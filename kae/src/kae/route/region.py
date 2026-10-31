@@ -204,8 +204,12 @@ class _Route:
 class Region:
     """One window's negotiation (see the module docstring). Build, then `run`, then `commit`."""
 
-    def __init__(self, sp, fills, win, fixed=(), log=print, seed=0):
+    def __init__(self, sp, fills, win, fixed=(), log=print, seed=0, only=None, quiet=False):
         self.sp, self.win, self.log, self.seed = sp, win, log, seed
+        self.only = set(only) if only is not None else None   # the nets that move (a repair step)
+        self.quiet = quiet
+        if quiet:
+            self.log = lambda m: None
         self.deadline = None
         self.fp = LM._fill_polys(fills)
         self.fixed = set(fixed)
@@ -221,10 +225,14 @@ class Region:
         sp, Wb = self.sp, self.W
         pad_nets = {it.net for it in sp.pads if it.kind == "pad" and it.net and it.geom.intersects(Wb)}
         field_nets = {it.net for it in sp.pads if it.kind == "pad" and it.net and it.fp == self.win["fp"]}
+        if self.only is not None:
+            pad_nets &= self.only
         rip, keep_arc = [], []
         for it in sp.existing + sp.routed:
             if it.kind not in ("track", "via") or not it.net or it.locked or it.uuid in self.fixed:
                 continue
+            if self.only is not None and (it.net not in self.only or it.net in self.fp):
+                continue    # a step moves only its nets; plane nets' escapes and dog-bones stay
             if it.kind == "via":
                 if Wb.contains(it.geom):
                     rip.append(it)
@@ -233,7 +241,7 @@ class Region:
                     keep_arc.append(it)     # an arc across the border: kept whole
                 else:
                     rip.append(it)
-        self.nets = sorted(pad_nets | {it.net for it in rip})
+        self.nets = sorted(pad_nets | {it.net for it in rip}) if self.only is None else sorted(self.only)
         self.field_nets = field_nets
         self.before = {n: LM._open_count(sp, self.fp, n) for n in self.nets}
         self.ripped = rip
@@ -381,7 +389,7 @@ class Region:
             groups = [x for x in groups if x[2] >= 0] + [x for x in groups if x[2] < 0]
             side = None
             has_fill = any(x.kind == "fill" for p in ps for x in p)
-            if outside and groups and n in self.field_nets and not has_fill:
+            if outside and groups and n in self.field_nets and not has_fill and self.only is None:
                 # the nearest copper of the other parts: the side of the window it lies beyond
                 best = None
                 for p in outside:
@@ -617,6 +625,8 @@ class Region:
             rt.conns += 1
             if side is not None:
                 rt.escape = side
+            if n in self.fp:
+                continue        # a plane net: each part joins its fill on its own, never a tree
             vias = [int(k) % self.plane for k in rt.vcells]
             tree = np.union1d(tree, path)
             if vias:
@@ -1237,3 +1247,190 @@ def solve(board, info, plan, fills, out, win, sev=None, fixed=(), deadline=None,
     for c in cap:
         log(f"region {win['ref']}: {c['line']}")
     return rep
+
+
+# ----------------------------------------------------------------------------- monotone repair
+STEP_MARGIN = 2.0      # mm around an open connection's two ends: a repair step's window
+STEP_MAX = 20.0        # mm: a step's window at most this wide (a farther connection is the router's)
+STEP_NETS = 12         # nets a step moves at most (the open one and the ones in its way)
+STEP_ITER = 12         # negotiation iterations of a step
+STEP_STALL = 40        # steps in a row without fewer open connections before a window stops
+STEP_TIME = 60.0       # s a step may take at most
+
+
+def _open_parts(sp, fp, net, Wb):
+    """The relevant parts of `net` (lastmile.parts), and whether two or more reach into Wb."""
+    ps = [p for p in LM.parts(sp, fp, net) if LM._relevant(p)]
+    inside = [p for p in ps if any(x.copper.intersects(Wb) for x in p)]
+    return ps, inside
+
+
+def _blockers(sp, gr, fp, net, src, others, win, fixed, widths):
+    """The nets whose unlocked copper a route of `net` from `src` to `others` inside `win`
+    (a box) would cross, cheapest first (lastmile's rip-up search: their copper taken out and
+    priced per cell crossed). Plane nets (with fill) are never blockers: their escapes stay."""
+    cand = {id(it): it for l in sp.cu for it in sp.query(l, win.bounds)
+            if it.kind in ("track", "via") and it.net and it.net != net and not it.locked
+            and it.uuid not in fixed and it.net not in fp and it.geom.intersects(win)}
+    cand = list(cand.values())
+    if not cand:
+        return []
+    sp.remove(cand)
+    gr.soft = [(it, LM.RIP_COST) for it in cand]
+    try:
+        got = LM._try(gr, sp, net, src, others, win, widths)
+    finally:
+        gr.soft = []
+    out = []
+    if got is not None:
+        rt, new = got
+        hit = [it for it in cand if LM._conflicts(sp, it, set(new))]
+        sp.remove(new)
+        seen = set()
+        for it in hit:
+            if it.net not in seen:
+                seen.add(it.net)
+                out.append(it.net)
+    LM._restore(sp, cand)
+    return out
+
+
+def _undo(sp, rg):
+    sp.remove(list(rg.stubs) + list(getattr(rg, "new", [])))
+    LM._restore(sp, rg.ripped)
+
+
+def repair_window(board, info, plan, fills, out, win, sev=None, fixed=(), deadline=None, log=print, seed=0,
+                  sp=None):
+    """Monotone repair of window `win` (from `windows`), starting from the board's routing as it
+    is: each open connection that ends in the window is a step. A step takes the nets whose
+    unlocked copper is in the connection's way (lastmile's rip-up search; at most STEP_NETS,
+    plane nets never: their escapes and dog-bones stay), rips them inside a small window
+    around the connection (STEP_MARGIN beyond its two ends; the windows move with the
+    connections, as TritonRoute's clips do), and re-routes them together by negotiation
+    (Region with `only`), laid with exact checks. A step is kept only when its nets end with
+    fewer missing connections than before, or as many (a plateau move, at most STEP_STALL in a
+    row); otherwise its copper goes and the old comes back, so the window never gets worse.
+    Writes `out` when a step was kept. Returns a report with every step's record."""
+    t0 = time.monotonic()
+    if sp is None:
+        sp = Space(load(board), info, plan=plan, sev=sev or {})
+    fp = LM._fill_polys(fills)
+    fixed = set(fixed)
+    gr = LM._SoftRouter(sp)
+    Wb = box(*win["box"])
+    rng = np.random.default_rng(seed)
+    file_ids = {it.uuid for it in sp.existing}
+    nets = sorted({it.net for it in sp.pads if it.kind == "pad" and it.net and it.geom.intersects(Wb)})
+    open0 = {n: LM._open_count(sp, fp, n) for n in nets}
+    steps, kept, stall, tried = [], 0, 0, {}
+    t_step = []
+    is_open = {n for n, v in open0.items() if v}
+    while deadline is None or time.monotonic() < deadline:
+        todo = []
+        for n in sorted(is_open):
+            ps, inside = _open_parts(sp, fp, n, Wb)
+            if len(ps) > 1 and inside and tried.get(n, 0) < 3:
+                todo.append(n)
+        if not todo or stall >= STEP_STALL:
+            break
+        n = todo[int(rng.integers(len(todo)))]
+        tried[n] = tried.get(n, 0) + 1
+        ts = time.monotonic()
+        ps, inside = _open_parts(sp, fp, n, Wb)
+        small = min(inside, key=lambda p: (sum(1 for x in p if x.kind == "pad"), id(p)))
+        others = [p for p in ps if p is not small]
+        widths = LM.widths_of(sp, n)
+        src = LM._anchors(small, max(widths) / 2 + 0.02)
+        rec = dict(net=n)
+        if not src:
+            rec["skip"] = "no anchors"
+            steps.append(rec)
+            continue
+        sw = LM._window(src, others, STEP_MARGIN)
+        x0, y0, x1, y1 = sw.bounds
+        if max(x1 - x0, y1 - y0) > STEP_MAX:
+            rec["skip"] = "far"
+            steps.append(rec)
+            continue
+        block = _blockers(sp, gr, fp, n, src, others, sw, fixed, widths)
+        move = [n] + block[:STEP_NETS - 1]
+        sub = dict(win, box=(x0, y0, x1, y1), ref=f"{win['ref']}:{n}")
+        before = {m: LM._open_count(sp, fp, m) for m in move}
+        rg = Region(sp, fills, sub, fixed=fixed, log=log, seed=int(rng.integers(1 << 30)), only=move, quiet=True)
+        rg.fp = fp
+        try:
+            rg.setup()
+            rg.run(deadline=min(deadline or 1e18, time.monotonic() + STEP_TIME), max_iter=STEP_ITER)
+            rg.deadline = deadline
+            com = rg.commit()
+        except Exception as e:  # noqa: BLE001 - a failed step changes nothing
+            _undo(sp, rg)
+            rec.update(error=f"{type(e).__name__}: {e}")
+            steps.append(rec)
+            continue
+        after = {m: LM._open_count(sp, fp, m) for m in move}
+        b_, a_ = sum(before.values()), sum(after.values())
+        ok = a_ < b_ or (a_ == b_ and stall < STEP_STALL)
+        rec.update(moved=len(move), before=b_, after=a_, converged=rg.converged, iterations=len(rg.stats),
+                   conflicts=[x["nets_in_conflict"] for x in rg.stats], laid=com["laid"],
+                   kept=bool(ok), seconds=round(time.monotonic() - ts, 1))
+        if a_ < b_:
+            stall = 0
+        else:
+            stall += 1
+        if not ok:
+            _undo(sp, rg)
+        else:
+            kept += 1
+            for it in rg.new + rg.stubs:
+                it.locked = False      # a later step may move it; written locked (_write_diff)
+            for m in move:
+                if after.get(m):
+                    is_open.add(m)
+                else:
+                    is_open.discard(m)
+            if a_ < b_:
+                tried.pop(n, None)
+        steps.append(rec)
+        t_step.append(rec["seconds"])
+        log(f"region {win['ref']} step {len(steps)} {n}: {len(move)} nets moved, open {b_} -> {a_} "
+            f"({'kept' if ok else 'undone'}; {'converged' if rg.converged else 'not converged'} in "
+            f"{len(rg.stats)} iterations, {rec['seconds']} s)")
+    open1 = {n: LM._open_count(sp, fp, n) for n in nets}
+    rep = dict(ref=win["ref"], kind=win["kind"], pitch=win["pitch"], box=[round(v, 3) for v in win["box"]],
+               nets=len(nets), mode="repair", steps=steps, kept=kept,
+               open_before=sum(open0.values()), open_after=sum(open1.values()),
+               step_seconds=dict(n=len(t_step), mean=round(float(np.mean(t_step)), 1) if t_step else 0.0,
+                                 max=max(t_step) if t_step else 0.0),
+               converged=sum(open1.values()) == 0)
+    rep["wrote"] = rep["open_after"] < rep["open_before"]
+    if rep["wrote"]:
+        rep["added"] = _write_diff(sp, board, out, file_ids)
+    rep["seconds"] = round(time.monotonic() - t0, 1)
+    log(f"region {win['ref']}: {kept} of {len(steps)} steps kept; open on its nets {rep['open_before']} -> "
+        f"{rep['open_after']} ({rep['seconds']} s)")
+    return rep
+
+
+def _write_diff(sp, board, out, file_ids):
+    """`out` = `board` with the space's copper: the board's tracks and vias no longer in the space
+    taken out, the space's new ones added (stubs unlocked, as the tracks they come from; the rest
+    locked, as the last mile's). Returns the new uuids."""
+    present = {it.uuid for it in sp.existing + sp.routed if it.kind in ("track", "via")}
+    remove = sorted(u for u in file_ids if u and u not in present)
+    tracks, vias, added = [], [], []
+    for it in sp.existing + sp.routed:
+        if it.kind not in ("track", "via") or it.uuid in file_ids:
+            continue
+        lock = it.owner != ("region", "stub")
+        if it.kind == "track":
+            tracks.append((it.net, next(iter(it.layers)), it.width, tuple(it.geom.coords[0]),
+                           tuple(it.geom.coords[-1]), it.uuid, lock))
+        else:
+            vias.append((it.net, it.geom.x, it.geom.y, it.width, it.drill, it.uuid, lock))
+        added.append(it.uuid)
+    W.edit(board, out, remove=remove)
+    if tracks or vias:
+        W.append_items(out, out, tracks=tracks, vias=vias)
+    return added

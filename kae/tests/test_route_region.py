@@ -77,3 +77,26 @@ def test_over_full_channel_is_named_with_its_room(tmp_path):
     assert c["layer"] == "F.Cu" and c["needs"] == 3 and c["holds"] == 1
     assert math.isclose(c["gap"], PITCH - 0.4, abs_tol=1e-3)
     assert "room for 1" in c["line"] and "U7.A1-U7.A2" in c["line"]
+
+
+def test_monotone_repair_joins_and_stays_legal(tmp_path):
+    # partners 8.5 mm to the left of the grid: each step's window holds both ends
+    near = ("P7", "Pads", "x:Pads", 126.0, 121.0, 0.0,
+            [(str(k + 1), b[1], 0.0, (k - len(BALLS) / 2) * 0.7, 0.4, 0.4, "smd", 0.0, "", "passive")
+             for k, b in enumerate(BALLS)], (0.5, 6.0))
+    p = F.write_board(tmp_path, extra=[GRID, near])
+    info = F.synth_info(load(p))
+    plan = CN.plan(info, p, {})
+    sp = Space(load(p), info, plan=plan)
+    w = next(x for x in region.windows(sp) if x["ref"] == "U7")
+    r = region.repair_window(p, info, plan, [], tmp_path / "out.kicad_pcb", w, sp=sp, log=lambda m: None)
+    assert r["open_after"] < r["open_before"] and r["wrote"]
+    assert all(s["after"] <= s["before"] for s in r["steps"] if s.get("kept"))
+    for it in sp.routed + sp.existing:
+        if it.kind == "via":
+            assert not sp.via_violations(it.net, it.geom.x, it.geom.y, ignore=(it,))
+        else:
+            a, b = it.geom.coords
+            assert not sp.track_violations(it.net, next(iter(it.layers)), it.width, a, b, ignore=(it,))
+    out = load(tmp_path / "out.kicad_pcb")
+    assert len(out.tracks) == sum(1 for it in sp.routed + sp.existing if it.kind == "track")
