@@ -6,7 +6,7 @@
                                                [--no-repair] [--fanout | --fanout-first] [--no-thermal]
                                                [--passes N] [--rounds N|auto] [--router-share F|auto]
                                                [--planes cost|keep|strict|allow] [--pad-shapes kicad|outside]
-                                               [--[no-]last-mile] [--report FILE]
+                                               [--[no-]last-mile] [--[no-]blocked] [--report FILE]
 
 INPUT is a .kicad_pcb with its project files (.kicad_pro, .kicad_dru) beside it; OUTPUT is
 written as soon as a routed board exists (kaebench scores only the board). The JSON report
@@ -14,6 +14,15 @@ goes to the last line of stdout and to --report FILE. As a kaebench method or pr
 
     kaebench run --adapter kae-fr --kinds route \\
       --command "<venv>/bin/python -m kae.route.cli route {input} {output} --seed {attempt} --time {timeout}"
+
+When connections stay open, the report's "blocked" section says why, per connection: congestion
+(a path exists without our other copper), the input's own copper, or the board rule that makes
+it impossible, with the value required and the value available, where, and the rule's source
+(.kicad_pro net class or board setup, .kicad_dru rule, footprint, rule area) or the kae default
+and its override (KAE_<NAME> text variable, --set). The router never relaxes a rule itself;
+"blocked" is for the caller to decide (change the rule, move a part, or accept). The same
+lines go to the log as "blocked: ...". `python -m kae.route.blocked ROUTED INPUT` runs the
+diagnosis alone on any routed board.
 
 Exit status: 0 when a routed board was written, 2 otherwise.
 """
@@ -52,6 +61,9 @@ def main(argv=None):
     r.add_argument("--last-mile", action=argparse.BooleanOptionalAction, default=True,
                    help="after the repair rounds, join what is still open with the grid router "
                         "(kae.route.lastmile; default on, --no-last-mile turns it off)")
+    r.add_argument("--blocked", action=argparse.BooleanOptionalAction, default=True,
+                   help="at the end, diagnose the connections still open: the report's \"blocked\" names the "
+                        "board rule (or kae default) that makes each impossible (kae.route.blocked)")
     r.add_argument("--neckdown", action=argparse.BooleanOptionalAction, default=False,
                    help="Freerouting's neck-down at pins, floored at the board's legal minimum width")
     r.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
@@ -65,7 +77,7 @@ def main(argv=None):
                 passes=a.passes, rounds=a.rounds if a.rounds == "auto" else int(a.rounds), keep=a.keep,
                 planes=a.planes, pad_shapes=a.pad_shapes,
                 router_share=a.router_share if a.router_share == "auto" else float(a.router_share),
-                last_mile=a.last_mile, neckdown=a.neckdown)
+                last_mile=a.last_mile, neckdown=a.neckdown, blocked=a.blocked)
     for kv in a.set:
         k, _, v = kv.partition("=")
         try:

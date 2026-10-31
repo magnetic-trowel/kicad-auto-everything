@@ -139,6 +139,8 @@ class Plan:
     min_width: float = 0.0                             # narrowest legal track for every net
     notes: dict = field(default_factory=dict)
     rule_board: object = None
+    bridging_openings: list = field(default_factory=list)  # (layer, polygon, why, nets): mask openings that
+                                                           # shut a pad in or expose two nets (kae.route.blocked)
 
 
 # ----------------------------------------------------------------------------- helpers
@@ -806,6 +808,12 @@ def _mask_openings(info, p, sev, pad_vec, outside=False):
                 shut = True   # a pad the opening shuts in (a jumper's, a crystal's): left as before
                 break
             keep = keep.difference(hole)
+        nets = sorted({info["pads"][j].get("net") or "" for j, _, _, _ in hits})
+        if shut or len(nets) > 1:
+            # KiCad counts a bridge for any copper of a net in an opening that exposes another
+            # net's: the holes let a pad's own net in (the router joins a jumper's pads at the
+            # price of bridges, jkiv cm4-carrier JP1-JP4); kae.route.blocked holds it exactly
+            p.bridging_openings.append((l, reach_geo, f"mask opening {m.get('cls')} {m.get('owner') or 'board'}", nets))
         if shut or keep.is_empty or keep.area < 1e-6:
             continue
         obs.append(Obstacle("keepout", l, keep, _obstacle_class(p, "kae_mask", vec),
