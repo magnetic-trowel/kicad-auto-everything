@@ -505,6 +505,7 @@ def _pads(board, cu, max_error, comp_ids):
                                       if pad.IsOnLayer(l)},
                        mask={}, zone_connection=_ZC.get(int(pad.GetZoneConnectionOverrides(None)), "inherited"),
                        thermal_gap=None, spoke_width=None, spoke_angle=pad.GetThermalSpokeAngleDegrees(),
+                       orient=pad.GetOrientationDegrees(),
                        round_keepout=_is_round_keepout(pad), fab=_pad_prop(pad),
                        drilled=bool(pad.HasHole() and pad.GetDrillSizeX() == pad.GetDrillSizeY()))
             if len(shapes) == 1 and polys:
