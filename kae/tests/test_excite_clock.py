@@ -25,3 +25,16 @@ def test_an_output_beats_a_bidirectional_pin_listed_first():
 def test_only_inputs_have_no_driver():
     bd = _bd([("U1.3", "input"), ("U2.3", "input")], {"U1": "ic", "U2": "ic"}, ics=("U1", "U2"))
     assert clock_driver(bd, "CLK") is None
+
+
+def test_a_clock_leaving_through_a_connector_loads_it_back_to_its_nearest_ground_pin():
+    from kae.excite.circuit import Circuit
+    from kae.excite.sources import _offboard_loads
+    bd = _bd([("U6.141", "bidirectional"), ("J3.5", "input")], {"U6": "ic", "J3": "connector"}, ics=("U6",))
+    bd.pads_of["GND"] = ["J3.3", "J3.6"]
+    bd.net_of = {"J3.3": "GND", "J3.6": "GND"}
+    bd.grounds, bd.assumptions, bd.circuit = {"GND"}, [], Circuit("GND")
+    bd.pad_xy = {"J3.5": (5.0, 0.0), "J3.3": (2.0, 0.0), "J3.6": (6.0, 0.0)}
+    _offboard_loads(bd, "CLK", "U6.141")
+    (e,) = bd.circuit.elems
+    assert (e.a, e.b, e.pa, e.pb) == ("CLK", "GND", "J3.5", "J3.6")

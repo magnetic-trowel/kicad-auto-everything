@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import math
 
-from .models import PKG_L, SW_FN, _rl
+from .models import PKG_L, SW_FN, _rl, _rlc
 
 # dynamic core current and edge of IC classes (stand-ins; an IC's datasheet replaces them)
 DYNAMIC = {"mcu": (0.05, 1e-9), "fpga": (0.5, 0.5e-9), "memory": (0.1, 1e-9), "logic": (0.02, 1e-9),
@@ -67,6 +67,7 @@ def add_all(bd, brief, nl=None):
                 bd.assumptions.append(f"clk:{net}: driver {drv} has no ground pin to return through; no clock source")
                 continue
             a = bd.net_of[pa]
+        _offboard_loads(bd, net, drv)
         V = 3.3
         I = CLOCK_C * V / CLOCK_TR
         src = bd.circuit.src(f"clk:{net}", a, net, pa=pa, pb=drv, kind="clock", net=net,
@@ -97,6 +98,21 @@ def clock_driver(bd, net):
             if test(t):
                 return t
     return None
+
+
+def _offboard_loads(bd, net, drv):
+    """A clock leaving the board through a connector pin drives a receiver there (cable, next board):
+    CLOCK_C from the pin to the connector's nearest ground pin, so its edge current returns through the
+    copper to that pin. (An IC's pins already load the net: kae.excite.models.)"""
+    for t in bd.pads_of.get(net, []):
+        ref = t.rsplit(".", 1)[0]
+        if t == drv or bd.part_kind.get(ref, ("",))[0] != "connector":
+            continue
+        g = _nearest_ground(bd, ref, t)
+        if g is None:
+            bd.assumptions.append(f"clk:{net}: {t} leaves the board with no ground pin beside it; its receiver is left out")
+            continue
+        bd.circuit.z(f"{t}:offboard", net, bd.net_of[g], _rlc(0, PKG_L, CLOCK_C), t, g, "in")
 
 
 def _nearest_ground(bd, ref, pad):
