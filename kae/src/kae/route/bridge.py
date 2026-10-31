@@ -58,7 +58,6 @@ DEFAULT_OPTS = dict(
     plane_escapes=True,      # before routing, join each pad of a zone net that the input's fill does not
                              # reach to that fill with a short stub and via (lastmile.plane_escapes),
                              # unlocked: the plane connections the human boards make first
-    ball_escapes=True,       # with them, dog-bones for the inner rings of ball grids (escape.dog_bones)
     pad_shapes="kicad",      # pin shapes in the DSN: "kicad" (KiCad's export: rounded corners and arcs as
                              # chords inside the outline, up to 4 um at r 0.25 mm, 10 um on custom pads) or
                              # "outside" (polygons that contain the pad's copper, translate.circumscribe_pins)
@@ -110,7 +109,8 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
         zoned = any(z.get("net") for z in info.get("zones") or [])
         share = strict_share(opts, seed, input_path)
         planes = zoned and opts.get("plane_escapes")
-        if planes or (zoned and share) or opts.get("ball_escapes"):
+        balls = bool(constraints.setting("ball_escapes", input_path, opts))   # KAE_BALL_ESCAPES, --set, default
+        if planes or (zoned and share) or balls:
             te = time.monotonic()
             staged = drc.stage_board(input_path, input_path, wd / "escapes")
             fills = pcbnew_io.zone_fills(staged)["zones"] if zoned else []   # refilled with the board's rules
@@ -118,10 +118,10 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             fp_ = translate.fill_planes(info, fills)
             opts["strict_planes"] = sorted(l for l, (n, a) in fp_.items() if a >= share)
             report["plane_fill_shares"] = {l: [n, round(a, 3)] for l, (n, a) in fp_.items()}
-        if planes or opts.get("ball_escapes"):
+        if planes or balls:
             from . import lastmile
             esc = wd / "escapes" / "escaped.kicad_pcb"
-            got = lastmile.plane_escapes(staged, info, p, fills if planes else [], esc, sev=sev, log=log, balls=opts.get("ball_escapes"),
+            got = lastmile.plane_escapes(staged, info, p, fills if planes else [], esc, sev=sev, log=log, balls=balls,
                                          deadline=time.monotonic() + max(10.0, 0.1 * left()))
             report["plane_escapes"] = {k: v for k, v in got.items() if k != "added"}
             if got["added"]:

@@ -157,6 +157,8 @@ DEFAULTS = dict(
                                    # and the DRC picks (z280 needs it: ~94 open -> 3; heypcb kestrel, whose
                                    # human routes 1.6 m on its planes, is hurt: 28 -> 53); a number: every
                                    # seed; 0: never (bridge.strict_share)
+    ball_escapes=1,                # 1: dog-bones for the inner rings of ball grids, laid with the plane
+                                   # escapes (escape.dog_bones; gecko5 101 -> 69 open, nekoink 99 -> 77); 0: none
 )
 
 

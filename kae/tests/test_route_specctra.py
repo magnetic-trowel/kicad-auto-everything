@@ -195,6 +195,9 @@ def test_strict_share_from_the_board(tmp_path):
     pcb.with_suffix(".kicad_pro").write_text(json.dumps({"text_variables": {"KAE_IGNORED_CLEARANCE_FLOOR": "x"}}))
     from kae.route import constraints
     assert constraints.setting("ignored_clearance_floor", pcb, dict(ignored_clearance_floor=0.2)) == 0.2
+    pcb.with_suffix(".kicad_pro").write_text(json.dumps({"text_variables": {"KAE_BALL_ESCAPES": "0"}}))
+    assert not constraints.setting("ball_escapes", pcb, dict(ball_escapes=True))
+    assert constraints.setting("ball_escapes", None, {}) and not constraints.setting("ball_escapes", None, dict(ball_escapes=0))
 
 
 def test_strict_planes_alternate_with_the_seed():
