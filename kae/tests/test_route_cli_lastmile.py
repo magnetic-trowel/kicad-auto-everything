@@ -27,3 +27,13 @@ def test_lastmile_command_fails_cleanly(monkeypatch, capsys):
     monkeypatch.setattr(bridge, "last_mile_only", boom)
     assert cli.main(["lastmile", "a", "b", "c"]) == 2
     assert json.loads(capsys.readouterr().out.strip().splitlines()[-1])["status"] == "error"
+
+
+def test_route_first_reads_the_restart_history(monkeypatch, tmp_path):
+    h = tmp_path / "history.json"
+    h.write_text(json.dumps({"SCLK": 2, "MOSI": 1, "GND": 0}))
+    monkeypatch.delenv("KAE_ROUTE_HISTORY", raising=False)
+    assert bridge.route_first({}) == ([], None)
+    monkeypatch.setenv("KAE_ROUTE_HISTORY", str(h))
+    assert bridge.route_first({}) == (["SCLK", "MOSI"], str(h))
+    assert bridge.route_first({"history": str(tmp_path / "missing.json")})[0] == []   # unreadable: empty

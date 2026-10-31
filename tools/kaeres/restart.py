@@ -22,6 +22,11 @@ input's project files), @OUT@, @SEED@ and @TIME@ replaced, its time reserved fro
 Its board replaces the kept one only when KiCad's DRC ranks it better. For a router this is the
 last mile alone (kae.route.cli lastmile): an attempt that ended late is not punished for it.
 
+With --history, every judged attempt adds the nets KiCad found open on its board to a failure
+history (restarts/history.json, {net: attempts that left it open}; record_open), and every attempt
+gets its path in KAE_ROUTE_HISTORY: a router may route those nets first (kae.route.bridge does).
+Each attempt's record in summary.json lists the nets it left open.
+
 Work is measured, since a sandboxed method's processes are invisible to the harness: every
 attempt's processes (its process tree and session, so a router started in a session of its own
 counts too) are sampled from /proc each second (CPU seconds summed over all of them, peak RSS);
@@ -183,6 +188,29 @@ def judge(board, inp, base, timeout, placement=False):
     return (1 if out else 0, 0 if clean else 1, d["unconnected"], new, out)
 
 
+def record_open(info, history, path):
+    """Add the nets the DRC of attempt `info`'s board found open (its drc.json, written by judge)
+    to `history` {net: attempts that left it open}, note them in `info` (open_nets), and write the
+    history to `path` atomically (attempts read it when they start). info None: write it only."""
+    if info is not None:
+        nets = set()
+        try:
+            rep = json.loads(Path(info["out"]).with_name("drc.json").read_text())
+        except (OSError, ValueError):
+            rep = {}
+        for u in rep.get("unconnected_items") or []:
+            for it in u.get("items") or []:
+                m = re.search(r"\[([^\]]*)\]", it.get("description") or "")
+                if m and m.group(1) and m.group(1) != "<no net>":
+                    nets.add(m.group(1))
+        info["open_nets"] = sorted(nets)
+        for n in nets:
+            history[n] = history.get(n, 0) + 1
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(history, indent=1, sort_keys=True))
+    os.replace(tmp, path)
+
+
 def final_reserve(a, judge_est):
     """Seconds kept free from the start for the final pass: its command (--final-s, else
     FINAL_MIN_S plus one DRC of the board, as long as the slowest judgement so far) and the
@@ -258,6 +286,9 @@ def main():
                          "its time reserved from the start; kept only when KiCad ranks it better")
     ap.add_argument("--final-s", type=float, default=0.0,
                     help="seconds for the final pass; 0 = FINAL_MIN_S plus one DRC of the board")
+    ap.add_argument("--history", action="store_true",
+                    help="keep a history of the nets judged attempts left open (restarts/history.json) and pass "
+                         "its path to every attempt in KAE_ROUTE_HISTORY")
     ap.add_argument("command", nargs=argparse.REMAINDER)
     a = ap.parse_args()
     cmd = " ".join(a.command[1:] if a.command[:1] == ["--"] else a.command)
@@ -284,6 +315,10 @@ def main():
         return end - max(min(0.25 * a.time, 60 + 0.05 * a.time), a.parallel * judge_est + GRACE_S + 15) \
             - final_reserve(a, judge_est)
     base = (b0 or {}).get("types", {})
+    history = {}
+    if a.history:
+        os.environ["KAE_ROUTE_HISTORY"] = str(wd / "history.json")   # attempts inherit it
+        record_open(None, history, wd / "history.json")
     log(f"input DRC errors by type: {base}")
     running, done, k = {}, [], 0
     best = None
@@ -358,6 +393,8 @@ def main():
             judge_cpu += child_cpu() - c0
             judge_wall += time.monotonic() - w0
             info.update(rc=p.returncode, rank=rank)
+            if a.history and rank is not None:
+                record_open(info, history, wd / "history.json")
             fast_fails = fast_fails + 1 if rank is None and info["wall_s"] < 10 else 0
             done.append(info)
             log(f"end #{info['k']} rc {p.returncode} (illegal, not clean, unconnected, new errors, outside) {rank}")

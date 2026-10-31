@@ -696,16 +696,81 @@ def apply(tree, plan, info):
     return summary
 
 
-def permute(tree, seed):
+def permute(tree, seed, first=()):
     """Shuffle the order of components, of their placements and of nets in a DSN `tree`
     (in place, reproducibly from `seed`; 0 leaves it as it is). Returns whether it changed.
 
     Freerouting 2.5.0 is deterministic and routes the open items in the order the DSN
     created them (pins in placement order; net numbers in network order break ties), so an
-    attempt with another order is another, equally valid attempt."""
-    if not seed:
+    attempt with another order is another, equally valid attempt.
+
+    `first`: nets to route before the rest, most urgent first (the nets earlier attempts left
+    open: route_first). After the shuffle, those nets lead the network, and the placements
+    holding their pins lead the placement (a part with an urgent net first, the parts with
+    fewer pins first among equals), the rest in the shuffled order."""
+    changed = False
+    if seed:
+        changed = _shuffle(tree, random.Random(seed))
+    if first:
+        changed |= _put_first(tree, list(first))
+    return changed
+
+
+def route_first(history, limit=None):
+    """Nets in the order to route them from a failure history {net: times left open}: most
+    often open first, ties by name (reproducible)."""
+    nets = sorted(((-int(n), str(net)) for net, n in (history or {}).items() if n), key=lambda t: t)
+    return [net for _, net in nets][:limit]
+
+
+def _put_first(tree, first):
+    from .lastmile import unescape
+    rank = {}
+    for i, n in enumerate(first):
+        rank.setdefault(n, i)
+    network = find(tree, "network")
+    if network is None:
         return False
-    rnd = random.Random(seed)
+    nets = [c for c in network if isinstance(c, list) and c and c[0] == "net"]
+
+    def net_rank(c):
+        name = str(c[1]) if len(c) > 1 else ""
+        return rank.get(name, rank.get(unescape(name), len(first)))
+    ref_rank, ref_pins = {}, {}
+    for c in nets:
+        r = net_rank(c)
+        for pins in (x for x in c if isinstance(x, list) and x and x[0] == "pins"):
+            for pin in pins[1:]:
+                ref = str(pin).split("@")[0].rsplit("-", 1)[0]
+                ref_pins[ref] = ref_pins.get(ref, 0) + 1
+                if r < len(first):
+                    ref_rank[ref] = min(ref_rank.get(ref, r), r)
+    if not ref_rank:
+        return False
+    idx = [i for i, c in enumerate(network) if isinstance(c, list) and c and c[0] == "net"]
+    for i, c in zip(idx, sorted(nets, key=net_rank)):     # stable: the shuffled order among equals
+        network[i] = c
+    placement = find(tree, "placement")
+    if placement is not None:
+        def place_key(pl):
+            ref = str(pl[1]) if len(pl) > 1 else ""
+            return (ref_rank.get(ref, len(first)), ref_pins.get(ref, 0) if ref in ref_rank else 0)
+        comps = []
+        for comp in (c for c in placement if isinstance(c, list) and c and c[0] == "component"):
+            pi = [i for i, x in enumerate(comp) if isinstance(x, list) and x and x[0] == "place"]
+            ps = sorted((comp[i] for i in pi), key=place_key)
+            for i, x in zip(pi, ps):
+                comp[i] = x
+            comps.append(comp)
+        ci = [i for i, c in enumerate(placement) if isinstance(c, list) and c and c[0] == "component"]
+        for i, c in zip(ci, sorted(comps, key=lambda c: min([place_key(x) for x in c
+                                                                if isinstance(x, list) and x and x[0] == "place"]
+                                                               or [(len(first), 0)]))):
+            placement[i] = c
+    return True
+
+
+def _shuffle(tree, rnd):
 
     def shuffle_children(node, head):
         idx = [i for i, c in enumerate(node) if isinstance(c, list) and c and c[0] == head]

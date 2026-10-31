@@ -674,7 +674,7 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
             plan.pad_shapes = opts.get("pad_shapes") or "kicad"
             rec["planes"] = plan.plane_policy
             translate.apply(tree, plan, info)
-            translate.permute(tree, round_seed(opts.get("seed"), k))
+            translate.permute(tree, round_seed(opts.get("seed"), k), first=opts.get("route_first") or ())
             if use_split:
                 now = {u: r for u, r in copper.items() if u not in rip}   # the board as exported
                 now.update({f"spoke{i}": dict(kind="track", **s) for i, s in enumerate(a["spokes"])})

@@ -73,3 +73,14 @@ def test_final_time_is_reserved_from_the_start(tmp_path):
 def test_no_final_pass_on_a_clean_board(tmp_path):
     r, out, summary = _run(tmp_path, "echo '(kicad_pcb OPEN=0)' > @OUT@", "echo '(kicad_pcb OPEN=0)' > @OUT@")
     assert all(d["k"] != "final" for d in summary["attempt_log"])
+
+
+def test_history_of_open_nets_reaches_later_attempts(tmp_path):
+    attempt = "cp \"$KAE_ROUTE_HISTORY\" seen.json; echo '(kicad_pcb OPEN=2)' > @OUT@"
+    r, out, summary = _run(tmp_path, attempt, "", extra=["--max-attempts", "2", "--history"])
+    assert r.returncode == 0, r.stdout + r.stderr
+    work = tmp_path / "work" / "restarts"
+    assert json.loads((work / "history.json").read_text()) == {"N0": 2, "N1": 2}
+    assert json.loads((work / "a0" / "seen.json").read_text()) == {}               # nothing judged yet
+    assert json.loads((work / "a1" / "seen.json").read_text()) == {"N0": 1, "N1": 1}
+    assert [d["open_nets"] for d in summary["attempt_log"]] == [["N0", "N1"], ["N0", "N1"]]
