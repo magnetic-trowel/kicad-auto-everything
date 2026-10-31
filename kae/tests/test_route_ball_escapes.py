@@ -44,3 +44,11 @@ def test_dog_bones_for_inner_rings_in_diagonal_gaps(tmp_path):
             a, b = it.geom.coords
             assert math.dist(a, balls[it.net]) < 1e-9
             assert not sp.track_violations(it.net, next(iter(it.layers)), it.width, a, b, ignore=(it,))
+
+
+def test_has_grid_only_for_ball_grids():
+    """The bridge's escape stage runs only on boards with a ball grid (escape.has_grid)."""
+    from kae.route.escape import has_grid
+    grid = [dict(attr="smd", layers=["F.Cu"], pos=(x * 0.8, y * 0.8), fp_index=1) for x in range(5) for y in range(5)]
+    row = [dict(attr="smd", layers=["F.Cu"], pos=(x * 0.5, 0.0), fp_index=2) for x in range(20)]
+    assert has_grid(dict(pads=grid)) and not has_grid(dict(pads=row)) and not has_grid({})

@@ -45,6 +45,16 @@ def _grid(pts):
     return pitch, ang, loc, [round(min(hx - abs(u), hy - abs(w)) / pitch) for u, w in loc]
 
 
+def has_grid(info):
+    """True when some footprint of the board's pads (pcbnew_io's records) has a ball grid,
+    as dog_bones finds them; cheap, so boards without one skip the escape stage."""
+    by = {}
+    for pd in info.get("pads") or []:
+        if pd.get("attr") == "smd" and len(pd.get("layers") or ()) == 1:
+            by.setdefault(pd.get("fp_index", pd.get("ref")), []).append(tuple(pd["pos"]))
+    return any(len(pts) >= MIN_BALLS and _grid(pts) is not None for pts in by.values())
+
+
 def _capacity(sp, net, layer, pitch, ball):
     """Tracks of `net`'s routing width that fit between two balls `ball` mm wide."""
     mn, opt, _ = sp.width_limits(net, layer)

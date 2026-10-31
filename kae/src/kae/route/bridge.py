@@ -110,6 +110,9 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
         share = strict_share(opts, seed, input_path)
         planes = zoned and opts.get("plane_escapes")
         balls = bool(constraints.setting("ball_escapes", input_path, opts))   # KAE_BALL_ESCAPES, --set, default
+        if balls:
+            from .escape import has_grid
+            balls = has_grid(info)    # no ball grid: no escape stage (its staging and Space cost time)
         if planes or (zoned and share) or balls:
             te = time.monotonic()
             staged = drc.stage_board(input_path, input_path, wd / "escapes")
