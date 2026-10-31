@@ -959,6 +959,7 @@ def _lay_grid(sp, ctx, paths, plane_vias, info, deadline=None):
             continue
         start = pd.pos if l == B else tuple(rec["via"])
         pts = _plan_points(ctx, q, start, slots, R[l]["w"] + R[l]["c"])
+        rec["_pts"], rec["_k"] = pts, k
         rec["exit"] = [round(pts[-1][0], 4), round(pts[-1][1], 4)]
         mn, opt, _ = sp.width_limits(pd.net, l)
         for wd in [w for w in dict.fromkeys([opt, mn]) if w] or [0.1]:
@@ -971,8 +972,15 @@ def _lay_grid(sp, ctx, paths, plane_vias, info, deadline=None):
                     sp.add_track(pd.net, l, wd, a_, b_, owner=owner, uuid=W.new_uuid())
                 rec["laid"] = "plan"
                 break
-        if rec["laid"]:
+    # then a search for the escapes their planned path did not fit, while time allows
+    for rec in recs:
+        if rec["laid"] or "_pts" not in rec or (deadline is not None and time.monotonic() > deadline):
             continue
+        k, pts = rec["_k"], rec["_pts"]
+        q, pd = paths[k], balls[k][0]
+        l = q["layer"]
+        mn, opt, _ = sp.width_limits(pd.net, l)
+        start = pts[0]
         cxy = pts[-1]
         tgt = Anchor(box(cxy[0] - p / 2, cxy[1] - p / 2, cxy[0] + p / 2, cxy[1] + p / 2), (l,), centre=cxy, kind="track")
         if l == B:
@@ -989,6 +997,9 @@ def _lay_grid(sp, ctx, paths, plane_vias, info, deadline=None):
                         it.owner = owner
                     rec["laid"] = "search"
                     break
+    for rec in recs:
+        rec.pop("_pts", None)
+        rec.pop("_k", None)
     return recs
 
 
@@ -1063,6 +1074,55 @@ def _routed_inside(sp, pkg):
     return len(seen)
 
 
+def _cache_key(opts, pkg):
+    """A key for `pkg`'s plan on the input board (opts _board: its path), or None."""
+    import hashlib
+    from pathlib import Path
+    b = (opts or {}).get("_board")
+    if not b or not Path(b).exists():
+        return None
+    h = hashlib.sha1(Path(b).read_bytes())
+    pro = Path(b).with_suffix(".kicad_pro")
+    for p in (pro, Path(b).with_suffix(".kicad_dru")):
+        if p.exists():
+            h.update(p.read_bytes())
+    h.update(repr(sorted((k, v) for k, v in (opts or {}).items() if k.startswith("escape") or k == "planes")).encode())
+    return f"{h.hexdigest()[:16]}-{pkg['ref']}"
+
+
+def _cache_dir():
+    import os
+    import tempfile
+    from pathlib import Path
+    return Path(os.environ.get("KAE_ESCAPE_CACHE") or Path(tempfile.gettempdir()) / f"kae-escape-{os.getuid()}")
+
+
+def _cache_get(key):
+    import pickle
+    if key is None:
+        return None
+    p = _cache_dir() / f"{key}.pkl"
+    try:
+        return pickle.loads(p.read_bytes())
+    except (OSError, EOFError, pickle.UnpicklingError, AttributeError, ValueError):
+        return None
+
+
+def _cache_put(key, value):
+    import os
+    import pickle
+    if key is None:
+        return
+    d = _cache_dir()
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+        tmp = d / f".{key}.{os.getpid()}"
+        tmp.write_bytes(pickle.dumps(value))
+        os.replace(tmp, d / f"{key}.pkl")
+    except OSError:
+        pass
+
+
 def run(sp, info, opts=None, log=print, deadline=None):
     """Plan, certify and lay the escapes of every ball grid; check fine-pitch pad rings.
     Returns {packages, blocked, laid, wanted} (blocked: kae.route.blocked entries)."""
@@ -1086,8 +1146,19 @@ def run(sp, info, opts=None, log=print, deadline=None):
                 # escapes are there; a plan around them would not be laid
                 log(f"escape plan {pkg['ref']}: {routed} tracks and vias already in its ball field; not planned")
                 continue
-            plan, ctx, paths, plane_vias = plan_grid(sp, pkg, info, opts, deadline=deadline)
-            cert = certificate(sp, pkg, info, opts, log=log, deadline=deadline)
+            key = _cache_key(opts, pkg)
+            got = _cache_get(key)
+            if got is not None:
+                # the same input planned before (a restart's earlier attempt): plans and
+                # certificates are deterministic
+                plan, paths, plane_vias, flex, cert = got
+                ctx = _setup(sp, pkg, info, opts)
+                ctx["flex"] = flex
+                plan = dict(plan, cached=True)
+            else:
+                plan, ctx, paths, plane_vias = plan_grid(sp, pkg, info, opts, deadline=deadline)
+                cert = certificate(sp, pkg, info, opts, log=log, deadline=deadline)
+                _cache_put(key, (plan, paths, plane_vias, ctx.get("flex", {}), cert))
             if cert:
                 out["blocked"].append(cert)
                 plan["certificate"] = cert["summary"]

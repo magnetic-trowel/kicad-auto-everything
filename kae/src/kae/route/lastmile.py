@@ -604,8 +604,12 @@ def plane_escapes(board, info, plan, fills, out, sev=None, log=print, deadline=N
         # whole-package escape plans first (kae.route.escape): dog-bones and escapes of the
         # ball grids, and the certificate of what no routing can escape under the rules
         from . import escape
-        esc = escape.run(sp, info, escape_opts, log=log,
-                         deadline=None if deadline is None else time.monotonic() + 0.7 * max(0.0, deadline - time.monotonic()))
+        eo = dict(escape_opts or {}, _board=str(board))
+        # the plan needs its LP whatever the share: escape_min_s at least (a restart's later
+        # attempts reuse it from the cache, escape._cache_get)
+        esc = escape.run(sp, info, eo, log=log,
+                         deadline=None if deadline is None else time.monotonic() + max(
+                             float(eo.get("escape_min_s", 45.0)), 0.7 * max(0.0, deadline - time.monotonic())))
         rep["escape"] = esc
         rep["dog_bones"] = (sum(p.get("vias_laid", 0) for p in esc["packages"]), esc["wanted"])
     for net in sorted(fp):
