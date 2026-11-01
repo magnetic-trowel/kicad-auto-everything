@@ -102,6 +102,7 @@ class Mesh:
     def __post_init__(self):
         self.lab = np.full((len(self.layers), self.ny, self.nx), -1, np.int32)
         self.thin = {}          # (layer, orientation, j, i) -> (width mm, length scale): sub-cell tracks
+        self.bridges = []       # thin tracks' skipped cells: (layer, net, cell a, cell b, length mm, width mm)
         self.cov = np.zeros(self.lab.shape)    # copper coverage of each cell (0..1), for edge cells
 
     @classmethod
@@ -206,6 +207,7 @@ class Mesh:
         k = self.net_id(net)
         lab = self.lab[layer]
         p = self.pitch
+        carry, gap = None, 0.0               # the last cell of the net's chain, and the skipped length since
         for (xa, ya), (xb, yb) in zip(pts[:-1], pts[1:]):
             seg = float(np.hypot(xb - xa, yb - ya))
             n = max(2, int(np.ceil(seg / (p / 4))) + 1)
@@ -225,20 +227,58 @@ class Mesh:
             cells = [(j, i) for j, i in cells if 0 <= j < self.ny and 0 <= i < self.nx]
             if len(cells) < 2:
                 for j, i in cells:
-                    lab[j, i] = k
+                    if lab[j, i] < 0 or lab[j, i] == k:
+                        lab[j, i] = k
                 continue
             scale = seg / ((len(cells) - 1) * p)
             pre = {c: lab[c] == k for c in cells}
-            for (j0, i0), (j1, i1) in zip(cells[:-1], cells[1:]):
+            # a cell another net's copper owns is not taken (a fine-pitch neighbour shares the raster cell):
+            # the chain skips it and the cells either side are joined by a bridge (bridge_gaps)
+            mine = [lab[c] < 0 or lab[c] == k for c in cells]
+            for q, c in enumerate(cells):
+                if q > 0 and carry is not None:
+                    gap += p * scale
+                if not mine[q]:
+                    continue
+                if carry is not None and carry != c and gap > p * scale * 1.5:
+                    self.bridges.append((layer, net, carry, c, gap, width))
+                carry, gap = c, 0.0
+            for q in range(len(cells) - 1):
+                if not (mine[q] and mine[q + 1]):
+                    continue
+                (j0, i0), (j1, i1) = cells[q], cells[q + 1]
                 if pre[(j0, i0)] and pre[(j1, i1)] and self.cov[layer][j0, i0] >= 0.999 and self.cov[layer][j1, i1] >= 0.999:
                     continue
                 o = "x" if j0 == j1 else "y"
                 key = (layer, o, min(j0, j1), min(i0, i1))
                 if key not in self.thin or self.thin[key][0] < width:
                     self.thin[key] = (width, scale)
-            for j, i in cells:
-                lab[j, i] = k
-                self.cov[layer][j, i] = 1.0
+            for q, (j, i) in enumerate(cells):
+                if mine[q]:
+                    lab[j, i] = k
+                    self.cov[layer][j, i] = 1.0
+
+    RHO_CU_OHM_MM = 1.72e-5
+    THIN_L_H_PER_MM = 1.0e-9          # a thin track's partial self inductance, about 1 nH/mm
+
+    def bridge_gaps(self):
+        """The thin tracks' skipped cells (paint_line) as lumped series parts: the track's resistance and an
+        inductance of ~1 nH/mm over the skipped length, between its cells either side. Connectivity and
+        R and L stay right; only those fractions of a millimetre lose their field coupling. Returns the count."""
+        n = 0
+        for b_, (l, net, ca, cb, length, width) in enumerate(self.bridges):
+            k = self.net_id(net)
+            if self.lab[l][ca] != k or self.lab[l][cb] != k:
+                continue                      # overwritten since (a pad's centre cell): nothing to join
+            ma = np.zeros((self.ny, self.nx), bool)
+            mb = np.zeros((self.ny, self.nx), bool)
+            ma[ca], mb[cb] = True, True
+            ta = self.terminal(f"bridge:{b_}:a", l, net=net, mask=ma)
+            tb = self.terminal(f"bridge:{b_}:b", l, net=net, mask=mb)
+            R = self.RHO_CU_OHM_MM * length / (max(width, 1e-3) * self.layers[l].t)
+            self.part(ta, tb, R=R, L=self.THIN_L_H_PER_MM * length, name=f"bridge:{net}")
+            n += 1
+        return n
 
     def rect(self, layer, net, x0, y0, x1, y1):
         return self.paint(layer, net, cov=self.coverage(rect=(x0, y0, x1, y1)))

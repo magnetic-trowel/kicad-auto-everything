@@ -124,6 +124,7 @@ class BoardMesh:
                 for layer in p.layers:
                     if layer in self.li:
                         m.lab[self.li[layer], j, i] = m.net_id(p.net)
+        self.n_bridges = m.bridge_gaps()        # fine-pitch neighbours' shared cells (Mesh.paint_line)
         for v in b.vias:
             if win.contains(Point(v.x, v.y)) and (nets is None or v.net in nets):
                 ls = [self.li[l] for l in span(v.layers) if l in self.li]
