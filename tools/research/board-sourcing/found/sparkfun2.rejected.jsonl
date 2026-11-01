@@ -1,0 +1,219 @@
+{"repo": "https://github.com/sparkfun/ADXL345_Eval", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/APDS-9301_Breakout", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfun/AT407_Tilt_Sensor", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/AVR_Programming_Adapter", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/Adapter_Board-ICD_ICD2", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/Alphabet_Boards", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfun/Alphanumeric_GPS_Clock", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/Audio_Amplifier_Kit-STA540", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/Audio_Jack_Breakout", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/Beehive_WiFi", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/Big_GPS_Clock", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/CherryMX-Chord-Keyer", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/Cherry_MX_Switch_Breakout", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfun/ClockIt", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/ColorLCDShield", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/Color_Light_Sensor_Evaluation_Board", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/Conference_Room_Signs", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/Current_Sensor_Breakout-ACS723-Low_Current", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfun/Digital_Handpan", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/ESP32_Miscellany", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/ESP8266_Thing_Dev_4H", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfun/Edison_Console_Block", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfun/EiBotBoard", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfun/Electret_Microphone_Breakout", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/Elevator_TARDIS", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/Fidget_Spinners", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/Fingerprint_Scanner-TTL", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/FreeSoC2_Keysynth", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/GlitchBooth", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/GraphicLCD_Nokia_5110", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/H2O_pH_Probe", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/HC-SR04_UltrasonicSensor", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/HaterMatic", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/IR-Control-Kit", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/IoT_Airlock", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/IoT_CloudCloud", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/IoT_Connected_Chess_Boards", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/IoT_FridgeCam", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/IoT_Power_Relay", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/IoT_SmartMirror", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/IoT_Weight_Logging_Scale", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/Knitting_Bracer", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/LED_Gumball_Machine", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/LED_Tactile_Button_Breakout", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/LS20126_GPS_Breakout", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/LSM303C_6_DOF_IMU_Breakout", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfun/LilyPad_Accelerometer-ADXL335", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/LilyPad_Arduino_328_Main_Board", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/LilyPad_LED_Rainbow", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfun/LilyPad_Slide_Switch", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/MG2639_Cellular_Shield", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfun/MIDI-BLE-Adapter", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/MIDI_Breakout", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/MMA8452_Accelerometer", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/MegaShield_Kit", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/Mega_Pro", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/MiP_Proto-Back", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfun/Monster_Moto_Shield", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/Navigation_Switch_Breakout", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/OpenLCD", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/Party_Button", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/Photo_Interrupter_Breakout", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/Photon_Weather_Shield", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfun/PoEthernet_Shield", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/Power_Driver_Shield_Kit", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/ProtoBoard_Wombat-PTH", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/ProtoSnap-Pro_Mini", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/Quadstepper_Motor_Driver", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/QuickLogic_Thing_Plus", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/Qwiic_Dual_Encoder_Reader", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/Qwiic_GPS_Clock_Project", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/Qwiic_SHIM_Kit", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/RFID_Evaluation_Shield", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/RF_Links", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/RHT03", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/RJ45_Breakout", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/RPi_PanTilt_Camera_Kit", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/Reaction_Timer", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/Rogue_Router", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/Rover5_Motor_Driver_Board", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/SC16IS750_Breakout", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/SFE_SHOVEL", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/SI4735_AM_FM_Shield", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/SI4735_Breakout", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/SIKIO", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/SM5100B_Cellular_Shield", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/SOIC20-DIP_Adapter", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/SOT23_DIP_Adapter", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/SSOP-DIP_Adapter_20-Pin", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/SSOP-DIP_Adapter_8-Pin", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/SWE_iCON", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/Secure-DIY-garage-door-opener", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/Serial-LCD-Kit", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfun/Serial_Alphanumeric_Display_Driver", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/Serial_DB9_Breakout", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/SillyString_Shooter", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/Simblee-LilyPad-Fitness-Bracer", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/Simon-Says", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/Sound_Page_Kit", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/SparkBowl_9DOF_RazorIMU", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/SparkFun-Payphone-Project", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/SparkFun_Arduino_UNO_R4_Qwiic_Kit", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/SparkFun_BREAD", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfun/SparkFun_DataLogger", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/SparkFun_GNSS_Dead_Reckoning_ZED-F9K", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfun/SparkFun_Hubble_Network", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/SparkFun_LTE_Stick_LARA_R6", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfun/SparkFun_Logic_Level_Shield", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/SparkFun_Optical_Tracking_Odometry_Sensor", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfun/SparkFun_PCB_Ruler", "reason": "only panel/old/library board files"}
+{"repo": "https://github.com/sparkfun/SparkFun_Pro_Micro_RP2350", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfun/SparkFun_SMD_LED_Light_Pipe", "reason": "only panel/old/library board files"}
+{"repo": "https://github.com/sparkfun/SparkFun_Simultaneous_RFID_Reader_M7E", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfun/SparkFun_Stepoko", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfun/SparkFun_Thing_Plus_ESP32_C6", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfun/SparkFun_TouchInput_Driver_FT5xx6", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/SparkFun_Trackuino", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/SparkFun_Watershed_Monitor", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfun/Sparkfun_GPS_Speedometer", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/Spectacle_Accelerometer_Input_Board", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfun/Spectacle_Button_Input_Board", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfun/Spectacle_Motion_Board", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfun/Speed_Trap", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfun/Stranger_Things_Wall", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/StupidArduinos", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfun/The_Flying_Jalapeno", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfun/Thermal_Printer", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/Thumb_Joystick_Breakout", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/Toaster_Oven_Reflow_Hack", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/TopHat", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/TweetCam", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/USB_Host_Shield", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/USB_Weather_Board", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfun/USB_miniB_Breakout", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/Vox_Imperium", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/WiFly-Shield", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/Wimp_Weather_Station", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/Window_Comparator", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/Wireless_Kill_Switch", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/XBee_Module_Breakout_Board", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/Zio-Qwiic-Soil-Moisture-Sensor", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfun/balance-robot", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/jetbot", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/microSD_Transflash_Breakout", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfun/sparkfun_autonomous_kit", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfun/usb-scale", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfunX/1Wire_to_Qwiic_Bridge_DS28E17", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Bluetooth_Mate_4.0", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Buzzard", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfunX/CCS811_Air_Quality_Breakout", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/DGNSS-Ranger", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfunX/Desktop-PickAndPlace-CHMT36VA", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/EAGLE_Badge_Generator", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfunX/ESP32_LoRa_1CH_Gateway", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/ESP8266_WiFi_IR_Blaster", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Flexible_Grayscale_OLED", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/GeoFence", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Inline-DC-Panel-Meter", "reason": "only panel/old/library board files"}
+{"repo": "https://github.com/sparkfunX/Iridium_9603N_Test_Header", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfunX/LED_Brightness_Adjuster", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/MLX90393_Magnetometer_Breakout", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Magnetic_Imaging_Tile", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/MicroMod_Carrier_Big_Display", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/MicroMod_Thing_Plus", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Nuclear_Battery_Kit", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/PoE_Power_Supply", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Pro_RF", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/QWIIC_RFID_ID-XXLA", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Qwiic_Accelerometer-MMA8452Q", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Qwiic_Adapter", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Qwiic_Air_Quality_Combo_Board-CCS811-BME280", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Qwiic_Blower_Fan", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Qwiic_Bluetooth_HC1x", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Qwiic_Cellular-Notecarrier", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Qwiic_Distance-RFD77402", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Qwiic_Distance_VL53L1X", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Qwiic_GPS-TitanX1", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Qwiic_GridEye", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Qwiic_HUD", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Qwiic_Human_Presence_Sensor-AK9750", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Qwiic_IMU_BNO080", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Qwiic_IR_Array_MLX90640", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Qwiic_Joystiic", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Qwiic_Keypad", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Qwiic_Magnetometer-MLX90393", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Qwiic_Micro_OLED", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Qwiic_Module_for_Tessel_2", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Qwiic_Mux-PCA9548A", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Qwiic_Mux_Shield_for_Arduino", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Qwiic_NonContact_Thermo_MLX90632", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Qwiic_PC_Fan_Controller", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Qwiic_Quad_Relay", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Qwiic_RF", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Qwiic_RTC", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Qwiic_Relay", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Qwiic_Shield_for_Arduino", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Qwiic_Shield_for_ESP32", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Qwiic_Shield_for_Photon", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Qwiic_Shield_for_RaspberryPi", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Qwiic_Spectral_Sensor-AS726x", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Qwiic_Spectral_Sensor-AS7341", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Qwiic_USB_Bridge", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Qwiic_USB_Hub-USB2514B", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Qwiic_UV_Sensor-ZOPT220x", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Qwiic_UV_VEML6075", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/RGB-OLED-Breakout-64x64-0.6", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/RGB_Panel_Arduino_Shield", "reason": "only panel/old/library board files"}
+{"repo": "https://github.com/sparkfunX/RGB_Panel_Mega_Shield", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/RedBoard_Edge", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Rotary_Dial", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/SAMD21_ProRF_1W", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Skimmer_Scanner", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfunX/SparkFunBifrost", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfunX/SparkX_smol_FPC_16-way_36mm", "reason": "board files empty / binary pre-v6 Eagle / not boards"}
+{"repo": "https://github.com/sparkfunX/SparkX_smol_OLED_Display", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/The_QwiicNES_Controller_Breakout", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Vulture", "reason": "no board files (kicad_pcb/brd)"}
+{"repo": "https://github.com/sparkfunX/ePaper", "reason": "no hardware licence statement (no LICENSE file; README only points to missing LICENSE.md or vague reuse text; no OSHWA cert with named licence)"}
+{"repo": "https://github.com/sparkfunX/Satellite_Transceiver_Breakout__Swarm_M138", "reason": "duplicate of sparkfun/SparkFun_Satellite_Transceiver-Swarm_M138 (same board)"}

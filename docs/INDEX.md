@@ -50,7 +50,8 @@ when you need the underlying evidence. Authoring rules: [CONVENTIONS.md](CONVENT
 | How the commander tells kae what "better" means: observables catalogue, intent with sections and exchange rates, status | [architecture/intent-driven-objectives](topics/architecture/intent-driven-objectives.md) |
 | Judging whether a routed board works (simulation, testbenches, intent) | [physics/functional-evaluation](topics/physics/functional-evaluation.md), [architecture/functional-evaluator](topics/architecture/functional-evaluator.md) (`kae.sim`), [architecture/intent-interchange](topics/architecture/intent-interchange.md) |
 | Generating schematics from a description | [synthesis/schematic-generation-landscape](topics/synthesis/schematic-generation-landscape.md), [synthesis/part-selection-and-verification](topics/synthesis/part-selection-and-verification.md), [research/llm-design](research/llm-design/README.md) |
-| Running the benchmark harness | [bench/README](../bench/README.md), [verification/harness](topics/verification/harness.md), [data/open-board-sources](topics/data/open-board-sources.md) |
+| Getting or using the local board corpus (~14k boards) | [data/local-board-corpus](topics/data/local-board-corpus.md) |
+| Running the benchmark harness | [bench/README](../bench/README.md), [verification/harness](topics/verification/harness.md), [data/open-board-sources](topics/data/open-board-sources.md), [data/wide-board-corpus](topics/data/wide-board-corpus.md) |
 | Planning the agent's workflow | [workflow/expert-state-machine](topics/workflow/expert-state-machine.md), [workflow/trust-requirements](topics/workflow/trust-requirements.md) |
 | Reusing third-party code or data | [licensing/reuse-matrix](topics/licensing/reuse-matrix.md), [data/licensing-tiers-and-contamination](topics/data/licensing-tiers-and-contamination.md) |
 

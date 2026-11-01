@@ -16,6 +16,7 @@ process from the harness. Every operation prints one JSON object on stdout.
     python pcbnew_ops.py unconnected BOARD
     python pcbnew_ops.py transplant-routing OUTPUT INPUT DEST [REFERENCE]
     python pcbnew_ops.py transplant-placement OUTPUT INPUT DEST [REFERENCE]
+    python pcbnew_ops.py covered-micro-arcs BOARD [MAX_MM]
 """
 import hashlib
 import json
@@ -722,6 +723,49 @@ def transplant_placement(out_path, inp_path, dst, ref_path=None):
     _out(dict(ok=True, loadable=True, missing=missing[:50], n_missing=len(missing), extra=extra[:50],
               n_extra=len(extra), locked_moved=locked_moved[:50], n_locked_moved=len(locked_moved),
               routing_added=routing_added, output=ident, foreign=foreign, copy=copy))
+def covered_micro_arcs(path, max_mm=0.001):
+    """List track arcs whose start, mid and end lie within max_mm of each other and whose
+    copper lies wholly inside the other tracks, vias and pads of the same net and layer.
+
+    Removing them leaves the copper (and so connectivity) unchanged. Zone fills are not
+    counted as cover, since they can be refilled. Polygons use a 0.1 um error, the arc
+    rounded inward and its cover outward.
+    """
+    board = _load(path)
+    lim, err = max_mm * NM, 100
+
+    def tiny(t):
+        if t.GetClass() != "PCB_ARC":
+            return False
+        p = [t.GetStart(), t.GetMid(), t.GetEnd()]
+        return max(math.hypot(a.x - b.x, a.y - b.y) for a, b in ((p[0], p[1]), (p[0], p[2]), (p[1], p[2]))) < lim
+
+    tracks = list(board.GetTracks())
+    groups = {}
+    for t in tracks:
+        if tiny(t):
+            groups.setdefault((t.GetNetCode(), t.GetLayer()), []).append(t)
+    pads = [p for fp in board.GetFootprints() for p in fp.Pads()]
+    covered, n = [], 0
+    for (net, layer), arcs in groups.items():
+        n += len(arcs)
+        cover = pcbnew.SHAPE_POLY_SET()
+        for t in tracks:
+            if t.GetNetCode() == net and t.IsOnLayer(layer) and not tiny(t):
+                t.TransformShapeToPolygon(cover, layer, 0, err, pcbnew.ERROR_OUTSIDE)
+        for p in pads:
+            if p.GetNetCode() == net and p.IsOnLayer(layer):
+                p.TransformShapeToPolygon(cover, layer, 0, err, pcbnew.ERROR_OUTSIDE)
+        if cover.OutlineCount() == 0:
+            continue
+        cover.Simplify()
+        for a in arcs:
+            own = pcbnew.SHAPE_POLY_SET()
+            a.TransformShapeToPolygon(own, layer, 0, err, pcbnew.ERROR_INSIDE)
+            own.BooleanSubtract(cover)
+            if own.Area() < 0.25e6:  # below 0.25 um^2 (internal units are nm)
+                covered.append(a.m_Uuid.AsString())
+    _out(dict(ok=True, candidates=n, covered=covered))
 
 
 def main(argv):
@@ -753,6 +797,8 @@ def main(argv):
             transplant_routing(*args[:4])
         elif op == "transplant-placement":
             transplant_placement(*args[:4])
+        elif op == "covered-micro-arcs":
+            covered_micro_arcs(args[0], *(float(a) for a in args[1:2]))
         else:
             raise SystemExit(f"unknown op {op}")
     except Exception as e:  # report failures as JSON so the harness can record them

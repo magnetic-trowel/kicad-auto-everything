@@ -1,0 +1,55 @@
+{"repo": "https://github.com/ClemensElflein/OpenMower", "reason": "LICENSE CC-BY-NC-SA-4.0"}
+{"repo": "https://github.com/ultimachine/Einsy-Rambo", "reason": "Altium only"}
+{"repo": "https://github.com/ultimachine/Archim", "reason": "Altium only"}
+{"repo": "https://github.com/macchina/m2-hardware", "reason": "no board files at HEAD (CC-BY-SA)"}
+{"repo": "https://github.com/commaai/panda", "reason": "no hardware files"}
+{"repo": "https://github.com/Ultrawipf/OpenFFBoard", "reason": "no PCB files in main repo"}
+{"repo": "https://github.com/EnnoidMe/ENNOID-BMS", "reason": "no board files in repo"}
+{"repo": "https://github.com/bdring/6-Pack_CNC_Controller", "reason": "only one small aux module kicad; main boards not KiCad (skipped)"}
+{"repo": "https://gitlab.com/librespacefoundation/phasma/phasma-sband-ant-pcb", "reason": "antenna-only PCB, no footprints"}
+{"repo": "https://github.com/oresat/oresat-star-tracker", "reason": "no licence file or licence statement in repo"}
+{"repo": "https://github.com/sinara-hw/Urukul", "reason": "no licence file in repo (Altium)"}
+{"repo": "https://github.com/sinara-hw/Sampler", "reason": "no licence file in repo"}
+{"repo": "https://github.com/sinara-hw/Thermostat", "reason": "no licence file in repo"}
+{"repo": "https://github.com/ultimachine/Mini-Rambo", "reason": "no licence"}
+{"repo": "https://github.com/Portiloop/portiloop-hardware", "reason": "no licence"}
+{"repo": "https://github.com/phil-barrett/grblHAL-teensy-4.x", "reason": "no licence"}
+{"repo": "https://github.com/ROBOTIS-GIT/OpenCR-Hardware", "reason": "OrCAD DSN only, licence vague"}
+{"repo": "https://github.com/simplefoc/SimpleFOCMini", "reason": "no PCB source files (MIT)"}
+{"repo": "https://github.com/sinara-hw/Mirny", "reason": "no licence file in per-board repo (Altium); sinara-hw/sinara monorepo is CERN-OHL-1.2"}
+{"repo": "https://github.com/sinara-hw/Fastino", "reason": "no licence file in per-board repo (Altium); sinara-hw/sinara monorepo is CERN-OHL-1.2"}
+{"repo": "https://github.com/sinara-hw/Phaser", "reason": "no licence file in per-board repo (Altium); sinara-hw/sinara monorepo is CERN-OHL-1.2"}
+{"repo": "https://github.com/sinara-hw/Zotino", "reason": "no licence file in per-board repo (Altium); sinara-hw/sinara monorepo is CERN-OHL-1.2"}
+{"repo": "https://github.com/sinara-hw/Clocker", "reason": "no licence file in per-board repo (Altium); sinara-hw/sinara monorepo is CERN-OHL-1.2"}
+{"repo": "https://github.com/sinara-hw/DIO_BNC", "reason": "no licence file in per-board repo (Altium); sinara-hw/sinara monorepo is CERN-OHL-1.2"}
+{"repo": "https://github.com/sinara-hw/Kasli-SoC", "reason": "no licence file in per-board repo (Altium); sinara-hw/sinara monorepo is CERN-OHL-1.2"}
+{"repo": "https://github.com/sinara-hw/Shuttler", "reason": "no licence file in per-board repo (Altium); sinara-hw/sinara monorepo is CERN-OHL-1.2"}
+{"repo": "https://github.com/sinara-hw/Banker", "reason": "no licence file in per-board repo (Altium); sinara-hw/sinara monorepo is CERN-OHL-1.2"}
+{"repo": "https://github.com/sinara-hw/Humpback", "reason": "no licence file in per-board repo (Altium); sinara-hw/sinara monorepo is CERN-OHL-1.2"}
+{"repo": "https://github.com/sinara-hw/Grabber", "reason": "no licence file in per-board repo (Altium); sinara-hw/sinara monorepo is CERN-OHL-1.2"}
+{"repo": "https://github.com/sinara-hw/Sayma_AMC", "reason": "no licence file in per-board repo (Altium); sinara-hw/sinara monorepo is CERN-OHL-1.2"}
+{"repo": "https://github.com/sinara-hw/Almazny", "reason": "no licence file in per-board repo (Altium); sinara-hw/sinara monorepo is CERN-OHL-1.2"}
+{"repo": "https://github.com/fred-c1/OSSI", "reason": "KiCad PCB is empty (0 footprints)"}
+{"repo": "https://github.com/williamhaarhoff/foc8313", "reason": "no licence file/statement"}
+{"repo": "https://github.com/AmericanRework/Pico-2x-BLDC", "reason": "no licence file/statement"}
+{"repo": "https://github.com/Scottapotamas/zaphod-bot", "reason": "no licence file/statement"}
+{"repo": "https://github.com/nnarain/icarus", "reason": "no licence file/statement"}
+{"repo": "https://github.com/mlab-modules/DRV10987V01", "reason": "no licence file/statement"}
+{"repo": "https://github.com/kbumsik/WolfieMouse", "reason": "licence only for firmware/simulation, hardware unlicensed"}
+{"repo": "https://github.com/but0n/Avem", "reason": "no PCB source files"}
+{"repo": "https://github.com/anticitizn/p4eregrine", "reason": "no licence"}
+{"repo": "https://github.com/guorbit/obc-hardware", "reason": "no licence"}
+{"repo": "https://github.com/andrea-cirillo/ACwing_FlightController_HW", "reason": "no licence"}
+{"repo": "https://github.com/xXsenseiXx/KHATAF-F411", "reason": "licence vague ('OSHW guidelines'), no licence file"}
+{"repo": "https://github.com/Filip-Kubecki/arty-scope-expansion-board", "reason": "no licence"}
+{"repo": "https://github.com/negativeview/generic-toolhead", "reason": "no licence"}
+{"repo": "https://github.com/edatki/Quectowatch", "reason": "no licence"}
+{"repo": "https://github.com/cvra/central-power-board", "reason": "no licence file"}
+{"repo": "https://github.com/LibreSolar/5uh-dc-lisn", "reason": "no licence file"}
+{"repo": "https://github.com/LibreSolar/solarduino-12a", "reason": "no licence file"}
+{"repo": "https://github.com/LibreSolar/switch-n-sense", "reason": "no licence file"}
+{"repo": "https://github.com/ClemensElflein/OpenMower", "reason": "CC-BY-NC-SA-4.0 (now acceptable) but no PCB files at HEAD; motor controller added via ClemensElflein/xESC"}
+{"repo": "https://github.com/open-ephys/onix-headstage-neuropix2e", "reason": "no licence file/statement"}
+{"repo": "https://github.com/open-ephys/onix-headstage-rhs2116", "reason": "no licence file/statement"}
+{"repo": "https://github.com/open-ephys/headstage", "reason": "no licence file/statement"}
+{"repo": "https://github.com/OpenBCI/V3_Hardware_Design_Files", "reason": "DesignSpark format only (CC-BY-SA)"}

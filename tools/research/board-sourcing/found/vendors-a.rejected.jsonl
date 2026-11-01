@@ -1,0 +1,15 @@
+{"repo": "https://github.com/ElectronicCats/BADGE-MALWARE-SPACE-2026", "reason": "no licence file or README licence statement"}
+{"repo": "https://github.com/ElectronicCats/Yavia_Carrier", "reason": "no licence (Yavia carrier board, 109 footprints)"}
+{"repo": "https://github.com/ElectronicCats/badge_hackgdl_2026", "reason": "README says 'open hardware, see licence files' but no licence files present"}
+{"repo": "https://github.com/ElectronicCats/badge-bugcon-2025", "reason": "README says 'open hardware, see licence files' but no licence files present (162-footprint badge)"}
+{"repo": "https://github.com/ElectronicCats/BADGE-MALWARE-SPACE-2025", "reason": "README references LICENSE_HARDWARE (CERN OHL 1.2) but file absent; only FreeRTOS MIT licence; left out as unclear"}
+{"repo": "https://datasheets.raspberrypi.com/cm4io/CM4IO-KiCAD.zip", "reason": "KiCad 6 CM4 IO board (4-layer, PCIe/USB/HDMI) but no licence in zip; datasheet terms restrict RESOURCES to use with Raspberry Pi products"}
+{"repo": "https://pip-assets.raspberrypi.com/categories/1098-design-files/documents/RP-008099-DD-1-CM5%20IO%20Board,%20revision%202,%20KiCAD%20files..zip", "reason": "KiCad 9 CM5 IO board but no licence in zip; Raspberry Pi resource terms restrict use"}
+{"repo": "https://datasheets.raspberrypi.com/picow/RPi-PicoW-PUBLIC-20220607.zip", "reason": "Allegro files, no licence file in zip"}
+{"repo": "https://docs.arduino.cc/static/722e62484d39226aa5502d1beff58779/ABX00030-cad-files.zip", "reason": "Nano 33 BLE / BLE Sense Eagle zip has no License.txt (other Arduino zips do: CC-BY-SA-4.0); unclear, left out"}
+{"repo": "https://docs.arduino.cc/static/77244a80f57dcd43254f4c2c978efcf1/ASX00085-cad-files.zip", "reason": "UNO Breakout Carrier Altium zip lacks License.txt"}
+{"repo": "https://docs.arduino.cc/static/f051671bbed80ddf7352991d62cb0d5c/A000056-cad-files.zip", "reason": "Arduino Due Eagle zip: licence only as a macOS .textClipping with no readable text; unclear"}
+{"repo": "https://github.com/watterott/senseBox-MCU", "reason": "no licence statement found (README/LICENSE absent); 140-part SAMD21 board"}
+{"repo": "https://github.com/watterott/Eitech-Robotics", "reason": "no licence statement"}
+{"repo": "https://github.com/watterott/FATSC", "reason": "no licence statement"}
+{"repo": "https://github.com/watterott/WebRadio", "reason": "only software licence.txt (Watterott license agreement); hardware licence unclear"}
