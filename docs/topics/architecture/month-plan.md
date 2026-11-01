@@ -7,7 +7,7 @@
   - a physics scorecard at least the human placement's on the binding budgets of most boards;
   - an ablation showing that the physics terms improve physics without costing routability.
 - **One pipeline:** board I/O → comprehension → physics brief → fast physics terms → cells-first seed → legalize → anneal → route critical nets → route the rest → repair loop → judge. Every stage is a module of the `kae` package ([system-design](system-design.md) §2) with a file contract.
-- **Compute.** Code and smoke tests run in the cloud session. Suite and corpus runs go to sk-tibia (at most 50 cores and 96 GB, detached, under its cgroup).
+- **Compute.** Code and smoke tests run in the cloud session. Suite and corpus runs go to the shared benchmark host (at most 50 cores and 96 GB, detached, under its cgroup).
 
 Status 2026-10-22. This plan replaces milestones M1–M6 of [system-design-build-plan](system-design-build-plan.md) for the first month; the physics engine ([physics-engine-design](physics-engine-design.md)) supplies the judges and, from week 3, the exact quotes.
 
@@ -69,7 +69,7 @@ A JSON document per board: net roles (ground, rails with voltage, switch nodes, 
 
 ### Weeks
 
-| Week | Build | Runs on sk-tibia | Exit |
+| Week | Build | Runs on the shared benchmark host | Exit |
 |---|---|---|---|
 | 1 | board I/O with verified transforms and writer; comprehension v1; place terms v1; `kae place` returning a legal placement; baselines | baseline (human, noop, Freerouting k = 3) | pads match pcbnew on 112/112 boards; human placement scores better than ≥ 90% of its own perturbations under the place terms; legal placements on split A |
 | 2 | cells-first seed; CP-SAT legalizer; annealer on physics plus routability; `kae place` as a kaebench `--command` adapter; physics scorecard on placements | suite with Freerouting probe; physics-off ablation | legal ≥ 0.95 on A+B; probe clean ≥ human + Freerouting − 0.10 on A+B; physics better than the ablation |

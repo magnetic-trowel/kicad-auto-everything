@@ -1,6 +1,6 @@
 # Placement routability probe, splits A+B at 1ef5bf1
 
-Run on sk-tibia, 2026-10-24, KiCad 10.0.7. Each placement is routed by the same router, kae's
+Run on the shared benchmark host, 2026-10-24, KiCad 10.0.7. Each placement is routed by the same router, kae's
 bridge as the kaebench probe (Freerouting fork, 1800 s, heap 2 GB), and scored by kaebench.
 33 boards, k = 2. Place tasks freshly prepared at task spec 6.
 
