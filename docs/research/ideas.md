@@ -373,9 +373,9 @@ each.
 ## Joint place and route: untested catalog ideas
 
 Source: the 42-idea catalog
-[docs/ideas/original/joint-pnr.md](https://github.com/magnetic-trowel/kicad-auto-everything/blob/claude/keen-wright-mlkjv6/docs/ideas/original/joint-pnr.md)
-on branch `claude/keen-wright-mlkjv6`, and its
-[literature survey](https://github.com/magnetic-trowel/kicad-auto-everything/blob/claude/keen-wright-mlkjv6/research_notes/joint-pnr/literature-survey.md).
+[docs/ideas/original/joint-pnr.md](../ideas/original/joint-pnr.md)
+(first on branch `claude/keen-wright-mlkjv6`), and its
+[literature survey](../../research_notes/joint-pnr/literature-survey.md).
 The tested ideas (1–3, 6–8, 11–13, 16, 17, 19, 20, 22, 23, 26, 30, 32, 36, 43) have pages in the
 [joint area](joint/README.md); 17 and 23 were folded into the differentiable-routing test
 ([soft-route-grad](joint/forces-and-fields.md)). The untested ones are below.
@@ -434,8 +434,8 @@ The tested ideas (1–3, 6–8, 11–13, 16, 17, 19, 20, 22, 23, 26, 30, 32, 36,
 ## Problem transformations
 
 Source:
-[research_notes/transformations/transformations.md](https://github.com/magnetic-trowel/kicad-auto-everything/blob/claude/keen-wright-mlkjv6/research_notes/transformations/transformations.md)
-on `claude/keen-wright-mlkjv6`. Each entry there gives the mapping, known results, what breaks,
+[research_notes/transformations/transformations.md](../../research_notes/transformations/transformations.md)
+(first on `claude/keen-wright-mlkjv6`). Each entry there gives the mapping, known results, what breaks,
 the payoff, a test plan and a novelty note. Three of them were built and run:
 - T1, min-plus best-response maps: [minplus-maps](joint/jc-extensions.md);
 - T2, exact Green's-function physics maps: [exact-physics-maps](joint/jc-extensions.md);
@@ -490,8 +490,8 @@ areas.
 
 ## The physics-first catalog (about 890 ideas)
 
-[docs/ideas/physics-first/](https://github.com/magnetic-trowel/kicad-auto-everything/tree/claude/vigilant-mayer-i91rrr/docs/ideas/physics-first)
-on branch `claude/vigilant-mayer-i91rrr` holds about 890 ideas: about 660 in eleven theme files
+[docs/ideas/physics-first/](../ideas/physics-first/)
+(first on branch `claude/vigilant-mayer-i91rrr`) holds about 890 ideas: about 660 in eleven theme files
 and 232 in seven first-principles lens files. The themes are:
 - rule replacements, a design language, reasoning and joint place-route;
 - optimization and simulation;
