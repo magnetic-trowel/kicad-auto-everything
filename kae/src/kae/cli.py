@@ -79,7 +79,7 @@ def cmd_place(a):
     anneal = "anneal" in stages and not a.no_anneal
     anneal_args = json.loads(a.anneal_args) if a.anneal_args else None
     kw = dict(physics=not a.no_physics, workers=a.workers, log=_log, anneal=anneal, edge_mate=a.edge_mate,
-              anneal_args=anneal_args, angle_step=a.angles)
+              anneal_args=anneal_args, angle_step=a.angles, board_path=a.input)
     fix_classes = [c.strip() for c in (a.fix_class or "").split(",") if c.strip()]
     fix_refs = [r.strip() for r in (a.fix or "").split(",") if r.strip()]
     if fix_classes or fix_refs:

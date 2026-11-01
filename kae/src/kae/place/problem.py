@@ -1044,6 +1044,8 @@ class Problem:
         r = self.board.rules
         track = (r.track_min if r and r.track_min else 0.2)
         edge_room = min(1.0, m / 0.5) * (track + self.clr_min) if m > 0 else 0.0
+        bands = getattr(self, "escape", {}) if getattr(self, "escape_on", False) else {}
+        fan = getattr(self, "fanout", {}) if getattr(self, "escape_on", False) else {}
         for p in self.parts:
             if not p.movable:
                 continue
@@ -1051,13 +1053,64 @@ class Problem:
             k = (int(round((m + esc) / 2 / g)) if m > 0 else 0) + extra.get(p.i, 0)
             kb = int(round((m / 2 + edge_room) / g)) if m > 0 else 0
             for r in p.rots:
+                kl, kt, kr, kd = self._band_cells(p, r) if p.i in bands else (0, 0, 0, 0)
                 a, b, c, d = r.g_own_exact
-                r.g_own = (a - k, b + k, c - k, d + k)
-                r.g_own_rects = tuple((a - k, b + k, c - k, d + k) for (a, b, c, d) in r.g_own_rects_exact)
+                r.g_own = (a - k - kl, b + k + kr, c - k - kt, d + k + kd)
+                r.g_own_rects = tuple((a - k - kl, b + k + kr, c - k - kt, d + k + kd)
+                                      for (a, b, c, d) in r.g_own_rects_exact)
+                if not hasattr(r, "g_opp_base"):
+                    r.g_opp_base = r.g_opp
+                r.g_opp = r.g_opp_base + (tuple(to_grid(rot_rect(x, r.rot, p.s), g) for x in fan[p.i])
+                                          if p.i in fan else ())
                 a, b, c, d = r.g_board_exact          # room to route between parts and the edge
                 r.g_board = (a - kb, b + kb, c - kb, d + kb)
                 r.g_boards = tuple((a - kb, b + kb, c - kb, d + kb) for (a, b, c, d) in r.g_boards_exact)
         return int(round(m / 2 / g)) if m > 0 else 0
+
+    def set_escape(self, bands, on=True, fanout=None):
+        """Escape bands (kae.place.escape_band): {part index: (left, top, right, bottom) mm, library
+        frame}. Movable packages carry them in their occupancy (set_margin); a locked one's become
+        fixed obstacles on its side. fanout: {part index: [library-frame via-site rectangles]}, kept
+        free on the package's other side the same way. on=False drops both (legality before wishes)."""
+        self.escape = dict(bands)
+        if fanout is not None:
+            self.fanout = {i: _cluster_rects(list(rs), max_n=64) for i, rs in fanout.items()}
+        self.escape_on = bool(on) and bool(bands or getattr(self, "fanout", None))
+        self.obstacles = [o for o in self.obstacles if not o.why.startswith("escape band")]
+        if self.escape_on:
+            self._band_obstacles()
+        self.set_margin(self.margin)
+
+    def _band_mm(self, p, r):
+        """Board-frame (left, top, right, bottom) growth of part p's band at rotation r."""
+        gl, gt, gr, gb = self.escape[p.i]
+        x0, y0, x1, y1 = rot_rect((-gl, -gt, gr, gb), r.rot, p.s)
+        return max(0.0, -x0), max(0.0, -y0), max(0.0, x1), max(0.0, y1)
+
+    def _band_cells(self, p, r):
+        g = self.g
+        return tuple(int(math.ceil(v / g - EPS)) if v > 0 else 0 for v in self._band_mm(p, r))
+
+    def _band_obstacles(self):
+        for i, rs in (getattr(self, "fanout", None) or {}).items():
+            p = self.parts[i]
+            if p.movable or (p.uuid in self.held and not p.fp.on_board):
+                continue
+            r = p.rots[0]
+            for x in rs:
+                self._add_obstacle(1 if p.s > 0 else 0, shift(rot_rect(x, r.rot, p.s), p.x0, p.y0),
+                                   f"escape band {p.ref} (dog-bone vias)")
+        for i, _ in self.escape.items():
+            p = self.parts[i]
+            if p.movable or (p.uuid in self.held and not p.fp.on_board):
+                continue
+            r = p.rots[0]
+            l, t, rr, b = self._band_mm(p, r)
+            x0, y0, x1, y1 = shift(r.own, p.x0, p.y0)
+            si = 0 if p.s > 0 else 1
+            for band in ((x0 - l, y0, x0, y1), (x1, y0, x1 + rr, y1), (x0, y0 - t, x1, y0), (x0, y1, x1, y1 + b)):
+                if band[2] - band[0] > 1e-6 and band[3] - band[1] > 1e-6:
+                    self._add_obstacle(si, band, f"escape band {p.ref}")
 
     def _fixed_obstacles(self, board):
         g = self.g
@@ -1084,6 +1137,8 @@ class Problem:
             for r in poly_cover_rects(ko.outline, g * 2):
                 for si in sides:
                     self._add_obstacle(si, r, f"keepout {ko.name or ko.uuid[:8]}")
+        if getattr(self, "escape_on", False):
+            self._band_obstacles()
         _ = g
 
     def _add_obstacle(self, side, rect, why):

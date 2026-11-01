@@ -103,10 +103,14 @@ def _escalate(P, st, workers, seed, log, time_s):
     overlap (KiCad does not check them), legalizing again after each step. Returns the steps
     taken with what each left illegal."""
     steps = []
-    for step in ("margin 0", "bodies relaxed"):
+    for step in ("escape bands off", "margin 0", "bodies relaxed"):
         if not grid_violations(st):
             break
-        if step == "margin 0":
+        if step == "escape bands off":
+            if not getattr(P, "escape_on", False):
+                continue
+            P.set_escape(P.escape, on=False)
+        elif step == "margin 0":
             if P.margin <= 0:
                 continue
             P.set_margin(0.0)
@@ -180,7 +184,7 @@ def physics_summary(terms, poses, breakdown=True):
 
 
 def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, log=None, anneal=True,
-          edge_mate=False, anneal_args=None, angle_step=None, fixed=()):
+          edge_mate=False, anneal_args=None, angle_step=None, fixed=(), board_path=None, opts=None):
     t0 = time.monotonic()
     log = log or (lambda *a, **k: None)
     workers = workers or _default_workers()
@@ -238,6 +242,19 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         rep["bodies_relaxed"] = P.relax_bodies()       # too full to treat bodies as obstacles
     margin = P.auto_margin()
     P.set_margin(margin)
+    # escape bands (kae.place.escape_band): 1 a soft annealer term against parts unrelated to the
+    # package, 2 hard occupancy against every part, 0 off
+    from . import escape_band as EB
+    from kae.route.constraints import setting
+    band_mode = int(setting("escape_band", board_path, opts))
+    eb, rep["escape_bands"] = EB.bands(P, board_path, opts, log)
+    ef = EB.fanout(P, board_path, opts, log)
+    if ef:
+        rep["escape_fanout"] = {P.parts[i].ref: len(rs) for i, rs in ef.items()}
+    soft_bands = eb if band_mode == 1 else {}
+    hard_bands = eb if band_mode >= 2 else {}
+    if hard_bands or ef:
+        P.set_escape(hard_bands, fanout=ef)
     roles = _net_roles(brief)
     for net in P.nets:
         net.weight *= ROLE_WEIGHT.get(roles.get(net.name), 1.0)
@@ -356,7 +373,12 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
                     break
                 rep["bodies_relaxed"] = True
                 m2 = 0.0
-            if m2 < P.margin or (m2 == P.margin and (macros or rep.get("bodies_relaxed"))):
+            bands_dropped = False
+            if m2 == 0.0 and getattr(P, "escape_on", False):
+                P.set_escape(P.escape, on=False)        # the bands go with the margin
+                rep["escape_bands_dropped"] = "floorplan infeasible"
+                bands_dropped = True
+            if m2 < P.margin or (m2 == P.margin and (macros or rep.get("bodies_relaxed") or bands_dropped)):
                 P.set_margin(m2)
                 items = [cpsat.single(P, i, int(st.X[i]), int(st.Y[i]), int(st.K[i])) for i in P.mov]
                 sol, model = seedmod.floorplan(P, items, max(2.0, 0.15 * (deadline - time.monotonic())),
@@ -430,6 +452,10 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         if w_chan > 0:
             grids.append(exactmod.channel_grid(P, weight=w_chan))
             rep["channel_term"] = dict(parts=len(grids[-1]), w_chan=w_chan)
+        if soft_bands:
+            w_band = float(setting("escape_band_w", board_path, opts))
+            grids.append(EB.escape_grid(P, soft_bands, weight=w_band))
+            rep["escape_term"] = dict(packages=len(soft_bands), parts=len(grids[-1]), w_band=w_band)
         if grids:
             kw["silk"] = exactmod.soft_grid(*grids)
             kw["w_silk"] = 1.0
@@ -467,8 +493,12 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     if viol:
         rep["legalize_escalation"] = _escalate(P, st, workers, seed, log, max(3.0, 0.1 * budget))
         viol = grid_violations(st)
-    if viol and P.margin > 0:
-        # the routing margin is a wish, legality is not: judge (and repair) without it
+    if viol and (P.margin > 0 or getattr(P, "escape_on", False)):
+        # the routing margin and the escape bands are wishes, legality is not: judge (and repair)
+        # without them
+        if getattr(P, "escape_on", False):
+            P.set_escape(P.escape, on=False)
+            rep["escape_bands_dropped"] = "final legality"
         P.set_margin(0.0)
         rep["margin_dropped"] = True
         viol = grid_violations(st)
