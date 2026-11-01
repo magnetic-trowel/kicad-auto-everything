@@ -1,4 +1,4 @@
-# Baseline: qualified suite, KiCad 10.0.7, sk-tibia, 2026-10-22
+# Baseline: qualified suite, KiCad 10.0.7, the shared benchmark host, 2026-10-22
 
 Summarized results only; boards and run directories stay on the host (third-party licences).
 
@@ -10,7 +10,7 @@ Summarized results only; boards and run directories stay on the host (third-part
 | Scoring | SCORE_VERSION 5, TASK_SPEC 4 |
 | Tools | KiCad 10.0.7 (Apptainer image), Freerouting 2.5.0 |
 | Suite | `bench/suites/qualified-kicad-10.0.7.txt`, manifest `bench/manifests/candidates.jsonl`; 112 qualified (A 13, B 20, C 79), 0 prepare failures |
-| Host | sk-tibia, `-j 32`, one cgroup scope (AllowedCPUs 0–49, MemoryMax 96 G), KiCad under `ulimit -v 40000000`; host load 65–98 from other jobs, so wall times are inflated |
+| Host | the shared benchmark host, `-j 32`, one cgroup scope (AllowedCPUs 0–49, MemoryMax 96 G), KiCad under `ulimit -v 40000000`; host load 65–98 from other jobs, so wall times are inflated |
 | Runs | `human`: reference, kinds route + place, probe Freerouting, k = 3, 900 s. `noop`: route, k = 1. `fr-k3`: Freerouting, route, k = 3, 900 s, `--keep-work` |
 | Caveat | `~/.config/freerouting/freerouting.json` was last written by Freerouting 2.5.1; 2.5.0 warns it may ignore some settings |
 
