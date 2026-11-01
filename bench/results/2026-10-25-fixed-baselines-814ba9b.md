@@ -18,5 +18,5 @@ Fixed under rules 4: 637 connectors (102 boards), 342 mounting parts (72), 407 u
 
 Reading: the human placement's probe score is the same on both place kinds, so the fixed kind
 changes only what the placer may move. Our headline runs (`fixed-place-d0bdb9d`,
-`joint-*-fixed-d0bdb9d`, queued on sk-tibia) compare against these rows; stock Freerouting on the
+`joint-*-fixed-d0bdb9d`, queued on the shared benchmark host) compare against these rows; stock Freerouting on the
 human placement (0.17) is the routing baseline, the human-routed board (1.0) the ceiling.
