@@ -80,6 +80,22 @@ def git(repo, *args):
     return sh(["git", "-C", repo, *args])
 
 
+def on_remote(repo, commit):
+    """Whether anyone can fetch `commit`: a remote branch contains it, or a tag pushed to origin does
+    (finished branches are kept as archive/* tags, and their commits stay linkable)."""
+    if git(repo, "branch", "-r", "--contains", commit):
+        return True
+    tags = set(git(repo, "tag", "--contains", commit).split())
+    if not tags:
+        return False
+    try:
+        remote = {l.split("refs/tags/", 1)[1] for l in git(repo, "ls-remote", "--tags", "origin").splitlines()
+                  if "refs/tags/" in l and not l.endswith("^{}")}
+    except subprocess.CalledProcessError:
+        return False
+    return bool(tags & remote)
+
+
 def sha256_file(path):
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -179,10 +195,10 @@ def resolve_code(spec, allow_dirty=False):
         pass
     url = re.sub(r"^git@github\.com:", "https://github.com/", url or "")
     comp = dict(repo=url or top, commit=commit, link=github_link(url, commit))
-    pushed = bool(git(top, "branch", "-r", "--contains", commit))
+    pushed = on_remote(top, commit)
     dirty = not ref and bool(git(top, "status", "--porcelain", "--untracked-files=no"))
     if (dirty or not pushed) and not allow_dirty:
-        why = "has uncommitted changes" if dirty else f"is at {commit[:7]}, which no remote branch contains"
+        why = "has uncommitted changes" if dirty else f"is at {commit[:7]}, which no remote branch or pushed tag contains"
         raise SystemExit(f"{name}: {top} {why}. Push it (so the method links to code anyone can fetch), "
                          "or pass --allow-dirty to freeze it as a local snapshot with a saved patch.")
     if dirty:
@@ -483,8 +499,8 @@ def cmd_exp_create(a):
     harness = git(repo, "rev-parse", a.harness)
     kae = git(repo, "rev-parse", a.kae)
     for c in (harness, kae):
-        if not git(repo, "branch", "-r", "--contains", c):
-            raise SystemExit(f"{c[:7]} is on no remote branch: push it first, so the experiment links to fetchable code")
+        if not on_remote(repo, c):
+            raise SystemExit(f"{c[:7]} is on no remote branch or pushed tag: push it first, so the experiment links to fetchable code")
     if a.boards:
         boards = Path(a.boards[1:]).read_text().split() if a.boards.startswith("@") else a.boards.split(",")
     else:
@@ -1303,7 +1319,7 @@ def cmd_exp_timer(a):
     # experiment's own (older) code: report fixes reach running experiments, and no result changes.
     # Not a shared installed copy: another checkout installing its timers would swap it under ours.
     head = git(main_repo(), "rev-parse", "HEAD")
-    if not git(main_repo(), "branch", "-r", "--contains", head):
+    if not on_remote(main_repo(), head):
         raise SystemExit(f"HEAD {head[:7]} is on no remote branch: push it first")
     tool = ensure_harness(head, venv=False)[0] / "tools" / "kaeres" / "kaeres.py"
     (d / f"{unit}.service").write_text(
@@ -1376,7 +1392,7 @@ def cmd_rephysics_submit(a):
     repo = main_repo()
     harness, kae = git(repo, "rev-parse", a.harness), git(repo, "rev-parse", a.kae)
     for c in (harness, kae):
-        if not git(repo, "branch", "-r", "--contains", c):
+        if not on_remote(repo, c):
             raise SystemExit(f"{c[:7]} is on no remote branch: push it first")
     ensure_harness(harness)
     ensure_harness(kae, kae=True)
