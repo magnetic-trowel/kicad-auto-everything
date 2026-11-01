@@ -182,6 +182,7 @@ class _SoftRouter(GridRouter):
     def __init__(self, sp, **kw):
         super().__init__(sp, **kw)
         self.soft = []
+        self.soft_grow = 0.0     # mm more around soft copper (a via of the net reaches further than a track)
 
     def cost_layer(self, grid, net, layer, w, layer_factor=1.0, skip=()):
         c = super().cost_layer(grid, net, layer, w, layer_factor, skip)
@@ -191,7 +192,7 @@ class _SoftRouter(GridRouter):
                 if layer in it.layers and k > 0:
                     m = np.zeros(c.shape, bool)
                     nd = self.sp.need(it, net, "track", layer) or 0.0
-                    grid.within(it.geom, it.r + nd + w / 2.0, m)
+                    grid.within(it.geom, it.r + nd + w / 2.0 + (self.soft_grow + 0.75 * grid.res if self.soft_grow else 0.0), m)
                     c[m & fin] += k * layer_factor
         return c
 
