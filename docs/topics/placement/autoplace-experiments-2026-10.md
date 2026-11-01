@@ -97,7 +97,7 @@ How the loop spent its effort (in-loop `unrouted/errors` per probe, `*` = kept):
 
 ## Sources
 
-- Runs: `kae-place/results/{ref,v3-*,v4-*}` in the local-NVMe work dir on sk-tibia (local only; boards are third-party). Code commits: v3 `4b4fba0`, v4 `e63bd23`; harness `7abe5fc`.
+- Runs: `kae-place/results/{ref,v3-*,v4-*}` in the local-NVMe work dir on the shared benchmark host (local only; boards are third-party). Code commits: v3 `4b4fba0`, v4 `e63bd23`; harness `7abe5fc`.
 - [KiCadRoutingTools placement-optimization notes](https://github.com/drandyhaas/KiCadRoutingTools/blob/main/docs/placement-optimization.md) (MIT): crossing weights, halo, `place_route_loop` [P].
 - [autolayout ROADMAP](https://github.com/bwattendorf/autolayout/blob/main/ROADMAP.md): escape halo 0.65 mm × escapes/4 [P].
 
