@@ -3,7 +3,7 @@
 """Last mile: close the few connections Freerouting leaves open with the critical router's
 grid search, ripping up the unlocked tracks of other nets that stand in the way.
 
-On splits A+B the bridge leaves 1-3 unconnected items on about 30 % of attempts (sk-tibia
+On splits A+B the bridge leaves 1-3 unconnected items on about 30 % of attempts (benchmark run
 v6, 10x budget: 29 of 99, all unconnected-only), and more time does not close them:
 Freerouting stops (COMPLETED or STAGNATION) and its own last-mile rip-up has already run.
 What is left is of two kinds:
