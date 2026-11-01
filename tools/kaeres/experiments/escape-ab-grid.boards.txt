@@ -1,0 +1,9 @@
+antmicro-arvsom-arvsom
+antmicro-polarfire-som-polarfire-som
+antmicro-sdi-mipi-video-converter-hw-sdi-mipi-video-converter
+bcecoop-bce-pcb-rmlv1616a-bce-pcb-rmlv1616a
+dimoustroufis-librewave-ecp5-librewave-ecp5
+kocer-direct-sampling-sdr-dogrudan-sdr-a
+logisim-evolution-gecko5education-gecko5education
+protocentral-protocentral-tinyecg-max30001-pc-tinyecg-max30001
+zephray-nekoink-pcb-2
