@@ -246,6 +246,10 @@ def main():
     ap.add_argument("--all", action="store_true", help="also owners with nothing active or finished in 3 h")
     ap.add_argument("--once", action="store_true", help="print one frame and exit")
     args = ap.parse_args()
+    try:
+        os.setpriority(os.PRIO_PROCESS, 0, 10)  # like the daemon: above queue jobs, below normal work
+    except OSError:
+        pass
     if not os.path.exists(kaeq.DB):
         sys.exit(f"no queue database at {kaeq.DB}: run this on the machine the kaeq daemon runs on")
     c = sqlite3.connect(f"file:{kaeq.DB}?mode=ro", uri=True, timeout=10)

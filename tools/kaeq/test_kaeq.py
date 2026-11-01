@@ -329,3 +329,12 @@ def test_no_start_while_threads_queue_for_a_cpu(kq):
     drive(kq, d, lambda: states(d)["wait"] in ("running", "ok"))
     d.c.execute("UPDATE jobs SET state='cancelled' WHERE state IN ('queued','running')")
     d.c.commit()
+
+
+def test_jobs_run_at_nice_19_and_sched_idle(kq, tmp_path):
+    d = kq.Daemon()
+    out = tmp_path / "prio"
+    submit(kq, f"ps -o ni=,cls= -p $$ > {out}", name="p")
+    drive(kq, d, lambda: states(d)["p"] == "ok")
+    ni, cls = out.read_text().split()
+    assert cls == "IDL" and ni in ("19", "-")  # ps prints "-" for the nice of SCHED_IDLE on some versions

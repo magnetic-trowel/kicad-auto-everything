@@ -905,10 +905,14 @@ class Daemon:
             os.setsid()
             if pinned:
                 os.sched_setaffinity(0, pinned)
+            try:  # nice 19 (shown by top/ps, and the fallback) and SCHED_IDLE, below even nice 19
+                os.setpriority(os.PRIO_PROCESS, 0, 19)
+            except OSError:
+                pass
             try:
                 os.sched_setscheduler(0, os.SCHED_IDLE, os.sched_param(0))
             except OSError:
-                os.nice(19)
+                pass
             try:
                 with open("/proc/self/oom_score_adj", "w") as f:
                     f.write("1000")
@@ -1414,7 +1418,7 @@ def cmd_install_service(a):
     d = os.path.expanduser("~/.config/systemd/user")
     os.makedirs(d, exist_ok=True)
     unit = (f"[Unit]\nDescription=kaeq job queue daemon\n\n[Service]\nExecStart={sys.executable} {os.path.realpath(__file__)} daemon\n"
-            "Restart=always\nRestartSec=5\nKillMode=process\n\n[Install]\nWantedBy=default.target\n")
+            "Restart=always\nRestartSec=5\nKillMode=process\nNice=10\n\n[Install]\nWantedBy=default.target\n")
     open(os.path.join(d, "kaeq.service"), "w").write(unit)
     total_mb = meminfo()["MemTotal"]
     cap = int(total_mb - cfg["reserve_mem_gb"] * 1024)
