@@ -87,6 +87,7 @@ def main(argv=None):
                         "when routed physics holds (the joint loop's rule; critical.soft_critical)")
     r.add_argument("--bridge-opt", action="append", default=[], metavar="KEY=VALUE",
                    help="another kae.route.bridge DEFAULT_OPTS entry, e.g. rounds=auto, router_share=auto")
+    r.add_argument("--budgets", help="board.budgets.json from `kae.sim.cli budgets`: simulated allocations")
     r.add_argument("--workdir")
     r.add_argument("--keep", action="store_true")
     r.add_argument("--report")
@@ -121,6 +122,8 @@ def main(argv=None):
             opts["skip"] = tuple(x for x in a.skip.split(",") if x)
         if a.trim_tol is not None:
             opts["trim_tol"] = a.trim_tol
+        if a.budgets:
+            opts["budgets"] = a.budgets
         rep = critical.run(a.input, a.output, seed=a.seed, time_s=a.time, opts=opts, rounds=a.rounds,
                            workdir=a.workdir, bridge=not a.no_bridge,
                            bridge_opts=dict(_bridge_opts(a.bridge_opt), planes=a.planes, pad_shapes=a.pad_shapes))

@@ -1,0 +1,10 @@
+{
+  "_doc": "Curated part data. Each entry: match (case-insensitive regex on the part's value, footprint and part-number fields), data (value or [lo, hi], SI units), source (the document it comes from). Add only what a document states; leave unknowns out (the physics or a prior interval fills them, flagged).",
+  "parts": [
+    {
+      "match": "MT3608",
+      "data": {"f_sw_Hz": 1.2e6, "r_on_ohm": 0.08, "v_sw_max_V": 28.0},
+      "source": "Aerosemi MT3608 datasheet (Rev 1.0 / Rev 3.0): 1.2 MHz fixed frequency, integrated 80 mOhm power MOSFET, SW swings to 28 V (Rev 3.0 abs max 30 V)"
+    }
+  ]
+}

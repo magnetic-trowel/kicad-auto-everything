@@ -35,7 +35,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, fields
 
-from shapely.geometry import LineString, Polygon
+from shapely.geometry import LineString, MultiPolygon, Polygon
 
 
 # ----------------------------------------------------------------------------- geometry
@@ -45,6 +45,20 @@ def poly_to_rings(p):
 
 def rings_to_poly(rings):
     return Polygon(rings[0], rings[1:]) if rings else Polygon()
+
+
+def _area_to(g):
+    """A Polygon or MultiPolygon (or None) as a list of polygons' rings."""
+    if g is None or g.is_empty:
+        return None
+    return [poly_to_rings(p) for p in getattr(g, "geoms", [g])]
+
+
+def _area_from(v):
+    if not v:
+        return None
+    ps = [rings_to_poly(r) for r in v]
+    return ps[0] if len(ps) == 1 else MultiPolygon(ps)
 
 
 def _line_to(ls):
@@ -137,8 +151,19 @@ class Pad(_Dict):
     clearance: float = 0.0           # local clearance override (pad's own, else the footprint's); 0 = none
     mask_margin: float | None = None  # solder-mask expansion override (pad's own, else the footprint's);
     #                                   None = the board's pad_to_mask_clearance (Rules.mask_margin)
+    outline: object = None           # Polygon | MultiPolygon | None: copper of shapes beyond rect/roundrect/circle/oval (trapezoid, chamfered
+    #                                  rectangle, custom: anchor + primitives), pad frame, library convention,
+    #                                  centred on the shape (offset applied by kae.place.legalize.pad_shape)
+    layer_shapes: dict = field(default_factory=dict)  # padstack overrides: copper layer -> {shape, size,
+    #                                                   offset, rratio, outline} (KiCad 9+ front/inner/back)
 
-    _from = {"size": tuple, "slot": lambda v: None if v is None else tuple(v), "offset": tuple}
+    _to = {"outline": lambda v: _area_to(v),
+           "layer_shapes": lambda v: {k: dict(d, outline=_area_to(d.get("outline"))) for k, d in v.items()}}
+    _from = {"size": tuple, "slot": lambda v: None if v is None else tuple(v), "offset": tuple,
+             "outline": lambda v: _area_from(v),
+             "layer_shapes": lambda v: {k: dict(d, size=tuple(d["size"]),
+                                               offset=None if d.get("offset") is None else tuple(d["offset"]),
+                                               outline=_area_from(d.get("outline"))) for k, d in (v or {}).items()}}
 
 
 @dataclass
@@ -165,6 +190,8 @@ class Footprint(_Dict):
     #                                               stroke widths included (logos, mask apertures, copper shapes)
     path: str = ""                   # schematic path
     sheet: str = ""                  # schematic sheet name
+    jumpers: list = field(default_factory=list)  # [[pad numbers]] bonded inside the part (KiCad jumper_pad_groups,
+    #                                              and same-numbered pads with duplicate_pad_numbers_are_jumpers)
     flags: list = field(default_factory=list)  # loader notes (module docstring)
     silk: dict = field(default_factory=dict)   # library layer (F/B.SilkS) -> [Polygon], library
     #                                            frame, stroked graphics
@@ -340,9 +367,12 @@ class Board(_Dict):
     warnings: list = field(default_factory=list)
     graphics: dict = field(default_factory=dict)    # board-level copper/mask graphics: layer -> [Polygon]
     #                                                 (gr_* shapes with stroke widths; gr_text as its box)
+    copper: dict = field(default_factory=dict)      # net -> {layer: [Polygon]}: board-level copper shapes that
+    #                                                 carry a net (KiCad 8+: they conduct, like a small pour)
 
     _to = {"footprints": lambda v: [f.to_dict() for f in v],
            "graphics": lambda v: {k: _polys_to(p) for k, p in v.items()},
+           "copper": lambda v: {n: {k: _polys_to(p) for k, p in d.items()} for n, d in v.items()},
            "nets": lambda v: {k: n.to_dict() for k, n in v.items()},
            "outline": _polys_to,
            "keepouts": lambda v: [k.to_dict() for k in v],
@@ -353,6 +383,7 @@ class Board(_Dict):
            "rules": lambda v: v.to_dict() if v is not None else None}
     _from = {"footprints": lambda v: [Footprint.from_dict(f) for f in v],
              "graphics": lambda v: {k: _polys_from(p) for k, p in v.items()},
+             "copper": lambda v: {n: {k: _polys_from(p) for k, p in d.items()} for n, d in v.items()},
              "nets": lambda v: {k: Net.from_dict(n) for k, n in v.items()},
              "outline": _polys_from,
              "keepouts": lambda v: [Keepout.from_dict(k) for k in v],

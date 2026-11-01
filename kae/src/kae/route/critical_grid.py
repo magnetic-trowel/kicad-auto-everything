@@ -582,7 +582,7 @@ class GridRouter:
 
     # ------------------------------------------------------------------ connect
     def connect(self, net, sources, targets, width, layers, layer_factor=None, via=True, window=None,
-                via_cost=None, skip=(), max_len=None, avoid=(), _aligned=False):
+                via_cost=None, skip=(), max_len=None, avoid=(), phys=None, _aligned=False):
         """Route one track of `width` from any source anchor to any target anchor on the
         given layers (vias between them when `via`), keeping the track centre `r` away from
         each (geometry, r, layer) in `avoid`. Returns a Route or None. When the sources or
@@ -654,20 +654,34 @@ class GridRouter:
             if g2 is None:
                 return None
             return self.connect(net, sources, targets, width, layers, layer_factor=layer_factor, via=via, window=g2,
-                                via_cost=via_cost, skip=skip, max_len=max_len, avoid=avoid, _aligned=True)
+                                via_cost=via_cost, skip=skip, max_len=max_len, avoid=avoid, phys=phys,
+                                _aligned=True)
         if dst[src].any():
             return Route(net=net, width=width, res=grid.res)     # already touching
         xs, ys = tb[0::4] + tb[1::4], tb[2::4] + tb[3::4]
         tx0, tx1, ty0, ty1 = min(xs), max(xs), min(ys), max(ys)
         vc = self.via_cost if via_cost is None else via_cost
-        path, nexp = self.K.astar(flat, vmask, src.astype(np.int64), dst, nl, grid.ny, grid.nx, grid.res, float(vc),
-                                  int(tx0), int(tx1), int(ty0), int(ty1), int(self.max_exp))
+        if phys is not None:
+            # physics-priced search (kae.em.route): phys(grid, layers) gives the move-cost arrays
+            from kae.em.route import search_flat
+            ph = phys(grid, layers)
+            path = search_flat(cost, ph["self"], ph["px"], ph["py"], ph["pot"], ph["void"], vmask, src, dst, grid.res,
+                               via_cost=float(vc), lam=1.0, floor=ph.get("floor", 0.2),
+                               target=((ty0 + ty1) // 2, (tx0 + tx1) // 2), pot2=ph.get("pot2"), void2=ph.get("void2"),
+                               theta=ph.get("theta"), th_src=ph.get("th_src"), th_dst=ph.get("th_dst"),
+                               vself=ph.get("vself"), cx=ph.get("cx"), cy=ph.get("cy"))
+            nexp = 0
+        else:
+            path, nexp = self.K.astar(flat, vmask, src.astype(np.int64), dst, nl, grid.ny, grid.nx, grid.res, float(vc),
+                                      int(tx0), int(tx1), int(ty0), int(ty1), int(self.max_exp))
         self.stats["expansions"] += int(nexp)
         if path.size == 0:
             return None
         rt = self._geometry(grid, net, width, layers, path, sources, targets, esc_src, esc_dst)
         if rt is None:
             return None
+        if phys is not None:
+            rt.search = (grid, layers, path, ph)          # what the physics search priced (kae.em.pnr.explain)
         rt.expansions = int(nexp)
         rt.res = grid.res
         if max_len is not None and rt.length > max_len:
