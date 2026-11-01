@@ -67,6 +67,13 @@ def summary(report):
     return dict(errors=len(errs), unconnected=len(report.get("unconnected_items", [])), by_type=by)
 
 
+def excess(summary, base):
+    """Error-level violations of `summary` beyond `base` ({type: count}, the board's own errors
+    before routing), per type: what routing added. 0 for a board whose only errors it had already."""
+    base = base or {}
+    return sum(max(0, n - base.get(t, 0)) for t, n in (summary.get("by_type") or {}).items())
+
+
 def stage_board(src_board, project_board, dest_dir):
     """Copy `src_board` into `dest_dir` as board.kicad_pcb with the project files of
     `project_board` (its .kicad_pro and .kicad_dru) beside it; returns the staged path."""

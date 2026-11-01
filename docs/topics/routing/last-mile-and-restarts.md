@@ -41,6 +41,16 @@ Bugs that hid the last mile's effect, all fixed by 2ec702e:
 ### Errors the router keeps making
 Before the last mile, `repair._rip_errors` takes out the unlocked router copper that each remaining error names: clearance, short, mask bridge, track width, edge and similar types. A starved thermal names a pad and a zone, not the copper causing it, so there the foreign unlocked copper in the pad's spoke corridors (`constraints.thermal_corridors`) is taken out instead. When the result has 0 errors, the last mile routes it with exact checks. Pre-routes and critical copper are never taken out here.
 
+### What stays open: the `blocked` report ([blocked.py](../../../kae/src/kae/route/blocked.py))
+The router never relaxes a board rule. After the last mile, each connection still open is tested in lastmile's grid and Space: a path without our other copper is `congestion`; one without the input's pre-routes too is `fixed copper`. Otherwise a relaxed search (only overlap hard, every clearance a price per cell) finds the cheapest path, and its narrowest real gap names the binding rule. A finer search then tries narrower tracks, so a track-width minimum is told apart from a clearance. The report gives the rule's source, or the kae default and its override, and leaves the decision to the caller ([kae README](../../../kae/README.md#kaeroute)).
+
+Checked on the merge2 final boards [C]:
+- bcecoop rmlv1616a: all 4 blocked by SRAM1's solder-mask openings (margin 0.1 + mask-to-copper 0.1).
+- fona-800: 2 by the 0.2 mm board-minimum track width, 2 by kae's thermal corridors at U1.12, 1 by a no-net copper graphic over U1.77.
+- atlantis can485: A4's U1.57 lies under the no-net pad U1.66.
+- smol-esp32: 37 of 56 by the 0.2 mm minimum width at the 0.4 mm-pitch U2 (0.127-0.16 mm would pass).
+- fm4dd, siderakb and noggin are all congestion.
+
 ### Soft critical tier (`--last-mile-soft`, crit only)
 `critical.soft_critical` passes the critical copper uuids and a physics guard to the bridge:
 - **Last resort.** When only critical copper blocks a join, a last tier may rip it, at 3× the price (`SOFT_FACTOR`). The ripped critical net is then re-joined by the grid search.

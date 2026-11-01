@@ -52,6 +52,22 @@ kaebench run --adapter kae-fr --kinds route \
   --command "kae/.venv/bin/python -m kae.route.cli route {input} {output} --seed {attempt} --time {timeout}"
 ```
 
+**Read `blocked` when connections stay open.** The router never relaxes a board's rules. At the
+end it diagnoses each connection still open (`kae.route.blocked`, a few seconds; `--no-blocked`
+turns it off) and the JSON report (last stdout line, `--report FILE`) carries a `blocked`
+section, with one line per connection in the log (`blocked: ...`). Each connection gets a cause:
+`congestion` (a path exists without our other copper: not a rule), `fixed copper` (the input's
+own tracks of the nets named), `rule` (a board rule: the value required and the value available,
+where, and its source: the `.kicad_pro` net class or board setup, a `.kicad_dru` rule by name, a
+footprint, a rule area, a pad's solder-mask opening), `kae default` (one of kae's own limits, with
+its `KAE_<NAME>` / `--set` override when there is one) or `geometry` (walled in by copper even with
+every clearance at zero). For example:
+`U2.17 CS1: needs a 0.160 mm track at (2.52, -16.60) F.Cu, minimum track width 0.200 mm (.kicad_pro
+board setup minimum track width); relax to 0.160 to allow`. The caller decides: change the rule,
+move a part, or accept the open connection. Under `tools/kaeres/restart.py` the kept attempt's
+report goes to `restarts/report.json` and its `blocked` lines to the wrapper's log.
+`python -m kae.route.blocked ROUTED INPUT [--drc REPORT] [--out FILE]` runs the diagnosis alone.
+
 Locked tracks and vias in the input are kept as they are; zones named `kae-crit:...` are
 obstacles for other nets. `kae.route.effective.load(board)` gives any other router the same
 numbers per net and layer (`track_width`, `via`, `clearance`, `pad_clearance`,

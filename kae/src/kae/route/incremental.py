@@ -92,6 +92,7 @@ def route_open(input_path, output_path, seed=0, time_s=30.0, workdir=None, opts=
         if hasattr(BR, "plane_policy"):
             p.plane_policy = BR.plane_policy(o)
             p.plane_cost = o.get("plane_cost")
+            p.outer_surcharge = o.get("outer_surcharge")
         tree = specctra.read(kdsn)
         rep["translate"] = translate.apply(tree, p, info)
         translate.permute(tree, seed)

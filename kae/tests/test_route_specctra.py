@@ -183,6 +183,47 @@ def test_inner_planes_become_power_layers():
     assert translate.layer_rules(["F.Cu", "B.Cu"], [False, False], [True, True]) is None
 
 
+def test_strict_share_from_the_board(tmp_path):
+    """The board's KAE_PLANE_STRICT_SHARE text variable wins over opts, as for every kae limit."""
+    import json
+    from kae.route.bridge import strict_share
+    pcb = tmp_path / "b.kicad_pcb"
+    pcb.with_suffix(".kicad_pro").write_text(json.dumps({"text_variables": {"KAE_PLANE_STRICT_SHARE": "0"}}))
+    assert strict_share(dict(plane_strict_share=0.8), 1, pcb) is None
+    pcb.with_suffix(".kicad_pro").write_text(json.dumps({"text_variables": {"KAE_PLANE_STRICT_SHARE": "0.85"}}))
+    assert strict_share(dict(plane_strict_share="odd"), 0, pcb) == 0.85
+    pcb.with_suffix(".kicad_pro").write_text(json.dumps({"text_variables": {"KAE_IGNORED_CLEARANCE_FLOOR": "x"}}))
+    from kae.route import constraints
+    assert constraints.setting("ignored_clearance_floor", pcb, dict(ignored_clearance_floor=0.2)) == 0.2
+    pcb.with_suffix(".kicad_pro").write_text(json.dumps({"text_variables": {"KAE_BALL_ESCAPES": "0"}}))
+    assert not constraints.setting("ball_escapes", pcb, dict(ball_escapes=True))
+    assert constraints.setting("ball_escapes", None, {}) and not constraints.setting("ball_escapes", None, dict(ball_escapes=0))
+
+
+def test_strict_planes_alternate_with_the_seed():
+    """plane_strict_share "odd" (the default): odd seeds make the inner layers that one net's
+    fill covers >= 0.8 power layers under planes "cost", even seeds leave them costed; an
+    explicit share applies to every seed and 0 to none."""
+    from kae.route.bridge import DEFAULT_OPTS, strict_share
+    assert [strict_share(DEFAULT_OPTS, s) for s in (0, 1, 2, 1001)] == [None, 0.8, None, 0.8]
+    assert strict_share(dict(plane_strict_share=0.9), 0) == 0.9
+    assert strict_share(dict(plane_strict_share=0), 1) is None
+    assert strict_share({}, 3) == 0.8
+    sq = lambda x0, y0, x1, y1: [[[x0, y0], [x1, y0], [x1, y1], [x0, y1]]]          # noqa: E731
+    info = dict(copper=["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"], outline=[sq(0, 0, 100, 50)], zones=[])
+    fills = [dict(net="GND", layers={"In1.Cu": [sq(0, 0, 100, 45)], "F.Cu": [sq(0, 0, 100, 50)]}),
+             dict(net="+5V", layers={"In2.Cu": [sq(0, 0, 50, 50)]}),
+             dict(net="+3V3", layers={"In2.Cu": [sq(50, 0, 100, 50)]})]
+    shares = translate.fill_planes(info, fills)
+    assert shares["In1.Cu"] == ("GND", 0.9) and shares["In2.Cu"][1] == 0.5
+    tree = S.parse("(pcb x (structure (layer F.Cu (type signal)) (layer In1.Cu (type signal))"
+                   " (layer In2.Cu (type signal)) (layer B.Cu (type signal))))")
+    layers = S.findall(S.find(tree, "structure"), "layer")
+    assert translate.mark_plane_layers(layers, info["copper"], info, []) == []
+    assert translate.mark_plane_layers(layers, info["copper"], info, ["In1.Cu"]) == ["In1.Cu"]
+    assert [str(S.find(l, "type")[1]) for l in layers] == ["signal", "power", "signal", "signal"]
+
+
 def test_plane_costs_go_beside_the_dsn(tmp_path):
     from types import SimpleNamespace
     dsn = tmp_path / "board.dsn"

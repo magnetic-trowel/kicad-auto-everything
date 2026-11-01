@@ -918,6 +918,11 @@ def load(path, *, arc_tol=geom.ARC_TOL, rules=True):
         ([], dict(open_ends=0, degenerate=0))
     dangling, degenerate = info["open_ends"], info["degenerate"]
     region = unary_union([Polygon(p.exterior) for p in base]) if base else None
+    if dangling:
+        # board-level chains left open: a footprint's Edge.Cuts close them (an RJ45 or card-edge
+        # notch drawn by its footprint), so the closed pieces alone are not the board (piecol
+        # cm5-minima: a 19 mm2 fragment, every part off the board); judge by the extent
+        region = None
     bbox = None
     if region is None:
         pts = [q for pl in opens + rings for q in pl]

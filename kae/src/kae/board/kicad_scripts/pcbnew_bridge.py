@@ -505,6 +505,7 @@ def _pads(board, cu, max_error, comp_ids):
                                       if pad.IsOnLayer(l)},
                        mask={}, zone_connection=_ZC.get(int(pad.GetZoneConnectionOverrides(None)), "inherited"),
                        thermal_gap=None, spoke_width=None, spoke_angle=pad.GetThermalSpokeAngleDegrees(),
+                       orient=pad.GetOrientationDegrees(),
                        round_keepout=_is_round_keepout(pad), fab=_pad_prop(pad),
                        drilled=bool(pad.HasHole() and pad.GetDrillSizeX() == pad.GetDrillSizeY()))
             if len(shapes) == 1 and polys:
@@ -643,7 +644,15 @@ def route_info(board, probes=True):
         for l, name in mask_layers.items():
             if item.IsOnLayer(l):
                 try:
-                    polys = _item_poly(item, l, max_error)
+                    if isinstance(item, pcbnew.PCB_TEXT) and not (hasattr(item, "IsKnockout") and item.IsKnockout()):
+                        # a text opens the mask along its glyphs (its DRC shape), not its box
+                        # (lenaschimmel bestelampe: 'Lampe' on F.Mask, 27 x 7 mm as a box)
+                        ps = pcbnew.SHAPE_POLY_SET()
+                        item.TransformTextToPolySet(ps, 0, max_error, pcbnew.ERROR_OUTSIDE)
+                        ps.Simplify()
+                        polys = _polyset(ps)
+                    else:
+                        polys = _item_poly(item, l, max_error)
                 except Exception:  # odd items (images, tables)
                     continue
                 if polys:
@@ -667,6 +676,11 @@ def route_info(board, probes=True):
             items += [f for f in fp.GetFields() if f.IsVisible() and any(f.IsOnLayer(l) for l in cu)]
         for g in fp.GraphicalItems():
             mask_recs(g, owner)
+        # visible fields (reference, value, ...) placed on a mask layer open the mask as well
+        # (gcy bpm: references on F.Mask/B.Mask under other nets' tracks)
+        for f in (fp.GetFields() if hasattr(fp, "GetFields") else []):
+            if f.IsVisible():
+                mask_recs(f, owner)
         for g in items:
             if g.GetClass() == "PCB_SHAPE" and g.GetLayer() in edge_layers:
                 r = _edge_rec(board, g, owner)

@@ -45,6 +45,9 @@ from . import effective as EF
 from . import rules as R
 
 TOL = 0.002          # mm kept above every requirement
+EXACT_TOL = -1e-7    # mm: no margin, only float slack (0.1 nm; KiCad stores whole nm), for the
+                     # pieces where the requirement itself is all the room there is (a track
+                     # exactly as wide as a 0.4 mm-pitch pad, centred on it, between its neighbours)
 INF = math.inf
 
 
@@ -238,6 +241,20 @@ class Space:
             for l in it.layers:
                 if l in self.items:
                     self.items[l].append(it)
+            if hole is not None and pd.get("attr") == "pth":
+                # a plated hole is copper on every layer, also where the pad has no ring
+                # (remove_unused_layers): KiCad's DRC shorts a track through its barrel, and the
+                # ring comes back on a layer once a track of the pad's net meets it there
+                # (gecko5education U12: last-mile joins on In1/In2 through a display's pins);
+                # foreign copper keeps clear of the whole pad shape
+                bare = [l for l in self.cu if l not in it.layers and l in self.items]
+                if bare:
+                    hb = Item("pad", it.net, bare, unary_union([geom, hole[0].buffer(hole[1], 32)]), 0.0, cls,
+                              owner=it.owner,
+                              hole=hole, smd=False)
+                    hb.kind, hb.fp, hb.idx, hb.uuid, hb.pos = it.kind, it.fp, k, it.uuid, it.pos
+                    for l in bare:
+                        self.items[l].append(hb)
 
     def _build_obstacles(self):
         plan = self.plan
@@ -462,9 +479,10 @@ class Space:
         d = it.geom.distance(g)
         return d - it.r
 
-    def track_violations(self, net, layer, w, a, b, ignore=(), first=False):
+    def track_violations(self, net, layer, w, a, b, ignore=(), first=False, tol=TOL):
         """Requirements a track of `net`, width w, from a to b on `layer` breaks:
-        [(item or 'edge', distance, needed)] (empty when legal)."""
+        [(item or 'edge', distance, needed)] (empty when legal); `tol` mm kept above each."""
+        TOL = tol
         out = []
         seg = LineString([a, b]) if (abs(a[0] - b[0]) > 1e-9 or abs(a[1] - b[1]) > 1e-9) else Point(a)
         half = w / 2.0
