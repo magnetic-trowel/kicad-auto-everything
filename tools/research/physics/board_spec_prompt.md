@@ -20,6 +20,8 @@ physical bounds. This file is the instruction given to the model.
  "purpose": "one line: what the board is and does",
  "rails": [{"net": "<a net from rails or sections>", "V_nom": 3.3, "tolerance_pct": 5,
             "ripple_max_mV": 50, "I_max_A": 0.5, "source_ref": "<ref of the regulator/connector feeding it>",
+            "regulator": "linear|switching|none", "from_net": "<the regulator's input rail, or null>",
+            "eta": [0.85, 0.92],
             "critical": false, "basis": "datasheet|typical|guess", "why": "..."}],
  "loads": [{"ref": "<IC/module ref>", "rail": "<net>", "I_typ_A": 0.02, "I_max_A": 0.15,
             "T_max_C": 125, "basis": "...", "why": "..."}],
@@ -51,6 +53,11 @@ physical bounds. This file is the instruction given to the model.
   3.3 V: 5-10 %; MCU core: 3-5 %; analog reference: 0.5-1 %). `ripple_max_mV` is what the rail's most
   sensitive load tolerates (digital logic ~50-100 mV, ADC/analog ~5-20 mV, RF/PLL ~5-10 mV).
   `critical`: true for rails feeding a radio, an ADC/reference, a precision analog part or a CPU core.
+  `regulator`: how `source_ref` makes this rail: `linear` (LDO, 78xx, load switch, series diode),
+  `switching` (buck, boost, buck-boost, charge pump), or `none` (a connector, battery or module output).
+  `from_net`: the rail it regulates from (an LDO's input, a buck's VIN), copied exactly; null when none.
+  `eta`: a switching regulator's efficiency range at this load from its datasheet class (e.g. [0.85, 0.92]);
+  null otherwise. Without these, kae takes the regulator as the board's power input and sees no loss in it.
 - `loads`: every IC and module, with typical and maximum current from its datasheet class, and
   `T_max_C` its maximum junction (or operating) temperature when the part number's datasheet gives it
   (null otherwise: kae then uses the part class's rating).

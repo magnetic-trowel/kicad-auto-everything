@@ -29,9 +29,40 @@ BOUNDS = {"V": (0.3, 1000.0), "pct": (0.05, 50.0), "mV": (0.01, 5000.0), "A": (1
 RATE = {"guess": 1.0, "typical": 1.0, "datasheet": 1.0}   # one rate scale: the basis is recorded, not weighted
 
 
+AMPS_PER_PAD = 3.0      # A a connector pin carries at most, generously (0.1" headers ~3 A)
+AMPS_BY_KIND = ((r"screw|terminal|\bTB\d|barrel|jack|DCJ|XT\d\d|anderson|mini.?fit|micro.?fit|power", 15.0),
+                (r"JST.?(SH|GH|ZH)|SM\d\dB.?SR|picoblade", 1.0))
+
+
+def amps_per_pad(part):
+    """A per pad for a connector by its library and value (power connectors carry far more than headers)."""
+    import re
+    text = f"{part.get('lib_id') or ''} {part.get('value') or ''}"
+    for pat, a in AMPS_BY_KIND:
+        if re.search(pat, text, re.I):
+            return a
+    return AMPS_PER_PAD
+
+
+def infer_input(summary, spec, src, out, v_out):
+    """A regulator's input rail from its own pads: the one other supply rail it touches (higher than the
+    output for a linear or buck regulator; a boost's is lower, so any other rail when v_out is unknown)."""
+    nets = next((p.get("nets") or {} for p in summary.get("parts") or [] if p["ref"] == src), {})
+    grounds = set(summary.get("ground_nets") or [])
+    volts = {r["net"]: r.get("V_nom") for r in spec.get("rails") or [] if r.get("net")}
+    for n, d in (summary.get("rails") or {}).items():
+        volts.setdefault(n, (d or {}).get("volts"))
+    cands = [n for n in nets if n != out and n not in grounds and n in volts]
+    hi = [n for n in cands if v_out and volts.get(n) and volts[n] > v_out]
+    pick = hi if len(hi) == 1 else (cands if len(cands) == 1 else [])
+    return pick[0] if pick else None
+
+
 class Spec:
     def __init__(self, spec, summary):
         self.s, self.sum = spec, summary
+        self.pads = {p["ref"]: p.get("nets") or {} for p in summary.get("parts") or []}
+        self.part = {p["ref"]: p for p in summary.get("parts") or []}
         self.refs = {p["ref"] for p in summary.get("parts") or []} | {r for x in summary.get("sections") or [] for r in x.get("parts") or []}
         self.nets = set(summary.get("rails") or {}) | set(summary.get("ground_nets") or []) | {n for x in summary.get("sections") or [] for n in x.get("nets") or []}
         self.sections = {x["id"]: x for x in summary.get("sections") or []}
@@ -79,6 +110,10 @@ def compile_spec(spec, summary):
                   why=f"efficiency: switch, rectifier and regulator losses the layout's currents and voltages set. {STANDING}"),
              dict(id="P3", tier="cost", obs="loss.loop", rate="1 mW_eq/mW", agg="cvar20",
                   why=f"efficiency: the hot loops' inductance energy dumped into the switches, 1/2 L I^2 f_sw. {STANDING}"),
+             dict(id="P4", tier="cost", obs="loss.loop_ac", rate="1 mW_eq/mW", agg="cvar20",
+                  why=f"efficiency: the hot loops' AC copper resistance carrying their pulsed current. {STANDING}"),
+             dict(id="P5", tier="cost", obs="loss.swnode", rate="1 mW_eq/mW", agg="cvar20",
+                  why=f"efficiency: switch-node copper capacitance charged through the switch, 1/2 C V^2 f_sw. {STANDING}"),
              dict(id="R0", tier="cost", obs="supply.peak", rate="0.1 mW_eq/mV", agg="cvar20",
                   why=f"ripple on every IC supply pin, at a low base rate under the per-rail limits below. {STANDING}")]
     # rails: tolerance -> drop limit; ripple -> supply.peak limit; source -> who feeds it
@@ -102,9 +137,37 @@ def compile_spec(spec, summary):
                               max=f"{rip:g} mV", rate=f"{rate} mW_eq/mV", source=f"{n}: ripple limit {rip:g} mV",
                               why=why(r, "ripple on the rail's loads")))
         src = r.get("source_ref")
+        mine = S.pads.get(src) or {}
+        if src and mine and n not in mine:
+            S.rejected.append(f"{w}.source_ref={src}: it has no pad on {n} (its nets: {', '.join(list(mine)[:6])})")
+            src = None
         if src and S.ref(src, w + ".source_ref"):
-            op["nets"][n] = {"source": src}
-            opwhy[f"nets.{n}.source"] = why(r, "rail source")
+            fact = {"source": src}
+            is_conn = (S.part.get(src) or {}).get("kind") == "connector"
+            if is_conn and r.get("regulator") in ("linear", "switching"):
+                S.rejected.append(f"{w}.regulator={r.get('regulator')}: {src} is a connector, not a regulator")
+                r = dict(r, regulator="none", from_net=None)
+            if r.get("from_net") and mine and r["from_net"] not in mine:
+                S.rejected.append(f"{w}.from_net={r['from_net']}: not on {src}'s pads; inferring it instead")
+                r = dict(r, from_net=None)
+            if V:
+                fact["V_V"] = V
+            fr = r.get("from_net")
+            if fr and S.net(fr, w + ".from_net"):
+                fact["from"] = fr                               # the regulator's input rail
+            elif r.get("regulator") in ("linear", "switching"):
+                inf = infer_input(summary, spec, src, n, V)
+                if inf:
+                    fact["from"] = inf
+                    opwhy[f"nets.{n}.from"] = f"inferred from {src}'s own pads: its only other supply rail ({inf})"
+            if r.get("regulator") in ("linear", "switching"):
+                fact["kind"] = r["regulator"]
+            eta = r.get("eta")
+            if fact.get("kind") == "switching" and isinstance(eta, list) and len(eta) == 2 and \
+                    all(isinstance(x, (int, float)) for x in eta) and 0.3 <= min(eta) <= max(eta) <= 0.99:
+                fact["eta"] = [float(min(eta)), float(max(eta))]
+            op["nets"][n] = fact
+            opwhy[f"nets.{n}"] = why(r, "rail source and its regulator")
     # loads: current per IC / module on a rail
     for i, l in enumerate(spec.get("loads") or []):
         w = f"loads[{i}]"
@@ -169,6 +232,14 @@ def compile_spec(spec, summary):
         if not ref:
             continue
         I = S.num(c, "I_A", "A", w)
+        if I:
+            npads = ((S.pads.get(ref) or {}).get(c.get("rail")) or 0) if c.get("rail") else 0
+            app = amps_per_pad(S.part.get(ref) or {})
+            cap = app * npads if npads else None
+            if cap and I > cap:
+                S.rejected.append(f"{w}.I_A={I:g} A capped at {cap:g} A: {ref} has {npads} pad(s) on {c.get('rail')} "
+                                  f"({app:g} A per pad)")
+                I = cap
         if c.get("direction") == "output" and I:
             op["parts"][ref] = {"I_A": [round(0.5 * I, 6), round(1.5 * I, 6)]}
             opwhy[f"parts.{ref}.I_A"] = why(c, f"export current ({c.get('function') or 'output'})")
