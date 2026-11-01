@@ -36,7 +36,7 @@ Locked copper is a wall for Freerouting. The stage therefore draws only what buy
 - **Escape corridors** (`escape_mm`, off). These are strips out of a dense IC's signal pins that other nets' critical copper avoids. On canhw they did not reduce unconnected items (19–33 vs 13–29, k = 1–2) and left decap loops within 1 % [C].
 - **Width that buys physics.** After routing, each loop hop is narrowed to the narrowest width whose loop stays within 5 % of the wide one (`trim_tol`). It never goes below the class width or the hop current's IPC width. Same centre line, so every clearance holds. On lambdakb's VDDPIX hop: 1.41 → 0.98 mm for +4.5 % nH.
 - **Rails only where they beat the class width.** A branch that fits only at about the class width (≤ 1.05×) has no drop physics over the router's track, so it is ripped up and left to the router. On suzyqboard a 17 mm VBUS track between the USB connectors had cut D− and CC. The trunk to the farthest load carries the design current; every other branch carries its own load's current.
-- **Joins of a critical net.** A critical net's nearby pads (`complete_mm` 8) and its islands (`island_mm` 20) are joined at the class width. On sk-tibia (crit-v3), cp1 on A+B was 0.636 with these joins against 0.515 without; locally, oasis went from 9 to 1 unconnected [C]. `soft` writes them unlocked.
+- **Joins of a critical net.** A critical net's nearby pads (`complete_mm` 8) and its islands (`island_mm` 20) are joined at the class width. On the shared benchmark host (crit-v3), cp1 on A+B was 0.636 with these joins against 0.515 without; locally, oasis went from 9 to 1 unconnected [C]. `soft` writes them unlocked.
 - **Decaps over their rail plane.** When the rail is an inner plane under both the capacitor and the pin, and the hop is longer than 2 mm (`decap_plane_mm`), the capacitor gets a via into the plane instead of a surface track around the IC.
 - **Other nets' pins keep an escape.** Before a hop is committed, nearby unrouted pins of other nets must still reach the edge of a 3.5 mm window or a via site, keeping a quarter of their room. If not, the hop is retried with a keep-out around them. An optional hop is dropped instead.
 - **Ground pours stay whole.** Crossing a ground pour costs 3× a foreign pour in the search. After routing, every ground fill piece cut off on its layer gets stitching vias into the same net's fill on another layer, legal and ≥ 2 mm apart. This applies to pieces that hold ground pads and are tied by fewer than 3 barrels.
@@ -98,7 +98,7 @@ A rail's design current is min(source rating, max(3Σ, Σ + 0.1 A)). The drop bu
 
 **Recheck** compares each routed module with its value at the module stage (its critical copper alone). It flags the module when u grew by > 15 %, crossed 1, or plane cover fell by > 0.10.
 
-**Re-tweak** (`--rounds N`, default 0) rips the nets that cross the flagged module's region, at most the 4 shortest, whole. It guards the plane and lets the bridge re-route them. A round is kept only if unconnected items and errors do not rise and the flagged modules improve. Rip-ups have not paid. On sk-tibia, 2 boards were flagged and no round was kept. On paw3395, round 1 restored a decap from u 0.83 to 0.53 but raised unconnected items from 3 to 7 [C].
+**Re-tweak** (`--rounds N`, default 0) rips the nets that cross the flagged module's region, at most the 4 shortest, whole. It guards the plane and lets the bridge re-route them. A round is kept only if unconnected items and errors do not rise and the flagged modules improve. Rip-ups have not paid. On the shared benchmark host, 2 boards were flagged and no round was kept. On paw3395, round 1 restored a decap from u 0.83 to 0.53 but raised unconnected items from 3 to 7 [C].
 
 ### Joint module optimization and the joint loop
 
@@ -116,7 +116,7 @@ On 12 human placements (120 s each, 0 DRC errors): hot loops changed on 7 of 8 c
 | Check | Boards | Result [C] |
 |---|---|---|
 | DRC errors on critical copper, KiCad 10.0.7, with the task's `.kicad_dru` | 33 A+B, 6 C | 0 attributable |
-| A/B on sk-tibia (k = 1, 600 s A+B / 900 s C6), bridge alone vs critical + bridge, earlier stage | 33 A+B | cp1 0.606 vs 0.576; completion 0.956 vs 0.943; 0 errors both. Physics vs bridge alone: decaps 0.71 (12 better, 3 worse), chains 0.71, rail R 0.97; vs human: decaps 0.87, rail R 0.95 |
+| A/B on the shared benchmark host (k = 1, 600 s A+B / 900 s C6), bridge alone vs critical + bridge, earlier stage | 33 A+B | cp1 0.606 vs 0.576; completion 0.956 vs 0.943; 0 errors both. Physics vs bridge alone: decaps 0.71 (12 better, 3 worse), chains 0.71, rail R 0.97; vs human: decaps 0.87, rail R 0.95 |
 | Same | 6 C | complete 2/6 vs 0/6; completion 0.891 vs 0.854; decaps 0.84, rail R 0.72, cells 1.05; 11 new ground islands on 5 boards (before stitching) |
 | Inner-plane foreign track | 6 C | critical copper puts 0 mm on inner layers. The bridge routing around it puts 872 mm there, against 473 mm for the bridge alone and 282 mm on the human boards |
 | Critical stage runtime | 39 | 0.4–60 s per board, one shared core |
