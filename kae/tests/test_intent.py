@@ -111,3 +111,42 @@ def test_the_copper_policy_widens_with_current_and_follows_the_area_knob():
                    "knobs": {"route.area_cost": 100}})
     from kae.route.critical_physics import ipc2221_width
     assert h.width("VIN", [2.0] * 5, 0.035, 0.2, ladder, 0.2, None)[0] >= ipc2221_width(2.0, 5, 0.035)
+
+
+def _open(ev, missing):
+    """The same evaluation with some sources not computed (open copper), their observations absent."""
+    ev = dict(ev, total={"complete": False, "not_computed": list(missing)})
+    drop = {"dc"} & set(missing)
+    ev["observations"] = [o for o in ev["observations"]
+                          if not (o["id"] in OB.DC_KINDS and drop) and o["scope"].get("source") not in missing]
+    return ev
+
+
+def test_an_open_source_leaves_only_the_terms_it_feeds_unpriced():
+    it = {"terms": [{"id": "T1", "tier": "cost", "obs": "loss.copper", "rate": "1 mW_eq/mW", "why": "loss"},
+                    {"id": "T2", "tier": "limit", "obs": "pickup.peak", "max": "2 mV", "rate": "10 mW_eq/mV", "why": "fb"}]}
+    st = OB.evaluate(_open(WIDE, ["dc"]), it, BRIEF)
+    rows = {r["id"]: r for r in st["terms"]}
+    assert rows["T1"]["incomplete"] and rows["T1"]["not_computed"] == ["dc"]
+    assert not rows["T2"].get("incomplete") and rows["T2"]["contribution"] == pytest.approx(20.0)
+    assert st["tiers"]["cost"] == 0.0 and st["tiers"]["limit"] == pytest.approx(20.0)   # loss not read as zero cost:
+    assert st["incomplete_terms"] == ["T1"] and "T1" in st["why_incomplete"]            # it is listed as missing
+
+
+def test_a_term_scoped_to_other_sources_stays_complete():
+    it = {"terms": [{"id": "T2", "tier": "cost", "obs": "pickup.peak", "where": {"source": "cell:*"},
+                     "rate": "10 mW_eq/mV", "why": "fb"},
+                    {"id": "T3", "tier": "cost", "obs": "pickup.peak", "rate": "10 mW_eq/mV", "why": "any"}]}
+    st = OB.evaluate(_open(WIDE, ["clk:SCK"]), it, BRIEF)
+    rows = {r["id"]: r for r in st["terms"]}
+    assert not rows["T2"].get("incomplete")
+    assert rows["T3"]["incomplete"] and rows["T3"]["not_computed"] == ["clk:SCK"]
+
+
+def test_layouts_are_compared_only_on_the_terms_all_of_them_computed():
+    it = {"terms": [{"id": "T1", "tier": "cost", "obs": "loss.copper", "rate": "1 mW_eq/mW", "why": "loss"},
+                    {"id": "T2", "tier": "cost", "obs": "pickup.peak", "rate": "10 mW_eq/mV", "why": "fb"}]}
+    a, b = OB.evaluate(WIDE, it, BRIEF), OB.evaluate(_open(THIN, ["dc"]), it, BRIEF)
+    common = OB.common_terms([a, b])
+    assert common == {"T2"}
+    assert OB.key(b, common) < OB.key(a, common)          # THIN picks up less; its loss is not counted for either

@@ -198,14 +198,15 @@ def evaluate(ev, intent=None, brief=None):
     obs = observations(ev, intent)
     cur = intent["currency"]
     complete = (ev.get("total") or {}).get("complete", True)
+    missing = list((ev.get("total") or {}).get("not_computed") or []) if not complete else []
     status = dict(schema="kae.status/1", observedGeneration=intent["generation"], board=ev.get("board"),
                   complete=complete, currency=cur, defaults=intent["defaults"], terms=[], unclaimed=[],
-                  questions=[], sections=sorted(secs))
-    if not complete:
-        status["tiers"] = None
-        status["why_incomplete"] = f"copper open for {(ev.get('total') or {}).get('not_computed')}: no score"
-        return status
+                  questions=[], sections=sorted(secs), not_computed=missing)
     if intent["defaults"] == "legacy/u":
+        if not complete:
+            status["tiers"] = None
+            status["why_incomplete"] = f"copper open for {missing}: no legacy total"
+            return status
         return _legacy(ev, status)
     terms = list(intent.get("terms", [])) + _defaults(intent, obs, intent.get("terms", []))
     claimed = set()
@@ -236,8 +237,14 @@ def evaluate(ev, intent=None, brief=None):
             inst.append((_agg(vals, agg), ob))
         row = dict(id=t["id"], tier=tier, obs=t["obs"], where=t.get("where"), matched=len(hit), agg=agg,
                    why=t.get("why"), source=t.get("source"))
+        gap = _gap(t, missing)
+        if gap:
+            # a source this term could see was not computed (open copper): the value below covers only the
+            # sources that were; it is reported, never priced, and never read as zero
+            row.update(incomplete=True, not_computed=gap)
         if not inst:
-            row.update(note="matched no observation on this board")
+            row.update(note="matched no observation on this board" + ("" if not gap else
+                                                                      " (its sources were not computed)"))
             rows.append(row)
             continue
         unit_ = dim or inst[0][1]["unit"]
@@ -261,22 +268,31 @@ def evaluate(ev, intent=None, brief=None):
             row.update(limit=f"{side_} {t[side_]}", met=all(o <= 0 for o in over),
                        margin=U.fmt(-max(excess), unit_))
             if tier == "hard":
-                hard += sum(o / max(abs(bound), 1e-30) for o in over)
+                h = sum(o / max(abs(bound), 1e-30) for o in over)
+                row["hard"] = round(h, 6)
+                hard += 0.0 if gap else h
             elif tier == "limit":
                 contrib = r * sum(over)
-                limit += contrib
         if tier == "cost":
             contrib = r * val
-            cost += contrib
         if tier in ("limit", "cost"):
             row["contribution"] = round(contrib, 4)
+            if not gap:
+                if tier == "limit":
+                    limit += contrib
+                else:
+                    cost += contrib
         rows.append(row)
     total = limit + cost
     for row in rows:
-        if "contribution" in row:
+        if "contribution" in row and not row.get("incomplete"):
             row["share"] = round(row["contribution"] / total, 3) if total > 0 else 0.0
     status["tiers"] = dict(hard=round(hard, 6), limit=round(limit, 4), cost=round(cost, 4))
     status["terms"] = rows
+    status["incomplete_terms"] = [r["id"] for r in rows if r.get("incomplete")]
+    if missing:
+        status["why_incomplete"] = (f"copper open for {missing}: the tiers count only the terms none of those "
+                                    f"sources could feed; {status['incomplete_terms']} are reported, not priced")
     # what nobody asked about, largest against its old reference first
     un = []
     for i, ob in enumerate(obs):
@@ -327,9 +343,38 @@ def _legacy(ev, status):
     return status
 
 
-def key(status):
-    """The ranking key: hard violations first, then limit cost plus cost (smaller is better)."""
+DC_KINDS = ("loss.copper", "drop.rail", "heat.track")      # the DC band's observations
+
+
+def _gap(t, missing):
+    """The uncomputed sources ("dc" for the DC band, else an aggressor's name) this term could have seen."""
+    if not missing:
+        return []
+    kinds = [k for k in KINDS if fnmatch.fnmatch(k, t["obs"])]
+    out = []
+    if "dc" in missing and any(k in DC_KINDS for k in kinds):
+        out.append("dc")
+    ac = [s for s in missing if s != "dc"]
+    if ac and any(k not in DC_KINDS for k in kinds):
+        pat = (t.get("where") or {}).get("source")
+        pats = (pat if isinstance(pat, list) else [pat]) if pat else None
+        out += [s for s in ac if pats is None or any(fnmatch.fnmatch(s, p) for p in pats)]
+    return out
+
+
+def key(status, terms=None):
+    """The ranking key: hard violations first, then limit cost plus cost (smaller is better). With `terms`
+    (ids), only those terms count: comparing layouts of one board on the terms complete for all of them."""
     t = status.get("tiers")
     if t is None:
         return (math.inf, math.inf)
-    return (t["hard"], t["limit"] + t["cost"])
+    if terms is None:
+        return (t["hard"], t["limit"] + t["cost"])
+    rows = [r for r in status.get("terms") or [] if r["id"] in terms]
+    return (sum(r.get("hard", 0.0) for r in rows), sum(r.get("contribution", 0.0) for r in rows))
+
+
+def common_terms(statuses):
+    """The term ids complete in every status (a term one layout could not compute is left out for all)."""
+    ids = [{r["id"] for r in s.get("terms") or [] if not r.get("incomplete")} for s in statuses]
+    return set.intersection(*ids) if ids else set()

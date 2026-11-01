@@ -46,13 +46,19 @@ def text(st, detailed=False):
     out.append(f"{st['board']}  [intent generation {st['observedGeneration']}, defaults {st['defaults']}]")
     out.append(f"  hard violations {t['hard']:g}; limits {t['limit']:.4g} + costs {t['cost']:.4g} = "
                f"{t['limit'] + t['cost']:.4g} {st['currency']}")
+    if st.get("not_computed"):
+        out.append(f"  INCOMPLETE: copper open for {', '.join(st['not_computed'][:6])}; "
+                   f"terms {', '.join(st.get('incomplete_terms') or []) or '(none)'} are reported, not priced")
     for r in st["terms"]:
         if r["tier"] == "ignore":
             out.append(f"  {r['id']:4s} ignore  {r['obs']} ({r['matched']} matched): {r.get('why')}")
             continue
         met = "" if "met" not in r else ("  met" if r["met"] else "  NOT MET")
         lim = f" vs {r['limit']} (margin {r['margin']})" if r.get("limit") else ""
-        con = f"  -> {r['contribution']:.4g} {st['currency']} ({r['share']:.0%})" if "contribution" in r else ""
+        if r.get("incomplete"):
+            con = f"  -> INCOMPLETE (not computed: {', '.join(r['not_computed'][:4])}; partial, not priced)"
+        else:
+            con = f"  -> {r['contribution']:.4g} {st['currency']} ({r['share']:.0%})" if "contribution" in r else ""
         out.append(f"  {r['id']:4s} {r['tier']:6s} {r['obs']}: {r.get('value', '-')} ({r.get('agg')}, "
                    f"{r['matched']} matched){lim}{met}{con}")
         if r.get("dominant"):
@@ -98,11 +104,15 @@ def main(argv=None):
             evs = [json.load(open(p)) for p in a.evals]
             brief = _brief(evs[0])                 # versions of one board share its parts and structures
             sts = [OB.evaluate(ev, a.intent, brief) for ev in evs]
-            order = sorted(range(len(sts)), key=lambda i: OB.key(sts[i]))
+            common = OB.common_terms(sts)          # only the terms every layout computed
+            dropped = sorted({r["id"] for s in sts for r in s["terms"]} - common)
+            if dropped:
+                print(f"compared on the terms every layout computed; left out for all: {', '.join(dropped)}")
+            order = sorted(range(len(sts)), key=lambda i: OB.key(sts[i], common))
             for rank, i in enumerate(order, 1):
-                k = OB.key(sts[i])
-                top = max((r for r in sts[i]["terms"] if "contribution" in r), key=lambda r: r["contribution"],
-                          default=None)
+                k = OB.key(sts[i], common)
+                top = max((r for r in sts[i]["terms"] if "contribution" in r and r["id"] in common),
+                          key=lambda r: r["contribution"], default=None)
                 print(f"{rank}. {a.evals[i]}: hard {k[0]:g}, {k[1]:.4g} {sts[i]['currency']}"
                       + (f"; dominant {top['id']} {top['obs']} = {top.get('value')}" if top else ""))
     except (OB.IntentError, SE.SectionError, ValueError) as e:
