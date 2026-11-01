@@ -104,7 +104,8 @@ class KaeStages:
         self.locked = {fp.uuid for fp in board.footprints if fp.locked}
         self.edge_parts = {fp.uuid for fp in board.footprints if fp.edge_cuts}
         res = place(board, seed=seed, time_s=time_s, physics=not self.opts.get("no_physics"), workers=1,
-                    log=lambda m: self.log(f"place: {m}"), edge_mate=bool(self.opts.get("edge_mate")))
+                    log=lambda m: self.log(f"place: {m}"), edge_mate=bool(self.opts.get("edge_mate")),
+                    angle_step=self.opts.get("angle_step") or None)
         out = self._path(0, "placed")
         if res.poses:
             self._write_poses(self.input, out, res.poses)
