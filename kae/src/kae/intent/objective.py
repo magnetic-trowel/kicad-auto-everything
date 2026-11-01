@@ -58,6 +58,11 @@ KINDS = {
                   "without a cell model at its efficiency. Loads' own consumption is not a loss and is left out."),
     "loss.loop": ("W", "Energy a switching cell's commutation loop inductance (the copper's share) dumps into the "
                   "switch at every turn-off, 1/2 L_loop I^2 f_sw: the hot loop's layout cost in efficiency."),
+    "loss.loop_ac": ("W", "A switching cell's hot loop's copper resistance at the switching frequency (the layout's "
+                     "share) carrying the loop's pulsed current, I^2 D (1 - D) R: a lower bound above a few MHz "
+                     "(no skin or proximity effect in the raster)."),
+    "loss.swnode": ("W", "The layout's capacitance of a switch node (its copper to every other net and the world, "
+                    "in the board's stackup) charged through the switch every cycle, 1/2 C V^2 f_sw."),
     "temp.junction": ("C", "A dissipating part's junction temperature: the board's heat flow (copper I^2 R, every "
                       "part's heat, face cooling) at its pads plus theta_jb times its power, at each corner."),
     "emission.cable_E": ("dBuV/m", "Field at 10 m from a declared cable driven by cable_cm.v (Ott 12-7: "
@@ -180,6 +185,8 @@ def _in(ob, dim):
     """The observation's per-corner values in the term's dimension (a log unit converts from SI)."""
     if dim in U.LOG and ob["unit"] != dim:
         return [U.to_log(v, dim) for v in ob["values"]]
+    if ob["unit"] == "C" and dim == "K":
+        return ob["values"]                     # temperatures in C against limits in C (or K steps)
     if dim not in ("", ob["unit"]) and not (dim == "dB" and ob["unit"] in U.LOG):
         raise IntentError(f"{ob['id']} is in {ob['unit']}; a limit in {dim} cannot be compared with it")
     return ob["values"]
@@ -263,7 +270,8 @@ def evaluate(ev, intent=None, brief=None):
         else:
             dom = (max if side_ != "min" else min)(inst, key=lambda x: x[0])
             val = dom[0]
-        row.update(value=U.fmt(val, unit_), dominant=dom[1].get("label"), rests_on=_rests(dom[1], ev))
+        shown = (lambda x: f"{x:.4g} C") if inst[0][1]["unit"] == "C" else (lambda x: U.fmt(x, unit_))
+        row.update(value=shown(val), dominant=dom[1].get("label"), rests_on=_rests(dom[1], ev))
         if dom[1].get("f_Hz"):
             row["f_MHz"] = round(max(dom[1]["f_Hz"]) / 1e6, 1)
         contrib = 0.0

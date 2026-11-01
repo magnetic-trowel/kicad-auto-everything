@@ -213,6 +213,50 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
             ob["scope"]["kind"] = "loop_loss"
             ob["scope"]["L_loop_H"] = pr["Le"]
             observations.append(ob)
+            # the hot loop's copper resistance at the switching frequency (the layout's share, Re Z at the
+            # fundamental) carrying the loop's pulsed current: AC RMS I sqrt(D (1 - D)). The raster has no
+            # skin or proximity effect, so above a few MHz this is a lower bound.
+            R = max(float(pr["Zf"].real), 0.0)
+            rv = []
+            for c in range(ncp):
+                val = {k[1]: v for k, v in cps[s.name][c].items()}
+                D = min(max(val.get("D", 0.5), 0.0), 1.0)
+                rv.append(val.get("I_A", 0.0) ** 2 * D * (1 - D) * R)
+            ob = O.observation(bd, o, s, rv, [0.0] * ncp)
+            ob.update(id="loss.loop_ac", unit="W", reference=dict(value=None, basis="none: a loss is priced, not bounded"),
+                      label=f"hot-loop AC conduction loss of {s.name}: I_ac,rms^2 R_loop, R_loop {R * 1e3:.3g} mOhm "
+                            f"at f_sw (copper, no skin effect)")
+            ob["scope"]["kind"] = "loop_ac_loss"
+            ob["scope"]["R_loop_ohm"] = R
+            observations.append(ob)
+    # each switch node's capacitance in the layout (its copper to every other net and the world, in the
+    # board's own stackup: kae.excite.capacitive), charged and discharged through the switch every cycle:
+    # 1/2 C V^2 f_sw lost at each hard turn-on
+    cells = {pr["s"].name: pr["s"] for pr in pairs if pr["o"].kind == "overshoot" and pr["s"].meta.get("sw")}
+    if cells:
+        from . import capacitive as CAP
+        try:
+            cpl, cworld = CAP.couplings(b, bm, bd, brief, [], log=log)
+        except Exception as e:                                   # the electrostatic solve is optional here
+            cpl, cworld = [], {}
+            notes.append(f"switch-node capacitance not computed ({type(e).__name__}: {e})")
+        for name, s in cells.items():
+            sw = s.meta["sw"]
+            # the node's whole capacitance: to the world (the Maxwell row sum) plus to every other net
+            C = (cworld.get(sw) or 0.0) + sum(c for a, _, c in cpl if a == sw)
+            if not C:
+                continue
+            sv = []
+            for c in range(ncp):
+                val = {k[1]: v for k, v in cps[name][c].items()}
+                sv.append(0.5 * C * val.get("V_V", 0.0) ** 2 * val.get("f_sw_Hz", 0.0))
+            o = next(pr["o"] for pr in pairs if pr["s"].name == name and pr["o"].kind == "overshoot")
+            ob = O.observation(bd, o, s, sv, [0.0] * ncp)
+            ob.update(id="loss.swnode", unit="W", reference=dict(value=None, basis="none: a loss is priced, not bounded"),
+                      label=f"switch-node capacitance loss of {name}: 1/2 C_sw V^2 f_sw, C_sw {C * 1e12:.3g} pF (copper)")
+            ob["scope"]["kind"] = "swnode_loss"
+            ob["scope"]["C_sw_F"] = C
+            observations.append(ob)
     if dcp:
         harms += _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes, log, obs_out=observations)
         if dcp.loads and not any(n.startswith("DC: copper open") for n in notes):
@@ -392,7 +436,9 @@ def main(argv=None):
                  f"{h['P_mW']} of {h['budget_mW']} mW" if h["kind"] == "dc_loss" else
                  f"{h['dV_mV']} of {h['budget_mV']} mV" if h["kind"] == "dc_drop" else
                  f"{h['dT_K']} K at {h['I_A']} A" if h["kind"] == "dc_heat" else "")
-        if h["kind"].startswith("dc_"):
+        if h["kind"] == "heat":
+            extra = f"T_j {h.get('T_C')} C (worst {h.get('T_hi_C')} C)"
+        if h["kind"].startswith("dc_") or h["kind"] == "heat":
             print(f"  {h['u']:8.3f} [{h['u_lo']:7.3f} .. {h['u_hi']:7.3f}]  {extra:38s} {h['observer']}")
             continue
         print(f"  {h['u']:8.3f} [{h['u_lo']:7.3f} .. {h['u_hi']:7.3f}]  L {h['L_nH']:7.3f} nH  |Zf| {h['Zf_mohm']:7.2f} mOhm  "

@@ -150,3 +150,28 @@ def test_layouts_are_compared_only_on_the_terms_all_of_them_computed():
     common = OB.common_terms([a, b])
     assert common == {"T2"}
     assert OB.key(b, common) < OB.key(a, common)          # THIN picks up less; its loss is not counted for either
+
+
+def test_part_temperatures_in_celsius_meet_limits_in_celsius():
+    ev = {"board": "synthetic", "total": {"complete": True}, "questions": [], "observations": [
+        _ob("temp.junction", "C", [80.0, 130.0], kind="heat", observer="heat:U3", source="dc", parts=["U3"]),
+        _ob("loss.part", "W", [0.2, 0.3], kind="part_loss", observer="loss:U3", source="dc", parts=["U3"])]}
+    it = {"terms": [{"id": "T0", "tier": "hard", "obs": "temp.junction", "where": {"part": ["U3"]}, "max": "125 C",
+                     "why": "rating"},
+                    {"id": "M0", "tier": "limit", "obs": "temp.junction", "where": {"part": ["U3"]}, "max": "105 C",
+                     "rate": "2 mW_eq/C", "why": "margin"},
+                    {"id": "P2", "tier": "cost", "obs": "loss.part", "rate": "1 mW_eq/mW", "agg": "worst", "why": "loss"}]}
+    st = OB.evaluate(ev, it, BRIEF)
+    rows = {r["id"]: r for r in st["terms"]}
+    assert rows["T0"]["met"] is False and st["tiers"]["hard"] > 0          # 130 C over 125 C: a hard violation
+    assert rows["M0"]["contribution"] == pytest.approx(2 * 25.0)          # 25 K over the margin at 2 mW_eq/C
+    assert rows["T0"]["value"] == "130 C"
+    assert rows["P2"]["contribution"] == pytest.approx(300.0)
+
+
+def test_a_dc_band_gap_also_leaves_temperatures_and_part_losses_unpriced():
+    it = {"terms": [{"id": "T0", "tier": "hard", "obs": "temp.junction", "max": "125 C", "why": "rating"},
+                    {"id": "P4", "tier": "cost", "obs": "loss.loop_ac", "rate": "1 mW_eq/mW", "why": "loop"}]}
+    st = OB.evaluate(_open(WIDE, ["dc"]), it, BRIEF)
+    rows = {r["id"]: r for r in st["terms"]}
+    assert rows["T0"]["incomplete"] and not rows["P4"].get("incomplete")
