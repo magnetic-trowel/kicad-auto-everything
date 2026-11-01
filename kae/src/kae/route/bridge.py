@@ -221,14 +221,16 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             if diag_s and final_rep and (report["repair"].get("final") or {}).get("unconnected"):
                 report["blocked"] = diagnose(output_path, input_path, original_input, info, p, final_rep, sev, wd,
                                              deadline=time.monotonic() + max(5.0, left() - 8), log=log)
-        if report.get("blocked_packages"):
-            blk = report.setdefault("blocked", {})
-            blk["packages"] = report.pop("blocked_packages")
-            blk["summary"] = [c["summary"] for c in blk["packages"]] + list(blk.get("summary") or [])
         elif opts.get("drc", True) and left() > 20:
             staged = drc.stage_board(output_path, input_path, wd / "drc")
             rep = drc.run(staged, wd / "drc" / "drc.json", timeout=max(10, left() - 5))
             report["drc"] = drc.summary(rep)
+        if report.get("blocked_packages"):
+            # packages no routing can escape under the board's rules (escape.certificate), in front
+            # of the per-connection diagnosis
+            blk = report.setdefault("blocked", {})
+            blk["packages"] = report.pop("blocked_packages")
+            blk["summary"] = [c["summary"] for c in blk["packages"]] + list(blk.get("summary") or [])
         return report
     finally:
         report["opts"] = {k: v for k, v in opts.items()
