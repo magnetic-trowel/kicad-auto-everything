@@ -55,7 +55,7 @@ DEFAULTS = dict(
     chain_tail=False,      # also route (and lock) a chain's hops after the protector (no surge physics)
     rail_light=False,      # also route rail branches that only need the class width (no drop physics)
     trim_tol=0.05,         # loop hops narrowed to the narrowest width within this of the wide loop (0: off)
-    complete_mm=8.0,       # join a critical net's pads within this distance of its critical copper (sk-tibia
+    complete_mm=8.0,       # join a critical net's pads within this distance of its critical copper (benchmark
                            # crit-v3: A+B cp1 0.636 with joins vs 0.515 without; oasis 9 -> 1 unconnected)
     island_mm=20.0,        # and its islands of critical copper to each other within this distance
     escape_mm=0.0,         # escape corridors this long out of dense ICs' signal pins (0: off; see escape_corridors)
