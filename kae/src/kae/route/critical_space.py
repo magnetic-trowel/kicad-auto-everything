@@ -241,6 +241,20 @@ class Space:
             for l in it.layers:
                 if l in self.items:
                     self.items[l].append(it)
+            if hole is not None and pd.get("attr") == "pth":
+                # a plated hole is copper on every layer, also where the pad has no ring
+                # (remove_unused_layers): KiCad's DRC shorts a track through its barrel, and the
+                # ring comes back on a layer once a track of the pad's net meets it there
+                # (gecko5education U12: last-mile joins on In1/In2 through a display's pins);
+                # foreign copper keeps clear of the whole pad shape
+                bare = [l for l in self.cu if l not in it.layers and l in self.items]
+                if bare:
+                    hb = Item("pad", it.net, bare, unary_union([geom, hole[0].buffer(hole[1], 32)]), 0.0, cls,
+                              owner=it.owner,
+                              hole=hole, smd=False)
+                    hb.kind, hb.fp, hb.idx, hb.uuid, hb.pos = it.kind, it.fp, k, it.uuid, it.pos
+                    for l in bare:
+                        self.items[l].append(hb)
 
     def _build_obstacles(self):
         plan = self.plan
