@@ -55,7 +55,7 @@
   - KiCadRoutingTools and PCBWorld-Engine adapters.
   - Intent-track constraint checks ([constraint-ir](../architecture/constraint-ir.md)).
   - A per-board DSN-loss report that compares Freerouting's drc.v1 output with KiCad DRC.
-- Run long benchmarks on a dedicated host (sk-tibia) with `-j` set to the core count. Freerouting runs single-threaded per attempt.
+- Run long benchmarks on a dedicated host with `-j` set to the core count. Freerouting runs single-threaded per attempt.
 
 ## Conflicts and open questions
 
