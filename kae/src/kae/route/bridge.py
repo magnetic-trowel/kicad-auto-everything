@@ -59,7 +59,15 @@ DEFAULT_OPTS = dict(
     plane_escapes=True,      # before routing, join each pad of a zone net that the input's fill does not
                              # reach to that fill with a short stub and via (lastmile.plane_escapes),
                              # unlocked: the plane connections the human boards make first
-    ball_escapes=True,       # with them, dog-bones for the inner rings of ball grids (escape.dog_bones)
+    ball_escapes=True,       # with them, whole-package escape plans for ball grids (escape.run): dog-bones,
+                             # escapes, and the certificate of balls no routing can escape (report "blocked")
+    escape_share=0.15,       # of the time left: the plane escapes' and escape plans' share at most
+    escape_min_s=45.0,       # but the escape plans get this much at least (cached for a restart's later attempts)
+    escape_lay="dog_bones",  # laid before routing: the fixed dog-bones, or "plan" (the plan's vias and escapes;
+                             # 2x the opens under Freerouting on gecko5education and nekoink)
+    blocked=True,            # at the end, diagnose the connections still open (kae.route.blocked): the report's
+                             # "blocked" names the board rule (or kae default) that makes each impossible
+    blocked_s=30.0,          # with blocked: seconds kept for it at most (taken from the repair rounds)
     pad_shapes="kicad",      # pin shapes in the DSN: "kicad" (KiCad's export: rounded corners and arcs as
                              # chords inside the outline, up to 4 um at r 0.25 mm, 10 um on custom pads) or
                              # "outside" (polygons that contain the pad's copper, translate.circumscribe_pins)
@@ -93,6 +101,7 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
     wd = Path(workdir).resolve() if workdir else Path(tempfile.mkdtemp(prefix="kae-route-", dir=output_path.parent))
     wd.mkdir(parents=True, exist_ok=True)
     report = dict(input=str(input_path), seed=seed, budget_s=time_s, opts=opts)
+    original_input = input_path
 
     def left():
         return time_s - (time.monotonic() - t0)
@@ -127,8 +136,15 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             from . import lastmile
             esc = wd / "escapes" / "escaped.kicad_pcb"
             got = lastmile.plane_escapes(staged, info, p, fills if planes else [], esc, sev=sev, log=log, balls=balls,
-                                         deadline=time.monotonic() + max(10.0, 0.1 * left()))
-            report["plane_escapes"] = {k: v for k, v in got.items() if k != "added"}
+                                         deadline=time.monotonic() + max(10.0, opts.get("escape_share", 0.15) * left()),
+                                         escape_opts=opts)
+            report["plane_escapes"] = {k: v for k, v in got.items() if k not in ("added", "escape")}
+            if got.get("escape"):
+                # the escape plan per package (per ball: layer, side, via, exit), and what no routing
+                # can escape under the board's rules (the "blocked" section's packages)
+                report["escape"] = {k: v for k, v in got["escape"].items() if k != "blocked"}
+                if got["escape"]["blocked"]:
+                    report["blocked_packages"] = got["escape"]["blocked"]
             if got["added"]:
                 esc_in = drc.stage_board(esc, input_path, wd / "escaped")
                 input_path = esc_in
@@ -196,10 +212,19 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
         report["fixed_items"] = len(opts["fixed_uuids"])
 
         # 5: DRC and repair
+        diag_s = min(float(opts.get("blocked_s") or 0.0), 0.05 * time_s) if opts.get("blocked") else 0.0
         if opts.get("repair") and left() > 30:
             from . import repair
-            report["repair"] = repair.loop(input_path, output_path, wd, p, info, opts, deadline=t0 + time_s - 10,
-                                           log=log)
+            report["repair"] = repair.loop(input_path, output_path, wd, p, info, opts,
+                                           deadline=t0 + time_s - 10 - diag_s, log=log)
+            final_rep = report["repair"].pop("_report", None)
+            if diag_s and final_rep and (report["repair"].get("final") or {}).get("unconnected"):
+                report["blocked"] = diagnose(output_path, input_path, original_input, info, p, final_rep, sev, wd,
+                                             deadline=time.monotonic() + max(5.0, left() - 8), log=log)
+        if report.get("blocked_packages"):
+            blk = report.setdefault("blocked", {})
+            blk["packages"] = report.pop("blocked_packages")
+            blk["summary"] = [c["summary"] for c in blk["packages"]] + list(blk.get("summary") or [])
         elif opts.get("drc", True) and left() > 20:
             staged = drc.stage_board(output_path, input_path, wd / "drc")
             rep = drc.run(staged, wd / "drc" / "drc.json", timeout=max(10, left() - 5))
@@ -213,6 +238,25 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             shutil.rmtree(wd, ignore_errors=True)
         else:
             report["workdir"] = str(wd)
+
+
+def diagnose(output_path, input_path, original_input, info, plan, drc_report, sev, wd, deadline, log=_log):
+    """kae.route.blocked on the final board: what makes each open connection impossible."""
+    from kae.board.kicad_file import load
+    from . import blocked
+    try:
+        staged = drc.stage_board(output_path, input_path, wd / "blocked")
+        fills = pcbnew_io.zone_fills(staged)["zones"]
+        inb = load(original_input)
+        ids = {t.uuid for t in inb.tracks} | {v.uuid for v in inb.vias}
+        out = blocked.diagnose(staged, info, plan, fills, drc_report, sev=sev, input_ids=ids, deadline=deadline,
+                               log=log)
+        log(f"blocked: {len(out['blocked'])} connections the rules block, {len(out['congestion'])} congestion, "
+            f"{out['undiagnosed']} not diagnosed ({out['seconds']} s)")
+        return out
+    except Exception as e:  # noqa: BLE001 - a diagnosis never costs the routed board
+        log(f"blocked: diagnosis failed: {type(e).__name__}: {e}")
+        return dict(error=f"{type(e).__name__}: {e}")
 
 
 def router_budget(left_s, opts):
