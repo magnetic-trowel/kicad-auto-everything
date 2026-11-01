@@ -102,3 +102,63 @@ class Policy:
         w = min(cands, key=cost)
         return w, (f"{k:.3g} {self.cur}/ohm from {', '.join(why)} (I up to {Imax:.2f} A); optimum {w_star:.2f} mm, "
                    f"ladder {w:g} mm" + (f", capped at {hi:g} mm" if w_star > hi else ""))
+
+    # ------------------------------------------------------------------ physics terms (per section)
+    PHYS = ("pickup.peak", "supply.peak", "overshoot.peak")
+    HARD_RATE = 1e6                  # currency per V of a hard term's violation: never worth trading
+
+    def pair_terms(self, bd, o, s):
+        """The intent's terms on the (observer, aggressor) pair's peak voltage: [(term, rate per V, limit V or
+        None, tier)]. Pairs no term names are not priced (and not solved) by the router."""
+        from kae.excite import observe as O
+        ob = O.observation(bd, o, s, [0.0], [0.0])
+        out = []
+        for t in self.intent.get("terms", []):
+            if t["tier"] in ("report", "ignore") or not any(fnmatch.fnmatch(k, t["obs"]) for k in self.PHYS):
+                continue
+            if not OB._match(t, ob, self.secs):
+                continue
+            lim = U.quantity(t["max"])[0] if "max" in t else None
+            r = U.rate(t["rate"], self.cur)[0] if "rate" in t else self.HARD_RATE
+            out.append((t, r, lim, t["tier"]))
+        return out
+
+    def dC_dV(self, terms, V):
+        """d(intent cost)/d(peak V) of a pair at corner values V (array): each cost term's rate; each limit's
+        rate where V exceeds it; a hard term's large rate where it is violated."""
+        import numpy as np
+        V = np.asarray(V, float)
+        d = np.zeros_like(V)
+        for t, r, lim, tier in terms:
+            if tier == "cost":
+                d += r
+            elif lim is not None:
+                d += r * (V > lim)
+        return d
+
+    def pair_cost(self, terms, V):
+        """The intent's cost of a pair at corner peak voltages V (array), in its currency."""
+        import numpy as np
+        V = np.asarray(V, float)
+        c = np.zeros_like(V)
+        for t, r, lim, tier in terms:
+            if tier == "cost":
+                c += r * V
+            elif lim is not None:
+                c += r * np.maximum(0.0, V - lim)
+        return c
+
+    def dc_cost(self, ob):
+        """The intent's cost of one corner's DC observation (kae.excite.dc.observe): its loss and drop terms."""
+        _, P, _ = ob["loss"]
+        c = 0.0
+        for t in self.loss:
+            c += U.rate(t["rate"], self.cur)[0] * P
+        for t in self.drop:
+            r = U.rate(t["rate"], self.cur)[0]
+            lim = U.quantity(t["max"])[0] if "max" in t else None
+            for ref, rail, _, dv, _ in ob["drops"]:
+                if _net_matches(t, rail, self.secs):
+                    c += r * (dv if lim is None else max(0.0, dv - lim))
+        return c
+

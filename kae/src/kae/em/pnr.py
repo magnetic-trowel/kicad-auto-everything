@@ -76,7 +76,8 @@ def phi_prime(u):
 
 class PhysRouter:
     def __init__(self, path, out, pitch=0.25, lam=30.0, nsub=2, plain=False, refresh=4, log=print, work=None,
-                 verify=False, intent=None, seed=0, n_corners=16, capacitive=True, spectral=False, goal=None):
+                 verify=False, intent=None, seed=0, n_corners=16, capacitive=True, spectral=False, goal=None,
+                 keep=()):
         from kae.board.kicad_file import load
         from kae.circuit import brief as B
         from kae.excite import models as M
@@ -106,9 +107,27 @@ class PhysRouter:
                 log(f"pnr: {s.name}: edge band {O.gentle_f(s) / 1e6:.3g} MHz, priced at {self.f / 1e6:.3g} MHz")
         for p in self.ledger.flagged():
             log(f"pnr: prior {p.subject} {p.name} [{p.lo:.4g} .. {p.hi:.4g}] {p.unit}: priced over the interval")
+        # goal: the commander's intent (kae.intent/1). Its copper policy sets hop widths in closed form, in
+        # plain and physics routing alike; its physics terms name the (observer, aggressor) pairs the router
+        # prices, so only those are solved and only the nets that carry them are routed with fields (the
+        # sections the intent asks physics of); every other net is routed plain with the policy's widths
+        self.policy, self.pair_terms = None, None
+        self.psrcs, self.pobs = self.srcs, self.obs
+        if goal is not None:
+            from kae.intent import route as IR
+            from kae.intent import sections as SE
+            self.policy = IR.Policy(goal, SE.apply(SE.from_brief(self.brief), goal.get("sections")))
+            self.pair_terms = {(o.name, s.name): ts for o in self.obs for s in self.srcs
+                               if (ts := self.policy.pair_terms(bd, o, s))}
+            on = {k[0] for k in self.pair_terms}
+            sn = {k[1] for k in self.pair_terms}
+            self.pobs = [o for o in self.obs if o.name in on]
+            self.psrcs = [s for s in self.srcs if s.name in sn]
+            log(f"pnr: {self.policy.describe()}; physics on {len(self.pair_terms)} (observer, aggressor) pairs "
+                f"of {len(self.obs) * len(self.srcs)}: {sorted(self.pair_terms)[:6]}")
         # capacitive prices (kae.em.cprice): victim copper in the swinging nets' fields, and back
         self.cap, self.capf = None, None
-        if capacitive and not plain:
+        if capacitive and not plain and self.policy is None:
             from .cprice import CapPrices
             self.cap = CapPrices(bd, self.brief, self.srcs, self.obs, self.cval, log=log)
             self.cap = self.cap if self.cap.pairs else None
@@ -117,24 +136,16 @@ class PhysRouter:
         # pat: the injection at the pads of parts outside the copper model (two-pad parts are lumped into
         # it); flow: every pad's current with ideal copper, which says what each net carries
         self.pat, self.flow, self.vid = {}, {}, {}
-        for s in self.srcs:
+        for s in self.psrcs:
             r = bd.circuit.solve(self.f, [s])[s.name]
             self.pat[("s", s.name)], self.flow[("s", s.name)] = r["Ja"], r["J"]
             self.vid[("s", s.name)] = O.ideal(bd, r)
-        for o in self.obs:
+        for o in self.pobs:
             self.pat[("o", o.name)] = O.pattern(bd, o, self.f, active=True)
             self.flow[("o", o.name)] = O.pattern(bd, o, self.f)
         # the DC band (kae.excite.dc): the evaluator's plan and observers, at the same corners (a corner's
         # cells take their switching corner's values)
         self.dcp = DC.plan(b, self.brief, bd, self.P, self.srcs, intent)
-        # goal: the commander's intent (kae.intent/1); its copper policy sets hop widths in closed form, in
-        # plain and physics routing alike
-        self.policy = None
-        if goal is not None:
-            from kae.intent import route as IR
-            from kae.intent import sections as SE
-            self.policy = IR.Policy(goal, SE.apply(SE.from_brief(self.brief), goal.get("sections")))
-            log(f"pnr: {self.policy.describe()}")
         for p in self.dcp.params:
             self.ledger.add(p)
         ncp = n_corners + 3
@@ -145,13 +156,21 @@ class PhysRouter:
         # priced nets: every non-ground net carrying pattern current (above 1% of the pattern's largest),
         # switching or DC
         load_ = {}
+        # the nets the priced pairs' currents flow in: routed with fields when the intent names pairs
+        self.phys_nets = set()
+        for J in self.flow.values():
+            mx = max((abs(v) for v in J.values()), default=0) or 1
+            self.phys_nets |= {bd.net_of.get(p) for p, v in J.items()
+                               if bd.net_of.get(p) and bd.net_of.get(p) not in bd.grounds and abs(v) > 0.01 * mx}
         for J in list(self.flow.values()) + self.dc_inj:
             mx = max((abs(v) for v in J.values()), default=0) or 1
             for p, v in J.items():
                 n = bd.net_of.get(p)
                 if n and n not in bd.grounds and abs(v) > 0.01 * mx:
                     load_[n] = load_.get(n, 0) + abs(v) / mx
-        self.nets = sorted(load_, key=lambda n: -load_[n])
+        # keep: nets an earlier pass could not route whole; they stay exactly as the input has them
+        self.kept = sorted(set(keep) & set(load_))
+        self.nets = sorted((n for n in load_ if n not in self.kept), key=lambda n: -load_[n])
         self.net_load = load_
         # rip them up
         rip = [t.uuid for t in b.tracks if t.net in self.nets] + [v.uuid for v in b.vias if v.net in self.nets]
@@ -167,7 +186,7 @@ class PhysRouter:
                 import shutil
                 shutil.copy2(s_, self.base.with_suffix(ext))
         log(f"pnr: {len(self.srcs)} aggressors, {len(self.obs)} observers; priced nets {self.nets}; "
-            f"ripped {len(rip)} items")
+            f"ripped {len(rip)} items" + (f"; kept as the input has them: {self.kept}" if self.kept else ""))
         from kae.route.critical import Session
         self.sess = Session(self.base, opts=dict(place_allocs=False), log=lambda m: None)
         self.sp, self.router = self.sess.space, self.sess.router
@@ -343,11 +362,13 @@ class PhysRouter:
         ncp = len(next(iter(self.cval.values()), [None]))
         tot = np.zeros(ncp)
         slope = {}
-        for o in self.obs:
+        for o in self.pobs:
             kk = ("o", o.name)
-            for s in self.srcs:
+            for s in self.psrcs:
                 ks = ("s", s.name)
                 if o.kind == "overshoot" and o.meta.get("source") != s.name:
+                    continue
+                if self.pair_terms is not None and (o.name, s.name) not in self.pair_terms:
                     continue
                 if ks not in self.pot_at:
                     continue
@@ -361,11 +382,17 @@ class PhysRouter:
                 us = g * abs(L)
                 self.u_c[(o.name, s.name)] = us
                 self.harm[(o.name, s.name)] = float(us[0])
-                tot += np.where(us <= 1, us, us + 4 * (us - 1) ** 2)
-                if o.kind not in UNPRICED:
-                    slope[(kk, ks)] = (g, np.sign(L or 1.0), (o.name, s.name))
+                if self.pair_terms is not None:      # the intent's cost, in its currency
+                    tot += self.policy.pair_cost(self.pair_terms[(o.name, s.name)], us * o.bound)
+                else:
+                    tot += np.where(us <= 1, us, us + 4 * (us - 1) ** 2)
+                if o.kind not in UNPRICED or self.pair_terms is not None:
+                    slope[(kk, ks)] = (g, np.sign(L or 1.0), (o.name, s.name), o.bound)
         for c, ob in enumerate(self.dc_obs or []):
-            tot[c] += HA.phi(ob["loss"][0]) + sum(HA.phi(d[2]) for d in ob["drops"])
+            if self.policy is not None:
+                tot[c] += self.policy.dc_cost(ob)
+            else:
+                tot[c] += HA.phi(ob["loss"][0]) + sum(HA.phi(d[2]) for d in ob["drops"])
         if self.cap:
             tot = tot + self.cap.corner_phi(self.capf)
         self.H, idx = HA.robust(list(tot))
@@ -373,9 +400,15 @@ class PhysRouter:
         if self.cap:
             self.cap.set_weights(self.capf, idx, phi_prime)
             self.log(f"cap: {self.cap.report(self.capf)}")
-        for key, (g, sg, pk) in slope.items():
+        for key, (g, sg, pk, bound) in slope.items():
             us = self.u_c[pk]
-            self.wts[key] = sg * float(np.mean([phi_prime(us[c]) * g[c] for c in idx]))
+            if self.pair_terms is not None:
+                # the intent's cost per volt of the pair's peak (V = u x bound), per henry of L_ks
+                V = us * bound
+                d = self.policy.dC_dV(self.pair_terms[pk], V)
+                self.wts[key] = sg * float(np.mean([d[c] * g[c] * bound for c in idx]))
+            else:
+                self.wts[key] = sg * float(np.mean([phi_prime(us[c]) * g[c] for c in idx]))
 
     def _islands_only(self):
         """The copper islands of each net (what is still to connect) without solving any field: the
@@ -705,22 +738,27 @@ class PhysRouter:
         self.failed = []
         self.choices = []
         since = 0
+        fields = self._fields = not self.plain and (self.pair_terms is None or bool(self.pair_terms))
+        if self.pair_terms is not None and not self.plain:
+            self.log(f"pnr: routed with fields: {sorted(self.phys_nets & set(self.nets))}; the other "
+                     f"{len(set(self.nets) - self.phys_nets)} nets plain with the intent's widths")
         for n in self.nets:
-            if not self.plain and (done == 0 or since >= self.refresh):
+            plain_n = self._plain_for(n)
+            if fields and not plain_n and (done == 0 or since >= self.refresh or getattr(self, "prices", None) is None):
                 self.solve_fields()           # plain routing reads no fields: it needs the islands only
                 since = 0
-            elif self.plain and done == 0:
+            elif done == 0:
                 self._islands_only()
             since += 1
             isl = [g for g in self.islands.get(n, []) if g]
             if len(isl) < 2:
                 done += 1
                 continue
-            if self.verify and not self.plain:
+            if self.verify and not plain_n:
                 self._route_verified(n)
                 since = 0                      # the chosen candidate's fields are current
             else:
-                res = self._route_net(n, plain=self.plain)
+                res = self._route_net(n, plain=plain_n)
                 self.failed += res["failed"]
             done += 1
             self._refill()
@@ -761,6 +799,7 @@ class PhysRouter:
         import json
         import subprocess
         self._refill()                               # the router's islands of the finished copper
+        self.torn = sorted(n for n in self.nets if len([g for g in self.islands.get(n, []) if g]) > 1)
         p = self._state_board()
         out = p.with_suffix(".drc.json")
         wrap = os.environ.get("KAE_KICAD_WRAP", "")
@@ -779,23 +818,34 @@ class PhysRouter:
                     kicad_open.add(d)
         ours = {n: len([g for g in self.islands.get(n, []) if g]) for n in self.nets}
         ours_open = {n for n, k in ours.items() if k > 1}
+        # KiCad is the judge: a net it reports open is torn though the router's model joins it (two pads of
+        # one number, one per side, are one terminal to the router)
+        import re
+        k_nets = {m.group(1) for u in drc.get("unconnected_items", []) for it in u.get("items", [])
+                  for m in [re.search(r"\[([^\]]+)\]", it.get("description") or "")] if m}
+        self.torn = sorted(set(self.torn) | (k_nets & set(self.nets)))
         self.log(f"pnr: connectivity check: KiCad reports {len(drc.get('unconnected_items', []))} unconnected items; "
                  f"the router {len(ours_open)} priced nets in pieces ({sorted(ours_open)[:6]})"
                  + (f"; refills took {self.t_refill:.0f}s" if getattr(self, "t_refill", None) else ""))
         for d in sorted(kicad_open)[:10]:
             self.log(f"pnr: connectivity check: KiCad: {d} unconnected")
 
+    def _plain_for(self, n):
+        """Is net n routed plain: plain routing, no fields this run, or a net no priced pair's current uses."""
+        return (self.plain or not getattr(self, "_fields", True)
+                or (self.pair_terms is not None and n not in self.phys_nets))
+
     def _repair(self):
         """After every net: the pours refilled on the finished copper can have pulled back from pads the
         router counted as joined through them; route each priced net that has come apart again."""
-        if self.plain:
+        if self.plain or not getattr(self, "_fields", True):
             self._islands_only()
         else:
             self.solve_fields()
         torn = [n for n in self.nets if len([g for g in self.islands.get(n, []) if g]) > 1]
         for n in torn:
             self.log(f"pnr: repair: {n} has {len(self.islands[n])} islands on the refilled copper; routing them")
-            res = self._route_net(n, plain=self.plain)
+            res = self._route_net(n, plain=self._plain_for(n))
             if res["failed"]:
                 res = self._repair_ripping(n, res)
             self.failed += res["failed"]
@@ -817,10 +867,10 @@ class PhysRouter:
             self.vias = [v for v in self.vias if v[0] != X]
         ok = {q for N in [n] + near for q in self.bd.pads_of.get(N, [])}
         self.islands[n] = self._exact_islands(n, ok)
-        res2 = self._route_net(n, plain=self.plain)
+        res2 = self._route_net(n, plain=self._plain_for(n))
         for X in near:
             self.islands[X] = self._exact_islands(X, ok)
-            r = self._route_net(X, plain=self.plain)
+            r = self._route_net(X, plain=self._plain_for(X))
             res2["failed"] += r["failed"]
         return res2
 
@@ -1227,6 +1277,43 @@ class PhysRouter:
         return None
 
 
+def open_nets(path, log=print):
+    """Nets KiCad's DRC (refilled) reports unconnected on a board: what the input itself leaves open."""
+    import json
+    import re
+    import subprocess
+    out = Path(tempfile.mkdtemp(prefix="kae-open-")) / "drc.json"
+    wrap = os.environ.get("KAE_KICAD_WRAP", "")
+    try:
+        subprocess.run(f"{wrap} kicad-cli pcb drc --refill-zones --format json --severity-error -o {out} {path}",
+                       shell=True, check=True, capture_output=True, timeout=1800)
+        drc = json.loads(out.read_text())
+    except Exception as e:                           # noqa: BLE001 - without it every torn net counts as ours
+        log(f"pnr: the input's DRC did not run ({type(e).__name__}); its open nets are unknown")
+        return set()
+    return {m.group(1) for u in drc.get("unconnected_items", []) for it in u.get("items", [])
+            for m in [re.search(r"\[([^\]]+)\]", it.get("description") or "")] if m}
+
+
+def route_whole(path, out, passes=3, log=print, **kw):
+    """Route, and give back to the input every net the router left in more pieces than the input has it:
+    the next pass keeps those nets exactly as the input has them and routes the rest again. Each net ends
+    newly routed and whole, or as it was; never less connected than the input."""
+    already = open_nets(path, log)
+    keep = set()
+    r = None
+    for k in range(passes):
+        r = PhysRouter(path, out, keep=keep, log=log, **kw).route()
+        bad = set(getattr(r, "torn", [])) - already
+        if not bad:
+            break
+        log(f"pnr: pass {k + 1}: {sorted(bad)} not routed whole; kept as the input has them in pass {k + 2}")
+        keep |= bad
+    else:
+        log(f"pnr: after {passes} passes still torn: {sorted(set(r.torn) - already)}")
+    return r
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="kae.em.pnr")
     ap.add_argument("board")
@@ -1245,14 +1332,16 @@ def main(argv=None):
                     help="prices weighted over the whole spectrum from a reduced model per refresh (kae.em.spectral)")
     ap.add_argument("--workers", type=int, default=1, help="--spectral: snapshot frequencies solved at once")
     ap.add_argument("--work", help="work directory (default: a new temporary one)")
+    ap.add_argument("--passes", type=int, default=3,
+                    help="routing passes: a net a pass leaves in pieces is kept as the input has it in the next")
     a = ap.parse_args(argv)
     from kae.excite.beliefs import load_intent
     facts, goal = load_intent(a.intent), None
     if facts.get("schema") == "kae.intent/1":            # the commander's intent: its facts and its goal
         goal, facts = facts, facts.get("facts") or {}
-    PhysRouter(a.board, a.out, pitch=a.pitch, lam=a.lam, plain=a.plain, refresh=a.refresh, verify=a.verify,
-               intent=facts, seed=a.seed, work=a.work, capacitive=not a.no_capacitive,
-               spectral=dict(workers=a.workers) if a.spectral else False, goal=goal).route()
+    route_whole(a.board, a.out, passes=a.passes, pitch=a.pitch, lam=a.lam, plain=a.plain, refresh=a.refresh,
+                verify=a.verify, intent=facts, seed=a.seed, work=a.work, capacitive=not a.no_capacitive,
+                spectral=dict(workers=a.workers) if a.spectral else False, goal=goal)
 
 
 if __name__ == "__main__":
