@@ -582,6 +582,19 @@ class World:
                 out.append((l, y + cy, x + cx))
         return out
 
+    def terminal_array(self, pi, k):
+        """terminals() as an int64 array (n, 3), in the same order (the routers' hot path)."""
+        cx, cy, ri = self.pose[pi]
+        ent = self.raster(pi)["pads"][k]
+        cache = self.__dict__.setdefault("_term_cache", {})  # id(ent) -> (ent, cells)
+        hit = cache.get(id(ent))
+        if hit is not None and hit[0] is ent:
+            base = hit[1]
+        else:
+            base = np.array([(l, y, x) for l in ent["layers"] for (x, y) in ent["cu"]], np.int64).reshape(-1, 3)
+            cache[id(ent)] = (ent, base)
+        return base + np.array((0, cy, cx), np.int64)
+
     def pad_world(self, pi, k):
         cx, cy, ri = self.pose[pi]
         ent = self.raster(pi)["pads"][k]
