@@ -1,0 +1,55 @@
+{"repo": "https://gitlab.com/kicad/code/kicad.git#qa/data/pcbnew/plugins/allegro/boards/VCU118_REV2-0", "reason": "Xilinx VCU118 eval board design files - vendor proprietary terms, not open"}
+{"repo": "https://gitlab.com/kicad/code/kicad.git#qa/data/pcbnew/plugins/allegro/boards/MIMXRT1170_EVKB", "reason": "NXP EVK design files under NXP terms (registry says 'NXP design files'); proprietary"}
+{"repo": "https://gitlab.com/kicad/code/kicad.git#qa/data/pcbnew/plugins/allegro/boards/BeagleBone_Black_RevC", "reason": "no licence in registry or in github.com/beagleboard/beaglebone-black; not taking KiCad blanket GPL for third-party board"}
+{"repo": "https://gitlab.com/kicad/code/kicad.git#qa/data/pcbnew/plugins/allegro/boards/EVK_BaseBoard + EVK_SOM, ProiectBoard, TRS80_POWER, mainBoard*, led_youtube", "reason": "unknown third-party origin, no licence stated"}
+{"repo": "https://gitlab.com/kicad/code/kicad.git#qa/data/pcbnew/plugins/altium/* (HiFive1.B01, eDP_adapter_dvt1, Fastino_Ground_Isolator, OpenRex reduced, issue PCB1)", "reason": "third-party Altium boards with no licence in tree; Fastino upstream repo has no licence file"}
+{"repo": "https://gitlab.com/kicad/code/kicad.git#qa/data/pcbnew/plugins/pads/issue23425/controlCARDDockingStation.asc", "reason": "TI controlCARD docking station - vendor design, no open licence"}
+{"repo": "https://gitlab.com/kicad/code/kicad.git#qa/data/pcbnew/plugins/allegro/boards/parallella_v163, Olympus, BeagleBone-AI-64", "reason": "only binary block fragments (.bin), no full board file"}
+{"repo": "https://gitlab.com/kicad/code/kicad.git#qa/data/pcbnew/plugins/legacy_demos/*", "reason": "KiCad legacy .brd copies of demos (duplicates of kicad_pcb demos)"}
+{"repo": "https://github.com/openwch/ch32v003", "reason": "boards present (KiCad/Altium EVT) but no licence file or licence statement in repo"}
+{"repo": "https://github.com/openwch/ch32v307", "reason": "boards present (KiCad/Altium EVT) but no licence file or licence statement in repo"}
+{"repo": "https://github.com/openwch/ch32v20x", "reason": "boards present (KiCad/Altium EVT) but no licence file or licence statement in repo"}
+{"repo": "https://github.com/openwch/ch32x035", "reason": "boards present (KiCad/Altium EVT) but no licence file or licence statement in repo"}
+{"repo": "https://github.com/openwch/ch34x", "reason": "boards present (KiCad/Altium EVT) but no licence file or licence statement in repo"}
+{"repo": "https://github.com/openwch/ch569", "reason": "boards present (KiCad/Altium EVT) but no licence file or licence statement in repo"}
+{"repo": "https://github.com/openwch/nfc", "reason": "boards present (KiCad/Altium EVT) but no licence file or licence statement in repo"}
+{"repo": "https://github.com/openwch/ch32h417", "reason": "boards present (KiCad/Altium EVT) but no licence file or licence statement in repo"}
+{"repo": "https://github.com/openwch/ch32v103", "reason": "boards present (KiCad/Altium EVT) but no licence file or licence statement in repo"}
+{"repo": "https://github.com/openwch/ch32l103", "reason": "boards present (KiCad/Altium EVT) but no licence file or licence statement in repo"}
+{"repo": "https://github.com/openwch/ch334", "reason": "boards present (KiCad/Altium EVT) but no licence file or licence statement in repo"}
+{"repo": "https://github.com/openwch/ch32v002_004_005_006_007", "reason": "boards present (KiCad/Altium EVT) but no licence file or licence statement in repo"}
+{"repo": "https://github.com/openwch/ch32v407_ch32v467", "reason": "boards present (KiCad/Altium EVT) but no licence file or licence statement in repo"}
+{"repo": "https://github.com/openwch/ch32f20x", "reason": "boards present (KiCad/Altium EVT) but no licence file or licence statement in repo"}
+{"repo": "https://github.com/openwch/ch641", "reason": "boards present (KiCad/Altium EVT) but no licence file or licence statement in repo"}
+{"repo": "https://github.com/openwch/ch32x315", "reason": "boards present (KiCad/Altium EVT) but no licence file or licence statement in repo"}
+{"repo": "https://github.com/hackclub/hackducky", "reason": "no root licence; only one submission subfolder has MIT"}
+{"repo": "https://github.com/hackclub/thing", "reason": "no licence"}
+{"repo": "https://github.com/hackclub/the-trail", "reason": "no board files on default branch"}
+{"repo": "https://www.espressif.com/en/support/download/documents/development-board", "reason": "dev-kit reference design zips: download blocked by bot check; no open licence stated on page (Espressif design files not Apache-licensed)"}
+{"repo": "https://gitlab.fabcloud.org/academany/fabacademy/2019/labs/crunchlab/students/michele-turco", "reason": "NoDerivatives licence on site: CC-BY-NC-ND-4.0"}
+{"repo": "https://gitlab.fabcloud.org/academany/fabacademy/2020/labs/bahrain/students/abduljalil-alkoheji", "reason": "NoDerivatives licence on site: CC-BY-NC-ND-4.0"}
+{"repo": "https://gitlab.fabcloud.org/academany/fabacademy/2021/labs/barcelona/students/nil-peguero", "reason": "NoDerivatives wording on site: 25\u20ac LICENSE CC-BY-NC (Creative Commons Atributtion + NonCommercial + ShareAlike) CC-BY-ND (Creattive Commons Atributtion + Non Commercial + NoDerivate"}
+{"repo": "https://gitlab.fabcloud.org/academany/fabacademy/2021/labs/dassault/students/griffin-vanhorne", "reason": "NoDerivatives licence on site: CC-BY-NC-ND-4.0"}
+{"repo": "https://gitlab.fabcloud.org/academany/fabacademy/2022/labs/vigyanashram/students/vrushabh-zunjurkar", "reason": "NoDerivatives licence on site: CC-BY-NC-ND-4.0"}
+{"repo": "https://gitlab.cba.mit.edu/academy/classes", "reason": "Neil Gershenfeld class hello-boards (20 kicad_pcb): permissive CBA notice appears only in sibling code files (.ino/.py), not on board files or repo-wide; licence for board files not explicit"}
+{"repo": "https://gitlab.cba.mit.edu/ampennes/classes", "reason": "fork/mirror of academy/classes; same licence issue"}
+{"repo": "https://gitlab.fel.cvut.cz/open-cube/hardware", "reason": "README License: TODO"}
+{"repo": "https://gitlab.fel.cvut.cz/canbus/zynq/canbech-hw", "reason": "CC BY-SA 3.0 note scoped to lib footprints only"}
+{"repo": "https://gitlab.cern.ch/*", "reason": "~40 other KiCad boards (berkeleylab/kicad/*, padeken/*, mightypix/*, dejardin/*, sbiereig/*) with no licence"}
+{"repo": "https://git.gsi.de, git.tu-berlin.de, gitlab.in2p3.fr, gitlab.mpcdf.mpg.de, gitlab.desy.de (various)", "reason": "~9 university/lab KiCad boards found via public GitLab search; none carries a licence"}
+{"repo":"https://gitlab.com/fablabbcn-projects/electronics/bar-levelshifter","reason":"no licence"}
+{"repo": "https://gitlab.fabcloud.org/academany/fabacademy/2018/labs/fablabesan/students/gerardoezequiel-sazgarcia", "reason": "site states CC-BY-NC-ND"}
+{"repo":"https://github.com/emfcamp/TiDAL-Hardware","reason":"no licence file"}
+{"repo": "https://gitlab.com/kicad/code/kicad.git#qa/data/pcbnew (issue*.kicad_pcb, stonehenge, connect)", "reason": "dropped to respect 15-per-repo cap: ~28 user-submitted full-board regression files (>=20 footprints) under KiCad's blanket GPL-3.0-or-later (LICENSE.README 'All remaining code'); weak per-board licence evidence. Lead if cap is relaxed: e.g. issue7325 HomeControl, issue22267 EIC KLM SiPM power board, issue6039 LoRa-RS485 bridge, issue16182 grblPANEL, issue5830 I2C soil sensor."}
+{"repo": "https://gitlab.fabcloud.org/academany/fabacademy/2021/labs/barcelona/students/carla-molins", "reason": "NoDerivatives licence on site: CC-BY-NC-ND-4.0"}
+{"repo": "https://gitlab.fabcloud.org/academany/fabacademy/2022/labs/vigyanashram/students/jaydeep-parejiya", "reason": "NoDerivatives licence on site: CC-BY-ND-4.0"}
+{"repo": "https://gitlab.fabcloud.org/academany/fabacademy/2023/labs/vigyanashram/students/sanjay-surage", "reason": "NoDerivatives licence on site: CC-BY-NC-ND-4.0"}
+{"repo":"https://gitlab.fabcloud.org/academany/fabacademy/2024/labs/waag/students/joe-wallace","reason":"site states CC BY-NC-ND 4.0"}
+{"repo": "https://gitlab.fabcloud.org/FabISPmk2/FabPDI", "reason": "no licence file/statement"}
+{"repo": "https://gitlab.fabcloud.org/FabSerial/version-1.1_5V", "reason": "no licence file/statement"}
+{"repo": "https://gitlab.fabcloud.org/FabSerial/version-1.2_3V3", "reason": "no licence file/statement"}
+{"repo": "https://gitlab.fabcloud.org/pub/helloworld/index", "reason": "no licence file/statement"}
+{"repo": "https://gitlab.fabcloud.org/pub/project/bootcamp-2026/drv8263-board", "reason": "no licence file/statement"}
+{"repo": "https://gitlab.fabcloud.org/pub/project/bootcamp-2026/power-almost-anything", "reason": "no licence file/statement"}
+{"repo": "https://gitlab.fabcloud.org/pub/project/bootcamp-2026/stm32-dev-board", "reason": "no licence file/statement"}
+{"repo": "https://gitlab.fabcloud.org/pub/project/fab23/machine_workshop", "reason": "no licence file/statement"}

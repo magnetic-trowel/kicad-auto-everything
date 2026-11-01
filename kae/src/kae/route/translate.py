@@ -457,18 +457,22 @@ def plane_layers(info, share=PLANE_SHARE):
     return {l: v[0] for l, v in out.items()}
 
 
-def layer_rules(names, is_plane, is_signal, k=PLANE_COST):
+OUTER_SURCHARGE = 0.2      # Freerouting's own default: outer layers cost this much more per signal layer
+
+
+def layer_rules(names, is_plane, is_signal, k=PLANE_COST, outer=OUTER_SURCHARGE):
     """A Specctra rules file (text) whose autoroute_settings give every layer its trace costs:
-    1 per unit length in the preferred direction and 2 against it, outer layers 0.2 per
-    signal layer more when there are more than two (Freerouting's own defaults), and plane
-    layers k times that. None when no layer is a plane."""
-    if not any(is_plane):
+    1 per unit length in the preferred direction and 2 against it, outer layers `outer` per
+    signal layer more when there are more than two (Freerouting's own default 0.2), and plane
+    layers k times that. None when no layer is a plane and the outer surcharge is
+    Freerouting's own."""
+    if not any(is_plane) and outer == OUTER_SURCHARGE:
         return None
     n = len(names)
     sig = sum(1 for x in is_signal if x)
     out = ["(rules PCB board", "  (autoroute_settings"]
     for i, (name, pl) in enumerate(zip(names, is_plane)):
-        base = 1.0 + (0.2 * sig if sig > 2 and i in (0, n - 1) else 0.0)
+        base = 1.0 + (outer * sig if sig > 2 and i in (0, n - 1) else 0.0)
         c = base * (k if pl else 1.0)
         out.append(f"    (layer_rule {atom_name(name)} (preferred_direction_trace_costs {fmt(c)})"
                    f" (against_preferred_direction_trace_costs {fmt(2.0 * c)}))")
@@ -492,10 +496,10 @@ def write_rules(plan, dsn_path):
         r.unlink()
 
 
-def mark_plane_layers(layers, cu, info):
+def mark_plane_layers(layers, cu, info, planes=None):
     """Write `(type power)` on the DSN `layers` (structure layer nodes, in `cu` order) that
-    are inner planes (plane_layers). Returns the layers changed."""
-    planes = plane_layers(info)
+    are inner planes (plane_layers, or the copper layers `planes`). Returns the layers changed."""
+    planes = plane_layers(info) if planes is None else set(planes)
     made = []
     for c, l in zip(cu, layers):
         k = find(l, "type")
@@ -539,15 +543,20 @@ def apply(tree, plan, info):
         for k in kinds:
             k[1] = "signal"
         summary["power_layers_unblocked"] = len(kinds)
-    elif getattr(plan, "plane_policy", "signal") == "power":
-        made = mark_plane_layers(layers, cu, info)
+    elif getattr(plan, "plane_policy", "signal") in ("power", "cost"):
+        # "cost" makes power layers of the attempt's strict planes only (bridge.strict_share)
+        made = mark_plane_layers(layers, cu, info, None if plan.plane_policy == "power"
+                                 else getattr(plan, "strict_planes", None) or ())
         if made:
             summary["plane_layers_power"] = made
     plan.layer_rules = None
-    if getattr(plan, "plane_policy", "signal") == "cost":
-        plan.layer_rules = layer_rules(dsn_names, [c in plane_layers(info) for c in cu],
+    outer = getattr(plan, "outer_surcharge", None)
+    outer = OUTER_SURCHARGE if outer is None else float(outer)
+    if getattr(plan, "plane_policy", "signal") == "cost" or outer != OUTER_SURCHARGE:
+        cost = getattr(plan, "plane_policy", "signal") == "cost"
+        plan.layer_rules = layer_rules(dsn_names, [cost and c in plane_layers(info) for c in cu],
                                        [str((find(l, "type") or [None, "signal"])[1]) == "signal" for l in layers],
-                                       getattr(plan, "plane_cost", None) or PLANE_COST)
+                                       getattr(plan, "plane_cost", None) or PLANE_COST, outer)
         if plan.layer_rules:
             summary["plane_layers_costed"] = [c for c in cu if c in plane_layers(info)]
 
@@ -696,16 +705,81 @@ def apply(tree, plan, info):
     return summary
 
 
-def permute(tree, seed):
+def permute(tree, seed, first=()):
     """Shuffle the order of components, of their placements and of nets in a DSN `tree`
     (in place, reproducibly from `seed`; 0 leaves it as it is). Returns whether it changed.
 
     Freerouting 2.5.0 is deterministic and routes the open items in the order the DSN
     created them (pins in placement order; net numbers in network order break ties), so an
-    attempt with another order is another, equally valid attempt."""
-    if not seed:
+    attempt with another order is another, equally valid attempt.
+
+    `first`: nets to route before the rest, most urgent first (the nets earlier attempts left
+    open: route_first). After the shuffle, those nets lead the network, and the placements
+    holding their pins lead the placement (a part with an urgent net first, the parts with
+    fewer pins first among equals), the rest in the shuffled order."""
+    changed = False
+    if seed:
+        changed = _shuffle(tree, random.Random(seed))
+    if first:
+        changed |= _put_first(tree, list(first))
+    return changed
+
+
+def route_first(history, limit=None):
+    """Nets in the order to route them from a failure history {net: times left open}: most
+    often open first, ties by name (reproducible)."""
+    nets = sorted(((-int(n), str(net)) for net, n in (history or {}).items() if n), key=lambda t: t)
+    return [net for _, net in nets][:limit]
+
+
+def _put_first(tree, first):
+    from .lastmile import unescape
+    rank = {}
+    for i, n in enumerate(first):
+        rank.setdefault(n, i)
+    network = find(tree, "network")
+    if network is None:
         return False
-    rnd = random.Random(seed)
+    nets = [c for c in network if isinstance(c, list) and c and c[0] == "net"]
+
+    def net_rank(c):
+        name = str(c[1]) if len(c) > 1 else ""
+        return rank.get(name, rank.get(unescape(name), len(first)))
+    ref_rank, ref_pins = {}, {}
+    for c in nets:
+        r = net_rank(c)
+        for pins in (x for x in c if isinstance(x, list) and x and x[0] == "pins"):
+            for pin in pins[1:]:
+                ref = str(pin).split("@")[0].rsplit("-", 1)[0]
+                ref_pins[ref] = ref_pins.get(ref, 0) + 1
+                if r < len(first):
+                    ref_rank[ref] = min(ref_rank.get(ref, r), r)
+    if not ref_rank:
+        return False
+    idx = [i for i, c in enumerate(network) if isinstance(c, list) and c and c[0] == "net"]
+    for i, c in zip(idx, sorted(nets, key=net_rank)):     # stable: the shuffled order among equals
+        network[i] = c
+    placement = find(tree, "placement")
+    if placement is not None:
+        def place_key(pl):
+            ref = str(pl[1]) if len(pl) > 1 else ""
+            return (ref_rank.get(ref, len(first)), ref_pins.get(ref, 0) if ref in ref_rank else 0)
+        comps = []
+        for comp in (c for c in placement if isinstance(c, list) and c and c[0] == "component"):
+            pi = [i for i, x in enumerate(comp) if isinstance(x, list) and x and x[0] == "place"]
+            ps = sorted((comp[i] for i in pi), key=place_key)
+            for i, x in zip(pi, ps):
+                comp[i] = x
+            comps.append(comp)
+        ci = [i for i, c in enumerate(placement) if isinstance(c, list) and c and c[0] == "component"]
+        for i, c in zip(ci, sorted(comps, key=lambda c: min([place_key(x) for x in c
+                                                                if isinstance(x, list) and x and x[0] == "place"]
+                                                               or [(len(first), 0)]))):
+            placement[i] = c
+    return True
+
+
+def _shuffle(tree, rnd):
 
     def shuffle_children(node, head):
         idx = [i for i, c in enumerate(node) if isinstance(c, list) and c and c[0] == head]
@@ -785,3 +859,37 @@ def _unsnap(net_out, snaps, scale):
                     n += 1
                     break
     return n
+
+
+def fill_planes(info, fills):
+    """{inner copper layer: (net, share)}: the net whose refilled zone copper (pcbnew_io.zone_fills
+    records) covers the most of the board outline on each inner layer, and that share."""
+    from shapely.ops import unary_union
+    cu = list(info.get("copper") or [])
+    inner = set(cu[1:-1])
+    if not inner:
+        return {}
+
+    def polys(rings_list):
+        out = []
+        for rings in rings_list or []:
+            if rings and len(rings[0]) >= 3:
+                pg = Polygon(rings[0], [h for h in rings[1:] if len(h) >= 3])
+                out.append(pg if pg.is_valid else pg.buffer(0))
+        return out
+    board = unary_union(polys(info.get("outline")))
+    if board.area <= 0:
+        return {}
+    by = {}
+    for z in fills or []:
+        if z.get("teardrop") or not z.get("net"):
+            continue
+        for l, rl in (z.get("layers") or {}).items():
+            if l in inner:
+                by.setdefault((l, z["net"]), []).extend(polys(rl))
+    out = {}
+    for (l, net), ps in by.items():
+        a = unary_union(ps).intersection(board).area / board.area
+        if a > out.get(l, (None, 0.0))[1]:
+            out[l] = (net, a)
+    return out

@@ -665,4 +665,9 @@ def strictest(board, ctype, a, b=None, layer=None):
         out.min, out.rule = c1.min, c1.rule + " (inside its area)"
     if c1.max is not None and (out.max is None or c1.max < out.max):
         out.max = c1.max
+    # a clearance check the board's project turns off (rule severity ignore/warning/...):
+    # KiCad's DRC reports nothing of that type, so only the floor holds (Board.ignored)
+    floor = (getattr(board, "ignored", None) or {}).get(ctype)
+    if floor is not None and out.min is not None and out.min > floor:
+        out.min, out.rule = floor, f"{ctype} not checked on this board (floor {floor} mm)"
     return out

@@ -1,6 +1,7 @@
 # Open board sources for the benchmark harness
 
 **TL;DR**
+- **Second pass (2026-10-21): 14,318 more boards** in [`wide.jsonl`](../../../bench/manifests/wide.jsonl) + [`wide-noncommercial.jsonl`](../../../bench/manifests/wide-noncommercial.jsonl), de-duplicated by content, with KiCad 10.0.7 stats and DRC; NC accepted in its own tier, ND still excluded. See [wide-board-corpus.md](wide-board-corpus.md) [P, measured].
 - **We ship a pointer manifest, not boards.** [`bench/manifests/candidates.jsonl`](../../../bench/manifests/candidates.jsonl) lists **297 vetted boards**: each row has repo, pinned commit, path, sha256, licence and the licence file at that commit, plus our KiCad 10.0.7 stats and DRC result. Unlicensed, NC and ND boards are excluded [P, measured].
 - **Mix:**
   - by licence: permissive 159, copyleft 72, reciprocal-hardware 54, weak-copyleft 12;
@@ -161,4 +162,4 @@ Sources and URLs: [research notes § Q1](../../../research_notes/LLM%20driven%20
   - [BenchPCNP](https://figshare.com/articles/dataset/BenchPCNP_Benchmark_Dataset_for_Printed_Circuit_Board_Netlist_Processing/30020125)
   - [Cypress](https://github.com/NVlabs/Cypress/tree/743b07c4e33dc52a00584d55d2e67f38f70957f5)
 
-See also: [corpora-and-yield.md](corpora-and-yield.md), [licensing-tiers-and-contamination.md](licensing-tiers-and-contamination.md), [data-pipeline-plan.md](data-pipeline-plan.md), [../verification/benchmarks.md](../verification/benchmarks.md), [../routing/pcbworld.md](../routing/pcbworld.md), [../placement/benchmarks-and-metrics.md](../placement/benchmarks-and-metrics.md)
+See also: [local-board-corpus.md](local-board-corpus.md) (all accepted boards as one local folder), [corpora-and-yield.md](corpora-and-yield.md), [licensing-tiers-and-contamination.md](licensing-tiers-and-contamination.md), [data-pipeline-plan.md](data-pipeline-plan.md), [../verification/benchmarks.md](../verification/benchmarks.md), [../routing/pcbworld.md](../routing/pcbworld.md), [../placement/benchmarks-and-metrics.md](../placement/benchmarks-and-metrics.md)

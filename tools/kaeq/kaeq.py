@@ -78,11 +78,33 @@ DEFAULTS = {
     "emergency_frac": 0.75,  # free memory below this share of the reserve preempts the newest job
     "warmup_s": 300,         # a new job keeps its declared --mem reserved this long; then its observed peak * peak_margin
     "peak_margin": 1.25,
+    # memory set aside for running jobs' peaks: "peak" = the sum of every job's peak (as if all peak at once);
+    # "pooled" = statistical: jobs rarely peak together, so set aside mean + mem_pool_z std of their combined
+    # growth, from how jobs of the same owner spent their lifetime (memory histograms of finished jobs)
+    "mem_pool": "measured",
+    # "measured": set aside what the running jobs together have actually grown by: the largest rise of their
+    # summed RSS within any mem_rise_window_s over the last mem_rise_history_s (new starts and finishes excluded),
+    # x mem_rise_margin; at least the largest single job's headroom; plus warming-up jobs' needs. Falls back to
+    # "pooled" until mem_rise_window_s of history exists
+    "mem_rise_window_s": 3600,
+    "mem_rise_history_s": 86400,
+    "mem_rise_margin": 1.25,
+    "mem_pool_z": 2.0,       # std deviations of headroom (2: ~2% of moments short if independent; the backstop
+                             # preempts the newest job if free RAM really runs low)
+    "mem_pool_margin": 1.1,  # pooled jobs may reach their observed peak x this (others: peak_margin)
+    "mem_pool_rho": 0.5,     # prior correlation between jobs of one owner (0 = independent, 1 = in lockstep); the
+                             # daemon measures it from concurrent jobs' RSS and uses the prior only as 2 pseudo-pairs
+    "mem_pool_min_jobs": 3,  # finished jobs with a histogram an owner needs before its jobs are pooled
+    # admission and warm-up on what jobs really use: once an owner has mem_learn_min_jobs finished jobs, a new job
+    # of it needs its --mem x (p95 of the owner's peak/--mem) x mem_learn_margin, never more than --mem
+    "mem_learn_min_jobs": 20,
+    "mem_learn_margin": 1.2,
     "starts_per_tick": 1,    # ramp: at most this many job starts every 2 s, so new jobs show their memory before more start
     "cpu_affinity": "auto",  # auto: pin jobs to the first threads-reserve_cpu CPUs (a hard cap); off; or e.g. "0-101"
     "max_running": 256,
     "mem_overrun": 1.5,      # kill a job whose RSS exceeds declared * this (+1 GB)
-    "starve_after_s": 600,   # a head-of-line job waiting this long blocks backfill
+    "starve_after_s": 600,   # a head-of-line job waiting this long blocks backfill, except short jobs:
+    "backfill_short_s": 1800,  # an owner whose recent jobs (p90) end within this may still backfill; 0 = never
     "cgroup": "auto",        # auto|on|off: wrap jobs in `systemd-run --user --scope`
     "slice": "kaeq.slice",   # systemd user slice for job scopes (install-service caps its memory); "" = none
     "scratch_dir": "",       # per-job scratch dirs ($KAEQ_SCRATCH), deleted when the job ends; "" = /var/tmp/$USER/kaeq-scratch
@@ -97,7 +119,8 @@ CREATE TABLE IF NOT EXISTS jobs(
  attempt INTEGER DEFAULT 1, retries_left INTEGER DEFAULT 0, preempts INTEGER DEFAULT 0,
  submitted REAL, started REAL, finished REAL, not_before REAL DEFAULT 0, deadline REAL,
  pid INTEGER, rc INTEGER, peak_mb INTEGER DEFAULT 0, note TEXT,
- root TEXT, branch TEXT, sha TEXT, rel TEXT, links TEXT, disk_mb INTEGER DEFAULT 1024, disk_peak_mb INTEGER DEFAULT 0);
+ root TEXT, branch TEXT, sha TEXT, rel TEXT, links TEXT, disk_mb INTEGER DEFAULT 1024, disk_peak_mb INTEGER DEFAULT 0,
+ mem_hist TEXT);
 CREATE INDEX IF NOT EXISTS jobs_state ON jobs(state);
 CREATE TABLE IF NOT EXISTS events(
  id INTEGER PRIMARY KEY, ts REAL, owner TEXT, job INTEGER, kind TEXT, msg TEXT,
@@ -137,7 +160,7 @@ def db(restore=False):
     c.execute("PRAGMA journal_mode=WAL")
     c.executescript(SCHEMA)
     have = {r[1] for r in c.execute("PRAGMA table_info(jobs)")}
-    for col in ("root", "branch", "sha", "rel", "links"):  # upgrade a pre-snapshot database
+    for col in ("root", "branch", "sha", "rel", "links", "mem_hist"):  # upgrade an older database
         if col not in have:
             c.execute(f"ALTER TABLE jobs ADD COLUMN {col} TEXT")
     for col, dflt in (("disk_mb", 1024), ("disk_peak_mb", 0)):  # upgrade a pre-scratch database
@@ -357,9 +380,146 @@ def kill_tree(pid, cg=None, sig=signal.SIGKILL):
         pass
 
 
+MEM_BINS = 20
+
+
+def mem_hist(samples, peak):
+    """How a job spent its life: counts of RSS samples in MEM_BINS equal slices of its peak."""
+    h = [0] * MEM_BINS
+    for r in samples:
+        h[min(MEM_BINS - 1, int(r / peak * MEM_BINS))] += 1
+    return h
+
+
+def pooled_headroom(jobs, z, rho, rho_of=None):
+    """Memory to set aside for running jobs' growth when they rarely peak together.
+    jobs: [(owner, expect_mb, rss_mb, profile or None)]: expect = the most it may reach (its peak x
+    margin, or its declared --mem while it warms up); profile = share of lifetime its owner's jobs
+    spend at each slice of their peak (MEM_BINS weights). A job without a profile counts its whole
+    headroom (expect - rss). A profiled job's RSS at a random moment is expect x (slice upper edge),
+    so its growth is max(0, that - rss): mean + z std over all of them, jobs of one owner correlated
+    by rho (or rho_of[owner], measured), owners independent; never less than the largest single
+    headroom, never more than the sum. Returns (set aside, sum of headrooms)."""
+    full = worst = 0.0
+    biggest = 0.0
+    mu = 0.0
+    var = 0.0
+    by_owner = {}
+    for owner, expect, rss, prof in jobs:
+        room = max(0.0, expect - rss)
+        worst += room
+        if prof is None:
+            full += room
+            continue
+        biggest = max(biggest, room)
+        g = [max(0.0, expect * (k + 1) / MEM_BINS - rss) for k in range(MEM_BINS)]  # growth if at slice k
+        m = sum(w * x for w, x in zip(prof, g))
+        m2 = sum(w * x * x for w, x in zip(prof, g))
+        sd = max(0.0, m2 - m * m) ** 0.5
+        mu += m
+        o = by_owner.setdefault(owner, [0.0, 0.0])
+        o[0] += sd
+        o[1] += sd * sd
+    for owner, (lin, sq) in by_owner.items():
+        r = (rho_of or {}).get(owner, rho)
+        var += (1 - r) * sq + r * lin * lin
+    pooled = max(biggest, mu + z * var ** 0.5)
+    return min(worst, full + pooled), worst
+
+
+def max_rise(series, window):
+    """Largest G[j] - G[i] with i <= j and t_j - t_i <= window, over [(t, G)] sorted by t (a sliding minimum)."""
+    from collections import deque
+    best, q = 0.0, deque()  # indexes of increasing G within the window
+    for j, (t, g) in enumerate(series):
+        while q and series[q[0]][0] < t - window:
+            q.popleft()
+        while q and series[q[-1]][1] >= g:
+            q.pop()
+        q.append(j)
+        best = max(best, g - series[q[0]][1])
+    return best
+
+
+def pearson(a, b):
+    n = len(a)
+    ma, mb = sum(a) / n, sum(b) / n
+    va, vb = sum((x - ma) ** 2 for x in a), sum((y - mb) ** 2 for y in b)
+    if va <= 0 or vb <= 0:
+        return None
+    return sum((x - ma) * (y - mb) for x, y in zip(a, b)) / (va * vb) ** 0.5
+
+
+def owner_correlation(series, prior, window=90, min_samples=30):
+    """Correlation between one owner's concurrently running jobs, measured: the mean Pearson r over
+    pairs of their last `window` RSS samples (taken on the same ticks), negative r counted as 0 and
+    pairs where either job is flat (coefficient of variation < 5%) skipped, shrunk towards `prior`
+    as 2 pseudo-pairs. series: [RSS samples] per job. Returns (rho, pairs used)."""
+    ok = []
+    for s in series:
+        if len(s) >= min_samples:
+            t = s[-window:]
+            m = sum(t) / len(t)
+            if m > 0 and (sum((x - m) ** 2 for x in t) / len(t)) ** 0.5 / m >= 0.05:
+                ok.append(t)
+    rs = []
+    for i in range(len(ok)):
+        for k in range(i + 1, len(ok)):
+            n = min(len(ok[i]), len(ok[k]))
+            r = pearson(ok[i][-n:], ok[k][-n:])
+            if r is not None:
+                rs.append(max(0.0, r))
+    return (sum(rs) + 2 * prior) / (len(rs) + 2), len(rs)
+
+
+def warm_headroom(jobs, z):
+    """What jobs still warming up may yet grow by. jobs: [(rss, full_headroom, mem_mb, ratios or None)]:
+    ratios = the owner's finished jobs' peak/--mem; without them a job counts its full headroom. With
+    them, a job's peak is --mem x a random draw from those ratios (job sizes vary independently from
+    one board to the next): mean + z std of the growth, at least the largest single headroom,
+    capped at its full headroom per job and at the sum overall."""
+    full = worst = biggest = mu = var = 0.0
+    for rss, room, mem, rs in jobs:
+        worst += room
+        if not rs:
+            full += room
+            continue
+        g = [min(room, max(0.0, mem * r - rss)) for r in rs]
+        m = sum(g) / len(g)
+        mu += m
+        var += sum((x - m) ** 2 for x in g) / len(g)
+        biggest = max(biggest, room)
+    return min(worst, full + max(biggest, mu + z * var ** 0.5))
+
+
+RISE_HIST = os.path.join(HOME, f"memrise.{HOST}.json")
+
+
+def load_rise_hist():
+    try:
+        with open(RISE_HIST) as f:
+            return [tuple(x) for x in json.load(f)]
+    except (OSError, ValueError, TypeError):
+        return []
+
+
+TICK_HZ = os.sysconf("SC_CLK_TCK")
+
+
+def runnable_threads():
+    """Threads ready to run right now, over the whole machine (procs_running, minus this one)."""
+    with open("/proc/stat") as f:
+        for line in f:
+            if line.startswith("procs_running"):
+                return max(0, int(line.split()[1]) - 1)
+    return 0
+
+
 def job_usage(j, sessions, per_pid, cgroups):
     """(rss_mb, cpu_ticks) of a job: every process in its scope (children that start their own
-    session stay in it), else every process in its session."""
+    session stay in it), else every process in its session. CPU comes from the scope's cpu.stat
+    when it has one: it includes children that have already exited (a job running many short
+    subprocesses otherwise looks idle)."""
     cg = cgroups.get(j["id"]) or job_cgroup(j["pid"])
     if cg:
         cgroups[j["id"]] = cg
@@ -371,6 +531,12 @@ def job_usage(j, sessions, per_pid, cgroups):
                 r, t = per_pid.get(q, (0.0, 0))
                 rss += r
                 ticks += t
+            try:
+                with open(os.path.join(cg, "cpu.stat")) as f:
+                    usec = int(f.readline().split()[1])  # usage_usec
+                ticks = usec * TICK_HZ // 1_000_000
+            except (OSError, ValueError, IndexError):
+                pass
             return rss, ticks
         except (OSError, ValueError):
             pass
@@ -463,6 +629,7 @@ class Daemon:
         self.c = db()
         self.popen = {}          # id -> Popen (to reap zombies)
         self.others_ema = 0.0
+        self.runq_ema = 0.0
         self.prev = cpu_ticks()
         self.prev_ours = {}
         self.sys = {}
@@ -472,6 +639,17 @@ class Daemon:
         self.disk_total = 0.0
         self.disk_ts = 0.0
         self.last_backup = 0.0
+        self.trace = {}          # job id -> RSS samples (every ~10 s) for its memory histogram
+        self.profiles, self.profiles_ts = {}, 0.0
+        self.rho, self.rho_ts = {}, 0.0  # owner -> (measured correlation, pairs)
+        self.ratios, self.ratios_ts = {}, 0.0  # owner -> p95 of peak / --mem
+        self.ratio_samples = {}  # owner -> its jobs' peak / --mem, sorted
+        self.organic = 0.0       # cumulative growth of running jobs' RSS (starts and finishes excluded)
+        self.last_rss = {}
+        self.rise_hist = load_rise_hist()  # [(t, organic)] every ~10 s
+        if self.rise_hist:
+            self.organic = self.rise_hist[-1][1]
+        self.rise, self.rise_ts = None, 0.0
         import threading
         threading.Thread(target=self.disk_loop, daemon=True).start()
 
@@ -522,6 +700,10 @@ class Daemon:
             ours_rss += rss
             ours_ticks += max(0, ticks - self.prev_ours.get(j["id"], ticks))
             self.prev_ours[j["id"]] = ticks
+            tr = self.trace.setdefault(j["id"], [0.0, [], now])  # [last sample, samples, first sample]
+            if now - tr[0] >= 10:
+                tr[0] = now
+                tr[1].append(rss)
             self.check(j, rss, now, cfg, self.disk.get(j["id"], 0.0))
         # system sample
         busy, total = cpu_ticks()
@@ -530,15 +712,62 @@ class Daemon:
         ours_threads = ours_ticks / dt * cfg["threads"]
         self.others_ema = 0.7 * self.others_ema + 0.3 * max(0.0, sys_threads - ours_threads)
         self.prev = (busy, total)
+        # demand, not just use: when CPUs are saturated, use stops at capacity but threads keep queueing
+        self.runq_ema = 0.8 * self.runq_ema + 0.2 * runnable_threads()
         mi = meminfo()
         running = c.execute("SELECT * FROM jobs WHERE state='running'").fetchall()
+        for jid in set(self.trace) - {j["id"] for j in running}:
+            del self.trace[jid]
+        profiles = self.owner_profiles(cfg, now, running)
+        self.learn_ratios(cfg, now)
+        if now - self.rho_ts >= 60:
+            by = {}
+            for j in running:
+                if j["id"] in self.trace:
+                    by.setdefault(j["owner"], []).append(self.trace[j["id"]][1])
+            self.rho = {o: owner_correlation(v, cfg["mem_pool_rho"]) for o, v in by.items() if o in profiles}
+            self.rho_ts = now
+        # organic growth: RSS change of jobs past warm-up running both last tick and now (a warming-up job's
+        # growth is covered by its own need, below; counting it here too would count it twice)
+        cur = {j["id"]: usage[j["id"]][0] for j in running
+               if j["id"] in usage and now - (j["started"] or now) >= cfg["warmup_s"]}
+        self.organic += sum(r - self.last_rss[i] for i, r in cur.items() if i in self.last_rss)
+        self.last_rss = cur
+        if not self.rise_hist or now - self.rise_hist[-1][0] >= 10:
+            self.rise_hist.append((now, self.organic))
+            cut = now - cfg["mem_rise_history_s"]
+            while self.rise_hist and self.rise_hist[0][0] < cut:
+                self.rise_hist.pop(0)
+        if now - self.rise_ts >= 60:
+            span = self.rise_hist[-1][0] - self.rise_hist[0][0] if self.rise_hist else 0
+            self.rise = max_rise(self.rise_hist, cfg["mem_rise_window_s"]) if span >= cfg["mem_rise_window_s"] else None
+            self.rise_ts = now
+        grow, warm_jobs, single = [], [], 0.0
         for j in running:
             # what a job may still grow into: its declared --mem while it warms up, then its observed peak
             # with a margin (a later phase may need more than the first); free memory is measured, not declared
             rss = usage.get(j["id"], (0.0, 0))[0]
             peak = max(j["peak_mb"] or 0, rss)
-            expect = j["mem_mb"] if now - (j["started"] or now) < cfg["warmup_s"] else peak * cfg["peak_margin"]
-            unrealized += max(0.0, expect - rss)
+            warm = now - (j["started"] or now) < cfg["warmup_s"]
+            prof = None if warm else profiles.get(j["owner"])
+            expect = (self.need_mb(j, cfg) if warm else
+                      peak * (cfg["mem_pool_margin"] if prof and cfg["mem_pool"] == "pooled" else cfg["peak_margin"]))
+            grow.append((j["owner"], expect, rss, prof))
+            if warm:
+                warm_jobs.append((j, rss, max(0.0, expect - rss)))
+            else:
+                single = max(single, expect - rss)
+        warm_need = warm_headroom([(rss, room, j["mem_mb"], self.ratio_samples.get(j["owner"]))
+                                   for j, rss, room in warm_jobs], cfg["mem_pool_z"])
+        unrealized, unrealized_peak = pooled_headroom(grow, cfg["mem_pool_z"], cfg["mem_pool_rho"],
+                                                      {o: r for o, (r, _) in self.rho.items()})
+        mode = cfg["mem_pool"]
+        if mode == "measured" and self.rise is not None:
+            unrealized = min(unrealized_peak, warm_need + max(single, self.rise * cfg["mem_rise_margin"]))
+        elif mode == "measured":
+            mode = "pooled (measuring: under 1 h of history)"
+        elif mode != "pooled":
+            unrealized = unrealized_peak
         disk_unrealized = sum(max(0.0, j["disk_mb"] - self.disk.get(j["id"], 0.0)) for j in running)
         declared = max(1.0, sum(j["cpus"] for j in running))
         # declared CPUs while a job warms up, then what the fleet really uses (floor: 25% of declared)
@@ -550,6 +779,12 @@ class Daemon:
         pinned = job_cpus(cfg)
         self.sys = dict(threads=cfg["threads"], others=self.others_ema, ours_cpu=ours_threads, cpu_commit=cpu_commit,
                         mem_total=mi["MemTotal"], avail=avail, ours_rss=ours_rss, unrealized=unrealized,
+                        unrealized_peak=unrealized_peak, pooled_owners=sorted(profiles),
+                        runnable=self.runq_ema,
+                        pool_rho={o: [round(r, 2), n] for o, (r, n) in self.rho.items()},
+                        mem_ratio={o: round(q, 3) for o, q in self.ratios.items()},
+                        mem_mode=mode, mem_rise=self.rise, mem_single=single, mem_warm=warm_need,
+                        mem_hist_s=(self.rise_hist[-1][0] - self.rise_hist[0][0]) if self.rise_hist else 0,
                         reserve_cpu=cfg["reserve_cpu"], reserve_mem=reserve, running=len(running),
                         pinned=len(pinned) if pinned else None, disk=self.disk_total, disk_cap=cap,
                         disk_unrealized=disk_unrealized)
@@ -576,6 +811,12 @@ class Daemon:
                 backup_db(c)
             except (OSError, sqlite3.Error):
                 pass
+            try:  # the measured growth history survives daemon restarts
+                with open(RISE_HIST + ".tmp", "w") as f:
+                    json.dump(self.rise_hist, f)
+                os.replace(RISE_HIST + ".tmp", RISE_HIST)
+            except OSError:
+                pass
             self.last_backup = now
         tmp = f"{BEAT}.tmp{os.getpid()}"
         with open(tmp, "w") as f:
@@ -592,26 +833,48 @@ class Daemon:
     def admit(self, cfg, now, mem_room, cpu_commit, n_running, disk_room=float("inf")):
         c = self.c
         cpu_room = cfg["threads"] - cfg["reserve_cpu"] - self.others_ema - cpu_commit
+        # no start while threads already queue for a CPU: more work would only slow every running job
+        cpu_room = min(cpu_room, cfg["threads"] - cfg["reserve_cpu"] - self.runq_ema)
         queued = c.execute("SELECT * FROM jobs WHERE state='queued' AND not_before<=?", (now,)).fetchall()
         per_owner = {}
         for j in c.execute("SELECT owner, COUNT(*) n FROM jobs WHERE state='running' GROUP BY owner"):
             per_owner[j["owner"]] = j["n"]
         started = 0
+        short = None
         while queued and started < cfg["starts_per_tick"] and n_running < cfg["max_running"]:
             queued.sort(key=lambda j: (-j["prio"], per_owner.get(j["owner"], 0), j["submitted"]))
-            fit = next((j for j in queued if j["mem_mb"] <= mem_room and j["disk_mb"] <= disk_room
-                        and (j["cpus"] <= cpu_room or n_running == 0)), None)
+            fits = lambda j: (self.need_mb(j, cfg) <= mem_room and j["disk_mb"] <= disk_room
+                              and (j["cpus"] <= cpu_room or n_running == 0))
+            fit = next((j for j in queued if fits(j)), None)
             head = queued[0]
-            if fit is None or (fit is not head and now - head["submitted"] > cfg["starve_after_s"]):
-                break  # nothing fits, or head is starving: hold the room for it
+            if fit is not None and fit is not head and now - head["submitted"] > cfg["starve_after_s"]:
+                # head is starving: hold the room for it, but let jobs that end soon use it meanwhile,
+                # so the head waits at most about backfill_short_s longer once its room frees
+                short = self.short_owners(cfg) if short is None else short
+                fit = next((j for j in queued if j["owner"] in short and fits(j)), None)
+            if fit is None:
+                break
             queued.remove(fit)
             if self.start(fit, cfg):
-                mem_room -= fit["mem_mb"]
+                mem_room -= self.need_mb(fit, cfg)
                 cpu_room -= fit["cpus"]
                 disk_room -= fit["disk_mb"]
                 n_running += 1
                 started += 1
                 per_owner[fit["owner"]] = per_owner.get(fit["owner"], 0) + 1
+
+    def short_owners(self, cfg):
+        """Owners whose recent jobs (p90 of the last 50, at least 5) ran within backfill_short_s."""
+        out = set()
+        if cfg["backfill_short_s"] <= 0:
+            return out
+        for (owner,) in self.c.execute("SELECT DISTINCT owner FROM jobs WHERE state='queued'").fetchall():
+            d = sorted(r[0] for r in self.c.execute(
+                "SELECT finished-started FROM jobs WHERE owner=? AND state='ok' AND started IS NOT NULL "
+                "ORDER BY finished DESC LIMIT 50", (owner,)))
+            if len(d) >= 5 and d[int(0.9 * (len(d) - 1))] <= cfg["backfill_short_s"]:
+                out.add(owner)
+        return out
 
     def start(self, j, cfg):
         d = jobdir(j["id"])
@@ -642,10 +905,14 @@ class Daemon:
             os.setsid()
             if pinned:
                 os.sched_setaffinity(0, pinned)
+            try:  # nice 19 (shown by top/ps, and the fallback) and SCHED_IDLE, below even nice 19
+                os.setpriority(os.PRIO_PROCESS, 0, 19)
+            except OSError:
+                pass
             try:
                 os.sched_setscheduler(0, os.SCHED_IDLE, os.sched_param(0))
             except OSError:
-                os.nice(19)
+                pass
             try:
                 with open("/proc/self/oom_score_adj", "w") as f:
                     f.write("1000")
@@ -741,10 +1008,50 @@ class Daemon:
             else:
                 self.finish_fail(j, "oom", f"RSS {fgb(rss)} exceeded declared {fgb(j['mem_mb'])}; resubmit with --mem {fgb(new)}", peak)
 
+    def learn_ratios(self, cfg, now):
+        """{owner: p95 of peak/--mem over its last 100 finished jobs} for owners with enough of them
+        (refreshed every 5 minutes)."""
+        if now - self.ratios_ts < 300:
+            return
+        out, samples = {}, {}
+        for (o,) in self.c.execute("SELECT DISTINCT owner FROM jobs WHERE state IN ('queued','running')").fetchall():
+            r = sorted(p / m for m, p in self.c.execute(
+                "SELECT mem_mb, peak_mb FROM jobs WHERE owner=? AND state='ok' AND peak_mb>0 AND mem_mb>0 "
+                "ORDER BY finished DESC LIMIT 100", (o,)))
+            if len(r) >= cfg["mem_learn_min_jobs"]:
+                out[o] = r[int(0.95 * (len(r) - 1))]
+                samples[o] = r
+        self.ratios, self.ratio_samples, self.ratios_ts = out, samples, now
+
+    def need_mb(self, j, cfg):
+        """Memory a job is expected to need: --mem, scaled by its owner's learned peak/--mem."""
+        q = self.ratios.get(j["owner"])
+        return j["mem_mb"] if q is None else min(j["mem_mb"], max(256.0, j["mem_mb"] * q * cfg["mem_learn_margin"]))
+
+    def owner_profiles(self, cfg, now, running):
+        """{owner: MEM_BINS weights}: the average memory histogram of an owner's last 50 finished
+        jobs, for owners with at least mem_pool_min_jobs of them (refreshed every minute)."""
+        if now - self.profiles_ts < 60:
+            return self.profiles
+        out = {}
+        for o in {j["owner"] for j in running}:
+            hs = [json.loads(r[0]) for r in self.c.execute(
+                "SELECT mem_hist FROM jobs WHERE owner=? AND mem_hist IS NOT NULL ORDER BY finished DESC LIMIT 50", (o,))]
+            hs = [h for h in hs if sum(h)]
+            if len(hs) >= cfg["mem_pool_min_jobs"]:
+                out[o] = [sum(h[k] / sum(h) for h in hs) / len(hs) for k in range(MEM_BINS)]
+        self.profiles, self.profiles_ts = out, now
+        return out
+
     def finish(self, j, rc, peak, lost=False):
         dlog(f"finish #{j['id']} rc {rc}{' lost' if lost else ''} peak {fgb(peak)}")
         if rc == 0 and not lost:
-            self.c.execute("UPDATE jobs SET state='ok',rc=0,finished=?,pid=NULL WHERE id=?", (time.time(), j["id"]))
+            now = time.time()
+            _, tr, first = self.trace.pop(j["id"], [0, [], now])
+            seen = (now - first) / max(1.0, now - (j["started"] or now))  # share of its run observed (< 1 after a restart)
+            hist = json.dumps(mem_hist(tr, peak)) if seen >= 0.5 and len(tr) >= 6 and peak > 0 else None
+            self.c.execute("UPDATE jobs SET state='ok',rc=0,finished=?,pid=NULL,mem_hist=? WHERE id=?",
+                           (time.time(), hist, j["id"]))
             drop_worktree(j)
             drop_scratch(config(), j["id"])
             return
@@ -1051,6 +1358,17 @@ def cmd_cancel(a):
     print(f"cancelled {len(rows)} job(s)")
 
 
+def cmd_prio(a):
+    c = db()
+    if not (a.ids or a.owner or a.tag):
+        sys.exit("give job ids, --owner or --tag")
+    n = 0
+    for j in sel_jobs(c, a, ("queued",)):
+        n += c.execute("UPDATE jobs SET prio=? WHERE id=? AND state='queued'", (a.prio, j["id"])).rowcount
+    c.commit()
+    print(f"set priority {a.prio} on {n} queued job(s)")
+
+
 def cmd_config(a):
     cfg = {}
     try:
@@ -1100,7 +1418,7 @@ def cmd_install_service(a):
     d = os.path.expanduser("~/.config/systemd/user")
     os.makedirs(d, exist_ok=True)
     unit = (f"[Unit]\nDescription=kaeq job queue daemon\n\n[Service]\nExecStart={sys.executable} {os.path.realpath(__file__)} daemon\n"
-            "Restart=always\nRestartSec=5\nKillMode=process\n\n[Install]\nWantedBy=default.target\n")
+            "Restart=always\nRestartSec=5\nKillMode=process\nNice=10\n\n[Install]\nWantedBy=default.target\n")
     open(os.path.join(d, "kaeq.service"), "w").write(unit)
     total_mb = meminfo()["MemTotal"]
     cap = int(total_mb - cfg["reserve_mem_gb"] * 1024)
@@ -1173,6 +1491,10 @@ def main(argv=None):
     s = sub.add_parser("cancel", help="cancel queued/running jobs by id, --owner or --tag")
     s.add_argument("ids", nargs="*"), owner_opt(s), s.add_argument("--tag")
     s.set_defaults(f=cmd_cancel)
+
+    s = sub.add_parser("prio", help="change the priority of queued jobs by id, --owner or --tag")
+    s.add_argument("prio", type=int), s.add_argument("ids", nargs="*"), owner_opt(s), s.add_argument("--tag")
+    s.set_defaults(f=cmd_prio)
 
     s = sub.add_parser("config", help="show / set limits: --set reserve_cpu=24 --set reserve_mem_gb=48")
     s.add_argument("--set", action="append")

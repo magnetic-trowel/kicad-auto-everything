@@ -1,0 +1,268 @@
+{"repo": "https://github.com/SolderedElectronics/1-channel-relay-board-qwiic-hardware-design", "reason": "dup basename modul_relej_1ch_easyc.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/125kHz-RFID-I2C-board-with-easyC-hardware-design", "reason": "dup basename 125khz rfid i2c board with easyc.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/2-channel-relay-board-with-easyC-hardware-design", "reason": "dup basename 2-channel relay board with easyc.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/8x8-LED-matrix-Red-MAX7219-board-hardware-design", "reason": "dup basename led matrix max7219.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/Air-quality-sensor-MQ135-breakout-qwiic-hardware-design", "reason": "dup basename mq breakout.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/Alcohol--Ethanol-sensor-MQ3-breakout-qwiic-hardware-design", "reason": "dup basename mq breakout.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/Ammonia-sensor-MQ137-breakout-qwiic-hardware-design", "reason": "dup basename mq breakout.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/Benzene--Toluene--Acetone--Formaldehyde-sensor-MQ138-breakout-hardware-design", "reason": "dup basename mq breakout.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/Butane--LPG---Smoke-sensor-MQ2-breakout-qwiic-hardware-design", "reason": "dup basename mq breakout.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/CO--flammable-gasses-sensor-MQ9-breakout-qwiic-hardware-design", "reason": "dup basename mq breakout.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/CO-sensor-MQ7-breakout-qwiic-hardware-design", "reason": "dup basename mq breakout.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/Color-and-gesture-sensor-APDS-9960-breakout-hardware-design", "reason": "dup basename apds9960_breakout.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/GNSS-GPS-L86-M33-breakout-with-easyC-hardware-design", "reason": "dup basename gnss gps l86-m33 breakout with easyc.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/Hall-effect-sensor-breakout-with-analog-output---qwiic-hardware-design", "reason": "dup basename hall_effect_sensor_easyc_analog.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/Hall-effect-sensor-breakout-with-digital-output---qwiic-hardware-design", "reason": "dup basename hall_effect_sensor_easyc_digital.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/Hydrogen-Sulfide-sensor-MQ136-breakout-with-easyC-hardware-design", "reason": "dup basename mq breakout.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/Hydrogen-sensor-MQ8-breakout-qwiic-hardware-design", "reason": "dup basename mq breakout.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/I2C-LCD-adapter-hardware-design", "reason": "dup basename easyc_lcd_driver.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/Inkplate-6PLUS-Hardware", "reason": "no TAPR licence file; licence files: []"}
+{"repo": "https://github.com/SolderedElectronics/LPG--Butane-sensor-MQ6-breakout-qwiic-hardware-design", "reason": "dup basename mq breakout.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/Load-cell-amplifier-HX711-board-qwiic-hardware-design", "reason": "dup basename hx711_breakout_easyc.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/Methane--CNG-sensor-MQ4-breakout-qwiic-hardware-design", "reason": "dup basename mq breakout.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/Methane--Natural-gas-sensor-MQ214-breakout-hardware-design", "reason": "dup basename mq breakout.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/Methane--Natural-gas-sensor-MQ214-breakout-with-easyC-hardware-design", "reason": "dup basename mq breakout.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/Mini-PCB-breadboard-protoboard-hardware-design", "reason": "dup basename mini_pcb_breadboard.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/Natural-gas--LPG-sensor-MQ5-breakout-qwiic-hardware-design", "reason": "dup basename mq breakout.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/Obstacle-sensor-qwiic-hardware-design", "reason": "dup basename obstacle_sensor_easyc.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/Ozone-sensor-MQ131-breakout-qwiic-hardware-design", "reason": "dup basename mq breakout.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/PCB-breadboard-protoboard-hardware-design", "reason": "dup basename pcb_breadboard.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/PIR-movement-sensor-board-with-easyC-hardware-design", "reason": "dup basename pir movement sensor board with easyc.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/Rotary-encoder-board-with-easyC-hardware-design", "reason": "dup basename rotary encoder with easyc.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/Simple-fire-sensor-board-with-easyC-hardware-design", "reason": "dup basename simple_sensor_easyc.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/Simple-light-sensor-board-qwiic-hardware-design", "reason": "dup basename simple_sensor_easyc.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/Simple-light-sensor-board-with-easyC-hardware-design", "reason": "dup basename simple_sensor_easyc.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/Slider-potentiometer-breakout-with-easyC-hardware-design", "reason": "dup basename slider_pot_easyc.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/Soldered-Inkplate-6PLUS-hardware-design", "reason": "dup basename soldered inkplate 6plus.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/Soldered-Stepper-Motor-Driver-DRV8825-Board-hardware-design", "reason": "no TAPR licence file; licence files: []"}
+{"repo": "https://github.com/SolderedElectronics/Ultrasonic-sensor-qwiic-hardware-design", "reason": "dup basename ultrasonic sensor with easyc.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/VOC-sensor-MQ138-breakout-hardware-design", "reason": "dup basename mq breakout.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/microSD-card-reader-breakout-hardware-design", "reason": "dup basename micro-sd_breakout.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/qwiic-adapter-hardware-design", "reason": "dup basename easyc_adapter.kicad_pcb"}
+{"repo": "https://github.com/SolderedElectronics/qwiic-hub-hardware-design", "reason": "dup basename easyc_hub.kicad_pcb"}
+{"repo": "https://github.com/mlab-modules/ADCaudio01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/ADCdual01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/AT32TQ14401", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/AXISCONTROL01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/BATPOWER04", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/BATPOWER05", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/BLE01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/C01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/CCP2019V01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/CHPUMP01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/COILSW01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/DIG4SW01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/DIP8SW01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/DOWNCONV01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/DOWNCONV02", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/DRV8835HB01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/EEPROM02", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/ESP32Sx01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/FMC2DIFF01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/HBRIDGE03", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/HBSTEP01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/HBSTEP02", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/HVPS03", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/I2C232V01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/I2CADC01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/I2CADC02", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/I2CDIFF01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/I2CHUB01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/I2CHUB02", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/I2CIO01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/I2CPWM01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/I2CSPI01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/IMU01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/ISL03", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/JTAGFT2232V02", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/LCM01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/LED01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/LED7SEG01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/LIGHTNING01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/LINREG01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/LTS01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/MAG01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/NEMASTEP01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/OZDUAL03", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/PIEZO01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/PIND01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/POWERDAC01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/PROGLOG01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/PWMLED01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/R01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/REL1SW01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/RGBC01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/RJ12V01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/RJ45V01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/RPS01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/RTC02", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/RTC03", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/SERVOHUB01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/SHT25V01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/SHT31V01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/SIPM01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/SIPMPOWER01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/SPIDIFF01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/STEPDOWN01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/STEPUPDC01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/STM32F30xRx01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/SUPERCAP01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/SW01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/SYMPOWER01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/SYMPOWER02", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/SYMTRANS01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/THERMOGEN01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/TL01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/TOUCHBOARD01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/TPS63036V01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/TRIM01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/UNIATMEGA8TQFP01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/UNIPOWER02", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/UNIPOWER03", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/UNIPOWER04", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/UNIPOWER05", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/UNIPOWER06", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/UNIPOWER07", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/UNIPOWER08", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/UNISERIAL01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/UNIUNI02", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/UNIUNI03", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/UPCONV01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/USB4xUART01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/USBI2S01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/USBSDREADER01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/VCAI2C01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/VCAI2C02", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/mlab-modules/VLFANT01", "reason": "no licence file in repo (MLAB org/website give no explicit licence); has board files"}
+{"repo": "https://github.com/ElectronicCats/MexaBadge", "reason": "only Firmware/LICENCE (MIT, firmware-scoped); no hardware licence"}
+{"repo": "https://github.com/ElectronicCats/Badge-HackGDL2024", "reason": "README licence section only shows an open-source logo image; no licence text/file"}
+{"repo": "https://github.com/ElectronicCats/badge-pwnterrey-2025", "reason": "README licence section only shows an open-source logo image; no licence text/file"}
+{"repo": "https://github.com/ElectronicCats/kits-soldadura-basico", "reason": "no licence"}
+{"repo": "https://github.com/ElectronicCats/puya-projects", "reason": "no licence"}
+{"repo": "https://github.com/ElectronicCats/MKR_shield_template", "reason": "template board (skipped)"}
+{"repo": "https://github.com/ElectronicCats/templateNodeMCU", "reason": "template board (skipped)"}
+{"repo": "https://github.com/OLIMEX/UEXT-ADAPTERS", "reason": "no licence file or README licence statement"}
+{"repo": "https://github.com/OLIMEX/PIC32-HMZ144", "reason": "no licence file or README licence statement"}
+{"repo": "https://github.com/OLIMEX/PIC32-RETROBSD", "reason": "no licence file or README licence statement"}
+{"repo": "https://github.com/OLIMEX/SOM", "reason": "no licence file or README licence statement"}
+{"repo": "https://github.com/watterott/senseBox-Sensors", "reason": "no licence statement (README/LICENSE absent)"}
+{"repo": "https://github.com/watterott/senseBox-Shield", "reason": "no licence statement (README/LICENSE absent)"}
+{"repo": "https://github.com/watterott/Drawdio", "reason": "no licence statement (README/LICENSE absent)"}
+{"repo": "https://github.com/Protocentral/openPressure", "reason": "no licence file; README only \"release anything derivative under the same license\" with no licence named"}
+{"repo": "https://github.com/Protocentral/Electric-Ray-Robot", "reason": "no licence file; README names no licence"}
+{"repo": "https://github.com/Protocentral/Kalam", "reason": "only nested firmware MIT licence; no hardware licence"}
+{"repo": "https://github.com/Protocentral/ProtoCentral_ESP8266_WiFiShield", "reason": "only nested firmware MIT licence; no hardware licence"}
+{"repo": "https://github.com/UnexpectedMaker/um-series-d", "reason": "only code/LICENSE (MicroPython MIT); no hardware licence"}
+{"repo": "https://github.com/Makerfabs/nRF52840-UWB-DW3000", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/MaUWB-DSTO", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/MaUWB_ESP32S3-with-STM32-AT-Command", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/MaduinoLoraRadio", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/MaTouch_ESP32-S3-MaUWB-SPI-TFT-Touch-3.95-ST7796", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/MaTouch_AMOLED_AI_CAMERA", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Home-Assistant-MaUWB", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/UWB-AOA-with-Display-STM32F103C8T6", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Makerfabs-ESP32-UWB-DW3000", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/ESP32-S3-4G-LTE-CAT1-A7670X", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/MaTouch_Lite_ESP32-S3-SPI-with-Touch-3.95-ST7796", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Home-Assistant-Mic-and-Speaker", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Home-Assistant-Camera-OV3660", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Maduino-Zero-4G-LTE", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/4G-LTE-Hat-For-Raspberry-Pi", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/SenseLora-4G-Gateway", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Home-Assistant-Radar", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/MaTouch-1.28-DevKit", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Makerfabs-ESP32-S3-Parallel-TFT-with-Touch", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Makerfabs-ESP32-S3-SPI-TFT-with-Touch", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Home-Assistant-Energy-Meter", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Home-Assistant-AC-Dimmer", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Lora-Soil-Moisture-Sensor", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Home-Assistant-Relay-8-Channel", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Home-Assistant-DC-Motor", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Makerfabs_MaLora", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Makerfabs_3.5TFT_Lora_Controller", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Project_Touch-Screen-Camera", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/SenseLora-Soil-Moisture", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/LoraWAN-Soil-Moisture", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Mabee", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Industrial-grade-Soil-Remote-Monitor-V2", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/ESP32-WiFi-AC-Dimmer", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Makerfabs_RS485-LoRa-Wireless-Station", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Project_ESP32-Voice-Interaction", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Makerfabs-ESP32-UWB", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Maduino-Zero-4G-CAT1-A7670X", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Maduino-Zero-SIM868-GPS-Tracker", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/SenseLoRa-Industrial-grade-Air-Monitor", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/SenseLoRa-LoRa-Receiver", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Makerfabs-Lora-AC-Dimmer", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/NRF52840", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/MakePython-Lora", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/MakePython-A9G", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Lora-Relay", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Makerfabs_SmartClock_Kit", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Mabee_Soil-Mositure", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Maduino-Zero-Lorawan", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Maduino-Zero-A9G", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/MaPIE", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Pico_Primer_Kit", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/MaESP-ESP32-C3-OLED", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Makerfabs-ESP32-C3-SPI-TFT-with-Touch", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Mabee_CO2", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Makerfabs-ESP32-S2-Parallel-TFT-with-Touch", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Makerfabs-LoRa_TDS_sensor", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Maduino-Power-Line-Modem", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Wind-Weather-Station", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Maduino-Zero-Bluetooth-4.0-HM-13", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/ESP32_IMU_Module", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Lora-Relay-4Channel", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Maduino-CANbus-RS485", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/Raspi-Voice-Interaction-Hat", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo": "https://github.com/Makerfabs/MakePython", "reason": "no hardware licence (Makerfabs repo has Eagle board files but no LICENSE/README licence statement)"}
+{"repo":"https://github.com/LowPowerLab/PowerShield","reason":"no licence statement"}
+{"repo":"https://github.com/LowPowerLab/Microscope-Light","reason":"no licence statement"}
+{"repo": "https://github.com/Tinkerforge/breakout_xmc1300", "reason": "no hardware licence file (hardware/LICENSE.txt absent)"}
+{"repo": "https://github.com/Tinkerforge/ethernet-extension", "reason": "no hardware licence file (hardware/LICENSE.txt absent)"}
+{"repo": "https://github.com/Tinkerforge/evse-v3-bricklet", "reason": "no hardware licence file (hardware/LICENSE.txt absent)"}
+{"repo": "https://github.com/Tinkerforge/evse-v4-bricklet", "reason": "no hardware licence file (hardware/LICENSE.txt absent)"}
+{"repo": "https://github.com/Tinkerforge/industrial-dual-ac-in-bricklet", "reason": "no hardware licence file (hardware/LICENSE.txt absent)"}
+{"repo": "https://github.com/Tinkerforge/warp-charger", "reason": "no hardware licence file (hardware/LICENSE.txt absent)"}
+{"repo": "https://github.com/Tinkerforge/warp-energy-manager-v2-bricklet", "reason": "no hardware licence file (hardware/LICENSE.txt absent)"}
+{"repo": "https://github.com/Tinkerforge/warp-esp32-ethernet-brick", "reason": "no hardware licence file (hardware/LICENSE.txt absent)"}
+{"repo": "https://github.com/Tinkerforge/warp-esp32-ethernet-v2-brick", "reason": "no hardware licence file (hardware/LICENSE.txt absent)"}
+{"repo": "https://github.com/Tinkerforge/warp-front-panel-bricklet", "reason": "no hardware licence file (hardware/LICENSE.txt absent)"}
+{"repo": "https://github.com/freetronics/Cube4-hardware", "reason": "no licence file covering hardware"}
+{"repo": "https://github.com/freetronics/NDriveShield", "reason": "no licence file covering hardware"}
+{"repo": "https://github.com/freetronics/EtherTen", "reason": "no licence file covering hardware"}
+{"repo": "https://github.com/freetronics/WeMos32Buttons", "reason": "no licence file covering hardware"}
+{"repo": "https://github.com/freetronics/WeMos32Proto", "reason": "no licence file covering hardware"}
+{"repo": "https://github.com/freetronics/USBSerial2", "reason": "no licence file covering hardware"}
+{"repo": "https://github.com/freetronics/SevenSegmentDisplay", "reason": "no licence file covering hardware"}
+{"repo": "https://github.com/freetronics/RULER", "reason": "no licence file covering hardware"}
+{"repo": "https://github.com/freetronics/PEBBLE", "reason": "no licence file covering hardware"}
+{"repo": "https://github.com/freetronics/PEBBLE2", "reason": "no licence file covering hardware"}
+{"repo": "https://github.com/freetronics/MobSenDat", "reason": "no licence file covering hardware"}
+{"repo": "https://github.com/freetronics/ET2", "reason": "no licence file covering hardware"}
+{"repo": "https://github.com/freetronics/USBSerial", "reason": "no licence file covering hardware"}
+{"repo": "https://github.com/freetronics/WEARESP32", "reason": "no licence file covering hardware"}
+{"repo": "https://github.com/freetronics/GPSModule", "reason": "no licence file covering hardware"}
+{"repo": "https://github.com/freetronics/DOG", "reason": "no licence file covering hardware"}
+{"repo": "https://github.com/freetronics/ADG801Inline", "reason": "no licence file covering hardware"}
+{"repo": "https://github.com/freetronics/BEESP12", "reason": "no licence file covering hardware"}
+{"repo": "https://github.com/freetronics/ServoShield", "reason": "no licence file covering hardware"}
+{"repo": "https://github.com/freetronics/StepDuino", "reason": "no licence file covering hardware"}
+{"repo": "https://github.com/freetronics/IMU9", "reason": "no licence file covering hardware"}
+{"repo": "https://github.com/freetronics/EtherDue", "reason": "no licence file covering hardware"}
+{"repo": "https://github.com/freetronics/WiFiShield", "reason": "no licence file covering hardware"}
+{"repo": "https://github.com/freetronics/BARO", "reason": "no licence file covering hardware"}
+{"repo": "https://github.com/freetronics/USBBoost", "reason": "no licence file covering hardware"}
+{"repo": "https://github.com/freetronics/PiScreen", "reason": "no licence file covering hardware"}
+{"repo": "https://github.com/freetronics/PWRMON", "reason": "no licence file covering hardware"}
+{"repo": "https://github.com/freetronics/OLEDSHIELD", "reason": "no licence file covering hardware"}
+{"repo": "https://github.com/freetronics/GSMGPSShield", "reason": "no licence file covering hardware"}
+{"repo": "https://github.com/freetronics/IRRX", "reason": "no licence file covering hardware"}
+{"repo": "https://github.com/freetronics/BLEShield", "reason": "no licence file covering hardware"}
+{"repo": "https://github.com/freetronics/GSMShield", "reason": "no licence file covering hardware"}
+{"repo": "https://github.com/freetronics/BLEMod", "reason": "no licence file covering hardware"}
+{"repo": "https://github.com/freetronics/OLEDSTICK", "reason": "no licence file covering hardware"}
+{"repo": "https://github.com/freetronics/USBASP", "reason": "no licence file covering hardware"}
+{"repo": "https://github.com/freetronics/USBDroidR3", "reason": "no licence file covering hardware"}
+{"repo": "https://github.com/freetronics/USBDroid", "reason": "no licence file covering hardware"}

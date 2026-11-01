@@ -6,7 +6,9 @@
                                                [--no-repair] [--fanout | --fanout-first] [--no-thermal]
                                                [--passes N] [--rounds N|auto] [--router-share F|auto]
                                                [--planes cost|keep|strict|allow] [--pad-shapes kicad|outside]
-                                               [--[no-]last-mile] [--report FILE]
+                                               [--[no-]last-mile] [--[no-]blocked] [--report FILE]
+    python -m kae.route.cli lastmile INPUT BOARD OUTPUT [--seed N] [--time S] [--workdir DIR] [--keep]
+                                               [--set KEY=VALUE] [--report FILE]
 
 INPUT is a .kicad_pcb with its project files (.kicad_pro, .kicad_dru) beside it; OUTPUT is
 written as soon as a routed board exists (kaebench scores only the board). The JSON report
@@ -14,6 +16,18 @@ goes to the last line of stdout and to --report FILE. As a kaebench method or pr
 
     kaebench run --adapter kae-fr --kinds route \\
       --command "<venv>/bin/python -m kae.route.cli route {input} {output} --seed {attempt} --time {timeout}"
+
+When connections stay open, the report's "blocked" section says why, per connection: congestion
+(a path exists without our other copper), the input's own copper, or the board rule that makes
+it impossible, with the value required and the value available, where, and the rule's source
+(.kicad_pro net class or board setup, .kicad_dru rule, footprint, rule area) or the kae default
+and its override (KAE_<NAME> text variable, --set). The router never relaxes a rule itself;
+"blocked" is for the caller to decide (change the rule, move a part, or accept). The same
+lines go to the log as "blocked: ...". `python -m kae.route.blocked ROUTED INPUT` runs the
+diagnosis alone on any routed board.
+
+`lastmile` is the post-route stage alone (bridge.last_mile_only): BOARD, routed from the task
+INPUT, gets the last mile with INPUT's rules; OUTPUT is BOARD or a round KiCad's DRC finds better.
 
 Exit status: 0 when a routed board was written, 2 otherwise.
 """
@@ -52,19 +66,52 @@ def main(argv=None):
     r.add_argument("--last-mile", action=argparse.BooleanOptionalAction, default=True,
                    help="after the repair rounds, join what is still open with the grid router "
                         "(kae.route.lastmile; default on, --no-last-mile turns it off)")
+    r.add_argument("--blocked", action=argparse.BooleanOptionalAction, default=True,
+                   help="at the end, diagnose the connections still open: the report's \"blocked\" names the "
+                        "board rule (or kae default) that makes each impossible (kae.route.blocked)")
+    r.add_argument("--neckdown", action=argparse.BooleanOptionalAction, default=False,
+                   help="Freerouting's neck-down at pins, floored at the board's legal minimum width")
+    r.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
+                   help="override one of kae's own defaults (e.g. ignored_clearance_floor=0.08); a "
+                        "KAE_<KEY> text variable in the KiCad project overrides this in turn")
     r.add_argument("--report")
+    m = sub.add_parser("lastmile", help="the last mile alone on a routed board (with the task input's rules)")
+    m.add_argument("input")
+    m.add_argument("board")
+    m.add_argument("output")
+    m.add_argument("--seed", type=int, default=0)
+    m.add_argument("--time", type=float, default=120.0)
+    m.add_argument("--workdir")
+    m.add_argument("--keep", action="store_true")
+    m.add_argument("--set", action="append", default=[], metavar="KEY=VALUE")
+    m.add_argument("--report")
     a = ap.parse_args(argv)
     from kae.route import bridge
+    if a.cmd == "lastmile":
+        return _finish(a, lambda opts: bridge.last_mile_only(a.input, a.board, a.output, time_s=a.time, seed=a.seed,
+                                                             workdir=a.workdir, opts=opts),
+                       dict(keep=a.keep))
     opts = dict(repair=not a.no_repair, fanout=True if a.fanout else ("first" if a.fanout_first else False),
                 thermal_repair=not a.no_thermal,
                 passes=a.passes, rounds=a.rounds if a.rounds == "auto" else int(a.rounds), keep=a.keep,
                 planes=a.planes, pad_shapes=a.pad_shapes,
                 router_share=a.router_share if a.router_share == "auto" else float(a.router_share),
-                last_mile=a.last_mile)
+                last_mile=a.last_mile, neckdown=a.neckdown, blocked=a.blocked)
     if a.thermal_all:
         opts["thermal_pads"] = "all"
+    return _finish(a, lambda o: bridge.route(a.input, a.output, seed=a.seed, time_s=a.time, workdir=a.workdir,
+                                             opts=o), opts)
+
+
+def _finish(a, run, opts):
+    for kv in a.set:
+        k, _, v = kv.partition("=")
+        try:
+            opts[k] = json.loads(v)
+        except ValueError:
+            opts[k] = v
     try:
-        rep = bridge.route(a.input, a.output, seed=a.seed, time_s=a.time, workdir=a.workdir, opts=opts)
+        rep = run(opts)
     except Exception as e:  # report and fail cleanly; kaebench records the log
         import traceback
         traceback.print_exc()

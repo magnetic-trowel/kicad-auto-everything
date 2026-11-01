@@ -183,7 +183,7 @@ Known limits:
 - **On main:** [tools/research/board-sourcing](../../../tools/research/board-sourcing/README.md).
   The scripts are `probe.py`, `atcommit.py`, `classify.py`, `kh_select.py`, `sig.py`, `enrich.py`,
   `merge.py` and `corpus.py`.
-- **Not ported**, left on branch [`claude/compassionate-ramanujan-lo56ee`](https://github.com/magnetic-trowel/kicad-auto-everything/tree/claude/compassionate-ramanujan-lo56ee):
+- **Also on main** (merged from branch `claude/compassionate-ramanujan-lo56ee` on 2026-11-01):
   - the manifests (`bench/manifests/wide*.jsonl`, 13 MB in all);
   - the candidate and reject lists;
   - the fetch-time import and load repairs in `bench/src/kaebench/{fetch,boardfiles,manifest}.py`,
@@ -192,9 +192,7 @@ Known limits:
     [db6cd48](https://github.com/magnetic-trowel/kicad-auto-everything/commit/db6cd483f123121c1e5c9f3cb8657ee74fbd47cf),
     [390771e](https://github.com/magnetic-trowel/kicad-auto-everything/commit/390771e3d4240e8115f82135f762a72d25427527)
     and [bc33b73](https://github.com/magnetic-trowel/kicad-auto-everything/commit/bc33b73c36ec13e26c7fa01a55b4b981e2a57868);
-  - `bench/scripts/build-corpus.sh`.
-
-  The scripts need that branch's `kaebench`.
+  - `bench/scripts/build-corpus.sh` ([local-board-corpus](../../topics/data/local-board-corpus.md)).
 - **Run:** see the board-sourcing README. In outline: `sig.py` → `enrich.py` → `merge.py` →
   `corpus.py <out> --fetch-missing --drc --no-fetch-tag host-robots-restricted name=rows.jsonl@workdir ...`.
 

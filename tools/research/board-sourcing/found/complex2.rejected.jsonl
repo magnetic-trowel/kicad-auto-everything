@@ -1,0 +1,109 @@
+{"repo":"https://gitlab.com/ohwr/project/conv-diff-se-cable-driver","reason":"no licence for hardware (only .ohwr.yaml BSD SPDX header on the metadata file)"}
+{"repo":"https://openbeagle.org/beagleconnect/bcf-backpack/bcf-backpack-pcb","reason":"no licence"}
+{"repo":"https://openbeagle.org/jkembedded/jkembedded-audio-board","reason":"no licence"}
+{"repo":"https://github.com/portlandhodl/nyan-keys-hardware","reason":"board files CC-BY-NC-ND-4.0 (NoDerivatives)"}
+{"repo":"https://github.com/frankbuss/kerberos","reason":"no licence"}
+{"repo":"https://github.com/jaromir-sukuba/nvm","reason":"no licence"}
+{"repo":"https://github.com/wren6991/riscboy","reason":"no licence"}
+{"repo":"https://github.com/danwerner21/vic2020","reason":"no licence"}
+{"repo":"https://github.com/kliment/sanguinololu","reason":"no licence file"}
+{"repo":"https://github.com/will127534/raspberrypiatomicnixieclock","reason":"no hardware licence"}
+{"repo":"https://github.com/whitequark/glasgow","reason":"fork of known GlasgowEmbedded/glasgow"}
+{"repo":"https://github.com/stm32world/hardware","reason":"PSL-1.0 custom licence with field-of-use restrictions and fee clauses"}
+{"repo":"https://github.com/kotori0919/varp-k26-memory-fpga","reason":"source-available research licence"}
+{"repo":"https://github.com/azonenberg/antikernel","reason":"board dirs explicitly not under repo BSD licence; per-file licences unclear"}
+{"repo":"https://github.com/jayis1/hacker-devices","reason":"dubious (apparently generated) offensive-tool device collection; skipped"}
+{"repo":"https://github.com/land-boards/lb-boards","reason":"no repo-level licence (only a few per-dir licences)"}
+{"repo":"https://github.com/rivosinc/scampi","reason":"only .brd is a git-LFS pointer"}
+{"repo":"https://github.com/ahmad-ih/usb-armory","reason":"copy of known usbarmory/usbarmory"}
+{"repo":"https://github.com/skcubesat/radsat-v1","reason":"contains copy of OreSat C3 (known)"}
+{"repo":"https://github.com/ece477-sp2023/daughterboard","reason":"no licence"}
+{"repo":"https://github.com/neuracoretech/neuracore-pcb","reason":"no repo licence (only vendored subdir MIT)"}
+{"repo":"https://github.com/sunnyyoshimitsu/celesticall","reason":"no repo licence"}
+{"repo":"https://github.com/i2cjak/backplane_kicad","reason":"KiCad source fork, test files"}
+{"repo":"https://github.com/samirdawar/baseboard","reason":"KiCad source fork, test files"}
+{"repo":"https://github.com/a1wolfe/imx6-barebones","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/aawo/cparti-fpga-development-board","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/abdulajadi1/fpga-board","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/adamgreig/iggie","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/adamjvr/zyncmv","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/aerogull/arctic-video","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/antonsievering/tracker","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/averagepillow17/p.r.i.s.m.","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/bendi11/spw-router","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/blazra/tdr","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/bonafide116/rfsom01","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/boobalakrishnan08/arty100t","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/dabridgham/qsic-verilog","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/dartcom/qmtech_xc7a100t-expantion-board","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/djupdal/asd-amp","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/dmpro-gruppe-b/effect-box-pcb","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/drammenmjk/dualsignalboard","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/drubiog/artix7_som","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/dylanfg123/zebra-x","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/enjens/joey","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/ferretcode/compute-deck","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/halworsen/tdt4295-grafikk","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/hamedroghani/zu64dr_rfsoc_kicad","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/iank/catfood","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/ironsuper1/zynq_board","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/jasonsbeer/amiga-n2630","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/jegeva/fuzzyduck","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/kaipereira/m.2-fpga-accelerator","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/keyboardio/pcbs","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/khaydarian/spla","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/korken89/mini_kvision","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/kscz/imx6_dev","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/leesanghun-droid/zynq_test_pcb","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/marqs85/ossc_pcb","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/masahirosuzuka/gamechanger","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/medhyal/ecp5-dev-board","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/moafkaljabi/ma-xilinx-fpga-10-layer","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/mohamed-bekheet/passpress","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/mullakrekar69/bozi-1.0.1-dk","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/nelgau/hicart","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/obra/space-banana","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/oresat/oresat-star-tracker-hardware","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/p8p671/zynq_devboard","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/perehinik/logic_analyzer_pcb","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/project11a/initialdummyboard","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/rasac-dev/rasac_board","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/rcardenes/stm32mp1_som","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/skot/xmachine","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/sr-madsen/smartmirror","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/syabyr/xc7z020_devboard","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/tamapochi1/digitalviolin","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/tdt4295-2019-groupa/pcb","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/thaaraak/sdr-transceiver","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/thebrutzler/brutzelboy_v2","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/thebrutzler/nixpi","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/thesilentdefender/artix-som","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/till-s/kicad-lan9254-evr-prototype","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/ttl/vna2","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/uchicago-space-program/pulse-hardware","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/vd-rd/sbc_nxp_ls1012a","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/vgacentrifuge/pcb","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/wang-edward/6ulz","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/wesleyvong/oscope","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/westonb/artix7-pcie","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/williamsanchez/hardware","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/wolframdioxide2/fpga_devboard_poc","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/xrpbot/xrpcam-hardware","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/zephray/sharket","reason":"no licence found (no LICENSE file, no README licence statement)"}
+{"repo":"https://github.com/gralco/l5-schematic","reason":"mirror of known source.puri.sm/librem5/hw/l5-schematic"}
+{"repo":"https://github.com/kitspace-forks/reform-kintex-som","reason":"mirror of known source.mnt.re/reform/reform-kintex-som"}
+{"repo":"https://github.com/antmicro/qomu-dev-board","reason":"same design as known quicklogic-corp/qomu-dev-board"}
+{"repo":"https://github.com/nov4ou/zynq-som","reason":"likely same as known pinguz97/zynq-som"}
+{"repo":"https://github.com/spirit-org/spirit","reason":"same project as known v3lectronics/spirit"}
+{"repo":"https://github.com/sinara-hw/ionpak","reason":"README: License TBD"}
+{"repo":"https://github.com/myriadrf/LimePSB-RPCM","reason":"no licence in repo"}
+{"repo":"https://gitlab.com/davidni/fpga-cluster-hw","reason":"only a first_test PcbDoc"}
+{"repo":"https://gitlab.com/ymz000/iccfpga-dev-board","reason":"no licence"}
+{"repo":"https://gitlab.com/xgzhou85/iccfpga-module","reason":"no licence"}
+{"repo":"https://gitlab.com/kitspace/ethernet-acquisition","reason":"no licence"}
+{"repo":"https://gitlab.com/tiltmesenpai/mini-mipi","reason":"no licence"}
+{"repo":"https://gitlab.com/jfoucher/6502-vga","reason":"no licence"}
+{"repo":"https://codeberg.org/marichan/sxm2pcie","reason":"no licence"}
+{"repo":"https://codeberg.org/ECP5-PCIe/ECP5-PCIe","reason":"no licence"}
+{"repo":"https://codeberg.org/Habbie/minipcie-protoboard","reason":"no licence"}
+{"repo":"https://github.com/jasonsbeer/Amiga-N2630","reason":"no licence"}

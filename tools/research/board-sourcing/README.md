@@ -3,18 +3,12 @@
 Scripts behind the wide open-board corpus. The write-up (method, licence policy, numbers) is
 [docs/research/data/board-corpus.md](../../../docs/research/data/board-corpus.md).
 
-**What is here and what is not.** Only the scripts were ported to `main`. These stay on branch
-[`claude/compassionate-ramanujan-lo56ee`](https://github.com/magnetic-trowel/kicad-auto-everything/tree/claude/compassionate-ramanujan-lo56ee) (commit `83687ad`):
-- the candidate lists (`found/*.jsonl`, `*.rejected.jsonl`), `keep.txt`, `todo*.txt`, `dups.jsonl` and
-  the enrich results (about 27 MB in all);
-- the reviewed manifests `bench/manifests/wide.jsonl` (13 MB), `wide-noncommercial.jsonl` and
-  `wide-duplicates.jsonl`;
-- the harness changes the scripts import: Eagle/Altium/Allegro/PADS/CADSTAR import at fetch time and
-  the KiCad 10 load repairs in `bench/src/kaebench/{fetch,boardfiles,manifest}.py`, plus
-  `bench/scripts/build-corpus.sh`.
-
-So `sig.py`, `enrich.py` and `corpus.py` run only against that branch's `kaebench`
-(`kaebench.manifest.import_format` and the archive/import paths of `kaebench.fetch` are not on `main`).
+**What is here.** The scripts, the candidate lists (`found/*.jsonl`, `*.rejected.jsonl`), `keep.txt`,
+`todo*.txt` and `dups.jsonl`; the reviewed manifests are `bench/manifests/wide*.jsonl`. The fetch-time
+imports (Eagle/Altium/Allegro/PADS/CADSTAR) and KiCad 10 load repairs they rely on are in
+`bench/src/kaebench/{fetch,boardfiles,manifest}.py`; `bench/scripts/build-corpus.sh` builds the local
+corpus ([local-board-corpus](../../../docs/topics/data/local-board-corpus.md)). Merged from branch
+`claude/compassionate-ramanujan-lo56ee`.
 
 | Step | Script | Output |
 |---|---|---|

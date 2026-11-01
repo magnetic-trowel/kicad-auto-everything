@@ -26,7 +26,8 @@ engine evaluated per pair of items. `plan(info, board_path)` maps one onto the o
   pads with several outlines).
 - **Obstacles.** NPTH holes, board cut-outs and stray Edge.Cuts/Margin shapes, copper
   graphics and texts, solder-mask openings drawn as graphics (on their outer copper layer,
-  unless they cover a pad), rule areas and thermal-spoke corridors become keepouts, each in an
+  minus room round the netted pads they expose: _mask_openings), rule areas and
+  thermal-spoke corridors become keepouts, each in an
   obstacle class carrying KiCad's requirement (rule areas and corridors: zero). A copper
   graphic that carries a net becomes a pin of that net instead (net_graphics), so the
   router connects its net to it and keeps the other nets away. So does the fill of every
@@ -37,6 +38,7 @@ engine evaluated per pair of items. `plan(info, board_path)` maps one onto the o
 
 All lengths mm. Requirements are rounded up to 0.1 um (the DSN resolution).
 """
+import json
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -137,13 +139,74 @@ class Plan:
     min_width: float = 0.0                             # narrowest legal track for every net
     notes: dict = field(default_factory=dict)
     rule_board: object = None
+    bridging_openings: list = field(default_factory=list)  # (layer, polygon, why, nets): mask openings that
+                                                           # shut a pad in or expose two nets (kae.route.blocked)
 
 
 # ----------------------------------------------------------------------------- helpers
-def rule_board(info, board_path):
+# clearance checks a board's project may turn off (rule_severities key -> constraint type)
+IGNORABLE = {"clearance": "clearance", "hole_clearance": "hole_clearance", "copper_edge_clearance": "edge_clearance"}
+# Our own limits apply only where the board's rules are silent, and each can be overridden without
+# code: a KAE_<NAME> text variable in the KiCad project wins over the run's opts (<name>), which win
+# over the default here.
+DEFAULTS = dict(
+    ignored_clearance_floor=0.1,   # mm: gap kept for a clearance check the board turns off (or the
+                                   # board's own minimum, if larger); KiCad then checks only shorts
+    plane_strict_share="odd",      # with planes "cost": inner layers whose one-net fill (refilled input)
+                                   # covers at least this share of the board carry no traces (Freerouting
+                                   # power layers); human boards leave 30 of 33 such layers at >= 0.8 free of
+                                   # signals. "odd": 0.8 on odd seeds, none on even ones, so restarts try both
+                                   # and the DRC picks (z280 needs it: ~94 open -> 3; heypcb kestrel, whose
+                                   # human routes 1.6 m on its planes, is hurt: 28 -> 53); a number: every
+                                   # seed; 0: never (bridge.strict_share)
+    ball_escapes=1,                # 1: dog-bones for the inner rings of ball grids, laid with the plane
+                                   # escapes (escape.dog_bones; gecko5 101 -> 69 open, nekoink 99 -> 77); 0: none
+)
+
+
+def _project(board_path):
+    pro = Path(board_path).with_suffix(".kicad_pro")
+    try:
+        return json.loads(pro.read_text(encoding="utf-8", errors="replace"))
+    except (OSError, ValueError):
+        return {}
+
+
+def board_severities(board_path):
+    """DRC rule severities from the board's project file (as KiCad's DRC reads them)."""
+    return ((_project(board_path).get("board") or {}).get("design_settings") or {}).get("rule_severities") or {}
+
+
+def setting(name, board_path=None, opts=None):
+    """One of our own limits (DEFAULTS): the project's KAE_<NAME> text variable, else opts[name],
+    else the default. Numbers come back as floats; a word (plane_strict_share "odd") as it is, where
+    the default is one too (a word for a numeric limit is skipped)."""
+    tv = (_project(board_path).get("text_variables") or {}).get("KAE_" + name.upper()) if board_path else None
+    for v in (tv, (opts or {}).get(name)):
+        if v in (None, ""):
+            continue
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            if isinstance(DEFAULTS[name], str):
+                return v
+    return DEFAULTS[name]
+
+
+def rule_board(info, board_path, opts=None):
     dru = Path(board_path).with_suffix(".kicad_dru")
-    return R.build(info["copper"], info["settings"], info["netclasses"], set(info["nets"]),
-                   str(dru) if dru.exists() else None)
+    rb = R.build(info["copper"], info["settings"], info["netclasses"], set(info["nets"]),
+                 str(dru) if dru.exists() else None)
+    # kelu124 pic0rick: clearance "ignore", GND in a 0.5 mm class beside 0.5 mm-pitch pins; the
+    # human's tracks pass 0.245 mm from GND pads and DRC passes, ours walled the IC in (45 open)
+    sev = board_severities(board_path)
+    s = info["settings"]
+    mins = {"clearance": s.get("min_clearance", 0.0), "hole_clearance": s.get("hole_clearance", 0.0),
+            "edge_clearance": s.get("edge_clearance", 0.0)}
+    floor = setting("ignored_clearance_floor", board_path, opts)
+    rb.ignored = {ct: max(floor, mins.get(ct) or 0.0) for key, ct in IGNORABLE.items()
+                  if _severity_ignored(sev, key)}
+    return rb
 
 
 def _strict_min(rb, ctype, a, b, layer):
@@ -200,7 +263,7 @@ def _via_choice(info, rb, net):
 def plan(info, board_path, opts=None):
     """The routing plan for a board (see the module docstring)."""
     opts = dict(opts or {})
-    rb = rule_board(info, board_path)
+    rb = rule_board(info, board_path, opts)
     cu = list(info["copper"])
     p = Plan(copper=cu, rule_board=rb)
     sev = opts.get("severities") or {}
@@ -308,10 +371,14 @@ def plan(info, board_path, opts=None):
 
     # ---- pins
     pin_req = {}
-    for pad in info["pads"]:
-        if not pad.get("pin") or not pad.get("layers"):
-            continue
-        vec = _pad_requirements(info, rb, p, pad, sev)
+    outside = opts.get("pad_shapes") == "outside"
+    pad_vec = {i: _pad_requirements(info, rb, p, pad, sev, outside=outside)
+               for i, pad in enumerate(info["pads"]) if pad.get("pin") and pad.get("layers")}
+    # solder-mask openings drawn as graphics: keepouts, and around the pads they expose a
+    # clearance raised to cover the opening where a keepout would shut the pad in
+    mask_obs = _mask_openings(info, p, sev, pad_vec, outside)
+    for i, vec in pad_vec.items():
+        pad = info["pads"][i]
         key = tuple(sorted(vec.items()))
         cls = pin_req.get(key)
         if cls is None:
@@ -322,6 +389,7 @@ def plan(info, board_path, opts=None):
 
     # ---- obstacles
     _obstacles(info, rb, p, sev, opts)
+    p.obstacles.extend(mask_obs)
 
     # ---- the board outline (Freerouting applies one value to every class)
     edge_vals = [v[0] for v in p.obstacle_classes.get("kae_edge", ObstacleClass("", {})).values.values()]
@@ -424,8 +492,12 @@ def _ring(pad, dsn):
     return float(dsn.exterior.distance(seg)) - h["width"] / 2 if dsn.contains(seg) else -h["width"] / 2
 
 
-def _pad_requirements(info, rb, p, pad, sev):
-    """{(routing class, layer): clearance mm} for one pad (see module docstring)."""
+def _pad_requirements(info, rb, p, pad, sev, outside=False):
+    """{(routing class, layer): clearance mm} for one pad (see module docstring). `outside`: the
+    DSN pin is the pad's own copper (pad_shapes "outside", translate.circumscribe_pins), so the
+    clearance needs no allowance for chords inside the outline (applied on every side, that
+    allowance closed the one legal escape between 0.4 mm-pitch pads 0.2 mm apart at 0.2 mm
+    clearance: kata0510 rp2040, qubik bmps)."""
     s = info["settings"]
     cu = p.copper
     pi = pad_item(info, pad)
@@ -447,7 +519,7 @@ def _pad_requirements(info, rb, p, pad, sev):
         for l in cu:
             if l not in pad["layers"]:
                 continue
-            e = _excess(real.get(l), dsn)
+            e = 0.0 if outside else _excess(real.get(l), dsn)
             t = net_item(info, rep, "track", l, rc.widths[l])
             v = net_item(info, rep, "via", l)
             tw = _strict_min(rb, "clearance", pi, t, l) + e
@@ -510,8 +582,9 @@ def _edge_geoms(info):
     bnd = board.boundary if board is not None else None
     for e in info.get("edges") or []:
         g = _edge_line(e)
-        if g is None:
-            continue
+        if g is None or g.is_empty or g.length <= 1e-9:
+            continue  # zero-length edge shapes (gitberthe, keebio, neotron): nothing to keep out,
+                      # and shapely.segmentize raises on them
         w = e.get("width", 0.0) if e.get("layer") == "Margin" else 0.0
         if e.get("layer") == "Edge.Cuts" and bnd is not None:
             pts = shapely.get_coordinates(shapely.segmentize(g, 0.05))
@@ -632,25 +705,6 @@ def _obstacles(info, rb, p, sev, opts):
             continue
         for l, geo in shapes.items():
             p.obstacles.append(Obstacle("keepout", l, geo, cls, why))
-    # ---- solder-mask openings drawn as graphics expose the copper under them: another net's
-    # track or via inside one would share an aperture with it (solder_mask_bridge). Openings
-    # over a pad belong to that pad and are left to its pin class.
-    if not _severity_ignored(sev, "solder_mask_bridge"):
-        m2c = info["settings"].get("mask_to_copper", 0.0)
-        side_layer = {"F.Mask": cu[0], "B.Mask": cu[-1]}
-        pad_cu = {}
-        for pad in info["pads"]:
-            for l, g in _pad_shapes(pad)[1].items():
-                if g is not None and not g.is_empty:
-                    pad_cu.setdefault(l, []).append(g)
-        for m in info.get("mask_openings") or []:
-            l = side_layer.get(m.get("layer"))
-            geo = unary_union([x for x in (_poly(r) for r in m.get("polys") or []) if x is not None])
-            if l is None or geo.is_empty or any(g.intersects(geo) for g in pad_cu.get(l, [])):
-                continue
-            vec = {(n, l2): (up(max(m2c, EPS_SHORT)), up(max(m2c, EPS_SHORT))) for n in p.classes for l2 in cu}
-            p.obstacles.append(Obstacle("keepout", l, geo, _obstacle_class(p, "kae_mask", vec),
-                                        f"mask opening {m.get('cls')} {m.get('owner') or 'board'}"))
     # ---- kae.route.critical's pours: hard obstacles for the other nets
     for z in opts.get("crit_zones") or []:
         net = z.get("net") or ""
@@ -697,6 +751,87 @@ def _obstacles(info, rb, p, sev, opts):
                                         f"thermal spokes {pad['ref']}.{pad['number']}"))
 
 
+def _mask_openings(info, p, sev, pad_vec, outside=False):
+    """Keepouts for the solder-mask openings drawn as
+    graphics (board and footprint shapes and texts on F.Mask/B.Mask).
+
+    KiCad's DRC (drc_test_provider_solder_mask.cpp) counts a bridge whenever one such
+    opening exposes copper of two nets on its outer layer (within the mask-to-copper
+    clearance); no-net copper never bridges, and openings in footprints that allow
+    bridges are skipped. So the router's copper of a net must stay out of an opening that
+    exposes another net's copper, and of an empty one altogether. An opening becomes a
+    keepout (class kae_mask: mask-to-copper clearance), minus a hole round every netted pad
+    it exposes, so the pad's net can still reach it: the hole is as large as the pad's own
+    clearance (other nets keep that far away anyway). An opening that shuts a pad in (no gap
+    a track of its net fits through on the hole's rim: a solder jumper's, a crystal's) is left
+    out, as before (raising the pad's clearance over its share of the opening walled
+    protocentral pulse-express in: 5 -> 12-13 open).
+
+    Before, any opening that touched a pad was left out entirely: a fiducial's mask ring
+    touching its no-net dot let other nets' tracks through it (adafruit fona: HP+ under FID1),
+    a text over a jumper's corner did too (lenaschimmel bestelampe 'Lampe': one track, 36-42
+    bridges)."""
+    if _severity_ignored(sev, "solder_mask_bridge") or not info.get("mask_openings"):
+        return []
+    cu = p.copper
+    m2c = info["settings"].get("mask_to_copper", 0.0)
+    side_layer = {"F.Mask": cu[0], "B.Mask": cu[-1]}
+    allow = {pad.get("comp") for pad in info["pads"] if pad.get("allow_bridges")}
+    exposed = {}  # layer -> [(pad index, real copper, clearance of other nets from it, own track width)]
+    for i, vec in pad_vec.items():
+        pad = info["pads"][i]
+        net = pad.get("net") or ""
+        if not net:
+            continue
+        dsn, real = _pad_shapes(pad)
+        for l in (cu[0], cu[-1]):
+            g = real.get(l)
+            if g is None or g.is_empty or l not in pad["layers"]:
+                continue
+            e = 0.0 if outside else _excess(g, dsn)
+            r = min(min(v) for (n, ll), v in vec.items() if ll == l) - e if any(ll == l for _, ll in vec) else 0.0
+            rc = p.classes.get(p.net_class.get(net))
+            w = rc.widths[l] if rc else 0.0
+            exposed.setdefault(l, []).append((i, g, max(r, 0.0), w))
+    trees = {l: shapely.STRtree([g for _, g, _, _ in v]) for l, v in exposed.items()}
+    vec = {(n, l2): (up(max(m2c, EPS_SHORT)), up(max(m2c, EPS_SHORT))) for n in p.classes for l2 in cu}
+    obs = []
+    for m in info["mask_openings"]:
+        l = side_layer.get(m.get("layer"))
+        if l is None or (m.get("owner") and m["owner"] in allow):
+            continue
+        geo = unary_union([x for x in (_poly(r) for r in m.get("polys") or []) if x is not None])
+        if geo.is_empty:
+            continue
+        reach_geo = geo.buffer(m2c) if m2c > 0 else geo
+        hits = []
+        if l in trees:
+            for k in trees[l].query(reach_geo):
+                i, g, r, w = exposed[l][int(k)]
+                if g.intersects(reach_geo):
+                    hits.append((i, g, r, w))
+        keep = geo
+        shut = False
+        for i, g, r, w in hits:
+            hole = g.buffer(r, quad_segs=8)
+            if hole.exterior.difference(geo.buffer(m2c + 1e-4)).length < max(w, 1e-3):
+                shut = True   # a pad the opening shuts in (a jumper's, a crystal's): left as before
+                break
+            keep = keep.difference(hole)
+        nets = sorted({info["pads"][j].get("net") or "" for j, _, _, _ in hits})
+        if shut or len(nets) > 1:
+            # KiCad counts a bridge for any copper of a net in an opening that exposes another
+            # net's: the holes let a pad's own net in (the router joins a jumper's pads at the
+            # price of bridges, jkiv cm4-carrier JP1-JP4); kae.route.blocked holds it exactly
+            p.bridging_openings.append((l, reach_geo, f"mask opening {m.get('cls')} {m.get('owner') or 'board'}", nets))
+        if shut or keep.is_empty or keep.area < 1e-6:
+            continue
+        obs.append(Obstacle("keepout", l, keep, _obstacle_class(p, "kae_mask", vec),
+                            f"mask opening {m.get('cls')} {m.get('owner') or 'board'}"
+                            + (f" (around {len(hits)} pads)" if hits else "")))
+    return obs
+
+
 def _hole_free(g):
     """Simple polygons that together cover polygon `g`: each hole is cut open by a vertical
     line through it (a DSN pin shape has no holes)."""
@@ -729,7 +864,16 @@ def thermal_corridors(info, p, pad_uuids=None, sev=None):
     away from foreign pads and copper by the zone clearance and from the board edge; so each
     strip (spoke width + 2 clearances wide, reaching past the gap by the zone's minimum width)
     is cut to that potential fill, and only the `min_resolved_spokes` strips with the most
-    landing area are kept. `pad_uuids` limits the pads (None: all)."""
+    landing area are kept. `pad_uuids` limits the pads (None: all).
+
+    A strip gives way where it would block another pin's only escape (gives_way): strips that
+    block none are preferred; when fewer than `min_resolved_spokes` of those are left and the
+    pad has a way out for a track itself, the pad gets no strips at all. Its zone then reaches
+    it through the routing or not at all (has_way): KiCad reports no starved thermal for a pad with no
+    spoke that a track joins to its net (checked with kicad-cli on a pad with every spoke cut),
+    and a lone spoke would be one (actual 1 < 2). bancouver40 dogema48: with a 0.508 mm zone
+    clearance, the strips of a 0.5 mm-pitch QFN's GND pins closed their neighbours' only
+    escapes, every seed; the human's GND pins there have no spokes and no error."""
     if sev and _severity_ignored(sev, "starved_thermal"):
         return []
     s = info["settings"]
@@ -744,6 +888,74 @@ def thermal_corridors(info, p, pad_uuids=None, sev=None):
     if polys:
         board = unary_union(polys)
     foreign_cache = {}
+    lane_w = max(s.get("min_track") or 0.0, 0.1)
+    by_layer = {}
+
+    def pads_on(layer):
+        """(STRtree, [(pad, copper)]) of every pad with copper on `layer`."""
+        if layer not in by_layer:
+            items = []
+            for q in info["pads"]:
+                g = _pad_shapes(q)[1].get(layer)
+                if g is not None and not g.is_empty:
+                    items.append((q, g))
+            by_layer[layer] = (shapely.STRtree([g for _, g in items]), items)
+        return by_layer[layer]
+
+    def free_lanes(q, g, layer):
+        """Straight ways out of pad q (copper g) for a track of the board's minimum width along
+        its own axes that cross no other pad: where a track from it can go."""
+        tree, items = pads_on(layer)
+        cx, cy = q["pos"]
+        x0, y0, x1, y1 = g.bounds
+        far = max(x1 - cx, cx - x0, y1 - cy, cy - y0) + 1.0
+        out = []
+        for k in range(4):
+            a = math.radians((q.get("orient") or 0.0) + 90 * k)
+            lane = LineString([(cx, cy), (cx + far * math.cos(a), cy - far * math.sin(a))]).buffer(
+                lane_w / 2, cap_style="flat")
+            if board is not None and not board.contains(lane):
+                continue
+            hit = False
+            for i in tree.query(lane):
+                o, og = items[int(i)]
+                if o is not q and o.get("net") != q.get("net") and og.intersects(lane):
+                    hit = True
+                    break
+            if not hit:
+                out.append(lane.difference(g))
+        return out
+
+    def has_way(q, g, layer):
+        """Whether a track can leave pad q (copper g): a free lane, or a short straight piece to
+        another pad of its net that crosses no other net's pad (a QFN's exposed pad to its GND pins)."""
+        if free_lanes(q, g, layer):
+            return True
+        from shapely.ops import nearest_points
+        tree, items = pads_on(layer)
+        for i in tree.query(g.buffer(2.0)):
+            o, og = items[int(i)]
+            if o is q or o.get("net") != q.get("net"):
+                continue
+            a, b2 = nearest_points(g, og)
+            piece = LineString([a, b2]).buffer(lane_w / 2) if a.distance(b2) > 1e-6 else None
+            if piece is None or not any(oo.get("net") != q.get("net") and oog.intersects(piece)
+                                        for oo, oog in (items[int(j)] for j in tree.query(piece))):
+                return True
+        return False
+
+    def gives_way(strip, pad, layer):
+        """Whether `strip` (the pad's strips together) covers every free lane of some other pin
+        (another net's pad next to it)."""
+        tree, items = pads_on(layer)
+        for i in tree.query(strip.buffer(lane_w)):
+            q, g = items[int(i)]
+            if q is pad or q.get("net") == pad.get("net") or not q.get("net"):
+                continue
+            lanes = free_lanes(q, g, layer)
+            if lanes and all(strip.intersection(x).area > 1e-6 for x in lanes):
+                return True
+        return False
 
     def foreign(layer, net, clr):
         key = (layer, net, round(clr, 4))
@@ -795,7 +1007,17 @@ def thermal_corridors(info, p, pad_uuids=None, sev=None):
                     continue
                 gap = pad.get("thermal_gap") or z.get("thermal_gap") or 0.5
                 mt = z.get("min_thickness") or 0.0
-                sw = max(pad.get("spoke_width") or z.get("spoke_width") or 0.5, mt)
+                # KiCad draws no spoke wider than the pad (kata0510 rp2040: the human's GND pin
+                # U2.19, 0.2 mm wide between 0.4 mm-pitch neighbours that both escape straight
+                # out, has its spokes with the zone's 0.508 mm spoke width; a strip that wide
+                # closed both neighbours' only escapes)
+                rr = cop.minimum_rotated_rectangle
+                rc = list(rr.exterior.coords) if rr.geom_type == "Polygon" else []
+                pmin = min(math.dist(rc[0], rc[1]), math.dist(rc[1], rc[2])) if len(rc) >= 3 else None
+                sw = pad.get("spoke_width") or z.get("spoke_width") or 0.5
+                if pmin:
+                    sw = min(sw, pmin)
+                sw = max(sw, mt)
                 clr = max(z.get("clearance") or 0.0, s.get("min_clearance", 0.0))
                 fill = zg
                 if board is not None:
@@ -810,14 +1032,29 @@ def thermal_corridors(info, p, pad_uuids=None, sev=None):
                 ring = cop.buffer(gap, quad_segs=8)
                 cand = []
                 for k in range(4):
-                    a = math.radians((pad.get("spoke_angle") or 0.0) + 90 * k)
+                    # KiCad lays the spokes out in the pad's frame: the spoke angle is relative to the
+                    # pad's orientation (bancouver40: a 45-degree QFN's GND pins U1.15 and U1.23 got
+                    # axis-aligned corridors across their neighbours' only escapes, every seed)
+                    a = math.radians((pad.get("spoke_angle") or 0.0) + (pad.get("orient") or 0.0) + 90 * k)
                     ex, ey = cx + reach * math.cos(a), cy - reach * math.sin(a)
                     strip = LineString([(cx, cy), (ex, ey)]).buffer(sw / 2 + clr, cap_style="flat")
-                    land = strip.intersection(fill).difference(ring)
+                    # fill the spoke can reach: pieces of the strip's fill that enter the relief gap
+                    # (beyond a foreign pad in its way, fill is no landing: KiCad's spoke stops there)
+                    sf = strip.intersection(fill)
+                    land = unary_union([q for q in getattr(sf, "geoms", [sf]) if q.intersects(ring)] or [Polygon()])
+                    land = land.difference(ring)
                     if land.area < sw * max(mt, 0.05):
                         continue
                     cand.append((land.area, strip.intersection(fill.union(ring)).difference(cop.buffer(1e-4))))
                 cand.sort(key=lambda t: -t[0])
+                clear = []    # the best strips that, together, leave every neighbour a way out
+                for c in cand:
+                    if len(clear) < need and not gives_way(unary_union([g for _, g in clear] + [c[1]]), pad, l):
+                        clear.append(c)
+                if len(clear) < min(need, len(cand)) and has_way(pad, cop, l):
+                    continue      # strips that close a neighbour in: none, the pad joins its net by a track
+                if len(clear) >= min(need, len(cand)):
+                    cand = clear
                 corridor = unary_union([g for _, g in cand[:need]]) if cand else None
                 if corridor is not None and not corridor.is_empty:
                     out.append((corridor, l, pad))

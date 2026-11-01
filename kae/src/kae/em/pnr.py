@@ -1,0 +1,1353 @@
+# SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Physics-priced routing of the nets the circuit says matter.
+
+    python -m kae.em.pnr BOARD.kicad_pcb OUT.kicad_pcb [--plain] [--lam 30] [--pitch 0.25]
+
+1. The circuit (kae.excite) gives every aggressor's and observer's pad-current pattern at the
+   pattern band, and the prices: d(harm)/d(L) per (observer, aggressor) pair.
+2. The priced nets (every non-ground net that carries pattern current) are ripped up.
+3. The copper as it stands is meshed (kae.em). Connections not yet routed are ideal shorts
+   (field-free), so every pattern can be solved; each solve gives the price fields and crossing
+   potentials of that pattern (kae.em.t1).
+4. Each priced net is routed hop by hop (a spanning tree of its copper islands) with the legality
+   of kae.route.critical_grid and move costs from the price fields: its own loop inductance over
+   the local reference, signed coupling to every other pattern, and the crossing term. The fields
+   are re-solved after every `refresh` nets.
+--plain routes the same nets in the same order with the same legality and no physics (the A/B).
+--spectral prices over the whole spectrum instead of the 10 MHz band: a reduced model of the copper and the
+whole circuit per refresh, weights from the evaluator's harmonic harms (kae.em.spectral).
+"""
+from __future__ import annotations
+
+import argparse
+import os
+import math
+import tempfile
+import time
+from pathlib import Path
+from types import SimpleNamespace
+
+import numpy as np
+
+from kae.excite import dc as DC
+from kae.route.critical_physics import RHO_CU, ipc2221_width
+
+from . import solve as ES
+from . import t1 as T1
+from .kicad import BoardMesh
+
+MU0 = 4e-7 * math.pi
+
+
+def strip_L_per_mm(w, h, t=0.035):
+    """Air microstrip inductance per mm (H/mm), Hammerstad-Jensen with the thickness correction."""
+    w = np.maximum(w, 1e-3)
+    h = np.maximum(h, 1e-3)
+    u, tn = w / h, t / h
+    u = u + tn / np.pi * np.log(1 + 4 * np.e / (tn / np.tanh(np.sqrt(6.517 * u)) ** 2))
+    f = 6 + (2 * np.pi - 6) * np.exp(-(30.666 / u) ** 0.7528)
+    return 376.73 / (2 * np.pi) * np.log(f / u + np.sqrt(1 + 4 / u ** 2)) / 2.998e8 * 1e-3
+
+
+def cpw_L_per_mm(w, g):
+    """Coplanar return: a strip of width w with ground copper at gap g on its own layer, both sides
+    (quasi-static, L' = mu0/4 K(k')/K(k), k = w/(w + 2g)); one side only doubles it (H/mm)."""
+    from scipy.special import ellipk
+    k = np.clip(w / (w + 2 * np.maximum(g, 1e-3)), 1e-6, 1 - 1e-9)
+    return MU0 / 4 * ellipk(1 - k * k) / ellipk(k * k) * 1e-3
+
+
+# the router's prices use the barrier's slope only up to this: past it, one observer whose bound is a
+# crude prior would set every price (the true score, sum phi(u), is not capped)
+PHI_SLOPE_CAP = 5.0
+# observer kinds whose coupling prediction has not passed a check against exact solves: the router does
+# not price them (the field solve that verifies each candidate still counts them)
+UNPRICED = ("cm",)
+# a hop gets the commutation width floor (0.8 mm) only when it carries at least this share of a cell's
+# pattern current: a trace of it (a feedback divider's) is not the commutation loop
+COMMUTATION_SHARE = 0.1
+
+
+def phi_prime(u):
+    """Slope of the margin price phi (kae.physics.priors): linear to 1, then a quadratic barrier."""
+    return 1.0 if u <= 1 else min(1.0 + 8.0 * (u - 1.0), PHI_SLOPE_CAP)
+
+
+class PhysRouter:
+    def __init__(self, path, out, pitch=0.25, lam=30.0, nsub=2, plain=False, refresh=4, log=print, work=None,
+                 verify=False, intent=None, seed=0, n_corners=16, capacitive=True, spectral=False, goal=None,
+                 keep=(), lock=False):
+        from kae.board.kicad_file import load
+        from kae.circuit import brief as B
+        from kae.excite import models as M
+        from kae.excite import observe as O
+        from kae.excite import sources as S
+        from kae.route import critical_write as W
+        self.log, self.pitch, self.lam, self.nsub, self.plain, self.refresh = log, pitch, lam, nsub, plain, refresh
+        self.verify = verify
+        self.lock = lock                     # write its copper locked: a completion router routes around it
+        self.explain_hops = True
+        self.src_path, self.out = Path(path), Path(out)
+        self.work = Path(work or tempfile.mkdtemp(prefix="kae-pnr-"))
+        self.work.mkdir(parents=True, exist_ok=True)
+        b = load(path)
+        self.brief = B.build(b)
+        bd = self.bd = M.build(b, self.brief)
+        self.srcs = S.add_all(bd, self.brief)
+        self.obs = O.observers(bd, self.brief, self.srcs)
+        self.f = O.F_PATTERN
+        self.w = 2 * math.pi * self.f
+        # the evaluator's assumption ledger and corners: the router prices the harm the evaluator scores
+        from kae.excite.beliefs import corners
+        from kae.excite.evaluate import ledger_for
+        self.P, self.ledger = ledger_for(bd, self.brief, self.srcs, intent)
+        self.cval = {s.name: [{k[1]: v for k, v in c.items()} for c in corners(self.P[s.name].values(), n=n_corners, seed=seed)]
+                     for s in self.srcs}
+        for s in self.srcs:
+            if O.gentle_f(s) != self.f:
+                log(f"pnr: {s.name}: edge band {O.gentle_f(s) / 1e6:.3g} MHz, priced at {self.f / 1e6:.3g} MHz")
+        for p in self.ledger.flagged():
+            log(f"pnr: prior {p.subject} {p.name} [{p.lo:.4g} .. {p.hi:.4g}] {p.unit}: priced over the interval")
+        # goal: the commander's intent (kae.intent/1). Its copper policy sets hop widths in closed form, in
+        # plain and physics routing alike; its physics terms name the (observer, aggressor) pairs the router
+        # prices, so only those are solved and only the nets that carry them are routed with fields (the
+        # sections the intent asks physics of); every other net is routed plain with the policy's widths
+        self.policy, self.pair_terms = None, None
+        self.psrcs, self.pobs = self.srcs, self.obs
+        if goal is not None:
+            from kae.intent import route as IR
+            from kae.intent import sections as SE
+            self.policy = IR.Policy(goal, SE.apply(SE.from_brief(self.brief), goal.get("sections")))
+            self.pair_terms = {(o.name, s.name): ts for o in self.obs for s in self.srcs
+                               if (ts := self.policy.pair_terms(bd, o, s))}
+            on = {k[0] for k in self.pair_terms}
+            sn = {k[1] for k in self.pair_terms}
+            self.pobs = [o for o in self.obs if o.name in on]
+            self.psrcs = [s for s in self.srcs if s.name in sn]
+            log(f"pnr: {self.policy.describe()}; physics on {len(self.pair_terms)} (observer, aggressor) pairs "
+                f"of {len(self.obs) * len(self.srcs)}: {sorted(self.pair_terms)[:6]}")
+        # capacitive prices (kae.em.cprice): victim copper in the swinging nets' fields, and back
+        self.cap, self.capf = None, None
+        if capacitive and not plain and self.policy is None:
+            from .cprice import CapPrices
+            self.cap = CapPrices(bd, self.brief, self.srcs, self.obs, self.cval, log=log)
+            self.cap = self.cap if self.cap.pairs else None
+            if self.cap:
+                self.cap.clearance = lambda n, layer: self.sp._generic_need(n, "track", layer)
+        # pat: the injection at the pads of parts outside the copper model (two-pad parts are lumped into
+        # it); flow: every pad's current with ideal copper, which says what each net carries
+        self.pat, self.flow, self.vid = {}, {}, {}
+        for s in self.psrcs:
+            r = bd.circuit.solve(self.f, [s])[s.name]
+            self.pat[("s", s.name)], self.flow[("s", s.name)] = r["Ja"], r["J"]
+            self.vid[("s", s.name)] = O.ideal(bd, r)
+        for o in self.pobs:
+            self.pat[("o", o.name)] = O.pattern(bd, o, self.f, active=True)
+            self.flow[("o", o.name)] = O.pattern(bd, o, self.f)
+        # the DC band (kae.excite.dc): the evaluator's plan and observers, at the same corners (a corner's
+        # cells take their switching corner's values)
+        self.dcp = DC.plan(b, self.brief, bd, self.P, self.srcs, intent)
+        for p in self.dcp.params:
+            self.ledger.add(p)
+        ncp = n_corners + 3
+        own = corners(self.dcp.params, n=n_corners, seed=seed + 1) if self.dcp.params else [{} for _ in range(ncp)]
+        self.dcv = [dict(own[c], **{s.name: self.cval[s.name][c] for s in self.srcs if s.kind == "cell"}) for c in range(ncp)]
+        self.dc_inj = [DC.injections(self.dcp, cv) for cv in self.dcv]
+        self.dc_obs = None
+        # priced nets: every non-ground net carrying pattern current (above 1% of the pattern's largest),
+        # switching or DC
+        load_ = {}
+        # the nets the priced pairs' currents flow in: routed with fields when the intent names pairs
+        self.phys_nets = set()
+        for J in self.flow.values():
+            mx = max((abs(v) for v in J.values()), default=0) or 1
+            self.phys_nets |= {bd.net_of.get(p) for p, v in J.items()
+                               if bd.net_of.get(p) and bd.net_of.get(p) not in bd.grounds and abs(v) > 0.01 * mx}
+        for J in list(self.flow.values()) + self.dc_inj:
+            mx = max((abs(v) for v in J.values()), default=0) or 1
+            for p, v in J.items():
+                n = bd.net_of.get(p)
+                if n and n not in bd.grounds and abs(v) > 0.01 * mx:
+                    load_[n] = load_.get(n, 0) + abs(v) / mx
+        # keep: nets an earlier pass could not route whole; they stay exactly as the input has them
+        self.kept = sorted(set(keep) & set(load_))
+        self.nets = sorted((n for n in load_ if n not in self.kept), key=lambda n: -load_[n])
+        self.net_load = load_
+        # rip them up
+        rip = [t.uuid for t in b.tracks if t.net in self.nets] + [v.uuid for v in b.vias if v.net in self.nets]
+        self.base = self.work / "base.kicad_pcb"
+        W.edit(path, self.base, remove=rip)
+        left = sum(1 for t in load(self.base).tracks if t.net in self.nets)
+        if left:
+            raise RuntimeError(f"pnr: rip-up left {left} tracks on the priced nets ({path}): the board's item ids "
+                               f"were not matched; routing would see every net connected")
+        for ext in (".kicad_pro", ".kicad_dru"):
+            s_ = Path(path).with_suffix(ext)
+            if s_.exists():
+                import shutil
+                shutil.copy2(s_, self.base.with_suffix(ext))
+        log(f"pnr: {len(self.srcs)} aggressors, {len(self.obs)} observers; priced nets {self.nets}; "
+            f"ripped {len(rip)} items" + (f"; kept as the input has them: {self.kept}" if self.kept else ""))
+        from kae.route.critical import Session
+        self.sess = Session(self.base, opts=dict(place_allocs=False), log=lambda m: None)
+        self.sp, self.router = self.sess.space, self.sess.router
+        self.tracks, self.vias = [], []
+        self.window = None
+        # whole-spectrum prices (kae.em.spectral): the reduced model of every refresh replaces the 10 MHz solve
+        self.spec, self.spec_m, self.spec_hops, self.spec_pred = None, None, (), {}
+        if spectral:
+            from .spectral import Spectral
+            self.spec = Spectral(self, log=log, **(spectral if isinstance(spectral, dict) else {}))
+
+    # ------------------------------------------------------------------ fields
+    def _state_board(self):
+        from kae.route import critical_write as W
+        p = self.work / "state.kicad_pcb"
+        W.append_items(self.base, p, tracks=self.tracks, vias=self.vias)
+        for ext in (".kicad_pro", ".kicad_dru"):
+            s_ = self.base.with_suffix(ext)
+            if s_.exists():
+                import shutil
+                shutil.copy2(s_, p.with_suffix(ext))
+        return p
+
+    def solve_fields(self):
+        """Mesh the copper as it stands, short what is not yet connected, solve every pattern. Copper that has
+        not changed since the last solve keeps its fields (the solve is deterministic)."""
+        t0 = time.time()
+        sig = hash(repr((self.tracks, self.vias)))
+        if sig == getattr(self, "_sig", None) and getattr(self, "prices", None) is not None:
+            self.log("pnr: copper unchanged since the last solve; fields kept")
+            return
+        p = self._state_board()
+        from kae.board.kicad_file import load
+        b = load(p)
+        if self.window is None:
+            from kae.board import transform
+            xs, ys = [], []
+            for fp in b.footprints:
+                for pd in fp.pads:
+                    x, y = transform.pad_xy(fp, pd)
+                    xs.append(x), ys.append(y)
+            self.window = (min(xs) - 3, min(ys) - 3, max(xs) + 3, max(ys) + 3)
+        bm = BoardMesh(p, self.window, self.pitch, nsub=self.nsub, b=b)
+        self._fills = bm.fills
+        pads = {q for J in self.pat.values() for q in J}
+        pads |= {q for n in self.nets for q in self.bd.pads_of.get(n, [])}
+        pads |= {q for e in self.bd.circuit.elems if e.pa and e.pb for q in (e.pa, e.pb)}
+        pads |= self.dcp.dc_pads
+        ok = set()
+        for q in sorted(pads):
+            try:
+                bm.pad(q)
+                ok.add(q)
+            except (KeyError, ValueError):
+                pass
+        net = ES.Network(bm.m)
+        # islands of each net's pads; unrouted connections become field-free shorts
+        self.islands = {}
+        shorted = 0
+        for n in set(self.bd.net_of[q] for q in ok if q in self.bd.net_of):
+            groups = {}
+            for q in self.bd.pads_of.get(n, []):
+                if q in ok:
+                    groups.setdefault(int(net.comp[net.term_node[q]]), []).append(q)
+            # the routing islands come from the exact copper (the raster can merge pads closer than a
+            # cell, and the hop between them would never be routed); the mesh's own groups get the shorts
+            self.islands[n] = self._exact_islands(n, ok) if n in self.nets else list(groups.values())
+            reps = [g[0] for g in groups.values()]
+            for a, c in zip(reps[:-1], reps[1:]):
+                bm.m.part(a, c)
+                shorted += 1
+        from kae.excite.circuit import lump_into
+
+        def tpad(t):
+            if t not in ok:
+                raise KeyError(t)
+            return t
+        base = list(bm.m.lumped)          # the field-free shorts of unrouted connections
+        lump_into(self.bd.circuit, tpad, lambda a, c, zf, nm: bm.m.part(a, c, name=nm, zf=zf))
+        net = ES.Network(bm.m)
+        op = ES.Operator(net)
+        self.dc_obs = None
+        if self.dcp.loads:
+            # the DC copper: the shorts and the parts that conduct at DC; one solve per corner at f = 0
+            ac = bm.m.lumped
+            bm.m.lumped = list(base)
+            lump_into(SimpleNamespace(elems=[e for e in self.bd.circuit.elems if e.kind in DC.DC_KINDS]), tpad,
+                      lambda a, c, zf, nm: bm.m.part(a, c, name=nm, zf=zf))
+            net_dc = ES.Network(bm.m)
+            bm.m.lumped = ac
+            res_dc = ES.potentials_many(bm.m, [{q: a for q, a in inj.items() if q in ok} for inj in self.dc_inj], 0.0,
+                                        net=net_dc, op=ES.Operator(net_dc))
+            if all(V is not None for V, _ in res_dc):
+                self.dc_obs = [DC.observe(self.dcp, cv, V, info) for cv, (V, info) in zip(self.dcv, res_dc)]
+            else:
+                self.log("pnr: the DC flow cannot close in the copper; the DC band is unpriced")
+        self.ref_ids = {bm.m.nets.index(g) for g in self.ref_nets() if g in bm.m.nets} or None
+        if self.spec is not None:
+            if self.cap:                      # the capacitive fields serve both price models
+                self.capf = self.cap.solve(bm, b, prev=self.capf)
+            return self.spec.refresh(bm, base, ok, t0, sig, shorted)
+        self.prices, self.pot_at = {}, {}
+        self.K = {}
+        layers = list(range(len(bm.m.layers)))
+        keys, injs = [], []
+        for key, J in self.pat.items():
+            inj = {q: v for q, v in J.items() if q in ok}
+            if inj:
+                keys.append(key)
+                injs.append(inj)
+        # (warm starts from the previous refresh did not converge faster: adding copper changes the solution
+        # too much; kae.em.solve.System.warm stays available)
+        # identical injection sets (e.g. an observer whose active and passive patterns coincide) solve once
+        uniq, slot = {}, []
+        for inj in injs:
+            slot.append(uniq.setdefault(tuple(sorted((q, complex(v)) for q, v in inj.items())), len(uniq)))
+        first = {i: inj for inj, i in zip(injs, slot)}
+        resu = ES.potentials_many(bm.m, [first[i] for i in range(len(uniq))], self.f, net=net, op=op)
+        res = [resu[i] for i in slot]
+        if len(uniq) < len(injs):
+            self.log(f"pnr: {len(injs)} patterns, {len(uniq)} distinct")
+        self._warm = {}
+        self.log(f"pnr: solve iterations {[r[1]['iters'] for r in res]}")
+        for key, (v, info) in zip(keys, res):
+            self._warm[key] = info.get("state")
+            if v is None:
+                self.log(f"pnr: pattern {key[1]} cannot close in the copper ({info['open_terms'][:4]}); unpriced")
+                continue
+            cp = T1.cell_potentials(info["sys"], info["x"])
+            self.K[key] = self._sheet_currents(net, info["I"])
+            from . import fields as EF
+            fl = EF.flux(op, info["I"])
+            self.prices[key] = {l: T1.price(bm.m, op, info["I"], cp, None, l, w=self.w, ref_ids=self.ref_ids,
+                                            phi_all=fl) for l in layers}
+            self.pot_at[key] = v
+        self.mesh = bm.m
+        self.op = op
+        self.layer_names = [l.name for l in bm.m.layers]
+        if self.cap:
+            self.capf = self.cap.solve(bm, b, prev=self.capf)
+        self._weights()
+        H = self.H
+        pred = getattr(self, "_pred", None)
+        if pred is not None and getattr(self, "_H", None) is not None:
+            self.log(f"pnr: harm {self._H:.2f} -> {H:.2f} (change {H - self._H:+.2f}; the hops' prices predicted "
+                     f"{pred:+.2f})")
+            # per (observer, aggressor) pair: the change of L the prices predicted against the solve's
+            rows = []
+            for key, L in self.Lks.items():
+                L0 = self._L0.get(key)
+                if L0 is None:
+                    continue
+                pl = self._predL.get(key, 0.0)
+                rows.append((abs(L - L0) + abs(pl), key, L - L0, pl))
+            for _, key, dl, pl in sorted(rows, reverse=True)[:8]:
+                self.log(f"pnr:   dL {key[0][:34]:34s} <- {key[1][:24]:24s} actual {dl * 1e9:+8.3f} nH "
+                         f"predicted {pl * 1e9:+8.3f} nH")
+        self._H, self._pred = H, 0.0
+        self._L0, self._predL = dict(self.Lks), {}
+        self._sig = sig
+        self.log(f"pnr: fields of {len(self.prices)} patterns on {bm.m.nx}x{bm.m.ny}x{len(layers)} "
+                 f"({shorted} unrouted connections shorted) in {time.time() - t0:.1f}s; harm robust {H:.2f}, "
+                 f"typical {self.H_typ:.2f}")
+
+    def _weights(self):
+        """Per (observer k, aggressor s) pair: u at every corner of s's intervals by the evaluator's model
+        (kae.excite.harm.pair_u) from the solve's L_ks; the objective H is the robust total (mean over the
+        worst corners, kae.excite.harm.robust) and w[(k, s)] its derivative per henry of L_ks. The router
+        solves one band, so the fundamental's layout share is its inductive part (j w_sw L_ks); the
+        resistive part is the DC band's."""
+        from kae.excite import harm as HA
+        self.wts, self.harm, self.Lks, self.u_c = {}, {}, {}, {}
+        ncp = len(next(iter(self.cval.values()), [None]))
+        tot = np.zeros(ncp)
+        slope = {}
+        for o in self.pobs:
+            kk = ("o", o.name)
+            for s in self.psrcs:
+                ks = ("s", s.name)
+                if o.kind == "overshoot" and o.meta.get("source") != s.name:
+                    continue
+                if self.pair_terms is not None and (o.name, s.name) not in self.pair_terms:
+                    continue
+                if ks not in self.pot_at:
+                    continue
+                r = sum(self.pat[kk].get(q, 0) * self.pot_at[ks].get(q, 0) for q in self.pat[kk] if q in self.pot_at[ks])
+                r -= sum(self.pat[kk].get(q, 0) * self.vid[ks].get(q, 0) for q in self.pat[kk])   # the layout's share
+                L = r.imag / self.w
+                self.Lks[(o.name, s.name)] = L
+                # both terms are proportional to |L| here, so u = g |L| with g per corner
+                g = np.array([HA.pair_u(o.kind, o.bound, 2j * math.pi * v["f_sw_Hz"] * 1e-9, 1e-9, v)[0] / 1e-9
+                              for v in self.cval[s.name]])
+                us = g * abs(L)
+                self.u_c[(o.name, s.name)] = us
+                self.harm[(o.name, s.name)] = float(us[0])
+                if self.pair_terms is not None:      # the intent's cost, in its currency
+                    tot += self.policy.pair_cost(self.pair_terms[(o.name, s.name)], us * o.bound)
+                else:
+                    tot += np.where(us <= 1, us, us + 4 * (us - 1) ** 2)
+                if o.kind not in UNPRICED or self.pair_terms is not None:
+                    slope[(kk, ks)] = (g, np.sign(L or 1.0), (o.name, s.name), o.bound)
+        for c, ob in enumerate(self.dc_obs or []):
+            if self.policy is not None:
+                tot[c] += self.policy.dc_cost(ob)
+            else:
+                tot[c] += HA.phi(ob["loss"][0]) + sum(HA.phi(d[2]) for d in ob["drops"])
+        if self.cap:
+            tot = tot + self.cap.corner_phi(self.capf)
+        self.H, idx = HA.robust(list(tot))
+        self.H_typ, self.H_corners = float(tot[0]), idx
+        if self.cap:
+            self.cap.set_weights(self.capf, idx, phi_prime)
+            self.log(f"cap: {self.cap.report(self.capf)}")
+        for key, (g, sg, pk, bound) in slope.items():
+            us = self.u_c[pk]
+            if self.pair_terms is not None:
+                # the intent's cost per volt of the pair's peak (V = u x bound), per henry of L_ks
+                V = us * bound
+                d = self.policy.dC_dV(self.pair_terms[pk], V)
+                self.wts[key] = sg * float(np.mean([d[c] * g[c] * bound for c in idx]))
+            else:
+                self.wts[key] = sg * float(np.mean([phi_prime(us[c]) * g[c] for c in idx]))
+
+    def _islands_only(self):
+        """The copper islands of each net (what is still to connect) without solving any field: the
+        plain router's setup."""
+        p = self._state_board()
+        from kae.board.kicad_file import load
+        b = load(p)
+        if self.window is None:
+            from kae.board import transform
+            xs, ys = [], []
+            for fp in b.footprints:
+                for pd in fp.pads:
+                    x, y = transform.pad_xy(fp, pd)
+                    xs.append(x), ys.append(y)
+            self.window = (min(xs) - 3, min(ys) - 3, max(xs) + 3, max(ys) + 3)
+        bm = BoardMesh(p, self.window, self.pitch, nsub=1, b=b)
+        self._fills = bm.fills
+        ok = set()
+        for q in sorted({q for n in self.nets for q in self.bd.pads_of.get(n, [])}):
+            try:
+                bm.pad(q)
+                ok.add(q)
+            except (KeyError, ValueError):
+                pass
+        self.islands = {n: self._exact_islands(n, ok) for n in self.nets}
+        self.prices = {}
+
+    def _zone_anchors(self, n, pads):
+        """Anchors for the pour pieces joined to the island of `pads` (refilled copper)."""
+        from kae.route.critical_grid import Anchor
+        zs = getattr(self, "island_zones", {}).get((n, frozenset(pads)), [])
+        return [Anchor(piece, (layer,), None, kind="zone") for layer, piece in zs]
+
+    def _exact_islands(self, n, ok):
+        """Net n's pads (those in `ok`) grouped by exact copper: pads, tracks and vias that touch
+        (kae.route Space.component), joined through every connected piece of the net's zone fills."""
+        sp = self.sp
+        tok_of = {}
+        for q in self.bd.pads_of.get(n, []):
+            if q not in ok:
+                continue
+            ref, num = q.rsplit(".", 1)
+            for it in sp.pads_by_fp.get(self._fp(ref), []):
+                if str(it.owner[1]) == num:
+                    tok_of[id(it)] = q
+        comps, where = [], {}
+        for q in tok_of.values():
+            if q in where:
+                continue
+            a = self._anchor(q)
+            comp = sp.component(n, [(a.geom, a.layers)])
+            k = len(comps)
+            comps.append(comp)
+            for it in comp:
+                if id(it) in tok_of:
+                    where[tok_of[id(it)]] = k
+            where.setdefault(q, k)
+        parent = list(range(len(comps)))
+
+        def find(i):
+            while parent[i] != i:
+                parent[i] = parent[parent[i]]
+                i = parent[i]
+            return i
+        # the pours as KiCad refills them on the copper as it stands (the mesh's fill), not the input board's: a
+        # pour the new tracks pushed back from a pad no longer connects it
+        fills = getattr(self, "_fills", None)
+        zones = ([(n, layer, g, None) for layer, polys in (fills.get(n) or {}).items() for g in polys] if fills is not None
+                 else [z for z in sp.zones if z[0] == n])
+        pieces = []
+        for zn, layer, g, _ in zones:
+            if zn != n:
+                continue
+            for piece in getattr(g, "geoms", [g]):
+                touch = [k for k, comp in enumerate(comps)
+                         if any(layer in it.layers and (it.geom.buffer(it.r) if it.r > 0 else it.geom).distance(piece) <= 1e-6
+                                for it in comp)]
+                for k in touch[1:]:
+                    parent[find(k)] = find(touch[0])
+                if touch:
+                    pieces.append((touch[0], layer, piece))
+        groups = {}
+        for q, k in where.items():
+            groups.setdefault(find(k), []).append(q)
+        # each island's pour pieces: a hop may end on them (a pad a refill cut off rejoins its pour)
+        self.island_zones = getattr(self, "island_zones", {})
+        for root, g in groups.items():
+            self.island_zones[(n, frozenset(g))] = [(layer, piece) for k, layer, piece in pieces if find(k) == root]
+        return list(groups.values())
+
+    def ref_nets(self):
+        """Nets whose copper carries returns at the pattern band: the grounds, and every rail with a
+        capacitor to a ground (an AC ground there: a power plane next to a track is its return)."""
+        out = set(self.bd.grounds)
+        for e in self.bd.circuit.elems:
+            if e.kind == "C" and e.pa and e.pb:
+                a, b = self.bd.net_of.get(e.pa), self.bd.net_of.get(e.pb)
+                if a in self.bd.grounds and b in self.bd.rails:
+                    out.add(b)
+                elif b in self.bd.grounds and a in self.bd.rails:
+                    out.add(a)
+        return out
+
+    # ------------------------------------------------------------------ hop prices
+    def hop_currents(self, n, a_pads, b_pads):
+        """Current of each pattern on a hop joining island A (pads a_pads) toward island B of net n:
+        the pattern's injection summed over the islands on A's side of the hop (one hop per pair of
+        islands in a chain, so A's side is A)."""
+        out = {}
+        for key, J in self.flow.items():
+            i = sum(J.get(q, 0) for q in a_pads)
+            if abs(i) > 1e-6:
+                out[key] = complex(i).real            # injected at A's pads, flowing A -> B in the copper
+        if self.spec is not None:
+            out[("pads", tuple(a_pads))] = 0.0       # kae.em.spectral reads the hop's currents per frequency
+        return out
+
+    def phys(self, cur, width, ends=(None, None)):
+        """The move-cost callable for GridRouter.connect, for a hop carrying `cur` {pattern: A}; ends: the
+        mesh layer indices of the planes its source and target terminals' returns enter."""
+        if self.spec is not None and not self.plain:
+            cur = self.spec.hop(cur, width)
+        lam, m = self.lam, getattr(self, "mesh", None)
+
+        def f(grid, layers):
+            nl = len(layers)
+            if self.plain:                    # plain routing: no mesh, no prices
+                z = np.zeros((nl, grid.ny, grid.nx))
+                return dict(self=z, px=z, py=z, pot=z, void=z.astype(bool), floor=1.0)
+            X = grid.x0 + np.arange(grid.nx) * grid.res
+            Y = grid.y0 + np.arange(grid.ny) * grid.res
+            jj = np.clip(((Y - m.y0) / m.pitch).astype(int), 0, m.ny - 1)
+            ii = np.clip(((X - m.x0) / m.pitch).astype(int), 0, m.nx - 1)
+            sel = np.ix_(jj, ii)
+            selfc = np.zeros((nl, grid.ny, grid.nx))
+            px = np.zeros_like(selfc)
+            py = np.zeros_like(selfc)
+            pot = np.zeros_like(selfc)
+            void = np.zeros(selfc.shape, bool)
+            pot2 = np.zeros_like(selfc)
+            void2 = np.zeros(selfc.shape, bool)
+            theta = np.zeros_like(selfc)
+            th_src = np.zeros_like(selfc)
+            th_dst = np.zeros_like(selfc)
+            for li, lname in enumerate(layers):
+                L = self.layer_names.index(lname) if lname in self.layer_names else None
+                if L is None:
+                    continue
+                up, dn, hu, hd, a_up, a_dn = T1.references(m, L, self.ref_ids)
+                # the track's own loop over both return planes: the two returns in parallel (a
+                # stripline's capacitances add, so its inductances combine in parallel in air)
+                Lu = np.where(np.isfinite(hu[sel]), strip_L_per_mm(width, np.where(np.isfinite(hu), hu, 1.0)[sel]), np.inf)
+                Ld = np.where(np.isfinite(hd[sel]), strip_L_per_mm(width, np.where(np.isfinite(hd), hd, 1.0)[sel]), np.inf)
+                Lp = 1.0 / (1.0 / Lu + 1.0 / Ld)
+                Lp = np.where(np.isfinite(Lp), Lp, strip_L_per_mm(width, 1.6))
+                # a ground pour on the routing layer beside the track also carries return current:
+                # in parallel with the reference below (one side: twice the two-sided coplanar value)
+                gm = self._gnd_gap(L)
+                if gm is not None:
+                    g = np.maximum(gm[sel] - width / 2, 0.05)
+                    Lc = 2 * cpw_L_per_mm(width, g)
+                    Lp = Lp * Lc / (Lp + Lc)
+                wself = 0.0
+                for (kk, ks), wt in self.wts.items():
+                    ik, is_ = cur.get(kk, 0.0), cur.get(ks, 0.0)
+                    if ik == 0 and is_ == 0:
+                        continue
+                    wself += wt * ik * is_
+                    for (pa, pb) in ((ks, ik), (kk, is_)):
+                        if pb == 0 or pa not in self.prices:
+                            continue
+                        pr = self.prices[pa][L]
+                        px[li] += wt * pb * pr.Px[sel] / m.pitch
+                        py[li] += wt * pb * pr.Py[sel] / m.pitch
+                        pot[li] += wt * pb * pr.phi[sel]
+                        void[li] |= pr.void[sel]
+                        pot2[li] += wt * pb * pr.phi2[sel]
+                        void2[li] |= pr.void2[sel]
+                        # vias only: replacing an unrouted (field-free) connection adds a circulating current
+                        # (the hop, back through the field-free short) whose image in the planes closes on
+                        # itself, so its ends move no return between planes; a via in the hop does
+                        theta[li] += wt * pb * pr.psi[sel]
+                split = np.zeros((grid.ny, grid.nx), bool)
+                for pa in self.prices.values():
+                    split |= pa[L].split[sel]
+                    break
+                # a split under the track: its return must find another layer or a capacitor; priced
+                # as five times the track's own inductance there (not a potential difference)
+                selfc[li] = max(wself, 0.0) * np.where(split, 6.0 * Lp, Lp)
+                # the hop's DC resistance: harm per ohm times ohm per mm on this layer's copper
+                selfc[li] += getattr(self, "_hop_dc", 0.0) * RHO_CU / (width * m.layers[L].t)     # ohm mm / mm^2
+                cc = self.cap.cost(self.capf, self._hop_net, width, L, sel) if self.cap else None
+                if cc is not None:
+                    selfc[li] += cc               # capacitive: C' per mm times the other nets' weighted fields
+            # a via's own loop: the hop's return changes planes at the nearest return transfer (a via or
+            # through-hole pad of a return net): L = mu0 dz / (2 pi) ln(d / r), dz the board's copper span
+            vs = np.zeros((grid.ny, grid.nx))
+            wself_all = sum(wt * cur.get(kk, 0.0) * cur.get(ks, 0.0) for (kk, ks), wt in self.wts.items())
+            if wself_all > 0:
+                d = self._transfer_dist()[sel]
+                zs = [l.z for l in m.layers]
+                dz = (max(zs) - min(zs)) * 1e-3
+                r = 0.15e-3
+                Lv = MU0 * dz / (2 * math.pi) * np.log(np.maximum(d * 1e-3, 2 * r) / r)
+                vs = lam * wself_all * Lv
+            cxs = np.zeros_like(selfc)
+            cys = np.zeros_like(selfc)
+            for li, lname in enumerate(layers):
+                if lname in self.layer_names:
+                    cxs[li], cys[li] = self._cut_costs(self.layer_names.index(lname), self._hop_net, cur, sel,
+                                                       (grid.ny, grid.nx))
+            return dict(self=lam * selfc, px=lam * px, py=lam * py, pot=lam * pot, void=void, vself=vs,
+                        cx=lam * cxs, cy=lam * cys,
+                        pot2=lam * pot2, void2=void2, theta=lam * theta, th_src=lam * th_src, th_dst=lam * th_dst,
+                        floor=0.2)
+        return f
+
+    WIDTHS = (0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.8, 1.0, 1.2, 1.5, 2.0, 2.5, 3.0)     # mm, the ladder
+
+    def _commutation_share(self, n, cur):
+        """The largest share of a commutation cell's pattern current a hop of net n carries (its current
+        over the pattern's largest pad current); 0 for a net an observer reads as a victim (high
+        impedance: width only adds capacitance to whatever swings near it)."""
+        if any(o.kind == "victim" and o.meta.get("net") == n for o in self.obs):
+            return 0.0
+        best = 0.0
+        for k, i in cur.items():
+            if k[0] == "s" and str(k[1]).startswith("cell:") and k in self.flow:
+                mx = max((abs(v) for v in self.flow[k].values()), default=0.0)
+                if mx > 0:
+                    best = max(best, abs(i) / mx)
+        return best
+
+    def _feed_pads(self, n):
+        """The pads where rail n's feed delivers its current."""
+        f = self.dcp.feeds.get(n)
+        if f is None:
+            return set()
+        if f["kind"] != "cell":
+            return set(f.get("out") or [])
+        c = f["cell"]
+        ref = c["rect"] or c["ctrl"]
+        return {q for q in self.bd.pads_of.get(n, []) if q.rsplit(".", 1)[0] == ref}
+
+    def _dc_per_ohm(self, n, b_pads):
+        """(dH/dR, I_max) of a hop joining island b_pads to the rest of net n: the robust objective's
+        derivative per ohm of the hop (copper loss I^2 R; the drop I R of every load beyond the hop from
+        its rail's feed), averaged over the objective's corners, and the hop's largest DC current."""
+        if not self.dc_obs or not getattr(self, "H_corners", None):
+            return 0.0, 0.0
+        I = [sum(inj.get(q, 0.0) for q in b_pads) for inj in self.dc_inj]
+        Imax = max(abs(x) for x in I)
+        if Imax < 1e-4:
+            return 0.0, 0.0
+        bset = set(b_pads)
+        src_in_b = bool(self._feed_pads(n) & bset)
+        beyond = {(ld["ref"], ld["rail"]) for ld in self.dcp.loads
+                  if ld["rail"] == n and bool(set(ld["sup"]) & bset) != src_in_b}
+        g = 0.0
+        for c in self.H_corners:
+            ob = self.dc_obs[c]
+            u, _, bud = ob["loss"]
+            if bud > 0:
+                g += phi_prime(u) * I[c] ** 2 / bud
+            for ref, rail, um, _, bm_ in ob["drops"]:
+                if (ref, rail) in beyond:
+                    g += phi_prime(um) * abs(I[c]) / bm_
+        return g / len(self.H_corners), Imax
+
+    def _dc_width(self, n, layer, w0, g, Imax):
+        """(width, reason) of a hop with DC price g (harm per ohm) and largest current Imax: the ladder
+        width minimizing area (relative to the class width and its clearance) plus resistance per mm,
+        never below w0 or the IPC-2221 width for Imax at the DC band's temperature rise."""
+        mn, opt, mx = self.sp.width_limits(n, layer)
+        L = self.layer_names.index(layer) if layer in self.layer_names else 0
+        t = self.mesh.layers[L].t
+        try:
+            s = float(self.sp._generic_need(n, "track", layer) or 0.2)
+        except Exception:                     # noqa: BLE001 - a clearance only weighs the area
+            s = 0.2
+        ext = L in (0, len(self.mesh.layers) - 1)
+        w_ipc = ipc2221_width(Imax, self.dcp.dT_max, t, internal=not ext)
+        lo = max(w0, mn, w_ipc)
+        if mx is not None and lo > mx + 1e-9:
+            return mx, f"IPC width {w_ipc:.2f} mm for {Imax:.2f} A exceeds the class maximum {mx:g} mm"
+        cands = sorted({lo} | {w for w in self.WIDTHS if w > lo and (mx is None or w <= mx + 1e-9)})
+
+        def cost(w):
+            return (w + s) / (max(opt, mn, 0.1) + s) + self.lam * g * RHO_CU / (w * t)
+        w = min(cands, key=cost)
+        floor = ("the IPC minimum" if lo == w_ipc else "the class width" if lo in (mn, opt) else "the commutation floor")
+        return self.sp.clamp_width(n, layer, w), (f"{Imax:.3g} A, {g:.3g} harm/ohm; IPC minimum {w_ipc:.2f} mm; "
+                                                  + (f"{floor} binds" if w == lo else
+                                                     f"area-resistance optimum among {len(cands)} widths"))
+
+    def _intent_width(self, n, layer, w0, I):
+        """(width, reason) of a hop of net n carrying the DC plan's corner currents I, by the intent's copper
+        policy (kae.intent.route): loss and drop rates against the area cost, IPC floor at its heating limit."""
+        mn, opt, mx = self.sp.width_limits(n, layer)
+        mesh = getattr(self, "mesh", None)
+        names = getattr(self, "layer_names", None) or []
+        t = mesh.layers[names.index(layer)].t if mesh is not None and layer in names else 0.035
+        try:
+            s = float(self.sp._generic_need(n, "track", layer) or 0.2)
+        except Exception:                     # noqa: BLE001 - a clearance only weighs the area
+            s = 0.2
+        w, why = self.policy.width(n, I, t, s, self.WIDTHS, max(w0, mn), mx)
+        return self.sp.clamp_width(n, layer, w), why
+
+    def _gnd_gap(self, L):
+        """Distance (mm) from each cell to the nearest ground copper on layer L, or None if it has none."""
+        if not hasattr(self, "_gg") or self._gg[0] is not self.mesh:
+            self._gg = (self.mesh, {})
+        cache = self._gg[1]
+        if L not in cache:
+            from scipy import ndimage
+            m = self.mesh
+            ids = [m.nets.index(n) for n in self.bd.grounds if n in m.nets]
+            gnd = np.isin(m.lab[L], ids) if ids else np.zeros((m.ny, m.nx), bool)
+            cache[L] = ndimage.distance_transform_edt(~gnd) * m.pitch if gnd.any() else None
+        return cache[L]
+
+    # ------------------------------------------------------------------ routing
+    def route(self):
+        t0 = time.time()
+        done = 0
+        self.failed = []
+        self.choices = []
+        since = 0
+        fields = self._fields = not self.plain and (self.pair_terms is None or bool(self.pair_terms))
+        if self.pair_terms is not None and not self.plain:
+            self.log(f"pnr: routed with fields: {sorted(self.phys_nets & set(self.nets))}; the other "
+                     f"{len(set(self.nets) - self.phys_nets)} nets plain with the intent's widths")
+        for n in self.nets:
+            plain_n = self._plain_for(n)
+            if fields and not plain_n and (done == 0 or since >= self.refresh or getattr(self, "prices", None) is None):
+                self.solve_fields()           # plain routing reads no fields: it needs the islands only
+                since = 0
+            elif done == 0:
+                self._islands_only()
+            since += 1
+            isl = [g for g in self.islands.get(n, []) if g]
+            if len(isl) < 2:
+                done += 1
+                continue
+            if self.verify and not plain_n:
+                self._route_verified(n)
+                since = 0                      # the chosen candidate's fields are current
+            else:
+                res = self._route_net(n, plain=plain_n)
+                self.failed += res["failed"]
+            done += 1
+            self._refill()
+        self._repair()
+        self._check_connectivity()
+        from kae.route import critical_write as W
+        W.append_items(self.base, self.out, tracks=self.tracks, vias=self.vias)
+        for ext in (".kicad_pro", ".kicad_dru"):
+            s_ = self.base.with_suffix(ext)
+            if s_.exists():
+                import shutil
+                shutil.copy2(s_, self.out.with_suffix(ext))
+        self.log(f"pnr: {len(self.tracks)} tracks, {len(self.vias)} vias, {len(self.failed)} failed hops, "
+                 f"{time.time() - t0:.1f}s" + (f"; chose {self.choices}" if self.choices else ""))
+        return self
+
+    def _refill(self):
+        """After a net: KiCad's refill of the copper as it stands (about a second), and the exact islands of
+        the nets still to route from it, so no net is routed against a pour the copper so far has pushed
+        back. Boards without zones skip it."""
+        if not getattr(self, "_has_zones", None):
+            from kae.board.kicad_file import load
+            self._has_zones = bool(load(self.base).zones)
+        if not self._has_zones:
+            return
+        from kae.route.critical_recheck import fills_of
+        t = time.time()
+        self._fills = fills_of(self._state_board())
+        for n, groups in list(self.islands.items()):
+            if n in self.nets:
+                ok = {q for g in groups for q in g}
+                self.islands[n] = self._exact_islands(n, ok)
+        self.t_refill = getattr(self, "t_refill", 0.0) + time.time() - t
+
+    def _check_connectivity(self):
+        """The LVS of the routed copper: KiCad's DRC (refilled) against the router's own islands. A pad one
+        calls joined and the other open is logged, both ways."""
+        import json
+        import subprocess
+        self._refill()                               # the router's islands of the finished copper
+        self.torn = sorted(n for n in self.nets if len([g for g in self.islands.get(n, []) if g]) > 1)
+        p = self._state_board()
+        out = p.with_suffix(".drc.json")
+        wrap = os.environ.get("KAE_KICAD_WRAP", "")
+        try:
+            subprocess.run(f"{wrap} kicad-cli pcb drc --refill-zones --format json --severity-error -o {out} {p}",
+                           shell=True, check=True, capture_output=True, timeout=1800)
+            drc = json.loads(out.read_text())
+        except Exception as e:                       # noqa: BLE001 - a missing check is logged, never fatal
+            self.log(f"pnr: connectivity check: DRC did not run ({type(e).__name__})")
+            return
+        kicad_open = set()
+        for u in drc.get("unconnected_items", []):
+            for it in u.get("items", []):
+                d = it.get("description") or ""
+                if d.startswith("Pad "):
+                    kicad_open.add(d)
+        ours = {n: len([g for g in self.islands.get(n, []) if g]) for n in self.nets}
+        ours_open = {n for n, k in ours.items() if k > 1}
+        # KiCad is the judge: a net it reports open is torn though the router's model joins it (two pads of
+        # one number, one per side, are one terminal to the router)
+        import re
+        k_nets = {m.group(1) for u in drc.get("unconnected_items", []) for it in u.get("items", [])
+                  for m in [re.search(r"\[([^\]]+)\]", it.get("description") or "")] if m}
+        self.torn = sorted(set(self.torn) | (k_nets & set(self.nets)))
+        self.log(f"pnr: connectivity check: KiCad reports {len(drc.get('unconnected_items', []))} unconnected items; "
+                 f"the router {len(ours_open)} priced nets in pieces ({sorted(ours_open)[:6]})"
+                 + (f"; refills took {self.t_refill:.0f}s" if getattr(self, "t_refill", None) else ""))
+        for d in sorted(kicad_open)[:10]:
+            self.log(f"pnr: connectivity check: KiCad: {d} unconnected")
+
+    def _plain_for(self, n):
+        """Is net n routed plain: plain routing, no fields this run, or a net no priced pair's current uses."""
+        return (self.plain or not getattr(self, "_fields", True)
+                or (self.pair_terms is not None and n not in self.phys_nets))
+
+    def _repair(self):
+        """After every net: the pours refilled on the finished copper can have pulled back from pads the
+        router counted as joined through them; route each priced net that has come apart again."""
+        if self.plain or not getattr(self, "_fields", True):
+            self._islands_only()
+        else:
+            self.solve_fields()
+        torn = [n for n in self.nets if len([g for g in self.islands.get(n, []) if g]) > 1]
+        for n in torn:
+            self.log(f"pnr: repair: {n} has {len(self.islands[n])} islands on the refilled copper; routing them")
+            res = self._route_net(n, plain=self._plain_for(n))
+            if res["failed"]:
+                res = self._repair_ripping(n, res)
+            self.failed += res["failed"]
+
+    def _repair_ripping(self, n, res, reach=1.0):
+        """A repair hop with no path: the router's own tracks of other nets within `reach` (mm) of the stranded
+        pads walled them off (and pushed their pour back). Rip those nets, route n, route them again."""
+        from shapely.geometry import LineString
+        stranded = [self._anchor(b) for (_, b, _) in res["failed"]] + [self._anchor(a) for (_, _, a) in res["failed"]]
+        stranded = [x for x in stranded if x is not None]
+        near = sorted({t[0] for t in self.tracks if t[0] != n and any(
+            LineString([t[3], t[4]]).distance(x.geom) <= reach + t[2] / 2 for x in stranded)})
+        if not near:
+            return res
+        self.log(f"pnr: repair: {n} walled off by {near}; ripping them, routing {n}, routing them again")
+        for X in near:
+            self.sp.remove([it for it in self.sp.routed if getattr(it, "owner", None) == ("pnr", X)])
+            self.tracks = [t for t in self.tracks if t[0] != X]
+            self.vias = [v for v in self.vias if v[0] != X]
+        ok = {q for N in [n] + near for q in self.bd.pads_of.get(N, [])}
+        self.islands[n] = self._exact_islands(n, ok)
+        res2 = self._route_net(n, plain=self._plain_for(n))
+        for X in near:
+            self.islands[X] = self._exact_islands(X, ok)
+            r = self._route_net(X, plain=self._plain_for(X))
+            res2["failed"] += r["failed"]
+        return res2
+
+    # ------------------------------------------------------------------ verified candidates
+    _STATE = ("prices", "pot_at", "K", "_warm", "wts", "harm", "u_c", "H", "H_typ", "H_corners", "_sig", "dc_obs", "Lks", "mesh", "op", "islands", "ref_ids", "layer_names", "_H",
+              "_pred", "_L0", "_predL", "capf", "spec_m", "spec_hops", "_cut_w", "spec_pred")
+
+    def _snap(self):
+        import copy
+        return {k: copy.deepcopy(getattr(self, k)) if k == "prices" else getattr(self, k, None) for k in self._STATE}
+
+    def _restore(self, st):
+        for k, v in st.items():
+            setattr(self, k, v)
+
+    def _true_harm(self):
+        """The robust objective (kae.excite.harm.robust of the per-corner sums of phi(u)) by a field solve of the
+        copper as it stands."""
+        self.solve_fields()
+        return self.H
+
+    def _route_verified(self, n):
+        """Route net n twice (physics prices, plain), keep the candidate the field solve says harms less:
+        the router's own estimate never decides; with the plain route always a candidate, physics routing
+        is never worse than plain by the evaluator's measure."""
+        st0 = self._snap()
+        cands = []
+        for mode in ("phys", "plain"):
+            self._restore(st0 if mode == "phys" else st0)
+            if mode == "plain":
+                import copy
+                self.prices = copy.deepcopy(st0["prices"])
+            res = self._route_net(n, plain=(mode == "plain"))
+            H = self._true_harm()
+            cands.append((H, mode, res, self._snap()))
+            self._uncommit(res)
+        H, mode, res, st = min(cands, key=lambda c: (c[0], c[1] != "plain"))
+        self._recommit(res)
+        self._restore(st)
+        self.failed += res["failed"]
+        self.choices.append((n, mode, round(cands[0][0], 2), round(cands[1][0], 2)))
+        self.log(f"pnr: {n}: physics candidate {cands[0][0]:.2f}, plain {cands[1][0]:.2f} -> {mode}")
+
+    def _uncommit(self, res):
+        self.sp.remove(res["items"])
+        for t in res["tracks"]:
+            self.tracks.remove(t)
+        for v in res["vias"]:
+            self.vias.remove(v)
+
+    def _recommit(self, res):
+        items = []
+        for (n, l, w, p0, p1, u, lk) in res["tracks"]:
+            items.append(self.sp.add_track(n, l, w, p0, p1, owner=("pnr", n)))
+            self.tracks.append((n, l, w, p0, p1, u, lk))
+        for (n, x, y, D, d, u, lk) in res["vias"]:
+            items.append(self.sp.add_via(n, x, y, owner=("pnr", n)))
+            self.vias.append((n, x, y, D, d, u, lk))
+        res["items"] = items
+
+    def _route_net(self, n, plain=False):
+        """Route every hop of net n (a spanning tree of its copper islands, nearest first); commits its
+        copper and returns dict(items, tracks, vias, failed)."""
+        out = dict(items=[], tracks=[], vias=[], failed=[])
+        isl = [g for g in self.islands.get(n, []) if g]
+        if len(isl) < 2:
+            return out
+        was = self.plain
+        self.plain = plain
+
+        def cen(g):
+            return np.mean([self._pad_xy(q) for q in g], axis=0)
+        # the spanning tree, nearest first, known before any copper: a hop carries the DC current of every
+        # island beyond it (islands attached later feed through it), not only its own island's
+        order, left_, tree_ = [], isl[1:], [isl[0]]
+        while left_:
+            a, b_ = min(((a, b_) for a in tree_ for b_ in left_), key=lambda ab: np.linalg.norm(cen(ab[0]) - cen(ab[1])))
+            order.append((a, b_))
+            tree_.append(b_)
+            left_.remove(b_)
+        beyond = {id(b_): [b_] for _, b_ in order}
+        for a, b_ in reversed(order):
+            if id(a) in beyond:
+                beyond[id(a)] += beyond[id(b_)]
+        left = isl[1:]
+        tree = [isl[0]]
+        try:
+            for a, b_ in order:
+                cur = self.hop_currents(n, b_, a)
+                layer0 = self.sp.cu
+                width = self.sp.width_limits(n, layer0[0])[1]
+                if self._commutation_share(n, cur) >= COMMUTATION_SHARE:
+                    # a commutation current: wide copper lowers its inductance per length
+                    width = self.sp.clamp_width(n, layer0[0], max(width, 0.8))
+                self._hop_dc = 0.0
+                if self.policy is not None:
+                    far = [q for g in beyond[id(b_)] for q in g]
+                    I = [sum(inj.get(q, 0.0) for q in far) for inj in self.dc_inj]
+                    if max((abs(x) for x in I), default=0.0) > 1e-4:
+                        width, why = self._intent_width(n, layer0[0], width, I)
+                        self.log(f"pnr:   hop {n} {b_[0]}->{a[0]}: width {width:g} mm ({why})")
+                elif not plain:
+                    g, Imax = self._dc_per_ohm(n, b_)
+                    if Imax > 0:
+                        width, why = self._dc_width(n, layer0[0], width, g, Imax)
+                        self._hop_dc = g
+                        self.log(f"pnr:   hop {n} {b_[0]}->{a[0]}: width {width:g} mm ({why})")
+                srcs = [self._anchor(q) for q in b_] + self._zone_anchors(n, b_)
+                dsts = [self._anchor(q) for q in a] + self._zone_anchors(n, a)
+                ends = (self._end_plane(b_), self._end_plane(a))
+                self._hop_net = n
+                rt = self.router.connect(n, [x for x in srcs if x], [x for x in dsts if x], width, list(layer0),
+                                         phys=self.phys(cur, width, ends))
+                w_class = self.sp.width_limits(n, layer0[0])[1]
+                # no path at the widened width (a fine-pitch pad): about half, then a quarter of it (on the
+                # ladder), then the class width, necked down, which beats no path
+                steps = []
+                for frac in (0.5, 0.25):
+                    w_ = max((w for w in self.WIDTHS if w <= width * frac + 1e-9), default=w_class)
+                    if w_ > w_class + 1e-9 and w_ not in steps:
+                        steps.append(w_)
+                steps.append(w_class)
+                for w_try in steps:
+                    if rt is not None or width <= w_class + 1e-9:
+                        break
+                    self.log(f"pnr:   hop {n} {b_[0]}->{a[0]}: no path at {width:g} mm; trying {w_try:g} mm")
+                    width = w_try
+                    rt = self.router.connect(n, [x for x in srcs if x], [x for x in dsts if x], width, list(layer0),
+                                             phys=self.phys(cur, width, ends))
+                if rt is None:
+                    out["failed"].append((n, b_[0], a[0]))
+                elif rt.segs or rt.vias:
+                    if self.explain_hops and getattr(rt, "search", None) is not None and self.prices:
+                        grid, lay, path, ph = rt.search
+                        if plain:
+                            # price the plain path with the physics arrays it was not searched with
+                            self.plain = False
+                            ph = self.phys(cur, width, ends)(grid, lay)
+                            self.plain = True
+                            rt.search = (grid, lay, path, ph)
+                        self.log(f"pnr:   hop {n} {b_[0]}->{a[0]} {'plain' if plain else 'phys'}: "
+                                 f"{self.explain(rt)} len {rt.length:.1f} vias {len(rt.vias)}")
+                    for l, p0, p1 in rt.segs:
+                        out["items"].append(self.sp.add_track(n, l, rt.width, p0, p1, owner=("pnr", n)))
+                        t = (n, l, rt.width, p0, p1, "", self.lock)
+                        self.tracks.append(t)
+                        out["tracks"].append(t)
+                    if not plain or self.spec is not None:     # (spectral: plain candidates are predicted too)
+                        try:
+                            self._pred = (self._pred or 0.0) + self._path_harm(rt, cur, width)
+                        except Exception as e:  # noqa: BLE001 - a diagnostic must not stop routing
+                            self.log(f"pnr: prediction failed: {type(e).__name__}: {e}")
+                        self._update_fields(rt, cur)
+                        if self.cap:
+                            self.capf = self.cap.hop(self, n, rt)
+                    for (x, y) in rt.vias:
+                        out["items"].append(self.sp.add_via(n, x, y, owner=("pnr", n)))
+                        D, d = self.sp.via_size(n)
+                        v = (n, x, y, D, d, "", self.lock)
+                        self.vias.append(v)
+                        out["vias"].append(v)
+                tree.append(b_)
+                left.remove(b_)
+        finally:
+            self.plain = was
+        return out
+
+    @staticmethod
+    def explain(rt, base=None):
+        """Cost of the path a physics search found, term by term, with the arrays it was priced with:
+        {base, self, mutual, crossing, transfer, via, cut} (mm-equivalent)."""
+        grid, layers, path, ph = rt.search
+        nl, ny, nx = len(layers), grid.ny, grid.nx
+        plane = ny * nx
+        out = dict(base=0.0, self=0.0, mutual=0.0, crossing=0.0, transfer=0.0, via=0.0, cut=0.0)
+        f = lambda a: np.asarray(a, float).reshape(-1)
+        S, PX, PY, POT, VO = f(ph["self"]), f(ph["px"]), f(ph["py"]), f(ph["pot"]), np.asarray(ph["void"]).reshape(-1)
+        POT2, VO2 = f(ph.get("pot2", np.zeros(nl * plane))), np.asarray(ph.get("void2", np.zeros(nl * plane, bool))).reshape(-1)
+        TH, TS, TD = (f(ph.get(k, np.zeros(nl * plane))) for k in ("theta", "th_src", "th_dst"))
+        VS = f(ph.get("vself", np.zeros(plane)))
+        CX, CY = f(ph.get("cx", np.zeros(nl * plane))), f(ph.get("cy", np.zeros(nl * plane)))
+        p = [int(k) for k in path]
+        out["transfer"] += TS[p[0]] - TD[p[-1]]
+        for k, k2 in zip(p[:-1], p[1:]):
+            l, r = divmod(k, plane)
+            l2, r2 = divmod(k2, plane)
+            if l2 != l:
+                tr = TH[k2] - TH[k]
+                tr = 0.0 if (tr < 0 and -tr > VS[r]) else tr
+                out["via"] += VS[r]
+                out["transfer"] += tr
+                continue
+            j, i = divmod(r, nx)
+            j2, i2 = divmod(r2, nx)
+            di, dj = i2 - i, j2 - j
+            ln = grid.res * math.hypot(di, dj)
+            out["self"] += ln * 0.5 * (S[k] + S[k2])
+            out["mutual"] += grid.res * (0.5 * (PX[k] + PX[k2]) * di + 0.5 * (PY[k] + PY[k2]) * dj)
+            if VO[k] or VO[k2]:
+                out["crossing"] += POT[k2] - POT[k]
+            if VO2[k] or VO2[k2]:
+                out["crossing"] += POT2[k2] - POT2[k]
+            out["cut"] += 0.5 * (CX[k] + CX[k2]) * abs(di) + 0.5 * (CY[k] + CY[k2]) * abs(dj)
+            out["base"] += ln
+        return {k: round(v, 2) for k, v in out.items()}
+
+    def _path_harm(self, rt, cur, width):
+        """The harm change (u, linearized) the price fields predict for a routed hop: its own loop over
+        its references plus coupling and crossings along its segments (vias and ends not counted)."""
+        if self.spec is not None:
+            return self.spec.path(rt, cur, width)
+        m = self.mesh
+        tot = 0.0
+        for l, p0, p1 in rt.segs:
+            if l not in self.layer_names:
+                continue
+            L = self.layer_names.index(l)
+            n = max(2, int(math.ceil(math.dist(p0, p1) / (m.pitch / 2))) + 1)
+            cells = []
+            for t in np.linspace(0, 1, n):
+                c = m.cell(p0[0] + (p1[0] - p0[0]) * t, p0[1] + (p1[1] - p0[1]) * t)
+                if 0 <= c[0] < m.ny and 0 <= c[1] < m.nx and (not cells or c != cells[-1]):
+                    cells.append(c)
+            if len(cells) < 2:
+                continue
+            up, dn, hu, hd, a_up, a_dn = T1.references(m, L, self.ref_ids)
+            j, i = cells[len(cells) // 2]
+            Lu = strip_L_per_mm(width, hu[j, i]) if np.isfinite(hu[j, i]) else np.inf
+            Ld = strip_L_per_mm(width, hd[j, i]) if np.isfinite(hd[j, i]) else np.inf
+            g = (0.0 if not np.isfinite(Lu) else 1.0 / float(Lu)) + (0.0 if not np.isfinite(Ld) else 1.0 / float(Ld))
+            Lp = 1.0 / g if g > 0 else float(strip_L_per_mm(width, 1.6))
+            for (kk, ks), wt in self.wts.items():
+                ik, is_ = cur.get(kk, 0.0), cur.get(ks, 0.0)
+                if ik == 0 and is_ == 0:
+                    continue
+                dl = ik * is_ * Lp * math.dist(p0, p1)
+                for pa, pb in ((ks, ik), (kk, is_)):
+                    if pb and pa in self.prices:
+                        dl += pb * T1.path_price(self.prices[pa][L], cells, m.pitch)
+                tot += wt * dl
+                key = (kk[1], ks[1])
+                self._predL[key] = self._predL.get(key, 0.0) + dl
+        return float(tot)
+
+    # cutting a return pour (kae: em_t1_check main_cut): dL_ks = C(h) X_k X_s (1 - exp(-l / l0)), X the
+    # current crossing the cut, C = CUT_C (h / mm)^CUT_B fitted at h = 0.2 and 1.5 mm with 4 mm stitching
+    CUT_C, CUT_B = 1.92e-9, 0.65
+
+    def _sheet_currents(self, net, I):
+        """{layer: (Kx, Ky)}: each cell's x- and y-bar current (summed through the thickness, real part),
+        A per unit pattern current."""
+        m = self.mesh if hasattr(self, "mesh") and self.mesh is net.m else net.m
+        out = {}
+        for o in ("x", "y"):
+            f = net.fil[o]
+            a0 = net.off[o]
+            n = len(f["a"])
+            for l in range(len(m.layers)):
+                sel = np.isin(f["s"], net.sub_of[l])
+                arr = np.zeros((m.ny, m.nx))
+                if n and sel.any():
+                    np.add.at(arr, (f["j"][sel], f["i"][sel]), I[a0:a0 + n][sel].real)
+                out.setdefault(l, {})[o] = arr
+        return {l: (d["x"], d["y"]) for l, d in out.items()}
+
+    def _cut_costs(self, L, net_name, cur, sel, shape):
+        """Per-step costs (x moves, y moves) on routing layer L of cutting its return pour: over cells of
+        return copper of another net, sum over priced pairs of w C X_k X_s, one side's crossing current
+        summed over a window of l0 along the cut (the current a long cut interrupts)."""
+        from scipy import ndimage
+        m = self.mesh
+        if not self.ref_ids:
+            return np.zeros(shape), np.zeros(shape)
+        own = m.nets.index(net_name) if net_name in m.nets else -2
+        pour = np.isin(m.lab[L], list(self.ref_ids)) & (m.lab[L] != own)
+        if not pour.any():
+            return np.zeros(shape), np.zeros(shape)
+        up, dn, hu, hd, a_up, a_dn = T1.references(m, L, self.ref_ids)
+        h = np.minimum(np.where(np.isfinite(hu), hu, 1e3), np.where(np.isfinite(hd), hd, 1e3))
+        h = np.where(h > 100, 1.6, h)
+        C = self.CUT_C * np.power(h, self.CUT_B)
+        n0 = max(1, int(round(max(1.0, 1.3 * float(np.median(h))) / m.pitch)))
+        cx = np.zeros((m.ny, m.nx))
+        cy = np.zeros((m.ny, m.nx))
+        for (kk, ks), wt in self.wts.items():
+            if kk not in self.K or ks not in self.K:
+                continue
+            Kkx, Kky = self.K[kk][L]
+            Ksx, Ksy = self.K[ks][L]
+            # an x move cuts the y-bars (current crossing it); its window runs along x
+            wy_k = ndimage.uniform_filter1d(Kky, 2 * n0 + 1, axis=1) * (2 * n0 + 1)
+            wy_s = ndimage.uniform_filter1d(Ksy, 2 * n0 + 1, axis=1) * (2 * n0 + 1)
+            wx_k = ndimage.uniform_filter1d(Kkx, 2 * n0 + 1, axis=0) * (2 * n0 + 1)
+            wx_s = ndimage.uniform_filter1d(Ksx, 2 * n0 + 1, axis=0) * (2 * n0 + 1)
+            cx += wt * 0.5 * (Kky * wy_s + Ksy * wy_k)
+            cy += wt * 0.5 * (Kkx * wx_s + Ksx * wx_k)
+        cx = np.where(pour, np.maximum(C * cx, 0.0), 0.0)
+        cy = np.where(pour, np.maximum(C * cy, 0.0), 0.0)
+        return cx[sel], cy[sel]
+
+    def _transfer_dist(self):
+        """Distance (mm) from each mesh cell to the nearest place a return can change planes: a via or
+        through-hole pad of a return net."""
+        if getattr(self, "_td", (None,))[0] is self.mesh:
+            return self._td[1]
+        from scipy import ndimage
+        m = self.mesh
+        pts = np.zeros((m.ny, m.nx), bool)
+        rid = self.ref_ids or set()
+        for v in m.vias:
+            if v.net in rid:
+                j, i = m.cell(v.x, v.y)
+                if 0 <= j < m.ny and 0 <= i < m.nx:
+                    pts[j, i] = True
+        d = ndimage.distance_transform_edt(~pts) * m.pitch if pts.any() else np.full((m.ny, m.nx), 50.0)
+        self._td = (m, d)
+        return d
+
+    def _update_fields(self, rt, cur):
+        """Between refreshes, a routed hop's own flux joins every pattern's price fields (its current in
+        that pattern times the field of the hop and its return under it), so the nets after it see it."""
+        if self.spec is not None:
+            return self.spec.add_hop(rt, cur)
+        if self.plain or not hasattr(self, "op"):
+            return
+        from . import fields as EF
+        m = self.mesh
+        bars = []
+        for l, p0, p1 in rt.segs:
+            if l not in self.layer_names:
+                continue
+            L = self.layer_names.index(l)
+            up, dn, hu, hd, a_up, a_dn = T1.references(m, L, self.ref_ids)
+            n = max(2, int(math.ceil(math.dist(p0, p1) / (m.pitch / 2))) + 1)
+            prev = None
+            for t in np.linspace(0, 1, n):
+                c = m.cell(p0[0] + (p1[0] - p0[0]) * t, p0[1] + (p1[1] - p0[1]) * t)
+                if prev is not None and c != prev and 0 <= c[0] < m.ny and 0 <= c[1] < m.nx:
+                    (j0, i0), (j1, i1) = prev, c
+                    for (ja, ia), (jb, ib) in (((j0, i0), (j0, i1)), ((j0, i1), (j1, i1))):
+                        if (ja, ia) == (jb, ib):
+                            continue
+                        o = "x" if ja == jb else "y"
+                        sg = (ib - ia) if o == "x" else (jb - ja)
+                        jj, ii = min(ja, jb), min(ia, ib)
+                        bars.append((L, o, jj, ii, float(sg)))
+                        for ref, a in ((up, a_up), (dn, a_dn)):
+                            k = ref[jj, ii]
+                            if k >= 0 and a[jj, ii] > 0:
+                                bars.append((int(k), o, jj, ii, -float(sg) * float(a[jj, ii])))
+                prev = c
+        if not bars:
+            return
+        fl = EF.flux_of_cells(self.op, bars)
+        for key, i in cur.items():
+            if key not in self.prices or i == 0:
+                continue
+            for L, pr in self.prices[key].items():
+                up, dn, hu, hd, a_up, a_dn = T1.references(m, L, self.ref_ids)
+                dx, dy = fl[(L, "x")].copy(), fl[(L, "y")].copy()
+                for ref, a in ((up, a_up), (dn, a_dn)):
+                    for k in np.unique(ref[ref >= 0]):
+                        sel = ref == k
+                        dx[sel] -= a[sel] * fl[(int(k), "x")][sel]
+                        dy[sel] -= a[sel] * fl[(int(k), "y")][sel]
+                pr.Px = pr.Px + i * dx
+                pr.Py = pr.Py + i * dy
+
+    def _end_plane(self, pads):
+        """The plane the return of an island's terminal enters: nearest return copper to its first pad's
+        copper layer (an SMD pad on F.Cu: the plane under F.Cu). None without a mesh (plain routing)."""
+        if not getattr(self, "layer_names", None):
+            return None
+        for q in pads:
+            ref, num = q.rsplit(".", 1)
+            for it in self.sp.pads_by_fp.get(self._fp(ref), []):
+                if str(it.owner[1]) == num:
+                    ls = [l for l in self.layer_names if l in it.layers]
+                    if ls:
+                        return T1.end_plane(self.mesh, self.layer_names.index(ls[0]), self.ref_ids)
+        return None
+
+    def _pad_xy(self, tok):
+        ref, num = tok.rsplit(".", 1)
+        for it in self.sp.pads_by_fp.get(self._fp(ref), []):
+            if str(it.owner[1]) == num:
+                return np.array(it.pos)
+        return np.array([0.0, 0.0])
+
+    def _fp(self, ref):
+        if not hasattr(self, "_fpmap"):
+            self._fpmap = {}
+            for fpu, its in self.sp.pads_by_fp.items():
+                for it in its:
+                    self._fpmap[it.owner[0]] = fpu
+        return self._fpmap.get(ref)
+
+    def _anchor(self, tok):
+        from kae.route.critical_grid import Anchor
+        ref, num = tok.rsplit(".", 1)
+        for it in self.sp.pads_by_fp.get(self._fp(ref), []):
+            if str(it.owner[1]) == num:
+                return Anchor(it.geom, tuple(it.layers), it.pos, kind="pad")
+        return None
+
+
+def open_nets(path, log=print):
+    """Nets KiCad's DRC (refilled) reports unconnected on a board: what the input itself leaves open."""
+    import json
+    import re
+    import subprocess
+    out = Path(tempfile.mkdtemp(prefix="kae-open-")) / "drc.json"
+    wrap = os.environ.get("KAE_KICAD_WRAP", "")
+    try:
+        subprocess.run(f"{wrap} kicad-cli pcb drc --refill-zones --format json --severity-error -o {out} {path}",
+                       shell=True, check=True, capture_output=True, timeout=1800)
+        drc = json.loads(out.read_text())
+    except Exception as e:                           # noqa: BLE001 - without it every torn net counts as ours
+        log(f"pnr: the input's DRC did not run ({type(e).__name__}); its open nets are unknown")
+        return set()
+    return {m.group(1) for u in drc.get("unconnected_items", []) for it in u.get("items", [])
+            for m in [re.search(r"\[([^\]]+)\]", it.get("description") or "")] if m}
+
+
+def route_whole(path, out, passes=3, log=print, **kw):
+    """Route, and give back to the input every net the router left in more pieces than the input has it:
+    the next pass leaves those nets exactly as the input has them and routes the rest again, so no
+    half-routed net blocks the others. On a board without routing (a new board) such nets stay unrouted
+    for the completion router (kae.route.bridge); they are never taken from a human layout."""
+    already = open_nets(path, log)
+    keep = set()
+    r = None
+    for k in range(passes):
+        r = PhysRouter(path, out, keep=keep, log=log, **kw).route()
+        bad = set(getattr(r, "torn", [])) - already
+        if not bad:
+            break
+        log(f"pnr: pass {k + 1}: {sorted(bad)} not routed whole; left as the input has them in pass {k + 2} "
+            f"(on a board without routing: unrouted, for the completion router)")
+        keep |= bad
+    else:
+        log(f"pnr: after {passes} passes still torn: {sorted(set(r.torn) - already)}")
+    return r
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog="kae.em.pnr")
+    ap.add_argument("board")
+    ap.add_argument("out")
+    ap.add_argument("--plain", action="store_true")
+    ap.add_argument("--lam", type=float, default=30.0)
+    ap.add_argument("--pitch", type=float, default=0.25)
+    ap.add_argument("--refresh", type=int, default=6)
+    ap.add_argument("--verify", action="store_true",
+                    help="per priced net, route a physics and a plain candidate and keep the one a field solve says harms less")
+    ap.add_argument("--intent", help="intent file (JSON): a kae.intent/1 document (goal and facts; "
+                    "docs/topics/architecture/intent-driven-objectives.md), or bare part facts")
+    ap.add_argument("--seed", type=int, default=0, help="seed of the corners sampled over the parameters' intervals")
+    ap.add_argument("--no-capacitive", action="store_true", help="leave out the capacitive prices (kae.em.cprice)")
+    ap.add_argument("--spectral", action="store_true",
+                    help="prices weighted over the whole spectrum from a reduced model per refresh (kae.em.spectral)")
+    ap.add_argument("--workers", type=int, default=1, help="--spectral: snapshot frequencies solved at once")
+    ap.add_argument("--work", help="work directory (default: a new temporary one)")
+    ap.add_argument("--lock", action="store_true", help="write the routed copper locked (for a completion router)")
+    ap.add_argument("--passes", type=int, default=3,
+                    help="routing passes: a net a pass leaves in pieces is kept as the input has it in the next")
+    a = ap.parse_args(argv)
+    from kae.excite.beliefs import load_intent
+    facts, goal = load_intent(a.intent), None
+    if facts.get("schema") == "kae.intent/1":            # the commander's intent: its facts and its goal
+        goal, facts = facts, facts.get("facts") or {}
+    route_whole(a.board, a.out, passes=a.passes, pitch=a.pitch, lam=a.lam, plain=a.plain, refresh=a.refresh,
+                verify=a.verify, intent=facts, seed=a.seed, work=a.work, capacitive=not a.no_capacitive,
+                spectral=dict(workers=a.workers) if a.spectral else False, goal=goal, lock=a.lock)
+
+
+if __name__ == "__main__":
+    main()

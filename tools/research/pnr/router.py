@@ -320,7 +320,7 @@ class Router:
         if len(pins) < 2:
             self.routes[net] = []
             return 0
-        terms = [np.array(w.terminals(pi, k), np.int32).reshape(-1, 3) for pi, k in pins]
+        terms = [w.terminal_array(pi, k).astype(np.int32) for pi, k in pins]
         terms += getattr(w, "shape_terms", {}).get(net, [])  # the net's board copper drawings
         terms = [t[(t[:, 1] >= 0) & (t[:, 2] >= 0) & (t[:, 1] < w.H) & (t[:, 2] < w.W)] for t in terms]
         # start from the pin closest to the pins' centroid
@@ -524,7 +524,7 @@ class Router:
         join the pieces in hard mode from the largest one. Unjoinable pieces count as unrouted."""
         w = self.w
         pins = [(pi, k) for pi, k in w.net_pins[net] if pi in w.pose]
-        terms = [np.array(w.terminals(pi, k), np.int32).reshape(-1, 3) for pi, k in pins]
+        terms = [w.terminal_array(pi, k).astype(np.int32) for pi, k in pins]
         terms += getattr(w, "shape_terms", {}).get(net, [])
         terms = [t[(t[:, 1] >= 0) & (t[:, 2] >= 0) & (t[:, 1] < w.H) & (t[:, 2] < w.W)] for t in terms]
         items = [t for t in terms if len(t)] + list(kept)

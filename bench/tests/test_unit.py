@@ -1,17 +1,20 @@
 # SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Tests that need no KiCad installation."""
+import hashlib
+import io
 import json
 import lzma
 import os
 import struct
 import subprocess
 import sys
+import tarfile
 from pathlib import Path
 
 import pytest
 
-from kaebench import adapters, boardfiles, manifest, report, runner, score, tools
+from kaebench import adapters, boardfiles, fetch, manifest, report, runner, score, tools
 
 SHA = "0" * 40
 
@@ -29,7 +32,7 @@ def test_manifest_validation(tmp_path):
     assert [e["id"] for e in manifest.load(p)] == ["b1", "b2"]
     assert [e["id"] for e in manifest.load(p, tags=["rf"])] == ["b2"]
     assert [e["id"] for e in manifest.load(p, tiers=["permissive"])] == ["b2"]
-    for bad in (entry(commit="abc"), entry(pcb_path="x.brd"), entry(id="has space"),
+    for bad in (entry(commit="abc"), entry(pcb_path="x.step"), entry(id="has space"),
                 entry(license_tier="other"), {k: v for k, v in entry().items() if k != "license"}):
         with pytest.raises(manifest.ManifestError):
             manifest.validate(bad)
@@ -44,12 +47,145 @@ def test_duplicate_ids(tmp_path):
 
 def test_project_paths():
     assert manifest.project_paths(entry()) == {"kicad_pro": "a/b.kicad_pro", "kicad_dru": "a/b.kicad_dru"}
+    assert manifest.project_paths(entry(pcb_path="hw/x.PcbDoc")) == {}
+
+
+def test_import_formats():
+    assert manifest.validate(entry(pcb_path="hw/board.brd"))
+    assert manifest.import_format("hw/Board.PcbDoc") == "altium"
+    assert manifest.import_format("hw/board.brd") == "auto"
+    zipped = entry(commit=None, repo="https://example.com/cad.zip", archive_sha256="a" * 64, pcb_path="x/b.brd")
+    assert manifest.validate(zipped)
+    for bad in (dict(zipped, archive_sha256="abc"), dict(zipped, commit="b" * 40), entry(commit=None)):
+        with pytest.raises(manifest.ManifestError):
+            manifest.validate(bad)
+    assert manifest.import_format("a/b.kicad_pcb") is None
 
 
 def test_top_level_block_ignores_nested_and_strings():
     text = '(kicad_pcb (version 1) (footprint "x" (setup "(setup fake)")) (setup (a 1) (b "c)")) (net 0 ""))'
     assert boardfiles.top_level_block(text, "setup") == '(setup (a 1) (b "c)"))'
     assert boardfiles.top_level_block(text, "missing") is None
+
+
+def test_fix_unloadable():
+    text = '(pad 1 smd (net 34 313)) (pad 2 smd (net 1 GND)) (gr_line (layer "Rescue")) (fp_line (layer "UNDEFINED"))'
+    assert boardfiles.fix_unloadable(text) == ('(pad 1 smd (net 34 "313")) (pad 2 smd (net 1 GND)) '
+                                               '(gr_line (layer "Cmts.User")) (fp_line (layer "Cmts.User"))')
+    text = '(net 16 -5) (net 6 +3.3) (net 45 1.02) (net 3 "+5V") (net 1 VCC)'
+    assert boardfiles.fix_unloadable(text) == '(net 16 "-5") (net 6 "+3.3") (net 45 "1.02") (net 3 "+5V") (net 1 VCC)'
+    text = '(kicad_pcb\n\t(property "SPDX-License-Identifier" "MIT")\n\t(version 20260206)\n\t(generator "pcbnew")'
+    assert boardfiles.fix_unloadable(text).startswith(
+        '(kicad_pcb\n\t(version 20260206)\n\t(property "SPDX-License-Identifier" "MIT")\n\t\n\t(generator')
+    text = '(user_via 0.45 0.3 3 0 31) (user_via 0.6 0.4)'
+    assert boardfiles.fix_unloadable(text) == '(user_via 0.45 0.3) (user_via 0.6 0.4)'
+
+
+def test_zip_fetch_reads_tar_gz(tmp_path, monkeypatch):
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as t:
+        for name, data in (("d/PCB/b.PcbDoc", b"board"), ("d/other.txt", b"x")):
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            t.addfile(info, io.BytesIO(data))
+    blob = buf.getvalue()
+    monkeypatch.setattr(fetch, "_download", lambda url, dest: Path(dest).write_bytes(blob) or True)
+    e = entry(commit=None, repo="https://example.com/d.tar.gz", pcb_path="d/PCB/b.PcbDoc",
+              archive_sha256=hashlib.sha256(blob).hexdigest())
+    got = fetch._zip_fetch(e, {"kicad_pcb": e["pcb_path"]}, tmp_path)
+    assert got["kicad_pcb"].read_bytes() == b"board"
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["b.PcbDoc"]
+
+
+def test_single_file_row_fetches_project_files(tmp_path, monkeypatch):
+    files = {"https://m.org/b.kicad_pcb": b"(kicad_pcb)", "https://m.org/b.kicad_pro": b"{}"}
+    monkeypatch.setattr(fetch, "_download", lambda url, dest: Path(dest).write_bytes(files[url]) or True)
+    h = {u: hashlib.sha256(b).hexdigest() for u, b in files.items()}
+    e = entry(commit=None, repo="https://m.org/b.kicad_pcb", pcb_path="w6/b.kicad_pcb",
+              archive_sha256=h["https://m.org/b.kicad_pcb"],
+              file_urls={"kicad_pro": {"url": "https://m.org/b.kicad_pro", "sha256": h["https://m.org/b.kicad_pro"]}})
+    assert manifest.validate(e)
+    got = fetch._zip_fetch(e, manifest.project_paths(e) | {"kicad_pcb": e["pcb_path"]}, tmp_path)
+    assert got["kicad_pro"].read_bytes() == b"{}" and got["kicad_pcb"].name == "b.kicad_pcb"
+    e["file_urls"]["kicad_pro"]["sha256"] = "0" * 64
+    (tmp_path / "x").mkdir()
+    with pytest.raises(ValueError):
+        fetch._zip_fetch(e, manifest.project_paths(e) | {"kicad_pcb": e["pcb_path"]}, tmp_path / "x")
+    with pytest.raises(manifest.ManifestError):
+        manifest.validate(dict(e, file_urls={"kicad_pro": {"url": "u"}}))
+
+
+def test_download_retries_rate_limit(tmp_path, monkeypatch):
+    import urllib.error
+    calls, sleeps = [], []
+
+    def fake_urlopen(req, timeout):
+        calls.append(req.full_url)
+        if len(calls) <= 2:
+            raise urllib.error.HTTPError(req.full_url, 429, "Too Many Requests", {"Retry-After": "30"}, None)
+        return io.BytesIO(b"board")
+
+    clock = [0.0]
+    monkeypatch.setattr(fetch.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(fetch.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(fetch.time, "sleep", lambda s: (sleeps.append(s), clock.__setitem__(0, clock[0] + s)))
+    monkeypatch.setattr(fetch, "_hold_until", {})
+    assert fetch._download("https://gitlab.example.org/a/-/raw/c/b.kicad_pcb", tmp_path / "b")
+    assert (tmp_path / "b").read_bytes() == b"board" and len(calls) == 3
+    assert len(sleeps) == 2 and all(30 <= s <= 37 for s in sleeps)  # Retry-After + jitter
+
+    # a persistent 503 is given up after RETRY_BUDGET seconds; 404 is "not found", not an error
+    def unavailable(req, timeout):
+        raise urllib.error.HTTPError(req.full_url, 503, "Service Unavailable", {}, None)
+    monkeypatch.setattr(fetch.urllib.request, "urlopen", unavailable)
+    with pytest.raises(urllib.error.HTTPError):
+        fetch._download("https://gitlab.example.org/x", tmp_path / "x")
+    assert clock[0] <= 2 * fetch.RETRY_BUDGET
+    monkeypatch.setattr(fetch.urllib.request, "urlopen",
+                        lambda req, timeout: (_ for _ in ()).throw(
+                            urllib.error.HTTPError(req.full_url, 404, "Not Found", {}, None)))
+    assert fetch._download("https://gitlab.example.org/y", tmp_path / "y") is False
+
+
+def test_fetch_falls_back_to_git_when_raw_misses(tmp_path, monkeypatch):
+    # gitlab.cba.mit.edu projects that moved to forge.cba.mit.edu 404 on the guessed raw URL
+    monkeypatch.setattr(fetch, "_download", lambda url, dest: False)
+    def git_fetch(repo, commit, paths, dest_dir):
+        out = dest_dir / "b.kicad_pcb"
+        out.write_text("(kicad_pcb (version 20240108))")
+        return {"kicad_pcb": out}
+    monkeypatch.setattr(fetch, "_git_fetch", git_fetch)
+    e = entry(repo="https://gitlab.cba.mit.edu/u/p", pcb_path="hw/b.kicad_pcb")
+    assert fetch.fetch(e, tmp_path)["kicad_pcb"].endswith("b.kicad_pcb")
+
+
+def test_art_zones_to_polys():
+    pts = "(pts (xy 0 0) (xy 1 0) (xy 1 1))"
+    text = ('(kicad_pcb (version 1)\n'
+            f' (footprint "x" (zone (layer "F.SilkS") (polygon {pts})))\n'
+            f' (zone (layer "B.SilkS") (uuid "u1") (fill (thermal_gap 0.5)) (polygon {pts}))\n'
+            f' (zone (net 1) (net_name "GND") (layer "F.Cu") (polygon {pts}))\n'
+            f' (zone (layer "F.Cu") (keepout (tracks not_allowed)) (polygon {pts}))\n'
+            f' (gr_text "(zone (layer \\"F.SilkS\\"))"))')
+    new, n = boardfiles.art_zones_to_polys(text)
+    assert n == 2
+    assert f'(fp_poly {pts} (stroke (width 0) (type solid)) (fill yes) (layer "F.SilkS"))' in new
+    assert f'(gr_poly {pts} (stroke (width 0) (type solid)) (fill yes) (layer "B.SilkS") (uuid "u1"))' in new
+    assert new.count("(zone") == 3  # copper zone, keepout and the string are untouched
+
+
+def test_micro_arc_pile_and_remove_top_level():
+    def arc(x, uid, layer="F.Cu", d=0.0000005):
+        return (f'\t(arc\n\t\t(start {x} 5) (mid {x + d} 5.0000004) (end {x + 2 * d} 5)\n'
+                f'\t\t(width 0.1)\n\t\t(layer "{layer}")\n\t\t(net 1)\n\t\t(uuid "{uid}")\n\t)\n')
+    text = ("(kicad_pcb\n" + arc(1, "a") + arc(1.00001, "b") + arc(1, "c", "B.Cu") + arc(7, "d")
+            + arc(9, "e", d=0.01)  # a real (if short) arc is not counted
+            + '\t(zone (polygon (pts (arc (start 1 5) (mid 1 5) (end 1 5)))) (uuid "z"))\n)\n')
+    assert boardfiles.micro_arc_pile(text) == 2
+    new, n = boardfiles.remove_top_level(text, "arc", {"a", "d", "z"})
+    assert n == 2 and '"a"' not in new and '"d"' not in new
+    assert '(uuid "b")' in new and '(uuid "e")' in new and '(uuid "z")' in new  # zone pts arc kept
+    assert new.startswith("(kicad_pcb\n\t(arc") and new.endswith("\n)\n")
 
 
 def test_strip_ses_placement(tmp_path):
@@ -183,6 +319,28 @@ def test_report_best_of_k(tmp_path):
     assert m["cp1"] == 0.0 and m["cpk"] == 0.5
     assert m["completion"] == pytest.approx(0.95)
     assert "| x | all |" in report.to_markdown(report.summarize(rows))
+
+
+def test_report_keeps_runs_of_one_adapter_apart(tmp_path):
+    """A method and its baseline run with the same adapter name must not be pooled."""
+    def write(run, adapter, bid, clean, version):
+        d = tmp_path / run / adapter / "route" / bid / "attempt-0"
+        d.mkdir(parents=True)
+        (d / "attempt.json").write_text(json.dumps(dict(
+            adapter=adapter, kind="route", id=bid, split="A", attempt=0, status="ok", runtime_s=1.0,
+            score_version=version, score=dict(valid=True, clean=clean, completion=1.0, errors=0, track_length_mm=10))))
+    for bid in ("b1", "b2"):
+        write("baseline", "freerouting", bid, False, 5)
+        write("new", "freerouting", bid, True, 6)
+        write("new", "reference", bid, True, 6)
+    summary, rows = report.report([tmp_path / "new", tmp_path / "baseline"])
+    assert summary[("freerouting@baseline", "route", "all")]["cp1"] == 0.0
+    assert summary[("freerouting@new", "route", "all")]["cp1"] == 1.0
+    assert summary[("freerouting@new", "route", "all")]["k"] == 1
+    assert ("reference", "route", "all") in summary  # unshared names keep their plain label
+    assert report.score_versions(rows) == [5, 6]
+    single, _ = report.report([tmp_path / "new"])
+    assert ("freerouting", "route", "all") in single
 
 
 def test_id_list_from_file(tmp_path):

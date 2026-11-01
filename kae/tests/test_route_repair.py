@@ -51,6 +51,25 @@ def test_permute_is_reproducible_and_keeps_everything():
     assert repair.round_seed(0, 1) != 0 and repair.round_seed(5, 1) != repair.round_seed(5, 2)
 
 
+def test_permute_routes_the_nets_left_open_first():
+    """A failure history puts its nets first (most often open first) and the placements holding
+    their pins first, after the seeded shuffle; the rest keep the shuffled order."""
+    assert translate.route_first({"C": 1, "D": 3, "A": 0, "B": 1}) == ["D", "B", "C"]
+    t = S.parse(DSN)
+    assert translate.permute(t, 0, first=["D"])               # no shuffle, only the history
+    comps, nets = _order(t)
+    assert nets[0] == "D" and sorted(nets) == ["A", "B", "C", "D"]
+    assert comps[0][0] == "SOT23"                              # Q1: one pin, on D
+    assert comps[1] == ("R0603", ["R3", "R1", "R2"])          # R3 holds D's other pin
+    for seed in (2, 5):
+        a, b = S.parse(DSN), S.parse(DSN)
+        translate.permute(a, seed, first=["B"])
+        translate.permute(b, seed, first=["B"])
+        assert a == b                                          # still reproducible from the seed
+        comps, nets = _order(a)
+        assert nets[0] == "B" and comps[0][0] == "R0603" and set(comps[0][1][:2]) == {"R1", "R2"}
+
+
 def _sq(x, y, h):
     return [[[x - h, y - h], [x + h, y - h], [x + h, y + h], [x - h, y + h], [x - h, y - h]]]
 
@@ -215,3 +234,12 @@ def test_slot_wait_ends_with_the_budget(tmp_path, monkeypatch):
     assert run.report.get("slot_gave_up") and run.ses is not None
     assert run.report["slot_wait_s"] < 10.0
     held.close()
+
+
+def test_excess_counts_only_errors_beyond_the_input():
+    from kae.route import drc
+    s = dict(errors=7, unconnected=2, by_type={"copper_edge_clearance": 4, "solder_mask_bridge": 2, "clearance": 1})
+    base = {"copper_edge_clearance": 4, "solder_mask_bridge": 3}
+    assert drc.excess(s, base) == 1          # the clearance error is the router's
+    assert drc.excess(s, {}) == 7            # no baseline: every error counts, as before
+    assert drc.excess(dict(by_type={}), base) == 0

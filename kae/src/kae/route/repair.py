@@ -31,6 +31,7 @@ missing connections), so the output never gets worse. Stops when the board is cl
 more can be done, FAILS rounds in a row were not better, the round limit is reached, or time
 runs out.
 """
+import json
 import math
 import re
 import shutil
@@ -96,9 +97,24 @@ class _Space:
         for net, shapes, cls, _ in getattr(plan, "net_graphics", []):  # copper pins of a net
             for l, g in shapes.items():
                 self.items.append((g, net, "pad", l, cls, None))
-        for ob in plan.obstacles:  # rule areas forbid tracks of every net
-            if ob.kind == "keepout" and ob.why.startswith("rule area") and not isinstance(ob.geom, tuple):
-                self.items.append((ob.geom, "", "keepout", None if ob.layer == "signal" else ob.layer, None, None))
+        for ob in plan.obstacles:
+            if ob.kind != "keepout":
+                continue  # via keepouts do not bind tracks
+            lay = None if ob.layer == "signal" else ob.layer
+            if ob.why.startswith("rule area") and not isinstance(ob.geom, tuple):
+                # rule areas forbid tracks of every net
+                self.items.append((ob.geom, "", "keepout", lay, None, None))
+                continue
+            # the plan's other keepouts (NPTH holes, cut-outs and stray edges, mask openings,
+            # copper graphics) at their class's clearance: a spoke track drawn across one was
+            # an error of its own (a solder mask bridge, a hole or edge clearance)
+            g = ob.geom
+            if isinstance(g, tuple):
+                if g[0] != "circle":
+                    continue
+                from shapely.geometry import Point
+                g = Point(g[1], g[2]).buffer(g[3] / 2, quad_segs=16)
+            self.items.append((g, "", "obstacle", lay, ob.cls, None))
         self.tree = STRtree([it[0] for it in self.items]) if self.items else None
 
     def _need(self, net, layer, it):
@@ -112,8 +128,8 @@ class _Space:
             v = self.plan.matrix.get((a, b, layer), (0.2, 0.2, 0.2))
             r = self.routed.get(it[5])
             return v[1] if r is not None and r["kind"] == "via" else v[0]
-        if it[2] == "pad" and it[4] in self.plan.obstacle_classes:
-            return self.plan.obstacle_classes[it[4]].values.get((cls, layer), (0.2, 0.2))[0]
+        if it[2] in ("pad", "obstacle") and it[4] in self.plan.obstacle_classes:
+            return max(self.plan.obstacle_classes[it[4]].values.get((cls, layer), (0.2, 0.2))[0], 1e-6)
         vals = [oc.values.get((cls, layer)) for n, oc in self.plan.obstacle_classes.items() if n.startswith("kae_cu")]
         return max([v[0] for v in vals if v is not None] or [0.2])
 
@@ -154,20 +170,27 @@ def spoke_tracks(pad, zone, layer, need, plan, space, taken=None, skip=()):
     if not net or cls is None or need <= 0:
         return []
     w = plan.classes[cls].widths.get(layer)
-    pieces = [g for i, g in enumerate(_poly(r) for r in (zone.get("layers") or {}).get(layer) or [])
-              if g is not None and (zone.get("uuid"), layer, i) not in skip]
-    if not w or not pieces:
-        return []
-    core = unary_union(pieces).buffer(-(w / 2 + 0.01))   # track ends this far inside the fill
     _, real = _pad_shapes(pad)
     cop = real.get(layer)
-    if core.is_empty or cop is None or cop.is_empty:
+    if not w or cop is None or cop.is_empty:
         return []
     start = Point(pad["pos"])
     if not cop.contains(start):
         start = cop.representative_point()
     reach = math.sqrt(cop.area) + (pad.get("thermal_gap") or 0.5) + 2.0
-    base = pad.get("spoke_angle") or 0.0
+    # only the fill near the pad counts: a ray reaches `reach` from it, and the fill clipped to a
+    # box `w` + 1 mm wider shrinks the same inside the ray's range (a board-wide pour shrunk whole
+    # for every starved pad took 4 of 5 minutes of a repair round on bastardkb dilemma)
+    m = reach + w + 1.0
+    win = shapely.box(start.x - m, start.y - m, start.x + m, start.y + m)
+    pieces = [g.intersection(win) for i, g in enumerate(_poly(r) for r in (zone.get("layers") or {}).get(layer) or [])
+              if g is not None and (zone.get("uuid"), layer, i) not in skip and g.intersects(win)]
+    if not pieces:
+        return []
+    core = unary_union(pieces).buffer(-(w / 2 + 0.01))   # track ends this far inside the fill
+    if core.is_empty:
+        return []
+    base = (pad.get("spoke_angle") or 0.0) + (pad.get("orient") or 0.0)   # spokes lie in the pad's frame
     cands, seen = [], set()
     for ang in [base + 90 * k for k in range(4)] + [base + 15 * k for k in range(24)]:
         a = round(ang % 360, 3)
@@ -494,8 +517,31 @@ def layer_names(dsn_tree, copper):
 # new order (translate.permute), so a round that repeats a level is a new attempt; the loop
 # stops after FAILS rounds in a row that were not better (on A+B no fourth round in a row
 # ever improved a board).
-LEVELS = ("items", "nets", "free")
+LEVELS = ("items", "nets", "region", "free")   # "region" only with opts region_level (experimental)
 FAILS = 2
+REGION_TUBE = (2.0, 4.0)   # mm each side of an open connection's straight line: the "region" level's rip-up,
+                           # wider on a second region round
+
+
+def region_rip(report, routed, nets, tube):
+    """Routed items (uuids) of `nets`, and every routed item of any net within `tube` mm of the
+    straight line between the two items of each of the report's missing connections: the
+    region Freerouting re-routes as a whole (its own rip-up), the rest fixed. Experimental (opts
+    region_level): on the merge2 final boards every region round was worse and discarded
+    (fm4dd i2c24io 3 -> 7 open, kata0510 rp2040 6 -> 18, bancouver40 5 -> 13, noggin 1 -> 4):
+    the open connections are not short of room locally but of the topology chosen earlier."""
+    from shapely.geometry import LineString, Point
+    from shapely.ops import unary_union
+    tubes = []
+    for u in report.get("unconnected_items") or []:
+        ps = [(it["pos"]["x"], it["pos"]["y"]) for it in u.get("items") or [] if it.get("pos")]
+        if len(ps) == 2:
+            tubes.append((LineString(ps) if ps[0] != ps[1] else Point(ps[0])).buffer(tube))
+    area = unary_union(tubes) if tubes else None
+    out = {u for u, r in routed.items() if r["net"] in nets}
+    if area is not None:
+        out |= {u for u, r in routed.items() if _routed_geom(r).intersects(area)}
+    return out
 
 
 AUTO_ROUNDS = 50   # rounds "auto": a bound that only a run of ever-better rounds reaches
@@ -537,14 +583,26 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
         staged = drc.stage_board(board, input_path, d)
         return drc.run(staged, d / "drc.json", timeout=max(10, left() - 5))
 
+    base_ = {}
+
+    def no_worse(s_, ref):
+        """No more errors than `ref`, or no more beyond the input's own (input_errors, read only
+        when a board with more errors in all would otherwise be kept)."""
+        if s_["errors"] <= ref["errors"]:
+            return True
+        if "v" not in base_:
+            base_["v"] = input_errors(input_path, wd, deadline)
+        return errors_no_worse(s_, ref, base_["v"])
+
     try:
-        best_rep = check(output_path, wd / "repair0" / "drc")
+        best_rep, best_dir = check(output_path, wd / "repair0" / "drc"), wd / "repair0" / "drc"
     except drc.DrcError as e:
         return dict(rounds=[dict(round=0, drc_error=str(e))], final=None)
     best = drc.summary(best_rep)
     rounds.append(dict(round=0, **best))
     log(f"repair round 0: {best['errors']} errors {best['by_type']}, {best['unconnected']} unconnected")
-    level, fails, split_failed = 0, 0, False
+    level, fails, split_failed, region_tries = 0, 0, False, 0
+    levels = LEVELS if opts.get("region_level") else tuple(x for x in LEVELS if x != "region")
     for k in range(1, max_rounds(opts) + 1):
         if best["errors"] == 0 and best["unconnected"] == 0:
             break
@@ -573,19 +631,34 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
             pol = getattr(plan, "plane_policy", None)
             plan = constraints.plan(info, input_path, dict(opts, severities=sev, thermal_pads=sorted(thermal)))
             plan.plane_policy = pol
+            plan.strict_planes = opts.get("strict_planes") or []
         if not (a["widen"] or a["items"] or a["open"] or a["spokes"] or new_thermal):
             rec["stopped"] = "nothing attributable"
             rec["unattributed"] = sorted(set(a["unattributed"]))
             break
+        if k > 1 and opts.get("last_mile") and not any(v.get("type") == "starved_thermal" or any(
+                it.get("uuid") in routed for it in v.get("items") or []) for v in drc.errors(best_rep)):
+            # no error on router copper, only open connections: the last mile joins them, given the
+            # time (heypcb kestrel 1,000 s: 28/25/15 open -> 14/6/0)
+            rec["stopped"] = "open connections: last mile"
+            break
         use_split = bool(a["connect"] and fills and not split_failed)
         if not a["items"] and not a["widen"] and not use_split and level == 0 and a["open"]:
-            level = 2  # only open connections: the router needs room, not the same board again
-        mode = LEVELS[level]
+            # only open connections: the router needs room, not the same board again; first the
+            # region round them when opts region_level (experimental: it made every board it ran on
+            # worse, see the close-nearmiss study), else straight to a free re-route
+            level = levels.index("region" if "region" in levels else "free")
+        mode = levels[level]
         rec.update(level=mode, widen=len(a["widen"]), spokes=len(a["spokes"]), rip_items=len(a["items"]),
                    rip_nets=sorted(a["nets"]), connect=sorted(a["connect"]), open=sorted(a["open"]),
                    thermal=len(new_thermal), unattributed=sorted(set(a["unattributed"])))
         if mode == "items":
-            rip = set(a["items"])
+            rip = _with_via_tracks(output_path, set(a["items"]), routed)
+        elif mode == "region":
+            tube = REGION_TUBE[min(region_tries, len(REGION_TUBE) - 1)]
+            region_tries += 1
+            rip = _with_via_tracks(output_path, region_rip(best_rep, routed, a["nets"], tube), routed)
+            rec["region_tube"] = tube
         else:
             rip = {u for u, r in routed.items() if r["net"] in a["nets"]}
         fixed_board = drc.stage_board(output_path, input_path, rdir / "fixed")
@@ -599,10 +672,11 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
             from .bridge import plane_policy
             plan.plane_policy = plane_policy(opts, free_round_with_open=bool(a["open"]))
             plan.plane_cost = opts.get("plane_cost")
+            plan.outer_surcharge = opts.get("outer_surcharge")
             plan.pad_shapes = opts.get("pad_shapes") or "kicad"
             rec["planes"] = plan.plane_policy
             translate.apply(tree, plan, info)
-            translate.permute(tree, round_seed(opts.get("seed"), k))
+            translate.permute(tree, round_seed(opts.get("seed"), k), first=opts.get("route_first") or ())
             if use_split:
                 now = {u: r for u, r in copper.items() if u not in rip}   # the board as exported
                 now.update({f"spoke{i}": dict(kind="track", **s) for i, s in enumerate(a["spokes"])})
@@ -628,7 +702,7 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
                 log(f"repair round {k} ({mode}): the router wrote no session "
                     f"({'killed' if run.timed_out else 'rc=' + str(run.rc)})")
                 fails += 1
-                level = min(level + 1, len(LEVELS) - 1)
+                level = min(level + 1, len(levels) - 1)
                 if use_split:
                     split_failed = True
                 if fails >= FAILS:
@@ -653,27 +727,27 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
             break
         s_ = drc.summary(rep)
         rec.update(s_)
-        # a round never buys a connection with a DRC error: an error is a defect the last mile
-        # cannot repair (it runs only on boards without errors), an open it can join (olimex
-        # crit: a free round traded 2 opens for 1 open + 1 starved thermal, and the board kept it)
-        rec["kept"] = _key(s_) > _key(best) and s_["errors"] <= best["errors"]
+        # a round never buys a connection with a DRC error beyond the input's own (no_worse): an
+        # error is a defect the last mile cannot repair, an open it can join (olimex crit: a free
+        # round traded 2 opens for 1 open + 1 starved thermal, and the board kept it)
+        rec["kept"] = _key(s_) > _key(best) and no_worse(s_, best)
         log(f"repair round {k} ({mode}{', spokes ' + str(len(a['spokes'])) if a['spokes'] else ''}"
             f"{', split planes ' + str(len(a['connect'])) if use_split else ''}): "
             f"{s_['errors']} errors {s_['by_type']}, {s_['unconnected']} unconnected "
             f"({'kept' if rec['kept'] else 'discarded'})")
         if rec["kept"]:
             shutil.copy2(cand, output_path)
-            best, best_rep = s_, rep
-            level, fails = 0, 0
+            best, best_rep, best_dir = s_, rep, rdir / "drc"
+            level, fails, region_tries = 0, 0, 0
         else:
             fails += 1
             if use_split:
                 # the router could not join the parts with everything else in place: from now
                 # on the net's planes are left out and the rest of the routing may move
                 split_failed = True
-                level = len(LEVELS) - 1 if not (a["items"] or a["widen"]) else min(level + 1, len(LEVELS) - 1)
+                level = len(levels) - 1 if not (a["items"] or a["widen"]) else min(level + 1, len(levels) - 1)
             else:
-                level = min(level + 1, len(LEVELS) - 1)
+                level = min(level + 1, len(levels) - 1)
             if fails >= FAILS:
                 rec["stopped"] = "no improvement"
                 break
@@ -682,9 +756,14 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
         if len(rounds) > 1 and not rounds[-1].get("stopped"):
             rounds[-1]["stopped"] = "round cap"
     if opts.get("last_mile"):
-        _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, best, best_rep, fixed, log)
+        # only a board with errors needs the baseline (one more DRC, minutes on big boards)
+        base = input_errors(input_path, wd, deadline) if best["errors"] else {}
+        best_rep = _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, best, best_rep, fixed,
+                              log, base=base) or best_rep
         best = next((r for r in reversed(rounds) if r.get("final")), {}).get("final") or best
-    return dict(rounds=rounds, final=best, thermal_pads=len(thermal), seconds=round(time.monotonic() - t_start, 1))
+    return dict(rounds=rounds, final=best, thermal_pads=len(thermal), seconds=round(time.monotonic() - t_start, 1),
+                drc_dir=None if opts.get("last_mile") else str(best_dir),   # the DRC of the board kept
+                _report=best_rep)   # its DRC report (for kae.route.blocked; the bridge takes it out)
 
 
 RIP_ERROR_TYPES = ("clearance", "hole_clearance", "track_width", "copper_edge_clearance", "shorting_items",
@@ -692,7 +771,27 @@ RIP_ERROR_TYPES = ("clearance", "hole_clearance", "track_width", "copper_edge_cl
                    "items_not_allowed")
 
 
-def _rip_errors(input_path, board, report, d, fixed, left, info=None, plan=None):
+def _with_via_tracks(board, rip, routed):
+    """`rip` plus the router tracks that end on a via in it (same net): a via ripped alone left
+    two tracks on different layers with no via between them, an open the next rounds kept
+    (heypcb kestrel: 6 of 17 open connections)."""
+    from kae.board.kicad_file import load
+    model = load(board)
+    vias = [v for v in model.vias if v.uuid in rip]
+    if not vias:
+        return set(rip)
+    out = set(rip)
+    for t in model.tracks:
+        if t.uuid in out or t.uuid not in routed:
+            continue
+        for v in vias:
+            if t.net == v.net and any(math.dist(e, (v.x, v.y)) <= v.size / 2 + 1e-3 for e in (t.start, t.end)):
+                out.add(t.uuid)
+                break
+    return out
+
+
+def _rip_errors(input_path, board, report, d, fixed, left, info=None, plan=None, base=None):
     """(board, report, summary) with the unlocked routing that every error-level violation
     of `report` names taken out (each error must name some; other errors stay as they are),
     or None when that leaves errors or nothing to take out. A starved thermal names a pad
@@ -719,15 +818,20 @@ def _rip_errors(input_path, board, report, d, fixed, left, info=None, plan=None)
                 hit |= {u for u, net, l, cg in geo if l == layer and net != pad.get("net") and u in routed
                         and cg.intersects(g)}
             if not hit:
-                return None
+                if base is None:
+                    return None
+                continue  # no router copper in its corridors: the board's own (base counts it)
             rip |= hit
             continue
         ours = uu & routed
+        if not ours and base is not None:
+            continue  # names no router copper: the board had it before routing
         if v.get("type") not in RIP_ERROR_TYPES or not ours:
             return None
         rip |= ours
     if not rip:
         return None
+    rip = _with_via_tracks(board, rip, routed)
     if Path(d).exists():
         shutil.rmtree(d)
     Path(d).mkdir(parents=True)
@@ -739,22 +843,62 @@ def _rip_errors(input_path, board, report, d, fixed, left, info=None, plan=None)
     except drc.DrcError:
         return None
     s_ = drc.summary(rep)
-    if s_["errors"]:
+    if drc.excess(s_, base):
         return None
     return cand, rep, s_
 
 
-LAST_MILE_MAX = 40     # open connections the last mile takes on at most (bms-c1: 27 joined to 0 in 25 s;
-                       # more is a routing failure for the router, not the last mile)
+GREEDY_MIN_S = 120.0   # time a greedy last-mile round needs: its joins, the nested reroute and two DRCs
+LAST_MILE_MIN_S = 30.0 # time a last-mile round needs (was 60: a short attempt, the restart portfolio's first
+                       # waves, then had neither repair nor last mile and ended with time unused)
+
+_BASE = {}
 
 
-def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, best, best_rep, fixed, log):
+def input_errors(input_path, wd, deadline):
+    """{type: count} of the error-level violations the board had before routing (its footprints,
+    outline, fixed copper and placement), by KiCad's DRC with its project rules; cached per file.
+    Routing cannot remove them, so the last mile and its error rip-out count only errors beyond
+    these. {} when the check fails (then every error counts, as before)."""
+    p = Path(input_path).resolve()
+    key = (str(p), p.stat().st_mtime_ns, p.stat().st_size)
+    if key not in _BASE:
+        d = Path(wd) / "input_drc"
+        try:
+            rep = drc.run(drc.stage_board(p, p, d), d / "drc.json",
+                          timeout=max(10, min(600, deadline - time.monotonic() - 60)))
+            _BASE[key] = drc.summary(rep)["by_type"]
+        except (drc.DrcError, OSError):
+            return {}
+    return _BASE[key]
+
+
+def errors_no_worse(s_, ref, base):
+    """Whether board summary `s_` has no more DRC errors than `ref`, counting with a baseline
+    (`base`, input_errors: the errors the board had before routing) only those beyond it. A
+    count of a type the input already has more of is the board's own, and it moves with the
+    routing: KiCad names one solder mask bridge per aperture and net it meets first, so the
+    copper that joins a solder jumper's or a reversible footprint's pads changes the count
+    (marksard rhymestone: the last mile closed all 8 open connections, mask bridges 152 -> 153
+    of the input's 172, and the board was discarded for that one). The count is not even
+    stable: KiCad's DRC of one and the same protocentral pulse-express board gave 39 and 40."""
+    if s_["errors"] <= ref["errors"]:
+        return True
+    return bool(base) and drc.excess(s_, base) <= drc.excess(ref, base)
+
+
+def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, best, best_rep, fixed, log,
+               base=None):
     """Last-mile rounds (kae.route.lastmile) after the repair rounds: join what is still
     open with the grid router, rip what the new copper must cross, and let a nested repair
     loop route the ripped nets with the new copper fixed. Each round works on the previous
     round's board (a join can open the net it ripped, which the next round joins in turn)
-    while that board has no more errors than the best one; the output is replaced only by a
-    board KiCad's DRC finds better with no more errors. Appends its records to `rounds`
+    while that board has no more errors beyond the input's (`base`) than the best one; the
+    output is replaced only by a board KiCad's DRC finds better with no more errors, or no more
+    beyond the input's (errors_no_worse). It runs on boards with errors beyond the input too:
+    a join adds only copper checked exactly, and the result is judged by the same rule
+    (adafruit ds2482s: a solder-jumper mask bridge beyond the input's 4 kept it from 7 open
+    connections). Appends its records to `rounds`
     (each kept one carries `final`)."""
     from . import lastmile
 
@@ -767,20 +911,36 @@ def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, 
     guard = opts.get("physics_guard")
     soft = set(opts.get("soft_fixed") or ()) if guard is not None else set()
     cur, cur_rep, cur_sum = output_path, best_rep, best
-    if cur_sum["errors"] and left() > 90:
+    if drc.excess(cur_sum, base) and left() > 90:
         # errors the router keeps making (bms-c1 crit: a Freerouting track 0.19 mm from a
         # 0.3 mm HV tab, in every round): take out the router's own copper that each error
         # names, so the last mile, whose every segment is checked exactly, routes it instead
-        got = _rip_errors(input_path, cur, cur_rep, wd / "lastmile0", fixed, left, info=info, plan=plan)
+        got = _rip_errors(input_path, cur, cur_rep, wd / "lastmile0", fixed, left, info=info, plan=plan, base=base)
         if got is not None:
             cur, cur_rep, cur_sum = got
             rounds.append(dict(round="lm0", level="rip errors", **cur_sum))
             log(f"last mile 0: router copper of {best['errors']} errors taken out: {cur_sum['errors']} errors, "
                 f"{cur_sum['unconnected']} unconnected")
-    for j in range(1, int(opts.get("last_mile_rounds", 4)) + 1):
-        if cur_sum["errors"] or not cur_sum["unconnected"] or cur_sum["unconnected"] > LAST_MILE_MAX or left() < 60:
+    # the first round joins only around everything (no rip-up): those joins cost nothing, and a
+    # rip-up round whose ripped nets get no reroute in the time left ends worse than it began
+    # (siderakb ergo-snm: 16 open; with rip-up 26 joins, 29 ripped, 18 open and discarded, where
+    # the free joins alone gave 10)
+    free_first = bool(opts.get("last_mile_free_first", True))
+    # no bound on the open connections or rounds: joins stop at their deadline, rounds after FAILS in
+    # a row not better (a bound of 40 open skipped transistorfet z280's last mile, 2 minutes unused)
+    fails = 0
+    for j in range(1, AUTO_ROUNDS + 1):
+        rip = not (free_first and j == 1)
+        # with time for the nested reroute, a rip-up keeps its joins and the reroute takes the
+        # ripped nets (judged by KiCad's DRC like any round); without it, rip-ups are transactions,
+        # undone unless they leave fewer open connections on the grid alone (heypcb kestrel:
+        # transactions throughout 31/22/14 open, greedy with the reroute 18/2/2; fm4dd i2c24io:
+        # a greedy cascade with no reroute after it 5 -> 30 open)
+        greedy = left() > GREEDY_MIN_S
+        if (drc.excess(cur_sum, base) > drc.excess(best, base) or not cur_sum["unconnected"] or fails >= FAILS
+                or left() < LAST_MILE_MIN_S):
             break
-        rec = dict(round=f"lm{j}", level="last_mile")
+        rec = dict(round=f"lm{j}", level="last_mile" if rip else "last_mile free")
         rounds.append(rec)
         ldir = wd / f"lastmile{j}"
         if ldir.exists():
@@ -790,8 +950,12 @@ def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, 
             staged = drc.stage_board(cur, input_path, ldir / "base")
             fills = pcbnew_io.zone_fills(staged)["zones"]
             cand = ldir / "cand.kicad_pcb"
+            # bounded by time, not by a count of joins (kata0510 rp2040: 39 open connections
+            # behind 0.4 mm-pitch escapes took 40 joins, the old cap, in 20 s); the round keeps
+            # time for its DRC and the rounds after it
             r = lastmile.close(staged, info, plan, fills, cand, nets=lastmile.open_nets(cur_rep), sev=sev,
-                               fixed=fixed, log=log, soft=soft)
+                               fixed=fixed, log=log, soft=soft, rip=rip, txn=not greedy, max_joins=None,
+                               deadline=time.monotonic() + max(LAST_MILE_MIN_S / 2, 0.5 * (left() - LAST_MILE_MIN_S)))
         except Exception as e:  # noqa: BLE001 - the repaired board stays
             rec["error"] = f"{type(e).__name__}: {e}"
             break
@@ -800,8 +964,11 @@ def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, 
         soft -= set(r["ripped"])
         if not r["joined"]:
             rec["stopped"] = "nothing joined"
+            if not rip:
+                continue    # the rip-up rounds work on the same board
             break
         fixed |= set(r["added"])
+        sub = {}
         if r["ripped"] and left() > 60:
             # the ripped nets go back to the router around the new, fixed copper
             if (wd / "kicad.dsn").exists():
@@ -810,22 +977,38 @@ def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, 
                        deadline, log=log)
             rec["reroute"] = [{k: x.get(k) for k in ("round", "level", "errors", "unconnected", "kept")}
                               for x in sub.get("rounds") or []]
-        if left() < 10:
+        d = Path(sub.get("drc_dir") or ldir / "drc")   # a reroute ends with its DRC of cand: no second one
+        if sub.get("drc_dir"):
+            rep = json.loads((d / "drc.json").read_text())
+        elif left() < 10:
             rec["stopped"] = "time"
             break
-        try:
-            rep = drc.run(drc.stage_board(cand, input_path, ldir / "drc"), ldir / "drc" / "drc.json",
-                          timeout=max(10, left() - 5))
-        except drc.DrcError as e:
-            rec["drc_error"] = str(e)
-            break
+        else:
+            try:
+                rep = drc.run(drc.stage_board(cand, input_path, d), d / "drc.json", timeout=max(10, left() - 5))
+            except drc.DrcError as e:
+                rec["drc_error"] = str(e)
+                break
         s_ = drc.summary(rep)
+        if not errors_no_worse(s_, best, base) and not sub.get("drc_dir") and left() > 30:
+            # a few joins KiCad faults (a track through a pour's spokes) need not cost the round's
+            # other joins: those joins go, and the rest is judged again
+            more = {t for t, n in (s_.get("by_type") or {}).items() if n > (best.get("by_type") or {}).get(t, 0)}
+            bad = lastmile.drop_joins(cand, cand, r, rep, types=more)
+            if bad:
+                try:
+                    rep = drc.run(drc.stage_board(cand, input_path, d), d / "drc.json", timeout=max(10, left() - 5))
+                    s_ = drc.summary(rep)
+                    rec["joins_dropped"] = len(bad)
+                except drc.DrcError as e:
+                    rec["drc_error"] = str(e)
+                    break
         rec.update(s_)
-        rec["kept"] = _key(s_) > _key(best) and s_["errors"] <= best["errors"]
+        rec["kept"] = _key(s_) > _key(best) and errors_no_worse(s_, best, base)
         if r.get("ripped_soft") and guard is not None:
             # critical copper was re-laid: the routed physics must hold (the joint loop's rule)
             try:
-                ok, why = guard(staged, cur_sum, ldir / "drc" / "board.kicad_pcb", s_)
+                ok, why = guard(staged, cur_sum, d / "board.kicad_pcb", s_)
             except Exception as e:  # noqa: BLE001 - no physics verdict, no critical copper change
                 ok, why = False, f"physics guard failed: {type(e).__name__}: {e}"
             rec["physics"] = why
@@ -842,6 +1025,8 @@ def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, 
             shutil.copy2(cand, output_path)
             best, best_rep = s_, rep
             rec["final"] = s_
-        if s_["errors"] > best["errors"]:
+        fails = 0 if rec["kept"] else fails + rip
+        if not errors_no_worse(s_, best, base):
             break
         cur, cur_rep, cur_sum = cand, rep, s_
+    return best_rep

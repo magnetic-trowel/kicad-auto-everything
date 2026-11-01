@@ -1,0 +1,31 @@
+{"repo": "https://github.com/splitkb/kyria", "reason": "CC-BY-NC-SA-4.0 (now acceptable) but no PCB design files in repo"}
+{"repo": "https://github.com/Bastardkb/Charybdis", "reason": "CC-BY-NC-SA-4.0 (now acceptable) but no PCB design files in repo"}
+{"repo": "https://github.com/mxmxmx/O_C", "reason": "no licence file found; only OLED adapter brd"}
+{"repo": "https://github.com/pichenettes/midipal", "reason": "no licence statement in README/LICENSE"}
+{"repo": "https://github.com/Fihdi/Eurorack", "reason": "CC-BY-NC-4.0 (now acceptable) but no PCB design files in repo"}
+{"repo": "https://github.com/afternoonlabs/BreezeKeyboard", "reason": "README: 'Anyone can use this project for personal use. Distributed under the MIT License' + name restriction; no LICENSE file - unclear"}
+{"repo": "https://github.com/nickajeglin/Eurorack-pcbs", "reason": "no licence"}
+{"repo": "https://github.com/yfuku/claw44", "reason": "no PCB files/no licence"}
+{"repo": "https://github.com/komar007/gh60", "reason": "no licence"}
+{"repo": "https://github.com/Keychron/Keychron-Keyboards-Hardware-Design", "reason": "Keychron Source-Available License (commercial-restrictive)"}
+{"repo": "https://github.com/sadekbaroudi/fingerpunch", "reason": "MIT but only plate/case kicad files, no main PCB sources"}
+{"repo": "https://github.com/4ms/DLD", "reason": "CC-BY-NC-SA (now acceptable) but no PCB design files in repo"}
+{"repo": "https://github.com/bastl-instruments/kastle", "reason": "no PCB design files (schematics PDFs only)"}
+{"repo": "https://github.com/coriolisinstruments/EurorackModules", "reason": "no licence file/statement"}
+{"repo": "https://github.com/jypma/modsynth", "reason": "no licence file/statement"}
+{"repo": "https://github.com/AlejandroHerr/modular-synth", "reason": "no licence"}
+{"repo": "https://github.com/Zidit/Usb_dac", "reason": "no licence"}
+{"repo": "https://github.com/pbing/HeadPhoneAmp", "reason": "no licence"}
+{"repo": "https://github.com/ooyang0325/Hi-Res-DAC", "reason": "no licence for board files"}
+{"repo": "https://github.com/BurningForceKin/ModularSynthStuff", "reason": "no licence; derived from educational-only designs"}
+{"repo": "https://github.com/abscisys/eurorack-freemodular", "reason": "fork of QuinnFreedman/modular (already recorded)"}
+{"repo": "https://github.com/jfedor2/rp2040-pmw3360", "reason": "no licence for kicad files"}
+{"repo": "https://github.com/0x62b/YetAnotherKeyboard", "reason": "no licence"}
+{"repo": "https://github.com/LucasS1206/Custom-4x3-Programable-Macropad", "reason": "no licence"}
+{"repo": "https://github.com/polykit/pico-dco", "reason": "no licence"}
+{"repo": "https://github.com/TheSlowGrowth/MutatedMutables", "reason": "CC-BY-SA-3.0 OK but only front-panel PCBs; skipped"}
+{"repo": "https://github.com/Netrona/STM32F_Audio_Codec_pcb", "reason": "no licence"}
+{"repo": "https://github.com/sx107/stm32-open-audio-interface", "reason": "GPL-3.0 but no board files in repo"}
+{"repo": "https://github.com/Bastardkb/Skeletyl", "reason": "CC-BY-NC-SA-4.0 (now acceptable) but no PCB design files"}
+{"repo": "https://github.com/Bastardkb/Scylla", "reason": "CC-BY-NC-SA-4.0 (now acceptable) but no PCB design files"}
+{"repo": "https://github.com/Bastardkb/TBK-Mini", "reason": "CC-BY-NC-SA-4.0 (now acceptable) but no PCB design files"}

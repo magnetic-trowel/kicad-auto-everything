@@ -220,3 +220,18 @@ def test_placement_rotated_off_right_angles_is_not_a_foreign_change(tmp_path):
                    capture_output=True)
     tr = tools.run_ops("transplant-placement", out, inp, tmp_path / "dst.kicad_pcb", inp)
     assert tr["foreign"]["count"] == 0, tr["foreign"]
+def test_covered_micro_arcs(tmp_path):
+    def arc(x, y, uid):
+        return (f'\t(arc (start {x} {y}) (mid {x + 0.0000003} {y + 0.0000004}) (end {x + 0.0000006} {y}) '
+                f'(width 0.1) (layer "F.Cu") (net 1) (uuid "{uid}"))\n')
+    text = FIXTURE.read_text()
+    cut = text.rindex(")")
+    covered = ["55555555-5555-5555-5555-555555555551", "55555555-5555-5555-5555-555555555552"]
+    text = (text[:cut] + arc(109.2, 105, covered[0]) + arc(114, 107, covered[1])  # on R1 pad 1; on a track
+            + arc(115, 108.5, "55555555-5555-5555-5555-555555555553")  # alone: it is copper
+            + arc(109.6, 105, "55555555-5555-5555-5555-555555555554")  # half off the pad edge
+            + text[cut:])
+    pcb = tmp_path / "b.kicad_pcb"
+    pcb.write_text(text)
+    res = tools.run_ops("covered-micro-arcs", pcb)
+    assert res["candidates"] == 4 and sorted(res["covered"]) == covered

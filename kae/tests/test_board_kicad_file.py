@@ -282,3 +282,26 @@ def test_board_copper_and_mask_graphics(tmp_path):
     from kae.board.model import Board
     b = kicad_file.load(p, rules=False)
     assert abs(Board.from_dict(b.to_dict()).graphics["B.Cu"][0].area - g["B.Cu"][0].area) < 1e-9
+
+
+def test_footprint_edges_close_an_open_outline(tmp_path):
+    """Board-level Edge.Cuts left open, closed by a footprint's own Edge.Cuts (an RJ45 notch),
+    with a small closed cut-out elsewhere: the outline is the whole board, not the cut-out
+    (piecol cm5-minima: a 19 mm2 fragment left every part off the board)."""
+    def ln(a, b, c, d, fp=False):
+        k = "fp_line" if fp else "gr_line"
+        return f'\t({k} (start {a} {b}) (end {c} {d}) (stroke (width 0.1) (type solid)) (layer "Edge.Cuts"))\n'
+    # 40 x 30 board; the top edge leaves a gap from x=10 to x=20 that the footprint closes
+    body = (ln(0, 0, 10, 0) + ln(20, 0, 40, 0) + ln(40, 0, 40, 30) + ln(40, 30, 0, 30) + ln(0, 30, 0, 0)
+            # a closed 2 x 2 cut-out inside
+            + ln(30, 20, 32, 20) + ln(32, 20, 32, 22) + ln(32, 22, 30, 22) + ln(30, 22, 30, 20))
+    fp = ('\t(footprint "notch" (layer "F.Cu") (uuid "00000000-0000-0000-0000-0000000000aa") (at 15 0)\n'
+          '\t\t(property "Reference" "T1" (at 0 0) (layer "F.SilkS"))\n'
+          + ln(-5, 0, -5, 5, True).replace("\t(", "\t\t(") + ln(-5, 5, 5, 5, True).replace("\t(", "\t\t(")
+          + ln(5, 5, 5, 0, True).replace("\t(", "\t\t(") + '\t)\n')
+    p = tmp_path / "notch.kicad_pcb"
+    p.write_text('(kicad_pcb (version 20240108) (generator "test")\n' + body + fp + ")\n")
+    b = kicad_file.load(p, rules=False)
+    assert len(b.outline) == 1
+    assert abs(b.outline[0].area - (40 * 30 - 10 * 5 - 4)) < 1e-6
+    assert b.footprints[0].on_board

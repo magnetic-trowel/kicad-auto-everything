@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 import importlib
+import json
 import os
 import subprocess
 import sys
@@ -72,6 +73,26 @@ def test_memory_gate_and_backfill(kq):
     submit(kq, "sleep 1", name="small")
     drive(kq, d, lambda: states(d).get("small") == "running" or states(d).get("small") == "ok")
     assert states(d)["huge"] == "queued"
+
+
+def test_starving_head_lets_only_short_owners_backfill(kq):
+    d = kq.Daemon()
+    free = kq.meminfo()["MemAvailable"]
+    submit(kq, "sleep 5", name="huge", mem=f"{free * 2}M", owner="big")
+    submit(kq, "sleep 1", name="slowpoke", owner="slow")
+    submit(kq, "sleep 1", name="quick", owner="fast")
+    old = time.time() - 3600
+    d.c.execute("UPDATE jobs SET submitted=?", (old,))  # every job has waited past starve_after_s
+    for i in range(5):  # history: "fast" jobs end in 10 s, "slow" ones take an hour
+        for owner, dur in (("fast", 10), ("slow", 3600)):
+            d.c.execute("INSERT INTO jobs (owner,cmd,cpus,mem_mb,timeout_s,prio,state,attempt,retries_left,preempts,"
+                        "submitted,started,finished,not_before,disk_mb) VALUES (?,'x',1,1,60,0,'ok',1,0,0,?,?,?,0,1)",
+                        (owner, old, old, old + dur))
+    d.c.commit()
+    drive(kq, d, lambda: states(d).get("quick") in ("running", "ok"))
+    assert states(d)["slowpoke"] == "queued" and states(d)["huge"] == "queued"
+    d.c.execute("UPDATE jobs SET state='cancelled' WHERE state IN ('queued','running')")
+    d.c.commit()
 
 
 def test_overrun_requeues_with_larger_mem(kq):
@@ -215,3 +236,105 @@ def test_reservation_drops_to_observed_peak_after_warmup(kq):
     d.tick()
     assert d.sys["unrealized"] < 1024  # then only its (tiny) observed peak with a margin
     d.c.execute("UPDATE jobs SET state='cancelled' WHERE 1")
+
+
+def test_pooled_headroom_sets_aside_less_when_peaks_are_rare(kq):
+    B = kq.MEM_BINS
+    always_top = [0.0] * (B - 1) + [1.0]
+    brief_peak = [0.9 / (B // 4)] * (B // 4) + [0.0] * (B - B // 4 - 1) + [0.1]  # 90% of life low, 10% at peak
+    jobs = [("a", 2000.0, 400.0, None)] * 3
+    assert kq.pooled_headroom(jobs, 3, 0.5) == (4800.0, 4800.0)  # unknown jobs count in full
+    jobs = [("a", 2000.0, 400.0, always_top)] * 10
+    aside, worst = kq.pooled_headroom(jobs, 3, 0.5)
+    assert worst == 16000.0 and aside == worst  # jobs that sit at their peak: nothing to pool
+    jobs = [(f"o{i}", 2000.0, 400.0, brief_peak) for i in range(20)]
+    aside, worst = kq.pooled_headroom(jobs, 3, 0.5)
+    assert 1600.0 <= aside < 0.5 * worst  # independent owners, rare peaks: well under the sum, >= one job's headroom
+    lock = kq.pooled_headroom([("one", 2000.0, 400.0, brief_peak)] * 20, 3, 1.0)[0]
+    assert lock > aside  # the same jobs in lockstep need more
+
+
+def test_finished_job_records_its_memory_histogram(kq):
+    d = kq.Daemon()
+    submit(kq, "python3 -c 'import time; b = bytearray(60 << 20); time.sleep(70)'", name="h", timeout="3m")
+    drive(kq, d, lambda: states(d)["h"] == "ok", secs=120)
+    h = json.loads(d.c.execute("SELECT mem_hist FROM jobs WHERE name='h'").fetchone()[0])
+    assert len(h) == kq.MEM_BINS and sum(h) >= 6 and h[-1] > 0
+
+
+def test_owner_correlation_is_measured_from_concurrent_jobs(kq):
+    import math
+    import random
+    rnd = random.Random(1)
+    wave = [1000 + 500 * math.sin(i / 5) for i in range(90)]
+    lockstep = [[w * f for w in wave] for f in (1.0, 1.5, 0.7, 2.0)]
+    rho, n = kq.owner_correlation(lockstep, 0.5)
+    assert n == 6 and rho > 0.85
+    noise = [[1000 + rnd.gauss(0, 200) for _ in range(90)] for _ in range(6)]
+    rho, n = kq.owner_correlation(noise, 0.5)
+    assert n == 15 and rho < 0.2
+    assert kq.owner_correlation([[5.0] * 90] * 3, 0.5) == (0.5, 0)  # flat jobs: no evidence, the prior
+    jobs = [("lm", 2000.0, 400.0, [1 / kq.MEM_BINS] * kq.MEM_BINS)] * 9
+    assert kq.pooled_headroom(jobs, 3, 0.5, {"lm": 0.0})[0] < kq.pooled_headroom(jobs, 3, 0.5)[0]
+
+
+def test_admission_learns_what_an_owners_jobs_really_use(kq):
+    d = kq.Daemon()
+    old = time.time() - 3600
+    for i in range(25):  # history: owner "x" declares 10G and peaks at 1-2G
+        d.c.execute("INSERT INTO jobs (owner,cmd,cpus,mem_mb,timeout_s,prio,state,attempt,retries_left,preempts,"
+                    "submitted,started,finished,not_before,disk_mb,peak_mb) VALUES ('x','x',1,10240,60,0,'ok',1,0,0,?,?,?,0,1,?)",
+                    (old, old, old + 10, 1024 + 40 * i))
+    submit(kq, "true", owner="x", mem="10G")  # ratios are learned for owners with work queued
+    cfg = kq.config()
+    d.learn_ratios(cfg, time.time())
+    need = d.need_mb({"owner": "x", "mem_mb": 10240}, cfg)
+    assert 1900 < need < 2600  # p95 of peak/--mem (~0.19) x 1.2 margin, not the declared 10G
+    assert d.need_mb({"owner": "new", "mem_mb": 10240}, cfg) == 10240  # no history: what it asked for
+
+
+def test_max_rise_finds_the_largest_growth_within_a_window(kq):
+    s = [(0, 0.0), (10, 5.0), (20, 2.0), (30, 9.0), (40, 1.0), (50, 4.0), (60, 20.0)]
+    assert kq.max_rise(s, 100) == 20.0  # 0 at t=0 -> 20 at t=60
+    assert kq.max_rise(s, 20) == 19.0   # 1 at t=40 -> 20 at t=60
+    assert kq.max_rise(s, 10) == 16.0   # 4 -> 20
+    assert kq.max_rise([(0, 5.0), (10, 3.0)], 60) == 0.0  # shrinking is no rise
+
+
+def test_warm_jobs_count_their_owners_spread_of_sizes(kq):
+    rs = [0.2] * 18 + [1.0, 1.1]  # most jobs use a fifth of --mem, a few all of it
+    jobs = [(100.0, 7900.0, 8000.0, rs)] * 10
+    aside = kq.warm_headroom(jobs, 2)
+    assert 7900.0 <= aside < 0.6 * 79000.0  # >= one job's full headroom, well under all ten at their worst
+    assert kq.warm_headroom([(100.0, 7900.0, 8000.0, None)] * 10, 2) == 79000.0  # unknown owner: in full
+
+
+def test_no_start_while_threads_queue_for_a_cpu(kq):
+    clock = [0]
+
+    def idle_cpus():  # the test machine may be busy: report it idle, so only the run queue decides
+        clock[0] += 4000
+        return 0, clock[0]
+    kq.cpu_ticks = idle_cpus
+    d = kq.Daemon()
+    submit(kq, "sleep 20", name="busy")
+    drive(kq, d, lambda: states(d)["busy"] == "running")  # (with nothing running, one job always starts)
+    kq.runnable_threads = lambda: 50  # 4 threads, 1 reserved: 50 runnable threads is oversubscribed
+    submit(kq, "true", name="wait")
+    for _ in range(10):
+        d.tick()
+        time.sleep(0.1)
+    assert states(d)["wait"] == "queued"
+    kq.runnable_threads = lambda: 0
+    drive(kq, d, lambda: states(d)["wait"] in ("running", "ok"))
+    d.c.execute("UPDATE jobs SET state='cancelled' WHERE state IN ('queued','running')")
+    d.c.commit()
+
+
+def test_jobs_run_at_nice_19_and_sched_idle(kq, tmp_path):
+    d = kq.Daemon()
+    out = tmp_path / "prio"
+    submit(kq, f"ps -o ni=,cls= -p $$ > {out}", name="p")
+    drive(kq, d, lambda: states(d)["p"] == "ok")
+    ni, cls = out.read_text().split()
+    assert cls == "IDL" and ni in ("19", "-")  # ps prints "-" for the nice of SCHED_IDLE on some versions

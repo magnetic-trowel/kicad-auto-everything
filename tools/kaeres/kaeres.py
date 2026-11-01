@@ -558,7 +558,10 @@ def cmd_exp_submit(a):
         chunks = [ch for ch in chunks if ch]
         for i, ch in enumerate(chunks):
             est = estimate(rows[bid], [ms[m] for m, _ in ch])
-            sel = "" if len(chunks) == 1 else "".join(f" --method {m}" for m, _ in ch)
+            # each method with its attempt (ID@N): a job runs --attempt for bare ids, so a chunk
+            # of later attempts would otherwise re-run attempt 0 (multi-attempt experiments ran
+            # attempt 0 only)
+            sel = "" if len(chunks) == 1 else "".join(f" --method {m}@{att}" for m, att in ch)
             jobs.append(dict(cmd=f"{py} {script} job --experiment {a.name} --board {bid}{sel}",
                              name=f"{a.name}:{bid}" + (f":{i}" if len(chunks) > 1 else ""),
                              cpus=max([2] + [method_cpus(ms[m]) for m, _ in ch]),
@@ -632,7 +635,10 @@ def cmd_job(a):
     harness = a.harness or e["harness"]["commit"]
     kae = a.kae or e["kae"]["commit"]
     if a.method:
-        todo = [(find_method(m)["id"], a.attempt) for m in a.method]
+        todo = []
+        for m in a.method:   # ID or ID@ATTEMPT
+            mid, _, att = m.partition("@")
+            todo.append((find_method(mid)["id"], int(att) if att else a.attempt))
     else:
         todo = missing(e, bid)
     human = next((m for m in methods().values() if m["recipe"]["runner"]["type"] == "reference"), None)
@@ -793,16 +799,22 @@ def _job_group(bid, row, hc, kae, items, human, ws, env, log, kicad, a, size):
     boards = {}
     for (mid, att), adir in adirs.items():
         aj = read_json(adir / "attempt.json") or {}
-        if aj.get("status") == "ok" and (adir / "score" / "board.kicad_pcb").exists():
-            boards[f"{mid}.{att}"] = adir / "score" / "board.kicad_pcb"
+        # route and place tasks score score/board.kicad_pcb; joint tasks score the placement and the
+        # routing separately, and the routed board is score/routing/board.kicad_pcb
+        for sb in (adir / "score" / "board.kicad_pcb", adir / "score" / "routing" / "board.kicad_pcb"):
+            if aj.get("status") == "ok" and sb.exists():
+                boards[f"{mid}.{att}"] = sb
+                break
     phys = {}
     if boards:
         kd, kv = code_dir(kae), code_dir(kae).with_name(code_dir(kae).name + ".venv-kae")
         pout = ws / f"physics-{hc[:8]}.json"
         with Step("physics", steps):
+            pt = board_dir(bid) / "pintypes.json"  # the schematic's pin types, as re-evaluation passes them
             rc, to = run_logged([kv / "bin" / "python", d / "tools" / "kaeres" / "physics_board.py",
                                  "--input", task / "route" / "input" / "board.kicad_pcb",
-                                 *[x for n, p in boards.items() for x in ("--board", f"{n}={p}")], "--out", pout],
+                                 *[x for n, p in boards.items() for x in ("--board", f"{n}={p}")], "--out", pout,
+                                 *(["--pintypes", pt] if pt.exists() else [])],
                                 log, genv, timeout=int(1800 + 120 * size))
         phys = read_json(pout) or dict(error=f"physics step {'timed out' if to else f'failed rc={rc}'}")
         if phys.get("error"):
@@ -1307,9 +1319,21 @@ def cmd_exp_timer(a):
 
 # ------------------------------------------------------------------ re-evaluation (physics)
 def _rephysics_todo(bid, method_ids, pid):
-    """Runs of these methods on a board that have an output but no evaluation by physics evaluator pid."""
+    """Runs of these methods on a board that have an output but no evaluation by physics evaluator pid.
+    Place tasks are left out: their routed board is the probe's, which is not stored."""
     return [(d, r) for d, r in board_runs(bid) if r["method_id"] in method_ids and r.get("status") == "ok"
-            and (d / "output.kicad_pcb.gz").exists() and not (d / "evals" / f"{pid}.json").exists()]
+            and (d / "output.kicad_pcb.gz").exists() and not (d / "evals" / f"{pid}.json").exists()
+            and _run_kind(r) not in ("place", "place-fixed")]
+
+
+_KINDS = {}
+
+
+def _run_kind(r):
+    """The task kind of a run's method (route for the human reference)."""
+    if r["method_id"] not in _KINDS:
+        _KINDS.update({k: (m.get("recipe") or {}).get("kind") or "route" for k, m in methods().items()})
+    return _KINDS.get(r["method_id"], "route")
 
 
 def _kaeq_active(owner):
@@ -1336,7 +1360,7 @@ def cmd_rephysics_timer(a):
         f"[Unit]\nDescription=kaeres physics re-evaluation of {a.name}\n\n[Service]\nType=oneshot\nNice=19\n"
         f"Environment=PATH={Path.home() / '.local' / 'bin'}:/usr/local/bin:/usr/bin:/bin\n"
         f"ExecStart=/usr/bin/python3 {tool} rephysics submit {a.name} --harness {harness} --kae {kae}"
-        + (f" --after {a.after}" if a.after else "") + "\n")
+        + (f" --after {a.after}" if a.after else "") + f" --prio {a.prio}\n")
     (d / f"{unit}.timer").write_text(f"[Unit]\nDescription=kaeres physics re-evaluation of {a.name}, hourly\n\n[Timer]\n"
                                      "OnBootSec=15min\nOnUnitActiveSec=1h\n\n[Install]\nWantedBy=timers.target\n")
     subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
@@ -1429,6 +1453,7 @@ def cmd_rephysics_job(a):
         rc, to = run_logged([hv / "bin" / "python", cd / "tools" / "kaeres" / "rebuild_boards.py",
                              "--board-dir", CORPUS / row["path"], "--work", ws / f"rb-{hc[:8]}",
                              *[x for d, r in items for x in ("--run", f"{r['run']}={d / 'output.kicad_pcb.gz'}")],
+                             *[x for d, r in items if _run_kind(r) in ("joint", "joint-fixed") for x in ("--joint", r["run"])],
                              "--out", man_p], log, dict(env, PATH=f"{hv / 'bin'}:{env.get('PATH', '')}"), timeout=int(1800 + 120 * size))
         man = read_json(man_p)
         if not man:
@@ -1582,7 +1607,7 @@ def main():
     s.set_defaults(f=cmd_rephysics_submit)
     s = rp.add_parser("install-timer", help="submit hourly as the experiment finishes boards")
     s.add_argument("name"), s.add_argument("--harness", required=True), s.add_argument("--kae", required=True)
-    s.add_argument("--after")
+    s.add_argument("--after"), s.add_argument("--prio", type=int, default=-1)
     s.set_defaults(f=cmd_rephysics_timer)
     s = sub.add_parser("rephysics-job", help="one board's physics re-evaluation (what each queued job runs)")
     s.add_argument("--board", required=True), s.add_argument("--harness", required=True), s.add_argument("--kae", required=True)
