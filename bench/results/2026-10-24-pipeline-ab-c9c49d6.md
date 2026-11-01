@@ -1,6 +1,6 @@
 # Place and route pipeline on splits A+B at c9c49d6
 
-Run on sk-tibia, 2026-10-24, KiCad 10.0.7. `kae place` (physics on, silk where the project makes it
+Run on the shared benchmark host, 2026-10-24, KiCad 10.0.7. `kae place` (physics on, silk where the project makes it
 an error, numbered-row labels, closed-loop legality with KiCad DRC) followed by kae's bridge with
 last mile (now the default) as the kaebench probe, against the human placement routed by the same
 probe. 33 boards, k = 2, 1800 s, Freerouting fork heap 2 GB, place tasks at task spec 6.
