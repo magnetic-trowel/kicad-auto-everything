@@ -77,7 +77,7 @@ def phi_prime(u):
 class PhysRouter:
     def __init__(self, path, out, pitch=0.25, lam=30.0, nsub=2, plain=False, refresh=4, log=print, work=None,
                  verify=False, intent=None, seed=0, n_corners=16, capacitive=True, spectral=False, goal=None,
-                 keep=()):
+                 keep=(), lock=False):
         from kae.board.kicad_file import load
         from kae.circuit import brief as B
         from kae.excite import models as M
@@ -86,9 +86,11 @@ class PhysRouter:
         from kae.route import critical_write as W
         self.log, self.pitch, self.lam, self.nsub, self.plain, self.refresh = log, pitch, lam, nsub, plain, refresh
         self.verify = verify
+        self.lock = lock                     # write its copper locked: a completion router routes around it
         self.explain_hops = True
         self.src_path, self.out = Path(path), Path(out)
         self.work = Path(work or tempfile.mkdtemp(prefix="kae-pnr-"))
+        self.work.mkdir(parents=True, exist_ok=True)
         b = load(path)
         self.brief = B.build(b)
         bd = self.bd = M.build(b, self.brief)
@@ -1015,7 +1017,7 @@ class PhysRouter:
                                  f"{self.explain(rt)} len {rt.length:.1f} vias {len(rt.vias)}")
                     for l, p0, p1 in rt.segs:
                         out["items"].append(self.sp.add_track(n, l, rt.width, p0, p1, owner=("pnr", n)))
-                        t = (n, l, rt.width, p0, p1, "", False)
+                        t = (n, l, rt.width, p0, p1, "", self.lock)
                         self.tracks.append(t)
                         out["tracks"].append(t)
                     if not plain or self.spec is not None:     # (spectral: plain candidates are predicted too)
@@ -1029,7 +1031,7 @@ class PhysRouter:
                     for (x, y) in rt.vias:
                         out["items"].append(self.sp.add_via(n, x, y, owner=("pnr", n)))
                         D, d = self.sp.via_size(n)
-                        v = (n, x, y, D, d, "", False)
+                        v = (n, x, y, D, d, "", self.lock)
                         self.vias.append(v)
                         out["vias"].append(v)
                 tree.append(b_)
@@ -1297,8 +1299,9 @@ def open_nets(path, log=print):
 
 def route_whole(path, out, passes=3, log=print, **kw):
     """Route, and give back to the input every net the router left in more pieces than the input has it:
-    the next pass keeps those nets exactly as the input has them and routes the rest again. Each net ends
-    newly routed and whole, or as it was; never less connected than the input."""
+    the next pass leaves those nets exactly as the input has them and routes the rest again, so no
+    half-routed net blocks the others. On a board without routing (a new board) such nets stay unrouted
+    for the completion router (kae.route.bridge); they are never taken from a human layout."""
     already = open_nets(path, log)
     keep = set()
     r = None
@@ -1307,7 +1310,8 @@ def route_whole(path, out, passes=3, log=print, **kw):
         bad = set(getattr(r, "torn", [])) - already
         if not bad:
             break
-        log(f"pnr: pass {k + 1}: {sorted(bad)} not routed whole; kept as the input has them in pass {k + 2}")
+        log(f"pnr: pass {k + 1}: {sorted(bad)} not routed whole; left as the input has them in pass {k + 2} "
+            f"(on a board without routing: unrouted, for the completion router)")
         keep |= bad
     else:
         log(f"pnr: after {passes} passes still torn: {sorted(set(r.torn) - already)}")
@@ -1332,6 +1336,7 @@ def main(argv=None):
                     help="prices weighted over the whole spectrum from a reduced model per refresh (kae.em.spectral)")
     ap.add_argument("--workers", type=int, default=1, help="--spectral: snapshot frequencies solved at once")
     ap.add_argument("--work", help="work directory (default: a new temporary one)")
+    ap.add_argument("--lock", action="store_true", help="write the routed copper locked (for a completion router)")
     ap.add_argument("--passes", type=int, default=3,
                     help="routing passes: a net a pass leaves in pieces is kept as the input has it in the next")
     a = ap.parse_args(argv)
@@ -1341,7 +1346,7 @@ def main(argv=None):
         goal, facts = facts, facts.get("facts") or {}
     route_whole(a.board, a.out, passes=a.passes, pitch=a.pitch, lam=a.lam, plain=a.plain, refresh=a.refresh,
                 verify=a.verify, intent=facts, seed=a.seed, work=a.work, capacitive=not a.no_capacitive,
-                spectral=dict(workers=a.workers) if a.spectral else False, goal=goal)
+                spectral=dict(workers=a.workers) if a.spectral else False, goal=goal, lock=a.lock)
 
 
 if __name__ == "__main__":
