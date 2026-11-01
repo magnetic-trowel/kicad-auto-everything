@@ -1,6 +1,6 @@
 # Placement on split C at 34fa56b (closed-loop legality)
 
-Run on sk-tibia, 2026-10-23, KiCad 10.0.7, spec-5 place tasks, `csweep.py --split C --time 600
+Run on the shared benchmark host, 2026-10-23, KiCad 10.0.7, spec-5 place tasks, `csweep.py --split C --time 600
 -j 24 --workers 2`, wall 823 s. Compared with [e171267](2026-10-23-place-split-c-e171267.md) on
 the same tasks. Legal means the placer's exact model and kicad-cli DRC on the written board both
 pass (a kae verdict, not kaebench's scorer).
@@ -50,7 +50,7 @@ Locally, all 4 false-positive boards, stickhub and the 12-board regression set a
 KiCad clean in round 0; pic-programmer's physics regression (47.3, from false-positive
 repairs) is back to 25.0 (human 46.8).
 
-## Split C at fe68468 (sk-tibia, 2026-10-24)
+## Split C at fe68468 (the shared benchmark host, 2026-10-24)
 
 Human gate 13/13 (A), 20/20 (B), 79/79 (C). Split C **72/72 legal** (from 67/72 at dcecf28),
 every counted board KiCad-verified, no legal → illegal flips; the five flips are the four
