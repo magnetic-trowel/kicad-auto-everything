@@ -66,19 +66,22 @@ def params(bd, dcp, P, intent=None):
     return out
 
 
-def part_heat(bd, dcp, cv, val, inj, ac_parts=None):
+def part_heat(bd, dcp, cv, val, inj, ac_parts=None, losses=None):
     """{part ref: W} at one corner. cv: the DC band's corner (kae.excite.dc); val: {(subject, name): value}
-    of the heat parameters; inj: the DC flow's injections at this corner."""
+    of the heat parameters; inj: the DC flow's injections at this corner. losses: a dict that gets each
+    part's loss alone (the heat without the loads' own consumption, which is the board's purpose, not a loss)."""
     from . import dc as DC
     out = {}
 
-    def add(ref, w):
+    def add(ref, w, loss=True):
         if ref and w > 0:
             out[ref] = out.get(ref, 0.0) + w
+            if loss and losses is not None:
+                losses[ref] = losses.get(ref, 0.0) + w
     xs = DC.load_currents(dcp, cv)
     for ld, x in zip(dcp.loads, xs):
         if (bd.part_kind.get(ld["ref"], ("",))[0]) != "connector":
-            add(ld["ref"], x * (dcp.volts.get(ld["rail"]) or 0.0))
+            add(ld["ref"], x * (dcp.volts.get(ld["rail"]) or 0.0), loss=False)
     for r, f in dcp.feeds.items():
         if f["kind"] == "cell":
             c = f["cell"]
@@ -127,9 +130,10 @@ def copper_heat(net, x, shape):
 
 
 def evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes, intent=None, ac_parts=None,
-             log=print, ledger=None):
+             log=print, ledger=None, obs_out=None):
     """Thermal harms per part at every corner, added into the per-corner totals. ac_parts: {ref: [W per
-    corner]} from the switching harmonics."""
+    corner]} from the switching harmonics. obs_out: a list that gets kae.intent observations: each
+    dissipating part's junction temperature (temp.junction, C) and its loss (loss.part, W) per corner."""
     import time
     from kae.em import solve as ES
     from kae.em import thermal as TH
@@ -160,7 +164,7 @@ def evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, tot, 
     for t, cells in m.terminals.items():
         ref = t.rsplit(".", 1)[0]
         pads_of.setdefault(ref, []).extend(cells)
-    U, Tj = {}, {}
+    U, Tj, Lp = {}, {}, {}
     th_cache = {}
     for c in range(ncp):
         val = hc[c]
@@ -170,7 +174,10 @@ def evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, tot, 
         th = th_cache[h]
         V, info = res[c]
         Q = copper_heat(info["net"], info["x"], m.lab.shape)
-        heat = part_heat(bd, dcp, cvs[c], val, injs[c], {k: v[c] for k, v in (ac_parts or {}).items()})
+        lc = {}
+        heat = part_heat(bd, dcp, cvs[c], val, injs[c], {k: v[c] for k, v in (ac_parts or {}).items()}, losses=lc)
+        for ref, w in lc.items():
+            Lp.setdefault(ref, [0.0] * ncp)[c] = w
         for ref, w in heat.items():
             cells = pads_of.get(ref)
             if cells:
@@ -196,5 +203,18 @@ def evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, tot, 
         rows.append(dict(observer=f"heat:{ref}", source="dc", kind="heat", u=us[0], u_lo=min(us), u_hi=max(us),
                          T_C=round(Tj[ref][0], 1), T_hi_C=round(max(Tj[ref]), 1),
                          basis=f"junction (pads' mean + theta_jb P) against {T_MAX.get(bd.part_kind.get(ref, ('',))[0], 85.0):g} C"))
+    if obs_out is not None:
+        for ref, ts in Tj.items():
+            kind = bd.part_kind.get(ref, ("",))[0]
+            obs_out.append(dict(id="temp.junction", unit="C", values=[float(t) for t in ts], u=list(U[ref]),
+                                scope=dict(kind="heat", observer=f"heat:{ref}", source="dc", part=ref, parts=[ref],
+                                           part_kind=kind),
+                                reference=dict(value=T_MAX.get(kind, 85.0), basis=f"{kind or 'part'} class rating"),
+                                label=f"junction temperature of {ref}"))
+        for ref, ws in Lp.items():
+            obs_out.append(dict(id="loss.part", unit="W", values=[float(w) for w in ws], u=[0.0] * ncp,
+                                scope=dict(kind="part_loss", observer=f"loss:{ref}", source="dc", part=ref, parts=[ref]),
+                                reference=dict(value=None, basis="none: a loss is priced, not bounded"),
+                                label=f"dissipation of {ref} (switching, conduction, rectification, linear drop)"))
     log(f"thermal: {len(U)} dissipating parts, {ncp} corners in {time.time() - t0:.1f}s")
     return rows

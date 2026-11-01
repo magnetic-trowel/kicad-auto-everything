@@ -55,6 +55,8 @@ class Thermal:
             ls = sorted(v.layers)
             for la, lb in zip(ls[:-1], ls[1:]):
                 dz = sum(gaps[la:lb]) * 1e-3
+                if dz <= 0:                                   # not two meshed layers apart: no barrel to model
+                    continue
                 link(np.array([idx[la, j, i]]), np.array([idx[lb, j, i]]),
                      np.array([k_cu * np.pi * v.drill * 1e-3 * T_PLATING / dz]))
         rows = np.concatenate([np.atleast_1d(r) for r in rows])

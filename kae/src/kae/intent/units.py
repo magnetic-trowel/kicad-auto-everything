@@ -10,7 +10,7 @@ import re
 PREFIX = {"G": 1e9, "M": 1e6, "k": 1e3, "": 1.0, "m": 1e-3, "u": 1e-6, "µ": 1e-6, "n": 1e-9, "p": 1e-12}
 # dimension -> base unit names (with SI prefixes allowed)
 BASE = {"V": "V", "A": "A", "W": "W", "K": "K", "Ohm": "Ohm", "Ω": "Ohm", "H": "H", "F": "F", "Hz": "Hz", "s": "s",
-        "m": "m"}
+        "m": "m", "C": "C"}               # C: degrees Celsius (temperatures, absolute)
 # logarithmic units: dimension name -> (linear dimension, reference in SI, 10 or 20 log)
 LOG = {"dBuV": ("V", 1e-6, 20), "dBµV": ("V", 1e-6, 20), "dBV": ("V", 1.0, 20), "dBm": ("W", 1e-3, 10),
        "dBuV/m": ("V/m", 1e-6, 20), "dBµV/m": ("V/m", 1e-6, 20), "dB": ("ratio", 1.0, 20)}

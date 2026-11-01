@@ -22,7 +22,7 @@ physical bounds. This file is the instruction given to the model.
             "ripple_max_mV": 50, "I_max_A": 0.5, "source_ref": "<ref of the regulator/connector feeding it>",
             "critical": false, "basis": "datasheet|typical|guess", "why": "..."}],
  "loads": [{"ref": "<IC/module ref>", "rail": "<net>", "I_typ_A": 0.02, "I_max_A": 0.15,
-            "basis": "...", "why": "..."}],
+            "T_max_C": 125, "basis": "...", "why": "..."}],
  "converters": [{"cell": "<a cell:... section id, exactly>", "V_in_V": 12, "V_out_V": 5,
                  "f_sw_Hz": 500000, "I_out_A": 1.0, "t_edge_s": 5e-9, "switch_V_max_V": 30,
                  "basis": "...", "why": "..."}],
@@ -51,7 +51,9 @@ physical bounds. This file is the instruction given to the model.
   3.3 V: 5-10 %; MCU core: 3-5 %; analog reference: 0.5-1 %). `ripple_max_mV` is what the rail's most
   sensitive load tolerates (digital logic ~50-100 mV, ADC/analog ~5-20 mV, RF/PLL ~5-10 mV).
   `critical`: true for rails feeding a radio, an ADC/reference, a precision analog part or a CPU core.
-- `loads`: every IC and module, with typical and maximum current from its datasheet class.
+- `loads`: every IC and module, with typical and maximum current from its datasheet class, and
+  `T_max_C` its maximum junction (or operating) temperature when the part number's datasheet gives it
+  (null otherwise: kae then uses the part class's rating).
 - `converters`: one per `cell:` section; switching regulators and motor/LED drivers.
 - `sensitive`: feedback pins (`victim:feedback:*`), ADC inputs, references, resets, crystal pins, RF inputs.
 - `radio`: only parts that are a radio transmitter/receiver or a GNSS receiver on this board.

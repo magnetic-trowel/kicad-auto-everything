@@ -200,8 +200,26 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
         harms.append(dict(observer=o.name, source=s.name, kind=o.kind, u=us[0], u_lo=min(us), u_hi=max(us),
                           L_nH=round(pr["Le"] * 1e9, 4), Zf_mohm=round(abs(pr["Zf"]) * 1e3, 3),
                           basis=o.basis, src_class=o.src_class, **(parts_ or {})))
+        if o.kind == "overshoot" and pr["Le"] > 0:
+            # the hot loop's efficiency cost: its copper inductance's energy, dumped into the switch at
+            # every turn-off (1/2 L I^2 per cycle), at each corner's operating current and frequency
+            lv = []
+            for c in range(ncp):
+                val = {k[1]: v for k, v in cps[s.name][c].items()}
+                lv.append(0.5 * pr["Le"] * val.get("I_A", 0.0) ** 2 * val.get("f_sw_Hz", 0.0))
+            ob = O.observation(bd, o, s, lv, [0.0] * ncp)
+            ob.update(id="loss.loop", unit="W", reference=dict(value=None, basis="none: a loss is priced, not bounded"),
+                      label=f"hot-loop loss of {s.name}: 1/2 L_loop I^2 f_sw, L_loop {pr['Le'] * 1e9:.3g} nH (copper)")
+            ob["scope"]["kind"] = "loop_loss"
+            ob["scope"]["L_loop_H"] = pr["Le"]
+            observations.append(ob)
     if dcp:
         harms += _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes, log, obs_out=observations)
+        if dcp.loads and not any(n.startswith("DC: copper open") for n in notes):
+            # part temperatures from the board's own heat flow, and each part's loss (kae.excite.heat)
+            from . import heat as HT
+            harms += HT.evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, [0.0] * ncp, notes,
+                                 intent, log=log, ledger=ledger, obs_out=observations)   # not in the legacy total
     harms.sort(key=lambda h: -(h["u_hi"] or 0))
     # each cell's parasitic ring: its copper loop with the switch node's capacitance
     rings = []

@@ -21,7 +21,7 @@ import json
 import math
 import sys
 
-STANDING = "standing benchmark priority: power loss, efficiency and ripple on every board; EMI on boards with a radio or GNSS"
+STANDING = "standing benchmark priority: power loss, efficiency (copper, parts, hot loops), ripple and thermals on every board; EMI on boards with a radio or GNSS"
 BASES = ("datasheet", "typical", "guess")
 # plausible ranges per field: (lo, hi) in SI units
 BOUNDS = {"V": (0.3, 1000.0), "pct": (0.05, 50.0), "mV": (0.01, 5000.0), "A": (1e-9, 200.0), "Hz": (1e3, 1e8),
@@ -75,6 +75,10 @@ def compile_spec(spec, summary):
     opwhy = {}
     terms = [dict(id="P1", tier="cost", obs="loss.copper", rate="1 mW_eq/mW", agg="cvar20",
                   why=f"power loss and efficiency: every mW the copper burns. {STANDING}"),
+             dict(id="P2", tier="cost", obs="loss.part", rate="1 mW_eq/mW", agg="cvar20",
+                  why=f"efficiency: switch, rectifier and regulator losses the layout's currents and voltages set. {STANDING}"),
+             dict(id="P3", tier="cost", obs="loss.loop", rate="1 mW_eq/mW", agg="cvar20",
+                  why=f"efficiency: the hot loops' inductance energy dumped into the switches, 1/2 L I^2 f_sw. {STANDING}"),
              dict(id="R0", tier="cost", obs="supply.peak", rate="0.1 mW_eq/mV", agg="cvar20",
                   why=f"ripple on every IC supply pin, at a low base rate under the per-rail limits below. {STANDING}")]
     # rails: tolerance -> drop limit; ripple -> supply.peak limit; source -> who feeds it
@@ -187,6 +191,26 @@ def compile_spec(spec, summary):
     hk = S.num(spec.get("thermal") or {}, "track_rise_max_K", "K", "thermal")
     if hk:
         terms.append(dict(id="H1", tier="limit", obs="heat.track", max=f"{hk:g} K", rate="5 mW_eq/K", why=why(spec["thermal"], "track heating")))
+    # thermals: nothing may overheat. A part's own rating (a load's T_max_C) or its class rating is hard;
+    # 20 K below it is a priced margin
+    from kae.excite.heat import T_MAX
+    own = {}
+    for i, l in enumerate(spec.get("loads") or []):
+        t = l.get("T_max_C")
+        if l.get("ref") in S.refs and isinstance(t, (int, float)) and 40 <= t <= 200:
+            own[l["ref"]] = float(t)
+    by_kind = {}
+    for p in summary.get("parts") or []:
+        if p["ref"] not in own and p.get("kind") in T_MAX:
+            by_kind.setdefault(p["kind"], []).append(p["ref"])
+    groups = [(f"part {r}", [r], t, "the spec's rating") for r, t in sorted(own.items())] + \
+             [(f"{k} parts", sorted(refs), T_MAX[k], f"{k} class rating") for k, refs in sorted(by_kind.items())]
+    for j, (what, refs, tmax, basis_) in enumerate(groups):
+        terms.append(dict(id=f"T{j}", tier="hard", obs="temp.junction", where={"part": refs}, max=f"{tmax:g} C",
+                          source=f"{what}: {basis_} {tmax:g} C", why=f"thermals: nothing may overheat. {STANDING}"))
+        terms.append(dict(id=f"M{j}", tier="limit", obs="temp.junction", where={"part": refs}, max=f"{tmax - 20:g} C",
+                          rate="2 mW_eq/C", source=f"{what}: 20 K margin below {tmax:g} C",
+                          why="thermals: keep a margin below the rating (ambient and cooling are uncertain)"))
     th = spec.get("thermal") or {}
     ta = th.get("T_amb_C")
     if isinstance(ta, list) and len(ta) == 2 and all(isinstance(x, (int, float)) for x in ta) and -55 <= min(ta) <= max(ta) <= 150:

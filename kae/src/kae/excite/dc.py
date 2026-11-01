@@ -92,6 +92,12 @@ def plan(board, brief, bd, P, srcs, intent=None):
     pads = _pads(board)
     grounds = bd.grounds
     rails = {n for n, d in nets.items() if (d or {}).get("role") == "rail"}
+    # the intent's operating facts may name rails the brief did not classify, with their voltage and
+    # their regulator: nets.<rail> = {"source": ref, "from": input net, "kind": "linear"|"switching",
+    # "eta": [lo, hi], "V_V": volts}
+    facts = {n: d for n, d in ((intent or {}).get("nets") or {}).items() if isinstance(d, dict)}
+    pad_nets = {p.net for fp in board.footprints for p in fp.pads if p.net}
+    rails |= {n for n, d in facts.items() if d.get("source") and n in pad_nets and n not in grounds}
     req = (intent or {}).get("requirements") or {}
     pl.loss_share = float(req.get("copper_loss_share", LOSS_SHARE))
     pl.drop_share = float(req.get("drop_share", DROP_SHARE))
@@ -111,6 +117,9 @@ def plan(board, brief, bd, P, srcs, intent=None):
         return s or on(ref, net)
 
     def volts(net):
+        fv = (facts.get(net) or {}).get("V_V")
+        if isinstance(fv, (int, float)) and fv > 0:
+            return float(fv)
         v = (nets.get(net) or {}).get("volts")
         return abs(float(v)) if v else None
 
@@ -147,15 +156,25 @@ def plan(board, brief, bd, P, srcs, intent=None):
         kind, sub = (parts.get(uuid_of.get(src_ref)) or {}).get("kind"), (parts.get(uuid_of.get(src_ref)) or {}).get("subtype")
         ins = [(n, net) for n, net, pt, fn in pads[src_ref] if net in rails and net != r and
                (pt == "power_in" or SUPPLY_PIN.match(fn))] if kind in ("ic", "module") else []
+        fr = (facts.get(r) or {}).get("from")
+        if kind in ("ic", "module") and fr and fr != r and any(net == fr for _, net, _, _ in pads[src_ref]):
+            ins = [(n, net) for n, net, _, _ in pads[src_ref] if net == fr]      # the facts' input net
         if kind in ("ic", "module") and ins:
             # an IC that supplies this rail from another one converts: switching by its class, else linear
             rin = ins[0][1]
             outs = on(src_ref, r, lambda pt, fn: pt == "power_out" or OUT_PIN.match(fn)) or on(src_ref, r)
-            f = dict(kind="switching" if sub in SWITCHING else "linear", ref=src_ref, rin=rin, out=outs,
+            fk = (facts.get(r) or {}).get("kind")
+            f = dict(kind=fk if fk in ("linear", "switching") else ("switching" if sub in SWITCHING else "linear"),
+                     ref=src_ref, rin=rin, out=outs,
                      inp=tok(src_ref, [n for n, net in ins if net == rin]), gnd=gnd_pads(src_ref))
             if f["kind"] == "switching":
-                f["eta"] = Param(f"dc:{src_ref}", "eta", ETA[1], ETA[0], ETA[2], "", "prior",
-                                 "efficiency of a switching regulator without a cell model (class range)")
+                fe = (facts.get(r) or {}).get("eta")
+                if isinstance(fe, list) and len(fe) == 2 and 0 < min(fe) <= max(fe) <= 1:
+                    f["eta"] = Param(f"dc:{src_ref}", "eta", (fe[0] + fe[1]) / 2, fe[0], fe[1], "", "intent",
+                                     "the intent file")
+                else:
+                    f["eta"] = Param(f"dc:{src_ref}", "eta", ETA[1], ETA[0], ETA[2], "", "prior",
+                                     "efficiency of a switching regulator without a cell model (class range)")
                 pl.params.append(f["eta"])
             pl.feeds[r] = f
         elif kind in ("diode", "inductor", "ferrite", "resistor", "jumper"):
@@ -169,12 +188,19 @@ def plan(board, brief, bd, P, srcs, intent=None):
             if kind in ("ic", "module"):
                 pl.notes.append(f"{r}: source {src_ref} has no supply pin on another rail; taken as the board's input")
             pl.feeds[r] = dict(kind="external", ref=src_ref, out=on(src_ref, r), gnd=gnd_pads(src_ref))
+    # a regulator whose input net has no feed of its own: the DC flow enters the board at it (its input
+    # current has nowhere to come from in the copper); its loss still comes from its input's voltage
+    for r, f in pl.feeds.items():
+        if f["kind"] in ("linear", "switching") and f.get("rin") not in pl.feeds:
+            f["flow_external"] = True
+            f["gnd"] = f.get("gnd") or gnd_pads(f["ref"])
+            pl.notes.append(f"{r}: {f['ref']}'s input {f.get('rin')} has no feed; the DC flow enters at {f['ref']}")
     # an external feed returns at its own ground pads, else at the connectors' (the board's way out)
     conn_g = [t for ref, pp in pads.items() if (parts.get(uuid_of.get(ref)) or {}).get("kind") == "connector"
               for t in tok(ref, [n for n, net, _, _ in pp if net in grounds])]
     for r in list(pl.feeds):
         f = pl.feeds[r]
-        if f["kind"] == "external" and not f["gnd"]:
+        if (f["kind"] == "external" or f.get("flow_external")) and not f["gnd"]:
             if conn_g:
                 f["gnd"] = conn_g
                 pl.notes.append(f"{r}: source {f['ref']} has no ground pad; its return is taken at the connectors' ground")
@@ -325,6 +351,10 @@ def injections(pl, cv):
         if f is None or depth > 8 or x == 0:
             return
         k = f["kind"]
+        if f.get("flow_external"):
+            _add(inj, f["out"], x)
+            _add(inj, f["gnd"], -x)
+            return
         if k == "external":
             _add(inj, f["out"], x)
             _add(inj, f["gnd"], -x)

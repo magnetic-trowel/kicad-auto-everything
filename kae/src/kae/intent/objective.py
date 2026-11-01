@@ -53,6 +53,13 @@ KINDS = {
     "cable_cm.v": ("V", "Common-mode voltage between two connectors' grounds at its worst harmonic (f_Hz per "
                    "corner), driven by an aggressor through shared ground copper. It radiates only if cables "
                    "are attached: declare them in environment.cables to get emission.cable_E."),
+    "loss.part": ("W", "A part's own dissipation at the DC operating point: a switch's conduction and switching "
+                  "loss, a rectifier's forward loss, a linear regulator's drop times its current, a converter "
+                  "without a cell model at its efficiency. Loads' own consumption is not a loss and is left out."),
+    "loss.loop": ("W", "Energy a switching cell's commutation loop inductance (the copper's share) dumps into the "
+                  "switch at every turn-off, 1/2 L_loop I^2 f_sw: the hot loop's layout cost in efficiency."),
+    "temp.junction": ("C", "A dissipating part's junction temperature: the board's heat flow (copper I^2 R, every "
+                      "part's heat, face cooling) at its pads plus theta_jb times its power, at each corner."),
     "emission.cable_E": ("dBuV/m", "Field at 10 m from a declared cable driven by cable_cm.v (Ott 12-7: "
                          "E = 1.26e-6 f l I / r, I = V / 150 Ohm), per connector pair with a declared cable."),
 }
@@ -343,7 +350,7 @@ def _legacy(ev, status):
     return status
 
 
-DC_KINDS = ("loss.copper", "drop.rail", "heat.track")      # the DC band's observations
+DC_KINDS = ("loss.copper", "drop.rail", "heat.track", "loss.part", "temp.junction")      # the DC band's observations
 
 
 def _gap(t, missing):
