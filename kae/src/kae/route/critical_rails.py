@@ -261,8 +261,10 @@ def rail_plan(ctx):
         rating = source_rating(ctx, src, net, cells)
         total = sum(loads.values())
         # the source's rating bounds the loads; the loads' E5 sum, with a 3x margin for
-        # its uncertainty, bounds what the rail must carry
-        design = min(rating, max(3.0 * total, total + 0.1)) if rating else total
+        # its uncertainty, bounds what the rail must carry (also when the source has no
+        # rating: a fuse, ferrite, diode or load switch; the margin was dropped there)
+        m = max(3.0 * total, total + 0.1)
+        design = min(rating, m) if rating else m
         rails.append(dict(net=net, src=src, loads=loads, rating=rating, design=design, parts=parts))
     rails.sort(key=lambda x: -x["design"])
     return rails

@@ -1016,3 +1016,16 @@ def test_crystal_trace_capacitance_uses_the_dielectric_under_the_trace():
     assert dielectric_er(cu, z, er, "B.Cu", None) == 4.0
     assert dielectric_er(cu, z, er, "F.Cu", "In2.Cu") == pytest.approx((3.7 * 0.2 + 4.6 * 1.2) / 1.4)
     assert dielectric_er(cu, z, [], "B.Cu", None) == 4.3
+
+
+def test_rail_design_current_keeps_its_margin_without_a_source_rating(tmp_path, monkeypatch):
+    """The design current is the loads' sum with a 3x margin, capped by the source's rating; a
+    source without a rating (fuse, ferrite, diode) dropped the margin."""
+    from kae.route import critical_rails as CR
+    s = F.session(tmp_path)
+    monkeypatch.setattr(CR, "source_rating", lambda *a, **k: None)
+    plan = CR.rail_plan(s.ctx)
+    assert plan
+    for r in plan:
+        total = sum(r["loads"].values())
+        assert r["design"] == pytest.approx(max(3.0 * total, total + 0.1))
