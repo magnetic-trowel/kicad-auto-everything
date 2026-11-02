@@ -1,12 +1,18 @@
 # KiCad 10 custom DRC rule language (.kicad_dru)
 
 Scope: grammar, evaluation order, clearance resolution, constraints, functions, properties, diff-pair naming, tuning profiles, compiler rules for `.kicad_dru` on 10.0 (master noted). Not here: violation reports -> [drc-report-and-repair-loop.md](drc-report-and-repair-loop.md); KiCad 11 `CustomRule` proto -> [ipc-api-10-vs-11.md](ipc-api-10-vs-11.md#coverage-matrix).
-Keys: kicad_dru, custom rules, constraint keywords, condition, severity, layer clause, operator precedence, clearance resolution, net tie, Clearance_Override, board minimum, units, time domain, ps, fs, physical_clearance, solder_mask_sliver, intersectsKeepout, fromTo, inDiffPair, diff-pair naming, XTAL false positive, tuning profile, graphical rule editor, hole_aspect_ratio, return_path, net chain, constraint compiler
+Keys: dru-check, silent rejection, sentinel rule, kicad_dru, custom rules, constraint keywords, condition, severity, layer clause, operator precedence, clearance resolution, net tie, Clearance_Override, board minimum, units, time domain, ps, fs, physical_clearance, solder_mask_sliver, intersectsKeepout, fromTo, inDiffPair, diff-pair naming, XTAL false positive, tuning profile, graphical rule editor, hole_aspect_ratio, return_path, net chain, constraint compiler
 
 **10.0 parses:** 35 constraint keywords (34 documented + undocumented `solder_mask_sliver`), 3 deprecated aliases, 23 current functions (incl. undocumented `intersectsKeepout`) + 5 deprecated, any registered item property, 4 severities + a `layer` clause [P]. Sources: [pcbnew_advanced.adoc @10.0](https://gitlab.com/kicad/services/kicad-doc/-/blob/10.0/src/pcbnew/pcbnew_advanced.adoc) ([rendered](https://docs.kicad.org/10.0/en/pcbnew/pcbnew.html#custom-design-rules)), [drc_rule_parser.cpp @10.0](https://gitlab.com/kicad/code/kicad/-/blob/10.0/pcbnew/drc/drc_rule_parser.cpp), [drc_rules.keywords @10.0](https://gitlab.com/kicad/code/kicad/-/blob/10.0/common/drc_rules.keywords) [P].
 
+## Check every rules file before use
+- **KiCad 10.0.7 drops the whole `.kicad_dru` on any parse error, silently:** `kicad-cli pcb drc` prints nothing, exits 0 and runs without custom rules, so a broken file makes DRC *easier* to pass [C] (sentinel probe, `kae.board.dru_check`).
+- Measured rejects (one bad rule rejects all rules): `;` comment; `#` after other text on a line; missing `(version 1)`; unknown constraint, function, property, severity, layer or option; bare number without unit (`(min 100000)`); `ps`/`fs` outside `length`/`skew`; unit `th`; repeated constraint type; second `layer`; `true`/`false`; `and`/`or`; double quotes inside a condition; dangling operator; undefined `${VAR}`; master-only constraints (`microvia_stack_depth`, ...) [C].
+- Measured accepts: `(min 1 mm)` (space before unit); unquoted layer and rule names; `F.CrtYd` and `F.Courtyard`; `In1.Cu` on a 2-layer board (layers are not checked against the stackup); deprecated aliases; `(version 2)`; a rule with no constraint [C].
+- Run `kae dru-check FILE` (static pass names line, column and fix; then KiCad's parser via a sentinel rule, naming each rejected rule). Exit 1 = do not use the file.
+
 ## Grammar and evaluation
-- **File:** `<project>.kicad_dru`, starts `(version 1)` ("As of KiCad 10.0, the version is `1`"); `#` comments; `${var}` substituted before parsing (object-dependent `${LAYER}` → syntax error); top level allows only `version` and `rule`.
+- **File:** `<project>.kicad_dru`, starts `(version 1)` ("As of KiCad 10.0, the version is `1`"); `#` comments, only at the start of a line (after spaces) [C]; `${var}` substituted before parsing (object-dependent `${LAYER}` → syntax error); top level allows only `version` and `rule`.
 - **Rule:** `(rule <name> [(severity error|warning|ignore|exclusion)] [(layer <L>|outer|inner)] [(condition "<expr>")] (constraint <type> …)…)`.
 - **Parser gotchas:**
   1. A second `condition` silently **overwrites** the first.
@@ -14,7 +20,7 @@ Keys: kicad_dru, custom rules, constraint keywords, condition, severity, layer c
   3. A repeated constraint type raises "Rule already has a '%s' constraint" (one per type per rule).
 - **Order:** rules are "evaluated in reverse order", first match wins → the **last** matching rule wins; put specific rules later. Exceptions in *Clearance resolution*.
 - **Severity `ignore`:** still evaluated, "can still override previous rules". The interactive router does **not** observe `ignore`; it observes error, warning, exclusion.
-- **Conditions:** `A` and `B` tested in both orders; `AB.` for pair functions. Booleans are bare (`A.Do_not_populate`); no `true`/`false` literals; `null` is comparable. Unitless value = nm (degrees for angles).
+- **Conditions:** `A` and `B` tested in both orders; `AB.` for pair functions. Booleans are bare (`A.Do_not_populate`); no `true`/`false` literals; `null` is comparable. Unitless value = nm (degrees for angles) inside conditions; constraint values need a unit (bare numbers reject the file) except `via_count` and `min_resolved_spokes` [C].
 - **Precedence, lowest → highest:** `&&` < `||` < comparisons (`== != > >= < <=`, non-associative) < `!` < `+ -` < `* /`. So `a && b || c` = `a && (b || c)` (reverse of C) and `!x == y` = `(!x) == y`. The 10.0 user doc ("All the boolean operators have the same precedence and are evaluated in order from left to right") is wrong; always parenthesise (corrected) [P] ([grammar.lemon @10.0](https://gitlab.com/kicad/code/kicad/-/blob/10.0/common/libeval_compiler/grammar.lemon)).
 - **Component classes:** separate parser `ParseComponentClassAssignmentRules` for `(assign_component_class <name> (condition …))` (Board Setup assignment).
 
@@ -130,12 +136,13 @@ Source: [pcbexpr_functions.cpp @10.0](https://gitlab.com/kicad/code/kicad/-/blob
 2. One constraint type per rule.
 3. General rules first, specific last.
 4. Emit only `mm`, `deg`, `ps`.
-5. Stable `IR:<id>:<slug>` names ([feedback mapping](drc-report-and-repair-loop.md#rule-name-protocol)).
-6. Write fab minimums into Board Setup (`.kicad_pro`) and clamp every emitted rule to the fab floor in the compiler (a matching custom rule bypasses the board minimum); audit `Clearance_Override` values, which beat compiled rules.
-7. High-speed classes time-domain first: a tuning profile per net class in `.kicad_pro`, plus `length`/`skew` in ps with `(within_diff_pairs)`. DeepPCB and Quilter explicitly leave this space open [I].
-8. Compile placement intent into native DRC where possible: courtyard spacing; `assertion` on `Layer`/`Orientation`; `enclosedByArea`/`intersectsArea` against named rule areas; component classes; edge and keepout rules.
-9. **DRC cannot express** pairwise pad distance between two footprints, alignment, symmetry, loop area, and (on 10.x) return path → our own checker [P/I].
-10. Keep a second emitter for the KiCad 11 `CustomRule` proto.
+5. Run `kae dru-check` on every emitted file; exit 1 blocks it.
+6. Stable `IR:<id>:<slug>` names ([feedback mapping](drc-report-and-repair-loop.md#rule-name-protocol)).
+7. Write fab minimums into Board Setup (`.kicad_pro`) and clamp every emitted rule to the fab floor in the compiler (a matching custom rule bypasses the board minimum); audit `Clearance_Override` values, which beat compiled rules.
+8. High-speed classes time-domain first: a tuning profile per net class in `.kicad_pro`, plus `length`/`skew` in ps with `(within_diff_pairs)`. DeepPCB and Quilter explicitly leave this space open [I].
+9. Compile placement intent into native DRC where possible: courtyard spacing; `assertion` on `Layer`/`Orientation`; `enclosedByArea`/`intersectsArea` against named rule areas; component classes; edge and keepout rules.
+10. **DRC cannot express** pairwise pad distance between two footprints, alignment, symmetry, loop area, and (on 10.x) return path → our own checker [P/I].
+11. Keep a second emitter for the KiCad 11 `CustomRule` proto.
 
 ## Open questions
 - `th`, `"`, `rad`: listed in docs, rejected by 10.0 and master resolvers (source reading only).

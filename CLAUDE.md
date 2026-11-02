@@ -11,6 +11,9 @@ CC-BY-4.0 (see `LICENSING.md`). New source files carry SPDX headers.
 - When writing docs, follow `docs/CONVENTIONS.md`: reference-text style (formulas, tables,
   numbered facts), each fact once with links elsewhere, `Scope:`/`Keys:` header lines.
   Re-run `python3 tools/docs/subjects.py` after editing docs.
+- Before using any `.kicad_dru` you wrote or edited, run `kae dru-check FILE` (from `kae/`:
+  `PYTHONPATH=src python -m kae.board.dru_check FILE`). KiCad silently drops the whole file on
+  one syntax error, so DRC would pass without your rules; exit 1 means fix it first.
 
 ## Local board corpus
 
