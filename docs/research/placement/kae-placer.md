@@ -1,5 +1,8 @@
 # kae placer: CP-SAT floorplan and compiled annealing
 
+Scope: defensive publication of `kae place` (seed, macros, CP-SAT floorplan, compiled annealer, grid legalization), its runs and open problems. Not here: exact legality and KiCad loop -> [exact legality](kae-exact-legality.md); stage → module map -> [kae place hub](../../topics/placement/kae-place.md).
+Keys: kae place, quadratic seed, clique model, partition_spread, physics macros, clusters.py, no-good cuts, Terms.breakdown, CP-SAT floorplan, FLOORPLAN_MAX_ITEMS, FastAnnealer, SA_U_SAT, w_phys, w_wl, w_cong, w_disp, w_order, w_label, w_silk, grid legalization, own/opp/board rectangles, _fastlegal.py, csweep.py, physics ablation, routability probe, dense sensor boards
+
 **Status:** worked.
 **First published:** 2026-10-22, commit [64a6858](https://github.com/magnetic-trowel/kicad-auto-everything/commit/64a6858cca92b72ead01cdf56e3b5667a71cb2bc) on branch `claude/vigilant-mayer-i91rrr`.
 
@@ -41,6 +44,12 @@ All seed 0, single run; "physics" is the linear sum of budget utilization, kae's
 | routability probe A+B at 1ef5bf1 (Freerouting-fork bridge, 1800 s, k = 2) | 64/66 on, 65/66 off | cp1 0.758 both arms, cpk 0.788 both (human 0.727 / 0.788); HPWL vs human 0.685 on, 0.657 off | | [place-routability-probe-1ef5bf1](../../../bench/results/2026-10-24-place-routability-probe-1ef5bf1.md) |
 
 Annealer throughput on split C: planned moves finished on 75/79 boards, median 11.7k moves/s (5.0k-40.4k). Silkscreen was the systematic loss in the probe (44 silk_overlap), fixed later ([kae-exact-legality](kae-exact-legality.md)). The seed and the macros were not ablated separately; probe-select runs showed the floorplan pulls jittered seeds back together, so seed jitter barely diversifies candidates.
+
+## Open problems
+
+- Dense sensor boards (paw3395, badjeff-pmw3610, siderakb-pmw3610): our placements put caps in the strips between the sensor's pins and the edge; Freerouting's first pass then runs ~500 s vs 13–155 s on the human's. With the connectors fixed, paw3395 drops to 2 unconnected on one routing. No estimate predicts these failures; the routing probe is the only, noisy, signal ([routability estimators](kae-routability-estimators.md)).
+- Split-C routability: 15 boards route clean only on the human placement ([pipeline C](../../../bench/results/2026-10-24-pipeline-c-c9c49d6.md)). Locally, 4 of 8 re-run boards routed clean on ours, 2 failed only on silk (since fixed), 2 failed on routing: eurorack (HPWL 0.76× human, crowded) and sdtv2csi (HPWL 1.22×). The 4-way routing portfolio may close some ([portfolio](../../../bench/results/2026-10-24-portfolio-ab-0465818.md)).
+- Other findings: pingdevkit's `GetRectangleWidth` assert is printed by pcbnew's zone fill on the human boards too (the split-C score error was the pcbnew process ending, not our writer). Probe DRC errors on split C: silk errors were placement errors that survived (fixed by the turned-glyph model); the others (mask bridge, hole and edge clearance) did not appear on the 8 boards re-run locally.
 
 ## Verdict
 

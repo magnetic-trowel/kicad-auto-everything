@@ -3,20 +3,20 @@
 **Status:** worked (as a verification pass; it found and fixed errors). Everything checked is still model vs model.
 **First published:** 2026-10-22, commit [91f22fa](https://github.com/magnetic-trowel/kicad-auto-everything/commit/91f22faad5ebda7c28519a13ba33511a2c67cad9) on branch `claude/vigilant-mayer-i91rrr`; corrections applied in [7fd127b](https://github.com/magnetic-trowel/kicad-auto-everything/commit/7fd127b819838f14a0be1e22327c6367a8ce68f9) and [287e1f2](https://github.com/magnetic-trowel/kicad-auto-everything/commit/287e1f23aa2ccc12b4e407db2990758395ff16cd); folded into [verification-and-limits](../../topics/physics/verification-and-limits.md) at [91671c8](https://github.com/magnetic-trowel/kicad-auto-everything/commit/91671c8dd253b6b08c5a5df98bd8f9acce5057c7).
 
-A third round re-implemented each load-bearing physics claim by a method its author did not use, issued verdicts on 15 claims and 76 verbatim text corrections, and wrote down where rule-following beats physics-first. It is the main reason to trust (or distrust) the numbers on the other physics pages. **Its checks are independent re-derivations, not measurements: "no [C] number here has met a measurement".**
+Scope: third round that re-implemented each load-bearing physics claim by a method its author did not use: 15 claim verdicts, 76 verbatim text corrections, where rule-following beats physics-first. Canonical home for corrections; other pages in this area cite rows here. Not here: full write-up -> [verification-and-limits](../../topics/physics/verification-and-limits.md).
+Keys: red team, re-derivation, corrections, `rt_*.py`, slit law, ℓ50, copper damping, tuned snubber, Z0 matching, world common mode, MS2, PEECN, VOI share, joint P&R, fill-gap Z0, steelman, falsification tests
+
+**Checks are independent re-derivations, not measurements: "no [C] number here has met a measurement".**
 
 ## Idea and how it works
 
-Every number the architecture relies on should pass three checks: an independent method, a refinement (convergence) study, and a reference validated where the optimizer actually selects, because optimizers drift to the edges of validated domains. For each claim the red team wrote a script `rt_*.py`, then issued corrections as records {file, verbatim current text, problem, replacement} and applied them to the owning docs.
-
-It also recorded:
-- **Steelman for rules:** at a fixed stackup "minimise length × h/w" picks the best hot loop 82–99% of the time vs 97–100% for the physics proxy MS2; the big computed wins (no slot under the net 24–38 dB, thin dielectric 15–17 dB) are textbook rules.
-- **Pre-registered falsification tests:** e.g. ≥ 10 measured boards with ΔSpearman < 0.1 vs a rule-violation count falsifies the critics; joint place-and-route vs an equal-CPU portfolio on ≥ 20 real boards.
-- **Independence note:** several idea ids are the same idea under different names (cut pricing = CT1, CT2, SY6–SY9, VP D4, CD2, CD6; world node = CT9, CT15, CT16, IN6, SY27, CD33, TH11). Agreement among lenses is "four routes to textbook results": evidence of correctness, not novelty.
+- Every number the architecture relies on must pass: (1) an independent method, (2) a refinement (convergence) study, (3) a reference validated where the optimizer actually selects (optimizers drift to the edges of validated domains).
+- Per claim: a script `rt_*.py`; corrections as records {file, verbatim current text, problem, replacement}, applied to the owning docs.
+- Outputs beyond the verdicts: a steelman for rules (at fixed stackup "minimise length × h/w" picks the best hot loop 82–99% vs 97–100% for MS2; [§3](../../topics/physics/verification-and-limits.md#3-where-competent-rule-following-beats-physics-first)), pre-registered falsification tests ([§4](../../topics/physics/verification-and-limits.md#4-falsification-tests)) and an independence audit: one idea under several ids, lens agreement = "four routes to textbook results" ([§5](../../topics/physics/verification-and-limits.md#5-independence-of-the-evidence)).
 
 ## Results
 
-The nine re-derivations (source: [verification-and-limits](../../topics/physics/verification-and-limits.md); scripts in `tools/research/physics/`):
+The nine re-derivations (scripts in `tools/research/physics/`):
 
 | Script | Claim checked | Independent method | Verdict |
 |---|---|---|---|
@@ -30,18 +30,23 @@ The nine re-derivations (source: [verification-and-limits](../../topics/physics/
 | `rt_jpr_stats.py` | joint place-and-route beats sequential | sign tests + bootstrap on the published table | 10/10 vs its own start (p = 0.002, −18%) but **5/10 vs equal-CPU portfolio** (p = 1.0, ratio 0.96, CI 0.83–1.24); physics-term effect 0.99. Downgraded to "a refiner" |
 | `rt_fill_z0.py` | fill-gap Z0 shift (−3.7% vs −6.5% conflict) | 20 cells per h FD over three copper thicknesses | −5.0% at g = h (thin) to −8.4% (t = 0.35h); ≤ 2.2% at g ≥ 2h; both earlier scripts under-resolved; "harmless at ≥ 2h" holds |
 
-Other checks without a new script: PEECN vs FastHenry within 1.3% only for 4 loops (w/h 0.3–5, 100 MHz); convex copper floors move 2.2–12.8% between 0.2 and 0.1 mm grids (and two grids used different areas); the wire-medium model matches lumped anti-resonance by identity (975 MHz); thermal length λ = 37.7 mm reproduces; rank-1 passport updates match brute force to 2×10⁻⁹ ("algebra, not physics"); `pw_cells ring` takes R from a fixed 2-square loop while L is free, so its Q values (31–173) belong to no single geometry; `fe_field2d` and `rg_fill_and_decaps` are under-resolved by 1.3–1.9 points.
+Checks without a new script (PEECN vs FastHenry, grid-dependent floors, wire-medium identity, thermal λ, rank-1 passports, under-resolved scripts): rows and scopes in [verification-and-limits](../../topics/physics/verification-and-limits.md#1-claims-verified-by-an-independent-method) and [§2](../../topics/physics/verification-and-limits.md#2-script-and-quantity-scopes); `pw_cells ring`'s Q values (31–173) belong to no single geometry.
 
-**The 76 corrections in summary.** They are text replacements in the lens, foundations, solver and field docs, of four kinds: scope added to a claim that held (ℓ50 valid for ℓ ≥ 6h; band numbers only for a 50 mm plane; image results assume a perfect infinite plane; "transitions" move up to 10× with the observable), numbers replaced by converged ones (fill-gap Z0, damping dB, loop-proxy drift, VOI share), claims withdrawn as wrong (12 kHz mirroring, copper never damps, Z0-matching invisibility, 40 dB cable benefit) and results re-labelled as inputs (`same_edge_db`). Each page in this area carries the corrections that touch it.
+**The 76 corrections**, text replacements in lens, foundations, solver and field docs, of four kinds:
+
+| Kind | Examples |
+|---|---|
+| scope added to a claim that held | ℓ50 valid for ℓ ≥ 6h; band numbers only for a 50 mm plane; image results assume a perfect infinite plane; "transitions" move up to 10× with the observable |
+| numbers replaced by converged ones | fill-gap Z0, damping dB, loop-proxy drift, VOI share |
+| claims withdrawn as wrong | 12 kHz mirroring, copper never damps, Z0-matching invisibility, 40 dB cable benefit |
+| results re-labelled as inputs | `same_edge_db` |
 
 ## Verdict
 
-The red team did its job: about a quarter of the load-bearing claims were wrong, overstated or circular, and the corrections are now in the docs. What it could not do is say whether any of it is true of a real board. Left: measured boards (none exist), a full-wave board-plus-cable run for the common-mode estimate, a converged reference at w/h ≥ 30 (+4–7% from 31 to 61 filaments), the pre-registered ≥ 20-board joint P&R experiment, and a regression suite that recomputes every [C] number.
+Did its job: ~1/4 of the load-bearing claims were wrong, overstated or circular; corrections are in the docs. Cannot say whether any of it is true of a real board. Left: measured boards (none exist); full-wave board-plus-cable run for the common-mode estimate; converged reference at w/h ≥ 30 (+4–7% from 31 to 61 filaments); the pre-registered ≥ 20-board joint P&R experiment; a regression suite that recomputes every [C] number.
 
 ## Code
 
-`tools/research/physics/rt_*.py`. Print-only; run as `OMP_NUM_THREADS=1 python tools/research/physics/rt_X.py [section]` (instant to ~4 min; `rt_fill_z0` is the slowest). `rt_loop_proxy`, `rt_voi_sensitivity` and `rt_jpr_stats` import `sl_loop_peec`, `in_decision_quality`, `in_emi_voi` and a table hard-coded from [joint-place-route-experiment](../../topics/physics/joint-place-route-experiment.md).
+`tools/research/physics/rt_*.py`, print-only: `OMP_NUM_THREADS=1 python tools/research/physics/rt_X.py [section]` (instant to ~4 min; `rt_fill_z0` slowest). `rt_loop_proxy`, `rt_voi_sensitivity`, `rt_jpr_stats` import `sl_loop_peec`, `in_decision_quality`, `in_emi_voi` and a table hard-coded from [joint-place-route-experiment](../../topics/physics/joint-place-route-experiment.md).
 
-## Related
-
-[rule-genealogy](rule-genealogy.md), [first-principles-lenses](first-principles-lenses.md), [domain-models](domain-models.md), [physics-ir-and-core](physics-ir-and-core.md), [validation-program](validation-program.md).
+Related: [rule-genealogy](rule-genealogy.md), [first-principles-lenses](first-principles-lenses.md), [domain-models](domain-models.md), [physics-ir-and-core](physics-ir-and-core.md), [validation-program](validation-program.md).

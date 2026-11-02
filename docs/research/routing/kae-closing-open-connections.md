@@ -1,22 +1,25 @@
 # Closing the last open connections: rule fixes, restarts, placement screening, BGA escape
 
+Scope: the 100%-routing round (2026-10-28 to 2026-11-01): failure classification, fixes that worked, dead ends, benchmark lessons, unmerged measurements. Not here: BGA literature -> [BGA ranked ideas](../../topics/routing/bga-routing-ranked-ideas.md); the `blocked` report mechanism -> [last mile and restarts](../../topics/routing/last-mile-and-restarts.md#what-stays-open-the-blocked-report).
+Keys: rules-merge2, rules-merge3, kae-complete, merit route/joint, merge2-eval, near-miss set, failure classes (a)(b)(c)(d), input_errors, drc.excess, constraints.DEFAULTS, KAE_ text variables, fine pitch, plane_strict_share odd, dog-bones, --final, --check-placement --screen, ASHA, kae.route.blocked, escape certificate, Yan–Wong, monotone BGA window repair, close-bga-region, region re-route, escape_lay=plan, pin_fields, bus_order, --history, RUDY Spearman, solder_mask_bridge nondeterminism, KAE_FR_SLOTS, numba cache
+
 **Status:** worked for most items (combined on branch `rules-merge3`, merged to main 2026-11-01; not yet measured as a whole against the merit methods' kae-complete 78d3de7, an A/B is running; the BGA window repair is on its own branch); did not work for the items in [what did not work](#what-did-not-work).
-**First published:** 2026-10-28 to 2026-11-01 on the branches named per item below. The combined, tested code is branch `rules-merge3` ([6d3ee11](https://github.com/magnetic-trowel/kicad-auto-everything/commit/6d3ee113abe619bc72dab19830c0558725bb2e49)).
+**First published:** 2026-10-28 to 2026-11-01 on the branches named per item below. Combined, tested code: branch `rules-merge3` ([6d3ee11](https://github.com/magnetic-trowel/kicad-auto-everything/commit/6d3ee113abe619bc72dab19830c0558725bb2e49)).
 
-The goal of this round: route 100% of the connections, with no DRC error beyond what the board had before routing (and, for methods that place, beyond the human layout's own), and where the board's own rules make that impossible, say why. Everything is judged by `kicad-cli` DRC on the re-opened board. Scoring was not changed. Numbers are open connections (unconnected items) and DRC errors summed over boards and seeds; most runs are 1-3 seeds, and run-to-run noise is about ±10-30% per board, so per-board differences below that are noise.
+Goal: route 100% of connections with no DRC error beyond what the board had before routing (and, for methods that place, beyond the human layout's own); where the board's own rules make that impossible, say why. Judged by `kicad-cli` DRC on the re-opened board; scoring unchanged. Numbers = open connections (unconnected items) and DRC errors summed over boards and seeds; most runs 1–3 seeds; run-to-run noise ~±10–30% per board, so smaller per-board differences are noise.
 
-Benchmarks used:
-- **merit route/joint:** 213 merit boards, the restart wrapper (`tools/kaeres/restart.py`, parallel 4, resume 0.5) at the merit budget 900 s × sqrt(footprints / 40).
-- **merge2-eval:** 14 boards routed on the human placement and 20 boards placed and routed, the boards of the congestion, DRC and outline studies, 3 seeds.
-- **near-miss set:** the 11 merge2-eval route boards that still had 1-12 open connections.
+Benchmarks:
+- merit route/joint: 213 merit boards, restart wrapper (`tools/kaeres/restart.py`, parallel 4, resume 0.5) at merit budget 900 s × sqrt(footprints / 40).
+- merge2-eval: 14 boards routed on the human placement and 20 placed and routed (boards of the congestion, DRC and outline studies), 3 seeds.
+- near-miss set: the 11 merge2-eval route boards still at 1–12 open connections.
 
 ## How the failures were found
 
-Agents compared our routings with the human routings of the same boards, read the router code, and classified every remaining open connection:
-- **(a)** a path exists in our copper, or after ripping 1-2 nets: a closing or search failure;
-- **(b)** a path exists only after ripping 3-30 nets: congestion; the human layout proves the capacity;
-- **(c)** our placement makes it impossible;
-- **(d)** no path even with all our copper removed: a board rule, a kae default, or geometry.
+Our routings were compared with the human routings of the same boards and the router code read; every remaining open connection classified:
+- (a) path exists in our copper, or after ripping 1–2 nets: closing or search failure;
+- (b) path only after ripping 3–30 nets: congestion (the human layout proves the capacity);
+- (c) our placement makes it impossible;
+- (d) no path even with all our copper removed: a board rule, a kae default, or geometry.
 
 On the near-miss set the 114 open connections split a 27 / b 55 / d 32. On the place-and-route set, 347 open split a 32 / zone islands 52 / b 74 / c ~189. On the dense BGA boards, 25-50% were class (a). The classification scripts are in `tools/research/routing/close-nearmiss/` (branch `close-nearmiss`).
 

@@ -1,5 +1,8 @@
 # autoplace: annealing placer with the router and DRC in the loop
 
+Scope: defensive publication of autoplace, a rectangle placer with five arms (rand, greedy, sa, sa-best, sa-loop), its cost, legalizer, 14-board results and a provisional larger sample. Not here: kae-router variant and speed-ups -> [autoplace with kae router](autoplace-kae-router.md).
+Keys: autoplace, kicad_helper.py, place.py, escape halo, fill factor, POWER_RE, ratsnest MST crossings, w_x, rand, greedy, sa, sa-best, sa-loop, repair rounds, blamed parts, successive halving S6, place_route_loop, legalizer meshgrid, starved_thermal, solder_mask_bridge, place-smoke-14.txt, score v5
+
 **Status:** partial. Router-in-the-loop repair (`sa-loop`) worked on a 14-board smoke suite; on a larger provisional sample it was much weaker and did not scale to big boards.
 **First published:** 2026-10-22, commit [3267001](https://github.com/magnetic-trowel/kicad-auto-everything/commit/32670011f0a3941edfef9629ad6f39fac20f27be) on branch `autoplace-experiments`; results [b3b0896](https://github.com/magnetic-trowel/kicad-auto-everything/commit/b3b08961f8e26555827730f2306c677073d0fca4).
 
