@@ -340,7 +340,7 @@ def test_jobs_run_at_nice_19_and_sched_idle(kq, tmp_path):
     assert cls == "IDL" and ni in ("19", "-")  # ps prints "-" for the nice of SCHED_IDLE on some versions
 
 
-LEASE = dict(lease_release_gb=2.0, lease_release_after_s=120, lease_margin_mb=512, lease_step_gb=1.0,
+LEASE = dict(lease_release_frac=0.25, mem_overrun=1.5, lease_release_gb=2.0, lease_release_after_s=120, lease_margin_mb=512, lease_step_gb=1.0,
              lease_step_frac=0.25, lease_stall_s=900)
 
 
@@ -365,7 +365,7 @@ def test_lease_plan_requeues_the_newest_job_only_after_a_long_stall(kq):
     p = kq.lease_plan(jobs, 0.0, LEASE, now=1100.0)
     assert p["stalled"] == [1] and p["victim"] == 2 and p["stall_since"][1] == 1100.0
     # a runaway (far past its --mem) is the victim, even when it is the one waiting
-    jobs[0]["declared"], jobs[1]["declared"] = 1024, 2048
+    jobs[0]["declared"], jobs[1]["declared"] = 1024, 2048        # #1 uses 4x its --mem
     assert kq.lease_plan(jobs, 0.0, LEASE, now=1100.0)["victim"] == 1
     # waiting only for other users' memory, alone: it keeps waiting
     assert kq.lease_plan(jobs[:1] and [dict(jobs[0], declared=8192)], 0.0, LEASE, now=1100.0)["victim"] is None

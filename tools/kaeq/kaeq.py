@@ -106,7 +106,8 @@ DEFAULTS = {
     "lease_step_gb": 1.0,    # lease: a grant grows by max(this, lease_step_frac of the grant) at a time
     "lease_step_frac": 0.25,
     "lease_margin_mb": 512,  # lease: a job within this of its grant asks for more
-    "lease_release_gb": 2.0, # lease: a grant more than max(this, half the use) above use for lease_release_after_s
+    "lease_release_gb": 2.0, # lease: a grant more than max(this, lease_release_frac of use) above use for
+    "lease_release_frac": 0.25,  # lease_release_after_s
     "lease_release_after_s": 120,  # is trimmed to use x 1.25 (at least use + 1 GB)
     "lease_stall_s": 900,    # lease: a job stalled this long for memory that nothing frees requeues the newest other job
     "mem_budget_gb": 0,      # cap on what all jobs together may use and hold (0: none beyond the reserve)
@@ -541,7 +542,7 @@ def lease_plan(jobs, free_mb, cfg, now):
     for a while are trimmed (that memory is free again); jobs near their grant get one more step each, by
     priority then age, while memory is free; the rest are stalled (the kernel holds them at their grant). A job
     stalled lease_stall_s with nothing freeing names a victim among jobs of no higher priority: the one furthest
-    past its declared --mem ("declared", MB), else the newest other job (a job within its declaration that only
+    past mem_overrun x its declared --mem ("declared", MB; a runaway), else the newest other job (a job within its declaration that only
     waits for other users' memory keeps waiting).
     Returns {grants: {id: MB}, slack_since, stall_since, stalled: [ids], free, victim}."""
     grants = {j["id"]: j["grant"] for j in jobs}
@@ -550,7 +551,7 @@ def lease_plan(jobs, free_mb, cfg, now):
     rel = cfg["lease_release_gb"] * 1024
     for j in jobs:
         g, u = grants[j["id"]], j["use"]
-        if g - u > max(rel, 0.5 * u):
+        if g - u > max(rel, cfg.get("lease_release_frac", 0.25) * u):
             slack[j["id"]] = slack[j["id"]] or now
             if now - slack[j["id"]] >= cfg["lease_release_after_s"]:
                 ng = max(u * 1.25, u + 1024)
@@ -581,7 +582,7 @@ def lease_plan(jobs, free_mb, cfg, now):
         by = {j["id"]: j for j in jobs}
         s = min(long_, key=lambda i: stall[i])
         peers = [j for j in jobs if j["prio"] <= by[s]["prio"]]
-        over = [j for j in peers if j["use"] > j.get("declared", float("inf"))]
+        over = [j for j in peers if j["use"] > j.get("declared", float("inf")) * cfg.get("mem_overrun", 1.5)]
         if over:                    # the job furthest past what it declared (a runaway), whichever it is
             victim = max(over, key=lambda j: j["use"] - j["declared"])["id"]
         else:                       # everyone within their declaration: the newest other job
