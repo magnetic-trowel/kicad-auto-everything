@@ -272,6 +272,29 @@ def test_joint_moves_are_legal_and_improve_the_routed_loop(tmp_path):
     assert copper
 
 
+@pytest.mark.parametrize("kind", ["hole", "pad_nopin"])
+def test_joint_moves_keep_hole_clearance_to_holes_and_keepout_pads(tmp_path, kind):
+    """A pad 0.05 mm from an NPTH hole (or a keepout pad of another part) passed the joint
+    move's legality: holes were tested for overlap only, keepout pads not at all."""
+    from shapely.geometry import Point
+    from kae.route.critical_joint import Legality
+    from kae.route.critical_space import Item
+    s = F.session(tmp_path)
+    sp = s.space
+    leg = Legality(s)
+    f = next(fp for fp in s.board.footprints if fp.ref == "C3")
+    from shapely.ops import unary_union
+    assert leg.ok(f.uuid, leg.poses[f.uuid]) == (True, "")
+    x0, y0, x1, y1 = unary_union([it.geom for it in sp.pads_by_fp[f.uuid] if it.kind == "pad"]).bounds
+    ob = Item(kind, None, list(sp.cu), Point(x1 + 0.05 + 0.4, (y0 + y1) / 2), 0.4, None, owner="H1")
+    ob.hole = (ob.geom, 0.4)
+    for l in sp.cu:
+        sp.items[l].append(ob)
+    sp.invalidate()
+    good, why = leg.ok(f.uuid, leg.poses[f.uuid])
+    assert not good and kind in why
+
+
 def test_heatsink_mount_keeps_right_angles(tmp_path):
     from kae.route.critical_joint import candidates, heatsink_mount
     s = F.session(tmp_path)
