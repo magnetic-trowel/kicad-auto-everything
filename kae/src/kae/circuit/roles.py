@@ -334,6 +334,13 @@ CHASSIS_NET = rx(r'EARTH|CHASSIS|SHIELD|^PE$|^FG$|^CGND|^SGND$|CASE|^SH$|SHLD|FR
 PWR_NET = rx(r'^(\+?\d+(\.\d+)?V\d*\w*|\+[A-Z0-9_.]+|V(CC|DD|BUS|IN|SYS|BAT|MOT|M|PP|REG|CORE|CAP|S|IO|LOGIC|AUX|LED|DRV|SUP)\w*|'
              r'[AD]V(DD|CC)\w*|P\d+V\d*\w*|\d+V\d+\w*|[0-9]+V[0-9]*_?\w*|-\d+(\.\d+)?V\w*|V_?\d+V\d*|VDD_?\w+|VCC_?\w+|'
              r'BATT?\+?|VBATT?\w*|PWR\w*|POWER\w*|SUPPLY\w*|RAW|VUSB\w*|USB_?5V|USB_?VBUS|VIN_?\w*|VOUT\w*|V_\w+|\w+_(3V3|5V|1V8|12V|24V|3V|VCC|VDD))$')
+# a rail name only by its voltage suffix ('MOTOR_12V', but also level-shifted logic 'SCK_3V', 'LCD_DATA1_5V'):
+# no name evidence when the base is a signal or interface name, weaker evidence at a logic level
+# (a supply suffix 'USB_VCC', 'CAN_VCC' and a supply word in the base 'VDA_USB_3V3' stay rail names)
+PWR_SUFFIX = rx(r'^(\w+)_(3V3|5V|1V8|12V|24V|3V)$')
+LOGIC_SUFFIX = rx(r'_(3V3|5V|1V8|3V)$')
+SUPPLY_TOKEN = rx(r'(^|_)(V(DD|CC|DA|IO|BUS|BATT?|SYS|IN|OUT|REG|CORE|PP|A|D)\w*|PWR|POWER|SUPPLY|BATT?\w*)(_|$)')
+PWR_NET_BASE = rx(PWR_NET.pattern.replace(r'|\w+_(3V3|5V|1V8|12V|24V|3V|VCC|VDD))$', r')$'))
 PWR_WEAK = rx(r'VOUT|VDD|VCC|VBUS|VBAT|VIN|PWR|SUPPLY|BATT|\bV\d|^P\d+V\d*|VSYS|VMOT|VLED|RAIL|VREG')
 CTRL_NET = rx(r'(^|[^A-Z])(FB|VFB|BOOT|BST|BS|EN|ENABLE|COMP|SS|PG|PGOOD|ILIM|RT|CT|TRK|SENSE|SNS|ISNS|CS|XTAL|XI|XO|OSC|RST|RESET|NRST|'
               r'ADC|AIN|SDA|SCL|TXD?|RXD?|LED|GATE|HO|LO|PWM|SIG|DATA|CLK|INT|IRQ|MISO|MOSI|SCK|CSN?|USB|D[PMN+-]|CC\d?|SBU\d?|'
@@ -1097,10 +1104,21 @@ def _rails(nl: Netlist, roles: Roles):
         s = nv.short
         evs = []
         name = bool(PWR_NET.search(s)) and not GND_ANY.search(s)
+        # a rail name only by its voltage suffix: Adafruit/Antmicro name level-shifted logic '<signal>_3V'
+        # (SCK_3V, TFTCS_3V, LCD_DATA1_5V were rails at exactly 0.5, the bare name evidence)
+        sfx = PWR_SUFFIX.match(s) if name and not PWR_NET_BASE.search(s) else None
+        if sfx and SUPPLY_TOKEN.search(sfx.group(1)):
+            sfx = None
+        # ... unless the net carries bulk evidence a signal never has (TYPE_C_UART_5V: 5 caps, a pour)
+        if sfx and (CTRL_NET.search(sfx.group(1)) or name_iface(sfx.group(1))[0] or CLOCK_NET.search(sfx.group(1))) \
+                and not (len(roles.caps_to.get(net, [])) >= 2 or nl.zone_layers.get(net)):
+            name = False
+        sfx = sfx and LOGIC_SUFFIX.search(s)
         weak = bool(PWR_WEAK.search(s))
         vname = V.net_voltage(net)
         if name:
-            evs.append(ev('name', f"name '{s}' matches a rail pattern", MODERATE + 1.0))
+            evs.append(ev('name', f"name '{s}' matches a rail pattern" + (" by its voltage suffix" if sfx else ""),
+                          MODERATE if sfx else MODERATE + 1.0))
         elif weak:
             evs.append(ev('name', f"name '{s}' contains a supply word", WEAK))
         if vname and not name:

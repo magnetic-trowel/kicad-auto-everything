@@ -245,6 +245,26 @@ def test_rail_named_control_lines_are_not_rails():
     assert r.nets['12V0_LC1'].attrs['source'] == {'kind': 'derived', 'ref': 'R1', 'upstream': 'SW_OUT', 'via': 'shunt'}
 
 
+def test_level_shifted_signals_with_a_voltage_suffix_are_not_rails():
+    """Adafruit and Antmicro name level-shifted logic '<signal>_3V' / '_5V': a voltage suffix alone is
+    no rail (SCK_3V, TFTCS_3V on the 1.69in TFT were rails at confidence 0.5-0.62). A suffix net with
+    bulk capacitance, a supply suffix or a supply word in the base stays a rail."""
+    parts = [R('R1', '10k', 'SCK_3V', 'GND'), R('R2', '10k', 'TFTCS_3V', 'GND'), R('R3', '10k', 'LCD_DATA1_5V', 'GND'),
+             fp('J2', 'Conn', 'Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical',
+                [('1', 'SCK_3V', '', 'passive'), ('2', 'TFTCS_3V', '', 'passive'), ('3', 'LCD_DATA1_5V', '', 'passive')]),
+             fp('J1', 'Conn', 'Connector_PinHeader_2.54mm:PinHeader_1x08_P2.54mm_Vertical',
+                [('1', 'SCK_3V', '', 'passive'), ('2', 'TFTCS_3V', '', 'passive'), ('3', 'LCD_DATA1_5V', '', 'passive'),
+                 ('4', 'GND', '', 'passive'), ('5', 'USB_VCC', '', 'passive'), ('6', 'UART_5V', '', 'passive'),
+                 ('7', 'MOTOR_12V', '', 'passive')]),
+             C('C1', '100nF', '+3V3', 'GND'), C('C2', '10uF', 'USB_VCC', 'GND'), C('C3', '10uF', 'UART_5V', 'GND'),
+             C('C4', '10uF', 'UART_5V', 'GND'), C('C5', '10uF', 'MOTOR_12V', 'GND')]
+    nl, r = roles_of(parts)
+    for n in ('SCK_3V', 'TFTCS_3V', 'LCD_DATA1_5V'):
+        assert n not in r.rails, (n, r.nets[n].confidence)
+    for n in ('USB_VCC', 'UART_5V', 'MOTOR_12V'):
+        assert n in r.rails, n
+
+
 def test_i2c_clock_and_gpio_named_oscillator_pins():
     parts = [IC('U1', 'STM32F030C8T6', 'Package_QFP:LQFP-48', [('3', 'PC14', 'PC14', 'bidirectional'), ('4', 'PC15', 'BUTTON', 'bidirectional'),
                                                              ('42', 'PB6', 'I2C1_SCLK', 'bidirectional'), ('1', 'VDD', '+3V3', 'power_in'),
