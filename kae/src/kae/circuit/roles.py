@@ -202,6 +202,9 @@ LIB_RULES = [
                           r'Samtec|FTSH|SHF|HDR-|SolderWirePad|Solderpad|WirePad|Wire_Pads|XT30|XT60|Harwin|Keystone5|MIDI|DIN5|XLR|SCART|HDMI|'
                           r'DisplayPort|SFP|QSFP|CardEdge|FMC|USB-C|TYPE-C|MINI-USB|Eurorack_Power|FanPinHeader|Power_Jack|JACK_ALIM|'
                           r'powertab|SolderPads|Socket|_Plug|Receptacle|Header|(^|[-_:])CON\d')),
+    # Eagle library names, upper case: DCJACK_2MM_PTH, 2X05_1.27MM, 1X04_LOCK, PINHD-2X5 (KiCad's 'PinHeader_1x02' is
+    # matched above; a capacitor or LED plugged into a header keeps its own kind)
+    ('connector', 2.5, rx(0, r'DC_?JACK|BARREL_?JACK|(^|[_:])[1-4]X\d{1,2}(_|$)|PINHD')),
     ('antenna', 3.5, rx(0, r'RF_Antenna|Antenna|(^|[_:])ANT_|_ANT(_|$)|PCB_Antenna')),
     ('test_point', 3.5, rx(0, r'TestPoint|Test_Point|(^|:)TP_|TestPad')),
     ('mounting_hole', 4.0, rx(0, r'MountingHole|Mounting_Hole|MTG\d|SCREWHOLE|ClearanceHole|_Clearance_|Tooling_Hole|Standoff|(^|:)Hole|MECHANICAL_CLEARANCE|MTG_|DrillHole|(^|:)M[2-6]_|PanelHole_Bourns')),
@@ -495,11 +498,19 @@ def _text(part: Part) -> str:
 def _ic_subtype(part: Part) -> tuple[str | None, str]:
     t = f"{part.value} {part.fields.get('MPN', '')} {part.fields.get('Manufacturer Part Number', '')} " \
         f"{part.fields.get('Part Number', '')} {part.fpname} {part.description}"
+    m = MODULE_LIB.search(part.lib_id)
+    if m:
+        # a DC/DC module footprint (Murata OKI-78SR, Recom R-78, Traco TSR): whatever the value names
+        # ('LM7805' on a drop-in switching module), the part is a switching module with its inductor inside
+        return 'regulator_module', m.group(0).strip(':_')
     for sub, r in IC_RULES:
         m = r.search(t)
         if m:
             return sub, m.group(0).strip()
     return None, ''
+
+
+MODULE_LIB = rx(0, r'Converter_DCDC|OKI-?78SR|(^|[_:])R-?78[A-Z]{1,2}\d|RECOM_R-?78|TRACO_TSR|(^|[_:])TSR_?1-|MORNSUN_K78|(^|[_:])K78\d\d-')
 
 
 def regulator_vout(text: str) -> tuple[float, str] | None:
@@ -508,13 +519,17 @@ def regulator_vout(text: str) -> tuple[float, str] | None:
     t = (text or '').upper().replace(',', '.')
     if re.search(r'ADJ', t):
         return None
+    # a range ('0.5 ~ 5.5V', '4.5V - 15V', '2.7 to 5.5 V') is an adjustable output or an input span, and a
+    # voltage followed by 'input' is the input: neither is the output the part is fixed at
+    t = re.sub(r'(?<![\w.])\d{1,3}(\.\d{1,3})?\s*V?\s*(~|-|–|TO)\s*\d{1,3}(\.\d{1,3})?\s*V\b', ' ', t)
+    t = re.sub(r'(?<![\w.])\d{1,3}(\.\d{1,3})?\s*V\s*(INPUT|IN\b|VIN)', ' ', t)
     m = re.search(r'(?<![\d.])(\d{1,2})\.(\d{1,2})\s*V?(?![\d])', t)          # -3.3, 3.3V, 5.0
     if m and 0.5 <= float(f"{m.group(1)}.{m.group(2)}") <= 60:
         return float(f"{m.group(1)}.{m.group(2)}"), m.group(0)
     m = re.search(r'(?<!\d)(\d)V(\d)(?!\d)', t)                               # 3V3
     if m:
         return float(f"{m.group(1)}.{m.group(2)}"), m.group(0)
-    m = re.search(r'\b(?:L|LM|MC|UA|KA|NJM|AN|VX|L)?(78|79)[LM]?(\d{2})(?!\d)', t)          # 7805, 78L05, LM7812, VX7805
+    m = re.search(r'(?<![A-Z0-9])[A-Z]{0,3}(78|79)[LM]?(\d{2})(?!\d)', t)          # 7805, 78L05, LM7812, VX7805, K7805-1000
     if m and m.group(2) not in ('00',):
         v = float(m.group(2))
         return (-v if m.group(1) == '79' else v), m.group(0)
@@ -540,6 +555,12 @@ def regulator_vout(text: str) -> tuple[float, str] | None:
         if 0.5 <= v <= 60:
             return v, m.group(0)
     return None
+
+
+def regulator_text(part: Part) -> str:
+    """The text a regulator's fixed output is read from: value, part-number fields and description, not the
+    footprint (a pitch 'P2.54mm' or a module footprint '1.5-W36-C' reads like an output voltage)."""
+    return part.text().replace(part.lib_id, ' ') if part.lib_id else part.text()
 
 
 def shunt_ohms(text: str) -> float | None:
@@ -666,7 +687,9 @@ def classify_part(part: Part) -> tuple[str, str | None, float, list]:
     if re.search(r'\bjumper\b', part.value, re.I) and part.npads <= 3:
         add('jumper', 1.0, ev('value', f"value '{part.value}'", 1.0))
     # two-terminal crystal vs oscillator: an oscillator has a supply pin
-    if (sc.get('crystal') or sc.get('oscillator')) and n_act <= 8 and any(PWR_PIN.match(f) or f in ('OUT', 'OUTPUT', 'CLK', 'VDD', 'VCC', 'EN', 'OE', 'ST', 'TRI-STATE')
+    # ('X' alone is a crystal, a connector or an oscillator: Eagle names connectors X1, so the prefix is no evidence)
+    xo_named = any(e.kind != 'refdes' for e in evs.get('crystal', []) + evs.get('oscillator', []))
+    if xo_named and n_act <= 8 and any(PWR_PIN.match(f) or f in ('OUT', 'OUTPUT', 'CLK', 'VDD', 'VCC', 'EN', 'OE', 'ST', 'TRI-STATE')
                                                                           for f in fns):
         add('oscillator', 1.5, ev('pinfunction', 'a supply or output pin (active oscillator)', 1.5))
     kind, p = softmax_pick({k: v for k, v in sc.items() if v > 0}, unknown=1.0)
@@ -834,6 +857,19 @@ def _is_power_inductor(part: Part, pr: PartRole) -> tuple[bool, float | None]:
     return pk.size not in ('0201', '0402', '0603'), None
 
 
+SW_NAME = rx(r'(^|[^A-Z])(SW|LX|PH|PHASE|SW_?NODE|SWN|SWITCH_?NODE)\d?([^A-Z]|$)')
+SW_NAME_NOT = rx(r'^SW\d+$|KEY|BTN|ROW|COL')
+SWITCHER_SUBS = ('regulator_switching', 'pmic', 'charger')
+
+
+def _sw_name(short: str) -> bool:
+    """A net name that calls the net a switch node ('SW', 'LX1', '1V25_SW', 'PHASE_A'), not a key matrix line."""
+    return SW_NAME.search(short) is not None and SW_NAME_NOT.search(short) is None
+# class-D audio amplifiers switch their outputs; codecs, DACs and class-AB headphone or speaker amps do not
+CLASS_D = rx(r'\bMAX9835\d|\bMAX9836\d|\bMAX9837\d|\bmax98357|\bTPA2\d{3}|\bTPA3\d{3}|\bPAM8\d{3}|\bTAS5\d{3}|\bTAS2\d{3}|'
+             r'\bSSM2[35]\d{2}|\bNS4168|\bNS4150|\bNS4160|\bTDA8932|\bTDA7491|\bIS31AP|\bclass.?D\b')
+
+
 def _switch_nodes(nl: Netlist, roles: Roles):
     g = set(roles.grounds)
     sw = {}
@@ -862,10 +898,17 @@ def _switch_nodes(nl: Netlist, roles: Roles):
                 and (roles.sem(alone[0]) == 'supply_out' or re.search(r'REG|LX|SW|VOUT|DCDC|SMPS|BUCK', alone[0].fn))):
             evs.append(ev('topology', f"only {alone[0].label} and the inductor on this node; far end decoupled (integrated converter output)",
                           MODERATE + 1.0))
-        if re.search(r'(^|[^A-Z])(SW|LX|PH|PHASE|SW_?NODE|SWN|SWITCH_?NODE)\d?([^A-Z]|$)', nv.short) and not re.search(r'^SW\d+$|KEY|BTN|ROW|COL', nv.short):
+        swname = _sw_name(nv.short)
+        if swname:
             evs.append(ev('name', f"name '{nv.short}'", MODERATE))
-        if PWR_NET.search(nv.short) or V.net_voltage(net):
+        if (PWR_NET.search(nv.short) or V.net_voltage(net)) and not swname:
+            # '1V25_SW' states its converter's output and is its switch node: the switch word decides
             evs.append(ev('name', f"rail-like name '{nv.short}'", -2.5))
+        if (alone and len(alone) == 1 and roles.parts[alone[0].ref].subtype in SWITCHER_SUBS and not alone[0].fn
+                and not alone[0].ptype and not caps and len(roles.caps_to.get(other, ())) >= 1 and not roles.sem(alone[0])):
+            # an unannotated pin (Eagle, Altium or KiCad 5 import) of a switching regulator alone with the inductor
+            evs.append(ev('topology', f"only unnamed pin {alone[0].label} of switching regulator {alone[0].ref} and the inductor on this node",
+                          MODERATE + 1.0))
         if net in g:
             evs.append(ev('topology', 'ground', -10))
         return sum(e.weight for e in evs), evs
@@ -920,11 +963,14 @@ def _switch_nodes(nl: Netlist, roles: Roles):
             shunt = any(o in shunt_to_g for q in lo for o in nl.parts[q].nets - {net})
             pkg = all(re.search(r'TO-?220|TO-?252|TO-?263|D2?PAK|PowerPAK|PowerDI|LFPAK|DFN.?5x6|PG-?HSOF|TDSON|SuperSO|SO-?8|SOIC-8|'
                                 r'DirectFET|PQFN|VSONP|HSOF|Q5A|DQJ|SON5x6|TOLL', nl.parts[q].lib_id, re.I) for q in hi[:1] + lo[:1])
+            # a driver drives a gate: an IC pin on one of the transistors' other nets that is not a ground or supply
+            # pin (a switching regulator's ground pin on a level shifter's source is no gate drive)
             drv = False
             for q in hi[:1] + lo[:1]:
-                for gn in nl.parts[q].nets - {net}:
+                for gn in nl.parts[q].nets - {net} - g:
                     for p in nl.pins(gn):
-                        if roles.parts[p.ref].kind == 'ic' and roles.parts[p.ref].subtype in ('gate_driver', 'motor_driver', 'regulator_switching'):
+                        if roles.parts[p.ref].kind == 'ic' and roles.parts[p.ref].subtype in ('gate_driver', 'motor_driver', 'regulator_switching') \
+                                and roles.sem(p) not in ('ground', 'supply', 'supply_out'):
                             drv = True
             power = ind or shunt or drv or pkg or (con and pkg)
             if not power:
@@ -936,6 +982,8 @@ def _switch_nodes(nl: Netlist, roles: Roles):
                 evs.append(ev('pinfunction', 'drain/source pins on the node', 0.5))
             if roles.caps_to.get(net):
                 evs.append(ev('topology', 'capacitors to ground on the node', -2.0))
+            if (PWR_NET.search(nv.short) or V.net_voltage(net)) and not _sw_name(nv.short):
+                evs.append(ev('name', f"rail-like name '{nv.short}' (a supply the transistors switch or shift from, not a midpoint)", -2.5))
             s = sum(e.weight for e in evs)
             if s >= 2.0:
                 sw[net] = dict(kind='half_bridge', transistors=qs, high=hi, low=lo, evidence=evs, score=s)
@@ -964,6 +1012,8 @@ def _switch_nodes(nl: Netlist, roles: Roles):
         pr = roles.parts[ref]
         if pr.kind != 'ic' or pr.subtype not in ('motor_driver', 'audio_amp', 'gate_driver'):
             continue
+        if pr.subtype == 'audio_amp' and not CLASS_D.search(part.text()):
+            continue          # a DAC, codec or class-AB amp: its outputs are linear, there is no commutation
         for p in part.pins:
             if not p.net or p.net in g or p.net in sw:
                 continue
@@ -1056,8 +1106,8 @@ def _unannotated_pin_sem(net) -> str | None:
         return None
     if GND_NET.search(leaf):
         return 'ground'
-    if PWR_NET.match(leaf) and not CTRL_NET.search(leaf) and not CTRL_SUFFIX.search(leaf):
-        return 'supply'
+    if PWR_NET.match(leaf) and not CTRL_NET.search(leaf) and not CTRL_SUFFIX.search(leaf) and not _sw_name(leaf.upper()):
+        return 'supply'          # ('1V25_SW' names its converter's output voltage but is the switch node)
     return None
 
 
@@ -1405,6 +1455,57 @@ INT_VOUT_TABLE = [(r'RP2040|RP2350', r'^(VREG_?VOUT|VREG_?OUT|DVDD)$', 1.1), (r'
                   (r'ATSAM[DLCE]|SAM[DLCE]\d', r'^VDDCORE$', 1.2), (r'nRF52', r'^DEC1$', 0.9), (r'ESP32', r'^VDD_?SDIO$', 3.3)]
 
 
+COIN_CELL = rx(r'(?<![A-Z0-9])(CR|BR|BC|DL|CH|ML|LIR)[-_ ]?(1[0-9]|2[0-9]|3[0-9])(\d\d)(?!\d)|\bcoin\b|\bbutton.?cell|'
+               r'Keystone_?10[0-9](?!\d)|1x(12|16|20|24)mm|CoinCell|Coin_?Cell')
+LIION_CELL = rx(r'(?<!\d)(18650|21700|14500|26650|16340)(?!\d)|\bLi-?Po\b|LiPo|Li-?ion|LIION|\bLiPol|\b1S\b')
+AA_CELL = rx(r'(?:(\d)\s*x\s*|(?<![A-Z0-9]))(AAA?)(?![A-Z0-9])(?:\s*x\s*(\d))?')
+
+
+def battery_volts(nl, roles, net):
+    """('battery', V, why, lo, hi) for a battery-named rail from what the board says about the battery: the
+    cell on the rail (or one series part away: a diode or resistor to an RTC's VBAT), a Li-ion charger on
+    the rail, or the name ('LIPO', 'VBAT_4S'); None when nothing says (the caller leaves it unknown)."""
+    s = nl.nets[net].short
+    m = re.search(r'(?<![0-9A-Z])(\d{1,2})S(\d?P)?(?![A-Z0-9])', s)
+    if m and 1 <= int(m.group(1)) <= 24 and re.search(r'BAT|CELL|PACK|LIPO|LIION', s):
+        n = int(m.group(1))
+        return ('battery', round(3.7 * n, 2), f"net name '{s}': {n} Li-ion cell(s) in series", round(3.0 * n, 2), round(4.2 * n, 2))
+    near = [p.ref for p in nl.nets[net].pins]
+    for p in nl.nets[net].pins:
+        part = nl.parts[p.ref]
+        if roles.parts[p.ref].kind in ('resistor', 'diode', 'fuse', 'jumper') and len(part.nets) == 2:
+            o = nl.other_net(part, net)
+            if o and o not in roles.grounds:
+                near += [q.ref for q in nl.nets[o].pins]
+    for ref in dict.fromkeys(near):
+        if roles.parts[ref].kind != 'battery':
+            continue
+        part = nl.parts[ref]
+        t = f"{part.value} {part.lib_id} {part.description}"
+        rv = V.rated_voltage(part.value)
+        if rv and 1.0 <= rv <= 100:
+            return ('battery', rv, f"battery {part.refdes} value '{part.value}'", round(rv * 0.8, 2), round(rv * 1.15, 2))
+        m = COIN_CELL.search(t)
+        if m:
+            chem = (m.group(1) or '').upper()
+            if chem == 'LIR':
+                return ('battery', 3.6, f"battery {part.refdes} '{m.group(0)}': rechargeable Li-ion coin cell", 3.0, 4.2)
+            return ('battery', 3.0, f"battery {part.refdes} '{m.group(0)}': lithium coin cell", 2.0, 3.3)
+        m = AA_CELL.search(part.value) or AA_CELL.search(part.lib_id)
+        if m:
+            n = int(m.group(1) or m.group(3) or 1)
+            return ('battery', 1.5 * n, f"battery {part.refdes} '{m.group(0)}': {n} alkaline cell(s)", round(0.9 * n, 2), round(1.65 * n, 2))
+        if LIION_CELL.search(t):
+            return ('battery', 3.7, f"battery {part.refdes} '{part.value}': one Li-ion cell", 3.0, 4.2)
+    for p in nl.nets[net].pins:
+        # a charger on the rail, or a PMIC's battery pin (AXP209 BAT): these charge one Li-ion cell
+        if roles.parts[p.ref].subtype == 'charger' or (roles.parts[p.ref].subtype == 'pmic' and re.match(r'^V?BAT', p.fn or '', re.I)):
+            return ('battery', 3.7, f"{roles.parts[p.ref].subtype} {nl.parts[p.ref].refdes} on the rail: one Li-ion cell assumed", 3.0, 4.2)
+    if LIION_CELL.search(s):
+        return ('battery', 3.7, f"net name '{s}': one Li-ion cell", 3.0, 4.2)
+    return None
+
+
 def _rail_voltage(nl, roles, net, vname, pd_ctrl):
     s = nl.nets[net].short
     srcs = []
@@ -1422,7 +1523,7 @@ def _rail_voltage(nl, roles, net, vname, pd_ctrl):
     for p in nl.nets[net].pins:
         pr = roles.parts.get(p.ref)
         if pr and pr.subtype in ('regulator_linear', 'regulator_switching', 'regulator_module') and (OUT_PIN.match(p.fn) or roles.sem(p) == 'supply_out'):
-            rv = regulator_vout(nl.parts[p.ref].text())
+            rv = regulator_vout(regulator_text(nl.parts[p.ref]))
             if rv:
                 srcs.append(('regulator', rv[0], f"{p.ref} part number '{rv[1]}'", abs(rv[0]) * 0.97, abs(rv[0]) * 1.03))
     if re.search(r'VBUS|USB_?5V|VUSB', s) and not vname:
@@ -1430,8 +1531,13 @@ def _rail_voltage(nl, roles, net, vname, pd_ctrl):
             srcs.append(('usb', 5.0, 'USB VBUS with a power-delivery controller on the board', 4.4, 20.0))
         else:
             srcs.append(('usb', 5.0, 'USB VBUS (5 V nominal)', 4.4, 5.5))
-    if re.search(r'VBAT|BATT|LIPO|LIION', s) and not vname:
-        srcs.append(('battery', 3.7, 'battery rail, single Li-ion cell assumed', 3.0, 4.2))
+    bat_unsettled = False
+    if re.search(r'VBAT|BATT|LIPO|LIION|LI_?ION', s) and not vname and not srcs:
+        bv = battery_volts(nl, roles, net)
+        if bv:
+            srcs.append(bv)
+        else:
+            bat_unsettled = True
     if not srcs:
         for p in nl.nets[net].pins:
             if roles.parts[p.ref].kind in ('connector', 'battery'):
@@ -1448,10 +1554,17 @@ def _rail_voltage(nl, roles, net, vname, pd_ctrl):
             ratings.append((r, cref))
     cap_hi = min(ratings) if ratings else None
     if not srcs:
+        if bat_unsettled:
+            # a battery of unknown chemistry and cell count: a coin cell, one Li-ion cell or a 12S pack all fit
+            hi = cap_hi[0] if cap_hi else 60.0
+            return belief(None, 'V', 'battery rail: no cell, charger or name states its chemistry or cell count (voltage unknown)',
+                          min(2.0, hi), hi, lineage=['battery rail, unknown pack'] +
+                          ([f"capacitor {cap_hi[1]} rated {cap_hi[0]:g} V bounds it"] if cap_hi else []))
         if cap_hi:
-            # designers derate ceramics and electrolytics by 1.25-3x: the rail most likely sits near rating/1.6
-            return belief(round(cap_hi[0] / 1.6, 2), 'V', f"estimate: lowest capacitor rating on the rail ({cap_hi[1]}, {cap_hi[0]:g} V) / 1.6",
-                          round(cap_hi[0] / 3.0, 2), cap_hi[0], lineage=['capacitor-rating estimate'])
+            # a rating bounds the rail from above and says little more: 50 V ceramics sit on 1.8 V rails and
+            # 6.3 V ones on 5 V rails, so rating/1.6 gave voltages no rail has (31.25 V, 3.94 V)
+            return belief(None, 'V', f"estimate: unknown, at most the lowest capacitor rating on the rail ({cap_hi[1]}, {cap_hi[0]:g} V)",
+                          min(0.8, cap_hi[0]), cap_hi[0], lineage=['capacitor-rating bound'])
         return None
     best = srcs[0]
     lineage = [x[2] for x in srcs]
@@ -1918,7 +2031,7 @@ def _part_roles(nl: Netlist, roles: Roles):
             if sub in ('regulator_linear', 'regulator_switching', 'regulator_module', 'charge_pump', 'pmic'):
                 pr.attrs['regulator'] = {'regulator_linear': 'linear', 'regulator_switching': 'switching', 'regulator_module': 'module',
                                          'charge_pump': 'charge_pump', 'pmic': 'pmic'}[sub]
-                rv = regulator_vout(part.text())
+                rv = regulator_vout(regulator_text(part))
                 if rv:
                     pr.attrs['vout'] = belief(rv[0], 'V', f"part number '{rv[1]}'", rv[0] * 0.97, rv[0] * 1.03)
             elif sub is None and _looks_like_regulator(part, roles):

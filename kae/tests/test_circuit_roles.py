@@ -453,3 +453,110 @@ def test_unannotated_pins_take_their_nets_meaning():
     assert _unannotated_pin_sem("3V3_EN") is None      # a control line, not a rail
     assert _unannotated_pin_sem("SHIELD") is None      # chassis is not a ground pin
     assert _unannotated_pin_sem("Net-(U1-Pad3)") is None
+
+
+# ------------------------------------------------------------------------------- brief fixes from the 213-board summary review
+def _volts(r, net):
+    return r.rails[net].attrs['volts']
+
+
+def test_battery_rail_voltage_comes_from_the_cell_charger_or_name():
+    rtc = IC('U1', 'PCF8523', 'Package_SO:SOIC-8', [('3', 'VBAT', 'VBAT', 'power_in'), ('4', 'VSS', 'GND', 'power_in'),
+                                                    ('8', 'VDD', '+3V3', 'power_in')])
+    coin = fp('B1', 'CR1220', 'Battery:BatteryHolder_Keystone_3000_1x12mm', [('1', 'VBAT', '+', 'passive'), ('2', 'GND', '-', 'passive')])
+    nl, r = roles_of([rtc, coin, C('C1', '100nF', 'VBAT', 'GND'), C('C2', '100nF', '+3V3', 'GND')])
+    vb = _volts(r, 'VBAT')
+    assert vb['value'] == 3.0 and vb['interval'] == [2.0, 3.3] and 'coin cell' in vb['relative_to']
+    # an RTC backup pin fed from the coin cell through a series diode
+    nl, r = roles_of([rtc, fp('BT1', 'CR2032', 'Battery:BatteryHolder_Keystone_103_1x20mm', [('1', 'CELL', '+', ''), ('2', 'GND', '-', '')]),
+                      D('D1', 'BAT54', 'VBAT', 'CELL'), C('C1', '100nF', 'VBAT', 'GND'), C('C2', '100nF', '+3V3', 'GND')])
+    assert _volts(r, 'VBAT')['value'] == 3.0
+    # a rechargeable LIR coin cell
+    nl, r = roles_of([rtc, fp('B1', 'LIR2032', 'Battery:BatteryHolder_Keystone_103_1x20mm', [('1', 'VBAT', '+', ''), ('2', 'GND', '-', '')]),
+                      C('C1', '100nF', 'VBAT', 'GND'), C('C2', '100nF', '+3V3', 'GND')])
+    assert _volts(r, 'VBAT')['value'] == 3.6
+    # a Li-ion charger on the rail settles one cell
+    chg = IC('U2', 'TP4056', 'Package_SO:SOIC-8', [('5', 'BAT', 'VBAT', 'power_out'), ('4', 'VCC', 'VBUS', 'power_in'), ('3', 'GND', 'GND', 'power_in')])
+    nl, r = roles_of([rtc, chg, C('C1', '10uF', 'VBAT', 'GND'), C('C2', '100nF', '+3V3', 'GND'), C('C3', '10uF', 'VBUS', 'GND')])
+    assert _volts(r, 'VBAT')['value'] == 3.7
+    pmic = IC('U2', 'AXP209', 'Package_DFN_QFN:QFN-48', [('38', 'BAT', 'VBAT', 'power_in'), ('4', 'ACIN', 'VBUS', 'power_in'),
+                                                        ('49', 'GND', 'GND', 'power_in')])
+    nl, r = roles_of([rtc, pmic, C('C1', '10uF', 'VBAT', 'GND'), C('C2', '100nF', '+3V3', 'GND'), C('C3', '10uF', 'VBUS', 'GND')])
+    assert _volts(r, 'VBAT')['value'] == 3.7
+    # a cell count in the name
+    esc = IC('U3', 'DRV8301', 'Package_QFP:HTQFP-56', [('1', 'PVDD', 'VBAT_4S', 'power_in'), ('2', 'GND', 'GND', 'power_in')])
+    nl, r = roles_of([esc, C('C1', '10uF', 'VBAT_4S', 'GND'), C('C2', '10uF', 'VBAT_4S', 'GND')])
+    assert _volts(r, 'VBAT_4S')['value'] == 14.8
+    # nothing says what the pack is: unknown, with a wide interval bounded by the capacitor rating
+    esc = IC('U3', 'DRV8301', 'Package_QFP:HTQFP-56', [('1', 'PVDD', 'VBAT', 'power_in'), ('2', 'GND', 'GND', 'power_in')])
+    nl, r = roles_of([esc, C('C1', '10uF 63V', 'VBAT', 'GND'), C('C2', '10uF 63V', 'VBAT', 'GND')])
+    vb = _volts(r, 'VBAT')
+    assert vb['value'] is None and vb['interval'] == [2.0, 63.0] and 'unknown' in vb['relative_to']
+
+
+def test_capacitor_rating_bounds_a_rail_but_does_not_state_its_voltage():
+    ic = IC('U1', 'ATTINY85-20SU', 'Package_SO:SOIC-8', [('8', 'VCC', 'VDDX', 'power_in'), ('4', 'GND', 'GND', 'power_in')])
+    nl, r = roles_of([ic, C('C1', '100nF 50V', 'VDDX', 'GND'), C('C2', '1uF 50V', 'VDDX', 'GND')])
+    vb = _volts(r, 'VDDX')
+    assert vb['value'] is None and vb['interval'][1] == 50.0 and vb['relative_to'].startswith('estimate')
+
+
+def test_net_names_that_state_a_voltage_beat_the_capacitor_bound():
+    ic = IC('U1', 'ATTINY85-20SU', 'Package_SO:SOIC-8', [('8', 'VCC', 'Net3V3_1', 'power_in'), ('4', 'GND', 'GND', 'power_in'),
+                                                          ('5', 'VDD', '+12', 'power_in')])
+    nl, r = roles_of([ic, C('C1', '100nF 6.3V', 'Net3V3_1', 'GND'), C('C2', '1uF 6.3V', 'Net3V3_1', 'GND'),
+                      C('C3', '1uF 25V', '+12', 'GND'), C('C4', '1uF 25V', '+12', 'GND')])
+    assert _volts(r, 'Net3V3_1')['value'] == 3.3 and _volts(r, '+12')['value'] == 12.0
+
+
+def test_regulator_vout_ignores_ranges_inputs_and_footprints():
+    from kae.circuit.netlist import Netlist as NL
+    from kae.circuit.roles import regulator_text
+    assert regulator_vout('TPSM5D1806RDBR Non-Isolated PoL Module DC DC Converter 1 Output 0.5 ~ 5.5V 12A 4.5V - 15V Input') is None
+    assert regulator_vout('RS-PRO_K7805M-1000R3')[0] == 5.0
+    assert regulator_vout('LM7812CT')[0] == 12.0 and regulator_vout('MC7905')[0] == -5.0
+    nl = NL.from_board(board([fp('U1', 'MCP1700', 'Package_TO_SOT_THT:TO-92_Inline_P2.54mm', [('1', 'GND', 'GND', '')])]))
+    assert regulator_vout(regulator_text(nl.parts['U1'])) is None        # the pitch is no output voltage
+
+
+def test_eagle_x_connectors_are_not_oscillators():
+    jack = kind('X5', '2.1mm', 'DCJACK_2MM_PTH', [('GND', 'GND', 'GND', 'power_in'), ('GNDBREAK', 'GND', 'GNDBREAK', 'power_in'),
+                                                  ('PWR', 'PWRIN', 'PWR', 'power_in')])
+    assert jack[0] == 'connector'
+    swd = kind('X2', '2x5 0.05" SWD', '2X05_1.27MM_BOX_POSTS', [(str(i), f'N{i}', '', '') for i in range(1, 11)])
+    assert swd[0] == 'connector'
+    # a real oscillator with an X prefix stays one
+    assert kind('X1', 'ASE-24MHz', 'Oscillator:Oscillator_SMD_Abracon_ASE-4Pin_3.2x2.5mm',
+                [('1', 'EN', 'EN', 'input'), ('2', 'GND', 'GND', 'power_in'), ('3', 'CLK', 'OUT', 'output'), ('4', 'V', 'VDD', 'power_in')])[0] == 'oscillator'
+
+
+def test_module_footprint_makes_a_regulator_module():
+    k, sub, _ = kind('U2', 'LM7805', 'CONV_OKI-78SR-5:1.5-W36-C', [('1', '+12V', 'VI', 'power_in'), ('2', 'GND', 'GND', 'power_in'),
+                                                                   ('3', '+5V', 'VO', 'power_out')])
+    assert (k, sub) == ('ic', 'regulator_module')
+
+
+def test_level_shifter_fets_on_a_rail_are_not_a_half_bridge():
+    """Unannotated BSS138 level shifters whose gates sit on a rail, next to a switching regulator's ground pin
+    (an imported board: no pin names, no footprint)."""
+    def q(ref, a, b, c):
+        return fp(ref, 'BSS138LT3G', '', [('1', a, '', ''), ('2', b, '', ''), ('3', c, '', '')])
+    reg = IC('U9', 'ETA3410D2I-T', '', [('1', '', 'GND', ''), ('7', '', 'VIN', ''), ('2', '', 'SWX', '')])
+    parts = [q('Q18', 'VDD_3V3_HDMI', 'DDC_SCL', 'DDC_SCL_CON'), q('Q21', 'VDD_3V3_HDMI', 'GND', 'N1'), reg,
+             C('C1', '100nF', 'VDD_3V3_HDMI', 'GND'), C('C2', '100nF', 'VDD_3V3_HDMI', 'GND'), C('C3', '10uF', 'VIN', 'GND')]
+    nl, r = roles_of(parts)
+    assert 'VDD_3V3_HDMI' not in r.switch_nodes
+
+
+def test_dac_and_class_ab_headphone_amp_have_no_bridge_outputs_but_class_d_does():
+    dac = IC('U1', 'PCM5102', 'Package_SO:TSSOP-20_4.4x6.5mm_P0.65mm', [
+        ('6', 'OUTL', 'OUT_L', 'output'), ('7', 'OUTR', 'OUT_R', 'output'), ('8', 'AVDD', 'AVDD', 'power_in'), ('9', 'AGND', 'GND', 'power_in'),
+        ('1', 'CPVDD', 'AVDD', 'passive'), ('2', 'CAPP', 'CAPP', 'passive'), ('4', 'CAPM', 'CAPM', 'passive')])
+    hp = IC('U4', 'TPA6132A2RTE', 'Package_DFN_QFN:WQFN-16-1EP_3x3mm_P0.5mm', [
+        ('5', 'OUTR', 'HP_R', 'output'), ('16', 'OUTL', 'HP_L', 'output'), ('14', 'VDD', 'AVDD', 'power_in'), ('10', 'PGND', 'GND', 'power_in')])
+    amp = IC('U5', 'MAX98357A', 'Package_DFN_QFN:QFN-16', [
+        ('9', 'OUTP', 'SPK_P', 'output'), ('10', 'OUTN', 'SPK_N', 'output'), ('7', 'VDD', 'VDD5', 'power_in'), ('3', 'GND', 'GND', 'power_in')])
+    parts = [dac, hp, amp, C('C1', '10uF', 'AVDD', 'GND'), C('C2', '1uF', 'CAPP', 'CAPM'), C('C3', '10uF', 'VDD5', 'GND')]
+    nl, r = roles_of(parts)
+    assert not {'OUT_L', 'OUT_R', 'HP_L', 'HP_R'} & set(r.switch_nodes)
+    assert r.switch_nodes['SPK_P']['kind'] == 'bridge_output'

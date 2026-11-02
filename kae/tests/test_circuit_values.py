@@ -40,6 +40,9 @@ def test_frequency(text, hz):
 @pytest.mark.parametrize('name,volts', [
     ('+3V3', 3.3), ('3.3V', 3.3), ('/Power/+1V8', 1.8), ('VCC_12V', 12.0), ('12V0', 12.0), ('P3V3', 3.3), ('-12V', -12.0),
     ('+5VA', 5.0), ('VDD3V3', 3.3), ('12P0V', 12.0), ('VCC', None), ('VBUS', None), ('GPIO2V', None), ('SDA', None),
+    # bare signed numbers (Altium/Eagle imports) and Altium port-named nets
+    ('+12', 12.0), ('-5', -5.0), ('+3.3', 3.3), ('+12_ISO', 12.0), ('Net3V3_1', 3.3), ('Net4V5_1', 4.5), ('+1', None),
+    ('NetC136_1', None), ('+', None),
 ])
 def test_net_voltage(name, volts):
     got = V.net_voltage(name)
