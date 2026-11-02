@@ -343,3 +343,24 @@ def test_footprint_edges_close_an_open_outline(tmp_path):
     assert len(b.outline) == 1
     assert abs(b.outline[0].area - (40 * 30 - 10 * 5 - 4)) < 1e-6
     assert b.footprints[0].on_board
+
+
+def test_zero_width_shapes_follow_pcbnew():
+    """pcbnew 10 fills a circle or rect drawn with width 0 and no fill token (the legacy way to
+    fill them: a custom pad's 0-width gr_circle lost 0.28 mm2 of copper here, area 0.6032 vs
+    pcbnew's 0.8717 mm2), and gives any other unfilled 0-width shape a 0.1 mm stroke (checked
+    with pcbnew.LoadBoard: IsSolidFill True / width 0.1)."""
+    from kae.board import sexpr
+
+    def area(s):
+        g = sexpr.parse(s)
+        o, r = kicad_file.shape_pieces(g)
+        return sum(p.area for p in kicad_file._stroked(g, o, r))
+    assert abs(area('(gr_circle (center -0.5 0) (end -0.2 0) (width 0))') - math.pi * 0.09) < 2e-3
+    assert abs(area('(fp_circle (center 0 0) (end 0.5 0) (stroke (width 0) (type solid)) (layer "F.Cu"))')
+               - math.pi * 0.25) < 3e-3
+    assert abs(area('(gr_rect (start 25 25) (end 27 27) (stroke (width 0) (type solid)) (layer "F.Cu"))') - 4.0) < 1e-9
+    ring = area('(fp_circle (center 0 3) (end 0.5 3) (stroke (width 0) (type solid)) (fill none) (layer "F.Cu"))')
+    assert abs(ring - math.pi * (0.55 ** 2 - 0.45 ** 2)) < 3e-3
+    assert abs(area('(gr_line (start 1 30) (end 5 30) (stroke (width 0) (type solid)) (layer "F.Cu"))')
+               - (0.4 + math.pi * 0.05 ** 2)) < 1e-3

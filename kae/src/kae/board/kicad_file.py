@@ -885,7 +885,13 @@ def _stroked(g, opens, rings):
     st = first(g, "stroke")
     w = _f(value(st, "width") if st is not None else value(g, "width"), 0.0)
     fill = value(g, "fill")
-    filled = fill in ("solid", "yes") or (fill is None and g[0] in ("fp_poly", "gr_poly"))
+    kind = g[0].split("_", 1)[-1]
+    # pcbnew 10 (parsePCB_SHAPE): a circle or rect with no fill token and a 0 width is filled
+    # (the legacy way to fill them; a custom pad's 0-width gr_circle lost 0.28 mm2 of copper
+    # here), and any other shape left unfilled at width <= 0 gets the 0.1 mm default stroke
+    filled = fill in ("solid", "yes") or (fill is None and (kind == "poly" or (kind in ("circle", "rect") and w <= 0)))
+    if w <= 0 and not filled:
+        w = 0.1
     out = []
     for pl in opens:
         if len(pl) >= 2 and w > 0:
