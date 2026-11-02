@@ -8,6 +8,8 @@ every copper layer above ambient, for heat injected anywhere.
     between      layer l and l + 1 through their dielectric gap: k_fr4 p^2 / gap per cell, plus every
                  via's plated barrel, k_cu pi d t_plating / gap
     to the air   both outer layers: h p^2 per cell (natural convection and radiation)
+    to a sink    optional (sinks): extra conductance per cell to a body at its own temperature (a cold
+                 plate or enclosure under the board, a fan's stronger cooling over a region)
 
 Neighbouring cells join through their half-cells in series. The system is symmetric positive
 definite; one sparse factorization serves every heat pattern.
@@ -25,10 +27,13 @@ T_PLATING = 25e-6       # m, via barrel plating
 
 
 class Thermal:
-    """The conduction network of a mesh. gaps: dielectric thickness (mm) between consecutive layers."""
+    """The conduction network of a mesh. gaps: dielectric thickness (mm) between consecutive layers.
+    sinks: [(layer index, G)] with G an (ny, nx) array of W/K per cell from that layer's cells to a sink
+    (solve() takes each sink's temperature rise above ambient; 0 = at ambient)."""
 
-    def __init__(self, m, gaps, h=H_AIR, k_fr4=K_FR4, k_cu=K_CU):
+    def __init__(self, m, gaps, h=H_AIR, k_fr4=K_FR4, k_cu=K_CU, sinks=()):
         self.m = m
+        self.sinks = [(int(l), np.asarray(G, float)) for l, G in sinks]
         L, ny, nx = m.lab.shape
         self.shape = (L, ny, nx)
         p = m.pitch * 1e-3
@@ -65,12 +70,17 @@ class Thermal:
         diag = np.zeros(n)
         diag[idx[0].ravel()] += h * p * p
         diag[idx[-1].ravel()] += h * p * p
+        for l, G in self.sinks:
+            diag[idx[l].ravel()] += G.ravel()
         A = sp.csc_matrix((vals, (rows, cols)), shape=(n, n)) + sp.diags(diag)
         self.lu = sla.splu(A.tocsc(), permc_spec="MMD_AT_PLUS_A", options=dict(SymmetricMode=True))
 
-    def solve(self, Q):
+    def solve(self, Q, t_sinks=None):
         """Temperature rise (K) of every cell, (L, ny, nx), for heat Q (W) per cell, same shape; Q may
-        carry a trailing axis of patterns."""
-        Q = np.asarray(Q, float)
+        carry a trailing axis of patterns. t_sinks: each sink's temperature rise above ambient (K)."""
+        Q = np.array(Q, float)
+        for (l, G), t in zip(self.sinks, t_sinks or ()):
+            if t:
+                Q[l] += (G * t).reshape(G.shape + (1,) * (Q.ndim - 3))
         flat = Q.reshape(int(np.prod(self.shape)), -1)
         return self.lu.solve(flat).reshape(Q.shape)

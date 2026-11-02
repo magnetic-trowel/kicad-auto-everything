@@ -4,7 +4,7 @@
 
   OPERATING  kae.excite.evaluate --intent: what the board does electrically. cells.<cell id>.{V_V,
              f_sw_Hz, I_A, t_i_s}, parts.<ref>.{I_A, I_sustained_A} (loads and output connectors; the sustained draw sets temperatures), nets.<rail>.source,
-             requirements.thermal.T_amb_C. Each replaces one of the evaluator's priors.
+             requirements.thermal.{T_amb_C, airflow_h_W_m2K, heatsinks}. Each replaces one of the evaluator's priors.
   INTENT     kae.intent: what matters. Standing priorities on every board (copper loss = power loss and
              efficiency; ripple), the spec's limits (rail tolerance -> drop.rail, rail and IC ripple ->
              supply.peak, sensitive pins -> pickup.peak, switch ratings -> overshoot.peak hard, track heat),
@@ -25,7 +25,8 @@ STANDING = "standing benchmark priority: power loss, efficiency (copper, parts, 
 BASES = ("datasheet", "typical", "guess")
 # plausible ranges per field: (lo, hi) in SI units
 BOUNDS = {"V": (0.3, 1000.0), "pct": (0.05, 50.0), "mV": (0.01, 5000.0), "A": (1e-9, 200.0), "Hz": (1e3, 1e8),
-          "s": (1e-10, 1e-5), "C": (-55.0, 150.0), "K": (1.0, 200.0), "m": (0.01, 50.0)}
+          "s": (1e-10, 1e-5), "C": (-55.0, 150.0), "K": (1.0, 200.0), "m": (0.01, 50.0), "K/W": (0.01, 500.0),
+          "W/m2K": (5.0, 20000.0), "mm": (0.0, 2000.0)}
 RATE = {"guess": 1.0, "typical": 1.0, "datasheet": 1.0}   # one rate scale: the basis is recorded, not weighted
 
 
@@ -359,11 +360,78 @@ def compile_spec(spec, summary):
             typ = (rng[0] * rng[1]) ** 0.5
             op["parts"].setdefault(p["ref"], {})["theta_jb_C_W"] = [round(rng[0], 3), round(rng[1], 3)] if rng[0] != rng[1] else round(typ, 3)
             opwhy[f"parts.{p['ref']}.theta_jb_C_W"] = f"junction to board: {rule}"
+    # a module's own board cools it (kae.excite.heat): its outline from its datasheet
+    for p in summary.get("parts") or []:
+        f = datasheet(p)
+        bw, bl = verified(f, "body_w_mm"), verified(f, "body_l_mm")
+        if bw and bl and (bw[0] or bw[1]) and (bl[0] or bl[1]):
+            a = (bw[0] or bw[1]) * (bl[0] or bl[1])
+            if 1 <= a <= 1e5:
+                op["parts"].setdefault(p["ref"], {})["body_mm2"] = round(a, 1)
+                opwhy[f"parts.{p['ref']}.body_mm2"] = f"body outline from {bw[2]}"
     th = spec.get("thermal") or {}
     ta = th.get("T_amb_C")
     if isinstance(ta, list) and len(ta) == 2 and all(isinstance(x, (int, float)) for x in ta) and -55 <= min(ta) <= max(ta) <= 150:
         op["requirements"]["thermal"] = {"T_amb_C": [float(min(ta)), float(max(ta))]}
         opwhy["requirements.thermal.T_amb_C"] = why(th, "ambient")
+    # cooling beyond still air: forced air, and heat sinks on parts or under the board (kae.excite.heat)
+    air = S.num(th, "airflow_h_W_m2K", "W/m2K", "thermal")
+    if air:
+        op["requirements"].setdefault("thermal", {})["airflow_h_W_m2K"] = air
+        opwhy["requirements.thermal.airflow_h_W_m2K"] = why(th, "forced air")
+    sinks = []
+    for i, hs in enumerate(th.get("heatsinks") or []):
+        w = f"thermal.heatsinks[{i}]"
+        if not isinstance(hs, dict):
+            continue
+        if hs.get("part"):
+            r = S.ref(hs.get("part"), w)
+            if not r:
+                continue
+            sa, cite = S.num(hs, "theta_sa_C_W", "K/W", w), None
+            if sa is None and hs.get("sink_part"):             # the sink's own datasheet, from the library
+                v = verified(datasheet({"value": hs["sink_part"]}), "theta_sa_C_W")
+                sa, cite = (v[0] if v[0] is not None else v[1], v[2]) if v else (None, None)
+            if sa is None:
+                S.rejected.append(f"{w}: heat sink on {r} without theta_sa_C_W (nor a library datasheet for its sink_part)")
+                continue
+            e = {"part": r, "theta_sa_C_W": sa}
+            cs = S.num(hs, "theta_cs_C_W", "K/W", w)
+            if cs:
+                e["theta_cs_C_W"] = cs
+            jc = S.num(hs, "theta_jc_C_W", "K/W", w)
+            v = None if jc else verified(datasheet(S.part.get(r) or {}), "theta_jc_C_W")
+            if jc or v:
+                e["theta_jc_C_W"] = jc or (v[0] if v[0] is not None else v[1])
+            e["why"] = "; ".join(x for x in (why(hs, "heat sink"), cite and f"theta_SA from {cite}",
+                                               v and f"theta_JC from {v[2]}") if x)
+        else:
+            side = str(hs.get("side") or "").lower()
+            if side not in ("top", "bottom"):
+                S.rejected.append(f"{w}: side {hs.get('side')!r} is not top or bottom")
+                continue
+            reg = hs.get("region", "board")
+            if not (reg == "board" or (isinstance(reg, list) and len(reg) == 4 and
+                                       all(S.num({"x": x}, "x", "mm", w) is not None for x in reg))):
+                S.rejected.append(f"{w}: region {reg!r} is neither 'board' nor [x0, y0, x1, y1] in mm")
+                continue
+            e = {"side": side, "region": reg}
+            t, h = S.num(hs, "theta_C_W", "K/W", w), S.num(hs, "h_W_m2K", "W/m2K", w)
+            if t:
+                e["theta_C_W"] = t
+            elif h:
+                e["h_W_m2K"] = h
+            else:
+                S.rejected.append(f"{w}: a region heat sink needs theta_C_W or h_W_m2K")
+                continue
+            tc = S.num(hs, "T_C", "C", w)
+            if tc is not None:
+                e["T_C"] = tc
+            e["why"] = why(hs, "heat sink")
+        sinks.append(e)
+    if sinks:
+        op["requirements"].setdefault("thermal", {})["heatsinks"] = sinks
+        opwhy["requirements.thermal.heatsinks"] = f"{len(sinks)} heat sink(s) from the spec"
     intent = {"schema": "kae.intent/1", "generation": 1, "currency": "mW_eq", "defaults": "neutral/1",
               "environment": {"enclosure": {"kind": th.get("enclosure") or "unknown", "why": why(th, "enclosure")},
                               "cables": cables if radios else []},

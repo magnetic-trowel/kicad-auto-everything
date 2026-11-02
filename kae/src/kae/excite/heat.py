@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .beliefs import Param, corners
+from .beliefs import Param, corners, intent_value
 
 T_MAX = {"ic": 125.0, "module": 85.0, "diode": 125.0, "transistor": 125.0, "inductor": 125.0,
          "capacitor": 105.0, "resistor": 125.0, "ferrite": 125.0, "led": 85.0, "connector": 85.0}
@@ -33,7 +33,7 @@ PASS_ON = ("charger", "regulator_linear", "regulator_switching", "regulator_modu
            "charge_pump")
 
 
-MODULE_AREA_MM2 = 1500.0   # a part whose pads span this much (a compute module on its carrier) has its own board
+MODULE_AREA_MM2 = 1500.0   # a part this large (its body, else its footprint) has a board of its own that cools it
 
 
 def rail_demand(dcp, rail, load_amps, depth=0):
@@ -55,6 +55,29 @@ def rail_demand(dcp, rail, load_amps, depth=0):
     return tot
 
 
+THETA_CS = (0.5, 0.2, 1.0)  # K/W, case to sink through grease or a thermal pad (class range)
+THETA_JC = (5.0, 1.0, 20.0)  # K/W, junction to case without a datasheet value (power packages to small SMD)
+
+
+def heatsinks(intent):
+    """The operating facts' heat sinks (requirements.thermal.heatsinks): on a part ({part, theta_sa_C_W,
+    theta_cs_C_W?, theta_jc_C_W?}) or under a region of one face ({side: top|bottom, region: "board" | [x0, y0,
+    x1, y1] mm, theta_C_W (the whole interface to the sink) or h_W_m2K (a stronger surface cooling, e.g. a fan),
+    T_C?: the sink's temperature, default ambient})."""
+    th = (((intent or {}).get("requirements") or {}).get("thermal") or {})
+    return [h for h in (th.get("heatsinks") or []) if isinstance(h, dict)]
+
+
+def _rng(v):
+    """(typ, lo, hi) of a number or [lo, hi] (typ: geometric mean), or None."""
+    if isinstance(v, (int, float)) and v > 0:
+        return float(v), float(v), float(v)
+    if isinstance(v, list) and len(v) == 2 and all(isinstance(x, (int, float)) and x > 0 for x in v):
+        lo, hi = sorted(map(float, v))
+        return (lo * hi) ** 0.5, lo, hi
+    return None
+
+
 def _theta_jb(npins):
     """(typ, lo, hi) K/W junction to board by package size."""
     return (60.0, 30.0, 120.0) if npins <= 8 else (20.0, 10.0, 40.0)
@@ -68,8 +91,27 @@ def params(bd, dcp, P, intent=None):
     iv = intent_value(intent, "requirements", "thermal", "T_amb_C")
     out.append(Param("heat", "T_amb_C", *(iv or (25.0, 25.0, 50.0)), "C", "intent" if iv else "prior",
                      "ambient air temperature" + ("" if iv else " (unknown: 25-50 C)")))
-    out.append(Param("heat", "h_W_m2K", 12.0, 8.0, 20.0, "W/m^2/K", "prior",
+    air = _rng((((intent or {}).get("requirements") or {}).get("thermal") or {}).get("airflow_h_W_m2K"))
+    out.append(Param("heat", "h_W_m2K", *air, "W/m^2/K", "intent", "forced air over the board (the intent file)") if air else
+               Param("heat", "h_W_m2K", 12.0, 8.0, 20.0, "W/m^2/K", "prior",
                      "still-air cooling of the board's faces, convection plus radiation"))
+    for k, hs in enumerate(heatsinks(intent)):
+        why = hs.get("why") or "the intent file"
+        if hs.get("part"):
+            sa = _rng(hs.get("theta_sa_C_W"))
+            if sa is None:
+                continue
+            cs = _rng(hs.get("theta_cs_C_W")) or THETA_CS
+            jc = _rng(hs.get("theta_jc_C_W")) or intent_value(intent, "parts", hs["part"], "theta_jc_C_W") or THETA_JC
+            out.append(Param(f"heat:{hs['part']}", "R_sink", sa[0] + cs[0] + jc[0], sa[1] + cs[1] + jc[1], sa[2] + cs[2] + jc[2],
+                             "K/W", "intent", f"junction to air through its heat sink: theta_JC + theta_CS + theta_SA ({why})"))
+        elif _rng(hs.get("theta_C_W")):
+            t, lo, hi = _rng(hs["theta_C_W"])
+            out.append(Param(f"heat:sink{k}", "G_W_K", 1 / t, 1 / hi, 1 / lo, "W/K", "intent",
+                             f"{hs.get('side', 'bottom')} face to its heat sink ({why})"))
+        elif _rng(hs.get("h_W_m2K")):
+            out.append(Param(f"heat:sink{k}", "h_W_m2K", *_rng(hs["h_W_m2K"]), "W/m^2/K", "intent",
+                             f"extra surface cooling over a region of the {hs.get('side', 'top')} face ({why})"))
     hot = {ld["ref"] for ld in dcp.loads if bd.part_kind.get(ld["ref"], ("",))[0] != "connector"}
     for f in dcp.feeds.values():
         hot |= {f["cell"]["ctrl"], f["cell"]["rect"]} if f["kind"] == "cell" else ({f["ref"]} if f["kind"] in ("linear", "switching") else set())
@@ -247,14 +289,63 @@ def evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, tot, 
     for t, cells in m.terminals.items():
         ref = t.rsplit(".", 1)[0]
         pads_of.setdefault(ref, []).extend(cells)
+    # heat sinks under a region of a face: their cells, on that face's layer
+    L_, ny, nx = m.lab.shape
+    names = [getattr(l, "name", "") for l in m.layers]
+    regions = []
+    for k, hs in enumerate(heatsinks(intent)):
+        if hs.get("part"):
+            continue
+        side = (hs.get("side") or "bottom").lower()
+        li = names.index("B.Cu" if side.startswith("b") else "F.Cu") if ("B.Cu" if side.startswith("b") else "F.Cu") in names \
+            else (L_ - 1 if side.startswith("b") else 0)
+        mask = np.zeros((ny, nx), bool)
+        r = hs.get("region", "board")
+        if isinstance(r, list) and len(r) == 4:
+            j0, i0 = m.cell(min(r[0], r[2]), min(r[1], r[3]))
+            j1, i1 = m.cell(max(r[0], r[2]), max(r[1], r[3]))
+            mask[max(j0, 0):max(j1 + 1, 0), max(i0, 0):max(i1 + 1, 0)] = True
+        else:
+            mask[:] = True
+        if mask.any() and ((f"heat:sink{k}", "G_W_K") in hc[0] or (f"heat:sink{k}", "h_W_m2K") in hc[0]):
+            regions.append((k, li, mask, _rng(hs.get("T_C"))))
+    if regions:
+        notes.append("thermal: heat sinks under " + ", ".join(f"{int(mk.sum())} cells of {names[li] or li}" for _, li, mk, _ in regions))
+    part_sinks = {hs["part"] for hs in heatsinks(intent) if hs.get("part")}
+    # each part's own area (mm2): its datasheet's body (the intent's parts.<ref>.body_mm2), else the largest of
+    # its courtyard, body outline and pad span
+    from shapely.ops import unary_union
+    areas = {}
+    for fp in b.footprints:
+        iv = intent_value(intent, "parts", fp.ref, "body_mm2")
+        if iv:
+            areas[fp.ref] = iv[0]
+            continue
+        a = max((unary_union(g).area if g else 0.0) for g in (fp.courtyard, fp.body))
+        cells = pads_of.get(fp.ref) or []
+        if cells:
+            js, is_ = [q[1] for q in cells], [q[2] for q in cells]
+            a = max(a, (max(js) - min(js) + 1) * (max(is_) - min(is_) + 1) * m.pitch ** 2)
+        areas[fp.ref] = a
     U, Tj, Lp = {}, {}, {}
     th_cache = {}
     for c in range(ncp):
         val = hc[c]
         h = round(val[("heat", "h_W_m2K")], 3)
-        if h not in th_cache:
-            th_cache = {h: TH.Thermal(m, gaps, h=h)}             # one factor at a time (memory)
-        th = th_cache[h]
+        sinks, t_sinks, key = [], [], [h]
+        for k, li, mask, tc in regions:
+            if (f"heat:sink{k}", "G_W_K") in val:
+                G = val[(f"heat:sink{k}", "G_W_K")]
+                sinks.append((li, mask * (G / mask.sum())))
+            else:
+                G = val[(f"heat:sink{k}", "h_W_m2K")]
+                sinks.append((li, mask * (G * (m.pitch * 1e-3) ** 2)))
+            t_sinks.append((tc[0] - val[("heat", "T_amb_C")]) if tc else 0.0)
+            key.append(round(G, 6))
+        key = tuple(key)
+        if key not in th_cache:
+            th_cache = {key: TH.Thermal(m, gaps, h=h, sinks=sinks)}   # one factor at a time (memory)
+        th = th_cache[key]
         V, info = res[c]
         Q = copper_heat(info["net"], info["x"], m.lab.shape)
         lc = {}
@@ -266,26 +357,34 @@ def evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, tot, 
             if cells:
                 for (l, j, i) in cells:
                     Q[l, j, i] += w / len(cells)
-        T = th.solve(Q)
-        # a compute module or a part with a board of its own spreads its heat over that board, which cools to
-        # the air from both faces (h x 2 x its area) beside the path into the carrier: the carrier takes the
-        # share G_board / (G_board + G_module) of it (G_board from the solve: its heat over the rise at its pads)
+        T = th.solve(Q, t_sinks)
+        # A part with a second way out for its heat besides its pads: a heat sink on it (junction to air through
+        # theta_JC + theta_CS + theta_SA), or a module's own board, cooling from both faces (h x 2 x its area).
+        # That path (R) runs beside the one into the carrier (theta_JB, then the carrier's rise per watt under
+        # its pads), which therefore takes R / (R + theta_JB + R_board) of the heat.
         mods = {}
         for ref, w in heat.items():
             cells = pads_of.get(ref)
             if not cells or w <= 0:
                 continue
-            js, is_ = [q[1] for q in cells], [q[2] for q in cells]
-            area = (max(js) - min(js) + 1) * (max(is_) - min(is_) + 1) * m.pitch ** 2
+            rs = []
+            if ref in part_sinks and (f"heat:{ref}", "R_sink") in val:
+                rs.append(val[(f"heat:{ref}", "R_sink")])
+            area = areas.get(ref, 0.0)
             if bd.part_kind.get(ref, ("",))[0] == "module" or area >= MODULE_AREA_MM2:
-                g_m = h * 2 * area * 1e-6
-                rise = max(float(np.mean([T[l, j, i] for (l, j, i) in cells])), 1e-3)
-                f = (w / rise) / (w / rise + g_m)
-                mods[ref] = f
-                for (l, j, i) in cells:
-                    Q[l, j, i] -= (1 - f) * w / len(cells)
+                rs.append(1.0 / max(h * 2 * area * 1e-6, 1e-9))
+            if not rs:
+                continue
+            r = 1.0 / sum(1.0 / x for x in rs)
+            rise = max(float(np.mean([T[l, j, i] for (l, j, i) in cells])), 1e-3)
+            npins = len({t for t in m.terminals if t.rsplit(".", 1)[0] == ref})
+            tjb = val.get((f"heat:{ref}", "theta_jb"), _theta_jb(npins)[0])
+            f = r / (r + tjb + rise / w)
+            mods[ref] = f
+            for (l, j, i) in cells:
+                Q[l, j, i] -= (1 - f) * w / len(cells)
         if mods:
-            T = th.solve(Q)
+            T = th.solve(Q, t_sinks)
         Tamb = val[("heat", "T_amb_C")]
         for ref, w in heat.items():
             cells = pads_of.get(ref)
@@ -295,7 +394,8 @@ def evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, tot, 
             Tmax = T_MAX.get(kind, 85.0)
             npins = len({t for t in m.terminals if t.rsplit(".", 1)[0] == ref})
             tj = val.get((f"heat:{ref}", "theta_jb"), _theta_jb(npins)[0])
-            dT = float(np.mean([T[l, j, i] for (l, j, i) in cells])) + tj * w
+            # a sinked part's junction sits theta_JB above its pads for the share that goes into the board
+            dT = float(np.mean([T[l, j, i] for (l, j, i) in cells])) + tj * w * mods.get(ref, 1.0)
             U.setdefault(ref, [0.0] * ncp)[c] = dT / max(Tmax - Tamb, 1.0)
             Tj.setdefault(ref, [0.0] * ncp)[c] = Tamb + dT
     rows = []

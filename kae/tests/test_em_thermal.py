@@ -41,3 +41,22 @@ def test_uniform_heat_on_a_two_layer_board_leaves_through_both_faces():
     c = T[:, 25, 25]
     assert c.mean() == pytest.approx(q / (2 * 10.0), rel=0.05)
     assert c[0] > c[1]                           # the heated face is warmer, by q/2 through the laminate
+
+
+def test_a_cold_plate_under_the_board_takes_the_heat_and_sets_its_temperature():
+    """A plate bolted under a heated board with conductance G per cell: far stronger than the air, the board
+    settles at the plate's temperature plus q / G per cell (the heat that crosses the interface)."""
+    m = Mesh.over(0, 0, 50, 50, 2.0, [Layer("T", 1.6, 0.035, 1), Layer("B", 0, 0.035, 1)])
+    m.rect(0, "A", 0, 0, 50, 50)
+    m.rect(1, "B", 0, 0, 50, 50)
+    ny, nx = m.lab.shape[1:]
+    g = 0.05                                     # W/K per 2 mm cell: 12500 W/m^2/K, a thermal pad on aluminium
+    q = 1e-3                                     # W into every top cell
+    Q = np.zeros(m.lab.shape)
+    Q[0] = q
+    free = TH.Thermal(m, [1.6], h=10.0).solve(Q)
+    th = TH.Thermal(m, [1.6], h=10.0, sinks=[(1, np.full((ny, nx), g))])
+    T = th.solve(Q, t_sinks=[15.0])              # the plate 15 K above ambient
+    assert free[:, 12, 12].mean() == pytest.approx(q / 4e-6 / 20.0, rel=0.05)   # still air: q/(2h), 12.5 K
+    assert T[1, 12, 12] == pytest.approx(15.0 + q / g, rel=0.1)
+    assert T[0, 12, 12] > T[1, 12, 12]           # the heat crosses the laminate to reach the plate

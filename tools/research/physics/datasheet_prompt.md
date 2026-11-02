@@ -53,8 +53,11 @@ Value names (use these exact names and units; record only what the datasheet sta
   absolute max).
 - MOSFETs: `R_ds_on_ohm` (at the stated V_gs), `V_ds_max_V`, `I_d_max_A`, `Q_g_C`, `C_oss_F`.
 - diodes: `V_f_V` (at the stated current), `V_rrm_V`, `I_f_max_A`.
+- heat sinks (kind `other`): `theta_sa_C_W` (sink to ambient in natural convection, C/W; at a stated
+  airflow say so in conditions).
 - MCUs, modules, drivers, amplifiers and other loads: `I_supply_typ_A`, `I_supply_max_A` (the active
-  current at the typical and the worst stated condition, e.g. radio transmitting), `V_supply_V`.
+  current at the typical and the worst stated condition, e.g. radio transmitting), `V_supply_V`; modules
+  also `body_w_mm` and `body_l_mm` (their own board's outline, shorter and longer side).
 
 Rules: a number is copied with its unit converted to the one named; `page` is the PDF page number;
 `conditions` quotes the test conditions; a value read from a graph says so in `conditions`. Never fill

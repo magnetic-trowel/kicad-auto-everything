@@ -37,6 +37,11 @@ physical bounds. This file is the instruction given to the model.
                  "rail": "<net it carries, or null>", "V_V": 5, "I_A": 0.5, "cable_length_m": 1.0,
                  "basis": "...", "why": "..."}],
  "thermal": {"T_amb_C": [0, 40], "enclosure": "none|plastic|metal|unknown", "track_rise_max_K": 20,
+             "airflow_h_W_m2K": null,
+             "heatsinks": [{"part": "<ref>", "sink_part": "<heat sink part number or null>", "theta_sa_C_W": 12,
+                            "theta_cs_C_W": 0.5, "basis": "...", "why": "..."},
+                           {"side": "top|bottom", "region": "board", "theta_C_W": 0.5, "T_C": 45,
+                            "basis": "...", "why": "..."}],
              "basis": "...", "why": "..."}}
 ```
 
@@ -67,4 +72,11 @@ physical bounds. This file is the instruction given to the model.
 - `connectors`: every connector. `direction` is power/signal flow seen from the board; `I_A` is what flows
   through it; `cable_length_m` only when a cable leaves the board from it (USB, jack, terminal block,
   wire-to-board), null for headers that mate with another board.
+- `thermal.heatsinks`: only cooling the board shows or its documentation states: a heat sink footprint
+  or a TO-220/TO-247 tab with a mounting hole next to a part (`part`, with `sink_part` when the board names
+  the sink, and `theta_sa_C_W` from that sink's datasheet or its class: clip-on SOT-223/DPAK 20-40,
+  TO-220 bolt-on 5-25); a board meant to sit on a metal plate or enclosure through a gap pad (`side`,
+  `region` "board" or [x0, y0, x1, y1] in mm, `theta_C_W` of the whole interface, `T_C` the plate's
+  temperature if stated). `airflow_h_W_m2K` only for a stated fan (25-100); null in still air. No heat sink
+  is an empty list, never a guess.
 - Keep it factual; when unsure, give the class value with basis `typical` or `guess`, not silence.
