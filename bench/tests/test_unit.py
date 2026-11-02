@@ -338,6 +338,14 @@ def test_report_best_of_k(tmp_path):
     assert "| x | all |" in report.to_markdown(report.summarize(rows))
 
 
+def test_cp1_is_attempt_0_and_a_missing_one_is_reported():
+    def row(bid, a, clean):
+        return dict(adapter="x", kind="route", id=bid, split="A", attempt=a, status="ok", runtime_s=1.0,
+                    score=dict(valid=True, clean=clean, completion=1.0, errors=0))
+    m = report.summarize([row("b1", 0, True), row("b2", 1, True), row("b2", 2, True)])[("x", "route", "all")]
+    assert m["cp1"] == 0.5 and m["cpk"] == 1.0 and m["missing_a0"] == 1
+
+
 def test_report_means_over_the_boards_every_adapter_scored():
     """A board without output drops out of an adapter's error mean; that favours a method that fails
     on hard boards, so the means are also over the boards both scored (and the counts are shown)."""
