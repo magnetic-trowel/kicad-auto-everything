@@ -233,11 +233,15 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             final_rep = report["repair"].pop("_report", None)
             if hot and left() > 20:
                 # after the repair and last-mile rounds, which judge connections only: the hot parts'
-                # thermal vias, judged by KiCad's DRC like a round (kae.route.thermal_vias)
+                # thermal vias and solid heat pads, judged by KiCad's DRC like a round (kae.route.thermal_vias)
                 report["thermal_vias"] = thermal_vias.run(input_path, output_path, wd, p, info, opts,
                                                           deadline=t0 + time_s - 10 - diag_s,
                                                           best=report["repair"].get("final"), log=log)
                 tv_rep = report["thermal_vias"].pop("_report", None)
+                if report["thermal_vias"].get("thermal"):
+                    # the push-back: what each hot part's heat path costs, what was done, what would
+                    # change it (kae.route.thermal_vias.pushback), beside "blocked"
+                    report["thermal"] = report["thermal_vias"]["thermal"]
                 if report["thermal_vias"].get("kept"):
                     report["repair"]["final"] = report["thermal_vias"]["after"]
                     final_rep = tv_rep or final_rep
