@@ -120,3 +120,19 @@ def test_copper_loss_budget_and_drop_share_the_unknown_rail_fallback():
     u, P_cu, budget = DC.observe(pl, cv, V, info)["loss"]
     assert P_cu > 0 and budget > 0 and u == pytest.approx(P_cu / budget)
     assert HA.phi(-0.5) == 0.0 and HA.phi(0.5) == 0.5
+
+
+def test_dc_currents_left_out_of_the_copper_void_the_score():
+    """Load and source currents at pads outside the copper model were dropped with a note while the
+    total stayed 'complete'; that note now voids the DC band (evaluate/wideband mark it uncomputed)."""
+    from types import SimpleNamespace
+
+    from kae.excite import evaluate as E
+    pl = _plan()
+    pl.params = []
+    notes = []
+    bm = SimpleNamespace(m=SimpleNamespace(terminals={}))
+    b = SimpleNamespace(footprints=[], tracks=[])
+    assert E._dc_harms(pl, bm, b, None, None, {}, [], 1, 0, [0.0] * 4, notes, lambda *a: None) == []
+    assert any(n.startswith(E.DC_VOID) for n in notes)
+    assert E.totals([0.0] * 4, ["dc"])["complete"] is False
