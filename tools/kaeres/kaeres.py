@@ -1204,27 +1204,45 @@ def _f(x, nd=3):
     return f"{x:.{nd}f}" if isinstance(x, float) else str(x)
 
 
+def _common(rows, names, key):
+    """Boards on which every method of `names` that has rows here has a value of `key` on an ok run."""
+    sets = [{r["board"] for r in rows if r["method"] == n and r["status"] == "ok" and r[key] is not None}
+            for n in names if any(r["method"] == n for r in rows)]
+    return set.intersection(*sets) if sets else set()
+
+
 def method_table(rows, names, title):
-    out = [f"### {title}", "", "| method | boards | ok | cp1 (clean) | completion | not closed | DRC errors / board | "
+    """Per-method table. DRC errors and physics are averaged over the ok runs that have a value, which
+    differ by method (a board with no output drops out instead of counting as worst, which favours
+    methods that fail on hard boards): each is shown with its board count, and again over the boards
+    on which every method has a value, the comparable number."""
+    ce, cp = _common(rows, names, "errors"), _common(rows, names, "physics_total")
+    out = [f"### {title}", "", "| method | boards | ok | cp1 (clean) | completion | not closed | DRC errors / board (boards) | "
+           f"DRC errors / board, {len(ce)} common boards | "
            "timeouts | no output | errors | CPU s median / p90 / total h | restarts median / p90 | wall s median | "
-           "physics Σu | Σu vs human (median) | module ratio (median) |",
-           "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+           f"physics Σu (boards) | physics Σu, {len(cp)} common boards | Σu vs human (median) | module ratio (median) |",
+           "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for n in names:
         rs = [r for r in rows if r["method"] == n]
         if not rs:
             continue
         ok = [r for r in rs if r["status"] == "ok"]
         cpu = [r["cpu_s"] for r in rs]
+        errs = [r["errors"] for r in ok if r["errors"] is not None]
+        phys = [r["physics_total"] for r in rs if r["physics_total"] is not None]
         out.append("| " + " | ".join([
             n, str(len(rs)), str(len(ok)), _f(_mean([1.0 if r["clean"] else 0.0 for r in rs])),
             _f(_mean([r["completion"] if r["completion"] is not None else 0.0 for r in rs])),
-            str(sum(1 for r in ok if (r["unconnected"] or 0) > 0)), _f(_mean([r["errors"] for r in ok]), 2),
+            str(sum(1 for r in ok if (r["unconnected"] or 0) > 0)), f"{_f(_mean(errs), 2)} ({len(errs)})",
+            _f(_mean([r["errors"] for r in ok if r["board"] in ce]), 2),
             str(sum(1 for r in rs if r["timed_out"] or r["partial"])), str(sum(1 for r in rs if r["status"] == "no_output")),
             str(sum(1 for r in rs if r["status"] in ("adapter_error", "score_error"))),
             f"{_f(_med(cpu), 1)} / {_f(_q(cpu, 0.9), 1)} / {_f(sum(x or 0 for x in cpu) / 3600, 1)}",
             f"{_f(_med([r.get('attempts') for r in rs]), 0)} / {_f(_q([r.get('attempts') for r in rs], 0.9), 0)}",
             _f(_med([r["runtime_s"] for r in rs]), 0),
-            _f(_mean([r["physics_total"] for r in rs]), 3), _f(_med([r["physics_vs_human"] for r in rs]), 3),
+            f"{_f(_mean(phys), 3)} ({len(phys)})",
+            _f(_mean([r["physics_total"] for r in ok if r["board"] in cp]), 3),
+            _f(_med([r["physics_vs_human"] for r in rs]), 3),
             _f(_med([r["module_ratio_median"] for r in rs]), 3)]) + " |")
     return out + [""]
 

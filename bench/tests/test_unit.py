@@ -338,6 +338,21 @@ def test_report_best_of_k(tmp_path):
     assert "| x | all |" in report.to_markdown(report.summarize(rows))
 
 
+def test_report_means_over_the_boards_every_adapter_scored():
+    """A board without output drops out of an adapter's error mean; that favours a method that fails
+    on hard boards, so the means are also over the boards both scored (and the counts are shown)."""
+    def row(adapter, bid, errors):
+        sc = dict(valid=True, clean=errors == 0, completion=1.0, errors=errors, wl_ratio=1.0, via_delta=0)
+        return dict(adapter=adapter, kind="route", id=bid, split="A", attempt=0, runtime_s=1.0,
+                    status="ok" if errors is not None else "no_output", score=sc if errors is not None else None)
+    rows = [row("a", "b1", 0), row("a", "hard", 10), row("b", "b1", 2), row("b", "hard", None)]
+    s = report.summarize(rows)
+    a, b = s[("a", "route", "all")], s[("b", "route", "all")]
+    assert (a["errors"], a["scored"], b["errors"], b["scored"]) == (5.0, 2, 2.0, 1)
+    assert (a["errors_common"], b["errors_common"], a["common"], b["common"]) == (0.0, 2.0, 1, 1)
+    assert "errors_common" in report.to_markdown(s)
+
+
 def test_report_keeps_runs_of_one_adapter_apart(tmp_path):
     """A method and its baseline run with the same adapter name must not be pooled."""
     def write(run, adapter, bid, clean, version):

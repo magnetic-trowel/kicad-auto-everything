@@ -42,7 +42,7 @@ def summarize(rows):
         atts.sort(key=lambda r: r["attempt"])
         for sp in (split, "all"):
             groups[(adapter, kind, sp)].append(atts)
-    out = {}
+    out, best_by = {}, {}
     for key, boards in sorted(groups.items()):
         adapter, kind, split = key
         first = [b[0] for b in boards]
@@ -67,6 +67,7 @@ def summarize(rows):
                      cpk=_mean([1.0 if s.get("clean") else 0.0 for s in sck]),
                      completion=_mean([s.get("completion", 0.0) for s in sck]),
                      errors=_mean([s.get("errors") for s in sck]),
+                     scored=sum(1 for s in sck if s.get("errors") is not None),
                      invalid=sum(1 for s in sck if s and not s.get("valid")),
                      wl_ratio=_median([s.get("wl_ratio") for s in sck]),
                      via_delta=_mean([s.get("via_delta") for s in sck]))
@@ -81,19 +82,47 @@ def summarize(rows):
                      invalid=sum(1 for s in sck if s and not s.get("valid")),
                      hpwl_ratio=_median([s.get("hpwl_ratio") for s in sck]),
                      outside=_mean([s.get("outside") for s in sck]),
+                     scored=sum(1 for s in sck if s.get("hpwl_mm") is not None),
                      probe_cp=_mean([1.0 if p.get("clean") else 0.0 for p in prb]) if any(prb) else None,
                      probe_completion=_mean([p.get("completion", 0.0) for p in prb]) if any(prb) else None)
         out[key] = m
+        best_by[key] = {b[0]["id"]: r.get("score") or {} for b, r in zip(boards, best)}
+    _common_means(out, best_by)
     return out
 
 
-ROUTE_COLS = ("adapter", "split", "boards", "k", "cp1", "cpk", "completion", "errors", "invalid",
+# Means of the best attempts' scores that skip boards without a value (no output, unloadable): over
+# each adapter's own boards they favour a method that fails on hard boards, so they are also taken
+# over the boards every adapter of the same kind and split scored (`common` of them).
+COMMON = {"route": dict(errors=_mean, wl_ratio=_median, via_delta=_mean),
+          "place": dict(hpwl_ratio=_median, outside=_mean)}
+COMMON["joint"] = COMMON["joint-fixed"] = dict(COMMON["route"], hpwl_ratio=_median)
+COMMON["place-fixed"] = COMMON["place"]
+
+
+def _common_means(out, best_by):
+    by_group = defaultdict(list)
+    for key in out:
+        by_group[(key[1], key[2])].append(key)
+    for (kind, _), keys in by_group.items():
+        need = "hpwl_mm" if kind in ("place", "place-fixed") else "errors"
+        common = set.intersection(*({b for b, s in best_by[k].items() if s.get(need) is not None} for k in keys))
+        for k in keys:
+            out[k]["common"] = len(common)
+            for metric, agg in COMMON[kind].items():
+                out[k][f"{metric}_common"] = agg([best_by[k][b].get(metric) for b in common])
+
+
+ROUTE_COLS = ("adapter", "split", "boards", "k", "cp1", "cpk", "completion", "errors", "scored", "errors_common",
+              "common", "invalid",
               "suspect", "wl_ratio", "via_delta", "time_s", "cpu_s", "rss_mb_max", "score_cpu_s", "partial",
               "timeouts", "capped", "failures")
-JOINT_COLS = ("adapter", "split", "boards", "k", "cp1", "cpk", "legal", "completion", "errors", "invalid",
+JOINT_COLS = ("adapter", "split", "boards", "k", "cp1", "cpk", "legal", "completion", "errors", "scored",
+              "errors_common", "common", "invalid",
               "suspect", "hpwl_ratio", "wl_ratio", "via_delta", "time_s", "cpu_s", "rss_mb_max", "timeouts",
               "failures")
-PLACE_COLS = ("adapter", "split", "boards", "k", "legal", "invalid", "suspect", "hpwl_ratio", "outside",
+PLACE_COLS = ("adapter", "split", "boards", "k", "legal", "invalid", "suspect", "hpwl_ratio", "outside", "scored",
+              "hpwl_ratio_common", "outside_common", "common",
               "probe_cp", "probe_completion", "time_s", "cpu_s", "rss_mb_max", "score_cpu_s", "failures")
 
 
@@ -117,7 +146,9 @@ def to_markdown(summary):
                      "the reference layouts; do not treat their scores as results.\n")
     lines.append("cp1/cpk: clean pass on attempt 0 / best of k (fully connected, no error-level DRC, "
                  "nothing but routing changed). completion: share of start-of-task unconnected items "
-                 "routed. invalid: best attempts that changed more than the task allows. suspect: "
+                 "routed. errors (and wl_ratio, via_delta, hpwl_ratio, outside): over the `scored` boards whose best "
+                 "attempt has a value, which differ by adapter (no output drops a board); *_common: the same over "
+                 "the `common` boards every adapter in the table scored, the comparable number. invalid: best attempts that changed more than the task allows. suspect: "
                  "attempts that reproduce the human layout. wl_ratio: track length / human. cpu_s / "
                  "rss_mb_max: the method's CPU seconds (mean) and peak memory (max) over all processes it "
                  "ran; score_cpu_s: the scorer's. capped: attempts with an error type at KiCad's DRC report cap "
