@@ -260,10 +260,8 @@ def place(sp, board, tgts, fills, board_path=None, opts=None, log=_log):
 
 
 def _path_notes(sp, board_path, tp, own, row, added):
-    """What in the board's own settings chokes the heat path the vias open, reported, never changed:
-    - the thermal pad joined to its pour through thermal reliefs (the pad's or zone's setting). For
-      exposed pads and thermal vias the sources ask for a solid connection (TI PowerPAD [4]); a
-      relief is ~18 K/W per pad (the report's calc), more than a 2-layer board's spreading floor;
+    """What in the board's own settings chokes the heat path the vias open, reported, never changed
+    (reliefs on the heat pad are pushback's):
     - a custom rule giving vias a zone connection other than solid (KiCad connects vias solid by
       default);
     - vias in the pad left untented on the component side: TI asks to cap them there (mask = drill +
@@ -271,19 +269,6 @@ def _path_notes(sp, board_path, tp, own, row, added):
     - a drill outside the 0.25-0.33 mm sweet spot."""
     out = []
     mine = [v for v in added if v.owner == ("thermal_via", row["part"])]
-    if tp is not None:
-        k = getattr(tp, "idx", None)
-        pd = (sp.info.get("pads") or [])[k] if k is not None else {}
-        for z in sp.info.get("zones") or []:
-            if z.get("net") != tp.net or own not in (z.get("layers") or []) or z.get("rule_area"):
-                continue
-            conn = pd.get("zone_connection") or "inherited"
-            if conn == "inherited":
-                conn = z.get("pad_connection") or "thermal"
-            if conn == "thermal" or (conn == "thru_hole_only" and pd.get("attr") == "pth"):
-                out.append(f"thermal pad {tp.owner[1]} joins its {own} pour through thermal reliefs (the "
-                           f"board's pad/zone setting, kept): the heat path on {own} is choked")
-                break
     if board_path:
         dru = Path(board_path).with_suffix(".kicad_dru")
         try:

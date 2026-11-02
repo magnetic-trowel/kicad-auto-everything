@@ -86,16 +86,18 @@ def test_without_a_plate_vias_need_the_pour_on_both_faces(tmp_path):
     assert not any("thermal reliefs" in n for n in rows[0]["notes"]) and rows[0]["via_mm"] == [(0.6, 0.3)]
 
 
-def test_reliefs_on_the_thermal_pad_are_reported_not_changed(tmp_path):
-    """A pour that joins the exposed pad through thermal reliefs chokes the heat path: the report
-    says so (the board's setting stands) and the vias still go in."""
+def test_reliefs_on_the_thermal_pad_go_to_the_push_back(tmp_path):
+    """A pour that joins the exposed pad through thermal reliefs chokes the heat path: the vias
+    still go in, and pushback, not the via notes, decides and reports it."""
     s = _session(tmp_path)
     sp, b = s.space, s.board
     _front_gnd_zone(sp)
     sp.info["zones"].append(dict(net="GND", layers=["F.Cu"], pad_connection="thermal", rule_area=False))
     tg, _ = TV.targets(b, op(sinks=False))
     vias, rows = TV.place(sp, b, tg, fills(), log=lambda *a: None)
-    assert vias and any("thermal reliefs" in n for n in rows[0]["notes"])
+    assert vias and not any("thermal reliefs" in n for n in rows[0]["notes"])
+    entries, solid = TV.pushback(sp, b, tg, rows, op(sinks=False))
+    assert [e["decision"] for e in entries if e["issue"].startswith("heat pad")] == ["solid"]
 
 
 def test_vias_in_the_exposed_pad_are_legal_and_land_on_the_sink_pour(tmp_path):
