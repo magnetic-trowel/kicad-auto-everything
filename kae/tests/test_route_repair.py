@@ -243,3 +243,16 @@ def test_excess_counts_only_errors_beyond_the_input():
     assert drc.excess(s, base) == 1          # the clearance error is the router's
     assert drc.excess(s, {}) == 7            # no baseline: every error counts, as before
     assert drc.excess(dict(by_type={}), base) == 0
+
+
+def test_planes_on_renamed_layers_are_dropped():
+    """analyse() names the open layers canonically (In1.Cu); KiCad writes the DSN plane on the
+    layer's user name (GND_PLANE), and the plane was never dropped."""
+    dsn = ('(pcb x (structure (layer F.Cu (type signal)) (layer GND_PLANE (type power)) '
+           '(layer In2.Cu (type signal)) (layer B.Cu (type signal))'
+           ' (plane GND (polygon GND_PLANE 0 0 0 100 0 100 100 0 100))'
+           ' (plane VCC (polygon In2.Cu 0 0 0 100 0 100 100 0 100))))')
+    lmap, _ = repair.layer_names(S.parse(dsn), ["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"])
+    t = S.parse(dsn)
+    assert repair._drop_planes(t, {"GND": {"In1.Cu"}, "VCC": {"B.Cu"}}, lmap) == 1
+    assert [str(p[1]) for p in S.findall(S.find(t, "structure"), "plane")] == ["VCC"]

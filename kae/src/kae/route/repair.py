@@ -363,8 +363,10 @@ def analyse(report, routed, info=None, plan=None, fills=None, layer_map=None, co
 
 
 # ----------------------------------------------------------------------------- DSN edits
-def _drop_planes(tree, nets_layers):
-    """Remove the planes of nets (on the given layers; all layers when None) from a DSN."""
+def _drop_planes(tree, nets_layers, canon=None):
+    """Remove the planes of nets (on the given canonical layers; all layers when None) from a
+    DSN. `canon` maps the DSN's (user) layer names to canonical ones (layer_names): KiCad
+    writes a renamed layer's user name, and a plane on it was never dropped."""
     struct = find(tree, "structure")
     n = 0
     for pl in findall(struct, "plane"):
@@ -374,6 +376,7 @@ def _drop_planes(tree, nets_layers):
         layers = nets_layers[net]
         shape = next((c for c in pl[2:] if isinstance(c, list)), None)
         layer = str(shape[1]) if shape is not None and len(shape) > 1 else ""
+        layer = (canon or {}).get(layer, layer)
         if layers is None or not layers or layer in layers:
             struct.remove(pl)
             n += 1
@@ -683,7 +686,7 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
                 rec["planes_split"] = _fill_planes(tree, fills, a["connect"], lambda l: lname_map.get(l, l),
                                                    info, now, plan.copper)
             rec["planes_dropped"] = _drop_planes(tree, {n: v for n, v in a["open"].items()
-                                                        if not use_split or n not in a["connect"]})
+                                                        if not use_split or n not in a["connect"]}, lmap)
             dsn = rdir / "board.dsn"
             specctra.write(tree, dsn)
             translate.write_rules(plan, dsn)
