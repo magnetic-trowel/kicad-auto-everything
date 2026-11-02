@@ -90,6 +90,7 @@ class BoardMesh:
                 continue
             add(t.net, t.layer, LineString(pts).buffer(t.width / 2, quad_segs=8))
         self.pads = {}
+        self.fp_of = fp_of = {}                 # pad token -> its footprint (a pad number may hold a dot: '3.3V')
         for f in b.footprints:
             for p in f.pads:
                 cus = [l for l in p.layers if l.endswith(".Cu")]
@@ -97,6 +98,7 @@ class BoardMesh:
                     g = transform.place_geom(pad_shape(p, layer), f.x, f.y, f.rot, f.side)
                     add(p.net, layer, g)
                     self.pads.setdefault(f"{f.ref}.{p.number}", []).append((layer, g, p))
+                    fp_of[f"{f.ref}.{p.number}"] = f
         order = [l.name for l in layers_of(b.stackup, nsub)]
 
         def span(ls):
@@ -133,9 +135,7 @@ class BoardMesh:
         for tok, lst in self.pads.items():
             p = lst[0][2]
             if p.drill and p.net and len(lst) > 1 and (nets is None or p.net in nets):
-                ref = tok.rsplit(".", 1)[0]
-                f = next(x for x in b.footprints if x.ref == ref)
-                x, y = transform.pad_xy(f, p)
+                x, y = transform.pad_xy(fp_of[tok], p)
                 if win.contains(Point(x, y)):
                     m.via(x, y, [self.li[l] for l, _, _ in lst if l in self.li], p.net, drill=p.drill)
 
@@ -146,8 +146,7 @@ class BoardMesh:
         lst = self.pads.get(token)
         if not lst:
             raise KeyError(f"no pad {token}")
-        ref = token.rsplit(".", 1)[0]
-        f = next(x for x in self.b.footprints if x.ref == ref)
+        f = self.fp_of[token]
         for layer, g, p in lst:
             if layer in self.li:
                 try:
