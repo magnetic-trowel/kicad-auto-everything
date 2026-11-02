@@ -53,12 +53,12 @@ def library():
 
 
 def datasheet(part):
-    """The library facts for a board part (its value, then value + lib_id, as kae's part table matches)."""
+    """The library facts for a board part: the entry whose match names its value (else value + lib_id) best,
+    from a word boundary and the most specific first (kae.excite.beliefs.match_rank)."""
+    from kae.excite.beliefs import best_match
     text = f"{part.get('value') or ''} {part.get('lib_id') or ''}"
-    for rx, f in library():
-        if rx.search(part.get("value") or "") or rx.search(text):
-            return f
-    return None
+    e = best_match(library(), lambda e: e[0].pattern, text, part.get("value") or "", name_of=lambda e: e[1].get("part"))
+    return e[1] if e else None
 
 
 def verified(f, name):

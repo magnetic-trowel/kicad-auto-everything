@@ -33,6 +33,28 @@ PASS_ON = ("charger", "regulator_linear", "regulator_switching", "regulator_modu
            "charge_pump")
 
 
+MODULE_AREA_MM2 = 1500.0   # a part whose pads span this much (a compute module on its carrier) has its own board
+
+
+def rail_demand(dcp, rail, load_amps, depth=0):
+    """Sustained current (A) a rail delivers: its loads (load_amps(ld) each) and, through the regulators and
+    converters it feeds, what their rails deliver (a linear one passes its output current through; a switching
+    one or a cell draws output power / (efficiency x input voltage))."""
+    if depth > 6:
+        return 0.0
+    tot = sum(load_amps(ld) for ld in dcp.loads if ld["rail"] == rail)
+    v_in = dcp.volts.get(rail) or 0.0
+    for r2, f in dcp.feeds.items():
+        c = f.get("cell")
+        if f["kind"] == "cell" and c and c.get("vin") == rail and r2 != rail:
+            d = rail_demand(dcp, r2, load_amps, depth + 1)
+            tot += d * (dcp.volts.get(r2) or v_in) / (0.88 * max(v_in, 0.5)) if v_in else d
+        elif f.get("rin") == rail and r2 != rail and f["kind"] in ("linear", "switching"):
+            d = rail_demand(dcp, r2, load_amps, depth + 1)
+            tot += d if f["kind"] == "linear" else d * (dcp.volts.get(r2) or v_in) / (0.85 * max(v_in, 0.5)) if v_in else d
+    return tot
+
+
 def _theta_jb(npins):
     """(typ, lo, hi) K/W junction to board by package size."""
     return (60.0, 30.0, 120.0) if npins <= 8 else (20.0, 10.0, 40.0)
@@ -177,13 +199,43 @@ def evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, tot, 
     for c in range(len(own)):
         own[c] = dict(own[c])
         own[c].update({k: v for k, v in sustained.items() if k[1] == "I_A" and str(k[0]).startswith("dc:")})
-    cvs = []
+    # A converter cell's current is what its rail's loads sustain, not its own class prior or a guessed
+    # operating point (a 600 mA buck feeding a microcontroller was heated as if it carried 2 A). Loads count at
+    # their sustained draw (connector exports nobody states at their low end); a cell whose rail has no known
+    # load takes the low end of its own range. Its hot-loop losses (ac_parts) scale with the current squared.
+    def load_amps(ld):
+        if ld.get("key"):
+            return sustained.get(ld["key"], 0.0)
+        iv = ((intent or {}).get("parts") or {}).get(ld["ref"], {}).get("I_sustained_A")
+        if isinstance(iv, (int, float)) and iv >= 0:
+            return float(iv)
+        return ld.get("prior", 0.0) / (10.0 if bd.part_kind.get(ld["ref"], ("",))[0] == "connector" else 1.0)
+    cell_out = {}
+    for f in dcp.feeds.values():
+        if f["kind"] == "cell":
+            cell_out[f["cell"]["src"]] = (f["cell"], rail_demand(dcp, f["cell"]["vout"], load_amps))
+    cvs, ac_scale = [], {}
     for c in range(ncp):
         cv = dict(own[c])
         for s in srcs:
             if s.kind == "cell":
                 cv[s.name] = {k[1]: v for k, v in cps[s.name][c].items()}
+                cell, demand = cell_out.get(s.name, (None, 0.0))
+                il0 = cv[s.name].get("I_A")
+                if cell is None or il0 is None:
+                    continue
+                if demand > 0:
+                    D = min(max(cv[s.name].get("D", 0.5), 0.02), 0.98)
+                    il = demand / (1 - D) if cell["cls"] == "boost" else demand
+                else:
+                    pi = next((p for p in (P.get(s.name) or {}).values() if getattr(p, "name", "") == "I_A"), None)
+                    il = pi.lo if pi is not None else il0
+                cv[s.name]["I_A"] = il
+                if cell.get("ctrl") and il0 > 0:
+                    ac_scale.setdefault(cell["ctrl"], [1.0] * ncp)[c] = (il / il0) ** 2
         cvs.append(cv)
+    if ac_parts:
+        ac_parts = {k: [w * ac_scale.get(k, [1.0] * ncp)[c] for c, w in enumerate(v)] for k, v in ac_parts.items()}
     m = bm.m
     injs = [{q: a for q, a in DC.injections(dcp, cv).items() if q in m.terminals} for cv in cvs]
     res = ES.potentials_many(m, injs, 0.0, net=net_dc, op=op_dc)
@@ -215,6 +267,25 @@ def evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, tot, 
                 for (l, j, i) in cells:
                     Q[l, j, i] += w / len(cells)
         T = th.solve(Q)
+        # a compute module or a part with a board of its own spreads its heat over that board, which cools to
+        # the air from both faces (h x 2 x its area) beside the path into the carrier: the carrier takes the
+        # share G_board / (G_board + G_module) of it (G_board from the solve: its heat over the rise at its pads)
+        mods = {}
+        for ref, w in heat.items():
+            cells = pads_of.get(ref)
+            if not cells or w <= 0:
+                continue
+            js, is_ = [q[1] for q in cells], [q[2] for q in cells]
+            area = (max(js) - min(js) + 1) * (max(is_) - min(is_) + 1) * m.pitch ** 2
+            if bd.part_kind.get(ref, ("",))[0] == "module" or area >= MODULE_AREA_MM2:
+                g_m = h * 2 * area * 1e-6
+                rise = max(float(np.mean([T[l, j, i] for (l, j, i) in cells])), 1e-3)
+                f = (w / rise) / (w / rise + g_m)
+                mods[ref] = f
+                for (l, j, i) in cells:
+                    Q[l, j, i] -= (1 - f) * w / len(cells)
+        if mods:
+            T = th.solve(Q)
         Tamb = val[("heat", "T_amb_C")]
         for ref, w in heat.items():
             cells = pads_of.get(ref)

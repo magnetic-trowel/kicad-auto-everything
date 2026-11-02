@@ -97,3 +97,26 @@ def test_a_charger_drawing_from_a_rail_is_not_heated_by_what_it_passes_on():
     bd = SimpleNamespace(part_kind={"U1": ("ic", "mcu", "mcu"), "U2": ("ic", "charger", "charger")})
     heat = HT.part_heat(bd, pl, {("dc:U1@VBUS", "I_A"): 0.1, ("dc:U2@VBUS", "I_A"): 0.5}, {}, {})
     assert heat == {"U1": pytest.approx(0.5)}
+
+
+def test_a_rails_demand_follows_its_loads_through_regulators():
+    """What a converter's output must deliver: its loads, plus an LDO's load passed through it."""
+    from kae.excite import heat as HT
+    pl = DC.Plan()
+    pl.volts = {"VIN": 12.0, "5V": 5.0, "3V3": 3.3}
+    pl.feeds = {"5V": dict(kind="cell", ref="U1", cell=dict(src="cell:c", cls="buck", vin="VIN", vout="5V")),
+                "3V3": dict(kind="linear", ref="U2", rin="5V")}
+    pl.loads = [dict(ref="U3", rail="5V", key=("dc:U3@5V", "I_A")), dict(ref="U4", rail="3V3", key=("dc:U4@3V3", "I_A"))]
+    amps = {("dc:U3@5V", "I_A"): 0.2, ("dc:U4@3V3", "I_A"): 0.05}
+    assert HT.rail_demand(pl, "5V", lambda ld: amps[ld["key"]]) == pytest.approx(0.25)
+    # the 12 V input carries the buck's output power over 88% efficiency
+    assert HT.rail_demand(pl, "VIN", lambda ld: amps[ld["key"]]) == pytest.approx(0.25 * 5 / (0.88 * 12))
+
+
+def test_part_patterns_match_from_a_word_boundary_and_the_most_specific_wins():
+    from kae.excite.beliefs import best_match, match_rank
+    assert match_rank("(?i)(ComputeModule5|CM5)", "PCM5102 Package_SO:TSSOP-20") is None
+    assert match_rank("(?i)(ComputeModule5|CM5)", "ComputeModule5-CM5") is not None
+    entries = [("3.3", r"(?i)^AP2112"), ("1.8", r"(?i)^AP2112K?-?1\.8")]
+    assert best_match(entries, lambda e: e[1], "AP2112K-1.8 Package_TO_SOT_SMD:SOT-23-5", "AP2112K-1.8")[0] == "1.8"
+    assert best_match(entries, lambda e: e[1], "AP2112K-3.3", "AP2112K-3.3")[0] == "3.3"
