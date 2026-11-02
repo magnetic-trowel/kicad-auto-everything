@@ -778,6 +778,9 @@ def certificate(sp, pkg, info, opts=None, log=print, deadline=None):
     let it escape, the entry says so (cause "via in pad", a fab choice) with the rule
     relaxations that would avoid them."""
     esc, meta, duals = bound(sp, pkg, info, opts, pads=True)
+    if esc is None:
+        # the relaxation did not solve (linprog status != 0): nothing is proved either way
+        return None
     demand = len(meta["sig"])
     pads = True
     if esc is not None and esc >= demand - 0.5:
@@ -1283,7 +1286,11 @@ def run(sp, info, opts=None, log=print, deadline=None):
                 plan = dict(plan, cached=True)
             else:
                 plan, ctx, paths, plane_vias = plan_grid(sp, pkg, info, opts, deadline=deadline)
-                cert = certificate(sp, pkg, info, opts, log=log, deadline=deadline)
+                try:
+                    cert = certificate(sp, pkg, info, opts, log=log, deadline=deadline)
+                except Exception as e:  # noqa: BLE001 - a failed proof must not throw away the plan
+                    log(f"escape plan {pkg['ref']}: certificate failed: {type(e).__name__}: {e}")
+                    cert = None
                 _cache_put(key, (plan, paths, plane_vias, ctx.get("flex", {}), cert))
             if cert:
                 out["blocked"].append(cert)
