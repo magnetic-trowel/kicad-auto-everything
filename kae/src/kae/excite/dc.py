@@ -47,6 +47,26 @@ LINEAR = ("regulator_linear", "charger", "load_switch", "battery_monitor", "usb_
 SWITCHING = ("regulator_switching", "pmic", "regulator_module")
 SUPPLY_PIN = re.compile(r"^(V(CC|DD|IN|BAT|BUS|S|M|PP|IO|CORE|DDA|DDIO|USB|SYS|P|\+)\w*|AVDD|DVDD|IOVDD|PVDD|PVIN|"
                         r"AVCC|DVCC|VIN\d*|PWR|POWER|\+V\w*|V\+|VREG_IN|IN)$", re.I)
+VOLT_PIN = re.compile(r"^\+?\d+V\d*$|^\+?\d+(\.\d+)?V$", re.I)     # '3V3', '5V', '+1.8V': a supply pin by its voltage
+
+
+def draws_from(pp, net, rails):
+    """Whether an IC or module with pads pp [(number, net, pintype, pinfunction)] takes supply current
+    from rail `net`: a pad on it typed power_in or named as a supply (VCC, VDD, 3V3...), or, on a board
+    whose pads carry neither name nor type (KiCad 5, Eagle and other imports: about half the corpus), a
+    pad on a net the brief classed as a rail or whose name says supply (kae.circuit.roles' rule)."""
+    from kae.circuit.roles import _unannotated_pin_sem
+    for _, nt, pt, fn in pp:
+        if nt != net:
+            continue
+        f = (fn or "").split("/")[0].strip()
+        if pt == "power_in" or (pt != "power_out" and (SUPPLY_PIN.match(f) or VOLT_PIN.match(f))):
+            return True
+        if not f and not pt and (net in rails or _unannotated_pin_sem(net) == "supply"):
+            return True
+    return False
+
+
 OUT_PIN = re.compile(r"^(V?OUT\w*|VO|VREG|LDO\w*|BAT\w*|VSYS|SYS|CHG\w*)$", re.I)
 K_IPC = {True: 0.048, False: 0.024}      # IPC-2221: I = k dT^0.44 A^0.725 (A in mil^2), external / internal
 
@@ -228,7 +248,7 @@ def plan(board, brief, bd, P, srcs, intent=None):
             g = gnd_pads(ref)
             if not g:
                 continue
-            a = load_current(ctx, u, r, {})
+            a = load_current(ctx, u, r, {}, draws=draws_from(pp, r, rails) if kind in ("ic", "module") else None)
             if kind == "connector":
                 a = 0.1 * a                          # an export: a tenth of its rating, typically
             if a <= 0:
