@@ -97,6 +97,26 @@
    "source": "Diodes Incorporated AP63205 datasheet https://www.diodes.com/assets/Datasheets/AP63200-AP63201-AP63203-AP63205.pdf (f_sw_Hz p.5; R_on_high_ohm p.5)"
   },
   {
+   "match": "(?i)^AXP209",
+   "data": {
+    "f_sw_Hz": 1500000
+   },
+   "from_library": "axp209.pdf",
+   "source": "X-Powers AXP209 datasheet https://store.comet.bg/download-file.php?id=6622 (f_sw_Hz p.8)"
+  },
+  {
+   "match": "(?i)^BSS138L?T[13]G?",
+   "data": {
+    "r_on_ohm": 3.5,
+    "c_sw_F": [
+     1.2e-11,
+     2.5e-11
+    ]
+   },
+   "from_library": "bss138lt3g.pdf",
+   "source": "onsemi BSS138LT3G datasheet https://cdn.components.ru/media/PDF/3584508.pdf (R_ds_on_ohm p.2; C_oss_F p.2)"
+  },
+  {
    "match": "(?i)^CSD18540Q5B",
    "data": {
     "r_on_ohm": [
@@ -126,6 +146,18 @@
    },
    "from_library": "csd86330q3d.pdf",
    "source": "Texas Instruments CSD86330Q3D datasheet https://www.ti.com/lit/ds/symlink/csd86330q3d.pdf (f_sw_Hz p.3; R_on_high_ohm p.4; C_oss_F p.4)"
+  },
+  {
+   "match": "(?i)^DMP2066LSN",
+   "data": {
+    "r_on_ohm": [
+     0.029,
+     0.04
+    ],
+    "c_sw_F": 2e-10
+   },
+   "from_library": "dmp2066lsn.pdf",
+   "source": "Diodes Incorporated DMP2066LSN datasheet https://static.chipdip.ru/lib/320/DOC012320307.pdf (R_ds_on_ohm p.2; C_oss_F p.2)"
   },
   {
    "match": "(?i)^DMP3098L",
@@ -168,6 +200,17 @@
    },
    "from_library": "eta3410d2i-t.pdf",
    "source": "ETA Semiconductor (ETA Solutions) ETA3410D2I-T datasheet https://atta.szlcsc.com/upload/public/pdf/source/20250320/DD65C5A769E8932264B9FDB8123B501F.pdf (f_sw_Hz p.2; R_on_high_ohm p.2; V_sw_max_V p.2)"
+  },
+  {
+   "match": "(?i)^FPF2286",
+   "data": {
+    "r_on_ohm": [
+     0.025,
+     0.035
+    ]
+   },
+   "from_library": "fpf2286ucx.pdf",
+   "source": "onsemi FPF2286UCX datasheet https://cdn.eicom.ru/media/PDF/1482096.pdf (R_on_high_ohm p.4)"
   },
   {
    "match": "(?i)^LM2576",
@@ -227,6 +270,18 @@
    "source": "Texas Instruments LMR62014XMF/NOPB datasheet https://www.ti.com/lit/ds/symlink/lmr62014.pdf (f_sw_Hz p.4; V_sw_max_V p.3)"
   },
   {
+   "match": "(?i)^MAX17135",
+   "data": {
+    "f_sw_Hz": [
+     850000,
+     1150000
+    ],
+    "v_sw_max_V": 20
+   },
+   "from_library": "max17135.pdf",
+   "source": "Maxim Integrated (Analog Devices) MAX17135 datasheet https://static.chipdip.ru/lib/301/DOC043301173.pdf (f_sw_Hz p.3; V_sw_max_V p.2)"
+  },
+  {
    "match": "(?i)^MC3[24]PF1510",
    "data": {
     "f_sw_Hz": 2000000,
@@ -234,6 +289,18 @@
    },
    "from_library": "mc34pf1510a6ep.pdf",
    "source": "NXP Semiconductors MC34PF1510A6EP datasheet https://www.farnell.com/datasheets/2645826.pdf (f_sw_Hz p.13; V_sw_max_V p.9)"
+  },
+  {
+   "match": "(?i)^MP1584",
+   "data": {
+    "f_sw_Hz": [
+     100000,
+     1500000
+    ],
+    "r_on_ohm": 0.15
+   },
+   "from_library": "mp1584en.pdf",
+   "source": "Monolithic Power Systems MP1584EN datasheet https://docs.rs-online.com/b924/A700000013716646.pdf (f_sw_Hz p.3; R_on_high_ohm p.3)"
   },
   {
    "match": "(?i)^MP5424",
@@ -270,6 +337,18 @@
    "source": "Aerosemi Technology MT3608 datasheet https://www.olimex.com/Products/Breadboarding/BB-PWR-3608/resources/MT3608.pdf (f_sw_Hz p.3; V_sw_max_V p.2)"
   },
   {
+   "match": "(?i)^NCP1529",
+   "data": {
+    "f_sw_Hz": [
+     1200000,
+     2200000
+    ],
+    "r_on_ohm": 0.4
+   },
+   "from_library": "ncp1529a.pdf",
+   "source": "onsemi NCP1529A datasheet https://monitor.espec.ws/download.php?id=138590 (f_sw_Hz p.5; R_on_high_ohm p.5)"
+  },
+  {
    "match": "(?i)^NX5P3090",
    "data": {
     "r_on_ohm": [
@@ -287,6 +366,17 @@
    },
    "from_library": "k7805m.pdf",
    "source": "MORNSUN (sold under RS PRO per the board value; RS PRO relabel not verified) K7805M-1000R3 datasheet https://static.chipdip.ru/lib/386/DOC014386130.pdf (f_sw_Hz p.2)"
+  },
+  {
+   "match": "(?i)^STMPS2151",
+   "data": {
+    "r_on_ohm": [
+     0.12,
+     0.16
+    ]
+   },
+   "from_library": "stmps2151str.pdf",
+   "source": "STMicroelectronics STMPS2151STR datasheet https://cdn.components.ru/media/PDF/1663638.pdf (R_ds_on_ohm p.13)"
   },
   {
    "match": "(?i)^SY6280",
