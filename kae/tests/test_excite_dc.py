@@ -69,3 +69,34 @@ def test_synchronous_boost_balances_and_the_ldo_rating_caps_its_load():
     sums = _net_sums(pl, inj, [{"VBUS", "SW"}])
     assert all(abs(v) < 1e-12 for v in sums.values()), sums
     assert inj["U2.1"] == pytest.approx(-0.5)                # the LDO delivers at most its 0.5 A rating
+
+
+def test_heat_accounts_every_dc_loss_vias_and_lumped_parts():
+    """The thermal band's heat is the DC flow's whole I^2 R: bars, via barrels (half to each landing)
+    and the lumped parts' own loss (an inductor's winding, a ferrite, a shunt) at their pads. Vias
+    and lumped branches were left out (a buck inductor's DCR loss never heated its neighbours)."""
+    import numpy as np
+
+    from kae.em import solve as ES
+    from kae.em.mesh import Layer, Mesh
+    from kae.excite import heat as H
+    m = Mesh.over(0, 0, 10, 1, 0.25, [Layer("F", 1.6, 0.035, 1), Layer("B", 0, 0.035, 1)])
+    m.rect(0, "A", 0, 0, 4.5, 1)
+    m.rect(1, "B", 5.5, 0, 10, 1)
+    m.rect(0, "B", 8.5, 0, 10, 1)
+    m.via(9.0, 0.5, [0, 1], "B", drill=0.3)
+    X, _ = m.centres()
+    m.terminal("a", 0, mask=X < 0.25)
+    m.terminal("m1", 0, mask=(X > 4.25) & (X < 4.5))
+    m.terminal("m2", 1, mask=(X > 5.5) & (X < 5.75))
+    m.terminal("b", 0, mask=X > 9.75)
+    m.part("m1", "m2", R=0.05, name="L1")
+    net = ES.Network(m)
+    assert len(net.vseg) == 1 and len(net.lump) == 1
+    (V, info), = ES.potentials_many(m, [{"a": 2.0, "b": -2.0}], 0.0, net=net)
+    P = 2.0 * float(np.real(V["a"] - V["b"]))
+    Q = H.copper_heat(info["net"], info["x"], m.lab.shape)
+    lump = H.lumped_heat(info["net"], info["x"], {"L1": "L"})
+    assert lump["L1"] > 0.19                                  # 2 A through 50 mOhm
+    assert Q.sum() + sum(lump.values()) == pytest.approx(P, rel=1e-3)
+    assert H.lumped_heat(info["net"], info["x"], {"L1": "D_on"}) == {}     # a diode's loss is V_f I in part_heat
