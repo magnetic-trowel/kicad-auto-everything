@@ -69,7 +69,12 @@ def round_chamfer_rect(w, h, r, c, corners, quad_segs=16):
             shape = shape.union(box(min(cx, cx - sx * r), min(cy, cy - sy * r), max(cx, cx - sx * r), max(cy, cy - sy * r)))
         if c > 0:
             shape = shape.difference(Polygon([(cx, cy), (cx - sx * c, cy), (cx, cy - sy * c)]))
-    return shape.intersection(rect)
+    out = shape.intersection(rect)
+    # the overlay can leave zero-area LineStrings along a chamfer cut (a GeometryCollection:
+    # buffered, they grew copper into the cut by up to 0.064 mm; Board.to_dict crashed on it)
+    if out.geom_type == "GeometryCollection":
+        out = unary_union([g for g in out.geoms if g.geom_type in ("Polygon", "MultiPolygon")])
+    return out
 
 
 def _shape_layers(g):
@@ -392,8 +397,13 @@ class _Reader:
         fp.silk, fp.silk_text = self._silk(fp, node, by_layer, lib, frot, s)
         if not fp.courtyard:
             fp.body = self._body(fp, pieces_on, by_layer)
+        k0, z0 = len(self.keepouts), len(self.zones)
         for z in kids(node, "zone"):
             self.zone(z, fp.uuid)
+        # load() makes footprint uuids unique only after every footprint is read: it gives
+        # these areas their owner's final uuid then (a missing uuid made a part's own keepout
+        # board-level, a repeated one handed it to the earlier part)
+        self.fp_areas.append((fp, self.keepouts[k0:] + self.zones[z0:]))
         return fp
 
     def pad(self, pd, fx, fy, frot, c, sn, s, fp_clear=0.0):
@@ -880,7 +890,13 @@ def _stroked(g, opens, rings):
     st = first(g, "stroke")
     w = _f(value(st, "width") if st is not None else value(g, "width"), 0.0)
     fill = value(g, "fill")
-    filled = fill in ("solid", "yes") or (fill is None and g[0] in ("fp_poly", "gr_poly"))
+    kind = g[0].split("_", 1)[-1]
+    # pcbnew 10 (parsePCB_SHAPE): a circle or rect with no fill token and a 0 width is filled
+    # (the legacy way to fill them; a custom pad's 0-width gr_circle lost 0.28 mm2 of copper
+    # here), and any other shape left unfilled at width <= 0 gets the 0.1 mm default stroke
+    filled = fill in ("solid", "yes") or (fill is None and (kind == "poly" or (kind in ("circle", "rect") and w <= 0)))
+    if w <= 0 and not filled:
+        w = 0.1
     out = []
     for pl in opens:
         if len(pl) >= 2 and w > 0:
@@ -1021,7 +1037,7 @@ def load(path, *, arc_tol=geom.ARC_TOL, rules=True):
     if not tree or tree[0] not in ("kicad_pcb",):
         raise ValueError(f"{path}: not a KiCad board")
     rd = _Reader(tree, path, arc_tol)
-    rd.keepouts, rd.zones = [], []
+    rd.keepouts, rd.zones, rd.fp_areas = [], [], []
     fps = []
     for node in tree:
         if type(node) is list and node and node[0] in ("footprint", "module"):
@@ -1032,6 +1048,9 @@ def load(path, *, arc_tol=geom.ARC_TOL, rules=True):
             fp.flags.append("uuid_synthesized" if not fp.uuid else "uuid_duplicate")
             fp.uuid = synth_uuid(fp.lib_id, fp.x, fp.y, fp.rot, fp.side, i)
         seen.add(fp.uuid)
+    for fp, areas in rd.fp_areas:
+        for a in areas:
+            a.footprint = fp.uuid
     for node in tree:
         if type(node) is list and node and node[0] == "zone":
             rd.zone(node)

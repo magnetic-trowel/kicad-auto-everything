@@ -628,9 +628,16 @@ def local_replace(board, parts, window_mm=None, time_s=30.0, seed=0, physics=Tru
             brief, _ = make_brief(board)
         except Exception:
             brief = {}
-    P = Problem.build(board, net_kinds=_net_kinds(brief), angle_step=angle_step)
-    P.set_margin(0.0)
     want = set(parts)
+    # every other footprint is locked (as joint.replace.window_board does): left movable it
+    # was modeled snapped to the grid and to a right angle (a part at 45 deg as 0 deg), so the
+    # re-placed parts were judged against neighbours that are not where the board has them
+    import dataclasses
+    board_w = dataclasses.replace(board, footprints=[
+        fp if (fp.locked or fp.uuid in want or fp.ref in want) else dataclasses.replace(fp, locked=True)
+        for fp in board.footprints])
+    P = Problem.build(board_w, net_kinds=_net_kinds(brief), angle_step=angle_step)
+    P.set_margin(0.0)
     sub = [p.i for p in P.parts if p.movable and (p.uuid in want or p.ref in want)]
     st = State(P)
     for p in P.parts:
