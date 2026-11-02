@@ -22,7 +22,7 @@ cd "$(dirname "$0")/../../.."
 K="python3 tools/kaeres/kaeres.py"
 SHA=${SHA:?commit of place-escape-keepouts}
 KAE=(--code kae=.@$SHA)
-H=(--harness e87baedbfb2334c30d56fc7d597ecb19cd23bea1)
+H=(--harness $SHA)   # the wrapper (restart.py --resume --screen --final) runs from the method's harness
 KH='$HOME/.cache/kaebench'
 FORK="$HOME/.cache/kaebench/kae-freerouting-fork-2e1125a/bin/freerouting"
 NUMBA=numba-kae-escape-${SHA:0:7}
