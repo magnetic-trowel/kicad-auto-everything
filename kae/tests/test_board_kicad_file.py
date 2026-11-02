@@ -364,3 +364,11 @@ def test_zero_width_shapes_follow_pcbnew():
     assert abs(ring - math.pi * (0.55 ** 2 - 0.45 ** 2)) < 3e-3
     assert abs(area('(gr_line (start 1 30) (end 5 30) (stroke (width 0) (type solid)) (layer "F.Cu"))')
                - (0.4 + math.pi * 0.05 ** 2)) < 1e-3
+
+
+def test_chamfered_roundrect_is_polygons_only():
+    """A chamfered roundrect (1.4 x 0.9, rratio 0.2, chamfer 0.3, top_left + bottom_right)
+    came out as a GeometryCollection with stray LineStrings inside the chamfer cut: buffered
+    for clearance they grew copper 0.064 mm into it, and Board.to_dict crashed on them."""
+    g = kicad_file.round_chamfer_rect(1.4, 0.9, 0.2 * 0.9, 0.3 * 0.9, ["top_left", "bottom_right"])
+    assert g.geom_type in ("Polygon", "MultiPolygon") and abs(g.area - 1.1731) < 1e-3

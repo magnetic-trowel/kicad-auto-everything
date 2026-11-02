@@ -69,7 +69,12 @@ def round_chamfer_rect(w, h, r, c, corners, quad_segs=16):
             shape = shape.union(box(min(cx, cx - sx * r), min(cy, cy - sy * r), max(cx, cx - sx * r), max(cy, cy - sy * r)))
         if c > 0:
             shape = shape.difference(Polygon([(cx, cy), (cx - sx * c, cy), (cx, cy - sy * c)]))
-    return shape.intersection(rect)
+    out = shape.intersection(rect)
+    # the overlay can leave zero-area LineStrings along a chamfer cut (a GeometryCollection:
+    # buffered, they grew copper into the cut by up to 0.064 mm; Board.to_dict crashed on it)
+    if out.geom_type == "GeometryCollection":
+        out = unary_union([g for g in out.geoms if g.geom_type in ("Polygon", "MultiPolygon")])
+    return out
 
 
 def _shape_layers(g):
