@@ -22,12 +22,14 @@ def hot_part(tab="GND"):
              ("4", tab, 0.0, -3.15, 3.6, 2.0, "smd", 0.0, "TAB", "passive")], (3.5, 4.4))
 
 
-def op(side="bottom", W=1.2, region="board", part_sink=False, sinks=True):
+def op(side="bottom", W=1.2, region="board", part_sink=False, sinks=True, process=None, **asm):
     hs = [dict(side=side, region=region, theta_C_W=0.5, T_C=35)] if sinks else []
     if part_sink:
         hs = [dict(part="U3", theta_sa_C_W=25)]
-    return dict(parts={"U3": dict(P_sustained_W=W), "U2": dict(P_sustained_W=0.01)},
-                requirements=dict(thermal=dict(heatsinks=hs)))
+    req = dict(thermal=dict(heatsinks=hs))
+    if process or asm:
+        req["assembly"] = dict(asm, **({"process": process} if process else {}))
+    return dict(parts={"U3": dict(P_sustained_W=W), "U2": dict(P_sustained_W=0.01)}, requirements=req)
 
 
 B_POUR = box(100.5, 100.5, 139.5, 129.5)      # the fixture's B.Cu GND pour, filled
@@ -149,6 +151,102 @@ def test_no_vias_for_a_net_without_copper_on_the_sink_face(tmp_path):
     assert any(n.startswith("VIN (thermal pad):") and "no copper on the other face" in n for n in rows[0]["notes"])
 
 
+# ----------------------------------------------------------------------------- push-back on reliefs
+def _relief_case(tmp_path, o, conn="thermal", tab="GND", dru=None):
+    s = _session(tmp_path, tab=tab)
+    sp, b = s.space, s.board
+    sp.zones.append((tab, "F.Cu", box(100.5, 100.5, 139.5, 129.5), {"pad_connection": conn}))
+    if dru is not None:
+        (tmp_path / "board.kicad_dru").write_text(dru)
+    tg, _ = TV.targets(b, o)
+    _vias, rows = TV.place(sp, b, tg, fills(), log=lambda *a: None)
+    entries, solid = TV.pushback(sp, b, tg, rows, o, board_path=tmp_path / "board.kicad_pcb")
+    return [e for e in entries if e["issue"].startswith("heat pad")], solid, entries
+
+
+@pytest.mark.parametrize("o, decision, says", [
+    (op(process="reflow"), "solid", "reflow heats the whole board"),
+    (op(process="hot_plate"), "solid", "hot_plate heats the whole board"),
+    (op(sinks=False, process="hand"), "solid", "board copper is its only cooling path; hand soldering needs preheat"),
+    (op(sinks=False), "solid", "board copper is its only cooling path"),
+    (op(process="hand"), "reliefs kept", "reliefs kept for hand soldering; heat path weakened"),
+    (op(process="wave", part_sink=True), "reliefs kept", "reliefs kept for wave soldering"),
+    (op(), "reliefs kept", "assembly process unknown: state it to decide"),
+], ids=["reflow", "hot-plate", "hand-only-copper", "unknown-only-copper", "hand-plate", "wave-clip", "unknown-plate"])
+def test_relief_policy(tmp_path, o, decision, says):
+    rel, solid, _ = _relief_case(tmp_path, o)
+    assert len(rel) == 1 and rel[0]["decision"] == decision and says in rel[0]["consequence"]
+    assert rel[0]["part"] == "U3" and rel[0]["pad"] == "4" and rel[0]["net"] == "GND" and rel[0]["would_change"]
+    assert [p.owner for p in solid] == ([("U3", "4")] if decision == "solid" else [])
+
+
+QFN = ("U9", "MCU", "Package_DFN_QFN:QFN-16-1EP_3x3mm_P0.5mm_EP1.7x1.7mm", 112.0, 103.0, 0.0,
+       [("1", "", -1.45, -0.75, 0.6, 0.25, "smd", 0.0, "", "passive"),
+        ("17", "GND", 0.0, 0.0, 1.7, 1.7, "smd", 0.0, "EP", "passive")], (2.0, 2.0))
+
+
+@pytest.mark.parametrize("asm, why", [
+    (dict(process="hand", reflow_only_parts=["U9"]), "board needs reflow (U9 QFN"),
+    (dict(process="unknown", n_reflow_only_parts=2, reflow_only_parts=[]), "board needs reflow (2 reflow-only parts)"),
+    (dict(process="hand", hand_solder_ok=False, reflow_only_parts=[]), "hand_solder_ok false"),
+    (dict(process="unknown"), "board needs reflow (U9 QFN"),       # inferred from the footprints
+], ids=["listed", "counted", "no-hand-solder", "inferred"])
+def test_a_board_that_needs_reflow_counts_as_reflow(tmp_path, asm, why):
+    """With a sink also cooling the part, hand or unknown assembly would keep the reliefs; a part
+    only reflow can solder (or hand_solder_ok false) makes the board reflowed anyway: solid."""
+    s = F.session(tmp_path, extra=[hot_part(), QFN])
+    sp, b = s.space, s.board
+    sp.zones.append(("GND", "F.Cu", box(100.5, 100.5, 139.5, 129.5), {"pad_connection": "thermal"}))
+    o = op(**asm)
+    tg, _ = TV.targets(b, o)
+    _v, rows = TV.place(sp, b, tg, fills(), log=lambda *a: None)
+    entries, solid = TV.pushback(sp, b, tg, rows, o)
+    e = next(e for e in entries if e["part"] == "U3" and e["issue"].startswith("heat pad"))
+    assert e["decision"] == "solid" and e["process"] == "reflow" and why in e["consequence"]
+    assert e["stated_process"] == asm["process"]
+    # without the QFN and with nothing else saying so: hand keeps the reliefs
+    s2 = _session(tmp_path / "plain")
+    s2.space.zones.append(("GND", "F.Cu", box(100.5, 100.5, 139.5, 129.5), {"pad_connection": "thermal"}))
+    tg2, _ = TV.targets(s2.board, op(process="hand"))
+    _v, rows2 = TV.place(s2.space, s2.board, tg2, fills(), log=lambda *a: None)
+    e2 = TV.pushback(s2.space, s2.board, tg2, rows2, op(process="hand"))[0]
+    assert next(x for x in e2 if x["issue"].startswith("heat pad"))["decision"] == "reliefs kept"
+
+
+def test_a_solid_pad_or_a_relief_rule_changes_nothing(tmp_path):
+    rel, solid, _ = _relief_case(tmp_path / "a", op(process="reflow"), conn="full")
+    assert rel == [] and solid == []
+    rule = ('(version 1)\n(rule "reliefs"\n\t(condition "A.Type == \'Pad\'")\n'
+            '\t(constraint zone_connection thermal_reliefs))\n')
+    rel, solid, _ = _relief_case(tmp_path / "b", op(process="reflow"), dru=rule)
+    assert solid == [] and rel[0]["decision"] == "reliefs kept"
+    assert "the board's rules require reliefs" in rel[0]["consequence"]
+
+
+def test_a_heat_net_without_copper_on_the_other_face_is_reported(tmp_path):
+    _rel, _solid, entries = _relief_case(tmp_path, op(sinks=False, process="reflow"), tab="VIN")
+    e = next(e for e in entries if e["issue"] == "no copper on the other face")
+    assert e["net"] == "VIN" and e["decision"] == "report only"
+    assert "U3's tab net VIN has no copper on B.Cu: thermal vias went to" in e["consequence"]
+    assert "a VIN patch on B.Cu under U3 or an inner VIN plane" in e["would_change"]
+
+
+def test_set_solid_overrides_one_pad_only(tmp_path):
+    s = _session(tmp_path)
+    tab = s.space.pads_of[(next(f for f in s.board.footprints if f.ref == "U3").uuid, "4")][0]
+    src = tmp_path / "board.kicad_pcb"
+    out = tmp_path / "solid.kicad_pcb"
+    assert TV.set_solid(src, out, [tab.uuid]) == [tab.uuid]
+    text = out.read_text()
+    assert text.count("(zone_connect 2)") == 1
+    i = text.index(f'(uuid "{tab.uuid}")')
+    assert text.rfind("(zone_connect 2)", 0, i) > text.rfind("(pad ", 0, i)
+    TV.set_solid(out, out, [tab.uuid])                      # again: replaced, not doubled
+    assert out.read_text().count("(zone_connect 2)") == 1
+    from kae.board.kicad_file import load
+    assert len(load(out).footprints) == len(s.board.footprints)
+
+
 # ----------------------------------------------------------------------------- against KiCad
 def _kicad():
     from kae.board import pcbnew_io
@@ -182,3 +280,67 @@ def test_pass_adds_vias_without_a_drc_error(tmp_path):
     # without the operating facts: nothing
     rep0 = TV.run(src, out, tmp_path / "wd0", plan, info, dict(opts, operating=""), deadline=time.monotonic() + 60)
     assert rep0["status"] == "no part needs thermal vias"
+
+
+def _board_with_front_pour(d):
+    src = F.write_board(d, extra=[hot_part()])
+    t = src.read_text()
+    x0, y0, x1, y1 = 100.5, 100.5, 139.5, 129.5
+    zone = (f'\t(zone\n\t\t(net "GND")\n\t\t(layer "F.Cu")\n\t\t(uuid "{F._u(9001)}")\n\t\t(name "gnd_top")\n'
+            f'\t\t(hatch edge 0.5)\n\t\t(connect_pads\n\t\t\t(clearance 0.3)\n\t\t)\n\t\t(min_thickness 0.25)\n'
+            f'\t\t(fill\n\t\t\t(thermal_gap 0.5)\n\t\t\t(thermal_bridge_width 0.5)\n\t\t)\n'
+            f'\t\t(polygon\n\t\t\t(pts\n\t\t\t\t(xy {x0} {y0}) (xy {x1} {y0}) (xy {x1} {y1}) (xy {x0} {y1})\n'
+            f'\t\t\t)\n\t\t)\n\t)\n')
+    i = t.index("\t(embedded_fonts no)\n)")
+    src.write_text(t[:i] + zone + t[i:])
+    return src
+
+
+def _run(tmp_path, o, name):
+    import time
+    from kae.board import pcbnew_io
+    from kae.route import bridge, constraints
+    src = _board_with_front_pour(tmp_path / "in")
+    opf = tmp_path / f"{name}.json"
+    opf.write_text(json.dumps(o))
+    info = pcbnew_io.export_dsn(src, tmp_path / "board.dsn")
+    opts = dict(operating=str(opf), severities=bridge.severities(src))
+    plan = constraints.plan(info, src, opts)
+    out = tmp_path / name / "board.kicad_pcb"
+    out.parent.mkdir()
+    out.write_bytes(src.read_bytes())
+    rep = TV.run(src, out, tmp_path / f"wd-{name}", plan, info, opts, deadline=time.monotonic() + 300,
+                 log=lambda *a: None)
+    return rep, out
+
+
+@pytest.mark.kicad
+@pytest.mark.skipif(not _kicad(), reason="no Python with pcbnew")
+def test_reflow_connects_the_tab_solid_and_drc_agrees(tmp_path):
+    rep, out = _run(tmp_path, op(sinks=False, process="reflow"), "reflow")
+    assert rep["status"] == "kept" and rep["solid_pads"] == ["U3.4"], rep
+    assert rep["after"]["errors"] <= rep["before"]["errors"]
+    assert rep["after"]["unconnected"] <= rep["before"]["unconnected"]
+    assert out.read_text().count("(zone_connect 2)") == 1
+    e = next(e for e in rep["thermal"] if e["decision"] == "solid")
+    assert e["part"] == "U3" and e["process"] == "reflow"
+
+
+@pytest.mark.kicad
+@pytest.mark.skipif(not _kicad(), reason="no Python with pcbnew")
+def test_a_solid_pad_kicad_faults_is_not_kept(tmp_path, monkeypatch):
+    """The DRC guard: a solid connection that KiCad's DRC found worse (here a forged extra error)
+    is discarded, the reliefs stay, and the entry says why."""
+    from kae.route import drc
+    real = drc.run
+
+    def worse(board, out_json, timeout=900):
+        r = real(board, out_json, timeout)
+        if "drc_solid" in str(out_json):
+            r["violations"].append(dict(type="clearance", severity="error", description="forged", items=[]))
+        return r
+    monkeypatch.setattr(drc, "run", worse)
+    rep, out = _run(tmp_path, op(sinks=False, process="reflow"), "guard")
+    assert rep["solid_pads"] == [] and "(zone_connect 2)" not in out.read_text()
+    e = next(e for e in rep["thermal"] if e["issue"].startswith("heat pad"))
+    assert e["decision"] == "reliefs kept" and "made KiCad's DRC worse" in e["consequence"]
