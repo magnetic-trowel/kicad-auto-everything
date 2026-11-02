@@ -128,6 +128,20 @@ def child_cpu():
 ENV_DEPENDENT_CHECKS = ("lib_footprint_issues", "lib_footprint_mismatch")  # as kaebench.tools: not the board's
 
 
+def report_unconnected(pro):
+    """Make the project copy `pro` report unconnected items when it sets them to "ignore": KiCad's
+    DRC then lists none at all, whatever --severity (7 corpus boards; the harness counts them by
+    pcbnew there, kaebench.score._uncapped). Only the judge's copy beside an attempt's board."""
+    try:
+        d = json.loads(pro.read_text(encoding="utf-8"))
+        sev = d["board"]["design_settings"]["rule_severities"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return
+    if sev.get("unconnected_items") == "ignore":
+        sev["unconnected_items"] = "error"
+        pro.write_text(json.dumps(d, indent=2), encoding="utf-8")
+
+
 def drc(board, inp, timeout):
     """{type: count} of DRC errors (env-dependent checks dropped) and the unconnected count of a
     board by kicad-cli, with the input's project rules; None when there is no usable board."""
@@ -137,9 +151,13 @@ def drc(board, inp, timeout):
         src = inp.with_suffix(ext)
         if src.exists():
             shutil.copy2(src, board.with_suffix(ext))
+    report_unconnected(board.with_suffix(".kicad_pro"))
     rep = board.with_name("drc.json")
+    # --severity-all: kicad-cli filters unconnected items by the project's severity like violations,
+    # so --severity-error read 0 open connections on boards that make them warnings (keytops-blank:
+    # 43 with --severity-all, 0 with --severity-error) and kept the first error-free attempt as clean
     cmd = [*shlex.split(os.environ.get("KAE_KICAD_WRAP", "")), "kicad-cli", "pcb", "drc", "--format", "json",
-           "--severity-error", "--refill-zones", "--output", str(rep), str(board)]
+           "--severity-all", "--refill-zones", "--output", str(rep), str(board)]
     try:
         subprocess.run(cmd, capture_output=True, timeout=max(60, timeout))
         r = json.loads(rep.read_text())

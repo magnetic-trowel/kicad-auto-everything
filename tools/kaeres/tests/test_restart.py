@@ -84,3 +84,43 @@ def test_history_of_open_nets_reaches_later_attempts(tmp_path):
     assert json.loads((work / "a0" / "seen.json").read_text()) == {}               # nothing judged yet
     assert json.loads((work / "a1" / "seen.json").read_text()) == {"N0": 1, "N1": 1}
     assert [d["open_nets"] for d in summary["attempt_log"]] == [["N0", "N1"], ["N0", "N1"]]
+
+
+# a kicad-cli that lists 3 unconnected items under the project's severity, filtered like KiCad:
+# none when the check is ignored, only with --severity-all when it is a warning
+SEVERITY_CLI = """#!/usr/bin/env python3
+import json, sys
+args = sys.argv[1:]
+out, board = args[args.index("--output") + 1], args[-1]
+sev = json.load(open(board[:-len(".kicad_pcb")] + ".kicad_pro"))["board"]["design_settings"]["rule_severities"]
+sev = sev["unconnected_items"]
+shown = sev == "error" or (sev == "warning" and "--severity-all" in args)
+json.dump(dict(violations=[], unconnected_items=[dict(severity=sev, items=[])] * (3 if shown else 0)), open(out, "w"))
+"""
+
+
+def test_judge_counts_unconnected_items_of_any_severity(tmp_path, monkeypatch):
+    """keytops-blank makes unconnected items warnings: --severity-error read 0 of its 43 open
+    connections; a project that ignores them makes DRC list none whatever the flag."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("restart_mod", RESTART)
+    restart = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(restart)
+    bin_ = tmp_path / "bin"
+    bin_.mkdir()
+    (bin_ / "kicad-cli").write_text(SEVERITY_CLI)
+    (bin_ / "kicad-cli").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_}:{os.environ['PATH']}")
+    monkeypatch.setenv("KAE_KICAD_WRAP", "")
+    for sev in ("error", "warning", "ignore"):
+        inp = tmp_path / sev / "in" / "board.kicad_pcb"
+        inp.parent.mkdir(parents=True)
+        inp.write_text("(kicad_pcb)\n")
+        pro = {"board": {"design_settings": {"rule_severities": {"unconnected_items": sev}}}}
+        inp.with_suffix(".kicad_pro").write_text(json.dumps(pro))
+        board = tmp_path / sev / "a0" / "board.kicad_pcb"
+        board.parent.mkdir()
+        board.write_text("(kicad_pcb)\n")
+        assert restart.drc(board, inp, 60)["unconnected"] == 3, sev
+        assert restart.judge(board, inp, {}, 60) == (0, 1, 3, 0, 0), sev
+        assert json.loads(inp.with_suffix(".kicad_pro").read_text()) == pro  # the task's project untouched
