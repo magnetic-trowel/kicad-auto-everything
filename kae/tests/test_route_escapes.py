@@ -146,3 +146,75 @@ def test_spoke_strips_give_way_to_a_neighbours_only_escape(tmp_path):
     p, info, plan, _sp = _setup(tmp_path / "narrow")
     _gnd_zone(info, 0.15)
     assert [g for g, l, pad in CN.thermal_corridors(info, plan) if pad["ref"] == "U9" and pad["number"] == "3"]
+
+
+# a 2 x 3 corner of a 0.4 mm-pitch wafer-level package (round 0.24 mm balls): from the middle
+# ball's centre a 0.2 mm track keeps 0.18 mm to its neighbours, less than the 0.2 mm clearance;
+# ending just past the ball, its copper still overlapping it, the track keeps more than 0.2 mm
+WLP_NETS = ["WA", "WB", "WC", "WD", "WE", "WF"]
+WLP = ("U8", "WLP", "Package_CSP:WLP-6", 106.0, 127.0, 0.0,
+       [(str(k + 1), n, -0.4 + 0.4 * (k % 3), 0.4 * (k // 3), 0.24, 0.24, "smd", 0.0, "", "passive")
+        for k, n in enumerate(WLP_NETS)], (0.6, 0.6))
+WLP_PARTNER = ("P8", "Pads", "x:Pads", 106.0, 120.0, 0.0,
+               [("1", "WB", 0.0, 0.0, 0.5, 0.5, "smd", 0.0, "", "passive")], (0.5, 0.5))
+
+
+def _wlp(tmp_path, overlap):
+    p = F.write_board(tmp_path, extra=[WLP, WLP_PARTNER])
+    text = p.read_text()
+    i = text.index('"Package_CSP:WLP-6"')
+    j = text.index("(embedded_fonts no)", i)
+    p.write_text(text[:i] + text[i:j].replace("smd rect", "smd circle") + text[j:])
+    info = F.synth_info(load(p))
+    info["settings"]["min_track"] = 0.2
+    plan = CN.plan(info, p, {})
+    return Space(load(p), info, plan=plan, opts={"pad_entry_overlap": overlap})
+
+
+def test_a_tight_ball_is_left_by_a_track_that_ends_just_past_it(tmp_path):
+    sp = _wlp(tmp_path, 0.05)
+    a, b = _pad(sp, "U8", "2"), _pad(sp, "P8", "1")
+    assert sp.track_violations("WB", "F.Cu", 0.2, a.pos, (a.pos[0], a.pos[1] - 1.0), tol=EXACT_TOL)
+    src = Anchor(a.geom, tuple(sorted(a.layers)), a.pos, kind="pad")
+    dst = Anchor(b.geom, tuple(sorted(b.layers)), b.pos, kind="pad")
+    rt = GridRouter(sp).connect("WB", [src], [dst], 0.2, ["F.Cu"], via=False)
+    assert rt is not None and rt.segs
+    l0, s0, e0 = rt.segs[0]
+    assert math.dist(s0, a.pos) > 0.12 - 1e-9                         # the end lies outside the ball
+    assert a.geom.distance(LineString([s0, e0]).buffer(0.1)) == 0      # and its copper overlaps it
+    assert a.geom.intersection(LineString([s0, e0]).buffer(0.1)).area > 0
+    for l, s, e in rt.segs:
+        assert not sp.track_violations("WB", l, 0.2, s, e, tol=EXACT_TOL)
+
+
+def test_without_an_overlap_allowance_the_tight_ball_stays_shut(tmp_path):
+    sp = _wlp(tmp_path, 0.0)
+    a, b = _pad(sp, "U8", "2"), _pad(sp, "P8", "1")
+    src = Anchor(a.geom, tuple(sorted(a.layers)), a.pos, kind="pad")
+    dst = Anchor(b.geom, tuple(sorted(b.layers)), b.pos, kind="pad")
+    assert GridRouter(sp).connect("WB", [src], [dst], 0.2, ["F.Cu"], via=False) is None
+
+
+def test_escapes_meeting_in_one_cell_are_drawn_not_counted_as_touching(tmp_path):
+    """Two same-net 0.3 mm pads 0.15 mm apart, foreign pads above and below: their escapes
+    meet in the one free cell between them. connect returned an empty Route ("already
+    touching") though no copper joins them; it now emits both escape pieces."""
+    from kae.route.critical_grid import Grid
+    from kae.route.critical_modules import anchor
+    X, Y, P, S = 130.0, 120.0, 0.45, 0.3
+    pads = [("1", "NB", 0, 0), ("2", "NB", P, 0), ("3", "N1", 0, P), ("4", "N2", P, P), ("5", "N3", 0, -P),
+            ("6", "N4", P, -P)]
+    s = F.session(tmp_path, extra=[("U9", "X", "Package_BGA:test", X, Y, 0.0,
+                                     [(n, net, lx, ly, S, S, "smd", 0.0, "", "passive") for n, net, lx, ly in pads],
+                                     (1.0, 1.0))])
+    sp, gr = s.space, s.router
+    fu = next(f.uuid for f in s.board.footprints if f.ref == "U9")
+    ta, tb = sp.terminal(fu, ["1"]), sp.terminal(fu, ["2"])
+    res = 0.05
+    g = Grid(X + P / 2 - 40 * res, Y - 40 * res, X + P / 2 + 40 * res, Y + 40 * res, res)
+    rt = gr.connect("NB", [anchor(ta)], [anchor(tb)], 0.2, ["F.Cu"], via=False, window=g)
+    assert rt is not None and rt.segs
+    line = LineString([rt.segs[0][1]] + [e for _, _, e in rt.segs]).buffer(0.1)
+    assert line.intersects(ta.geom) and line.intersects(tb.geom)
+    for l, a, b in rt.segs:
+        assert not sp.track_violations("NB", l, 0.2, a, b, tol=EXACT_TOL)

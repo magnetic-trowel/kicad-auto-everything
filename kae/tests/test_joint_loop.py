@@ -34,6 +34,23 @@ def test_accept_is_lexicographic_with_hard_guards():
     assert not accept(base, card(unc=1, mods={"a": None}))[0]
 
 
+def test_accept_prices_missing_at_the_cap_and_compares_like_with_like():
+    """A module losing its copper must not beat its measured value, and physics compares only
+    the modules both cards measured the same way (audit repro: 5.4 -> 3.8 and 10.2 -> 2.6 were
+    'physics better')."""
+    assert not accept(card(unc=2, err=1, mods={"cell1": 4.6, "dec1": 0.8}),
+                      card(unc=2, err=1, mods={"cell1": None, "dec1": 0.8}))[0]
+    old = card(unc=3, mods={"cell1": 1.2})
+    old.method = "recheck"
+    new = card(unc=3, mods={"cell1": 1.4, "dec1": 0.5, "dec2": 0.6, "xtal": 0.1})
+    new.method = "board_physics"
+    assert not accept(old, new)[0]
+    new.method = "recheck"
+    assert not accept(old, new)[0]                                        # cell1 1.2 -> 1.4: worse
+    # a module leaving the candidate's set is not counted against it
+    assert accept(card(unc=3, mods={"cell1": 0.9, "dec1": 0.5}), card(unc=3, mods={"dec1": 0.45}))[0]
+
+
 class Lay:
     def __init__(self, broken, poses, tag):
         self.broken = set(broken)       # connections still unrouted (by part ref)

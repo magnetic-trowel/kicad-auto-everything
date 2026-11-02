@@ -161,6 +161,18 @@ DEFAULTS = dict(
                                    # seed; 0: never (bridge.strict_share)
     ball_escapes=1,                # 1: dog-bones for the inner rings of ball grids, laid with the plane
                                    # escapes (escape.dog_bones; gecko5 101 -> 69 open, nekoink 99 -> 77); 0: none
+    pad_entry_overlap=0.05,        # mm: a track may end outside a pad when its copper still overlaps the pad by
+                                   # this much (KiCad connects any overlap); a 0.4 mm-pitch WLP ball is left
+                                   # cleanly no other way at 0.2 / 0.2 mm (critical_grid._escapes)
+    escape_band=1,                 # placement (kae.place.escape_band): the surface escapes of each ball grid
+                                   # and fine-pitch ring kept free of parts that are not its own (1: a soft
+                                   # annealer term; 2: hard occupancy against every part; 0: off)
+    escape_band_w=1.0,             # weight of the soft band term (overlap / mean part area, as silk)
+    escape_band_scale=1.0,         # band depth per side = scale x escapes on that side x (track + clearance)
+    escape_band_max_mm=2.5,        # mm: the deepest band on one side
+    escape_ring_pitch=0.5,         # mm: pad rings (QFN, QFP) at most this fine get bands
+    escape_fanout=0,               # placement: 1 also reserves the dog-bone via sites of each ball grid on the
+                                   # other side (no part there covers them); 0: off
 )
 
 

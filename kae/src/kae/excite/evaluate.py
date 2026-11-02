@@ -160,8 +160,18 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
             solved[k] = res
     notes = []
     uncomputed = []
+    # an aggressor whose pattern drives current into a pad outside the copper model loses that current
+    # from its solve: its harms are not computed (a dropped contribution is not a zero one)
+    miss = set(missing)
+    for s in srcs:
+        out_ = sorted({p for band in bands[s.name] for p, j in pats[(s.name, band)][1].items() if p in miss and abs(j) > 1e-9})
+        if out_:
+            notes.append(f"{s.name}: pads outside the copper model ({', '.join(out_[:6])}): its harms are not computed")
+            uncomputed.append(s.name)
     pairs = []
     for s in srcs:
+        if s.name in uncomputed:
+            continue
         res = {}
         for band, f in bands[s.name].items():
             v, info = solved[(s.name, band)]
@@ -294,7 +304,7 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
     if bad:
         notes.append(f"{len(bad)} observation(s) implausible, left for kae.intent to report unpriced: "
                      f"{bad[0]['label']}: {bad[0]['implausible']}")
-    if any(n.startswith("DC: copper open") for n in notes):
+    if any(n.startswith(DC_VOID) for n in notes):
         uncomputed.append("dc")
     return dict(board=path, pitch=pitch, window=window, seconds=round(time.time() - t0, 1), seed=seed,
                 total=totals(tot, uncomputed),
@@ -337,6 +347,10 @@ def print_total(t):
         return
     print(f"total harm: robust {t['robust']} (mean of the worst {HA.WORST_SHARE:.0%} of corners), typical {t['typical']}, "
           f"90% of corners below {t['p90']}, worst {t['worst']}, best {t['best']}")
+
+
+# the DC band's notes that void the score: an open flow, or load/source currents left out of the copper
+DC_VOID = ("DC: copper open", "DC: pads outside the copper model")
 
 
 def _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes, log, ac_copper=None, obs_out=None):

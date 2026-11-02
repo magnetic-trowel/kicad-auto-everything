@@ -66,6 +66,34 @@ def test_a_hard_violation_outranks_any_cost():
     assert a["tiers"]["hard"] == 0 and b["tiers"]["hard"] > 0 and OB.key(a) < OB.key(b)
 
 
+def test_a_min_bound_is_judged_at_its_lowest_corner():
+    """'worst' for a min bound is the smallest corner (max judged it at its best: 50/10/90 mV against
+    min 40 mV read 90 mV, met)."""
+    ev = {"board": "synthetic", "total": {"complete": True}, "questions": [],
+          "observations": [_ob("drop.rail", "V", [0.050, 0.010, 0.090], kind="dc_drop", rail="+3V3")]}
+    st = OB.evaluate(ev, {"terms": [{"id": "T1", "tier": "hard", "obs": "drop.rail", "min": "40 mV", "why": "w"}]}, BRIEF)
+    t1 = next(r for r in st["terms"] if r["id"] == "T1")
+    assert t1["met"] is False and st["tiers"]["hard"] > 0
+    assert OB._agg([5.0, 1.0, 9.0, 3.0, 7.0], "cvar20", "min") == 1.0
+    assert OB._agg([5.0, 1.0, 9.0, 3.0, 7.0], "cvar20") == 9.0
+
+
+def test_an_evaluation_without_observations_has_no_score():
+    """Missing data is not zero harm: an evaluation with no observations (kae.excite.wideband's) ranked
+    as perfect (0, 0)."""
+    st = OB.evaluate({"board": "synthetic", "total": {"complete": True}, "harms": [{"u": 9.0}]}, None, BRIEF)
+    assert st["tiers"] is None and OB.key(st) == (float("inf"), float("inf"))
+
+
+def test_a_db_limit_on_a_log_unit_observation_is_not_converted_twice():
+    ev = {"board": "synthetic", "total": {"complete": True}, "questions": [],
+          "observations": [_ob("emission.cable_E", "dBuV/m", [30.0, 36.0], kind="cm", connectors=["J1"])]}
+    st = OB.evaluate(ev, {"terms": [{"id": "E1", "tier": "hard", "obs": "emission.cable_E", "max": "40 dB",
+                                     "why": "w"}]}, BRIEF)
+    e1 = next(r for r in st["terms"] if r["id"] == "E1")
+    assert e1["met"] is True and e1["value"].startswith("36")
+
+
 def test_declared_cables_turn_common_mode_into_a_field_at_10_m():
     it = {"environment": {"cables": [{"connector": "J1", "length_m": 1.5}]},
           "terms": [{"id": "E1", "tier": "limit", "obs": "emission.cable_E", "max": "30 dBuV/m", "rate": "5 mW_eq/dB",

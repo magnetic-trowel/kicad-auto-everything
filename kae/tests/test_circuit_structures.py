@@ -71,6 +71,9 @@ def test_boost_cell_closes_on_the_output_capacitor():
     assert c['class'] == 'boost' and c['rail'] == '+12V'
     assert c['loop'][0][0] == c['loop'][-1][0] == 'C2'
     assert [t[0] for t in c['loop'][1:3]] == ['D1', 'D1']
+    # the controller holds the low-side switch the loop runs through (its SW and GND pads)
+    assert c['switches'] == {'high': None, 'low': 'U1', 'rectifier': 'D1'}
+    assert [t[0] for t in c['loop'][3:5]] == ['U1', 'U1']
 
 
 def test_discrete_half_bridge_cell_with_shunt():

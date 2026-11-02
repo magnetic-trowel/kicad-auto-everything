@@ -64,7 +64,9 @@ def pair_u(kind, bound, Zf, Le, val):
 
 
 def phi(u):
-    """The margin price: linear to the bound, then a quadratic barrier."""
+    """The margin price: linear to the bound, then a quadratic barrier; never negative (a negative DC
+    drop, the load's ground nearer the return than the source's, is no credit)."""
+    u = max(u, 0.0)
     return u if u <= 1 else u + 4 * (u - 1) ** 2
 
 

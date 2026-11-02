@@ -516,9 +516,9 @@ class PhysRouter:
 
     # ------------------------------------------------------------------ hop prices
     def hop_currents(self, n, a_pads, b_pads):
-        """Current of each pattern on a hop joining island A (pads a_pads) toward island B of net n:
-        the pattern's injection summed over the islands on A's side of the hop (one hop per pair of
-        islands in a chain, so A's side is A)."""
+        """Current of each pattern on a hop joining island A toward island B of net n: the pattern's
+        injection summed over a_pads, the pads of every island on A's side of the hop (A and the
+        islands attached through it)."""
         out = {}
         for key, J in self.flow.items():
             i = sum(J.get(q, 0) for q in a_pads)
@@ -656,7 +656,7 @@ class PhysRouter:
         return {q for q in self.bd.pads_of.get(n, []) if q.rsplit(".", 1)[0] == ref}
 
     def _dc_per_ohm(self, n, b_pads):
-        """(dH/dR, I_max) of a hop joining island b_pads to the rest of net n: the robust objective's
+        """(dH/dR, I_max) of a hop joining the islands b_pads (the hop's whole far side) to the rest of net n: the robust objective's
         derivative per ohm of the hop (copper loss I^2 R; the drop I R of every load beyond the hop from
         its rail's feed), averaged over the objective's corners, and the hop's largest DC current."""
         if not self.dc_obs or not getattr(self, "H_corners", None):
@@ -961,7 +961,10 @@ class PhysRouter:
         tree = [isl[0]]
         try:
             for a, b_ in order:
-                cur = self.hop_currents(n, b_, a)
+                # the hop carries every island beyond it: its current, DC price and width are the subtree's
+                # (with b_'s alone a trunk hop of a rail or switch net came out too narrow and under-priced)
+                far = [q for g in beyond[id(b_)] for q in g]
+                cur = self.hop_currents(n, far, a)
                 layer0 = self.sp.cu
                 width = self.sp.width_limits(n, layer0[0])[1]
                 if self._commutation_share(n, cur) >= COMMUTATION_SHARE:
@@ -969,13 +972,12 @@ class PhysRouter:
                     width = self.sp.clamp_width(n, layer0[0], max(width, 0.8))
                 self._hop_dc = 0.0
                 if self.policy is not None:
-                    far = [q for g in beyond[id(b_)] for q in g]
                     I = [sum(inj.get(q, 0.0) for q in far) for inj in self.dc_inj]
                     if max((abs(x) for x in I), default=0.0) > 1e-4:
                         width, why = self._intent_width(n, layer0[0], width, I)
                         self.log(f"pnr:   hop {n} {b_[0]}->{a[0]}: width {width:g} mm ({why})")
                 elif not plain:
-                    g, Imax = self._dc_per_ohm(n, b_)
+                    g, Imax = self._dc_per_ohm(n, far)
                     if Imax > 0:
                         width, why = self._dc_width(n, layer0[0], width, g, Imax)
                         self._hop_dc = g

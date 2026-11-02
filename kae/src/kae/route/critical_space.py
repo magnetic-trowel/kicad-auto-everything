@@ -164,6 +164,7 @@ class Space:
         self.rb = plan.rule_board
         self.settings = info.get("settings") or {}
         self.via_in_pad = bool(self.opts.get("via_in_pad", False))
+        self.pad_overlap = float(CN.setting("pad_entry_overlap", getattr(board, "path", None), self.opts))
         st = board.stackup
         z = [0.0]
         if st is not None and st.copper == self.cu and len(st.gaps) == len(self.cu) - 1:
@@ -194,6 +195,7 @@ class Space:
         self.pads_of = {}                          # (fp uuid, number) -> [pad Item]
         self.pads_by_fp = {}
         self.corridors_by_fp = {}
+        self.barrels_by_fp = {}      # PTH barrels on layers where the pad has no ring
         self.routed = []                           # committed critical copper (Items)
         self.existing = []                         # tracks and vias already in the board
         self.zones = []                            # (net, layer, polygon, rec)
@@ -255,6 +257,7 @@ class Space:
                     hb.kind, hb.fp, hb.idx, hb.uuid, hb.pos = it.kind, it.fp, k, it.uuid, it.pos
                     for l in bare:
                         self.items[l].append(hb)
+                    self.barrels_by_fp.setdefault(it.fp, []).append(hb)
 
     def _build_obstacles(self):
         plan = self.plan
@@ -532,9 +535,13 @@ class Space:
                 same = it.net is not None and it.net == net and it.kind in ("pad", "track", "via", "corridor", "shape")
                 if same:
                     if it.kind == "via":
-                        dc = it.geom.distance(p)
-                        if dc < pitch - TOL:
-                            out.append((it, dc, pitch))
+                        # hole to hole through both drills (the pitch holds the class drill): an
+                        # existing via with a larger drill needs more; TOL above the
+                        # requirement like every other test (it was `pitch - TOL`, 2 um inside)
+                        dh = it.geom.distance(p) - (it.drill or d) / 2.0 - rh
+                        nh = pitch - self.via_size(net)[1]
+                        if dh < nh + TOL:
+                            out.append((it, dh, nh))
                     elif it.kind == "pad":
                         if it.hole is not None:
                             hg, hr = it.hole
@@ -701,7 +708,10 @@ class Space:
         from kae.board import transform as T
         if old[3] != new[3]:
             raise ValueError("set_pose cannot flip a part")
-        its = list(self.pads_by_fp.get(fp_uuid) or []) + list(self.corridors_by_fp.get(fp_uuid) or [])
+        # the bare-layer barrels move with their pads (they stayed behind as ghosts at the old
+        # pose, and nothing marked the moved hole on those layers)
+        its = (list(self.pads_by_fp.get(fp_uuid) or []) + list(self.corridors_by_fp.get(fp_uuid) or [])
+               + list(self.barrels_by_fp.get(fp_uuid) or []))
         if not its:
             return
         inv = _inverse(T.affine(*old))

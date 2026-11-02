@@ -198,7 +198,8 @@ def spoke_tracks(pad, zone, layer, need, plan, space, taken=None, skip=()):
             continue
         seen.add(a)
         r = math.radians(a)
-        ray = LineString([(start.x, start.y), (start.x + reach * math.cos(r), start.y + reach * math.sin(r))])
+        # y down, as constraints.thermal_corridors (`+ sin` mirrored the spokes of a rotated pad)
+        ray = LineString([(start.x, start.y), (start.x + reach * math.cos(r), start.y - reach * math.sin(r))])
         inter = ray.intersection(core)
         if inter.is_empty:
             continue
@@ -363,8 +364,10 @@ def analyse(report, routed, info=None, plan=None, fills=None, layer_map=None, co
 
 
 # ----------------------------------------------------------------------------- DSN edits
-def _drop_planes(tree, nets_layers):
-    """Remove the planes of nets (on the given layers; all layers when None) from a DSN."""
+def _drop_planes(tree, nets_layers, canon=None):
+    """Remove the planes of nets (on the given canonical layers; all layers when None) from a
+    DSN. `canon` maps the DSN's (user) layer names to canonical ones (layer_names): KiCad
+    writes a renamed layer's user name, and a plane on it was never dropped."""
     struct = find(tree, "structure")
     n = 0
     for pl in findall(struct, "plane"):
@@ -374,6 +377,7 @@ def _drop_planes(tree, nets_layers):
         layers = nets_layers[net]
         shape = next((c for c in pl[2:] if isinstance(c, list)), None)
         layer = str(shape[1]) if shape is not None and len(shape) > 1 else ""
+        layer = (canon or {}).get(layer, layer)
         if layers is None or not layers or layer in layers:
             struct.remove(pl)
             n += 1
@@ -559,6 +563,19 @@ def round_seed(seed, k):
     return (seed or 0) * 7919 + k
 
 
+def _thermal_plan(plan, info, input_path, opts, sev, thermal):
+    """The plan with spoke corridors for the pads in `thermal` (starved so far). With
+    --thermal-all every pad has its corridors already: re-planning with only the starved ones
+    dropped all the others' for the later rounds and the last mile."""
+    if opts.get("thermal_pads") == "all":
+        return plan
+    pol = getattr(plan, "plane_policy", None)
+    plan = constraints.plan(info, input_path, dict(opts, severities=sev, thermal_pads=sorted(thermal)))
+    plan.plane_policy = pol
+    plan.strict_planes = opts.get("strict_planes") or []
+    return plan
+
+
 def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
     """Repair `output_path` in place (see the module docstring). Returns a report."""
     wd = Path(wd)
@@ -628,10 +645,7 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
         new_thermal = a["thermal"] - thermal
         if new_thermal and opts.get("thermal_repair", True):
             thermal |= new_thermal
-            pol = getattr(plan, "plane_policy", None)
-            plan = constraints.plan(info, input_path, dict(opts, severities=sev, thermal_pads=sorted(thermal)))
-            plan.plane_policy = pol
-            plan.strict_planes = opts.get("strict_planes") or []
+            plan = _thermal_plan(plan, info, input_path, opts, sev, thermal)
         if not (a["widen"] or a["items"] or a["open"] or a["spokes"] or new_thermal):
             rec["stopped"] = "nothing attributable"
             rec["unattributed"] = sorted(set(a["unattributed"]))
@@ -683,7 +697,7 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
                 rec["planes_split"] = _fill_planes(tree, fills, a["connect"], lambda l: lname_map.get(l, l),
                                                    info, now, plan.copper)
             rec["planes_dropped"] = _drop_planes(tree, {n: v for n, v in a["open"].items()
-                                                        if not use_split or n not in a["connect"]})
+                                                        if not use_split or n not in a["connect"]}, lmap)
             dsn = rdir / "board.dsn"
             specctra.write(tree, dsn)
             translate.write_rules(plan, dsn)

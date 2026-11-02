@@ -468,3 +468,20 @@ def test_mask_opening_over_another_nets_zone_bridges():
     for pd in u1.pads:
         pd.mask_margin = 0.5
     assert bridged()
+
+
+def test_board_min_clearance_floors_the_pad_inflation():
+    """The setup's min_clearance is a floor under every netclass (KiCad DRC, and the exact
+    check's legalize._net_clr). Raising it above the netclass clearance used to *shrink* the
+    pads' own rectangles (0.15 -> 0.5 mm took 0.1 mm off each side), so grid-disjoint parts
+    sat 0.2 mm apart where the board asks 0.5 mm."""
+    b = load(FIXTURE)
+    b.rules.clearance = 0.5
+    P = Problem.build(b)
+    assert P.clr_min >= 0.5 and all(v >= 0.5 for v in P.netclass_clr.values())
+    from kae.place.problem import pad_lib_rect, rect_union
+    p = next(q for q in P.parts if q.fp.pads and q.fp.pads[0].kind == "smd")
+    raw, own = rect_union([pad_lib_rect(pd) for pd in p.fp.pads]), p._lib["own_pads"]
+    # every pad grows by at least half the floor, so two disjoint parts' pads keep it
+    assert own[0] <= raw[0] - 0.25 + 1e-9 and own[1] <= raw[1] - 0.25 + 1e-9
+    assert own[2] >= raw[2] + 0.25 - 1e-9 and own[3] >= raw[3] + 0.25 - 1e-9, (raw, own)

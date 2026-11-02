@@ -89,8 +89,10 @@ def ties(z, r, d, h):
 
 @jit
 def via_return(h, d, r):
+    """Two antiparallel vias of height h over a plane, d apart, with their images: ties(h, r, d, 0).
+    The other via's image spans [-h, 0] (it sat at [-2h, -h]: +4 % at h 1.5, d 2)."""
     d = max(d, 2.0 * r)
-    return 2.0 * (m_self(h, r) + collinear(h, h, 0.0)) - 2.0 * (m_par(h, h, 0.0, d) + m_par(h, h, -2.0 * h, d))
+    return 2.0 * (m_self(h, r) + collinear(h, h, 0.0)) - 2.0 * (m_par(h, h, 0.0, d) + m_par(h, h, -h, d))
 
 
 @jit
@@ -257,6 +259,30 @@ def hop_on_ground(N, gmask, x0, y0, res, ax, ay, bx, by):
 
 
 @jit
+def side_vias(GS, ti, isbody, px, py, n, thick, rvia):
+    """Partial inductance (nH) of the vias where a loop's board hops change sides: each via's self
+    plus 2 M per pair, signed by their directions (F->B against B->F is antiparallel, -2 M; two
+    vias the same way, possible with four or more side changes, +2 M: all were subtracted)."""
+    A = 0.0
+    for k in range(n):
+        if isbody[k]:
+            continue
+        k1 = k + 1 if k + 1 < n else 0
+        if GS[ti[k]] != GS[ti[k1]]:
+            A += m_self(thick, rvia)
+            sk = 1.0 if GS[ti[k1]] > GS[ti[k]] else -1.0
+            for q in range(k + 1, n):
+                if isbody[q]:
+                    continue
+                q1 = q + 1 if q + 1 < n else 0
+                if GS[ti[q]] != GS[ti[q1]]:
+                    sq = 1.0 if GS[ti[q1]] > GS[ti[q]] else -1.0
+                    d = math.hypot(px[k1] - px[q1], py[k1] - py[q1])
+                    A += 2.0 * sk * sq * m_par(thick, thick, 0.0, max(d, rvia))
+    return A
+
+
+@jit
 def loop_core(X, Y, C, S, GS, ti, tlx, tly, isbody, w, zb, bodyd, n, gnd, cos_min, clr, detour, thick, rvia,
               Hf, Hb, Nf, Nb, gmask, rx0, ry0, rres, px, py, hs, fs):
     """Loop inductance (nH). clr: copper clearance (mm); detour: c of the expected route
@@ -417,22 +443,7 @@ def loop_core(X, Y, C, S, GS, ti, tlx, tly, isbody, w, zb, bodyd, n, gnd, cos_mi
                 MAB += 0.5 * m
             else:
                 A += m
-    # vias where a board hop changes sides
-    nth = 0
-    for k in range(n):
-        if isbody[k]:
-            continue
-        k1 = k + 1 if k + 1 < n else 0
-        if GS[ti[k]] != GS[ti[k1]]:
-            A += m_self(thick, rvia)
-            for q in range(k + 1, n):
-                if isbody[q]:
-                    continue
-                q1 = q + 1 if q + 1 < n else 0
-                if GS[ti[q]] != GS[ti[q1]]:
-                    d = math.hypot(px[k1] - px[q1], py[k1] - py[q1])
-                    A -= 2.0 * m_par(thick, thick, 0.0, max(d, rvia))
-            nth += 1
+    A += side_vias(GS, ti, isbody, px, py, n, thick, rvia)
     if gnd < 0:
         return max(A, Af)
     lateral = max(A + B + 2.0 * MAB, Af)

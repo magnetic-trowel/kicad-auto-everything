@@ -7,11 +7,13 @@ A Scorecard holds what KiCad and the routed-physics recheck say about a board:
 - completion: KiCad's unconnected items; DRC: error-level violations (library-environment
   checks excluded, as kaebench);
 - physics: per module the routed utilization u = value / allocation (critical_recheck), and
-  their sum, each capped at U_CAP, a module without a value counted at U_MISSING; the place
-  terms' straight-line total is reported beside it.
+  their sum, each capped at U_CAP, a module without a value counted at U_MISSING (reports) or
+  U_CAP (acceptance); the place terms' straight-line total is reported beside it. `method`
+  names the measurement (recheck of the module stage, or board_physics).
 
 `accept(old, new)` compares lexicographically: legality, then completion and DRC
-(unconnected + errors, then unconnected), then routed physics. Legality, unconnected items
+(unconnected + errors, then unconnected), then routed physics (on the modules both cards
+measured with the same method, a module without a value at U_CAP). Legality, unconnected items
 and DRC errors must never get worse. A board that becomes clean (legal, fully routed, no
 DRC error) is always kept. Another strict gain in completion or DRC is kept when routed
 physics worsens by at most `phys_slack` (10 % of the incumbent's total) per item gained;
@@ -26,13 +28,14 @@ from dataclasses import dataclass, field
 from .feedback import PLACEMENT_TYPES  # noqa: F401 - KiCad's placement-type checks (stages.placement_errors)
 
 U_CAP = 5.0          # one module far over budget must not hide every other module's change
-U_MISSING = 3.0      # a module whose routed value cannot be computed (copper missing)
+U_MISSING = 3.0      # a module whose routed value cannot be computed (copper missing), in reports
 
-def physics_total(modules):
-    """Sum of capped routed utilizations: modules {id: u or None}."""
+
+def physics_total(modules, missing=U_MISSING):
+    """Sum of capped routed utilizations: modules {id: u or None}, None priced `missing`."""
     tot = 0.0
     for _, u in sorted(modules.items()):
-        tot += U_MISSING if u is None else min(U_CAP, max(0.0, float(u)))
+        tot += missing if u is None else min(U_CAP, max(0.0, float(u)))
     return tot
 
 
@@ -45,6 +48,7 @@ class Scorecard:
     modules: dict = field(default_factory=dict)      # module id -> routed u (None: no value)
     flagged: list = field(default_factory=list)      # modules the recheck flags
     place_terms: float | None = None                 # straight-line place-terms total
+    method: str = ""                                 # how `modules` were measured ('recheck', 'board_physics')
     worst_rail_mohm: float | None = None
     note: str = ""
 
@@ -69,11 +73,14 @@ class Scorecard:
                     errors=self.errors, errors_by_type=dict(self.errors_by_type), physics=round(self.physics, 4),
                     modules={k: (None if v is None else round(v, 4)) for k, v in sorted(self.modules.items())},
                     flagged=list(self.flagged), place_terms=None if self.place_terms is None else round(self.place_terms, 4),
-                    worst_rail_mohm=self.worst_rail_mohm, **({"note": self.note} if self.note else {}))
+                    worst_rail_mohm=self.worst_rail_mohm, **({"method": self.method} if self.method else {}),
+                    **({"note": self.note} if self.note else {}))
 
 
 def _phys_on(card, ids):
-    return physics_total({k: card.modules.get(k) for k in ids})
+    # a module whose copper became unmeasurable must never beat a measured value (at 3.0 a
+    # hot loop at u 4.6 'improved' by losing its copper): price it at the cap
+    return physics_total({k: card.modules.get(k) for k in ids}, missing=U_CAP)
 
 
 def accept(old, new, phys_tol=0.005, phys_slack=0.10):
@@ -86,8 +93,10 @@ def accept(old, new, phys_tol=0.005, phys_slack=0.10):
         return False, f"completion dropped ({old.unconnected} -> {new.unconnected} unconnected)"
     if new.errors > old.errors:
         return False, f"DRC errors rose ({old.errors} -> {new.errors})"
-    # physics on the modules both boards know (the module set comes from one brief)
-    ids = sorted(set(old.modules) | set(new.modules))
+    # physics on the modules both boards measured, and only when measured the same way: the
+    # union priced every module one card lacked (a stage-only recheck against a board_physics
+    # card of every module) at the missing value, so a worse shared module read as better
+    ids = sorted(set(old.modules) & set(new.modules)) if old.method == new.method else []
     p0, p1 = _phys_on(old, ids), _phys_on(new, ids)
     k0 = (old.placement_errors, old.unconnected + old.errors, old.unconnected)
     k1 = (new.placement_errors, new.unconnected + new.errors, new.unconnected)

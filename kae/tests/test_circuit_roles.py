@@ -27,6 +27,12 @@ def test_part_kinds_from_names_values_footprints():
     # a bead on a resistor footprint, named by its impedance
     assert kind('FB1', '600R@100MHz', 'Resistor_SMD:R_0603_1608Metric', [('1', 'A', '', ''), ('2', 'B', '', '')])[0] == 'ferrite'
     assert kind('L2', '600OHM/2A', 'Inductor_SMD:L_0805_2012Metric', [('1', 'A', '', ''), ('2', 'B', '', '')])[0] == 'ferrite'
+    # TLV70x1/TLV70x2 are comparators, TLV70033/TLV75733 LDOs
+    sot = 'Package_TO_SOT_SMD:SOT-23-5'
+    assert kind('U3', 'TLV7031', sot, [('1', 'OUT', 'OUT', 'output'), ('2', 'GND', 'V-', 'power_in')])[1] != 'regulator_linear'
+    assert kind('U3', 'TLV7042DGKR', sot, [('1', 'OUT', 'OUT', 'output'), ('2', 'GND', 'V-', 'power_in')])[1] != 'regulator_linear'
+    assert kind('U3', 'TLV70033', sot, [('1', 'IN', 'IN', 'power_in'), ('5', 'OUT', 'OUT', 'power_out')])[1] == 'regulator_linear'
+    assert kind('U3', 'TLV75733PDRVR', sot, [('1', 'IN', 'IN', 'power_in'), ('5', 'OUT', 'OUT', 'power_out')])[1] == 'regulator_linear'
     k, sub, _ = kind('D1', 'SMBJ15A', 'Diode_SMD:D_SMB', [('1', 'A', 'K', ''), ('2', 'B', 'A', '')])
     assert (k, sub) == ('diode', 'tvs')
     k, sub, _ = kind('U5', 'USBLC6-2SC6', 'Package_TO_SOT_SMD:SOT-23-6',
@@ -56,6 +62,28 @@ def test_regulator_part_number_voltage():
     assert regulator_vout('TLV74318PDBVR')[0] == 1.8
     assert regulator_vout('LM317') is None
     assert regulator_vout('SPX1117-ADJ') is None
+    assert regulator_vout('AZ1117CH-3.3TRG1')[0] == 3.3
+    assert regulator_vout('R-78B5.0-2.0')[0] == 5.0
+    assert regulator_vout('TPS7A20285PDQNR')[0] == 2.85          # TI x.xx code
+    assert regulator_vout('TLV75733PDRVR')[0] == 3.3
+    assert regulator_vout('LD1117S33TR')[0] == 3.3
+
+
+def test_regulator_voltage_reads_part_numbers_not_sizes_or_currents():
+    """A decimal needs a V or a part-number position: footprint pitches and body sizes,
+    current ratings and input ranges are not an output voltage (opendrone whoop TPS7A20285 read
+    1.0 V from 'X2SON-4_L1.0', TPS63001 read 1.8 V from '1.8A')."""
+    from types import SimpleNamespace
+
+    from kae.circuit.roles import part_number_text
+    assert regulator_vout('TPS62130 Package_DFN_QFN:VQFN-16-1EP_3x3mm_P0.5mm_EP1.68x1.68mm') is None
+    assert regulator_vout('MP2307 Package_SO:SOIC-8_3.9x4.9mm_P1.27mm') is None
+    assert regulator_vout('TPS63001 buck-boost 1.8A') is None
+    assert regulator_vout('TLV7031DPWR') is None                     # a comparator, no code
+    p = SimpleNamespace(value='TPS7A20285', lib_id='Package_SON:Texas_X2SON-4_L1.0',
+                        fields={'Description': 'LDO 300 mA, VIN 1.6-6.0 V', 'MPN': 'TPS7A20285PDQNR'})
+    assert 'X2SON' not in part_number_text(p) and 'VIN' not in part_number_text(p)
+    assert regulator_vout(part_number_text(p))[0] == 2.85
 
 
 # ------------------------------------------------------------------------------- grounds and rails
@@ -221,6 +249,26 @@ def test_rail_named_control_lines_are_not_rails():
     assert r.parts['R1'].subtype == 'shunt'
     assert r.nets['SW_OUT'].attrs['volts']['value'] == 12.0                        # a load switch passes its input through
     assert r.nets['12V0_LC1'].attrs['source'] == {'kind': 'derived', 'ref': 'R1', 'upstream': 'SW_OUT', 'via': 'shunt'}
+
+
+def test_level_shifted_signals_with_a_voltage_suffix_are_not_rails():
+    """Adafruit and Antmicro name level-shifted logic '<signal>_3V' / '_5V': a voltage suffix alone is
+    no rail (SCK_3V, TFTCS_3V on the 1.69in TFT were rails at confidence 0.5-0.62). A suffix net with
+    bulk capacitance, a supply suffix or a supply word in the base stays a rail."""
+    parts = [R('R1', '10k', 'SCK_3V', 'GND'), R('R2', '10k', 'TFTCS_3V', 'GND'), R('R3', '10k', 'LCD_DATA1_5V', 'GND'),
+             fp('J2', 'Conn', 'Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical',
+                [('1', 'SCK_3V', '', 'passive'), ('2', 'TFTCS_3V', '', 'passive'), ('3', 'LCD_DATA1_5V', '', 'passive')]),
+             fp('J1', 'Conn', 'Connector_PinHeader_2.54mm:PinHeader_1x08_P2.54mm_Vertical',
+                [('1', 'SCK_3V', '', 'passive'), ('2', 'TFTCS_3V', '', 'passive'), ('3', 'LCD_DATA1_5V', '', 'passive'),
+                 ('4', 'GND', '', 'passive'), ('5', 'USB_VCC', '', 'passive'), ('6', 'UART_5V', '', 'passive'),
+                 ('7', 'MOTOR_12V', '', 'passive')]),
+             C('C1', '100nF', '+3V3', 'GND'), C('C2', '10uF', 'USB_VCC', 'GND'), C('C3', '10uF', 'UART_5V', 'GND'),
+             C('C4', '10uF', 'UART_5V', 'GND'), C('C5', '10uF', 'MOTOR_12V', 'GND')]
+    nl, r = roles_of(parts)
+    for n in ('SCK_3V', 'TFTCS_3V', 'LCD_DATA1_5V'):
+        assert n not in r.rails, (n, r.nets[n].confidence)
+    for n in ('USB_VCC', 'UART_5V', 'MOTOR_12V'):
+        assert n in r.rails, n
 
 
 def test_i2c_clock_and_gpio_named_oscillator_pins():
@@ -511,12 +559,12 @@ def test_net_names_that_state_a_voltage_beat_the_capacitor_bound():
 
 def test_regulator_vout_ignores_ranges_inputs_and_footprints():
     from kae.circuit.netlist import Netlist as NL
-    from kae.circuit.roles import regulator_text
+    from kae.circuit.roles import part_number_text
     assert regulator_vout('TPSM5D1806RDBR Non-Isolated PoL Module DC DC Converter 1 Output 0.5 ~ 5.5V 12A 4.5V - 15V Input') is None
     assert regulator_vout('RS-PRO_K7805M-1000R3')[0] == 5.0
     assert regulator_vout('LM7812CT')[0] == 12.0 and regulator_vout('MC7905')[0] == -5.0
     nl = NL.from_board(board([fp('U1', 'MCP1700', 'Package_TO_SOT_THT:TO-92_Inline_P2.54mm', [('1', 'GND', 'GND', '')])]))
-    assert regulator_vout(regulator_text(nl.parts['U1'])) is None        # the pitch is no output voltage
+    assert regulator_vout(part_number_text(nl.parts["U1"])) is None        # the pitch is no output voltage
 
 
 def test_eagle_x_connectors_are_not_oscillators():

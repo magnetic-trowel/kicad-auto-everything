@@ -47,6 +47,15 @@ R_MIN = 1e-4
 K_SUM = 0.8           # largest sum of |k| over one inductor's couplings
 
 
+def _er(rb, layer):
+    """Permittivity under copper on `layer` (kae.route.critical_physics.dielectric_er): the board's
+    first dielectric for every layer priced a bottom-side line with the top prepreg."""
+    from kae.route.critical_physics import dielectric_er
+    st = rb.board.stackup if getattr(rb, "board", None) is not None else None
+    ers = list(st.er or []) if st is not None else []
+    return dielectric_er(rb.cu, rb.z, ers, layer) if ers else rb.er
+
+
 @dataclass
 class Element:
     kind: str                 # R | L | C | K
@@ -113,7 +122,7 @@ class _Builder:
         t = self.t_cu.get(layer, 0.035)
         R = r_track(ln, w, t)
         L = lprime_hj(w, h) * ln * 1e-9
-        C = 0.0 if (ground or pour or not self.line_c) else cprime_hj(w, h, rb.er) * ln * 1e-12
+        C = 0.0 if (ground or pour or not self.line_c) else cprime_hj(w, h, _er(rb, layer)) * ln * 1e-12
         geom = None if (ground or pour) else (layer, (a[0], a[1], h), (c[0], c[1], h), w, h)
         self.pieces.append(_Piece(net, na, nb, R, L, C, ln, geom))
         if not pour:
@@ -185,7 +194,7 @@ class _Builder:
                 h = rb.h_at(l, cx, cy)
                 if h == INF:
                     continue
-                C = EPS0_PF_MM * rb.er * pg.area / h * 1e-12
+                C = EPS0_PF_MM * _er(rb, l) * pg.area / h * 1e-12
                 for k in cont:
                     key = nk(k, l)
                     self.caps[key] = self.caps.get(key, 0.0) + C / len(cont)
