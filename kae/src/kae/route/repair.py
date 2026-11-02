@@ -198,7 +198,8 @@ def spoke_tracks(pad, zone, layer, need, plan, space, taken=None, skip=()):
             continue
         seen.add(a)
         r = math.radians(a)
-        ray = LineString([(start.x, start.y), (start.x + reach * math.cos(r), start.y + reach * math.sin(r))])
+        # y down, as constraints.thermal_corridors (`+ sin` mirrored the spokes of a rotated pad)
+        ray = LineString([(start.x, start.y), (start.x + reach * math.cos(r), start.y - reach * math.sin(r))])
         inter = ray.intersection(core)
         if inter.is_empty:
             continue
@@ -562,6 +563,19 @@ def round_seed(seed, k):
     return (seed or 0) * 7919 + k
 
 
+def _thermal_plan(plan, info, input_path, opts, sev, thermal):
+    """The plan with spoke corridors for the pads in `thermal` (starved so far). With
+    --thermal-all every pad has its corridors already: re-planning with only the starved ones
+    dropped all the others' for the later rounds and the last mile."""
+    if opts.get("thermal_pads") == "all":
+        return plan
+    pol = getattr(plan, "plane_policy", None)
+    plan = constraints.plan(info, input_path, dict(opts, severities=sev, thermal_pads=sorted(thermal)))
+    plan.plane_policy = pol
+    plan.strict_planes = opts.get("strict_planes") or []
+    return plan
+
+
 def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
     """Repair `output_path` in place (see the module docstring). Returns a report."""
     wd = Path(wd)
@@ -631,10 +645,7 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
         new_thermal = a["thermal"] - thermal
         if new_thermal and opts.get("thermal_repair", True):
             thermal |= new_thermal
-            pol = getattr(plan, "plane_policy", None)
-            plan = constraints.plan(info, input_path, dict(opts, severities=sev, thermal_pads=sorted(thermal)))
-            plan.plane_policy = pol
-            plan.strict_planes = opts.get("strict_planes") or []
+            plan = _thermal_plan(plan, info, input_path, opts, sev, thermal)
         if not (a["widen"] or a["items"] or a["open"] or a["spokes"] or new_thermal):
             rec["stopped"] = "nothing attributable"
             rec["unattributed"] = sorted(set(a["unattributed"]))
