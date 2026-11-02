@@ -233,10 +233,12 @@ def copper_heat(net, x, shape):
 
 
 def evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes, intent=None, ac_parts=None,
-             log=print, ledger=None, obs_out=None):
+             log=print, ledger=None, obs_out=None, power_out=None):
     """Thermal harms per part at every corner, added into the per-corner totals. ac_parts: {ref: [W per
     corner]} from the switching harmonics. obs_out: a list that gets kae.intent observations: each
-    dissipating part's junction temperature (temp.junction, C) and its loss (loss.part, W) per corner."""
+    dissipating part's junction temperature (temp.junction, C) and its loss (loss.part, W) per corner.
+    power_out: a dict that gets each part's sustained dissipation at the typical point (W: its loss, or what a
+    load turns into heat), for the placer (operating facts parts.<ref>.P_sustained_W, write_part_power.py)."""
     import time
     from kae.em import solve as ES
     from kae.em import thermal as TH
@@ -386,6 +388,8 @@ def evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, tot, 
         # to the copper model, whose bars and vias alone never counted them)
         for ref, w in lumped_heat(info["net"], info["x"], kinds).items():
             heat[ref] = heat.get(ref, 0.0) + w
+        if c == 0 and power_out is not None:
+            power_out.update(heat)
         for ref, w in heat.items():
             cells = pads_of.get(ref)
             if cells:

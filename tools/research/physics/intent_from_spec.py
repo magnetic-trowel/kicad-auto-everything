@@ -396,6 +396,18 @@ def compile_spec(spec, summary):
                 S.rejected.append(f"{w}: heat sink on {r} without theta_sa_C_W (nor a library datasheet for its sink_part)")
                 continue
             e = {"part": r, "theta_sa_C_W": sa}
+            # the sink's body, for the placer's keepout: outline seen from above (centred on the part unless offset,
+            # in the part's own frame) and height
+            for k, n in (("outline_mm", 2), ("offset_mm", 2)):
+                v = hs.get(k)
+                if isinstance(v, list) and len(v) == n and all(isinstance(x, (int, float)) and abs(x) <= 500 for x in v) \
+                        and (k == "offset_mm" or min(v) > 0):
+                    e[k] = [float(x) for x in v]
+                elif v is not None:
+                    S.rejected.append(f"{w}.{k}={v!r}: not [{', '.join(['mm'] * n)}]")
+            hm = S.num(hs, "height_mm", "mm", w)
+            if hm:
+                e["height_mm"] = hm
             cs = S.num(hs, "theta_cs_C_W", "K/W", w)
             if cs:
                 e["theta_cs_C_W"] = cs

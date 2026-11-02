@@ -19,7 +19,8 @@ def compile_thermal(thermal):
 
 def test_heat_sinks_and_airflow_reach_the_operating_facts_and_bad_ones_are_rejected():
     th, rej = compile_thermal({"T_amb_C": [0, 40], "airflow_h_W_m2K": 40, "heatsinks": [
-        {"part": "U1", "theta_sa_C_W": 25, "basis": "typical", "why": "clip-on sink"},
+        {"part": "U1", "theta_sa_C_W": 25, "outline_mm": [20, 25], "height_mm": 12, "offset_mm": [0, 3],
+         "basis": "typical", "why": "clip-on sink"},
         {"side": "bottom", "region": "board", "theta_C_W": 0.5, "T_C": 45, "why": "enclosure"},
         {"part": "U9", "theta_sa_C_W": 10},                       # not on the board
         {"part": "U1"},                                           # no theta, no sink datasheet
@@ -27,6 +28,7 @@ def test_heat_sinks_and_airflow_reach_the_operating_facts_and_bad_ones_are_rejec
     assert th["airflow_h_W_m2K"] == 40
     part, plate = th["heatsinks"]
     assert part["part"] == "U1" and part["theta_sa_C_W"] == 25
+    assert part["outline_mm"] == [20, 25] and part["height_mm"] == 12 and part["offset_mm"] == [0, 3]
     assert plate == {"side": "bottom", "region": "board", "theta_C_W": 0.5, "T_C": 45,
                      "why": "heat sink (guess: enclosure)"}
     assert len(rej) == 3 and any("U9" in r for r in rej) and any("without theta_sa" in r for r in rej)
