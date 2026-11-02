@@ -128,6 +128,20 @@ def child_cpu():
 ENV_DEPENDENT_CHECKS = ("lib_footprint_issues", "lib_footprint_mismatch")  # as kaebench.tools: not the board's
 
 
+def report_unconnected(pro):
+    """Make the project copy `pro` report unconnected items when it sets them to "ignore": KiCad's
+    DRC then lists none at all, whatever --severity (7 corpus boards; the harness counts them by
+    pcbnew there, kaebench.score._uncapped). Only the judge's copy beside an attempt's board."""
+    try:
+        d = json.loads(pro.read_text(encoding="utf-8"))
+        sev = d["board"]["design_settings"]["rule_severities"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return
+    if sev.get("unconnected_items") == "ignore":
+        sev["unconnected_items"] = "error"
+        pro.write_text(json.dumps(d, indent=2), encoding="utf-8")
+
+
 def drc(board, inp, timeout):
     """{type: count} of DRC errors (env-dependent checks dropped) and the unconnected count of a
     board by kicad-cli, with the input's project rules; None when there is no usable board."""
@@ -137,9 +151,13 @@ def drc(board, inp, timeout):
         src = inp.with_suffix(ext)
         if src.exists():
             shutil.copy2(src, board.with_suffix(ext))
+    report_unconnected(board.with_suffix(".kicad_pro"))
     rep = board.with_name("drc.json")
+    # --severity-all: kicad-cli filters unconnected items by the project's severity like violations,
+    # so --severity-error read 0 open connections on boards that make them warnings (keytops-blank:
+    # 43 with --severity-all, 0 with --severity-error) and kept the first error-free attempt as clean
     cmd = [*shlex.split(os.environ.get("KAE_KICAD_WRAP", "")), "kicad-cli", "pcb", "drc", "--format", "json",
-           "--severity-error", "--refill-zones", "--output", str(rep), str(board)]
+           "--severity-all", "--refill-zones", "--output", str(rep), str(board)]
     try:
         subprocess.run(cmd, capture_output=True, timeout=max(60, timeout))
         r = json.loads(rep.read_text())
@@ -175,13 +193,47 @@ def overlaps(report):
 NUM = r"(-?[0-9.]+)"
 
 
+def block(txt, i):
+    """The S-expression block opening at txt[i] == "(" (to the end of txt if it never closes)."""
+    d, j, n, in_str = 0, i, len(txt), False
+    while j < n:
+        c = txt[j]
+        if in_str:
+            if c == "\\":
+                j += 1
+            elif c == '"':
+                in_str = False
+        elif c == '"':
+            in_str = True
+        elif c == "(":
+            d += 1
+        elif c == ")":
+            d -= 1
+            if d == 0:
+                return txt[i:j + 1]
+        j += 1
+    return txt[i:]
+
+
+def edge_cuts_graphics(txt):
+    """Board graphics (gr_line/arc/rect/poly/circle) on Edge.Cuts, each its own block. A regex from
+    a graphic to the next `(layer "Edge.Cuts")` took in every graphic on another layer before an
+    Edge.Cuts one (mulcmu-plimsoll-3: outline (100,100)-(142,150) read as (-2.95,-2.85)-(142,150);
+    6 of 115 corpus boards inflated), so parts staged on that side were not counted outside."""
+    for m in re.finditer(r"\((?:gr_line|gr_arc|gr_rect|gr_poly|gr_circle)\b", txt):
+        blk = block(txt, m.start())
+        lay = re.search(r'\(layer "?([^"\s)]*)', blk)
+        if lay and lay.group(1) == "Edge.Cuts":
+            yield blk
+
+
 def outside(board):
     """Unlocked footprints with pads whose anchor lies outside the Edge.Cuts bounding box (a part left staged
     off the board, which DRC does not flag): a cheap stand-in for the harness's legality check.
     Locked parts are the task's fixed interface and may overhang the edge."""
     txt = board.read_text(errors="replace")
-    pts = [(float(x), float(y)) for m in re.finditer(r"\((?:gr_line|gr_arc|gr_rect|gr_poly|gr_circle)\b(.*?)\(layer \"Edge\.Cuts\"\)", txt, re.S)
-           for x, y in re.findall(r"\((?:start|end|mid|xy|center) " + NUM + " " + NUM, m.group(1))]
+    pts = [(float(x), float(y)) for blk in edge_cuts_graphics(txt)
+           for x, y in re.findall(r"\((?:start|end|mid|xy|center) " + NUM + " " + NUM, blk)]
     if not pts:
         return 0
     x0, x1 = min(p[0] for p in pts), max(p[0] for p in pts)

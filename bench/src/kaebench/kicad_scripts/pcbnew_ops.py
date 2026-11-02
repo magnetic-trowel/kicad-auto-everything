@@ -645,11 +645,27 @@ def transplant_routing(out_path, inp_path, dst, ref_path=None):
         raise RuntimeError(f"transplant produced {n_routing} routing items, expected "
                            f"{len(given)} + {len(blocks)}")
 
+    # Placement unchanged within the tolerance the place side allows anchored parts (_same_pose):
+    # a joint output that rounds a locked part's pose by under 1 um passed transplant-placement
+    # but failed an exact hash here. Parts within it are put back at the input pose, so their
+    # re-save does not count as a foreign change either.
+    in_fps = {fp.m_Uuid.AsString(): fp for fp in board.GetFootprints()}
+    out_fps = {fp.m_Uuid.AsString(): fp for fp in out.GetFootprints()}
+    moved = sorted(set(in_fps) ^ set(out_fps))
+    for u, o in out_fps.items():
+        f = in_fps.get(u)
+        if f is None:
+            continue
+        if _same_pose(f, o):
+            _set_pose(o, f.GetPosition(), f.GetOrientation(), f.IsFlipped())
+        else:
+            moved.append(f.GetReference())
     _unfill(out)
     _unfill(board)
     foreign = _foreign(_canonical(out), _canonical(board))
     _out(dict(ok=True, loadable=True, added=len(blocks), bad_layer=bad_layer, new_net_items=new_net,
-              missing_given=missing_given, output=ident, foreign=foreign, copy=copy))
+              missing_given=missing_given, output=ident, placement_moved=moved[:50], n_placement_moved=len(moved),
+              foreign=foreign, copy=copy))
 
 
 def _same_pose(a, b):
