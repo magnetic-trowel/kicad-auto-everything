@@ -44,8 +44,9 @@ them (their own load currents, their wiring).
 
 Value names (use these exact names and units; record only what the datasheet states):
 
-- every part: `T_j_max_C` (absolute max junction or max operating temperature, C), `theta_ja_C_W` and
-  `theta_jc_C_W` (thermal resistance for the package used, C/W), `package`.
+- every part: `T_j_max_C` (absolute max junction or max operating temperature, C), `theta_ja_C_W`,
+  `theta_jc_C_W` and `theta_jb_C_W` (junction to ambient, case and board, for the package used, C/W;
+  `theta_jb_C_W` is RthetaJB, or psiJB when that is all the sheet gives: say which in conditions), `package`.
 - regulators and chargers: `V_in_max_V`, `V_out_V`, `I_out_max_A`, `I_q_A` (quiescent), `V_dropout_V`
   (at its rated current), and for switching ones `f_sw_Hz`, `eta` (as {"typ": 0.9, "conditions": "load,
   V_in, V_out"}), `R_on_high_ohm`, `R_on_low_ohm` (integrated switches), `V_sw_max_V` (switch node

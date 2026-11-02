@@ -337,6 +337,25 @@ def compile_spec(spec, summary):
         terms.append(dict(id=f"M{j}", tier="limit", obs="temp.junction", where={"part": refs}, max=f"{tmax - 20:g} C",
                           rate="2 mW_eq/C", source=f"{what}: 20 K margin below {tmax:g} C",
                           why="thermals: keep a margin below the rating (ambient and cooling are uncertain)"))
+    # junction-to-board thermal resistance (the heat model adds theta_jb P to the board under the part):
+    # the datasheet's own RthetaJB / psiJB; else between theta_JC and theta_JA (the JEDEC board's own path
+    # to air is in theta_JA), typical at their geometric mean; else a share of theta_JA
+    for p in summary.get("parts") or []:
+        f = datasheet(p)
+        jb, jc, ja = (verified(f, k) for k in ("theta_jb_C_W", "theta_jc_C_W", "theta_ja_C_W"))
+        pick = lambda v: (v[0] if v[0] is not None else v[1]) if v else None
+        jb_, jc_, ja_ = pick(jb), pick(jc), pick(ja)
+        rng = rule = None
+        if jb_ and 0.1 <= jb_ <= 500:
+            rng, rule = [jb_, jb_], f"theta_JB from {jb[2]}"
+        elif jc_ and ja_ and 0 < jc_ < ja_ <= 1000:
+            rng, rule = [jc_, ja_], f"between theta_JC ({jc[2]}) and theta_JA ({ja[2]})"
+        elif ja_ and 1 <= ja_ <= 1000:
+            rng, rule = [0.3 * ja_, 0.8 * ja_], f"0.3-0.8 x theta_JA ({ja[2]}): no theta_JB or theta_JC stated"
+        if rng:
+            typ = (rng[0] * rng[1]) ** 0.5
+            op["parts"].setdefault(p["ref"], {})["theta_jb_C_W"] = [round(rng[0], 3), round(rng[1], 3)] if rng[0] != rng[1] else round(typ, 3)
+            opwhy[f"parts.{p['ref']}.theta_jb_C_W"] = f"junction to board: {rule}"
     th = spec.get("thermal") or {}
     ta = th.get("T_amb_C")
     if isinstance(ta, list) and len(ta) == 2 and all(isinstance(x, (int, float)) for x in ta) and -55 <= min(ta) <= max(ta) <= 150:

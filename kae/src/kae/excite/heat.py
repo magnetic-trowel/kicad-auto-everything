@@ -48,6 +48,11 @@ def params(bd, dcp, P, intent=None):
     for f in dcp.feeds.values():
         hot |= {f["cell"]["ctrl"], f["cell"]["rect"]} if f["kind"] == "cell" else ({f["ref"]} if f["kind"] in ("linear", "switching") else set())
     for ref in sorted(r for r in hot if r):
+        iv = intent_value(intent, "parts", ref, "theta_jb_C_W")       # from the part's datasheet, via the facts
+        if iv:
+            why = ((intent or {}).get("provenance") or {}).get("why", {}).get(f"parts.{ref}.theta_jb_C_W")
+            out.append(Param(f"heat:{ref}", "theta_jb", *iv, "K/W", "intent", why or "the intent file"))
+            continue
         npins = sum(1 for t in bd.net_of if t.rsplit(".", 1)[0] == ref)
         typ, lo, hi = _theta_jb(npins)
         out.append(Param(f"heat:{ref}", "theta_jb", typ, lo, hi, "K/W", "prior",
