@@ -1938,6 +1938,23 @@ def thermal_victims(b: _B) -> list:
     return out
 
 
+def _implausible_vout(b: _B, ic, net, vo, vb, cells=()) -> str | None:
+    """Why a divider's implied output cannot be the rail's voltage, or None: outside 0.3-60 V, above the
+    lowest capacitor rating on the rail (the bound an estimate carries), or, for a step-down part, above
+    its own input rail."""
+    if not 0.3 <= vo <= 60.0:
+        return f"implied {vo:g} V is outside 0.3-60 V"
+    if str(vb.get('relative_to', '')).startswith('estimate') and vb.get('interval') and vo > vb['interval'][1] * 1.001:
+        return f"implied {vo:g} V is above the rail's capacitor rating ({vb['interval'][1]:g} V)"
+    if b.sub(ic) in ('regulator_linear', 'regulator_switching', 'regulator_module') and not b.r.switch_nodes.get(net):
+        vin = [b.volts(p.net) for p in b.nl.parts[ic].active_pins() if p.net != net and IN_PIN.match(p.fn) and p.net in b.r.rails]
+        vin = [x for x in vin if x]
+        boost = any(c for c in cells if c.get('controller') == ic and c.get('class') == 'boost')
+        if vin and not boost and vo > max(abs(x) for x in vin) * 1.02:
+            return f"implied {vo:g} V is above the input rail ({max(abs(x) for x in vin):g} V) of a step-down part"
+    return None
+
+
 def _apply_dividers(b: _B, fb, cells):
     """A feedback divider with a known reference states its rail's voltage: Vout = Vref (1 + Rtop/Rbot).
     It fills rails whose voltage is unknown or only estimated, flags conflicts with a stated one, and
@@ -1950,6 +1967,10 @@ def _apply_dividers(b: _B, fb, cells):
         nr = b.r.rails[net]
         vb = nr.attrs.get('volts') or {}
         src = f"feedback divider {d.get('top')}/{d.get('bottom')} x Vref {d.get('vref_V')} V of {v['ic']}"
+        why = _implausible_vout(b, v['ic'], net, vo, vb, cells)
+        if why:
+            d['vout_dropped'] = why          # a misread value or a wrong pairing: say so, leave the rail as it was
+            continue
         if vb.get('value') is None or str(vb.get('relative_to', '')).startswith('estimate'):
             nr.attrs['volts'] = belief(vo, 'V', src, round(vo * 0.95, 3), round(vo * 1.05, 3), lineage=[vb.get('relative_to', '')] if vb else [])
         elif abs(abs(vb['value']) - vo) > 0.08 * abs(vb['value']):

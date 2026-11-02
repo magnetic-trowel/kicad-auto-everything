@@ -595,3 +595,55 @@ def test_two_converters_on_one_rail_each_close_on_their_own_capacitor():
     nl, r, st = structures(parts)
     c1, c2 = one(st['commutation_cells'], controller='U1'), one(st['commutation_cells'], controller='U2')
     assert c1['caps'] == ['C1'] and c2['caps'] == ['C7'] and not c2.get('cap_shared')
+
+
+# ------------------------------------------------------------------------------- brief fixes from the 213-board summary review
+def test_unannotated_switcher_with_its_inductor_is_a_buck_cell():
+    """An imported board: the TPS62175's pins carry no names, its switch node an auto name."""
+    u = IC('IC35', 'TPS62175DQC', 'Regulators:SON50P200X300X80-11N', [('1', '', 'GND', ''), ('2', '', 'NetC136_1', ''), ('3', '', 'NetC136_1', ''),
+                                                                        ('5', '', 'NetIC35_5', ''), ('8', '', 'P3V3', ''), ('9', '', 'NetIC35_9', ''),
+                                                                        ('11', '', 'GND', '')])
+    parts = [u, L('L16', '10uH', 'NetIC35_9', 'P3V3'), C('C136', '10uF', 'NetC136_1', 'GND'), C('C138', '22uF', 'NetC136_1', 'GND'),
+             C('C149', '22uF', 'P3V3', 'GND'), C('C150', '22uF', 'P3V3', 'GND'), R('R5', '100k', 'NetC136_1', 'NetIC35_5'),
+             L('L8', '10uH', 'P12V0', 'NetC136_1'), C('C1', '22uF', 'P12V0', 'GND'),
+             fp('J1', 'Conn_01x02', 'Connector:Conn_01x02', [('1', 'P12V0', '', ''), ('2', 'GND', '', '')])]
+    nl, r, st = structures(parts)
+    c = one(st['commutation_cells'], controller='IC35')
+    assert c['class'] == 'buck' and c['sw'] == 'NetIC35_9' and c['inductor'] == 'L16'
+    # a switch node named after its output ('1V25_SW') is a switch node, not a rail
+    u = IC('U4', 'ETA3410D2I-T', '', [('1', '', 'GND', ''), ('2', '', '1V25_SW', ''), ('4', '', '1V25_FB', ''), ('7', '', '3V3_IN', '')])
+    parts = [u, L('L3', '1uH', '1V25_SW', 'VDD_1V25'), C('C1', '10uF', '3V3_IN', 'GND'), C('C2', '22uF', 'VDD_1V25', 'GND'),
+             C('C3', '22uF', 'VDD_1V25', 'GND'), R('R1', '10k', 'VDD_1V25', '1V25_FB'), R('R2', '10k', '1V25_FB', 'GND')]
+    nl, r, st = structures(parts)
+    assert one(st['commutation_cells'], controller='U4')['sw'] == '1V25_SW'
+    assert '1V25_SW' not in r.rails
+
+
+def test_dcdc_module_footprint_is_a_cell():
+    u = IC('U2', 'LM7805', 'CONV_OKI-78SR-5:1.5-W36-C', [('1', 'VI', '/12V', 'power_in'), ('2', 'GND', 'GND', 'power_in'),
+                                                         ('3', 'VO', '+5V', 'power_out')])
+    parts = [u, C('C1', '10uF', '/12V', 'GND'), C('C2', '10uF', '+5V', 'GND'),
+             fp('J1', 'Conn_01x02', 'TerminalBlock:TerminalBlock_bornier-2_P5.08mm', [('1', '/12V', '', ''), ('2', 'GND', '', '')])]
+    nl, r, st = structures(parts)
+    assert one(st['commutation_cells'], controller='U2')['class'] == 'buck'
+
+
+def test_divider_output_above_the_input_rail_is_dropped():
+    """A step-down part cannot make more than its input: a misread divider is reported, not written to the rail."""
+    parts = [p for p in buck_board() if p.ref not in ('R1',)] + [R('R1', '300k', '+3V3', 'FB')]
+    for p in parts:
+        for pad in p.pads:
+            if pad.net == '+3V3':
+                pad.net = 'VOUT'
+    nl, r, st = structures(parts)
+    d = one(st['victims'], **{'class': 'feedback'})['divider']
+    assert d['vout_implied_V'] > 12 and 'input rail' in d['vout_dropped']
+    assert (r.rails['VOUT'].attrs.get('volts') or {}).get('value') is None
+    # the plausible divider of the same board still states the rail
+    parts = [p for p in buck_board()]
+    for p in parts:
+        for pad in p.pads:
+            if pad.net == '+3V3':
+                pad.net = 'VOUT'
+    nl, r, st = structures(parts)
+    assert abs(r.rails['VOUT'].attrs['volts']['value'] - 3.296) < 0.01
