@@ -115,7 +115,14 @@ def frame(c, cfg, sampler, args, width):
     L.append(f"RAM  {bar((total - avail) / total, bw)} {gb(total - avail)}/{gb(total)} used: queue jobs {gb(ours_rss)} now, "
              f"{gb(unreal)} more set aside for their peaks | {gb(avail)} free, {gb(rmem)} kept free")
     pooled_now = bsys.get("pooled_owners") or []
-    if bsys.get("mem_rise") is not None and str(bsys.get("mem_mode")) == "measured":
+    ls = bsys.get("lease") if str(bsys.get("mem_mode")) == "lease" else None
+    if ls:
+        st = ls.get("stalled") or []
+        L.append(f"     leases: {ls.get('jobs', 0)} jobs hold {gb(ls.get('granted', 0))} (memory.high), use {gb(ls.get('used', 0))}; "
+                 f"unused grants {gb(unreal)}"
+                 + (f"  << {len(st)} job(s) waiting at their grant for memory: no new starts ({', '.join('#%d' % i for i in st[:6])})"
+                    if st else ""))
+    elif bsys.get("mem_rise") is not None and str(bsys.get("mem_mode")) == "measured":
         L.append(f"     measured: running jobs together grew at most {gb(bsys['mem_rise'])} in any hour of the last "
                  f"{dur(bsys.get('mem_hist_s', 0))}; set aside {gb(unreal)} (that x {cfg['mem_rise_margin']}, at least the "
                  f"biggest single job's {gb(bsys.get('mem_single', 0))}, + {gb(bsys.get('mem_warm', 0))} for jobs warming up)"
@@ -127,7 +134,7 @@ def frame(c, cfg, sampler, args, width):
         L.append(f"     pooled: set aside {gb(unreal)} instead of {gb(upeak)} (every job at its peak at once), saving "
                  f"{gb(max(0, upeak - unreal))}; owners marked *, measured correlation: "
                  + (", ".join(f"{o} {r:.2f} ({n} pairs)" for o, (r, n) in sorted(rho.items())) or "not yet"))
-    L.append(f"     room for new jobs: {gb(max(0, room))}  (free - set aside - kept free)"
+    L.append(f"     room for new jobs: {gb(max(0, room))}  (free - {'unused grants' if ls else 'set aside'} - kept free)"
              + ("   << memory is the limit" if room < 4096 else ""))
     if bsys.get("disk_cap"):
         L.append(f"Disk scratch {gb(bsys.get('disk', 0))}/{gb(bsys['disk_cap'])}"

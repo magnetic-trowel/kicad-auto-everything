@@ -338,3 +338,77 @@ def test_jobs_run_at_nice_19_and_sched_idle(kq, tmp_path):
     drive(kq, d, lambda: states(d)["p"] == "ok")
     ni, cls = out.read_text().split()
     assert cls == "IDL" and ni in ("19", "-")  # ps prints "-" for the nice of SCHED_IDLE on some versions
+
+
+LEASE = dict(lease_release_gb=2.0, lease_release_after_s=120, lease_margin_mb=512, lease_step_gb=1.0,
+             lease_step_frac=0.25, lease_stall_s=900)
+
+
+def test_lease_plan_grows_by_priority_trims_idle_grants_and_stalls_the_rest(kq):
+    jobs = [dict(id=1, prio=0, started=10, grant=4096, use=4000),     # at its grant
+            dict(id=2, prio=0, started=20, grant=4096, use=3900),     # at its grant, younger
+            dict(id=3, prio=0, started=5, grant=20480, use=1024, slack_since=1.0)]  # holds far more than it uses
+    p = kq.lease_plan(jobs, 500.0, LEASE, now=200.0)
+    assert p["grants"][3] == pytest.approx(2048)            # trimmed to use + 1 GB: 18 GB freed
+    assert p["grants"][1] == pytest.approx(4096 + 1024)     # the older job first, one step of max(1 GB, 25%)
+    assert p["grants"][2] == pytest.approx(4096 + 1024)
+    assert p["stalled"] == [] and p["victim"] is None
+    p = kq.lease_plan(jobs[:2], 1200.0, LEASE, now=200.0)   # room for one step: the older job gets it
+    assert p["grants"][1] > 4096 and p["grants"][2] == 4096 and p["stalled"] == [2]
+
+
+def test_lease_plan_requeues_the_newest_job_only_after_a_long_stall(kq):
+    jobs = [dict(id=1, prio=0, started=10, grant=4096, use=4090, stall_since=100.0),
+            dict(id=2, prio=0, started=50, grant=2048, use=1000),
+            dict(id=3, prio=5, started=60, grant=2048, use=1000)]       # higher priority: never a victim for #1
+    assert kq.lease_plan(jobs, 0.0, LEASE, now=500.0)["victim"] is None  # stalled 400 s: wait
+    p = kq.lease_plan(jobs, 0.0, LEASE, now=1100.0)
+    assert p["stalled"] == [1] and p["victim"] == 2 and p["stall_since"][1] == 1100.0
+    # a runaway (far past its --mem) is the victim, even when it is the one waiting
+    jobs[0]["declared"], jobs[1]["declared"] = 1024, 2048
+    assert kq.lease_plan(jobs, 0.0, LEASE, now=1100.0)["victim"] == 1
+    # waiting only for other users' memory, alone: it keeps waiting
+    assert kq.lease_plan(jobs[:1] and [dict(jobs[0], declared=8192)], 0.0, LEASE, now=1100.0)["victim"] is None
+
+
+def _lease_daemon(kq, tmp_path, **cfg):
+    conf = json.load(open(kq.CONF))
+    conf.update(cgroup="auto", slice="kaeqtest.slice", mem_pool="lease", **cfg)
+    json.dump(conf, open(kq.CONF, "w"))
+    d = kq.Daemon()
+    if not d.use_cgroup(kq.config()):
+        pytest.skip("no delegated cgroup memory controller here")
+    return d
+
+
+HOG = ("python3 -c \"import time\na=[]\nfor i in range({n}):\n    a.append(bytearray(256<<20)); print(i, flush=True); "
+       "time.sleep(0.1)\n{after}time.sleep({hold})\"")
+
+
+def test_lease_stalls_a_job_at_its_grant_instead_of_killing_it(kq, tmp_path):
+    """A job that outgrows what may be granted waits in the kernel at its grant; once the budget allows,
+    it gets more and finishes. It is never killed for using more than it declared."""
+    d = _lease_daemon(kq, tmp_path, mem_budget_gb=1.5)
+    submit(kq, HOG.format(n=8, after="", hold=1), name="hog", mem="300M", timeout="2m")
+    log = tmp_path / "jobs" / "1" / "log"
+    drive(kq, d, lambda: d.c.execute("SELECT grant_mb FROM jobs").fetchone()[0] >= 1200, secs=40)
+    t = time.time()
+    while time.time() - t < 6:
+        d.tick()
+        time.sleep(0.2)
+    n = len(joblog(log).split())
+    print(f"held: {n} of 8 chunks, cgroup at {int(open(d.cgroups[1] + '/memory.current').read()) >> 20} MB")
+    assert states(d)["hog"] == "running" and n < 8               # held at ~1.5 GB, not killed
+    g = d.c.execute("SELECT grant_mb FROM jobs").fetchone()[0]
+    assert g <= 1.5 * 1024 + 1
+    conf = json.load(open(kq.CONF)); conf["mem_budget_gb"] = 4; json.dump(conf, open(kq.CONF, "w"))
+    drive(kq, d, lambda: states(d)["hog"] == "ok", secs=60)
+
+
+def test_lease_gives_back_what_a_job_no_longer_uses(kq, tmp_path):
+    d = _lease_daemon(kq, tmp_path, lease_release_gb=0.5, lease_release_after_s=2)
+    submit(kq, HOG.format(n=8, after="a.clear()\n", hold=30), name="hog", mem="300M", timeout="2m")
+    drive(kq, d, lambda: d.c.execute("SELECT grant_mb FROM jobs").fetchone()[0] >= 2000, secs=40)
+    drive(kq, d, lambda: d.c.execute("SELECT grant_mb FROM jobs").fetchone()[0] <= 1200, secs=30)
+    d.c.execute("UPDATE jobs SET state='cancelled' WHERE 1")
+    kq.kill_tree(d.c.execute("SELECT pid FROM jobs").fetchone()[0], d.cgroups.get(1))

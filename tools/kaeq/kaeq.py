@@ -78,10 +78,14 @@ DEFAULTS = {
     "emergency_frac": 0.75,  # free memory below this share of the reserve preempts the newest job
     "warmup_s": 300,         # a new job keeps its declared --mem reserved this long; then its observed peak * peak_margin
     "peak_margin": 1.25,
-    # memory set aside for running jobs' peaks: "peak" = the sum of every job's peak (as if all peak at once);
+    # memory for running jobs. "lease" (default where the cgroup memory controller is delegated): each job holds a
+    # grant, enforced as its scope's memory.high; a job that reaches its grant is not killed but stalls in the kernel
+    # until the queue grants more (lease_step_gb at a time, from what is free), and a grant far above what the job
+    # uses is given back. Without a delegated memory controller "lease" falls back to "measured".
+    # "peak" = the sum of every job's peak (as if all peak at once);
     # "pooled" = statistical: jobs rarely peak together, so set aside mean + mem_pool_z std of their combined
     # growth, from how jobs of the same owner spent their lifetime (memory histograms of finished jobs)
-    "mem_pool": "measured",
+    "mem_pool": "lease",
     # "measured": set aside what the running jobs together have actually grown by: the largest rise of their
     # summed RSS within any mem_rise_window_s over the last mem_rise_history_s (new starts and finishes excluded),
     # x mem_rise_margin; at least the largest single job's headroom; plus warming-up jobs' needs. Falls back to
@@ -99,6 +103,13 @@ DEFAULTS = {
     # of it needs its --mem x (p95 of the owner's peak/--mem) x mem_learn_margin, never more than --mem
     "mem_learn_min_jobs": 20,
     "mem_learn_margin": 1.2,
+    "lease_step_gb": 1.0,    # lease: a grant grows by max(this, lease_step_frac of the grant) at a time
+    "lease_step_frac": 0.25,
+    "lease_margin_mb": 512,  # lease: a job within this of its grant asks for more
+    "lease_release_gb": 2.0, # lease: a grant more than max(this, half the use) above use for lease_release_after_s
+    "lease_release_after_s": 120,  # is trimmed to use x 1.25 (at least use + 1 GB)
+    "lease_stall_s": 900,    # lease: a job stalled this long for memory that nothing frees requeues the newest other job
+    "mem_budget_gb": 0,      # cap on what all jobs together may use and hold (0: none beyond the reserve)
     "starts_per_tick": 1,    # ramp: at most this many job starts every 2 s, so new jobs show their memory before more start
     "cpu_affinity": "auto",  # auto: pin jobs to the first threads-reserve_cpu CPUs (a hard cap); off; or e.g. "0-101"
     "max_running": 256,
@@ -120,7 +131,7 @@ CREATE TABLE IF NOT EXISTS jobs(
  submitted REAL, started REAL, finished REAL, not_before REAL DEFAULT 0, deadline REAL,
  pid INTEGER, rc INTEGER, peak_mb INTEGER DEFAULT 0, note TEXT,
  root TEXT, branch TEXT, sha TEXT, rel TEXT, links TEXT, disk_mb INTEGER DEFAULT 1024, disk_peak_mb INTEGER DEFAULT 0,
- mem_hist TEXT);
+ mem_hist TEXT, grant_mb INTEGER DEFAULT 0);
 CREATE INDEX IF NOT EXISTS jobs_state ON jobs(state);
 CREATE TABLE IF NOT EXISTS events(
  id INTEGER PRIMARY KEY, ts REAL, owner TEXT, job INTEGER, kind TEXT, msg TEXT,
@@ -163,7 +174,7 @@ def db(restore=False):
     for col in ("root", "branch", "sha", "rel", "links", "mem_hist"):  # upgrade an older database
         if col not in have:
             c.execute(f"ALTER TABLE jobs ADD COLUMN {col} TEXT")
-    for col, dflt in (("disk_mb", 1024), ("disk_peak_mb", 0)):  # upgrade a pre-scratch database
+    for col, dflt in (("disk_mb", 1024), ("disk_peak_mb", 0), ("grant_mb", 0)):  # upgrade an older database
         if col not in have:
             c.execute(f"ALTER TABLE jobs ADD COLUMN {col} INTEGER DEFAULT {dflt}")
     return c
@@ -492,6 +503,95 @@ def warm_headroom(jobs, z):
     return min(worst, full + max(biggest, mu + z * var ** 0.5))
 
 
+def cg_mem(cg):
+    """(use_mb, high_events) of a job's scope: the memory it cannot give back (anonymous and shared memory
+    and the kernel's own for it; page cache is reclaimed at memory.high, so it is not use) and how often it
+    has hit memory.high. None when the scope has no memory controller."""
+    try:
+        st = {}
+        with open(os.path.join(cg, "memory.stat")) as f:
+            for line in f:
+                k, v = line.split()
+                st[k] = int(v)
+        use = st.get("anon", 0) + st.get("shmem", 0) + st.get("kernel", st.get("kernel_stack", 0) + st.get("pagetables", 0))
+        high = 0
+        with open(os.path.join(cg, "memory.events")) as f:
+            for line in f:
+                k, v = line.split()
+                if k == "high":
+                    high = int(v)
+        return use / (1 << 20), high
+    except (OSError, ValueError):
+        return None
+
+
+def cg_set_high(cg, mb):
+    """Set a job's grant: its scope's memory.high (the kernel throttles, never kills, above it)."""
+    try:
+        with open(os.path.join(cg, "memory.high"), "w") as f:
+            f.write(str(int(mb) << 20))
+        return True
+    except OSError:
+        return False
+
+
+def lease_plan(jobs, free_mb, cfg, now):
+    """One pass of the memory leases. jobs: [{id, prio, started, grant, use, slack_since, stall_since}] (MB, s);
+    free_mb: memory nobody holds (free minus the reserve, minus every grant's unused part). Grants far above use
+    for a while are trimmed (that memory is free again); jobs near their grant get one more step each, by
+    priority then age, while memory is free; the rest are stalled (the kernel holds them at their grant). A job
+    stalled lease_stall_s with nothing freeing names a victim among jobs of no higher priority: the one furthest
+    past its declared --mem ("declared", MB), else the newest other job (a job within its declaration that only
+    waits for other users' memory keeps waiting).
+    Returns {grants: {id: MB}, slack_since, stall_since, stalled: [ids], free, victim}."""
+    grants = {j["id"]: j["grant"] for j in jobs}
+    slack = {j["id"]: j.get("slack_since") or 0.0 for j in jobs}
+    stall = {j["id"]: j.get("stall_since") or 0.0 for j in jobs}
+    rel = cfg["lease_release_gb"] * 1024
+    for j in jobs:
+        g, u = grants[j["id"]], j["use"]
+        if g - u > max(rel, 0.5 * u):
+            slack[j["id"]] = slack[j["id"]] or now
+            if now - slack[j["id"]] >= cfg["lease_release_after_s"]:
+                ng = max(u * 1.25, u + 1024)
+                if ng < g:
+                    free_mb += g - ng
+                    grants[j["id"]] = ng
+                slack[j["id"]] = 0.0
+        else:
+            slack[j["id"]] = 0.0
+    stalled = []
+    for j in sorted(jobs, key=lambda j: (-j["prio"], j["started"] or 0)):
+        g, u = grants[j["id"]], j["use"]
+        if u < g - cfg["lease_margin_mb"]:
+            stall[j["id"]] = 0.0
+            continue
+        step = max(cfg["lease_step_gb"] * 1024, cfg["lease_step_frac"] * g, u + cfg["lease_margin_mb"] - g)
+        if free_mb >= min(step, 256.0):
+            take = min(step, free_mb)
+            grants[j["id"]] = g + take
+            free_mb -= take
+            stall[j["id"]] = 0.0
+        else:
+            stalled.append(j["id"])
+            stall[j["id"]] = stall[j["id"]] or now
+    victim = None
+    long_ = [i for i in stalled if now - stall[i] >= cfg["lease_stall_s"]]
+    if long_:
+        by = {j["id"]: j for j in jobs}
+        s = min(long_, key=lambda i: stall[i])
+        peers = [j for j in jobs if j["prio"] <= by[s]["prio"]]
+        over = [j for j in peers if j["use"] > j.get("declared", float("inf"))]
+        if over:                    # the job furthest past what it declared (a runaway), whichever it is
+            victim = max(over, key=lambda j: j["use"] - j["declared"])["id"]
+        else:                       # everyone within their declaration: the newest other job
+            others = [j for j in peers if j["id"] != s]
+            victim = max(others, key=lambda j: j["started"] or 0)["id"] if others else None
+        if victim is not None:
+            stall[s] = now          # the next victim only after another lease_stall_s
+    return dict(grants=grants, slack_since=slack, stall_since=stall, stalled=stalled, free=free_mb, victim=victim)
+
+
 RISE_HIST = os.path.join(HOME, f"memrise.{HOST}.json")
 
 
@@ -650,6 +750,7 @@ class Daemon:
         if self.rise_hist:
             self.organic = self.rise_hist[-1][1]
         self.rise, self.rise_ts = None, 0.0
+        self.lease_st = {}       # job id -> {slack_since, stall_since, set}: memory lease bookkeeping
         import threading
         threading.Thread(target=self.disk_loop, daemon=True).start()
 
@@ -690,6 +791,7 @@ class Daemon:
     def tick(self):
         cfg = config()
         c = self.c
+        lease_on = cfg["mem_pool"] == "lease" and self.use_cgroup(cfg)
         sessions, per_pid = proc_by_session()
         now = time.time()
         running = c.execute("SELECT * FROM jobs WHERE state='running'").fetchall()
@@ -704,7 +806,7 @@ class Daemon:
             if now - tr[0] >= 10:
                 tr[0] = now
                 tr[1].append(rss)
-            self.check(j, rss, now, cfg, self.disk.get(j["id"], 0.0))
+            self.check(j, rss, now, cfg, self.disk.get(j["id"], 0.0), lease=lease_on and j["id"] in self.cgroups)
         # system sample
         busy, total = cpu_ticks()
         dt = max(1, total - self.prev[1])
@@ -762,11 +864,13 @@ class Daemon:
         unrealized, unrealized_peak = pooled_headroom(grow, cfg["mem_pool_z"], cfg["mem_pool_rho"],
                                                       {o: r for o, (r, _) in self.rho.items()})
         mode = cfg["mem_pool"]
-        if mode == "measured" and self.rise is not None:
+        if mode == "lease" and not lease_on:
+            mode = "measured (lease needs the cgroup memory controller)"
+        if mode.startswith("measured") and self.rise is not None:
             unrealized = min(unrealized_peak, warm_need + max(single, self.rise * cfg["mem_rise_margin"]))
-        elif mode == "measured":
+        elif mode.startswith("measured"):
             mode = "pooled (measuring: under 1 h of history)"
-        elif mode != "pooled":
+        elif mode not in ("pooled", "lease"):
             unrealized = unrealized_peak
         disk_unrealized = sum(max(0.0, j["disk_mb"] - self.disk.get(j["id"], 0.0)) for j in running)
         declared = max(1.0, sum(j["cpus"] for j in running))
@@ -775,6 +879,11 @@ class Daemon:
                          for j in running)
         avail = mi["MemAvailable"]
         reserve = cfg["reserve_mem_gb"] * 1024
+        lease = None
+        if mode == "lease":
+            lease = self.lease(cfg, now, running, usage, avail, reserve)
+            unrealized = lease["held"]
+            running = c.execute("SELECT * FROM jobs WHERE state='running'").fetchall()
         cap = cfg["scratch_gb"] * 1024
         pinned = job_cpus(cfg)
         self.sys = dict(threads=cfg["threads"], others=self.others_ema, ours_cpu=ours_threads, cpu_commit=cpu_commit,
@@ -787,7 +896,8 @@ class Daemon:
                         mem_hist_s=(self.rise_hist[-1][0] - self.rise_hist[0][0]) if self.rise_hist else 0,
                         reserve_cpu=cfg["reserve_cpu"], reserve_mem=reserve, running=len(running),
                         pinned=len(pinned) if pinned else None, disk=self.disk_total, disk_cap=cap,
-                        disk_unrealized=disk_unrealized)
+                        disk_unrealized=disk_unrealized,
+                        lease={k: v for k, v in (lease or {}).items() if k != "room"} or None)
         # emergency: free memory below emergency_frac of the reserve -> preempt newest job
         floor = reserve * cfg["emergency_frac"]
         if avail < floor and running:
@@ -804,7 +914,10 @@ class Daemon:
             self.disk_total -= used
             running = [j for j in running if j["id"] != v["id"]]
         disk_room = cap - self.disk_total - disk_unrealized
-        self.admit(cfg, now, avail - unrealized - reserve, cpu_commit, len(running), disk_room)
+        mem_room = avail - unrealized - reserve
+        if lease is not None:   # running jobs waiting for memory come first: nothing starts meanwhile
+            mem_room = -1.0 if lease["stalled"] else lease["room"]
+        self.admit(cfg, now, mem_room, cpu_commit, len(running), disk_room)
         self.idle_events(now)
         if now - self.last_backup > 300 and DB != os.path.join(HOME, "queue.db"):
             try:
@@ -823,11 +936,58 @@ class Daemon:
             json.dump({"pid": os.getpid(), "ts": now, "sys": self.sys}, f)
         os.replace(tmp, BEAT)
 
+    def lease(self, cfg, now, running, usage, avail, reserve):
+        """Grow, trim and enforce running jobs' memory grants (kaeq.lease_plan); requeue a victim if a job has
+        waited lease_stall_s for memory nothing frees. Returns what the rest of the tick needs to know."""
+        c = self.c
+        jobs, cgs, other = [], {}, 0.0
+        for j in running:
+            cg = self.cgroups.get(j["id"]) or (job_cgroup(j["pid"]) if j["pid"] else None)
+            m = cg_mem(cg) if cg else None
+            if m is None:      # no scope (yet): what it declared and has not used yet stays set aside
+                other += max(0.0, self.need_mb(j, cfg) - usage.get(j["id"], (0.0, 0))[0])
+                continue
+            self.cgroups[j["id"]] = cgs[j["id"]] = cg
+            st = self.lease_st.setdefault(j["id"], {"slack_since": 0.0, "stall_since": 0.0, "set": None})
+            g = j["grant_mb"] or max(self.need_mb(j, cfg), m[0] + 2 * cfg["lease_margin_mb"])  # adopted job: a first grant
+            jobs.append(dict(id=j["id"], prio=j["prio"], started=j["started"], grant=float(g), use=m[0], declared=j["mem_mb"],
+                             slack_since=st["slack_since"], stall_since=st["stall_since"]))
+        for jid in set(self.lease_st) - set(cgs):
+            del self.lease_st[jid]
+        room = avail - reserve
+        if cfg["mem_budget_gb"] > 0:
+            used = sum(j["use"] for j in jobs) + sum(usage.get(j["id"], (0.0, 0))[0] for j in running if j["id"] not in cgs)
+            room = min(room, cfg["mem_budget_gb"] * 1024 - used)
+        held = other + sum(max(0.0, j["grant"] - j["use"]) for j in jobs)
+        plan = lease_plan(jobs, room - held, cfg, now)
+        by = {j["id"]: j for j in running}
+        for j in jobs:
+            st, g = self.lease_st[j["id"]], int(plan["grants"][j["id"]])
+            st["slack_since"], st["stall_since"] = plan["slack_since"][j["id"]], plan["stall_since"][j["id"]]
+            if g != by[j["id"]]["grant_mb"]:
+                c.execute("UPDATE jobs SET grant_mb=? WHERE id=?", (g, j["id"]))
+                if by[j["id"]]["grant_mb"]:
+                    dlog(f"lease #{j['id']}: {fgb(by[j['id']]['grant_mb'])} -> {fgb(g)} (uses {fgb(j['use'])})")
+            if st["set"] != g and cg_set_high(cgs[j["id"]], g):
+                st["set"] = g
+        if plan["victim"] is not None:
+            v = by[plan["victim"]]
+            need = max(v["mem_mb"], int(max(v["peak_mb"] or 0, v["grant_mb"] or 0) * 1.2))
+            self.preempt(v, now, f"requeued: job(s) {plan['stalled']} waited {fdur(cfg['lease_stall_s'])} for memory "
+                                 f"nothing freed; this job was {'the furthest past its --mem' if v['peak_mb'] > v['mem_mb'] else 'the newest'} "
+                                 f"(restarts with --mem {fgb(need)})")
+            c.execute("UPDATE jobs SET mem_mb=?, grant_mb=0 WHERE id=?", (need, v["id"]))
+        grants = {i: plan["grants"][i] for i in plan["grants"] if i != plan["victim"]}
+        use = {j["id"]: j["use"] for j in jobs}
+        return dict(room=plan["free"], held=other + sum(max(0.0, g - use[i]) for i, g in grants.items()),
+                    granted=sum(grants.values()), used=sum(use.values()), stalled=plan["stalled"],
+                    victim=plan["victim"], jobs=len(jobs))
+
     def preempt(self, v, now, note, disk_mb=None):
         dlog(f"preempt #{v['id']}: {note}")
         self.kill(v)
         drop_scratch(config(), v["id"])
-        self.c.execute("UPDATE jobs SET state='queued',pid=NULL,preempts=preempts+1,not_before=?,note=?,disk_mb=? WHERE id=?",
+        self.c.execute("UPDATE jobs SET state='queued',pid=NULL,preempts=preempts+1,not_before=?,note=?,disk_mb=?,grant_mb=0 WHERE id=?",
                        (now + 60, note, disk_mb or v["disk_mb"], v["id"]))
 
     def admit(self, cfg, now, mem_room, cpu_commit, n_running, disk_room=float("inf")):
@@ -894,11 +1054,18 @@ class Daemon:
         argv = ["bash", "-c", wrap, "_", j["cmd"], rc]
         if shutil_which("ionice"):
             argv = ["ionice", "-c3"] + argv
+        grant = 0
         if self.use_cgroup(cfg):
-            lim = int(j["mem_mb"] * cfg["mem_overrun"] * 2 + 1024)
+            if cfg["mem_pool"] == "lease":
+                # the grant is the scope's memory.high: above it the kernel stalls the job (it is never killed for
+                # it) until the queue grants more; the slice's MemoryMax is the hard backstop
+                grant = int(self.need_mb(j, cfg))
+                lim = ["-p", f"MemoryHigh={grant}M"]
+            else:
+                lim = ["-p", f"MemoryMax={int(j['mem_mb'] * cfg['mem_overrun'] * 2 + 1024)}M"]
             argv = ["systemd-run", "--user", "--scope", "--quiet", "--collect",
                     *([f"--slice={cfg['slice']}"] if cfg["slice"] else []),
-                    "-p", f"MemoryMax={lim}M", "-p", "MemorySwapMax=0"] + argv
+                    *lim, "-p", "MemorySwapMax=0"] + argv
         pinned = job_cpus(cfg)
 
         def pre():
@@ -948,8 +1115,8 @@ class Daemon:
             self.finish_fail(j, "failed", f"spawn error: {e}")
             return False
         self.popen[j["id"]] = p
-        self.c.execute("UPDATE jobs SET state='running',pid=?,started=?,deadline=?,peak_mb=0,note=NULL WHERE id=?",
-                       (p.pid, time.time(), time.time() + j["timeout_s"], j["id"]))
+        self.c.execute("UPDATE jobs SET state='running',pid=?,started=?,deadline=?,peak_mb=0,note=NULL,grant_mb=? WHERE id=?",
+                       (p.pid, time.time(), time.time() + j["timeout_s"], grant, j["id"]))
         dlog(f"start #{j['id']} attempt {j['attempt']} pid {p.pid} mem {fgb(j['mem_mb'])} {j['name'] or j['cmd'][:60]}")
         return True
 
@@ -960,7 +1127,7 @@ class Daemon:
             time.sleep(0.2)
             kill_tree(j["pid"], cg, signal.SIGKILL)
 
-    def check(self, j, rss, now, cfg, disk=0.0):
+    def check(self, j, rss, now, cfg, disk=0.0, lease=False):
         c = self.c
         if disk > j["disk_peak_mb"]:
             c.execute("UPDATE jobs SET disk_peak_mb=? WHERE id=?", (int(disk), j["id"]))
@@ -998,7 +1165,7 @@ class Daemon:
             else:
                 self.finish_fail(j, "failed", f"scratch {fgb(disk)} exceeded declared {fgb(j['disk_mb'])}; resubmit with --disk {fgb(new)}")
             return
-        if rss > j["mem_mb"] * cfg["mem_overrun"] + 1024:
+        if rss > j["mem_mb"] * cfg["mem_overrun"] + 1024 and not lease:  # under a lease, memory.high holds it
             self.kill(j)
             new = int(rss * 1.3) + 1024
             drop_scratch(cfg, j["id"])
@@ -1248,7 +1415,8 @@ def cmd_status(a):
     now = time.time()
     run = sel_jobs(c, a, ["running"])
     for j in run[: a.limit]:
-        print(f"RUN  #{j['id']} {j['owner']} {fdur(now - j['started'])} {fgb(j['peak_mb'])}/{fgb(j['mem_mb'])} {j['cpus']:g}c {j['name'] or j['cmd'][:50]}")
+        lease = f" grant {fgb(j['grant_mb'])}" if j["grant_mb"] else ""
+        print(f"RUN  #{j['id']} {j['owner']} {fdur(now - j['started'])} {fgb(j['peak_mb'])}/{fgb(j['mem_mb'])}{lease} {j['cpus']:g}c {j['name'] or j['cmd'][:50]}")
     if len(run) > a.limit:
         print(f"  (+{len(run) - a.limit} more running)")
     bad = sel_jobs(c, a, PROBLEM)
