@@ -14,6 +14,8 @@ operating corner, each with its scope) are matched by the intent's terms:
 - tier "limit": met costs nothing; beyond it, rate x the excess (in the limit's own unit).
 - tier "cost": rate x the value, summed.
 - tier "report": listed, unpriced; "ignore": dropped from the report.
+- an observation the evaluator flags `implausible` (noise beyond half its rail: wrong inputs, not layout)
+  matches no term; it is listed first among the unclaimed, with its reason.
 - where: scope filters (glob patterns): section, from, to (a boundary: from a section's sources into
   another section's observers), observer, source, kind, rail, load, net, part, connector.
 - agg over corners: worst (default for hard and limit), cvar20 (mean of the worst fifth; default for cost), typ.
@@ -227,7 +229,9 @@ def evaluate(ev, intent=None, brief=None):
     hard = limit = cost = 0.0
     rows = []
     for t in terms:
-        hit = [i for i, ob in enumerate(obs) if _match(t, ob, secs)]
+        # an observation the evaluator flagged implausible (kae.excite.observe.implausible) is no term's:
+        # it is reported among the unclaimed with its reason, never priced
+        hit = [i for i, ob in enumerate(obs) if not ob.get("implausible") and _match(t, ob, secs)]
         tier = t["tier"]
         claimed |= set(hit) if tier != "report" else set()
         if tier == "ignore":
@@ -318,7 +322,9 @@ def evaluate(ev, intent=None, brief=None):
         un.append(dict(obs=ob["id"], label=ob.get("label"), worst=U.fmt(w, ob["unit"]),
                        reference=U.fmt(ref, ob["unit"]) if ref else None,
                        ratio=round(w / ref, 3) if ref else None, basis=(ob.get("reference") or {}).get("basis")))
-    un.sort(key=lambda x: -(x["ratio"] or 0))
+        if ob.get("implausible"):
+            un[-1]["implausible"] = ob["implausible"]
+    un.sort(key=lambda x: (not x.get("implausible"), -(x["ratio"] or 0)))
     status["unclaimed"] = un
     status["questions"] = _questions(ev, intent, obs, rows)
     return status

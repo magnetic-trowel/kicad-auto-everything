@@ -175,3 +175,24 @@ def test_a_dc_band_gap_also_leaves_temperatures_and_part_losses_unpriced():
     st = OB.evaluate(_open(WIDE, ["dc"]), it, BRIEF)
     rows = {r["id"]: r for r in st["terms"]}
     assert rows["T0"]["incomplete"] and not rows["P4"].get("incomplete")
+
+
+def test_an_implausible_observation_is_reported_not_priced():
+    """kae.excite flags supply noise beyond half its rail (a signal taken for a rail); no term prices it."""
+    from kae.excite import observe as O
+    sup = O.Observer("supply:IC1:PWRSTAT", "supply", "a", "g", bound=0.165, meta=dict(ref="IC1", rail="PWRSTAT", V=3.3))
+    ok = O.Observer("supply:U2:VBAT", "supply", "a", "g", bound=0.185, meta=dict(ref="U2", rail="VBAT", V=3.7))
+    assert O.implausible(sup, [0.5, 15.2]) and O.implausible(ok, [0.05, 0.2]) is None
+    src = O.Observer("core:IC1:PWRSTAT", "core", "a", "g")
+    ev = _ev([0.037] * 2, [0.004] * 2)
+    bad, good = [], []
+    for o, vals, out in ((sup, [0.5, 15.2], bad), (ok, [0.05, 0.2], good)):
+        ob = O.observation(type("BD", (), {"pads_of": {}})(), o, src, vals, [0.0, 0.0])
+        out.append(ob)
+    assert "implausible" in bad[0] and "implausible" not in good[0]
+    ev["observations"] += bad + good
+    it = {"terms": [{"id": "S1", "tier": "cost", "obs": "supply.peak", "rate": "100 mW_eq/V", "why": "test"}]}
+    st = OB.evaluate(ev, it, BRIEF)
+    s1 = next(r for r in st["terms"] if r["id"] == "S1")
+    assert s1["matched"] == 1 and s1["dominant"] == good[0]["label"]
+    assert st["unclaimed"][0]["implausible"] and st["unclaimed"][0]["label"] == bad[0]["label"]

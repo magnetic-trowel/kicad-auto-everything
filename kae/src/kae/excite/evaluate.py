@@ -290,6 +290,10 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
                 fr = [1 / (2 * math.pi * math.sqrt(pr["Le"] * c)) for c in (C.hi, C.typ, C.lo)]
                 rings.append(dict(cell=pr["s"].name, L_copper_nH=round(pr["Le"] * 1e9, 3),
                                   f_ring_MHz=[round(x / 1e6) for x in fr]))
+    bad = [ob for ob in observations if ob.get("implausible")]
+    if bad:
+        notes.append(f"{len(bad)} observation(s) implausible, left for kae.intent to report unpriced: "
+                     f"{bad[0]['label']}: {bad[0]['implausible']}")
     if any(n.startswith("DC: copper open") for n in notes):
         uncomputed.append("dc")
     return dict(board=path, pitch=pitch, window=window, seconds=round(time.time() - t0, 1), seed=seed,

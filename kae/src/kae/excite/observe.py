@@ -71,7 +71,7 @@ def observers(bd, brief, sources):
             frac, why = TOL["supply_analog" if analog else "supply_digital"]
             V = bd.rails.get(rail) or 3.3
             out.append(Observer(f"supply:{ref}:{rail}", "supply", v, nodes["g"], bound=frac * V,
-                                basis=f"{why}; {rail} = {V:g} V", meta=dict(ref=ref, rail=rail)))
+                                basis=f"{why}; {rail} = {V:g} V", meta=dict(ref=ref, rail=rail, V=V)))
     for st in brief.get("structures") or []:
         if st.get("kind") != "victim":
             continue
@@ -103,6 +103,22 @@ def observers(bd, brief, sources):
 
 OBS_ID = {"victim": "pickup.peak", "supply": "supply.peak", "overshoot": "overshoot.peak", "cm": "cable_cm.v"}
 
+# copper noise on a supply above half its rail at any corner: the IC would not run, and the first-order
+# (linear, small-signal) pricing no longer holds. A working board cannot show it; it means the inputs are
+# wrong (a signal net taken for a rail, an aggressor's current on the wrong net), so the observation is
+# flagged for kae.intent to leave unpriced rather than read as a layout's harm.
+IMPLAUSIBLE_RAIL_FRAC = 0.5
+
+
+def implausible(o, values) -> str | None:
+    """Why an observer's per-corner values cannot be a real board's, or None."""
+    V = o.meta.get("V") if o.kind == "supply" else None
+    w = max(values, default=0.0)
+    if V and w > IMPLAUSIBLE_RAIL_FRAC * V:
+        return (f"{w:.3g} V of copper noise on {o.meta.get('rail')} exceeds {IMPLAUSIBLE_RAIL_FRAC:.0%} of its "
+                f"{V:g} V rail: beyond first-order pricing, and no working board shows it (is the net a rail?)")
+    return None
+
 
 def _ref(tok):
     return tok.rsplit(".", 1)[0] if tok and "." in tok else None
@@ -127,6 +143,9 @@ def observation(bd, o, s, values, us, fs=()):
                           from_parts=from_parts, from_nets=from_nets, to_parts=to_parts, to_nets=to_nets),
                reference=dict(value=(o.bound or None), basis=o.basis, src_class=o.src_class),
                label=f"{o.name} <- {s.name}")
+    why = implausible(o, values)
+    if why:
+        out["implausible"] = why
     if fs:
         out["f_Hz"] = list(fs)
         out["scope"]["connectors"] = to_parts
