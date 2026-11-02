@@ -593,12 +593,17 @@ class Problem:
 
     def _rules(self, board):
         r = board.rules
-        clr = [r.clearance or 0.0] if r else [0.0]
+        # the setup's min_clearance is a floor under every netclass in KiCad's DRC (the exact
+        # check floors with it too, legalize._net_clr); taking the smaller of the two let a
+        # floor above a netclass *shrink* the pad inflation (0.15 -> 0.5 mm moved pads 0.1 mm
+        # closer), so grid-disjoint pads sat closer than the board allows
+        floor = float(r.clearance or 0.0) if r else 0.0
+        clr = [floor]
         if r:
             for nc in r.netclasses.values():
                 if nc.clearance:
-                    clr.append(float(nc.clearance))
-        self.clr_min = min([c for c in clr if c > 0] or [0.2])
+                    clr.append(max(floor, float(nc.clearance)))
+        self.clr_min = min(clr[1:] or [floor if floor > 0 else 0.2])
         self.clr_max = max(clr + [0.0])
         self.clearance = self.clr_max
         e = (r.edge_clearance if r else 0.0) or 0.0
@@ -634,7 +639,7 @@ class Problem:
         self.netclass_clr = {}
         if r:
             for name, nc in r.netclasses.items():
-                self.netclass_clr[name] = float(nc.clearance) if nc.clearance else self.clr_min
+                self.netclass_clr[name] = max(floor, float(nc.clearance)) if nc.clearance else self.clr_min
 
     def _domain(self, board, grid):
         polys = [p for p in board.outline if p.area > 0]
