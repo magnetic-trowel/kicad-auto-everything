@@ -21,6 +21,9 @@ from . import observe as O
 from . import sources as S
 
 
+NO_COPPER = 1e-4         # A per unit source: a pattern below this everywhere is the circuit's leak, not current
+
+
 def _vin_net(bd, brief, st):
     """A cell's input rail: the inductor's terminal that is not the switch node."""
     uuid = {u: p["ref"] for u, p in brief["parts"].items()}
@@ -146,7 +149,14 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
     for f in freqs:
         keys = [k for k, (ff, _) in pats.items() if ff == f]
         injs = [{p: j for p, j in pats[k][1].items() if p in bm.m.terminals} for k in keys]
-        for k, res in zip(keys, ES.potentials_many(bm.m, injs, f, net=net, op=op)):
+        # a pattern whose every injection is the circuit's leak (G_LEAK): the source's current closes inside
+        # its part (a core current from a rail no other part is on): none of it reaches the copper
+        none_ = [all(abs(j) < NO_COPPER for j in pats[k][1].values()) for k in keys]
+        for k in (k for k, z in zip(keys, none_) if z):
+            solved[k] = (None, dict(unbalanced=0, no_copper=True))
+        keys = [k for k, z in zip(keys, none_) if not z]
+        injs = [i for i, z in zip(injs, none_) if not z]
+        for k, res in zip(keys, ES.potentials_many(bm.m, injs, f, net=net, op=op) if keys else []):
             solved[k] = res
     notes = []
     uncomputed = []
@@ -164,11 +174,17 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
             res[band] = (f, v)
         if res is None:
             continue
+        if any(v is None for _, v in res.values()):
+            notes.append(f"{s.name}: none of its current reaches the copper (it closes inside its part): its layout "
+                         f"harms are zero")
         for o in obs:
             if o.kind == "overshoot" and o.meta.get("source") != s.name:
                 continue
             z = {}
             for band, (f, v) in res.items():
+                if v is None:
+                    z[band] = 0j
+                    continue
                 Jk = opats[(o.name, f)]
                 # the layout's share: the copper solve minus the same parts with ideal copper
                 z[band] = O.bilinear(Jk, v) - (O.bilinear(Jk, vid[(s.name, band)]) if lumped else 0.0)

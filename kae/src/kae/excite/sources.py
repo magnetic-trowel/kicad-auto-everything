@@ -8,7 +8,8 @@
   share it, whatever the topology.
 - ICs: the dynamic supply current of the core, drawn from the internal supply node to ground.
 - Clock drivers: the output pin charges the net's load, returning through the driver's ground (a clock
-  arriving through a connector: from the connector's pin, back through its nearest ground pin).
+  arriving through a port, a connector or a module (kae.excite.models): from the port's pin, back
+  through its nearest ground pin; a port pin the clock reaches is a receiver there).
 
 Each source carries di/dt (A/s) and the edge frequency f_e = 1/(pi t_r) at which its injection
 vector is solved; requirements scale the unit solution by these.
@@ -17,7 +18,7 @@ from __future__ import annotations
 
 import math
 
-from .models import PKG_L, SW_FN, _rl, _rlc
+from .models import PKG_L, SW_FN, _rl, _rlc, nearest_ground
 
 # dynamic core current and edge of IC classes (stand-ins; an IC's datasheet replaces them)
 DYNAMIC = {"mcu": (0.05, 1e-9), "fpga": (0.5, 0.5e-9), "memory": (0.1, 1e-9), "logic": (0.02, 1e-9),
@@ -62,7 +63,7 @@ def add_all(bd, brief, nl=None):
         if ref in bd.ic_nodes:
             a, pa = bd.ic_nodes[ref]["g"], None                  # returns through the driver's ground
         else:
-            pa = _nearest_ground(bd, ref, drv)                   # an oscillator, or a connector: from off the board
+            pa = _nearest_ground(bd, ref, drv)                   # an oscillator, or a port: from off the board
             if pa is None:
                 bd.assumptions.append(f"clk:{net}: driver {drv} has no ground pin to return through; no clock source")
                 continue
@@ -83,8 +84,9 @@ UNTYPED = ("", "unspecified", "passive", "free")
 
 def clock_driver(bd, net):
     """The pad that drives a clock net, by the schematic's pin types: an output; else an oscillator's
-    pin; else a bidirectional IC pin; else a connector's (the clock comes from off the board); else an
-    IC pin of no stated direction. An input never drives. None if nothing can."""
+    pin; else a bidirectional IC pin; else a module's (a board of its own); else a connector's (the
+    clock comes from off the board); else an IC pin of no stated direction. An input never drives. None
+    if nothing can."""
     toks = bd.pads_of.get(net, [])                     # the board's order breaks ties (as before)
     ref = lambda t: t.rsplit(".", 1)[0]
     typ = lambda t: bd.pin_type.get(t, "")
@@ -92,7 +94,8 @@ def clock_driver(bd, net):
     for test in (lambda t: typ(t) in DRIVES,
                  lambda t: kind(t) == "oscillator" and typ(t) != "input",
                  lambda t: typ(t) == "bidirectional" and ref(t) in bd.ic_nodes,
-                 lambda t: kind(t) == "connector" and typ(t) != "input",
+                 lambda t: _port(bd, ref(t)) == "module" and typ(t) != "input",
+                 lambda t: _port(bd, ref(t)) == "connector" and typ(t) != "input",
                  lambda t: typ(t) in UNTYPED and ref(t) in bd.ic_nodes):
         for t in toks:
             if test(t):
@@ -100,13 +103,22 @@ def clock_driver(bd, net):
     return None
 
 
+def _port(bd, ref):
+    """"connector" or "module" when ref is a port (kae.excite.models.port_kind), else None."""
+    port = getattr(bd, "port", None)
+    if port is not None:
+        return port.get(ref)
+    k = bd.part_kind.get(ref, ("",))[0]
+    return k if k in ("connector", "module") else None
+
+
 def _offboard_loads(bd, net, drv):
-    """A clock leaving the board through a connector pin drives a receiver there (cable, next board):
-    CLOCK_C from the pin to the connector's nearest ground pin, so its edge current returns through the
+    """A clock reaching a port pin (a connector: cable, next board; a module) drives a receiver there:
+    CLOCK_C from the pin to the port's nearest ground pin, so its edge current returns through the
     copper to that pin. (An IC's pins already load the net: kae.excite.models.)"""
     for t in bd.pads_of.get(net, []):
         ref = t.rsplit(".", 1)[0]
-        if t == drv or bd.part_kind.get(ref, ("",))[0] != "connector":
+        if t == drv or not _port(bd, ref):
             continue
         g = _nearest_ground(bd, ref, t)
         if g is None:
@@ -115,13 +127,7 @@ def _offboard_loads(bd, net, drv):
         bd.circuit.z(f"{t}:offboard", net, bd.net_of[g], _rlc(0, PKG_L, CLOCK_C), t, g, "in")
 
 
-def _nearest_ground(bd, ref, pad):
-    """The part's ground pin nearest to its pad (the return path of a signal it drives)."""
-    gs = [t for nt in bd.grounds for t in bd.pads_of.get(nt, []) if t.rsplit(".", 1)[0] == ref]
-    if not gs:
-        return None
-    x, y = bd.pad_xy.get(pad, (0.0, 0.0))
-    return min(gs, key=lambda t: math.dist(bd.pad_xy.get(t, (x, y)), (x, y)) if t in bd.pad_xy else math.inf)
+_nearest_ground = nearest_ground
 
 
 def _cell(bd, s, uuid):
