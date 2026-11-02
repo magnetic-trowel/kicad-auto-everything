@@ -91,6 +91,31 @@ def test_space_uses_the_bridges_effective_rules(tmp_path):
     assert sp.need(pad, "+3V3", "track", "F.Cu") is None          # same net: no clearance
 
 
+def test_same_net_vias_keep_hole_to_hole_through_both_drills(tmp_path):
+    """A second via of the net 1.5 um inside the pitch was accepted (`pitch - TOL`), and an
+    existing via with a larger drill was held to the class drill's pitch."""
+    from kae.route.critical_grid import Grid
+    s = F.session(tmp_path)
+    sp, gr = s.space, s.router
+    net = "+3V3"
+    D, d = sp.via_size(net)
+    pitch = sp.same_net_via_pitch(net)
+    x, y = next((x, y) for x in range(101, 140) for y in range(101, 130)
+                if not any(sp.via_violations(net, x + dx, y) for dx in (0.0, pitch + 0.01, pitch + 0.2)))
+    v = sp.add_via(net, x, y)
+    assert sp.via_violations(net, x + pitch - 0.0015, y, ignore=()) and not sp.via_violations(net, x + pitch + 0.01, y)
+    sp.remove([v])
+    big = sp.add_via(net, x, y, size=D + 0.2, drill=d + 0.2)
+    assert sp.via_violations(net, x + pitch + 0.05, y)            # 0.1 mm more drill: 0.1 mm further
+    assert not sp.via_violations(net, x + pitch + 0.11, y)
+    g = Grid(x - 1.0, y - 0.025, x + 1.0, y + 0.025, 0.05)
+    ok = gr.via_allowed(g, net, sp.cu)
+    for i in range(g.nx):
+        cx, cy = g.xy(i, 0)
+        if abs(cy - y) < 1e-6 and ok[0, i]:
+            assert math.dist((cx, cy), (x, y)) - big.drill / 2 - d / 2 >= pitch - d
+
+
 def test_grid_route_is_exactly_legal(tmp_path):
     s = F.session(tmp_path)
     sp, gr = s.space, s.router

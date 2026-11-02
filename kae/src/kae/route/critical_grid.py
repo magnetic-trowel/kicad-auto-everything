@@ -475,7 +475,8 @@ class GridRouter:
                 same = it.net is not None and it.net == net and it.kind in ("pad", "track", "via", "corridor", "shape")
                 if same:
                     if it.kind == "via":
-                        grid.within(it.geom, pitch + m, out)
+                        # hole to hole through both drills, as Space.via_violations
+                        grid.within(it.geom, pitch + ((it.drill or d) - d) / 2.0 + m + TOL, out)
                     elif it.kind == "pad":
                         if it.hole is not None:
                             hg, hr = it.hole

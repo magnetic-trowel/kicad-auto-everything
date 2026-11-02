@@ -533,9 +533,13 @@ class Space:
                 same = it.net is not None and it.net == net and it.kind in ("pad", "track", "via", "corridor", "shape")
                 if same:
                     if it.kind == "via":
-                        dc = it.geom.distance(p)
-                        if dc < pitch - TOL:
-                            out.append((it, dc, pitch))
+                        # hole to hole through both drills (the pitch holds the class drill): an
+                        # existing via with a larger drill needs more; TOL above the
+                        # requirement like every other test (it was `pitch - TOL`, 2 um inside)
+                        dh = it.geom.distance(p) - (it.drill or d) / 2.0 - rh
+                        nh = pitch - self.via_size(net)[1]
+                        if dh < nh + TOL:
+                            out.append((it, dh, nh))
                     elif it.kind == "pad":
                         if it.hole is not None:
                             hg, hr = it.hole
