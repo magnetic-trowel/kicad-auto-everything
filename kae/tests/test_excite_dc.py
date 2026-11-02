@@ -69,3 +69,18 @@ def test_synchronous_boost_balances_and_the_ldo_rating_caps_its_load():
     sums = _net_sums(pl, inj, [{"VBUS", "SW"}])
     assert all(abs(v) < 1e-12 for v in sums.values()), sums
     assert inj["U2.1"] == pytest.approx(-0.5)                # the LDO delivers at most its 0.5 A rating
+
+
+def test_ics_on_boards_without_pin_data_draw_from_their_rails():
+    """A pad typed power_in or named as a supply draws; on a board whose pads carry neither name nor
+    type (an Eagle or KiCad 5 import), a pad on a rail or a supply-named net draws; a pad typed or
+    named otherwise, or on a signal net, does not."""
+    rails = {"VBAT", "+3V3"}
+    assert DC.draws_from([("1", "+3V3", "power_in", "")], "+3V3", rails)
+    assert DC.draws_from([("2", "+3V3", "passive", "3V3")], "+3V3", rails)           # named by its voltage
+    assert DC.draws_from([("1", "VBAT", "", ""), ("2", "GND", "", "")], "VBAT", rails)  # unannotated, on a rail
+    assert DC.draws_from([("1", "VCC_IO", "", "")], "VCC_IO", set())                 # unannotated, supply name
+    assert not DC.draws_from([("1", "+3V3", "input", "EN")], "+3V3", rails)          # an enable tied high
+    assert not DC.draws_from([("1", "+3V3", "power_out", "3V3")], "+3V3", rails)     # its output, not a draw
+    assert not DC.draws_from([("1", "PWRSTAT", "", "")], "PWRSTAT", set())           # a status line
+    assert not DC.draws_from([("1", "VBAT", "", "")], "+3V3", rails)                 # no pad on that rail
