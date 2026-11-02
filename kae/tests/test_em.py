@@ -113,3 +113,20 @@ def test_open_loop_is_an_error():
     m.port("p", "a", "b")
     with pytest.raises(ValueError, match="open loop"):
         S.solve(m, [INF])
+
+
+def test_physics_search_reaches_the_nearest_of_spread_out_destinations():
+    """The A* heuristic aims at the destination cells' bounding box, not their mean point: a mean
+    point between a near cell and a far block overestimated and returned 22 steps to the block
+    instead of 18 to the near cell."""
+    from kae.em.route import search_flat
+    nl, ny, nx = 1, 21, 61
+    base = np.ones((nl, ny, nx))
+    z = np.zeros_like(base)
+    dst = np.zeros(nl * ny * nx, bool)
+    dst[10 * nx + 0] = True
+    for j in range(ny):
+        dst[j * nx + 40: j * nx + 61] = True
+    p = search_flat(base, z, z, z, z, np.zeros(base.shape, bool), np.zeros(ny * nx, bool),
+                    np.array([10 * nx + 18], np.int64), dst, 1.0)
+    assert len(p) - 1 == 18 and int(p[-1]) == 10 * nx
