@@ -62,3 +62,27 @@ def test_seeded_runs_repeat():
         ann.run(cpu_s=60.0, max_moves=2000)
         out.append((list(ann.X), list(ann.Y), list(ann.K)))
     assert out[0] == out[1]
+
+
+def test_evaluate_keeps_the_congestion_history():
+    """evaluate() built its pricing annealer without cong_history, so its RUDY total lacked
+    the routing-history demand cost() includes: the same state priced two ways."""
+    b, P, st = _legal_state()
+
+    def hist(x0, y0, bsz, nbx, nby):
+        a = np.zeros((nbx, nby))
+        a[: nbx // 2, :] = 50.0         # well over a bin's supply
+        return a
+    a = Annealer(P, st.copy(), terms=None, seed=1, w_phys=0.0, cong_history=hist)
+    assert a.cong.total() > 0
+    c, rep = a.evaluate(st)
+    assert abs(c - a.cost(a.lam1)) < 1e-9 * max(1.0, abs(c)) and rep["cong"] == round(a.cong.total(), 6)
+
+
+def test_make_annealer_keeps_congestion_with_a_blockage_beta():
+    """The compiled engine prices congestion only at beta 0 and dropped the term silently
+    otherwise; make_annealer gives such runs the reference annealer."""
+    from kae.place.anneal import make_annealer
+    b, P, st = _legal_state()
+    a = make_annealer(P, st.copy(), terms=None, seed=1, w_phys=0.0, cong_args=dict(beta=0.5))
+    assert type(a) is Annealer and a.cong is not None and a.cong.beta == 0.5
