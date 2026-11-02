@@ -1,232 +1,260 @@
 # Idea inventory: power, PDN, RF, analog, isolation, thermal, DFM rules
 
-One line per distinct approach, checker, detector, design idea or recommendation from the power/RF/analog/DFM research cluster. Each line links to the topic doc that holds the detail and sources. Evidence lives in `rules_power_rf_analog_dfm.md`, `verification_rules.md` and `interface_rule_packs.md` under [research_notes](../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/).
+Scope: one line per idea from the power/RF/analog/DFM rule notes; detail and sources in the linked topic doc. Line refs `pwr:` cite this file by phrase; `hs#N` = [inventory-rules-hs-emi](inventory-rules-hs-emi.md) line N. Not here: high-speed/EMC/interface rules -> [inventory-rules-hs-emi](inventory-rules-hs-emi.md).
+Keys: hot loop, buck, boost, SEPIC, flyback, gate drive, bootstrap, Kelvin, current sense, LDO, motor driver, BMS, high current, class-D, decoupling, PDN, RF, mixed-signal, precision, crystal, creepage, thermal, DFM, role detectors
+Pointer tags = rule docs: [buck](../topics/rules/power/buck.md), [motor-drivers](../topics/rules/power/motor-drivers.md), [high-current](../topics/rules/power/high-current.md), [current-sense-kelvin](../topics/rules/power/current-sense-kelvin.md), [flyback-offline](../topics/rules/power/flyback-offline.md), [chargers-bms](../topics/rules/power/chargers-bms.md), [gate-drive-bootstrap](../topics/rules/power/gate-drive-bootstrap.md), [class-d-audio](../topics/rules/power/class-d-audio.md), [buck-boost-sepic](../topics/rules/power/buck-boost-sepic.md), [led-drivers](../topics/rules/power/led-drivers.md), [ldo](../topics/rules/power/ldo.md), [boost](../topics/rules/power/boost.md), [hot-loops](../topics/rules/power/hot-loops.md), [rf](../topics/rules/rf.md), [decoupling-pdn](../topics/rules/decoupling-pdn.md), [dfm-fab-limits](../topics/rules/dfm-fab-limits.md), [checkers-power](../topics/rules/checkers-power.md), [analog-mixed-signal](../topics/rules/analog-mixed-signal.md), [thermal](../topics/rules/thermal.md), [placement-methodology](../topics/rules/placement-methodology.md), [isolation-creepage](../topics/rules/isolation-creepage.md), [datasheet-to-constraints](../topics/rules/datasheet-to-constraints.md), [precision-sensing](../topics/rules/precision-sensing.md), [crystals-clocks](../topics/rules/crystals-clocks.md).
+Evidence: `rules_power_rf_analog_dfm.md`, `verification_rules.md`, `interface_rule_packs.md` in [research_notes](../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/).
 
 ## Switching converters: hot loops and buck/boost
-- Hot loop first: smallest, CIN on the IC layer, solid plane on the next layer (vertical loops close through it) → [hot-loops](../topics/rules/power/hot-loops.md)
-- Topology table deriving hot vs continuous-current branches per converter type → [hot-loops](../topics/rules/power/hot-loops.md)
-- INTVCC/driver decoupling loop as a second hot loop (~20 dB lower) → [hot-loops](../topics/rules/power/hot-loops.md)
-- Overshoot calculator V = L·di/dt (5 A/ns × 2 nH = 10 V) → [hot-loops](../topics/rules/power/hot-loops.md)
-- Loop-inductance anchors: SNVA803 2/20 mm², EPC 0.4–2.9 nH; AN-139 table (10 × 10 cm test loop, 27 MHz) for the plane-distance trend only → [hot-loops](../topics/rules/power/hot-loops.md)
-- Loop-area tiers ≤2 / ≤10 / >20 mm² as soft scores [I] → [hot-loops](../topics/rules/power/hot-loops.md)
-- Warn when L_est·di/dt > 0.2 × V_DS,max → [hot-loops](../topics/rules/power/hot-loops.md)
-- Efficiency-impact estimate from loop inductance (EPC data) → [hot-loops](../topics/rules/power/hot-loops.md)
-- Prefer vertical loops on multilayer boards; thinner boards cancel better → [hot-loops](../topics/rules/power/hot-loops.md)
-- ≥4 layers with ≤0.127 mm L1–L2 dielectric under power stages → [hot-loops](../topics/rules/power/hot-loops.md)
-- Isolated-return context switch for ≥100 W supplies (Hubing) → [hot-loops](../topics/rules/power/hot-loops.md)
-- Edge-rate slowing (series bootstrap R) as an EMI-vs-efficiency knob → [gate-drive-bootstrap](../topics/rules/power/gate-drive-bootstrap.md)
-- SLYT614 five-step order emitted as `placement_priority` → [buck](../topics/rules/power/buck.md)
-- CIN placed and routed immediately after the IC, on its layer (hard for integrated converters); hot-loop vias scored through L_est, vertical loops allowed → [buck](../topics/rules/power/buck.md)
-- MPS <2 mm (NB67x) as a soft CIN distance objective, overridable by datasheet → [buck](../topics/rules/power/buck.md)
-- WCSP exception: route SW under CIN; use vias in SW→L rather than moving CIN → [buck](../topics/rules/power/buck.md)
-- System vias outside the CIN–IC path → [buck](../topics/rules/power/buck.md)
-- All converter parts on one board side; EN/PG parts placed last → [buck](../topics/rules/power/buck.md)
-- Never move CBYPASS or the freewheel diode to the far side through vias (Rohm) → [buck](../topics/rules/power/buck.md)
-- Bulk CIN allowed ~20 mm from the HF cap → [buck](../topics/rules/power/buck.md)
-- MPS via counts at power pins; >20 vias between input caps → [buck](../topics/rules/power/buck.md)
-- Rohm/Johnson via-inductance formula for scoring → [checkers-power](../topics/rules/checkers-power.md)
-- SW-area cap relative to SW + inductor pads → [buck](../topics/rules/power/buck.md)
-- SW trace width ≤2.54 mm (LM10504) → [buck](../topics/rules/power/buck.md)
-- No SW copper in parallel on several layers (BQ25895), default for all bucks; WCSP series layer change allowed → [chargers-bms](../topics/rules/power/chargers-bms.md)
-- Cool through PGND/EP vias, never by enlarging SW copper → [buck](../topics/rules/power/buck.md)
-- Inductor dot on SW, needing a footprint pin-1 = dot convention → [buck](../topics/rules/power/buck.md)
-- Copper under the inductor as a context switch (TI vs Rohm vs Hubing) → [buck](../topics/rules/power/buck.md)
-- Sensitive-net keep-out under L and near SW on all layers → [buck](../topics/rules/power/buck.md)
-- FB/VOS Kelvin from the COUT pad, separate from the power plane → [buck](../topics/rules/power/buck.md)
-- FB divider next to the FB pin with no vias (MPS) → [buck](../topics/rules/power/buck.md)
-- FB on a GND-shielded other layer when R_FB > 100 kΩ → [buck](../topics/rules/power/buck.md)
-- Angular-sector test: FB/comp parts away from the SW/L half-plane → [buck](../topics/rules/power/buck.md)
-- AGND island with exactly one net tie to PGND → [buck](../topics/rules/power/buck.md)
-- Surface TI's internal FB-ground tension (DS vs SLYT614) for user selection → [buck](../topics/rules/power/buck.md)
-- Plane + local loop + single tie instead of literal star grounding → [buck](../topics/rules/power/buck.md)
-- PMIC ground cuts (DA9080) honoured only when mandated → [buck](../topics/rules/power/buck.md)
-- CIN/COUT ground separation as a context switch, not a default → [buck](../topics/rules/power/buck.md)
-- RC snubber at the IC SW/GND pins, loop-area check (not across the diode) → [buck](../topics/rules/power/buck.md)
-- `buck_sync` rule pack with typed parameters and an eval-board override → [buck](../topics/rules/power/buck.md)
-- Boost: COUT_HF as the critical cap; {LS, D, COUT_HF} loop check → [boost](../topics/rules/power/boost.md)
-- Boost: large VIN copper allowed; AGND tie near PGND → [boost](../topics/rules/power/boost.md)
-- Inverting buck-boost: one series loop; CIN/COUT grounds adjacent → [buck-boost-sepic](../topics/rules/power/buck-boost-sepic.md)
-- 4-switch: one loop constraint per half-bridge → [buck-boost-sepic](../topics/rules/power/buck-boost-sepic.md)
-- SEPIC/Ćuk loop as soft, flagged unverified inference → [buck-boost-sepic](../topics/rules/power/buck-boost-sepic.md)
+- Hot loop first: smallest, CIN on the IC layer, solid plane on the next layer (vertical loops close through it) [hot-loops]
+- Topology table deriving hot vs continuous-current branches per converter type [hot-loops]
+- INTVCC/driver decoupling loop as a second hot loop (~20 dB lower) [hot-loops]
+- Overshoot calculator V = L·di/dt (5 A/ns × 2 nH = 10 V) [hot-loops]
+- Loop-inductance anchors: SNVA803 2/20 mm², EPC 0.4–2.9 nH; AN-139 table (10 × 10 cm test loop, 27 MHz) for the plane-distance trend only [hot-loops]
+- Loop-area tiers ≤2 / ≤10 / >20 mm² as soft scores [I] [hot-loops]
+- Warn when L_est·di/dt > 0.2 × V_DS,max [hot-loops]
+- Efficiency-impact estimate from loop inductance (EPC data) [hot-loops]
+- Prefer vertical loops on multilayer boards; thinner boards cancel better [hot-loops]
+- ≥4 layers with ≤0.127 mm L1–L2 dielectric under power stages [hot-loops]
+- Isolated-return context switch for ≥100 W supplies (Hubing) [hot-loops]
+- Edge-rate slowing (series bootstrap R) as an EMI-vs-efficiency knob [gate-drive-bootstrap]
+- SLYT614 five-step order emitted as `placement_priority` [buck]
+- CIN placed and routed immediately after the IC, on its layer (hard for integrated converters); hot-loop vias scored through L_est, vertical loops allowed [buck]
+- MPS <2 mm (NB67x) as a soft CIN distance objective, overridable by datasheet [buck]
+- WCSP exception: route SW under CIN; use vias in SW→L rather than moving CIN [buck]
+- System vias outside the CIN–IC path [buck]
+- All converter parts on one board side; EN/PG parts placed last [buck]
+- Never move CBYPASS or the freewheel diode to the far side through vias (Rohm) [buck]
+- Bulk CIN allowed ~20 mm from the HF cap [buck]
+- MPS via counts at power pins; >20 vias between input caps [buck]
+- Rohm/Johnson via-inductance formula for scoring [checkers-power]
+- SW-area cap relative to SW + inductor pads [buck]
+- SW trace width ≤2.54 mm (LM10504) [buck]
+- No SW copper in parallel on several layers (BQ25895), default for all bucks; WCSP series layer change allowed [chargers-bms]
+- Cool through PGND/EP vias, never by enlarging SW copper [buck]
+- Inductor dot on SW, needing a footprint pin-1 = dot convention [buck]
+- Copper under the inductor as a context switch (TI vs Rohm vs Hubing) [buck]
+- Sensitive-net keep-out under L and near SW on all layers [buck]
+- FB/VOS Kelvin from the COUT pad, separate from the power plane [buck]
+- FB divider next to the FB pin with no vias (MPS) [buck]
+- FB on a GND-shielded other layer when R_FB > 100 kΩ [buck]
+- Angular-sector test: FB/comp parts away from the SW/L half-plane [buck]
+- AGND island with exactly one net tie to PGND [buck]
+- Surface TI's internal FB-ground tension (DS vs SLYT614) for user selection [buck]
+- Plane + local loop + single tie instead of literal star grounding [buck]
+- PMIC ground cuts (DA9080) honoured only when mandated [buck]
+- CIN/COUT ground separation as a context switch, not a default [buck]
+- RC snubber at the IC SW/GND pins, loop-area check (not across the diode) [buck]
+- `buck_sync` rule pack with typed parameters and an eval-board override [buck]
+- Boost: COUT_HF as the critical cap; {LS, D, COUT_HF} loop check [boost]
+- Boost: large VIN copper allowed; AGND tie near PGND [boost]
+- Inverting buck-boost: one series loop; CIN/COUT grounds adjacent [buck-boost-sepic]
+- 4-switch: one loop constraint per half-bridge [buck-boost-sepic]
+- SEPIC/Ćuk loop as soft, flagged unverified inference [buck-boost-sepic]
 
 ## Gate drive, current sense, LDO
-- Gate loop paired, driver adjacent, Kelvin source used → [gate-drive-bootstrap](../topics/rules/power/gate-drive-bootstrap.md)
-- EPC criterion L_G ≤ ¼(R_G+R_S)²C_GS from extracted parameters → [gate-drive-bootstrap](../topics/rules/power/gate-drive-bootstrap.md)
-- Bootstrap schematic check C_boot ≥10 C_g, C_VDD ≥10 C_boot (corrected) → [gate-drive-bootstrap](../topics/rules/power/gate-drive-bootstrap.md)
-- Smaller driver VDD cap nearest the IC (TI SLUAAM3, GaN drivers) → [gate-drive-bootstrap](../topics/rules/power/gate-drive-bootstrap.md)
-- Kelvin tap at the centre of the inner pad edge; equal-length pair → [current-sense-kelvin](../topics/rules/power/current-sense-kelvin.md)
-- Copper TCR (3900 ppm/°C) awareness for 2-terminal shunts → [current-sense-kelvin](../topics/rules/power/current-sense-kelvin.md)
-- Sense pair on the far side of a shield plane (AN-139) → [current-sense-kelvin](../topics/rules/power/current-sense-kelvin.md)
-- DCR sensing: R at the inductor, C at the IC → [current-sense-kelvin](../topics/rules/power/current-sense-kelvin.md)
-- RSENSE role detector (≤100 mΩ to CS±/SENSE) → [current-sense-kelvin](../topics/rules/power/current-sense-kelvin.md)
-- Net ties proposed as schematic changes (KiCad parity) to force Kelvin routing → [current-sense-kelvin](../topics/rules/power/current-sense-kelvin.md)
-- Comparative check: sense filter closer to the IC than to the shunt → [current-sense-kelvin](../topics/rules/power/current-sense-kelvin.md)
-- LDO: output routed through COUT before branching; topology check → [ldo](../topics/rules/power/ldo.md)
-- LDO copper sized from (V_IN−V_OUT)·I via the thermal screener, not 2 cm²/W → [ldo](../topics/rules/power/ldo.md)
+- Gate loop paired, driver adjacent, Kelvin source used [gate-drive-bootstrap]
+- EPC criterion L_G ≤ ¼(R_G+R_S)²C_GS from extracted parameters [gate-drive-bootstrap]
+- Bootstrap schematic check C_boot ≥10 C_g, C_VDD ≥10 C_boot (corrected) [gate-drive-bootstrap]
+- Smaller driver VDD cap nearest the IC (TI SLUAAM3, GaN drivers) [gate-drive-bootstrap]
+- Kelvin tap at the centre of the inner pad edge; equal-length pair [current-sense-kelvin]
+- Copper TCR (3900 ppm/°C) awareness for 2-terminal shunts [current-sense-kelvin]
+- Sense pair on the far side of a shield plane (AN-139) [current-sense-kelvin]
+- DCR sensing: R at the inductor, C at the IC [current-sense-kelvin]
+- RSENSE role detector (≤100 mΩ to CS±/SENSE) [current-sense-kelvin]
+- Net ties proposed as schematic changes (KiCad parity) to force Kelvin routing [current-sense-kelvin]
+- Comparative check: sense filter closer to the IC than to the shunt [current-sense-kelvin]
+- LDO: output routed through COUT before branching; topology check [ldo]
+- LDO copper sized from (V_IN−V_OUT)·I via the thermal screener, not 2 cm²/W [ldo]
 
 ## Circuit classes
-- Flyback loop identification: primary, clamp, secondary, bias → [flyback-offline](../topics/rules/power/flyback-offline.md)
-- Nested-loop polygon containment test → [flyback-offline](../topics/rules/power/flyback-offline.md)
-- Transformer-belly and drain keep-out rule areas → [flyback-offline](../topics/rules/power/flyback-offline.md)
-- Feedback tapped before the post-filter L; post filter at the terminals → [flyback-offline](../topics/rules/power/flyback-offline.md)
-- One star join per side (graph check) → [flyback-offline](../topics/rules/power/flyback-offline.md)
-- π-filter inductor in the negative leg → [flyback-offline](../topics/rules/power/flyback-offline.md)
-- RCD clamp values with optional series damping; secondary snubber when needed → [flyback-offline](../topics/rules/power/flyback-offline.md)
-- Half-bridge commutation-loop check {C_byp, HS.D, LS.S} → [motor-drivers](../topics/rules/power/motor-drivers.md)
-- Gate traces ≥20 mil paired with SW → [motor-drivers](../topics/rules/power/motor-drivers.md)
-- VDRAIN Kelvin trace with net tie → [motor-drivers](../topics/rules/power/motor-drivers.md)
-- 2-layer ground gridding/mesh; partition instead of split → [motor-drivers](../topics/rules/power/motor-drivers.md)
-- Teardrops; in-path passives side by side → [motor-drivers](../topics/rules/power/motor-drivers.md)
-- Bulk at power entry, ceramics at each half-bridge → [motor-drivers](../topics/rules/power/motor-drivers.md)
-- H-bridge/3-phase role detector → [motor-drivers](../topics/rules/power/motor-drivers.md)
-- Provenance flags for erroneous vendor numbers (SLVA959 via R, λ typo) → [motor-drivers](../topics/rules/power/motor-drivers.md)
-- LED sense pair with filter at the IC; no switching current under the IC → [led-drivers](../topics/rules/power/led-drivers.md)
-- LED heat kept away from sense/reference parts → [led-drivers](../topics/rules/power/led-drivers.md)
-- Charger ordered-priority emission (BQ25895) → [chargers-bms](../topics/rules/power/chargers-bms.md)
-- BMS shunt filter at the IC, not the shunt → [chargers-bms](../topics/rules/power/chargers-bms.md)
-- Ordered, uncrossed cell traces; spread balance resistors → [chargers-bms](../topics/rules/power/chargers-bms.md)
-- Monitor ground kept off high-current shared copper → [chargers-bms](../topics/rules/power/chargers-bms.md)
-- Spacing classes from cell index × cell voltage → [chargers-bms](../topics/rules/power/chargers-bms.md)
-- Narrowest-cross-section check on the track/zone graph → [high-current](../topics/rules/power/high-current.md)
-- Vias placed where current enters/leaves pads → [high-current](../topics/rules/power/high-current.md)
-- Conservative via ampacity with conflict logged (2.6× spread) → [high-current](../topics/rules/power/high-current.md)
-- Rohm 1 mm/A (1 oz), 0.7 mm/A (2 oz) widths; IPC + IR drop → [high-current](../topics/rules/power/high-current.md)
-- Heavy copper vs fine-pitch min-space check → [high-current](../topics/rules/power/high-current.md)
-- Overlapped (laminated) supply/return → [high-current](../topics/rules/power/high-current.md)
-- Busbar/press-fit keep-outs; transitions as hot spots → [high-current](../topics/rules/power/high-current.md)
-- Copper weight by dissipation, surfaced early → [high-current](../topics/rules/power/high-current.md)
-- Per-pin pH loop-inductance budgets (SLAA896) → [class-d-audio](../topics/rules/power/class-d-audio.md)
-- No adjacent-layer coupling for switching outputs → [class-d-audio](../topics/rules/power/class-d-audio.md)
-- Output filter at the IC; speaker connector at filter-cap pads → [class-d-audio](../topics/rules/power/class-d-audio.md)
-- Inputs on the quiet side with floods → [class-d-audio](../topics/rules/power/class-d-audio.md)
-- <100 kHz return-path planning; shared-ground-copper flag → [class-d-audio](../topics/rules/power/class-d-audio.md)
+- Flyback loop identification: primary, clamp, secondary, bias [flyback-offline]
+- Nested-loop polygon containment test [flyback-offline]
+- Transformer-belly and drain keep-out rule areas [flyback-offline]
+- Feedback tapped before the post-filter L; post filter at the terminals [flyback-offline]
+- One star join per side (graph check) [flyback-offline]
+- π-filter inductor in the negative leg [flyback-offline]
+- RCD clamp values with optional series damping; secondary snubber when needed [flyback-offline]
+- Half-bridge commutation-loop check {C_byp, HS.D, LS.S} [motor-drivers]
+- Gate traces ≥20 mil paired with SW [motor-drivers]
+- VDRAIN Kelvin trace with net tie [motor-drivers]
+- 2-layer ground gridding/mesh; partition instead of split [motor-drivers]
+- Teardrops; in-path passives side by side [motor-drivers]
+- Bulk at power entry, ceramics at each half-bridge [motor-drivers]
+- H-bridge/3-phase role detector [motor-drivers]
+- Provenance flags for erroneous vendor numbers (SLVA959 via R, λ typo) [motor-drivers]
+- LED sense pair with filter at the IC; no switching current under the IC [led-drivers]
+- LED heat kept away from sense/reference parts [led-drivers]
+- Charger ordered-priority emission (BQ25895) [chargers-bms]
+- BMS shunt filter at the IC, not the shunt [chargers-bms]
+- Ordered, uncrossed cell traces; spread balance resistors [chargers-bms]
+- Monitor ground kept off high-current shared copper [chargers-bms]
+- Spacing classes from cell index × cell voltage [chargers-bms]
+- Narrowest-cross-section check on the track/zone graph [high-current]
+- Vias placed where current enters/leaves pads [high-current]
+- Conservative via ampacity with conflict logged (2.6× spread) [high-current]
+- Rohm 1 mm/A (1 oz), 0.7 mm/A (2 oz) widths; IPC + IR drop [high-current]
+- Heavy copper vs fine-pitch min-space check [high-current]
+- Overlapped (laminated) supply/return [high-current]
+- Busbar/press-fit keep-outs; transitions as hot spots [high-current]
+- Copper weight by dissipation, surfaced early [high-current]
+- Per-pin pH loop-inductance budgets (SLAA896) [class-d-audio]
+- No adjacent-layer coupling for switching outputs [class-d-audio]
+- Output filter at the IC; speaker connector at filter-cap pads [class-d-audio]
+- Inputs on the quiet side with floods [class-d-audio]
+- <100 kHz return-path planning; shared-ground-copper flag [class-d-audio]
 
 ## Decoupling and PDN
-- Rank decoupling by mounting inductance, not value → [decoupling-pdn](../topics/rules/decoupling-pdn.md)
-- Alternate cap orientation in clusters; spread caps; max C per package → [decoupling-pdn](../topics/rules/decoupling-pdn.md)
-- Via-in-pad vs cost/solder-thieving trade-off → [decoupling-pdn](../topics/rules/decoupling-pdn.md)
-- Archambeault depth-to-plane table in the estimator → [decoupling-pdn](../topics/rules/decoupling-pdn.md)
-- Plane pairs high in the stack, thin, no long thin necks → [decoupling-pdn](../topics/rules/decoupling-pdn.md)
-- Via-at-pad plane connections, no traces → [decoupling-pdn](../topics/rules/decoupling-pdn.md)
-- Z_t using only the transient share of the budget → [decoupling-pdn](../topics/rules/decoupling-pdn.md)
-- Flat profile; peaks ≤1.57× (robust) / 3× (risk) Z_t → [decoupling-pdn](../topics/rules/decoupling-pdn.md)
-- Q per peak; rogue-wave warning → [decoupling-pdn](../topics/rules/decoupling-pdn.md)
-- ESR damping and C = L/R² bulk instead of decade values → [decoupling-pdn](../topics/rules/decoupling-pdn.md)
-- Open-source lumped-RLC PDN screener → [decoupling-pdn](../topics/rules/decoupling-pdn.md)
-- Plane cavity-mode check vs clock harmonics → [decoupling-pdn](../topics/rules/decoupling-pdn.md)
-- MLCC DC-bias derating before counting C → [decoupling-pdn](../topics/rules/decoupling-pdn.md)
-- Ferrite beads only on need, ≤20% rated, resonance check, damping options A/B/C → [decoupling-pdn](../topics/rules/decoupling-pdn.md)
-- Return vias at reference changes; ≤1 µF stitching caps at split crossings → [decoupling-pdn](../topics/rules/decoupling-pdn.md)
-- Pre-layout BOM checks (derating, bead current, boot ratios) → [decoupling-pdn](../topics/rules/decoupling-pdn.md)
-- Capacitor-combination ringing awareness (Williams, MT-101) → [decoupling-pdn](../topics/rules/decoupling-pdn.md)
+- Rank decoupling by mounting inductance, not value [decoupling-pdn]
+- Alternate cap orientation in clusters; spread caps; max C per package [decoupling-pdn]
+- Via-in-pad vs cost/solder-thieving trade-off [decoupling-pdn]
+- Archambeault depth-to-plane table in the estimator [decoupling-pdn]
+- Plane pairs high in the stack, thin, no long thin necks [decoupling-pdn]
+- Via-at-pad plane connections, no traces [decoupling-pdn]
+- Z_t using only the transient share of the budget [decoupling-pdn]
+- Flat profile; peaks ≤1.57× (robust) / 3× (risk) Z_t [decoupling-pdn]
+- Q per peak; rogue-wave warning [decoupling-pdn]
+- ESR damping and C = L/R² bulk instead of decade values [decoupling-pdn]
+- Open-source lumped-RLC PDN screener [decoupling-pdn]
+- Plane cavity-mode check vs clock harmonics [decoupling-pdn]
+- MLCC DC-bias derating before counting C [decoupling-pdn]
+- Ferrite beads only on need, ≤20% rated, resonance check, damping options A/B/C [decoupling-pdn]
+- Return vias at reference changes; stitching caps = hs#8 [decoupling-pdn]
+- Pre-layout BOM checks (derating, bead current, boot ratios) [decoupling-pdn]
+- Capacitor-combination ringing awareness (Williams, MT-101) [decoupling-pdn]
 
 ## RF
-- Net class RF50 with solver geometry → [rf](../topics/rules/rf.md)
-- RF point-to-point topology; branch/stub detector → [rf](../topics/rules/rf.md)
-- Match at the pin; shunt grounded through the named pin → [rf](../topics/rules/rf.md)
-- Inner-layer keep-out under the matching network → [rf](../topics/rules/rf.md)
-- Via-fence and pour-stitching max-gap checker (λ_g/20, soft) + worked λ table → [rf](../topics/rules/rf.md)
-- Antenna keep-out as an all-layer rule area from the module figure → [rf](../topics/rules/rf.md)
-- Enclosure clearance exported to a mechanical checklist → [rf](../topics/rules/rf.md)
-- Ground-plane size window for embedded-antenna modules → [rf](../topics/rules/rf.md)
-- Stitched edge ground ring; power planes pulled back → [rf](../topics/rules/rf.md)
-- RF length first, then bus length → [rf](../topics/rules/rf.md)
-- Reference plane for every trace including DC → [rf](../topics/rules/rf.md)
-- Power through bypass and bulk before the module pin → [rf](../topics/rules/rf.md)
-- Solder-mask under GNSS receivers, no open vias → [rf](../topics/rules/rf.md)
-- Per-part RF data store (stack, widths, harmonic stub, touch, ripple) → [rf](../topics/rules/rf.md)
-- Reference-design deference (QFN vs WLCSP matching) → [rf](../topics/rules/rf.md)
-- RF↔SMPS separation as ranked objective; cans and fences → [rf](../topics/rules/rf.md)
-- Shield-can footprint ring rules → [rf](../topics/rules/rf.md)
-- Corner rules on RF, ESD, differential-pair and ≥10 Gb/s nets (none for single-ended <2 Gb/s); acute-angle check everywhere → [rf](../topics/rules/rf.md)
+- Net class RF50 with solver geometry [rf]
+- RF point-to-point topology; branch/stub detector [rf]
+- Match at the pin; shunt grounded through the named pin [rf]
+- Inner-layer keep-out under the matching network [rf]
+- Via-fence and pour-stitching max-gap checker (λ_g/20, soft) + worked λ table [rf]
+- Antenna keep-out as an all-layer rule area from the module figure [rf]
+- Enclosure clearance exported to a mechanical checklist [rf]
+- Ground-plane size window for embedded-antenna modules [rf]
+- Stitched edge ground ring; power planes pulled back [rf]
+- RF length first, then bus length [rf]
+- Reference plane for every trace including DC [rf]
+- Power through bypass and bulk before the module pin [rf]
+- Solder-mask under GNSS receivers, no open vias [rf]
+- Per-part RF data store (stack, widths, harmonic stub, touch, ripple) [rf]
+- Reference-design deference (QFN vs WLCSP matching) [rf]
+- RF↔SMPS separation as ranked objective; cans and fences [rf]
+- Shield-can footprint ring rules [rf]
+- Corner rules scoped as hs#127 (none for single-ended <2 Gb/s); acute-angle check everywhere [rf]
 
 ## Analog, mixed-signal, precision
-- One partitioned plane, ADC straddling the boundary → [analog-mixed-signal](../topics/rules/analog-mixed-signal.md)
-- Ground strategy selected from ADC resolution (≤12 vs ≥14 bit) → [analog-mixed-signal](../topics/rules/analog-mixed-signal.md)
-- Ott jumper test (0 Ω links every ½") as a validation experiment → [analog-mixed-signal](../topics/rules/analog-mixed-signal.md)
-- Split-crossing detector; single bridge → [analog-mixed-signal](../topics/rules/analog-mixed-signal.md)
-- AGND/DGND tie at the package for low-digital-current converters (override datasheet except scheme-specified parts) → [analog-mixed-signal](../topics/rules/analog-mixed-signal.md)
-- 300 mV inter-plane limit and back-to-back Schottkys → [analog-mixed-signal](../topics/rules/analog-mixed-signal.md)
-- Converter output buffer with series R → [analog-mixed-signal](../topics/rules/analog-mixed-signal.md)
-- Guard-ring net check, driven at node potential, both sides → [analog-mixed-signal](../topics/rules/analog-mixed-signal.md)
-- Summing-node copper minimisation → [analog-mixed-signal](../topics/rules/analog-mixed-signal.md)
-- Matched-pair mirror/common-centroid metric; isotherm placement → [analog-mixed-signal](../topics/rules/analog-mixed-signal.md)
-- Separate board or shield box for >35 dB analog isolation (Pease) → [analog-mixed-signal](../topics/rules/analog-mixed-signal.md)
-- Kelvin on all precision sense points → [current-sense-kelvin](../topics/rules/power/current-sense-kelvin.md)
-- Thermocouple CJ co-location and symmetric TC± routing → [precision-sensing](../topics/rules/precision-sensing.md)
-- Bridge: ratiometric, 6-wire Kelvin, balanced traces, R_G at the pins → [precision-sensing](../topics/rules/precision-sensing.md)
-- TIA regime classifier driving opposite copper rules → [precision-sensing](../topics/rules/precision-sensing.md)
-- Low-leakage dielectric BOM check for electrometers → [precision-sensing](../topics/rules/precision-sensing.md)
-- Ground-noise budget from the LSB table → [precision-sensing](../topics/rules/precision-sensing.md)
-- Crystal distance annulus, pF budget, guard rule area, zero test points, vendor switches, C-shaped via ring → [crystals-clocks](../topics/rules/crystals-clocks.md)
+- One partitioned plane, ADC straddling the boundary [analog-mixed-signal]
+- Ground strategy selected from ADC resolution (≤12 vs ≥14 bit) [analog-mixed-signal]
+- Ott jumper test (0 Ω links every ½") as a validation experiment [analog-mixed-signal]
+- Split-crossing detector; single bridge [analog-mixed-signal]
+- AGND/DGND tie at the package for low-digital-current converters (override datasheet except scheme-specified parts) [analog-mixed-signal]
+- 300 mV inter-plane limit and back-to-back Schottkys [analog-mixed-signal]
+- Converter output buffer with series R [analog-mixed-signal]
+- Guard-ring net check, driven at node potential, both sides [analog-mixed-signal]
+- Summing-node copper minimisation [analog-mixed-signal]
+- Matched-pair mirror/common-centroid metric; isotherm placement [analog-mixed-signal]
+- Separate board or shield box for >35 dB analog isolation (Pease) [analog-mixed-signal]
+- Kelvin on all precision sense points [current-sense-kelvin]
+- Thermocouple CJ co-location and symmetric TC± routing [precision-sensing]
+- Bridge: ratiometric, 6-wire Kelvin, balanced traces, R_G at the pins [precision-sensing]
+- TIA regime classifier driving opposite copper rules [precision-sensing]
+- Low-leakage dielectric BOM check for electrometers [precision-sensing]
+- Ground-noise budget from the LSB table [precision-sensing]
+- Crystal distance annulus, pF budget, guard rule area, zero test points, vendor switches, C-shaped via ring [crystals-clocks]
 
 ## Isolation and safety
-- Safety-spacing lookup engine → [isolation-creepage](../topics/rules/isolation-creepage.md)
-- Native KiCad 10 `creepage` constraint, plus a surface-geodesic checker for slot validity where it falls short → [isolation-creepage](../topics/rules/isolation-creepage.md)
-- 3-D clearance checker → [isolation-creepage](../topics/rules/isolation-creepage.md)
-- LLM net-class/grade proposal with mandatory human confirmation → [isolation-creepage](../topics/rules/isolation-creepage.md)
-- All-layer barrier keep-out under isolators/transformers → [isolation-creepage](../topics/rules/isolation-creepage.md)
-- Slot-width validity per pollution degree; groove-credit formula → [isolation-creepage](../topics/rules/isolation-creepage.md)
-- Group-I package on group-III PCB trap detector → [isolation-creepage](../topics/rules/isolation-creepage.md)
-- Hi-pot substitution only for functional isolation → [isolation-creepage](../topics/rules/isolation-creepage.md)
-- Spark-gap footprints, Y-cap routing, fuse-first topology checks → [isolation-creepage](../topics/rules/isolation-creepage.md)
-- Stricter of IPC-2221B (corrected B4 rate) and the safety standard → [isolation-creepage](../topics/rules/isolation-creepage.md)
+- Safety-spacing lookup engine [isolation-creepage]
+- Native KiCad 10 `creepage` constraint, plus a surface-geodesic checker for slot validity where it falls short [isolation-creepage]
+- 3-D clearance checker [isolation-creepage]
+- LLM net-class/grade proposal with mandatory human confirmation [isolation-creepage]
+- All-layer barrier keep-out under isolators/transformers [isolation-creepage]
+- Slot-width validity per pollution degree; groove-credit formula [isolation-creepage]
+- Group-I package on group-III PCB trap detector [isolation-creepage]
+- Hi-pot substitution only for functional isolation [isolation-creepage]
+- Spark-gap footprints, Y-cap routing, fuse-first topology checks [isolation-creepage]
+- Stricter of IPC-2221B (corrected B4 rate) and the safety standard [isolation-creepage]
 
 ## Thermal
-- Screening estimator: power → spreading → network → superposition → [thermal](../topics/rules/thermal.md)
-- Never size from R_θJA alone; correct Ψ_JB/Ψ_JT use → [thermal](../topics/rules/thermal.md)
-- Board-level 15.3 cm²/W and board-area formula checks (total dissipation, not per part) → [thermal](../topics/rules/thermal.md)
-- EP via array at 1 mm pitch, direct-connect, as many as fit → [thermal](../topics/rules/thermal.md)
-- Cut-orientation vs heat-flow check → [thermal](../topics/rules/thermal.md)
-- Bottom-side heatsink preference → [thermal](../topics/rules/thermal.md)
-- Via tenting as an assembly-process context switch; void-limit selection → [thermal](../topics/rules/thermal.md)
-- EP windowpane paste 50–70% → [thermal](../topics/rules/thermal.md)
-- Spread hot parts, avoid corners; sensitive parts upstream; airflow-cone check → [thermal](../topics/rules/thermal.md)
-- Arrhenius electrolytic life in distance scoring → [thermal](../topics/rules/thermal.md)
+- Screening estimator: power → spreading → network → superposition [thermal]
+- Never size from R_θJA alone; correct Ψ_JB/Ψ_JT use [thermal]
+- Board-level 15.3 cm²/W and board-area formula checks (total dissipation, not per part) [thermal]
+- EP via array at 1 mm pitch, direct-connect, as many as fit [thermal]
+- Cut-orientation vs heat-flow check [thermal]
+- Bottom-side heatsink preference [thermal]
+- Via tenting as an assembly-process context switch; void-limit selection [thermal]
+- EP windowpane paste 50–70% [thermal]
+- Spread hot parts, avoid corners; sensitive parts upstream; airflow-cone check [thermal]
+- Arrhenius electrolytic life in distance scoring [thermal]
 
 ## DFM and fab
-- Fab profile packs that set min only, applied as floors after resolution and written to Board Setup; recommended as router opt → [dfm-fab-limits](../topics/rules/dfm-fab-limits.md)
-- Multi-fab profile table (JLCPCB, PCBWay, OSH Park, Eurocircuits) → [dfm-fab-limits](../topics/rules/dfm-fab-limits.md)
-- Courtyard Level B 0.25 mm default → [dfm-fab-limits](../topics/rules/dfm-fab-limits.md)
-- Tombstone asymmetry metric → [dfm-fab-limits](../topics/rules/dfm-fab-limits.md)
-- Polarized-part rotation histogram → [dfm-fab-limits](../topics/rules/dfm-fab-limits.md)
-- Single-sided SMT preference → [dfm-fab-limits](../topics/rules/dfm-fab-limits.md)
-- Fiducial and test-point checks with corrected numbers → [dfm-fab-limits](../topics/rules/dfm-fab-limits.md)
-- Part-class edge and V-score distances (MLCC 3–5 mm) → [dfm-fab-limits](../topics/rules/dfm-fab-limits.md)
-- Panel/tab geometry rules → [dfm-fab-limits](../topics/rules/dfm-fab-limits.md)
-- Derived mounting-hole keep-out (RP2040 6 mm example) → [dfm-fab-limits](../topics/rules/dfm-fab-limits.md)
-- 3-D height zones from the enclosure → [dfm-fab-limits](../topics/rules/dfm-fab-limits.md)
-- Silk check with corrected JLC minimums → [dfm-fab-limits](../topics/rules/dfm-fab-limits.md)
+- Fab profile packs that set min only, applied as floors after resolution and written to Board Setup; recommended as router opt [dfm-fab-limits]
+- Multi-fab profile table (JLCPCB, PCBWay, OSH Park, Eurocircuits) [dfm-fab-limits]
+- Courtyard Level B 0.25 mm default [dfm-fab-limits]
+- Tombstone asymmetry metric [dfm-fab-limits]
+- Polarized-part rotation histogram [dfm-fab-limits]
+- Single-sided SMT preference [dfm-fab-limits]
+- Fiducial and test-point checks with corrected numbers [dfm-fab-limits]
+- Part-class edge and V-score distances (MLCC 3–5 mm) [dfm-fab-limits]
+- Panel/tab geometry rules [dfm-fab-limits]
+- Derived mounting-hole keep-out (RP2040 6 mm example) [dfm-fab-limits]
+- 3-D height zones from the enclosure [dfm-fab-limits]
+- Silk check with corrected JLC minimums [dfm-fab-limits]
 
 ## Method, constraints, checkers
-- Expert placement order as an agent state machine → [placement-methodology](../topics/rules/placement-methodology.md)
-- Pre-routing placement score → [placement-methodology](../topics/rules/placement-methodology.md)
-- Template-first, then global placement with severity-weighted cost → [placement-methodology](../topics/rules/placement-methodology.md)
-- Region partition with designated boundary parts → [placement-methodology](../topics/rules/placement-methodology.md)
-- Route critical nets first, freeze, re-check → [placement-methodology](../topics/rules/placement-methodology.md)
-- BGA central placement; fan-out style by pitch → [placement-methodology](../topics/rules/placement-methodology.md)
-- Fan-out generator: one via per power pad; DDR inner pads first → [placement-methodology](../topics/rules/placement-methodology.md)
-- Termination at the driver; ESD/EMI at the connector → [placement-methodology](../topics/rules/placement-methodology.md)
-- Rough-then-refine sectioned placement (Phil's Lab) → [placement-methodology](../topics/rules/placement-methodology.md)
-- Fast parts mounted low; coaxial probe points (Williams) → [placement-methodology](../topics/rules/placement-methodology.md)
-- Datasheet statement taxonomy (5 types) and phrase→constraint table → [datasheet-to-constraints](../topics/rules/datasheet-to-constraints.md)
-- Statement strength → severity ("mandatory" = hard) → [datasheet-to-constraints](../topics/rules/datasheet-to-constraints.md)
-- Vision extraction of layout figures as placement seeds → [datasheet-to-constraints](../topics/rules/datasheet-to-constraints.md)
-- Comparative constraints (rank orders, ratios) instead of invented mm → [datasheet-to-constraints](../topics/rules/datasheet-to-constraints.md)
-- Rule fields applies_if / source_scope / statement_strength / contested_by → [datasheet-to-constraints](../topics/rules/datasheet-to-constraints.md)
-- Rule-pack contract, precedence ladder 20/30/40 for design intent, fab/safety minimums as post-resolution floors, "stricter" resolution → [datasheet-to-constraints](../topics/rules/datasheet-to-constraints.md)
-- Mandatory vendor profiles; tightest primary value when unknown (under review; two-sided windows take the intersection and `ask` if it is empty; current packs differ, e.g. USB2 50 mil skew) → [datasheet-to-constraints](../topics/rules/datasheet-to-constraints.md)
-- Hard / soft / context-switch / scope classification; severity recalibrations → [datasheet-to-constraints](../topics/rules/datasheet-to-constraints.md)
-- Anti-folklore list; scope and rationale against blind rule-following → [datasheet-to-constraints](../topics/rules/datasheet-to-constraints.md)
-- 20-H, perimeter stitching, guard traces as non-default contested rules → [datasheet-to-constraints](../topics/rules/datasheet-to-constraints.md)
-- Role detectors for converter, flyback, H-bridge, charger, BMS, LED, sensor, class-D, crystal, LDO → [checkers-power](../topics/rules/checkers-power.md)
-- Typed YAML constraint schema (loop_area, proximity, connect_at, keepout, solid_reference, via_array) → [checkers-power](../topics/rules/checkers-power.md)
-- Loop-inductance estimator as a first-class metric → [checkers-power](../topics/rules/checkers-power.md)
-- Thermal and PDN screening inside the placement loop → [checkers-power](../topics/rules/checkers-power.md)
-- Python checks emitting KiCad-style markers for LLM repair loops → [checkers-power](../topics/rules/checkers-power.md)
-- Role-based net classes and `.kicad_dru` generation → [checkers-power](../topics/rules/checkers-power.md)
-- Reviewable criticality map before geometry (Pease) → [checkers-power](../topics/rules/checkers-power.md)
-- LLM extracts and classifies; deterministic code checks → [checkers-power](../topics/rules/checkers-power.md)
-- Context-dependence flags against over-applying rules → [checkers-power](../topics/rules/checkers-power.md)
-- Low-authority numbers as soft objectives with provenance → [checkers-power](../topics/rules/checkers-power.md)
-- Validation corpus of open-source KiCad boards; calibration on vendor eval layouts → [checkers-power](../topics/rules/checkers-power.md)
+- Expert placement order as an agent state machine [placement-methodology]
+- Pre-routing placement score [placement-methodology]
+- Template-first, then global placement with severity-weighted cost [placement-methodology]
+- Region partition with designated boundary parts [placement-methodology]
+- Route critical nets first, freeze, re-check [placement-methodology]
+- BGA central placement; fan-out style by pitch [placement-methodology]
+- Fan-out generator: one via per power pad; DDR inner pads first [placement-methodology]
+- Termination at the driver; ESD/EMI at the connector [placement-methodology]
+- Rough-then-refine sectioned placement (Phil's Lab) [placement-methodology]
+- Fast parts mounted low; coaxial probe points (Williams) [placement-methodology]
+- Datasheet statement taxonomy (5 types) and phrase→constraint table [datasheet-to-constraints]
+- Statement strength → severity ("mandatory" = hard) [datasheet-to-constraints]
+- Vision extraction of layout figures as placement seeds [datasheet-to-constraints]
+- Comparative constraints (rank orders, ratios) instead of invented mm [datasheet-to-constraints]
+- Rule fields applies_if / source_scope / statement_strength / contested_by [datasheet-to-constraints]
+- Rule-pack contract, precedence ladder 20/30/40 for design intent, "stricter" resolution; fab/safety floors = hs#95 [datasheet-to-constraints]
+- Mandatory vendor profiles, unknown-vendor policy = hs#59 (current packs differ, e.g. USB2 50 mil skew) [datasheet-to-constraints]
+- Hard / soft / context-switch / scope classification; severity recalibrations [datasheet-to-constraints]
+- Anti-folklore list; scope and rationale against blind rule-following [datasheet-to-constraints]
+- 20-H, perimeter stitching, guard traces as non-default contested rules [datasheet-to-constraints]
+- Role detectors for converter, flyback, H-bridge, charger, BMS, LED, sensor, class-D, crystal, LDO [checkers-power]
+- Typed YAML constraint schema (loop_area, proximity, connect_at, keepout, solid_reference, via_array) [checkers-power]
+- Loop-inductance estimator as a first-class metric [checkers-power]
+- Thermal and PDN screening inside the placement loop [checkers-power]
+- Python checks emitting KiCad-style markers for LLM repair loops [checkers-power]
+- Role-based net classes and `.kicad_dru` generation [checkers-power]
+- Reviewable criticality map before geometry (Pease) [checkers-power]
+- LLM extracts and classifies; deterministic code checks [checkers-power]
+- Context-dependence flags against over-applying rules [checkers-power]
+- Low-authority numbers as soft objectives with provenance [checkers-power]
+- Validation corpus of open-source KiCad boards; calibration on vendor eval layouts [checkers-power]
+
+[analog-mixed-signal]: ../topics/rules/analog-mixed-signal.md
+[checkers-power]: ../topics/rules/checkers-power.md
+[crystals-clocks]: ../topics/rules/crystals-clocks.md
+[datasheet-to-constraints]: ../topics/rules/datasheet-to-constraints.md
+[decoupling-pdn]: ../topics/rules/decoupling-pdn.md
+[dfm-fab-limits]: ../topics/rules/dfm-fab-limits.md
+[isolation-creepage]: ../topics/rules/isolation-creepage.md
+[placement-methodology]: ../topics/rules/placement-methodology.md
+[boost]: ../topics/rules/power/boost.md
+[buck-boost-sepic]: ../topics/rules/power/buck-boost-sepic.md
+[buck]: ../topics/rules/power/buck.md
+[chargers-bms]: ../topics/rules/power/chargers-bms.md
+[class-d-audio]: ../topics/rules/power/class-d-audio.md
+[current-sense-kelvin]: ../topics/rules/power/current-sense-kelvin.md
+[flyback-offline]: ../topics/rules/power/flyback-offline.md
+[gate-drive-bootstrap]: ../topics/rules/power/gate-drive-bootstrap.md
+[high-current]: ../topics/rules/power/high-current.md
+[hot-loops]: ../topics/rules/power/hot-loops.md
+[ldo]: ../topics/rules/power/ldo.md
+[led-drivers]: ../topics/rules/power/led-drivers.md
+[motor-drivers]: ../topics/rules/power/motor-drivers.md
+[precision-sensing]: ../topics/rules/precision-sensing.md
+[rf]: ../topics/rules/rf.md
+[thermal]: ../topics/rules/thermal.md
