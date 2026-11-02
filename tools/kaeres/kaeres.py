@@ -1066,13 +1066,16 @@ def run_view(bid, d, r, evs, human_phys=None):
     s = (ed.get(evs.get("drc")) or {}).get("score") or {}
     pr = ((ed.get(evs.get("drc")) or {}).get("probe") or {}).get("score")
     if pr and "clean" not in s:  # a place task: the routing numbers are the probe's route of the placement
-        s = dict(pr, valid=bool(s.get("valid") and pr.get("valid")))
+        # clean also needs a legal placement: parts left off the outline are no DRC error, so a probe can
+        # route an illegal placement clean (kaebench's joint clean is legal and routed clean, too)
+        s = dict(pr, valid=bool(s.get("valid") and pr.get("valid")), legal=s.get("legal"),
+                 clean=bool(pr.get("clean") and s.get("legal")))
     ph = ((ed.get(evs.get("physics")) or {}).get("physics")) or {}
     meta = r.get("adapter_meta") or {}
     rep = meta.get("router_report") or {}
     mu = r.get("method_usage") or {}
     row = dict(board=bid, method=r["method_name"], method_id=r["method_id"], run=r["run"], attempt=r["attempt"],
-               task_id=r["task_id"], status=r["status"], valid=s.get("valid"), clean=s.get("clean"),
+               task_id=r["task_id"], status=r["status"], valid=s.get("valid"), legal=s.get("legal"), clean=s.get("clean"),
                completion=s.get("completion"), start_unconnected=s.get("start_unconnected"), unconnected=s.get("unconnected"),
                errors=s.get("errors"), warnings=s.get("warnings"), errors_by_type=json.dumps(s.get("errors_by_type") or {}, sort_keys=True),
                track_length_mm=s.get("track_length_mm"), vias=s.get("vias"), wl_ratio=s.get("wl_ratio"), via_delta=s.get("via_delta"),

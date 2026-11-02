@@ -71,3 +71,15 @@ def test_runs_of_another_task_are_missing_and_not_reported(tmp_path, monkeypatch
     monkeypatch.setattr(kaeres, "_TASK_SPECS", {e["harness"]["commit"]: None})  # harness code not here: any task
     assert kaeres.missing(e, "b1") == []
 
+
+def test_a_place_run_is_clean_only_if_its_placement_is_legal(tmp_path):
+    """Parts left off the outline are no DRC error: a clean probe route did not make an illegal placement clean."""
+    import json
+    (tmp_path / "evals").mkdir()
+    r = dict(method_name="p", method_id="p", run="p.a0", attempt=0, task_id="t", status="ok")
+    probe = dict(valid=True, clean=True, completion=1.0, errors=0, unconnected=0)
+    for legal in (True, False):
+        place = dict(valid=True, legal=legal, outside=0 if legal else 2)
+        (tmp_path / "evals" / "drc1.json").write_text(json.dumps(dict(score=place, probe=dict(score=probe))))
+        v = kaeres.run_view("b", tmp_path, r, dict(drc="drc1", physics="ph"))
+        assert (v["clean"], v["legal"], v["valid"]) == (legal, legal, True)
