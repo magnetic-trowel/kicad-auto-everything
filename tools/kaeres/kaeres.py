@@ -421,6 +421,23 @@ def corpus_rows():
 
 
 INPUT_KIND = {"joint": "place", "joint-fixed": "place-fixed"}  # task kind -> the input it runs on
+PLACE_KINDS = ("place", "place-fixed")
+
+
+def routed_board(kind, aj, adir):
+    """The routed board of an attempt (kaebench attempt dir adir, attempt.json aj) that physics
+    evaluates, None if there is none. Route tasks score score/board.kicad_pcb; joint tasks score the
+    placement and the routing separately, the routed board is score/routing/board.kicad_pcb. A place
+    task's score/board.kicad_pcb is the placement without copper (physics read every module as open
+    or missing: 0xpolybit center-tap-rectifier 2 of 2 missing with its probe clean), so its routed
+    board is the probe's, and a place run without a routed probe has none."""
+    if aj.get("status") != "ok":
+        return None
+    if kind in PLACE_KINDS:
+        sbs = (adir / "probe" / "score" / "board.kicad_pcb",) if (aj.get("probe") or {}).get("status") == "ok" else ()
+    else:
+        sbs = (adir / "score" / "board.kicad_pcb", adir / "score" / "routing" / "board.kicad_pcb")
+    return next((sb for sb in sbs if sb.exists()), None)
 
 LARGE_MB = 10  # board files above this are the slow, memory-heavy jobs
 
@@ -813,14 +830,12 @@ def _job_group(bid, row, hc, kae, items, human, ws, env, log, kicad, a, size):
 
     # routed physics of every new run's scored board (and the human board), one brief from the task input
     boards = {}
+    kind_of = {m["id"]: m["recipe"]["kind"] for m, _ in todo}
     for (mid, att), adir in adirs.items():
         aj = read_json(adir / "attempt.json") or {}
-        # route and place tasks score score/board.kicad_pcb; joint tasks score the placement and the
-        # routing separately, and the routed board is score/routing/board.kicad_pcb
-        for sb in (adir / "score" / "board.kicad_pcb", adir / "score" / "routing" / "board.kicad_pcb"):
-            if aj.get("status") == "ok" and sb.exists():
-                boards[f"{mid}.{att}"] = sb
-                break
+        sb = routed_board(kind_of.get(mid), aj, adir)
+        if sb is not None:
+            boards[f"{mid}.{att}"] = sb
     phys = {}
     if boards:
         kd, kv = code_dir(kae), code_dir(kae).with_name(code_dir(kae).name + ".venv-kae")
@@ -1339,7 +1354,7 @@ def _rephysics_todo(bid, method_ids, pid):
     Place tasks are left out: their routed board is the probe's, which is not stored."""
     return [(d, r) for d, r in board_runs(bid) if r["method_id"] in method_ids and r.get("status") == "ok"
             and (d / "output.kicad_pcb.gz").exists() and not (d / "evals" / f"{pid}.json").exists()
-            and _run_kind(r) not in ("place", "place-fixed")]
+            and _run_kind(r) not in PLACE_KINDS]
 
 
 _KINDS = {}
