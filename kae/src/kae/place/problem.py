@@ -977,13 +977,16 @@ class Problem:
     def relax_bodies(self):
         """Footprints without a courtyard keep only their pads (plus the courtyard excess) as
         occupancy: KiCad does not check bodies, and on a full board a body standing above
-        others (a display on headers) must be allowed to. Returns the parts relaxed."""
+        others (a display on headers) must be allowed to. Surface-mount parts keep their body:
+        it sits on the board. Returns the parts relaxed."""
         out = []
         g = self.g
         fixed_relaxed = False
         for p in self.parts:
             if p.has_courtyard or getattr(p, "relaxed", False):
                 continue
+            if p.fp.pads and all(pd.kind in ("smd", "connect") for pd in p.fp.pads):
+                continue                 # a surface-mount body sits on the board: nothing goes under it
             if not p.movable:
                 fixed_relaxed = True     # a locked module's body (an Arduino under its shield)
             p.relaxed = True
@@ -1011,16 +1014,27 @@ class Problem:
         self.set_margin(self.margin)
 
     def utilization(self):
-        """Per side: occupancy-rectangle area of all parts on (or drilling through) the side
-        over the board area."""
+        """Per side: the area the parts on (or drilling through) the side occupy, over the
+        board area. A part's occupancy rectangles overlap (its body and its pad pieces), so
+        each part counts their union; a locked part counts only what lies on the board (a
+        castellated pad is half outside it). Summing the rectangles counted circuitmonkey
+        chips-0123 (a 6.3 mm electrolytic, its body and pads) 101 % full, so the placer took
+        the bodies of parts without a courtyard off and put a capacitor under the electrolytic."""
+        from shapely.affinity import translate
+        from shapely.geometry import box
+        from shapely.ops import unary_union
         area = max(1e-9, float(self.outline.area))
         u = [0.0, 0.0]
         for p in self.parts:
             r = p.rots[0]
             si = 0 if p.s > 0 else 1
-            u[si] += sum(rect_area(x) for x in (r.own_rects or (r.own,)))
-            for o in r.opp:
-                u[1 - si] += rect_area(o)
+            for side, rects in ((si, r.own_rects or (r.own,)), (1 - si, r.opp)):
+                if not rects:
+                    continue
+                g = unary_union([box(*x) for x in rects])
+                if not p.movable:
+                    g = translate(g, p.x0, p.y0).intersection(self.outline)
+                u[side] += g.area
         return [x / area for x in u]
 
     def auto_margin(self):

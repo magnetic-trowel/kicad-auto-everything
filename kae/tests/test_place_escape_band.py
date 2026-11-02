@@ -158,3 +158,31 @@ def test_a_small_wafer_level_grid_is_a_grid_not_a_ring():
 def test_a_hollow_ring_is_not_a_small_grid():
     fp = _qfn(per_side=3, pitch=0.4, span=1.6)    # 12 pads round an empty middle
     assert EB._grid([(p.lx, p.ly) for p in fp.pads]) is None
+
+
+def test_utilization_counts_each_parts_occupancy_once():
+    from shapely.geometry import box
+    from shapely.ops import unary_union
+    P = _fixture_problem()
+    want = [0.0, 0.0]
+    for p in P.parts:
+        r = p.rots[0]
+        g = unary_union([box(*x) for x in (r.own_rects or (r.own,))])
+        if not p.movable:
+            from shapely.affinity import translate
+            g = translate(g, p.x0, p.y0).intersection(P.outline)
+        want[0 if p.s > 0 else 1] += g.area
+        if r.opp:
+            g = unary_union([box(*o) for o in r.opp])
+            if not p.movable:
+                g = translate(g, p.x0, p.y0).intersection(P.outline)
+            want[1 if p.s > 0 else 0] += g.area
+    got = P.utilization()
+    assert all(abs(a - b / P.outline.area) < 1e-9 for a, b in zip(got, want))
+
+
+def test_a_surface_mount_body_is_never_relaxed():
+    P = _fixture_problem()
+    relaxed = set(P.relax_bodies())
+    smd = {p.ref for p in P.parts if p.fp.pads and all(pd.kind in ("smd", "connect") for pd in p.fp.pads)}
+    assert smd and not (relaxed & smd)
