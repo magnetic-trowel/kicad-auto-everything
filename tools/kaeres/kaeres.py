@@ -530,6 +530,16 @@ def cmd_exp_create(a):
         if hc:
             ensure_harness(hc)
         ensure_method_code(m)
+    # a method prepares its boards with its own harness: on another task spec its runs land on another
+    # task and never count here (baseline-2611: freerouting 2.5.0 pinned to a spec-8 harness ran 552 s
+    # per board and wrote no run)
+    want = harness_task_spec(harness)
+    off = [(m["name"], m["id"], harness_task_spec(hc)) for m in ms
+           for hc in [(m["code"].get("harness") or {}).get("commit")] if hc and harness_task_spec(hc) != want]
+    if off:
+        raise SystemExit(f"methods prepared with a harness of another task spec than {harness[:7]}'s ({want}): "
+                         + "; ".join(f"{n} {i} (spec {s})" for n, i, s in off)
+                         + ". Register them again with --harness at this experiment's harness.")
     kicad = kicad_version()
     evs = evaluators_for(harness, kae, kicad)
     e = dict(schema=SCHEMA, name=a.name, description=a.description or "", created=now(),

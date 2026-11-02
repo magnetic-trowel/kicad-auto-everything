@@ -83,3 +83,22 @@ def test_a_place_run_is_clean_only_if_its_placement_is_legal(tmp_path):
         (tmp_path / "evals" / "drc1.json").write_text(json.dumps(dict(score=place, probe=dict(score=probe))))
         v = kaeres.run_view("b", tmp_path, r, dict(drc="drc1", physics="ph"))
         assert (v["clean"], v["legal"], v["valid"]) == (legal, legal, True)
+
+
+def test_exp_create_refuses_a_method_prepared_on_another_task_spec(monkeypatch, tmp_path):
+    import pytest
+    K = kaeres
+    specs = {"h9": 9, "h8": 8}
+    monkeypatch.setattr(K, "harness_task_spec", lambda c: specs[c])
+    monkeypatch.setattr(K, "exp_dir", lambda n: tmp_path / n)
+    monkeypatch.setattr(K, "main_repo", lambda: str(tmp_path))
+    monkeypatch.setattr(K, "git", lambda repo, *a: a[-1])
+    monkeypatch.setattr(K, "on_remote", lambda repo, c: True)
+    monkeypatch.setattr(K, "ensure_harness", lambda *a, **k: None)
+    monkeypatch.setattr(K, "ensure_method_code", lambda m: None)
+    monkeypatch.setattr(K, "corpus_rows", lambda: {"b1": {}})
+    meth = {"fr": dict(id="fr0000000000", name="freerouting", code=dict(harness=dict(commit="h8")))}
+    monkeypatch.setattr(K, "find_method", lambda k: meth[k])
+    a = type("A", (), dict(name="x", method=["fr"], harness="h9", kae="h9", boards=None, attempts=1, description=""))
+    with pytest.raises(SystemExit, match="another task spec"):
+        K.cmd_exp_create(a)
