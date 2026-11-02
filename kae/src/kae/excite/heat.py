@@ -107,11 +107,40 @@ def part_heat(bd, dcp, cv, val, inj, ac_parts=None):
     return out
 
 
+LUMP_HEAT_KINDS = ("R", "L", "FB")     # lumped parts whose own DC loss is heat at their pads (a diode's is V_f I
+                                        # in part_heat; a 'short' is a jumper stand-in)
+
+
+def lumped_heat(net, x, kinds):
+    """{lumped part name: W}: |I|^2 Re z(0) of the lumped branches of a DC solution x whose element kind
+    (kinds: {name: kind}) is in LUMP_HEAT_KINDS (an inductor's winding, a ferrite, a shunt)."""
+    out = {}
+    I = x[:net.n_br]
+    for k, (_, _, q) in enumerate(net.lump):
+        if kinds.get(q.name) not in LUMP_HEAT_KINDS:
+            continue
+        w = abs(I[net.off["l"] + k]) ** 2 * q.z(0.0).real
+        if w > 0 and np.isfinite(w):
+            out[q.name] = out.get(q.name, 0.0) + float(w)
+    return out
+
+
 def copper_heat(net, x, shape):
     """Q (L, ny, nx) W: I^2 R of every bar of a DC solution x (amperes in its first n_br entries), half to
     each of its two cells; vias half to each landing."""
     Q = np.zeros(shape)
     I = np.real(x[:net.n_br])
+    # via segments, in Network's order (consecutive landings of one via, skipping shorted pairs)
+    k = net.off["v"]
+    for land in net.via_nodes:
+        for (la, ca), (lb, cb) in zip(land[:-1], land[1:]):
+            if int(net.node[ca]) == int(net.node[cb]):
+                continue
+            p = I[k] ** 2 * net.R[k]
+            Q[ca] += p / 2
+            Q[cb] += p / 2
+            k += 1
+    assert k == net.off["l"], (k, net.off["l"])
     for o, (dj, di) in (("x", (0, 1)), ("y", (1, 0))):
         f = net.fil[o]
         a0, n = net.off[o], len(f["a"])
@@ -156,6 +185,7 @@ def evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, tot, 
         notes.append("thermal: the DC flow does not close in the copper; temperatures not computed")
         return []
     gaps = list(b.stackup.gaps) if len(b.stackup.gaps) == len(m.layers) - 1 else [1.6 / max(len(m.layers) - 1, 1)] * (len(m.layers) - 1)
+    kinds = {e.name: e.kind for e in bd.circuit.elems}
     pads_of = {}
     for t, cells in m.terminals.items():
         ref = t.rsplit(".", 1)[0]
@@ -171,6 +201,10 @@ def evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, tot, 
         V, info = res[c]
         Q = copper_heat(info["net"], info["x"], m.lab.shape)
         heat = part_heat(bd, dcp, cvs[c], val, injs[c], {k: v[c] for k, v in (ac_parts or {}).items()})
+        # the lumped parts' own DC loss at their pads (part_heat leaves inductors, ferrites and resistors
+        # to the copper model, whose bars and vias alone never counted them)
+        for ref, w in lumped_heat(info["net"], info["x"], kinds).items():
+            heat[ref] = heat.get(ref, 0.0) + w
         for ref, w in heat.items():
             cells = pads_of.get(ref)
             if cells:

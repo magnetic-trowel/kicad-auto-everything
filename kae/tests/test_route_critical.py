@@ -1058,3 +1058,47 @@ def test_writer_edits_kicad6_files_with_spaces_and_tstamps(tmp_path):
     W.edit(src, dst, remove=["11111111-1111-1111-1111-111111111111", "33333333-3333-3333-3333-333333333333"])
     text = dst.read_text()
     assert "1111" not in text and "3333" not in text and "2222" in text and "(arc (start 1 1)" in text
+
+
+def test_recheck_pairs_an_unpaired_decap_with_its_nearest_power_pin(routed, tmp_path):
+    """A nearest_pin decap's capacitor is priced at the IC power pin nearest it, as the
+    module stage and the place terms pair it, not at power_pins[0] (helios U4: caps 0.9 mm
+    from their pins were priced at pin 1, 6-8 mm away)."""
+    from kae.board.kicad_file import load
+    from kae.route import critical_recheck as R
+    dst = tmp_path / "b.kicad_pcb"
+    routed.write(dst)
+    b = load(dst)
+    rb = R.RoutedBoard(b, fills=None, brief=routed.brief)
+    uid = {f.ref: f.uuid for f in b.footprints}
+    s = dict(kind="decap", ic=uid["U2"], rail="+3V3", ground="GND", power_pins=["4", "8"], caps=[uid["C3"]],
+             pairing="nearest_pin", pin_caps={})
+    pairs, _ = R.decap_pairs(rb, s)
+    assert [(p, c) for p, c, _ in pairs] == [("8", uid["C3"])]
+
+
+def test_crystal_trace_capacitance_uses_the_dielectric_under_the_trace():
+    """A bottom-side crystal trace is priced with the dielectric between it and its plane, not the
+    top prepreg (er[0] for every layer)."""
+    from kae.route.critical_physics import dielectric_er
+    cu = ["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"]
+    z = {"F.Cu": 0.0, "In1.Cu": 0.2, "In2.Cu": 1.4, "B.Cu": 1.6}
+    er = [3.7, 4.6, 4.0]
+    assert dielectric_er(cu, z, er, "F.Cu", "In1.Cu") == 3.7
+    assert dielectric_er(cu, z, er, "B.Cu", "In2.Cu") == 4.0
+    assert dielectric_er(cu, z, er, "B.Cu", None) == 4.0
+    assert dielectric_er(cu, z, er, "F.Cu", "In2.Cu") == pytest.approx((3.7 * 0.2 + 4.6 * 1.2) / 1.4)
+    assert dielectric_er(cu, z, [], "B.Cu", None) == 4.3
+
+
+def test_rail_design_current_keeps_its_margin_without_a_source_rating(tmp_path, monkeypatch):
+    """The design current is the loads' sum with a 3x margin, capped by the source's rating; a
+    source without a rating (fuse, ferrite, diode) dropped the margin."""
+    from kae.route import critical_rails as CR
+    s = F.session(tmp_path)
+    monkeypatch.setattr(CR, "source_rating", lambda *a, **k: None)
+    plan = CR.rail_plan(s.ctx)
+    assert plan
+    for r in plan:
+        total = sum(r["loads"].values())
+        assert r["design"] == pytest.approx(max(3.0 * total, total + 0.1))

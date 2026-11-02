@@ -12,8 +12,9 @@ A move of length l on layer L from cell c to c' in direction (dx, dy) costs
 
 with cell-pair means of each array. The coupling term is signed: running beside a current of
 the opposite sense (the hop's own return) lowers the loop and is a gain. A move's total is
-floored at `floor` times its length so the search stays well-posed, and the heuristic uses the
-smallest per-length cost any cell offers, so it stays admissible.
+floored at `floor` times its length so the search stays well-posed, and the heuristic, the smallest
+per-length cost any cell offers (only `floor` where void crossings can be gains) times the distance to
+the destination cells' bounding box, less the largest target-plane credit, stays admissible.
 """
 from __future__ import annotations
 
@@ -34,7 +35,7 @@ SQ2 = math.sqrt(2.0)
 
 @jit
 def _astar(base, selfc, px, py, pot, void, pot2, void2, theta, th_src, th_dst, vself, cx, cy, via_ok, src, dst, nl, ny,
-           nx, res, via_cost, lam, floor, hmin, ti, tj):
+           nx, res, via_cost, lam, floor, hmin, hoff, ti0, ti1, tj0, tj1):
     plane = ny * nx
     n = nl * plane
     g = np.full(n, np.inf)
@@ -93,7 +94,7 @@ def _astar(base, selfc, px, py, pot, void, pot2, void2, theta, th_src, th_dst, v
             if ng < g[k2]:
                 g[k2] = ng
                 par[k2] = k
-                h = hmin * res * max(abs(i2 - ti), abs(j2 - tj))
+                h = hmin * res * max(0, ti0 - i2, i2 - ti1, tj0 - j2, j2 - tj1) - hoff
                 heapq.heappush(heap, (ng + h, k2))
         if via_ok[r]:
             for l2 in range(nl):
@@ -114,29 +115,48 @@ def _astar(base, selfc, px, py, pot, void, pot2, void2, theta, th_src, th_dst, v
                 if ng < g[k2]:
                     g[k2] = ng
                     par[k2] = k
-                    h = hmin * res * max(abs(i - ti), abs(j - tj))
+                    h = hmin * res * max(0, ti0 - i, i - ti1, tj0 - j, j - tj1) - hoff
                     heapq.heappush(heap, (ng + h, k2))
     return [np.int64(-1)][:0]
 
 
-def search_flat(base, selfc, px, py, pot, void, via_ok, src, dst, res, via_cost=1.0, lam=1.0, floor=0.05, target=None,
-                pot2=None, void2=None, theta=None, th_src=None, th_dst=None, vself=None, cx=None, cy=None):
-    """As `search` with flat cell indices: src (int array), dst (bool array over all cells); returns a
-    flat index array (empty: no route)."""
-    nl, ny, nx = base.shape
-    if target is None:
-        k = np.nonzero(dst)[0] % (ny * nx)
-        target = (int(np.mean(k // nx)), int(np.mean(k % nx)))
-    tj, ti = target
+def _heuristic(base, selfc, px, py, lam, floor, voids, th_dst, dst):
+    """(hmin, hoff): A*'s admissible per-length lower bound and the largest credit for joining the
+    target terminal's plane. The crossing terms over a void (pot steps) can be gains, so with a
+    void the bound is the move floor alone."""
     per = base + lam * selfc - lam * (np.abs(px) + np.abs(py))
     fin = np.isfinite(per)
     hmin = max(float(np.min(per[fin])) if fin.any() else floor, floor)
     hmin = min(hmin, 1.0)
+    if any(v is not None and np.any(v) for v in voids):
+        hmin = floor
+    hoff = max(0.0, float(lam * np.max(th_dst[dst]))) if th_dst is not None and dst.any() else 0.0
+    return hmin, hoff
+
+
+def _box(dst, ny, nx):
+    """(i0, i1, j0, j1): the destination cells' bounding box (the heuristic's target; a mean point
+    overestimates when the destinations are spread out)."""
+    k = np.nonzero(dst)[0] % (ny * nx)
+    if not k.size:
+        return 0, -1, 0, -1
+    j, i = k // nx, k % nx
+    return int(i.min()), int(i.max()), int(j.min()), int(j.max())
+
+
+def search_flat(base, selfc, px, py, pot, void, via_ok, src, dst, res, via_cost=1.0, lam=1.0, floor=0.05,
+                pot2=None, void2=None, theta=None, th_src=None, th_dst=None, vself=None, cx=None, cy=None):
+    """As `search` with flat cell indices: src (int array), dst (bool array over all cells); returns a
+    flat index array (empty: no route)."""
+    nl, ny, nx = base.shape
+    dst = np.asarray(dst, np.bool_)
+    ti0, ti1, tj0, tj1 = _box(dst, ny, nx)
     pot2 = np.zeros_like(pot) if pot2 is None else pot2
     void2 = np.zeros(pot.shape, bool) if void2 is None else void2
     theta = np.zeros_like(pot) if theta is None else theta
     th_src = theta if th_src is None else th_src
     th_dst = theta if th_dst is None else th_dst
+    hmin, hoff = _heuristic(base, selfc, px, py, lam, floor, (void, void2), np.asarray(th_dst, float).ravel(), dst)
     vself = np.zeros(ny * nx) if vself is None else np.asarray(vself, float).ravel()
     cx = np.zeros(pot.size) if cx is None else np.asarray(cx, float).ravel()
     cy = np.zeros(pot.size) if cy is None else np.asarray(cy, float).ravel()
@@ -144,8 +164,8 @@ def search_flat(base, selfc, px, py, pot, void, via_ok, src, dst, res, via_cost=
                   py.ravel().astype(float), pot.ravel().astype(float), void.ravel().astype(np.bool_),
                   pot2.ravel().astype(float), void2.ravel().astype(np.bool_), theta.ravel().astype(float),
                   th_src.ravel().astype(float), th_dst.ravel().astype(float), vself, cx, cy,
-                  via_ok.ravel().astype(np.bool_), np.asarray(src, np.int64), np.asarray(dst, np.bool_), nl, ny, nx,
-                  float(res), float(via_cost), float(lam), float(floor), hmin, ti, tj)
+                  via_ok.ravel().astype(np.bool_), np.asarray(src, np.int64), dst, nl, ny, nx,
+                  float(res), float(via_cost), float(lam), float(floor), hmin, hoff, ti0, ti1, tj0, tj1)
     return np.array(path, np.int64)
 
 
@@ -160,18 +180,15 @@ def search(base, selfc, px, py, via_ok, src, dst, res, via_cost=1.0, lam=1.0, fl
     d = np.zeros(nl * ny * nx, np.bool_)
     for c in dst:
         d[flat(c)] = True
-    tj = int(np.mean([c[1] for c in dst]))
-    ti = int(np.mean([c[2] for c in dst]))
-    per = base + lam * selfc - lam * (np.abs(px) + np.abs(py))
-    hmin = max(float(np.min(per[np.isfinite(per)])) if np.isfinite(per).any() else floor, floor)
-    hmin = min(hmin, 1.0)
+    ti0, ti1, tj0, tj1 = _box(d, ny, nx)
     z0 = np.zeros(base.size)
+    hmin, _ = _heuristic(base, selfc, px, py, lam, floor, (void,), None, d)
     path = _astar(base.ravel().astype(float), selfc.ravel().astype(float), px.ravel().astype(float),
                   py.ravel().astype(float), pot.ravel().astype(float), void.ravel().astype(np.bool_),
                   z0, z0.astype(np.bool_), z0, z0, z0, np.zeros(ny * nx), z0, z0, via_ok.ravel().astype(np.bool_), s, d, nl,
                   ny, nx,
                   float(res),
-                  float(via_cost), float(lam), float(floor), hmin, ti, tj)
+                  float(via_cost), float(lam), float(floor), hmin, 0.0, ti0, ti1, tj0, tj1)
     out = []
     for k in path:
         l, r = divmod(int(k), ny * nx)

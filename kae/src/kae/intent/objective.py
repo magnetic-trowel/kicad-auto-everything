@@ -160,17 +160,23 @@ def _match(t, ob, secs):
     return True
 
 
-def _agg(vals, how):
+def _agg(vals, how, side=None):
+    """The corners' values aggregated: typical, worst, or the mean of the worst CVAR_SHARE. For a
+    'min' bound the worst corners are the smallest (max judged it at its best corner)."""
     if how == "typ":
         return vals[0]
+    lo = side == "min"
     if how == "worst":
-        return max(vals)
+        return min(vals) if lo else max(vals)
     k = max(1, math.ceil(CVAR_SHARE * len(vals)))
-    return sum(sorted(vals)[-k:]) / k
+    return sum(sorted(vals)[:k] if lo else sorted(vals)[-k:]) / k
 
 
 def _in(ob, dim):
-    """The observation's per-corner values in the term's dimension (a log unit converts from SI)."""
+    """The observation's per-corner values in the term's dimension (a log unit converts from SI; a dB
+    limit on a log-unit observation compares its values as they are)."""
+    if dim == "dB" and ob["unit"] in U.LOG:
+        return ob["values"]
     if dim in U.LOG and ob["unit"] != dim:
         return [U.to_log(v, dim) for v in ob["values"]]
     if dim not in ("", ob["unit"]) and not (dim == "dB" and ob["unit"] in U.LOG):
@@ -207,6 +213,13 @@ def evaluate(ev, intent=None, brief=None):
         return status
     if intent["defaults"] == "legacy/u":
         return _legacy(ev, status)
+    if not obs:
+        # nothing observed (kae.excite.wideband emits no observations): every term would match nothing and
+        # the board rank as perfect (0, 0); missing data is no score
+        status["tiers"] = None
+        status["complete"] = False
+        status["why_incomplete"] = "the evaluation has no observations: no score"
+        return status
     terms = list(intent.get("terms", [])) + _defaults(intent, obs, intent.get("terms", []))
     claimed = set()
     hard = limit = cost = 0.0
@@ -233,7 +246,7 @@ def evaluate(ev, intent=None, brief=None):
         for i in hit:
             ob = obs[i]
             vals = _in(ob, dim) if dim else ob["values"]
-            inst.append((_agg(vals, agg), ob))
+            inst.append((_agg(vals, agg, side_), ob))
         row = dict(id=t["id"], tier=tier, obs=t["obs"], where=t.get("where"), matched=len(hit), agg=agg,
                    why=t.get("why"), source=t.get("source"))
         if not inst:

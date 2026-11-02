@@ -46,7 +46,7 @@ from kae.physics.boardview import body_z
 from kae.physics.kernels import lprime_hj
 
 from .copper import NetGraph
-from .critical_physics import INF, Loop, r_track, r_via, trace_capacitance_pf
+from .critical_physics import INF, Loop, dielectric_er, r_track, r_via, trace_capacitance_pf
 
 GND_HINT = ("GND", "VSS", "GROUND", "EARTH")
 
@@ -407,16 +407,31 @@ def decap_pairs(rb, s):
     pins = [str(p) for p in s.get("power_pins") or []]
     pc = s.get("pin_caps") or {}
     pairs = [(str(p), c) for p, cs in pc.items() for c in cs if c in caps or c in owned]
-    for c in caps:
-        if any(c == x for _, x in pairs) or not pins:
-            continue
-        pairs.append((pins[0], c))
-    vals = {}
-    out = []
-    opens = 0
     fic = rb.fp.get(ic)
     if fic is None:
         return [], dict(note="ic not found")
+    # an unpaired capacitor serves the power pin nearest it, as the module stage
+    # (critical_modules._decap_pairs) and the place terms (nearest_pin) pair it; pricing it
+    # at power_pins[0] measured every cap of a multi-pin IC across the package (helios U4:
+    # C9/C11/C13 0.9 mm from their pins, priced at pin 1 6-8 mm away)
+    for c in caps:
+        if any(c == x for _, x in pairs) or not pins:
+            continue
+        fc = rb.fp.get(c)
+        rp = next((p.number for p in fc.pads if p.net == rail), None) if fc is not None else None
+        tr = rb.terminal(c, [rp]) if rp is not None else None
+        best = None
+        for p in pins:
+            tp = rb.terminal(ic, [p]) if tr is not None else None
+            if tp is None:
+                continue
+            d = math.dist((tp["x"], tp["y"]), (tr["x"], tr["y"]))
+            if best is None or d < best[0]:
+                best = (d, p)
+        pairs.append((best[1] if best is not None else pins[0], c))
+    vals = {}
+    out = []
+    opens = 0
     for pin, cap in pairs:
         fc = rb.fp.get(cap)
         if fc is None:
@@ -469,7 +484,11 @@ def crystal_value(rb, s):
     for t in rb.board.tracks:
         if t.net in nets:
             h = rb.strip_h(t.layer, t.start, t.end, n=3)
-            C += trace_capacitance_pf(math.dist(t.start, t.end), t.width, h if h != INF else rb.thickness, rb.er)
+            # the dielectric between the track and that plane (the copper layer h away), not the top one
+            zl = rb.z.get(t.layer, 0.0)
+            pl = min(rb.cu, key=lambda l: abs(abs(rb.z[l] - zl) - h)) if h != INF else None
+            er = dielectric_er(rb.cu, rb.z, list(rb.board.stackup.er or []) if rb.board.stackup else [], t.layer, pl)
+            C += trace_capacitance_pf(math.dist(t.start, t.end), t.width, h if h != INF else rb.thickness, er)
     # each net's C adds to one load capacitor: C_L = C1 C2 / (C1 + C2) moves by C / 4 (place
     # terms' CrystalComp)
     return S * C / 4.0, dict(c_trace_pf=round(C, 4))

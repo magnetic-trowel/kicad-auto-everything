@@ -121,7 +121,9 @@ def hot_loop_budget(cell_class='buck', v_in=12.0, c_oss_pf=None, t_sw_ns=None, d
     T = 2 pi sqrt(L C) (dr_switch_cell_budget.py; schematic-to-physics.md), so
         L_max = sigma^2 / (2 C ln(1/a')),  a' = a exp(pi/(2Q)),
     with a = (derate V_abs - V_in) / V_in and V_abs the next standard rating above
-    1.25 V_in. Example: 12 V, 120 pF, 1.5 ns -> 1.3 nH (the ODE gives 1.05 nH)."""
+    1.25 V_in. Example: 12 V (a 16 V rating), 120 pF, 1.5 ns -> 0.78 nH. The research case
+    (dr_switch_cell_budget.py buck_12V: 13.2 V on a 20 V part, a = 0.29) gives 1.36 nH by this
+    closed form, 1.05 nH by the ODE."""
     c0, t0, _, margin, q0 = CELL_CLASS.get(cell_class, CELL_CLASS['unknown'])
     if cell_class == 'half_bridge' and t_sw_ns and t_sw_ns <= 2.0:
         c0 = GAN_C_OSS_PF          # edges this fast mean GaN switches

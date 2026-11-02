@@ -494,6 +494,7 @@ class KaeStages:
             if stage:
                 rc = recheck(lay.board, brief, stage, terms=self.terms)
                 card.modules = {k: (v or {}).get("u_routed") for k, v in (rc.get("modules") or {}).items()}
+                card.method = "recheck"
             elif (brief or {}).get("structures"):
                 # no module stage (or nothing it routed): the routed physics of every module,
                 # whoever drew its copper, still guards the acceptance
@@ -501,6 +502,7 @@ class KaeStages:
                 ph = board_physics(lay.board, brief=brief, terms=self.terms)
                 rc = dict(modules={}, retweak=[], rails=ph.get("_rails"))
                 card.modules = {k: v.get("u") for k, v in ph.items() if not k.startswith("_") and isinstance(v, dict)}
+                card.method = "board_physics"
         except Exception as e:  # noqa: BLE001 - routing results stand without physics
             self.log(f"recheck failed: {type(e).__name__}: {e}")
             rc = {}
