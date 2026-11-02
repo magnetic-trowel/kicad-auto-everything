@@ -274,6 +274,23 @@ def test_freerouting_hung_after_writing_ses_keeps_it(tmp_path, monkeypatch):
     assert len(imported) == 1
 
 
+def test_command_killed_at_the_deadline_keeps_its_output(tmp_path, monkeypatch):
+    """An anytime method (restart.py) keeps its best board in {output}: killed at the harness
+    deadline it is scored on it, as Freerouting is on its partial session; no file is no output."""
+    inp = tmp_path / "in"
+    inp.mkdir()
+    (inp / "board.kicad_pcb").write_text("(kicad_pcb)")
+    for wrote in (True, False):
+        def run(cmd, timeout=None, **kw):
+            if wrote:
+                (kw["cwd"] / "output" / "board.kicad_pcb").write_text("(kicad_pcb)")
+            raise subprocess.TimeoutExpired(cmd, timeout, output="best so far")
+        monkeypatch.setattr(tools, "run_measured", run)
+        res = adapters.Command("true").run("route", inp, tmp_path / f"w{wrote}", 0, 10)
+        assert res.meta["timed_out"] and res.meta["partial"] == wrote and "best so far" in res.log
+        assert (res.output == tmp_path / f"w{wrote}" / "output" / "board.kicad_pcb") if wrote else res.output is None
+
+
 def test_dsn_unset_netclass_sizes(tmp_path):
     dsn = tmp_path / "b.dsn"
     dsn.write_text('(pcb b (resolution um 10) (unit um)\n (structure (via "Via[0-1]_-0.001:-0.001_um")\n'
