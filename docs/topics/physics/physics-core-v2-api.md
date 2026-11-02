@@ -1,28 +1,24 @@
 # Physics core v2 API: types, kernel protocols, facade, IR changes
 
-**TL;DR**
-- **Three layers.** Types (Piece, WorldConductor, Passport, Job, ClosedLoopBudget, Belief, Quote, TopoEvent, RegimeCell, Mode, Floor); eight kernel protocols over one `Operator`/`Factorization` protocol; and a `PhysicsCore` facade with read-only queries for the LLM and humans and an edit interface for the optimizer.
-- **Every return is a Belief** or a container of Beliefs, each with an exactness class and a `relative_to` model. Edits are quoted before they are committed; a commit returns topological events and passport diffs.
-- **One operator protocol serves all physics.** Anything that exposes incidence, branch admittances and a solve can be priced by the response kernel: sheets, PEEC in mesh form, thermal networks, circuit MNA, harmonic-balance conversion matrices.
-- **pcb-intent 0.4** adds `world`, `symmetry`, `hypotheses`, loop-named budgets and criticality to `intent.yaml`, and pieces, passports, jobs, beliefs, events, regimes, modes, floors, quotes and VOI to `ledger.json`. It deprecates net × layer bodies as the physics unit, `mech`-keyed allocation, two-point AC voltage budgets and point LII.
-- **The skeleton runs.** [pc2_core_skeleton.py](../../../tools/research/physics/pc2_core_skeleton.py) implements a subset (operator, quotes, attribution, leverage, events, passport, `why_here`, `what_if`, `explain`, `where_add`); its identities match re-factorization to ≤ 4×10⁻¹¹ [C].
+Scope: the API of [physics-core-v2](physics-core-v2.md) (design rationale there): enforced rules, types, kernel protocols, the `PhysicsCore` facade, a worked LLM exchange, and the pcb-intent 0.3 → 0.4 and vocabulary changes. Not here: kernel costs and acceptance tests -> [physics-core-v2](physics-core-v2.md); the 0.3 IR -> [physics-ir](physics-ir.md); atoms -> [vocabulary](vocabulary.md).
+Keys: PhysicsCore facade, Belief, Exactness, Piece, WorldConductor, Band, RegimeCell, ClosedLoopBudget, Job, Passport, TopoEvent, Edit, Quote, Mode, Floor, Operator protocol, Factorization, green_block, why_here, what_if, where_add, explain, menu, binding, unknowns, commit, pcb-intent 0.4, ledger.json, intent.yaml, hole_created, pc2_core_skeleton.py
 
-Tags: [C] computed by the skeleton on the 30 × 20 mm plane pair of [physics-core-v2](physics-core-v2.md); [I] inference. The design rationale is in that doc.
+Layers: types; eight kernel protocols over one `Operator`/`Factorization` protocol (anything exposing incidence, branch admittances and a solve is priced by K4: sheets, PEEC in mesh form, thermal networks, MNA, harmonic-balance conversion matrices); a `PhysicsCore` facade with read-only queries for LLM and humans and an edit interface for the optimizer. The skeleton [pc2_core_skeleton.py](../../../tools/research/physics/pc2_core_skeleton.py) implements a subset (operator, quotes, attribution, leverage, events, passport, `why_here`, `what_if`, `explain`, `where_add`); identities match re-factorization to ≤ 4×10⁻¹¹ [C].
 
-## Key facts
+Tags: [C] skeleton on the 30 × 20 mm plane pair of [physics-core-v2](physics-core-v2.md); [I] inference.
 
-### 1. Rules the API enforces
+## 1. Rules the API enforces
 
-1. **No bare numbers.** Everything is a `Belief` with exactness E0–E5 and the model it is exact relative to.
-2. **Stable ids, private meshes.** Pieces, budgets, modes and events have ids; meshes are disposable.
-3. **Quote, then commit.** Queries never mutate. Edits are quoted at stage 1 (screens) or stage 2 (exact). A commit returns events and passport diffs and bumps the epoch at topological events.
-4. **Budgets name loops.** The validator refuses an AC voltage budget without a closed observation loop.
-5. **Class by code.** A, A′, B, C, D or L is computed per (budget, band). Explanations follow it: attribution when χ ≥ 0.5, counterfactuals otherwise.
-6. **The world is first class.** Unknown world facts are E5 Beliefs ranked by VOI, and the core asks about them.
-7. **Pure kernels.** Kernel results depend only on (model, epoch) and are cached by geometry hash, stackup, band and epoch.
-8. **A narrow write surface for the LLM:** hypotheses, allocations, menu choices, declarations and world facts.
+1. **No bare numbers:** everything is a `Belief` with exactness E0–E5 and the model it is exact relative to.
+2. **Stable ids, private meshes:** pieces, budgets, modes, events have ids; meshes are disposable.
+3. **Quote, then commit:** queries never mutate; edits are quoted at stage 1 (screens) or 2 (exact); a commit returns events and passport diffs and bumps the epoch at topological events.
+4. **Budgets name loops:** the validator refuses an AC voltage budget without a closed observation loop.
+5. **Class by code:** A, A′, B, C, D or L per (budget, band); explanations by attribution when χ ≥ 0.5, counterfactuals otherwise.
+6. **The world is first class:** unknown world facts are E5 Beliefs ranked by VOI; the core asks about them.
+7. **Pure kernels:** results depend only on (model, epoch), cached by geometry hash, stackup, band, epoch.
+8. **Narrow LLM write surface:** hypotheses, allocations, menu choices, declarations, world facts. LLM tools are thin wrappers over the facade (`why_here`, `what_if`, `where_add`, `explain`, `menu`, `binding`, `unknowns`), each returning Beliefs; no geometry tools.
 
-### 2. Types
+## 2. Types
 
 ```python
 class Exactness(IntEnum):
@@ -153,7 +149,7 @@ class Floor:
     tau: float                    # bound / floor; < 1 is infeasible: an ECO question
 ```
 
-### 3. Kernel protocols
+## 3. Kernel protocols
 
 ```python
 class Operator(Protocol):
@@ -214,7 +210,7 @@ class BeliefEngine(Protocol):                              # K8
     def escalate(self, budget: str) -> bool: ...           # margin < z*sigma, z = Phi^-1(1 - c/L)
 ```
 
-### 4. The facade
+## 4. The facade
 
 ```python
 class PhysicsCore:
@@ -235,7 +231,7 @@ class PhysicsCore:
     def commit(self, edit: Edit) -> tuple[list[TopoEvent], list[dict]]: ...  # events, passport diffs
 ```
 
-### 5. Worked exchange on the test board [C]
+## 5. Worked exchange on the test board [C]
 
 What the LLM reads for the Kelvin-tap budget:
 
@@ -257,7 +253,7 @@ menu:
     events: []
 ```
 
-The `hole_created` event matters at AC: a closed hole carries a circulation driven by the flux through it, a potential shorted turn ([lens-ct](lens-ct.md) CT-P5). K1's hole count (the copper's Euler characteristic) would flag it before anyone commits the bridge; the skeleton's K1 checks only connectivity and bridges, so this event is stated [I], not computed.
+`hole_created` matters at AC: a closed hole carries a circulation driven by the flux through it, a potential shorted turn ([lens-ct](lens-ct.md) CT-P5). K1's hole count (copper's Euler characteristic) would flag it before commit; the skeleton's K1 checks only connectivity and bridges, so this event is stated [I], not computed.
 
 What the LLM writes back:
 
@@ -270,64 +266,53 @@ hypotheses:
 choices: [{op: bridge, at: slot@16.75, because: [H1], accepts_events: [hole_created]}]
 ```
 
-A human asks, and the answers come straight from passports and quotes:
+Human queries, answered straight from passports and quotes:
 - `why_here(PWR.t07.05)` → "DC: lowers coupling Z_SA, +46.6% without it (exact), 1.86 × slack; lowers Z_BA, +17.5%; carries Z_AA, +15.2%."
 - `why_here(C3)` → "300 MHz: lowers Z_BA, +25.5% without it; raises Z_SA, −19.0%; carries Z_AA, +12.4%." That is a job conflict.
 - `what_if(cut to y = 0)` → "infinite at DC: disconnects A, B and S (K1); +27% at 300 MHz, where the right half floats on displacement current."
 
-### 6. Changes to pcb-intent: 0.3 → 0.4
+## 6. Changes to pcb-intent: 0.3 → 0.4
+
+Ship the 0.4 validator before any optimizer reads budgets: the loop rule catches the commonest gauge errors.
 
 | Place | Add | Change | Deprecate |
 |---|---|---|---|
-| `intent.yaml` `physics` | `world` (world conductors, known facts, open asks); `symmetry` declarations ([SY13](../../ideas/physics-first/lens-sy.md)); `hypotheses` with registered predictions ([IN31](../../ideas/physics-first/lens-in.md)); `criticality` (c/L) per budget | budgets name a `loop`: a port plus its closure. `designed` applies per (piece or entity, job) | `mech` as an allocation key (explanation only); `alloc` on class-B budgets |
-| `intent.yaml` `ops` | `damp`, `bond`, `close_locally`, `separate_jobs`, `bury_victim`, `antiphase_pair`, `designed_cut`, `set_fp` | `expect` comes from stage-2 quotes, with r and events | sign-only effect cards |
-| `ledger.json` | `pieces`, `passports` (sparse, per band and epoch), `jobs`, `beliefs`, `events`, `regimes`, `modes`, `floors` (with τ and certificates), `quotes`, `voi` | every number is a Belief; LII is reported as P(LII ≤ 1) | point LII; spender bars on interaction budgets |
+| `intent.yaml` `physics` | `world` (world conductors, known facts, open asks); `symmetry` declarations ([SY13](../../ideas/physics-first/lens-sy.md)); `hypotheses` with registered predictions ([IN31](../../ideas/physics-first/lens-in.md)); `criticality` (c/L) per budget | budgets name a `loop`: a port plus its closure; `designed` per (piece or entity, job) | `mech` as an allocation key (explanation only); `alloc` on class-B budgets |
+| `intent.yaml` `ops` | `damp`, `bond`, `close_locally`, `separate_jobs`, `bury_victim`, `antiphase_pair`, `designed_cut`, `set_fp` | `expect` from stage-2 quotes, with r and events | sign-only effect cards |
+| `ledger.json` | `pieces`, `passports` (sparse, per band and epoch), `jobs`, `beliefs`, `events`, `regimes`, `modes`, `floors` (with τ and certificates), `quotes`, `voi` | every number a Belief; LII reported as P(LII ≤ 1) | point LII; spender bars on interaction budgets |
 | Validator | refuse AC voltage budgets without a closed loop and `alloc` on class-B budgets; require provenance on world facts | — | — |
 | Bands | regime cells per structure (code) | `bands` stay named intervals | the fixed band-edge table; a single f_x |
 
-### 7. Vocabulary changes
+Version `ledger.json` by epoch so passports diff; raise role-change alarms on commits.
+
+## 7. Vocabulary changes
+
+Proposed changes to [vocabulary](vocabulary.md); the twelve atoms stay the language of intent, pieces and jobs become the language of observation.
 
 | Add | Why |
 |---|---|
-| **Piece** (below Body) | The physics unit; Body becomes a view, the union of a net's pieces on one layer ([lens-cd](lens-cd.md)) |
-| **World conductor** (atom) | Chassis, cable, heatsink, enclosure, earth or LISN, test setup carry CM physics and most VOI ([lens-ct](lens-ct.md), [lens-in](lens-in.md)) |
-| **Passport, Job** (value types) | Observed relations become signed, share-valued and counterfactual. `carries` and `returns_through` stop being booleans |
-| **Closed-loop budget** | A Budget gains a loop and a class per band ([lens-sy](lens-sy.md) P5, [lens-ct](lens-ct.md) D4) |
-| **Belief, Exactness** | Every quantity states what it is exact relative to ([lens-in](lens-in.md), [lens-vp](lens-vp.md)) |
-| **Mode** | Extends Cavity and Res with complex frequency and a Q ledger ([lens-th](lens-th.md)) |
+| **Piece** (below Body) | the physics unit; Body becomes a view: union of a net's pieces on one layer ([lens-cd](lens-cd.md)) |
+| **World conductor** (atom) | chassis, cable, heatsink, enclosure, earth or LISN, test setup carry CM physics and most VOI ([lens-ct](lens-ct.md), [lens-in](lens-in.md)) |
+| **Passport, Job** (value types) | observed relations become signed, share-valued, counterfactual; `carries` and `returns_through` stop being booleans |
+| **Closed-loop budget** | a Budget gains a loop and a class per band ([lens-sy](lens-sy.md) P5, [lens-ct](lens-ct.md) D4) |
+| **Belief, Exactness** | every quantity states what it is exact relative to ([lens-in](lens-in.md), [lens-vp](lens-vp.md)) |
+| **Mode** | extends Cavity and Res with complex frequency and a Q ledger ([lens-th](lens-th.md)) |
 | **Regime cell** | Regime gains scales: the ℓ–f plane replaces labels ([lens-ls](lens-ls.md)) |
-| **Event, epoch, floor, closure type, symmetry declaration** | Topology and bounds become first-class ([lens-ct](lens-ct.md), [lens-vp](lens-vp.md), [lens-sy](lens-sy.md)) |
-| **Operators** `damp`, `bond`, `close_locally`, `separate_jobs`, `bury_victim`, `antiphase_pair`, `designed_cut`, `set_fp` | Lens levers that 0.3 has no operator for |
+| **Event, epoch, floor, closure type, symmetry declaration** | topology and bounds become first-class ([lens-ct](lens-ct.md), [lens-vp](lens-vp.md), [lens-sy](lens-sy.md)) |
+| **Operators** `damp`, `bond`, `close_locally`, `separate_jobs`, `bury_victim`, `antiphase_pair`, `designed_cut`, `set_fp` | lens levers 0.3 has no operator for |
 
-Deprecate or demote:
-- Body as the physics unit (it stays a geometry handle);
-- `mech` as a budget key;
-- "voltage between two points" at AC;
-- designed/parasitic per structure;
-- Regime as a label;
-- f_x as one boundary.
+Deprecate or demote: Body as the physics unit (stays a geometry handle); `mech` as a budget key; "voltage between two points" at AC; designed/parasitic per structure; Regime as a label; f_x as one boundary.
 
-The twelve atoms stay as the language of intent; pieces and jobs are the language of observation.
+## Open questions
 
-## Recommendations for our system
-
-1. Turn the skeleton into a package: the types, `GraphOperator`, K4 and K1 first, with its checks as unit tests.
-2. Ship the 0.4 validator before any optimizer reads budgets; the loop rule catches the commonest gauge errors.
-3. Give the LLM thin tools over the facade (`why_here`, `what_if`, `where_add`, `explain`, `menu`, `binding`, `unknowns`), each returning Beliefs; no geometry tools.
-4. Version `ledger.json` by epoch so passports diff; raise role-change alarms on commits.
-5. Keep E1 counterfactuals and E2 brackets in separate fields; let verdicts choose.
-
-## Conflicts and open questions
-
-- **Piece ids under big edits.** Reroutes and part moves remap tiles; ids anchored to net, layer and nearest feature need an overlap-based matcher, or passport diffs will misattribute.
-- **Ledger size.** Passports are pieces × bands × budgets. Store only binding budgets and jobs above threshold, and recompute the rest on demand.
-- **Coupled branches.** For PEEC, `admittance()` returns dense blocks and K4 works in mesh form; the nodal skeleton does not test this path ([lens-cd](lens-cd.md) did).
-- **Class boundaries.** K6's one-dominant-energy test needs a threshold, and bands near resonances may flip class between epochs.
-- **Periodic adjoints** depend on a harmonic-balance operator that does not exist in open SPICE yet.
+- **Piece ids under big edits:** reroutes and part moves remap tiles; ids anchored to net, layer and nearest feature need an overlap-based matcher, or passport diffs misattribute.
+- **Ledger size:** passports are pieces × bands × budgets; store only binding budgets and jobs above threshold, recompute the rest on demand.
+- **Coupled branches:** for PEEC, `admittance()` returns dense blocks and K4 works in mesh form; the nodal skeleton does not test this path ([lens-cd](lens-cd.md) did).
+- **Class boundaries:** K6's one-dominant-energy test needs a threshold; bands near resonances may flip class between epochs.
+- **Periodic adjoints** need a harmonic-balance operator absent from open SPICE.
 
 ## Sources
 
-- [pc2_core_skeleton.py](../../../tools/research/physics/pc2_core_skeleton.py) [C].
-- Contracts this extends: [physics-ir](physics-ir.md), [vocabulary](vocabulary.md), the evaluator contract in [solver-ladder](solver-ladder.md), the critic contract in [physics-critics](physics-critics.md).
-
-See also: [physics-core-v2](physics-core-v2.md) · [lens-cd](lens-cd.md) · [lens-ct](lens-ct.md) · [lens-in](lens-in.md) · [physics-ir-examples](physics-ir-examples.md) · [design-reasoning-architecture](design-reasoning-architecture.md)
+- [pc2_core_skeleton.py](../../../tools/research/physics/pc2_core_skeleton.py) [C]; package it with types, `GraphOperator`, K4 and K1 first, its checks as unit tests.
+- Contracts extended: [physics-ir](physics-ir.md), [vocabulary](vocabulary.md), the evaluator contract in [solver-ladder](solver-ladder.md#1-one-evaluator-contract), the critic contract in [physics-critics](physics-critics.md).
+- Related: [physics-ir-examples](physics-ir-examples.md), [design-reasoning-architecture](design-reasoning-architecture.md).

@@ -1,17 +1,13 @@
 # Suite physics: passports and critics on the 112 qualified boards
 
-**TL;DR**
-- **Coverage is complete and cheap.** Passports and critics ran on all 112 boards of the KiCad 10.0.7 qualified suite with no tool failure: 15.2 min at three jobs, median 8.8 s per board, peak 3.3 GB. DC passports cover 335 rails on 90 boards; hot loops, 22 cells on 19 boards [C].
-- **Solver cost is set by terminals, not board size.** The DC networks have up to 260k unknowns and factor in at most 4.5 s with COLAMD. Minimum-degree ordering took up to 413 s and over 4 GB on the same matrices, because each pad electrode is a row with up to 5,788 entries. Hot-loop windows (up to 98k sheet cells, 107 s) are the cost tail [C].
-- **Human power copper is thin at the vias.** On 102 of 335 rails one via or plated lead carries all of the supply current (on 27, all of the ground return), and 49% of loads take at least 90% of their current through one via. The median rail has 9.7 mΩ of copper; the worst load sees a median 21 mV per ampere (p90 96 mV/A) [C].
-- **Hot loops are set by plane order more than by vias.** Model-relative loop L is 5.5 nH median (p10–p90 2.1–17.9 nH). The best added via cuts it 5% median, 16% at most; where a foreign plane lies between the cell and ground (6 cells), swapping planes cuts it 19–65% [C].
-- **Freerouting's DRC-clean failure is power copper.** On the 18 complete A+B boards it adds no return-path faults, but it doubles the worst rail drop (median ×1.9, up to ×8.4) and turns a 12 V, 5 A breakout's 2.8 mΩ supply copper into 49 mΩ [C].
+Scope: passports and critics on all 112 qualified KiCad 10.0.7 boards: method, role inference, coverage, cost, distributions, notable findings, Freerouting vs human. Not here: one board in depth -> [real-board-passports](real-board-passports.md); critic definitions -> [physics-critics-catalog](physics-critics-catalog.md).
+Keys: suite physics, qualified suite, DC passport, R_eff, worst drop per ampere, via bottleneck, sole path, dead copper, Beckmann floor, necks, ground islands, HF hot loop, plane swap, COLAMD vs minimum degree, electrode rows, SuperLU realloc, role inference, Freerouting power copper, suite_physics.py, suite_passports.py
+
+Summary with provenance: [physics-critics-and-passports](../../research/physics/physics-critics-and-passports.md#results).
 
 Tags: [S] secondary, [C] computed by the scripts in Sources; quasi-static and uncalibrated. "Per A" is per ampere of that load, since load currents are unknown. Physics is a separate scorecard; cp1/cpk are not read.
 
-## Key facts
-
-### 1. Method
+## 1. Method
 
 **Pipeline.** For each board the runner copies the board and its reference rules to a scratch directory, refills and saves the zones (`kicad-cli pcb drc --refill-zones --save-board`), and runs the passports and the critics in separate processes (600 s timeout, 4 GB resident-memory watchdog). An aggregation step writes `summary.json` and `summary.md` under `kae-work/physics/<run>/`, never into kaebench's `results/` or `score/`. `--boards-glob` runs the same physics on router outputs, paired with the human board by task id.
 
@@ -40,7 +36,7 @@ Decaps are 2-pin capacitors between a rail and a ground; shunts are 2-pin resist
 
 Findings are counted with screening thresholds, not budgets: drop 100 mV/A, dead copper 50%, Beckmann gap 90%, HF gain 10%.
 
-### 2. Coverage
+## 2. Coverage
 
 | Analysis | Boards | Why not on the rest |
 |---|---|---|
@@ -53,7 +49,7 @@ Findings are counted with screening thresholds, not budgets: drop 100 mV/A, dead
 
 108 rails have no identified source: EmberOne's 24 series-stacked ASIC domains, IC-internal supply pins, and rails fed through uncovered parts.
 
-### 3. Measured cost
+## 3. Measured cost
 
 | Step | Median | p90 | Max | Note |
 |---|---|---|---|---|
@@ -76,7 +72,7 @@ An electrode links a pad to every cell under it, up to 5,788 entries in one row.
 
 An address-space cap is the wrong memory guard: SuperLU grows its buffers by realloc, so a factorization with 1.3 GB resident fails under a 4 GB address-space cap [C].
 
-### 4. Distributions
+## 4. Distributions
 
 **DC passports (335 rails)**
 
@@ -89,7 +85,7 @@ An address-space cap is the wrong memory guard: SuperLU grows its buffers by rea
 | Dead copper share | 0.36 | 0.10–0.72 | 0.95 |
 | Beckmann avoidable bound (161 rails with pours) | 0.84 | 0.57–0.97 | 0.99 |
 
-- **Via bottlenecks.** 236 are flagged on 142 rails. A via or plated lead is the sole path of the whole supply current on 102 rails, and of the whole ground return on 27. The rest carry ≥ 50% with ρ between 0.8 and 0.999. 427 of 873 modelled loads take ≥ 90% of their current through one via.
+- **Via bottlenecks.** 236 are flagged on 142 rails. A via or plated lead is the sole path of the whole supply current on 102 rails, and of the whole ground return on 27. The rest carry ≥ 50% with ρ between 0.8 and 0.999. 427 of 873 modelled loads (49%) take ≥ 90% of their current through one via.
 - **Necks are rare:** 13 tiles on 12 rails. Loss concentrates at terminals and vias, not in pours.
 - **Ground.** 139 islands on 45 boards hold the ground pins of two or more parts and reach the rest of ground through ≤ 2 vias. Median dead ground copper is 26%. Ten ICs on 9 boards have an exposed pad without a via (three power ICs). On 9 boards, 25 input capacitors of a switching cell sit on a top-side ground island apart from the IC's ground pins.
 - **The Beckmann bound is too loose to rank pours:** it imposes no shape and calls a median 84% avoidable, where convex floors put real pours 4% above theirs ([validation-program](validation-program.md)).
@@ -98,7 +94,7 @@ An address-space cap is the wrong memory guard: SuperLU grows its buffers by rea
 
 | Quantity | Median | Range |
 |---|---|---|
-| Loop L (nH) | 5.5 | 0.99–35.6 |
+| Loop L (nH) | 5.5 | 0.99–35.6 (p10–p90 2.1–17.9) |
 | Best added ground via | −5.1% | −0.002% to −15.7% |
 | Median legal via site | −0.01% | 0 to −1.2% |
 | Swap the plane nearest the cell with ground (6 cells) | −22% | −19% to −65% |
@@ -116,7 +112,7 @@ An address-space cap is the wrong memory guard: SuperLU grows its buffers by rea
 | Longest plane slot | median 41 mm (93 boards) |
 | First cavity mode | median 2.8 GHz, minimum 0.25 GHz |
 
-### 5. The most informative findings
+## 5. The most informative findings
 
 No geometry is reproduced [C].
 
@@ -133,7 +129,7 @@ No geometry is reproduced [C].
 | 12 V 5 A breakout (MIT), Freerouting | Supply copper 2.8 → 49 mΩ with zero DRC errors: 0.25 V and 1.2 W at 5 A instead of 14 mV and 0.07 W |
 | Bipolar supply (CERN-OHL-P-2.0), Freerouting | Both rails 11 → 93–96 mΩ, each now running through other parts' leads as sole paths |
 
-### 6. Role inference: what it got right and wrong
+## 6. Role inference: what it got right and wrong
 
 **Inputs.** 99 of 112 boards carry pin types in the board file, 89 of them with `power_in`/`power_out` pins. 590 of 1,090 loads were found through typed `power_in` pins. Sources: 221 high, 160 medium and 79 low confidence.
 
@@ -143,19 +139,9 @@ No geometry is reproduced [C].
 - **Converters inside other ICs** are found: an MCU's internal SMPS and an Ethernet PHY's regulator.
 - **Critic roles.** Inference changed 319 nets against the regexes: 289 signal → power (rails named without a voltage pattern: 3P3V, VADJ, DDRVTT), 27 power → signal (power-good, enable, sense, video inputs) and 3 signal → ground. 1,536 of 7,179 markers rest on an inferred role.
 
-**Failure modes observed on suite boards.** The tool guards against the first five:
-1. package codes in values ("10k/R0402" read as 0.0402 Ω) make every resistor a shunt;
-2. GND_RE misses letter-prefixed grounds (XADCGND, CHASSISGND);
-3. discrete transistor logic matches the half-bridge pattern;
-4. a pad count alone, or "ADC" in ADC_AVDD, is too weak to reject a named supply (30 cases);
-5. an open loop in the HF window reads as 10¹⁰ nH, and a small Edge.Cuts cut-out can pass for the outline.
+**Failure modes observed on suite boards**, guarded against now: (1) package codes in values ("10k/R0402" read as 0.0402 Ω) made every resistor a shunt; (2) GND_RE missed letter-prefixed grounds (XADCGND, CHASSISGND); (3) discrete transistor logic matched the half-bridge pattern; (4) a pad count alone, or "ADC" in ADC_AVDD, was too weak to reject a named supply (30 cases); (5) an open loop in the HF window read as 10¹⁰ nH, and a small Edge.Cuts cut-out could pass for the outline. Still open: (6) library pin types mislead: connector, fuse, bead and resistor pins typed `power_out` become "regulator outputs" (Latent Red PDU, linecard), and Kelvin sense lines named after their rail become rails; (7) some stages have no model: 108 sourceless rails get no DC passport; boosts with an external diode and discrete half-bridges get no HF model.
 
-Two remain open:
-
-6. **Library pin types mislead.** Connector, fuse, bead and resistor pins typed `power_out` become "regulator outputs" (Latent Red PDU, linecard); Kelvin sense lines named after their rail become rails.
-7. **Some stages have no model:** 108 sourceless rails get no DC passport; boosts with an external diode and discrete half-bridges get no HF model.
-
-### 7. Router against human (Freerouting, splits A and B)
+## 7. Router against human (Freerouting, splits A and B)
 
 33 boards are paired by task id. 18 reached completion 1.0 and are electrically comparable; all 18 are 2-layer. Split C was still routing at the time of this run (8 of 79 attempts, 3 with output, none complete).
 
@@ -168,16 +154,16 @@ Two remain open:
 
 Router-introduced faults that DRC does not see [C]: thin power tracks (PWR-TRACE) on 5 boards, worst drops above 100 mV/A on 3, and sole-path leads on 2, where the rail runs through other parts' pins. It also removed 22 void crossings, so return-path quality is a wash on these boards. Reported apart: on two incomplete boards the hot loop is worse (DCDC-50-5-12 6.5 → 10.6 nH, Noisecard 9.6 → 39 nH).
 
-## Recommendations for our system
+## Consequences for kae
 
-1. **Model terminals as constraints, not dense rows.** Use multipoint constraints or a Schur complement for equipotential pads, choose orderings that defer dense rows, and test every solver on the suite's electrode-heavy boards. A whole-board exact DC passport then costs seconds; HF windows need Schur-windowed or reduced-order solves ([physics-core-v2](physics-core-v2.md)).
-2. **Make roles an input with provenance.** Pin types carry inference on 89% of boards, but libraries mistype pins and sense lines borrow rail names: infer, show the evidence, and have a human confirm sources, Kelvin pairs and stacked domains ([physics-critics](physics-critics.md) §2).
-3. **Grade DC findings by current.** 36% of rails have a sole-path via: normal for milliamp rails, a fault for amp rails. Until the schematic supplies load currents, rank by per-ampere values and do not count them as violations.
-4. **Gate router output on DC passports.** Net current classes that set trace width, and a post-route DC passport against the human board, would catch the ×2–×17 resistance rises that DRC passes.
-5. **Rank hot-loop fixes by counterfactual, after a closure test.** Plane order is the largest lever where it applies; the model needs body models for boosts and discrete half-bridges, and calibration before its nanohenries are used.
-6. **Rank pours with convex floors, not Beckmann.**
+1. Model terminals as constraints, not dense rows: multipoint constraints or a Schur complement for equipotential pads; orderings that defer dense rows; test every solver on the suite's electrode-heavy boards. Whole-board exact DC passports then cost seconds; HF windows need Schur-windowed or reduced-order solves ([physics-core-v2](physics-core-v2.md)).
+2. Roles are an input with provenance: pin types carry inference on 89% of boards, but libraries mistype pins and sense lines borrow rail names; infer, show evidence, have a human confirm sources, Kelvin pairs and stacked domains ([physics-critics](physics-critics.md#2-suite-architecture)).
+3. Grade DC findings by current: 36% of rails have a sole-path via (normal for mA rails, a fault for amp rails); until the schematic supplies load currents, rank by per-ampere values and do not count them as violations.
+4. Gate router output on DC passports: net current classes setting trace width, plus a post-route DC passport vs the human board, catch the ×2–×17 resistance rises DRC passes.
+5. Rank hot-loop fixes by counterfactual after a closure test; plane order is the largest lever where it applies; boosts and discrete half-bridges need body models; calibrate before using nanohenries.
+6. Rank pours with convex floors, not Beckmann.
 
-## Conflicts and open questions
+## Open questions
 
 - **Calibration.** No number is calibrated. The HF model over-estimates narrow strips (×1.5 at w/h = 5); DC grids coarsen to 0.47–0.63 mm on the largest boards, under-resolving thin tracks.
 - **Currents.** Per-ampere metrics cannot say which findings matter.
@@ -192,4 +178,4 @@ Router-introduced faults that DRC does not see [C]: thin power tracks (PWR-TRACE
 - Suite and licences: [qualified-kicad-10.0.7.txt](../../../bench/suites/qualified-kicad-10.0.7.txt), `bench/manifests/candidates.jsonl`.
 - T. A. Davis et al., "A column approximate minimum degree ordering algorithm", ACM TOMS 30(3), 2004 (dense-row handling in COLAMD) [S].
 
-See also: [real-board-passports](real-board-passports.md) · [physics-critics](physics-critics.md) · [physics-critics-catalog](physics-critics-catalog.md) · [lens-cd](lens-cd.md) · [validation-program](validation-program.md) · [physics-core-v2](physics-core-v2.md)
+- Related: [lens-cd](lens-cd.md), [validation-program](validation-program.md).

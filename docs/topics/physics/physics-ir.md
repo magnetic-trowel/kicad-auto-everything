@@ -1,15 +1,17 @@
 # Physics IR: schema, compilation targets, who writes what (`pcb-intent/0.3`)
 
-**TL;DR**
-- `pcb-intent/0.3` is `0.2` plus four top-level keys: `bands`, `symbols`, `physics` (typed entities from the [vocabulary](vocabulary.md)) and `ops` (an operator plan). Every `0.2` file stays valid. Physics entities *expand to* `0.2` constraints, so the existing `.kicad_dru` emitter and checkers keep working [I].
-- Intent and evidence live in two files. `intent.yaml` holds what is *required* (written by detectors, the LLM and humans, with provenance). `ledger.json` holds what is *observed* (written only by code: the physics graph, regimes, budget spend, attribution). Critics diff the two.
-- Every number is a dimensioned quantity or an expression over named symbols (I2). The validator refuses bare numbers, unit mismatches, ports without a reference terminal, open loops, and couplings whose mechanism cannot act on the victim.
-- The LLM writes requirements, allocations, mechanism hypotheses and operator choices. It never writes geometry, regimes, spend or coordinates. Code drafts most entities from the schematic, IBIS, datasheets and simulation [I].
-- One entity compiles to up to six targets: KiCad objects, `.kicad_dru` rules, placer terms, router costs, checkers, and solver/simulator decks (our PEEC, FasterCap, openEMS, ngspice, thermal; FastHenry decks only for internal calibration, see its licence in [open-solvers](open-solvers.md)).
+Scope: the `pcb-intent/0.3` schema: files, value grammar, entity kinds, validation rules, derivation from the schematic, who writes what, operator plan, compilation targets, mapping from 0.2. Not here: 0.4 changes -> [physics-core-v2-api](physics-core-v2-api.md#6-changes-to-pcb-intent-03--04); worked examples -> [physics-ir-examples](physics-ir-examples.md); atoms -> [vocabulary](vocabulary.md); 0.2 -> [constraint-ir](../architecture/constraint-ir.md).
+Keys: pcb-intent/0.3, intent.yaml, ledger.json, bands, symbols, physics, ops, entity kinds, port, node, loop, channel, reference, body, cavity, discontinuity, antenna, coupling, exclusion, shield, heat_path, barrier, cell, feed, excite, sense, budget, alloc, value grammar, vo_ir_check.py, compilation targets, .kicad_dru, IR:<entity>.<metric>, half-port rule, I1, I2, I6, I7
 
-## Key facts
+Design rules [I]:
+- `0.3` = `0.2` + four top-level keys `bands`, `symbols`, `physics` (typed entities from the [vocabulary](vocabulary.md)), `ops` (operator plan). Every `0.2` file stays valid; physics entities *expand to* `0.2` constraints, so the `.kicad_dru` emitter and checkers keep working. Ship 0.3 as this additive extension.
+- Intent and evidence in two files: `intent.yaml` = what is *required* (detectors, LLM, humans, with provenance); `ledger.json` = what is *observed* (code only). `ledger.json` is the only place a computed number lives; never write spend into `intent.yaml`, so intent diffs stay readable and evidence regenerable. Critics diff the two.
+- Every number is a dimensioned quantity or an expression over named symbols (I2). Build the validator before the compiler: dimensional analysis and the half-port rule catch most LLM authoring errors cheaply.
+- The LLM writes requirements, allocations, mechanism hypotheses and operator choices; never geometry, regimes, spend or coordinates. Code drafts most entities from schematic, IBIS, datasheets and simulation.
+- One entity compiles to up to six targets: KiCad objects, `.kicad_dru` rules, placer terms, router costs, checkers, solver/simulator decks (our PEEC, FasterCap, openEMS, ngspice, thermal; FastHenry decks for internal calibration only, licence in [open-solvers](open-solvers.md#licence-verdicts)).
+- Start with five kinds: `port`, `loop`, `node`, `channel`, `coupling` (hot loops, decoupling, FB routing, USB/PCIe, crosstalk); then `exclusion`, `heat_path`, `barrier`.
 
-### File layout and versioning
+## File layout and versioning
 
 | File | Writer | Content |
 |---|---|---|
@@ -19,7 +21,7 @@
 
 Unknown keys are refused (KRT-style). Entity ids are stable hierarchical names (`buck1.hot`), so intent diffs (I6) and stamps in the board file (I7) key on them.
 
-### Value grammar (extends I2)
+## Value grammar (extends I2)
 
 ```
 quantity  := number unit                       # "1.2 nH", "5 mil", "0.3 uV"
@@ -32,7 +34,7 @@ expr      := arithmetic over quantities and symbol calls, e.g.
 - Units: SI with prefixes, plus `mil`, `oz`, `dB`, `dBm`, `ppm`, `degC`, `%`. Dimensions are checked (pint-style); `dB` budgets must name the quantity they are a ratio of (`IL`, `S11`, `margin`).
 - `symbols:` binds or overrides facts locally with provenance, e.g. `{"tr(buck1.sw)": 2 ns}`. Symbols resolve lazily: stackup (`h(F.Cu,In1.Cu)`, `er(...)`, `vp(layer)`), parts (`V_abs(pin)`, `Coss(Q1)`, `ESL(C10)`), nets (`tr(node)`, `f_sw(cell)`, `I_max(net)`, `UI(iface)`), derived (`didt(loop)`, `dvdt(node)`, `lambda_g(f, layer)`, `LSB(adc)`). Every resolved number carries its derivation chain into the ledger (I2).
 
-### Entity schema
+## Entity schema
 
 Common fields for every entity in `physics:`:
 
@@ -67,7 +69,7 @@ Kind-specific fields (required in bold):
 
 In code, each kind is a typed class with `expand()` (to 0.2 constraints) and `compile(target)`, mirroring ALIGN's `HardConstraint.translate(solver)` ([constraint-models-compared](../architecture/constraint-models-compared.md)); cell templates are functions that return entity lists, so YAML and a Python DSL are two spellings of one model.
 
-The data model is extended in [physics-core-v2-api](physics-core-v2-api.md): Piece, WorldConductor, Passport, Job, ClosedLoopBudget, Belief, Mode, RegimeCell, Event.
+Data-model extension (Piece, WorldConductor, Passport, Job, ClosedLoopBudget, Belief, Mode, RegimeCell, Event): [physics-core-v2-api](physics-core-v2-api.md).
 
 Spectrum forms for `excite`: `{wave: trapezoid, V|I, f0, duty, tr}`, `{wave: data, rate, tr, V}`, `{wave: sine, f0, V|I}`, `{wave: edge, tr, V|I}` (ESD, hot plug), `{wave: dc, I}`, `{wave: sim, file}` (back-annotated from SPICE). Code derives `dvdt`, `didt` and a piecewise log-log envelope ([LearnEMC trapezoid calculator](https://learnemc.com/ext/calculators/trapezoid_harmonics/index.html) [S]).
 
@@ -75,7 +77,7 @@ Sensitivity form for `sense`: `{threshold, band, transfer}`, where `transfer` na
 
 Bands are named intervals: `bands: {sw: ["f_sw(buck1)", "1/(pi*tr(buck1.sw))"], rf24: [2.4 GHz, 2.4835 GHz]}`. Built-ins: `dc`, `esd` (about 0.3–1 GHz for IEC 61000-4-2 edges [I]), and `edge:<node>`.
 
-### Validation rules (prototype: `tools/research/physics/vo_ir_check.py`)
+## Validation rules (prototype: `tools/research/physics/vo_ir_check.py`)
 
 1. Closed kinds, required fields, no unknown keys.
 2. Every quantity parses and has the dimension its metric needs (`L_loop` → H, `IL` → dB, `dT` → K).
@@ -87,7 +89,7 @@ Bands are named intervals: `bands: {sw: ["f_sw(buck1)", "1/(pi*tr(buck1.sw))"], 
 
 The prototype catches 12 of 12 errors seeded in a test file, and the 46 entities of the six [worked examples](physics-ir-examples.md) pass with 0 errors [C].
 
-### Derivation from the schematic (what code drafts)
+## Derivation from the schematic (what code drafts)
 
 | Step | Input | Output entities |
 |---|---|---|
@@ -102,7 +104,7 @@ The prototype catches 12 of 12 errors seeded in a test file, and the 46 entities
 
 The LLM then adjudicates: it confirms templates, fills spectra the documents do not give (flagged as assumptions), links budgets to requirements and standards, and adds mechanism hypotheses the screen missed. A human confirms the top-level budgets ([U3](../../ideas/original/workflow-ux.md) expected-loss ordering).
 
-### Who writes what
+## Who writes what
 
 | Item | LLM | Code | Human |
 |---|---|---|---|
@@ -117,7 +119,7 @@ The LLM then adjudicates: it confirms templates, fills spectra the documents do 
 
 This keeps the RAC result: relations, not coordinates, raise clean-pass from 23.2% to 90.9% ([interfaces-relations-vs-coordinates](../llm/interfaces-relations-vs-coordinates.md)) [P]. Physics entities are relations with physical units instead of ordinal magnitudes.
 
-### Operator plan (`ops`)
+## Operator plan (`ops`)
 
 ```yaml
 ops:
@@ -126,9 +128,9 @@ ops:
   - {op: halo, target: buck1.sw, args: {victims: [adc1.ain]}}
 ```
 
-Code fills `expect` (predicted delta per budget from the operator's sensitivity card, [vocabulary § Operators](vocabulary.md#operators)) before execution and `observed` after. An operator whose observed delta disagrees with `expect` beyond the model's trust radius raises a finding.
+Code fills `expect` (predicted delta per budget from the operator's sensitivity card, [physics-graph § Operators](physics-graph.md#operators)) before execution and `observed` after. An operator whose observed delta disagrees with `expect` beyond the model's trust radius raises a finding.
 
-### Compilation targets
+## Compilation targets
 
 | Entity | KiCad objects | `.kicad_dru` (KiCad 10) | Placer / router | Checker | Solver / simulator deck |
 |---|---|---|---|---|---|
@@ -147,7 +149,7 @@ Code fills `expect` (predicted delta per budget from the operator's sensitivity 
 
 Checker ids are those of the [critic catalog](physics-critics-catalog.md); a `feed` compiles to `IR-DROP`, `J-MAX` and `THERM-DT`. Each emitted DRU rule is named `IR:<entity id>.<metric>` for attribution, ordered general → specific, and linted on a scratch board ([constraint-ir](../architecture/constraint-ir.md)). Where KiCad cannot express a budget, the DRU rule is a labelled proxy and the checker is authoritative; the ledger records which one gave the verdict.
 
-### Mapping from `0.2` kinds
+## Mapping from `0.2` kinds
 
 | `0.2` kind | `0.3` source of truth | Becomes |
 |---|---|---|
@@ -159,19 +161,13 @@ Checker ids are those of the [critic catalog](physics-critics-catalog.md); a `fe
 | `overheated_length` | `feed` + `heat_path` | ΔT budget, not a length fraction |
 | `proximity` | any coupling or loop budget | emitted only when no physical spend model exists, tagged [I] |
 
-## Recommendations for our system
+Solver input shape: the FastHenry/FasterCap deck model (nodes, segments, planes, ports as terminal pairs) is nearly the physics graph itself; use it as the shape of our solver input, shipping our PEEC, PyPEEC (MPL-2.0) and FasterCap (LGPL-2.1) [P].
 
-- **Ship 0.3 as an additive extension.** Physics entities expand to 0.2 constraints in a first release, so the DRU emitter and checkers can be reused unchanged [I].
-- **Make `ledger.json` the only place a computed number lives.** Never write spend into `intent.yaml`. Then intent diffs stay readable and evidence can be regenerated [I].
-- **Build the validator before the compiler.** Dimensional analysis and the half-port rule catch most LLM authoring errors cheaply (I2 test plan) [I].
-- **Start with five kinds:** `port`, `loop`, `node`, `channel`, `coupling`. These cover hot loops, decoupling, FB routing, USB/PCIe and crosstalk. Add `exclusion`, `heat_path` and `barrier` next [I].
-- **Use the FastHenry/FasterCap deck model (nodes, segments, planes, ports as terminal pairs) as the shape of our solver input; it is nearly the physics graph itself.** Ship our own PEEC, PyPEEC (MPL-2.0) and FasterCap (LGPL-2.1). FastHenry's source carries an MIT "internal, noncommercial … distribution strictly prohibited" notice, so FastHenry decks are for internal calibration runs only and FastHenry is never vendored or shipped ([open-solvers](open-solvers.md)) [P].
-
-## Conflicts and open questions
+## Open questions
 
 - **Spend-model trust.** The L·di/dt overshoot model and the LC step model disagree when the edge is shorter than the ring period ([dr_switch_cell_budget.py](../../../tools/research/physics/dr_switch_cell_budget.py) [C]). The ledger must name the model per regime, not one formula per budget.
 - **Granularity of `alloc`.** Partial inductances are not additive without their mutual terms; allocations over sub-structures are approximate when sub-structures couple strongly [I].
-- **`ledger.json` size.** A dense partial-inductance matrix grows as N²; storing it per revision needs sparsification ([vocabulary § physics graph](vocabulary.md#the-physics-graph)).
+- **`ledger.json` size.** A dense partial-inductance matrix grows as N²; storing it per revision needs sparsification ([physics-graph § physics graph](physics-graph.md#the-physics-graph)).
 - **KiCad 11** `CustomRule` protobuf and `return_path` may replace several custom checkers; re-target when it ships.
 
 ## Sources
@@ -181,4 +177,4 @@ Checker ids are those of the [critic catalog](physics-critics-catalog.md); a `fe
 - Modelica 3.6 connectors (potential equal, flow sums to zero): https://specification.modelica.org/maint/3.6/connectors-and-connections.html [P]
 - Scripts: [vo_ir_check.py](../../../tools/research/physics/vo_ir_check.py), [vo_numbers.py](../../../tools/research/physics/vo_numbers.py)
 
-See also: [vocabulary.md](vocabulary.md), [physics-ir-examples.md](physics-ir-examples.md), [../architecture/constraint-ir.md](../architecture/constraint-ir.md), [../../ideas/original/intent-and-why.md](../../ideas/original/intent-and-why.md), [solver-ladder.md](solver-ladder.md), [../../ideas/physics-first/language.md](../../ideas/physics-first/language.md)
+- Related: [intent-and-why](../../ideas/original/intent-and-why.md), [solver-ladder](solver-ladder.md), [ideas: language](../../ideas/physics-first/language.md).

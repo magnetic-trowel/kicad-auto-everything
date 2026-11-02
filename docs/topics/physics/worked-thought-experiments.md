@@ -1,17 +1,13 @@
 # Worked thought experiments: physics-first vs rule-following on four boards
 
-**TL;DR**
-- In all four cases the physics-first answer differs from the rule-following one where it matters, and agrees elsewhere with a reason and a number attached. The difference usually comes from **asking which output binds** before drawing anything [I].
-- **12 V buck + MCU + USB 2.0 + crystal:** choose a 0.1 mm prepreg and GND/GND inner layers; the hot loop leads (τ ≈ 1.7). USB skew is an EMI budget (1.27 mm → ~3 mV common-mode spikes), not a timing one. The crystal needs only ~2–3 mm from switch copper on this stackup [C].
-- **48 V half-bridge:** with 15 ns edges, overshoot does not bind. What binds is common-mode current through the heatsink (~22 pF, ~71 mA pulses) and a shunt sitting inside the hot loop (1.3 V spikes on a 40 mV signal). Bond the heatsink to DC−, and move the HF capacitor return above the shunt [C, I].
-- **24-bit ADC beside a buck:** the dominant couplings are DC plane gradients (µV/mm, hundreds of LSB) and thermal EMF along ∇T, not distance from the switcher. The fixes are measurement-loop topology and isotherm-aligned parts. Over a solid plane, magnetic coupling at 5 mm is already ~400× below the free-space value [C].
-- **2.4 GHz chip antenna:** the ground plane is part of the antenna, and clock harmonics need 58–70 dB isolation. Slew-rate and frequency plans come before geometry; corners don't matter at 2.4 GHz over a 0.1 mm dielectric, though they do on a 1.5 mm two-layer board [C].
+Scope: four case boards (A buck + MCU + USB + crystal; B 48 V half-bridge; C 24-bit ADC beside a buck; D 2.4 GHz chip antenna) worked rule-first and physics-first, with the hand-off to the joint optimizer. Not here: reasoning method -> [design-reasoning-architecture](design-reasoning-architecture.md), [schematic-to-physics](schematic-to-physics.md); optimizer -> [joint-place-route](joint-place-route.md).
+Keys: thought experiment, case study, binding output, τ ranking, hand-off, buck hot loop budget, USB skew common mode, crystal injection, heatsink bond DC−, shunt inside hot loop, common-source inductance, plane DC gradient, thermal EMF isotherm, peninsula, alias band, chip antenna ground plane, desense, slew rate
 
-## Key facts
+Physics-first differs from rule-following where it matters and agrees elsewhere with a reason and a number, by **asking which output binds** before drawing anything [I]. Summary: [where the answers diverge](#where-the-answers-diverge). The same circuits in IR form, at other design points: [physics-ir-examples](physics-ir-examples.md).
 
-Numbers tagged [C] come from [dr_switch_cell_budget.py](../../../tools/research/physics/dr_switch_cell_budget.py), [dr_coupling_oracles.py](../../../tools/research/physics/dr_coupling_oracles.py) and [dr_noise_adjoint.py](../../../tools/research/physics/dr_noise_adjoint.py), under the conditions stated there. Each case ends with what the reasoning layer hands the joint optimizer ([joint-place-route](joint-place-route.md)), what comes back, and how the binding constraint is explained. Optimizer return values are illustrative [I]. The method is in [design-reasoning-architecture](design-reasoning-architecture.md) and [schematic-to-physics](schematic-to-physics.md).
+[C] = [dr_switch_cell_budget.py](../../../tools/research/physics/dr_switch_cell_budget.py), [dr_coupling_oracles.py](../../../tools/research/physics/dr_coupling_oracles.py), [dr_noise_adjoint.py](../../../tools/research/physics/dr_noise_adjoint.py), under the conditions stated there. Optimizer return values are illustrative [I].
 
-### A. 12 V → 3.3 V buck, MCU with a USB 2.0 HS PHY, 24 MHz crystal, 4 layers, fixed USB-C
+## A. 12 V → 3.3 V buck, MCU with a USB 2.0 HS PHY, 24 MHz crystal, 4 layers, fixed USB-C
 
 **Setup.** 50 × 35 mm board; USB-C fixed mid-right edge; a 2-pin 12 V input the optimizer may place; integrated 2 A synchronous buck at 0.3 A load.
 
@@ -39,7 +35,7 @@ Numbers tagged [C] come from [dr_switch_cell_budget.py](../../../tools/research/
 
 Explanation: "C_IN is 0.4 mm from U3 because the 1.05 nH hot-loop budget binds. Moving the crystal 1 mm closer to the MCU would cost 0.04 nH, which we have."
 
-### B. 48 V half-bridge motor driver with a heatsink and a low-side shunt
+## B. 48 V half-bridge motor driver with a heatsink and a low-side shunt
 
 **Setup.** One leg of a 3-phase inverter: 54 V maximum, 20 A phase, 100 V FETs in TO-220 on a heatsink fixed along one edge, 2 mΩ low-side shunt, 20 kHz PWM, 15 ns edges.
 
@@ -55,7 +51,7 @@ Explanation: "C_IN is 0.4 mm from U3 because the 1.05 nH hot-loop budget binds. 
 **Back (illustrative):** with a chassis bond the CM budget is infeasible (certificate: heatsink capacitance × dv/dt alone exceeds it). With a DC− bond it passes at 40 % spent; loop inductance 12 nH.
 **Explanation:** "The heatsink is bonded to DC− because the chassis option cannot meet the CM budget at any geometry. The loop is 12 nH, not smaller, because overshoot never binds; the area went to the gate loop."
 
-### C. 24-bit ADC next to a switching supply
+## C. 24-bit ADC next to a switching supply
 
 **Setup.** ADS1262-class ADC with a bridge sensor at gain 32: ±78 mV full scale, 9.3 nV LSB, datasheet noise 7 nV rms at 2.5 SPS ([TI](https://www.ti.com/product/ADS1262/datasheet)) [S]. A 500 kHz buck losing 0.4 W, 0.3 A of digital return, 60 × 40 mm, 4 layers.
 
@@ -73,7 +69,7 @@ The ranking, DC gradient ≫ thermal > magnetic ≈ electric (only in alias band
 **Back (illustrative):** isotherm alignment binds against short routing (price: 3 mm extra on AINN). Peninsula chosen.
 **Explanation:** "R12/R13 are rotated 90° from the obvious route because the buck's gradient (0.2 K/mm here) would put 0.3 µV across each."
 
-### D. 2.4 GHz radio with a chip antenna fixed at one corner
+## D. 2.4 GHz radio with a chip antenna fixed at one corner
 
 **Setup.** BLE SoC with an on-chip DC-DC, chip antenna fixed at a corner of a 50 × 30 mm 4-layer board, SPI flash clocked at 48 MHz, 3.3 V logic.
 
@@ -89,7 +85,7 @@ The ranking, DC gradient ≫ thermal > magnetic ≈ electric (only in alias band
 **Back (illustrative):** flash-clock isolation binds at 4 dB margin with 1 ns edges and passes at 16 dB with slow slew.
 **Explanation:** "We set the SPI GPIO to slow slew. It buys 12 dB of desense margin and frees the flash to sit 6 mm closer to the SoC."
 
-### Where the answers diverge
+## Where the answers diverge
 
 | Case | Rule answer | Physics-first answer | Why it is better |
 |---|---|---|---|
@@ -100,13 +96,14 @@ The ranking, DC gradient ≫ thermal > magnetic ≈ electric (only in alias band
 | C | ≥ 20 mm and split ground | differential/Kelvin topology, isotherm alignment, ~10 mm | fixes the actual dominant errors |
 | D | geometry first | slew and frequency plan first | 12 dB from one register bit |
 
-## Recommendations for our system
+
+## Use in kae
 
 1. Turn the four cases into synthetic benchmark boards with the reasoning layer's expected hand-off as a golden file; score whether the system finds the binding output ([benchmark-plan](../verification/benchmark-plan.md)) [I].
 2. Ship oracles for plane DC flow, loop mutual inductance with images, K-factor capacitance, trapezoid envelopes and fin-model gradients as T0 spend models [C demo].
 3. Make discrete non-geometric levers (prepreg, plane roles, bond node, capacitor return node, slew, f_sw) first-class decision variables in the hand-off [I].
 
-## Conflicts and open questions
+## Open questions
 
 - Case B's capacitor-above-shunt proposal is untested and may conflict with single-shunt or three-shunt reconstruction schemes; it needs a SPICE and bench comparison.
 - Case C's isotherm rule assumes resistor thermal EMF of the copper–solder order; foil and thin-film parts differ. The fin model ignores components and airflow.
@@ -119,4 +116,4 @@ The ranking, DC gradient ≫ thermal > magnetic ≈ electric (only in alias band
 - IEC 61000-4-2 waveform ([Wikipedia](https://en.wikipedia.org/wiki/IEC_61000-4-2)) [S]; USB 2.0 HS rise time ([USB-IF compliance spec](https://www.usb.org/sites/default/files/USB2%20Electrical%20Compliance%20Specification%20v1.08.pdf), [TI TUSB1210](https://www.ti.com.cn/document-viewer/cn/lit/html/ZHCSKM0J/GUID-1003578D-34E0-47DB-BF8D-514B4C9072EC)) [S]
 - heatsink common-mode coupling ([Altium](https://resources.altium.com/p/emi-heatsinks-and-what-you-can-do-about-it)) [S]
 
-See also: [design-reasoning-architecture](design-reasoning-architecture.md), [schematic-to-physics](schematic-to-physics.md), [reasoning ideas](../../ideas/physics-first/reasoning.md), [hot-loops](../rules/power/hot-loops.md), [emc-placement](../rules/emc-placement.md)
+See also: [reasoning ideas](../../ideas/physics-first/reasoning.md), [hot-loops](../rules/power/hot-loops.md), [emc-placement](../rules/emc-placement.md)

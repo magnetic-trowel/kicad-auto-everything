@@ -1,17 +1,17 @@
 # Lens VP: variational principles and energy
 
-**TL;DR**
-- **Nature solves for the currents; the designer chooses the domain.** Each quantity the layout controls is an energy minimum over fields the copper constrains. For self-energy objectives that copper lowers (loss, loop L, thermal resistance, 1/C), layout is one joint minimization, convex in a relaxed copper density, with free gradients, certified floors and monotonicity; couplings, single-load drops and EMI masks lack these.
-- **Floor oracles exist and are cheap** [C]. On the test pour of [copper-shape-synthesis](copper-shape-synthesis.md) at equal area, a closed form gives R ≥ 1.53 mΩ in 150 µs and a convex relaxation with a dual certificate R ≥ 1.761 mΩ. On its 0.1 mm raster the synthesized pour (1.789 mΩ) is within 1.6% of the best possible, and the human tree (2.092 mΩ) carries 14.5–15.8% avoidable loss. The raster floor is not grid-converged (it fell 2.2–12.8% at equal area from a 0.2 to a 0.1 mm grid), so certificates for real layouts need a refinement study or a discretization with known-sign error. A convex start also avoids the inductance-only local optimum of a penalized start (0.546 vs 0.613 nH).
-- **Complementary principles give two-sided bounds** [C]. Potential and stream-function solves on one coarse mesh bracket a corner at 0.530–0.581 squares (exact 0.5587). Logarithmic capacity gives via-cluster inductance within 2%. Hashin–Shtrikman explains why Rayleigh's via-field formula only under-predicts: hexagonal fields sit within 5% of the bound, square ones up to 40% above.
-- **The R–L crossover is a spectrum, not one frequency.** Half the return lies within ℓ50 ≈ R_s/(2π·μ0·f) of the trace for ℓ ≳ 6h (D5): 62 mm at 1 kHz, 0.12 mm at 500 kHz for 1 oz. ℓ50 is ℓ_m/2, with ℓ_m = R_s/(π·μ0·f) = δ²/t the common length ([foundations](foundations.md)). f_x = R_s/(2π·μ0·h) is the case ℓ = h. Converter fundamentals above ~300 kHz on 1 oz return under the loop (at 100 kHz ~18% still flows beyond ±5 mm); the open regime is DC to tens of kHz near precision analog.
-- **Energy is the right currency only for self terms** (S10, PW30): they add, with free gradients and provable floors. Couplings are interaction energies (one adjoint each); EMI limits are a maximum over frequency.
+Scope: energy-minimum principles for R, L, C and heat; layout as a bilevel problem; term classes A/A′/B/C; certified floors and two-sided bounds; capacity theory of vias; polarization pricing of edits; the R–L crossover as a spectrum; equipartition width. Not here: F3 statement -> [foundations](foundations.md); pour synthesis -> [copper-shape-synthesis](copper-shape-synthesis.md); symbols -> [vocabulary](vocabulary.md#glossary).
+Keys: Thomson, Dirichlet, minimum magnetic energy, Rumsey, Rayleigh quotient, Tellegen, Poynting, Hashin–Shtrikman, logarithmic capacity, bilevel, class A A′ B C, convex relaxation, SIMP, Beckmann floor, earth-mover W1, dual certificate, Prager–Synge, avoidable loss, polarization tensor, ℓ50, receding image, Foster modal model, equipartition, monotonicity, VP1-VP30
 
-Tags: [S] secondary, [I] inference, [C] computed by [vp_floors.py](../../../tools/research/physics/vp_floors.py), [vp_rl_band.py](../../../tools/research/physics/vp_rl_band.py) or [vp_edit_pricing.py](../../../tools/research/physics/vp_edit_pricing.py) (quasi-static, uncalibrated). Ideas VP1–VP30: [lens-vp ideas](../../ideas/physics-first/lens-vp.md).
+**Results**
+- Self-energy objectives that copper lowers (loss, loop L, thermal resistance, 1/C) form one joint minimization, convex in a relaxed copper density, with free gradients, certified floors and monotonicity; couplings, single-load drops and EMI masks lack these (§2, D7). Energy is the right currency only for self terms (S10, PW30).
+- Floors are cheap and tight (D1); the raster floor is not grid-converged ([verification-and-limits](verification-and-limits.md#1-claims-verified-by-an-independent-method)): certificates for real layouts need a refinement study or a discretization with known-sign error [C].
+- Complementary principles give two-sided bounds (D2 corners, D3 via capacity, Hashin–Shtrikman).
+- The R–L crossover is a spectrum (D5): ℓ50 = ℓ_m/2 ≈ R_s/(2π·μ0·f), 62 mm at 1 kHz, 0.12 mm at 500 kHz (1 oz); f_x is the case ℓ = h. Converter fundamentals above ~300 kHz on 1 oz return under the loop; the open regime is DC to tens of kHz near precision analog.
 
-## Key facts
+[C] = [vp_floors.py](../../../tools/research/physics/vp_floors.py), [vp_rl_band.py](../../../tools/research/physics/vp_rl_band.py), [vp_edit_pricing.py](../../../tools/research/physics/vp_edit_pricing.py) (quasi-static, uncalibrated). Ideas VP1–VP30: [lens-vp ideas](../../ideas/physics-first/lens-vp.md).
 
-### 1. The principles
+## 1. The principles
 
 Each principle, then its PCB reading:
 - **V1 Thomson (DC).** I²R = min ∫R_s·|K|² over sheet currents K with the given sources. A trial K bounds R from above. *Current spreads to minimize loss; added copper never raises a two-terminal R.*
@@ -27,7 +27,7 @@ Each principle, then its PCB reading:
 
 **The gentle limit, variationally.** A schematic is the stationary point of a Lagrangian over lumped charges and loop currents (V9), exact when hidden field modes (eddy patterns, cavity modes, common-mode currents) relax much faster than the circuit or are damped, and energy matrices are block-diagonal between nets. Layout bends it: hidden modes fall in band, off-diagonal energy appears, energy leaves by retardation. Invisibility means hidden modes out of band or damped, and small interaction energies where they matter [I].
 
-### 2. Layout as a bilevel problem
+## 2. Layout as a bilevel problem
 
 Outer: the designer's domain D (copper, parts, stackup). Inner: nature's u*(D) = argmin E(u; D).
 
@@ -38,7 +38,7 @@ Outer: the designer's domain D (copper, parts, stackup). Inner: nature's u*(D) =
 
 Class A needs one dominant energy in the band: PDN |Z| near an anti-resonance is class C (a decap raised |Z_AA| at 0/150 sites at 300 MHz, 150/150 at 1 GHz; [physics-core-v2](physics-core-v2.md)). Pours are class A: the adjoint is the state itself, and SIMP with p = 1 is convex, so its optimum floors every binary layout of that area. Non-convexity in pour synthesis comes from the p = 3 penalty, not the physics. Near-optimality is therefore certifiable for class A on a fixed raster; couplings and joint placement have no such certificate.
 
-### 3. Derivations
+## 3. Derivations
 
 - "Short and wide"; R·A = R_s·l² ([power-copper](power-copper.md)) (V1): N□ ≥ d²/A for any shape (D1).
 - Topology optimization −14.5% (OP2) (V1): At most 15.8% was available on the 0.1 mm raster (D1).
@@ -48,7 +48,7 @@ Class A needs one dominant energy in the band: PDN |Z| near an anti-resonance is
 - Via clusters: "outer size, not count" (PW32) (V10): Capacity (D3).
 - Rayleigh's via-field formula "under-predicts" (V10): It is the HS bound (D3).
 - Largest empty circle "±30%" (FE26) (V6): One-sided: f1 ≤ 0.766·c/(D·√εr). The fitted κ = 0.32–0.64 all lie below 0.766.
-- Adjoint misses a slot 30× ([solver-ladder](solver-ladder.md)) (V1): Polarization of the edit's shape (D4).
+- Adjoint misses a slot 30× ([solver-ladder](solver-ladder.md#6-caching-and-incremental-re-extraction)) (V1): Polarization of the edit's shape (D4).
 - f_x = R_s/(2π·μ0·h), "found four times" ([research-gaps](research-gaps.md)) (V3, V4): One of two distinct crossovers (D5).
 - w* at Z0 = V/I (PW2) (V3, V5): Equipartition (D6).
 
@@ -60,7 +60,7 @@ where W1 = min ∫\|K\| is the earth-mover distance between sources and sinks (B
 
 A tighter floor makes conductance linear in a density ρ ∈ [0, 1], so P(ρ) = max_v [2fᵀv − vᵀK(ρ)v] is convex. For any trial potential v, P* ≥ (fᵀv)²/max_ρ vᵀK(ρ)v, a fractional knapsack.
 
-On the [copper-shape-synthesis](copper-shape-synthesis.md) pour [C, 0.1 mm grid, 105 mm², 6 A]: Beckmann floor (156 µs) ≥ 1.527 mΩ; convex floor (dual gap 4×10⁻⁴) ≥ 1.761 mΩ; SIMP, binary, 1.789 mΩ (+1.6%); human trunk and branches 2.092 mΩ (+18.8%). "Copper everywhere" (0.677 mΩ) ignores the area budget and lies 2.6× below the convex floor.
+On the [copper-shape-synthesis](copper-shape-synthesis.md) pour [C, 0.1 mm grid, 105 mm², 6 A]: Beckmann floor (156 µs) ≥ 1.527 mΩ; convex floor (dual gap 4×10⁻⁴) ≥ 1.761 mΩ; SIMP, binary, 1.789 mΩ (+1.6%); human trunk and branches 2.092 mΩ (+18.8%), so the human tree carries 14.5–15.8% avoidable loss (valid on this 0.1 mm raster only). "Copper everywhere" (0.677 mΩ) ignores the area budget and lies 2.6× below the convex floor.
 
 - **Area sweep:** at 20–70% of free area, SIMP is 0.5–10% above the floor.
 - **Slotted reference** (0.2 mm grid; convex inductance floor 0.524 nH). From a uniform p = 3 start vs a convex start: inductance only 0.613 nH, 2.40 mΩ vs 0.546 nH, 2.02 mΩ; a 50/50 mix 0.604 nH, 2.05 mΩ vs 0.562 nH, 1.91 mΩ.
@@ -83,7 +83,7 @@ Perforated planes:
 - Rayleigh's (1+f)/(1−f) is the 2-D HS lower bound for isotropic hole patterns; 1/(1−f) bounds any pattern, and cuts along the flow attain it.
 - Square lattices exceed HS by 4/15/40% at D/p = 0.8/0.9/0.95; a hexagonal lattice with the same via density stays within 5% [C].
 
-**D4. Pricing an edit is a polarization problem.** Lenses CT and SY found this too. Cutting a small insulating hole B where the current density is K costs ΔP = R_s·KᵀM(B)K. A disc has M = 2·area, exactly the area-based estimate. An ellipse with semi-axis b across the flow and a along it has M = π·b·(a+b), so a slit across costs πℓ²/4, one along about 0, and an edge slit twice the interior value. The area estimate thus misses slits by about ℓ/(2w), or ℓ/w from an edge: 30 for the 6 × 0.2 mm slot of [solver-ladder](solver-ladder.md).
+**D4. Pricing an edit is a polarization problem.** Lenses CT and SY found this too. Cutting a small insulating hole B where the current density is K costs ΔP = R_s·KᵀM(B)K. A disc has M = 2·area, exactly the area-based estimate. An ellipse with semi-axis b across the flow and a along it has M = π·b·(a+b), so a slit across costs πℓ²/4, one along about 0, and an edge slit twice the interior value. The area estimate thus misses slits by about ℓ/(2w), or ℓ/w from an edge: 30 for the 6 × 0.2 mm slot of [solver-ladder](solver-ladder.md#6-caching-and-incremental-re-extraction).
 
 On 16 edits [C], the area estimate gave 0.03–0.88× the exact change and the polarization estimate 0.78–0.89×. Polarizability grows with the set, so the inscribed ellipse under-prices a rectangle (the one-sided bias). CT adds the exact strip law; SY extends it to any objective.
 
@@ -94,7 +94,7 @@ On 16 edits [C], the area estimate gave 0.03–0.88× the exact change and the p
 - **Away from the trace.** The current outside ±5 mm, |1 − F|, is 18% (h 0.1 mm) and 27% (1.6 mm) at 100 kHz, 3.4% and 20% at 500 kHz, 61–62% at 20 kHz. At 100 kHz most is in quadrature, which the in-band 1 − |F| (1.6%, 21%) hides, but a common-impedance victim sees it [C].
 - **Spectrum.** A Foster modal model of (R, L) reproduces the direct solve exactly and puts 10/50/90% of the DC-to-HF inductance drop at 17/65/360 kHz for h = 0.1 mm on a 50 mm plane and 8.6/41/315 kHz on 100 mm (f_x = 622 kHz); an independent PEEC gives 10.7/60/490 kHz (50 mm), so band edges are uncertain by ±50% and width-dependent [C].
 
-Two crossovers are distinct: the R/ωL corner of a fixed distribution, and the frequency at which the return narrows to its image width h (f_x). A return leaves a victim 5 mm away below about 12 kHz on 1 oz. Lenses SY and LS reach the same length independently ([lens-ls](lens-ls.md)).
+Two crossovers are distinct: the R/ωL corner of a fixed distribution, and the frequency at which the return narrows to its image width h (f_x). On 1 oz, ~12 kHz is only the onset of mirroring for a 5 mm loop; half-mirroring needs ~93 kHz ([red team](../../research/physics/redteam-corrections.md)). Lenses SY and LS reach the same length independently ([lens-ls](lens-ls.md)).
 
 **D6. Width as equipartition.** Copper of length l switching I and V stores ½LI² + ½CV² per cycle, with LC = (l/v)². By AM–GM this is ≥ V·I·l/v, the Poynting energy in flight, with equality at Z0 = V/I (PW2's optimum; LS too). For 2 mm at 12 V, 10 A and 500 kHz it is 0.8 mW: the parts' C_oss and package L set the real floors.
 
@@ -102,7 +102,7 @@ Two crossovers are distinct: the R/ωL corner of a fixed distribution, and the f
 
 On the human trunk-and-branch pour [C], a 1.5 mm bridge between branches cut total loss 1.0% and raised load C's drop 1%; on a 0.2 mm grid, B and C rose about 3%. Small, but the sign is wrong: "star versus plane" is a dispute about transfer terms (also lens CD, CD24).
 
-### 4. Convergences and synergies
+## 4. Convergences and synergies
 
 - **φ, ψ, adjoints and prices are one object.** In V1 the potential is the multiplier of current conservation (∂P/∂I_k = 2V_k), so "everything is a price" ([research-gaps](research-gaps.md)) is an identity; objects 1, 2, 4 and 5 of [cross-workstream-synthesis](cross-workstream-synthesis.md) are primal, dual, gradient and multiplier of one saddle point, and (φ, ψ) give certified error bars.
 - **S7's "unified via theory" is capacity theory** (PW32, PW13, FE26, FE27, via fields; D3).
@@ -110,7 +110,7 @@ On the human trunk-and-branch pour [C], a 1.5 mm bridge between branches cut tot
 - **Multi-load (XD62), multi-rail (OP4), DC+HF (OP5) and fixed-resistivity electro-thermal (OP11) pours are sums of compliances,** convex when relaxed: one pre-solve gives a joint floor and warm start.
 - **OP6, XD56 and the floors are one formula:** P ≥ R_s·(Σ W1,n)²/A_total, so area shares go ∝ W1,n; at the Beckmann floor dP/dA = −P/A, an elasticity of −1.
 
-### 5. Transfers
+## 5. Transfers
 
 - Topology optimization (solve at p = 1, then penalize) → non-convex OP and JPR terms; floors for OP57.
 - FEM error bounds (Prager–Synge) → SIM1's σ as certified intervals; SIM10 escalates only on overlap.
@@ -118,23 +118,21 @@ On the human trunk-and-branch pour [C], a 1.5 mm bridge between branches cut tot
 - Potential theory (capacity) → N8 via patterns, stitching, Peaceman cells.
 - Power-module damping layers (Hartmann, Müsing and Kolar 2009) → hot-loop damping as a stackup choice (VP15).
 
-### 6. What each conductor is doing, energetically
+## 6. What each conductor is doing, energetically
 
 Per piece and band, one PEEC or sheet solve gives six numbers [I]: **guide** (Poynting flux along its gap), **store** (½·I_k·(L_p·I)_k and ½·q_k·φ_k), **dissipate** (I_k²·R_k, the Poynting flux into its surface), **radiate** (its share of the cell's dipole moment), **couple** (interaction energy with each victim) and **damp** (participation in each ringing mode's loss).
 
 A budget's sensitivity to the piece is the energy density at its boundary: free for self terms, one adjoint for interactions. Lens CD builds the passport ([lens-cd](lens-cd.md)); VP supplies the energies.
 
-## Recommendations for our system
+## Use in kae
 
-1. **Floor stage before optimization:** certified floors per structure (Beckmann, convex relaxation, hull capacity, HS, empty circle) feed τ (DR17), pruning (JPR30), the stop rule (OP57) and infeasibility certificates (DR41).
-2. **Tag every term A, A′, B or C:** optimize A jointly and convexly first, continue into B, give C worst-frequency sensitivities.
-3. **Every class-A F2 evaluator returns a primal–dual bracket as σ.**
-4. **Price edits by polarization tensors** (with CT and SY).
-5. **Replace the single f_x** with ℓ50(f) against victim distance; Foster eddy models for kHz returns.
-6. **Variational regression tests:** coarse PEEC L ≥ fine; FEM R ≤ true; in RL extractions L(f) non-increasing and R(f) non-decreasing.
-7. **Report avoidable loss,** (R − floor)/R, at three levels: shape (own zones), routing (other tracks movable), partition (zone fills negotiable). A pilot census of 4 real boards found shape-level loss near 0 (median 4%) except where thermal reliefs isolate pads (7–48%); partition held 107 of 135 mW ([validation-program](validation-program.md)).
+1. Floor stage before optimization: certified floors per structure (Beckmann, convex relaxation, hull capacity, HS, empty circle) feed τ (DR17), pruning (JPR30), the stop rule (OP57), infeasibility certificates (DR41).
+2. Tag every term A, A′, B or C: optimize A jointly and convexly first, continue into B, give C worst-frequency sensitivities. Every class-A F2 evaluator returns a primal–dual bracket as σ. Price edits by polarization tensors (with CT, SY).
+3. Replace the single f_x with ℓ50(f) against victim distance; Foster eddy models for kHz returns.
+4. Variational regression tests: coarse PEEC L ≥ fine; FEM R ≤ true; in RL extractions L(f) non-increasing, R(f) non-decreasing.
+5. Report avoidable loss (R − floor)/R at three levels: shape (own zones), routing (other tracks movable), partition (zone fills negotiable). Pilot census of 4 real boards: shape-level loss near 0 (median 4%) except where thermal reliefs isolate pads (7–48%); partition held 107 of 135 mW ([validation-program](validation-program.md)).
 
-## Conflicts and open questions
+## Open questions
 
 - **Floors assume fixed terminals;** as parts move, Beckmann becomes a placement term.
 - **The convex floor assumes variable-thickness copper;** minimum width and space raise the real floor (TM52).

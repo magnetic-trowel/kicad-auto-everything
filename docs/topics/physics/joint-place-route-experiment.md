@@ -1,44 +1,47 @@
 # Joint vs sequential placement and routing: a proof of concept
 
-**TL;DR**
-- At equal CPU (50 s), joint SA (an HPWL start, then moves accepted on routed length, vias, ground-plane cuts and hot-loop area) significantly improves its own sequential start (10/10, p = 0.002) but ties an equal-CPU restart portfolio over both sizes (5/10; median J ratio 0.96, 95% CI 0.83–1.24). At 30 parts it beat a longer sequential SA on 5/5 boards (median −17% routed objective J; exact sign test p = 0.06) and the portfolio on 3/5 (median −10%; p = 1.0). The physics term's effect is 0.99 (0.93–1.05); run-to-run spread of one board is ×1.18 [C, [rt_jpr_stats](../../../tools/research/physics/rt_jpr_stats.py)]. The gains were fewer vias (median 16 vs 24) and smaller hot loops (3 vs 6–8.5 mm²), not shorter wire.
-- At 50 parts it was a coin flip: 2/5 against each control (median +4% and +9%). Routed moves cost ~25× an HPWL move, and when the start sits in a bad basin, restarts escape it and local joint moves do not.
-- The joint stage improved its own start in 10/10 runs (median −18% at 30 parts, −24% at 50). After a converged 50 s sequential run, 40 s of joint search beat 40 s more SA on 3 of 4 boards.
-- Proxies rank coarse differences (HPWL vs routed J, Spearman 0.87–0.94) but not near-equal placements: 44% of pairs within 3% HPWL differed by more than 10% in J. A straight-line hot-loop proxy ranked the routed loop at only 0.23–0.79.
-- Synthetic 2-layer grid boards, a Python router and 5 seeds per size: this bounds mechanisms and costs, not real-board quality. Routing completion was 100% in every arm, so completion did not discriminate.
+Scope: the synthetic-board experiment comparing joint SA (moves accepted on routed objective) with sequential and equal-CPU restart controls; proxy study; method lessons. Canonical home of all JPR PoC numbers. Not here: architecture and prior art -> [joint-place-route](joint-place-route.md).
+Keys: joint SA, sequential SA, seq, seqx, seq_long, seq_port, joint_nophys, long_joint, seq_longer, routed objective J, equal-CPU restart portfolio, proxy study, Spearman HPWL, hot-loop area, PathFinder referee, jpr_joint_vs_sequential.py, rt_jpr_stats, JPR6, JPR14, JPR37, JPR41, JPR45, JPR46
 
-## Key facts
+**Results** [C, [rt_jpr_stats](../../../tools/research/physics/rt_jpr_stats.py)]:
+- Joint improves its own sequential start 10/10 (p = 0.002; median −18%) but ties an equal-CPU restart portfolio over both sizes, 5/10 (median J ratio 0.96, 95% CI 0.83–1.24): a refiner after diverse starts, not a cold start.
+- 30 parts: wins come from fewer vias and smaller hot loops, not shorter wire (sign tests vs `seq_long` p = 0.06, vs `seq_port` p = 1.0).
+- 50 parts: coin flip; routed moves cost ~25× an HPWL move, and from a bad basin restarts escape while local joint moves do not.
+- Physics-term effect 0.99 (0.93–1.05), below noise; run-to-run spread of one board ×1.18.
+- Proxies rank coarse differences (HPWL vs routed J Spearman 0.87–0.94) but not near-equal placements (44% of pairs within 3% HPWL differ > 10% in J); straight-line hot-loop proxy vs routed loop 0.23–0.79.
 
-### Setup [C]
+Bounds: synthetic 2-layer grid boards, Python router, 5 seeds per size; mechanisms and costs, not real-board quality. Completion 100% in every arm, so it did not discriminate.
+
+## Setup [C]
 
 Script: [`tools/research/physics/jpr_joint_vs_sequential.py`](../../../tools/research/physics/jpr_joint_vs_sequential.py) (GPL-3.0-or-later; Python 3.11+, NumPy, Shapely, SciPy).
 
 | Item | Value |
 |---|---|
-| Instances | `pcbgen.make_instance` from [solver-bench](../../../tools/research/solver-bench/) at N = 30 and 50, seeds 0–4, utilization 0.6: 30–76 nets, boards 29×19 to 43×28 mm; R/C 0402/0603, SOT-23, SOIC-8, QFN-32, TQFP-64, 2×5 headers; 4 mounting-hole keep-outs and an antenna-style edge keep-out; decaps with an L1 ≤ 3 mm rule |
-| Added physics | 1–3 **hot loops** per board: an IC VIN pin → C0603 → an adjacent IC GND pin, as two 2-pin nets |
-| Boundary conditions | One 2×5 header fixed at the bottom edge; parts may not leave the outline (hard domain constraint) |
-| Router | 2-layer grid at 0.5 mm pitch (track + clearance), node capacity 1; SMD pads block the top layer, THT pads both; a via costs 4 steps; bottom-layer steps cost 2×, because the bottom should stay a solid ground plane |
+| Instances | `pcbgen.make_instance` from [solver-bench](../../../tools/research/solver-bench/), N = 30 and 50, seeds 0–4, utilization 0.6: 30–76 nets, boards 29×19 to 43×28 mm; R/C 0402/0603, SOT-23, SOIC-8, QFN-32, TQFP-64, 2×5 headers; 4 mounting-hole keep-outs, an antenna-style edge keep-out; decaps with an L1 ≤ 3 mm rule |
+| Added physics | 1–3 **hot loops** per board: IC VIN pin → C0603 → adjacent IC GND pin, as two 2-pin nets |
+| Boundary conditions | one 2×5 header fixed at the bottom edge; parts may not leave the outline (hard) |
+| Router | 2-layer grid, 0.5 mm pitch (track + clearance), node capacity 1; SMD pads block top, THT both; via = 4 steps; bottom-layer steps 2× (bottom should stay a solid ground plane) |
 | Referee | PathFinder (first pass free, then present factor 0.5 × 1.3 per pass, history +1 per overuse, ≤ 40 passes) re-routing each **final placement from scratch**, identical for every arm |
-| Legalizer | Greedy spiral repair of residual overlaps, same for every arm |
-| Routed objective J (mm-equivalent) | wirelength + 2·vias + 1·bottom-layer length + 4·hot-loop area (mm²) + 40·failed nets + 100·(overlaps + keep-out intrusions + decap violations) |
-| Hot-loop term | Enclosed plan-view area of the routed VIN and GND paths (lobes add) plus 1.5 mm × loop length on the bottom layer. This is a **2-layer, far-plane simplification**: with a plane within ~0.2 mm, loop inductance follows height × squares or the MS2 proxy, not area ([solver-ladder](solver-ladder.md)) |
+| Legalizer | greedy spiral repair of residual overlaps, same for every arm |
+| Routed objective J (mm-equivalent) | wirelength + 2·vias + 1·bottom length + 4·hot-loop area (mm²) + 40·failed nets + 100·(overlaps + keep-out intrusions + decap violations) |
+| Hot-loop term | enclosed plan-view area of routed VIN and GND paths (lobes add) + 1.5 mm × loop length on bottom. **2-layer far-plane simplification**: with a plane within ~0.2 mm, loop L follows height × squares or MS2, not area ([solver-ladder](solver-ladder.md)) |
 
-**Arms.** Budgets are process CPU seconds, because the machine was shared and wall time was not usable: TP = 10 s, TJ = 40 s, B = TP + TJ = 50 s.
+**Arms.** Budgets in process CPU seconds (shared machine, wall time unusable): TP = 10 s, TJ = 40 s, B = TP + TJ = 50 s.
 
 | Arm | What it does | CPU |
 |---|---|---|
 | `seq` | SA on HPWL + straight-line hot-loop area + penalties, then referee | TP |
-| `seqx` | `seq` plus a crossing proxy (0.5 mm per crossing of star-decomposed nets; best of {0.5, 1.5, 3} on held-out seed 9) | TP |
+| `seqx` | `seq` + crossing proxy (0.5 mm per crossing of star-decomposed nets; best of {0.5, 1.5, 3} on held-out seed 9) | TP |
 | `seq_long` | `seq` SA for the whole budget | B |
-| `seq_port` | `seq`, then restarts from new random placements (SA + referee each) until B is spent; keep the best J | B |
-| `joint` | `seq`'s placement and its referee routes as the start. Every SA move first checks overlaps and keep-outs (hard; illegal moves are rejected before routing), then rips up and A*-reroutes the affected nets (nets on the moved parts plus nets crossing their new pads) and is accepted on the routed objective plus an overflow penalty (2 → 40 mm per overused node) | B |
-| `joint_nophys` | `joint` whose acceptance ignores hot-loop area and bottom-layer length | B |
-| `long_joint` / `seq_longer` | follow-up on 4 boards: `seq_long` (50 s) then 40 s of joint, vs 90 s of `seq` SA | 90 s |
+| `seq_port` | `seq`, then restarts from new random placements (SA + referee each) until B is spent; best J | B |
+| `joint` | start = `seq` placement + its referee routes. Each SA move checks overlaps and keep-outs first (hard; illegal moves rejected before routing), rips up and A*-reroutes affected nets (nets on moved parts + nets crossing their new pads), accepts on routed objective + overflow penalty (2 → 40 mm per overused node) | B |
+| `joint_nophys` | `joint` with acceptance ignoring hot-loop area and bottom length | B |
+| `long_joint` / `seq_longer` | follow-up, 4 boards: `seq_long` (50 s) then 40 s joint, vs 90 s `seq` SA | 90 s |
 
-Commands: `python jpr_joint_vs_sequential.py --n 30 --seed 0 --util 0.6 --tp 10 --tj 40` (six arms); add `--arms long_joint,seq_longer` for the follow-up and `--tp 3 --proxy-study 40` for the proxy study.
+Commands: `python jpr_joint_vs_sequential.py --n 30 --seed 0 --util 0.6 --tp 10 --tj 40` (six arms); `--arms long_joint,seq_longer` for the follow-up; `--tp 3 --proxy-study 40` for the proxy study.
 
-### Results [C]
+## Results [C]
 
 **Routed objective J per board** (lower is better; all arms 100% routed):
 
@@ -68,54 +71,53 @@ Commands: `python jpr_joint_vs_sequential.py --n 30 --seed 0 --util 0.6 --tp 10 
 | 50 | joint | 687.5 | 407.0 | **22** | 60.0 | 16.6 |
 | 50 | joint_nophys | **649.2** | 407.5 | 25 | 48.5 | 19.4 |
 
-**Joint vs equal-CPU controls** (per-board ratio of J):
+**Joint vs equal-CPU controls** (per-board J ratio):
 
 | N | joint vs seq_long | joint vs seq_port | joint vs its start (seq) |
 |---|---|---|---|
 | 30 | 5/5 wins, median −17.0% (−56.6 to −3.2%) | 3/5, −10.3% (−24.7 to +23.7%) | 5/5, −17.6% |
 | 50 | 2/5, +3.8% (−35.0 to +32.5%) | 2/5, +9.4% (−23.5 to +40.5%) | 5/5, −24.0% |
 
-**Follow-up after a converged start** (J): 30/0: long_joint 362.5 vs seq_longer 364.0; 30/1: 342.5 vs 483.0; 50/0: 788.0 vs 714.0; 50/1: 683.8 vs 726.8. Joint is better on 3 of 4, but its gain over its own start was small at 50 parts (+0.1% and −10.6%).
+- **Follow-up after a converged start** (long_joint vs seq_longer J): 30/0 362.5 vs 364.0; 30/1 342.5 vs 483.0; 50/0 788.0 vs 714.0; 50/1 683.8 vs 726.8. Joint better 3/4; its gain over its own start was small at 50 parts (+0.1%, −10.6%).
+- **Physics term in acceptance** (`joint` vs `joint_nophys`): lower J on 4/5 at N = 30, 3/5 at N = 50; median hot loop 3.0 vs 4.0 mm² at N = 30. Smaller than seed-to-seed noise.
+- **Crossing proxy** (`seqx` vs `seq`, equal CPU): worse at N = 30 (2/5; 2.5–3.5× fewer SA moves), better at N = 50 (4/5, median −38%). Better proxies cost compute too.
 
-**Physics term in the acceptance** (`joint` vs `joint_nophys`): lower J on 4/5 boards at N = 30 and 3/5 at N = 50; smaller median hot loops at N = 30 (3.0 vs 4.0 mm²). The effect is smaller than seed-to-seed noise.
-
-**Crossing proxy** (`seqx` vs `seq`, equal CPU): worse at N = 30 (2/5; 2.5–3.5× fewer SA moves) and better at N = 50 (4/5, median −38%). Better proxies cost compute too.
-
-**Proxy study** (`--proxy-study 40 --tp 3`: placements of mixed quality, each routed by the referee; illegal ones dropped; boards 30/0, 50/0, 30/1, 50/1):
+**Proxy study** (`--proxy-study 40 --tp 3`: placements of mixed quality, each routed by the referee, illegal ones dropped; boards 30/0, 50/0, 30/1, 50/1). Matches Cadence's 12,000-placement finding at small scale ([joint-place-route](joint-place-route.md#1-why-staged-place-then-route-gets-stuck)).
 
 | Measure | Value |
 |---|---|
 | Spearman, HPWL vs routed J | 0.884 / 0.939 / 0.874 / 0.901 |
 | Spearman, HPWL vs routed wirelength | 0.897 / 0.961 / 0.984 / 0.978 |
 | Spearman, crossings vs routed J | 0.763 / 0.891 / 0.703 / 0.808 |
-| Spearman, straight-line loop area vs routed loop area | 0.231 / 0.453 / 0.791 / 0.577 |
-| Pairs within 3% HPWL whose routed J differs by > 10% | 41/103, 10/16, 4/7, 3/5 (58/131 = 44%) |
+| Spearman, straight-line vs routed loop area | 0.231 / 0.453 / 0.791 / 0.577 |
+| Pairs within 3% HPWL whose routed J differs > 10% | 41/103, 10/16, 4/7, 3/5 (58/131 = 44%) |
 
-This matches Cadence's 12,000-placement finding at small scale ([joint-place-route](joint-place-route.md)).
+**Cost** (median per CPU second): HPWL SA 13.9k moves (N = 30), 12.2k (N = 50); joint 1.6k proposals, 510–550 legal and routed (2.5 and 1.6 nets re-routed per move): ~25× per routed move. Five restarts fit the portfolio budget.
 
-**Cost** (median per CPU second): HPWL SA 13.9k moves (N = 30) and 12.2k (N = 50); joint 1.6k proposals, of which 510–550 were legal and routed (2.5 and 1.6 nets re-routed per move). The gap is ~25× per routed move. Five restarts fit in the portfolio budget.
+## Method lessons [C]
 
-### Method lessons [C]
-- **Keep hard constraints hard.** Pricing overlaps with a ramped penalty left 2–7 overlaps at the end of the run, and the end-of-run legalizer then moved parts without regard to their routes: on one board the joint's own routed J of 602.5 became 1163.5 after legalization and re-routing. Rejecting illegal moves before routing avoids this and raises the routed-move rate 3–7× (70–170 → 510–550 per second). A joint optimizer must stay legal throughout, or legalize with its routes in view (JPR14, JPR37).
-- **Incremental route state drifts.** At N = 50 the joint's maintained routes ended with 2–10 failed nets in 4/5 runs, while a from-scratch PathFinder re-route of the same placement was clean. Periodic global renegotiation, or LPA* repair with history costs, is needed (JPR6). Scoring the joint's own routes instead of the referee gives the same picture at N = 30 (wins 5/5 and 4/5 against the two controls) and a worse one at N = 50 (2/5 and 1/5).
-- **Variance is large.** Three runs of one board and seed gave `seq` J of 241, 290 and 337 (CPU budgets change move counts). Five seeds show direction, not significance.
+- **Keep hard constraints hard.** A ramped overlap penalty left 2–7 overlaps at run end; the end-of-run legalizer then moved parts blind to their routes (one board: joint's routed J 602.5 → 1163.5 after legalization and re-route). Rejecting illegal moves before routing avoids this and raises routed moves 3–7× (70–170 → 510–550 per second). Stay legal throughout, or legalize with routes in view (JPR14, JPR37).
+- **Incremental route state drifts.** At N = 50 the joint's maintained routes ended with 2–10 failed nets in 4/5 runs, while a from-scratch PathFinder re-route of the same placement was clean: needs periodic global renegotiation or LPA* repair with history costs (JPR6). Scoring the joint's own routes instead of the referee: same at N = 30 (5/5, 4/5 vs the two controls), worse at N = 50 (2/5, 1/5).
+- **Variance is large.** Three runs of one board and seed gave `seq` J 241, 290, 337 (CPU budgets change move counts). Five seeds show direction, not significance.
+- **Delayed acceptance next:** 53–62% of routed moves were rejected after paying for the reroute (JPR41).
 
-## Recommendations for our system
-- Use routed-objective search as a **refinement stage** after a fast, converged sequential placement, never as the cold start. The per-move cost makes cheap global moves essential, and the joint stage won on 3/4 boards in that role [C/I].
-- Spend extra compute on **restarts and joint refinement together**: at 50 parts the portfolio and the joint stage each won where the other lost. Successive halving over restarts, with joint refinement of the survivors, follows directly (JPR45) [I].
-- Reject illegal moves before routing them; make admissible-pose masks and the channel-width legalizer part of the joint loop (JPR37, JPR14) [C].
-- Make delayed acceptance the next step: 53–62% of routed moves were rejected after paying for the reroute (JPR41) [C].
-- Adopt the equal-CPU sequential portfolio as the required control in the bench harness (JPR46); `kicad-cli` DRC on re-opened boards then replaces our referee [I].
-- Score hot loops with MS2 or height × squares on boards with a near plane; the area term here fits only the 2-layer far-plane case [I].
+## Consequences for the system [C/I]
 
-## Conflicts and open questions
-- **Not a real-board result.** No clearance geometry, diff pairs, pours, 4+ layers, or DRC; nets have 2–4 pins; the router always completed. Whether the via and loop gains survive Freerouting realization and `kicad-cli` DRC on PCBWorld D3 is the open test.
-- **Language bias.** Both arms are pure Python; Rust may shift the 50-part outcome [I].
-- **Post-hoc fix.** Rejecting illegal moves before routing was adopted after a first matrix in which the penalty variant of `joint` lost badly. It is a correctness fix, applied before the final runs, but it was not pre-registered.
-- **Weights.** J's weights are choices; the I1 ledger should set them.
+- Use routed-objective search as refinement after a fast, converged sequential placement, never as cold start (won 3/4 in that role).
+- Spend extra compute on restarts and joint refinement together (at 50 parts each won where the other lost): successive halving over restarts, joint refinement of survivors (JPR45) [I].
+- Require the equal-CPU sequential portfolio as control in the bench harness (JPR46); `kicad-cli` DRC on re-opened boards replaces our referee [I].
+- Score hot loops by MS2 or height × squares near a plane; this area term fits only the 2-layer far-plane case [I].
+
+## Open questions
+
+- **Not a real-board result:** no clearance geometry, diff pairs, pours, 4+ layers or DRC; nets have 2–4 pins; router always completed. Open test: do via and loop gains survive Freerouting realization and `kicad-cli` DRC on PCBWorld D3?
+- **Language bias:** both arms pure Python; Rust may shift the 50-part outcome [I].
+- **Post-hoc fix:** rejecting illegal moves before routing was adopted after a first matrix in which the penalty variant lost badly; a correctness fix applied before the final runs, not pre-registered.
+- **Weights** of J are choices; the I1 ledger should set them.
+- **Cost gap wording:** earlier idea rows said ~30× per move; the measured median is ~25× per legal routed move (cost line above); the ~30× figure is superseded.
 
 ## Sources
-- Script: [`tools/research/physics/jpr_joint_vs_sequential.py`](../../../tools/research/physics/jpr_joint_vs_sequential.py); instance generator and SA and PathFinder measurements: [solver benchmarks](../solvers/benchmarks.md)
-- Prior art for the method (PROXI, Starfish) and Cadence's proxy study: [joint-place-route](joint-place-route.md)
 
-See also: [joint-place-route](joint-place-route.md) · [ideas: joint placement and routing](../../ideas/physics-first/joint-place-route.md) · [pathfinder-negotiated-congestion](../routing/pathfinder-negotiated-congestion.md) · [metaheuristics-and-qd](../solvers/metaheuristics-and-qd.md) · [solver-ladder](solver-ladder.md)
+- Script above; instance generator, SA and PathFinder measurements: [solver benchmarks](../solvers/benchmarks.md).
+- Prior art (PROXI, Starfish) and Cadence's proxy study: [joint-place-route](joint-place-route.md).
+- Related: [ideas: joint placement and routing](../../ideas/physics-first/joint-place-route.md), [pathfinder-negotiated-congestion](../routing/pathfinder-negotiated-congestion.md), [metaheuristics-and-qd](../solvers/metaheuristics-and-qd.md).
