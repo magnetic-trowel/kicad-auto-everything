@@ -142,3 +142,19 @@ def test_a_placement_with_soft_bands_reports_the_term(monkeypatch):
     res = place(load(FIXTURE), seed=0, time_s=8.0, physics=False, workers=1, opts={"escape_band": 1})
     assert res.report["escape_term"]["packages"] == 1
     assert not getattr(calls["P"], "escape_on", False)       # soft: the occupancy is untouched
+
+
+def test_a_small_wafer_level_grid_is_a_grid_not_a_ring():
+    fp = _bga(n=3, pitch=0.4)                     # 3 x 3 sites; add a fourth column: a 12-ball 3 x 4 WLP
+    fp.pads += [_pad(0.8, (j - 1) * 0.4, f"X{j}", 0.24) for j in range(3)]
+    for p in fp.pads:
+        p.size = (0.24, 0.24)
+    pk = EB.package(fp, _kinds(fp), w=0.2, c=0.2)
+    assert pk["kind"] == "grid" and abs(pk["pitch"] - 0.4) < 1e-6
+    assert sum(pk["counts"].values()) == 10       # the 2 interior balls go down their dog-bones
+    assert EB._grid([(x * 0.5, 0.0) for x in range(6)] + [(x * 0.5, 0.5) for x in range(6)]) is None  # 2 rows
+
+
+def test_a_hollow_ring_is_not_a_small_grid():
+    fp = _qfn(per_side=3, pitch=0.4, span=1.6)    # 12 pads round an empty middle
+    assert EB._grid([(p.lx, p.ly) for p in fp.pads]) is None

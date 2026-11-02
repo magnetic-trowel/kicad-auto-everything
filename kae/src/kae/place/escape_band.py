@@ -7,7 +7,7 @@ impossible (docs/research/routing/kae-closing-open-connections.md, class c), typ
 dropped into the strip a BGA's or a fine-pitch QFN's escapes need. The placer saw no difference
 between that strip and any other free space.
 
-Per tricky package (a ball grid; a pad ring at most `escape_ring_pitch` mm, 0.5 by default) this
+Per tricky package (a ball grid, down to a 3 x 3 wafer-level package; a pad ring at most `escape_ring_pitch` mm, 0.5 by default) this
 module counts the signal escapes that must leave each side of it on the parts' own copper layer,
 with the escape planner's own capacity rule (kae.route.escape.fit):
 
@@ -52,9 +52,44 @@ MIN_RING = 12           # a pad ring at least this many
 SIDES = ("L", "T", "R", "B")   # library frame: -x, -y, +x, +y (y down)
 
 
+MIN_SMALL = 9           # a small ball grid (wafer-level packages): at least 3 x 3 sites
+SMALL_FILL = 0.75       # of which at least this share carry a ball (a QFN ring is hollow)
+
+
 def _grid(pts):
+    """(pitch, angle, local points, ring of each point) of a ball grid, else None: the escape
+    planner's test for 16 balls and more, and below that a filled lattice of at least 3 x 3 sites
+    (a 12-ball 3 x 4 wafer-level package has 2 interior balls, too few for the planner's test)."""
     from kae.route.escape import _grid as grid
-    return grid(pts)
+    if len(pts) >= MIN_BALLS:
+        return grid(pts)
+    return _small_grid(pts) if len(pts) >= MIN_SMALL else None
+
+
+def _small_grid(pts):
+    nn = []
+    for i, a in enumerate(pts):
+        d, v = min((math.dist(a, b), (b[0] - a[0], b[1] - a[1])) for j, b in enumerate(pts) if j != i)
+        nn.append((d, v))
+    pitch, v = sorted(nn)[len(nn) // 2]
+    if pitch < 1e-3:
+        return None
+    ang = math.atan2(v[1], v[0]) % (math.pi / 2)
+    cx, cy = sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts)
+    c, s = math.cos(-ang), math.sin(-ang)
+    loc = [((x - cx) * c - (y - cy) * s, (x - cx) * s + (y - cy) * c) for x, y in pts]
+    u0, w0 = min(u for u, _ in loc), min(w for _, w in loc)
+    idx = [((u - u0) / pitch, (w - w0) / pitch) for u, w in loc]
+    if any(abs(a - round(a)) > 0.1 or abs(b - round(b)) > 0.1 for a, b in idx):
+        return None                                     # not on one lattice
+    cols = {round(a) for a, _ in idx}
+    rows = {round(b) for _, b in idx}
+    nc, nr = max(cols) + 1, max(rows) + 1
+    sites = {(round(a), round(b)) for a, b in idx}
+    if nc < 3 or nr < 3 or len(sites) < SMALL_FILL * nc * nr:
+        return None
+    rings = [min(round(a), round(b), nc - 1 - round(a), nr - 1 - round(b)) for a, b in idx]
+    return pitch, ang, loc, rings
 
 
 def _track_and_clearance(board):
@@ -86,23 +121,25 @@ def package(fp, net_kind, w, c, ring_pitch=0.5):
     net_kind: {net name: 'ground'|'power'|'signal'}; a pad on no net escapes nothing."""
     from kae.route.escape import fit
     pads = [p for p in fp.pads if p.kind == "smd" and len([l for l in p.layers if l.endswith(".Cu")]) == 1]
-    if len(pads) < MIN_RING:
+    if len(pads) < MIN_SMALL:
         return None
     sizes = sorted(min(p.size) for p in pads)
     med = sizes[len(sizes) // 2]
     pads = [p for p in pads if min(p.size) <= 2.0 * med]      # leave out an exposed pad or shield tabs
-    if len(pads) < MIN_RING:
+    if len(pads) < MIN_SMALL:
         return None
     pts = [(p.lx, p.ly) for p in pads]
     xs, ys = [x for x, _ in pts], [y for _, y in pts]
     cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
     hx, hy = max(max(xs) - cx, 1e-6), max(max(ys) - cy, 1e-6)
-    g = _grid(pts) if len(pads) >= MIN_BALLS else None
+    g = _grid(pts)
     if g is not None:
         pitch, _ang, _loc, rings = g
         O = fit(pitch - med, w, c)
         surface = [r <= O for r in rings]
         kind = "grid"
+    elif len(pads) < MIN_RING:
+        return None
     else:
         # pitch between distinct pad sites: stacked pads (a switch's or a jumper's) are one site
         sites = sorted({(round(x, 3), round(y, 3)) for x, y in pts})
@@ -173,13 +210,13 @@ def via_sites(fp, net_kind, w, c, D):
     pad ring or no grid."""
     from kae.route.escape import fit
     pads = [p for p in fp.pads if p.kind == "smd" and len([l for l in p.layers if l.endswith(".Cu")]) == 1 and p.net]
-    if len(pads) < MIN_BALLS:
+    if len(pads) < MIN_SMALL:
         return []
     sizes = sorted(min(p.size) for p in pads)
     med = sizes[len(sizes) // 2]
     pads = [p for p in pads if min(p.size) <= 2.0 * med]
     pts = [(p.lx, p.ly) for p in pads]
-    g = _grid(pts) if len(pads) >= MIN_BALLS else None
+    g = _grid(pts)
     if g is None:
         return []
     pitch, _ang, _loc, rings = g
