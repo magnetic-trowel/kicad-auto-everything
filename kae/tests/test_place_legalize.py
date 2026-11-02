@@ -184,6 +184,16 @@ def test_mask_openings_of_different_nets_bridge():
     P.board.rules.mask_margin = 0.0
     P.board.rules.mask_min_width = 0.5                    # web too thin
     assert bridges()
+    # each expansion alone is below the gap, both together exceed it: the prefilter took the
+    # max of one margin (`max(mmi + mmj)` joined the lists) and missed this pair
+    from kae.place.exact import ExactModel
+    P.board.rules.mask_min_width = 0.0
+    E = ExactModel(P, st)
+    d = min(ga.distance(gb) for ga, ka, _ in E._shapes(a.i, st.pose(a.i))["pads"] if ka == 0
+            for gb, kb, _ in E._shapes(b.i, st.pose(b.i))["pads"] if kb == 0)
+    assert d > 0.05
+    P.board.rules.mask_margin = 0.6 * d
+    assert bridges()
 
 
 def test_kicad_zone_error_keeps_the_part_off_the_whole_zone():
