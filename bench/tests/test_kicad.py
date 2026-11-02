@@ -73,6 +73,17 @@ def test_moving_parts_in_a_route_task_is_invalid(tasks):
 
 
 @needs_kicad
+def test_sub_micron_pose_change_is_within_the_placement_tolerance(tasks):
+    """The place side lets an anchored part differ by 1 um (_same_pose); the route side compared an
+    exact hash, so a joint output that rounded a locked pose passed placement and failed routing."""
+    root, _ = tasks
+    for dx, ok in (("120.0004", True), ("120.002", False)):
+        nudge = adapters.Command(f"sed 's/(at 120 105)/(at {dx} 105)/' {{input}} > {{output}}", name=f"nudge{ok}")
+        s = _run(root, nudge, name=f"nudge-{ok}")[0]["score"]
+        assert s["integrity"]["placement"] == ok and s["integrity"]["untouched"] == ok and s["valid"] == ok, s
+
+
+@needs_kicad
 def test_unplaced_board_is_not_legal(tasks):
     root, _ = tasks
     s = _run(root, adapters.Noop(), kinds=("place",), name="noop-place")[0]["score"]

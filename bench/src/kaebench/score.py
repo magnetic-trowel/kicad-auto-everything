@@ -28,7 +28,9 @@ from pathlib import Path
 from . import tools
 from .boardfiles import board_path, install_rules, unconnected_ignored
 
-SCORE_VERSION = 8  # 8: unconnected counted by pcbnew where the project ignores the check (_uncapped)
+# 8: unconnected counted by pcbnew where the project ignores the check (_uncapped)
+# 9: route placement integrity with the place side's pose tolerance (transplant-routing)
+SCORE_VERSION = 9
 # KiCad 10's DRC report stops listing unconnected items at 499 and other violations at 199
 # per type (drc_engine ERROR_LIMIT / EXTENDED_ERROR_LIMIT).
 DRC_UNCONNECTED_CAP = 499
@@ -125,7 +127,7 @@ def score_routing(output_board, input_board, input_stats, start_unconnected, ref
                                     cache=Path(input_board).parent / "unconnected.json")
     out, foreign = tr["output"], tr["foreign"]
     integrity = dict(
-        placement=out["placement_hash"] == input_stats["placement_hash"],
+        placement=tr["n_placement_moved"] == 0,
         pad_nets=out["padnet_hash"] == input_stats["padnet_hash"],
         layers=tr["bad_layer"] == 0,
         untouched=foreign["count"] == 0,
