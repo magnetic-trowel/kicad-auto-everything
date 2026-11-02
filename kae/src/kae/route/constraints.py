@@ -174,7 +174,15 @@ DEFAULTS = dict(
     operating="",                  # placement and routing: the board's operating facts (JSON: requirements.thermal
                                    # heat sinks, parts' P_sustained_W; kae.place.heat); "" none
     heat_pull_w=1.0,               # placement: label-term weight per sustained W pulling a hot part into a region sink
-    heat_min_W=0.25,               # placement: parts dissipating less are not pulled
+    heat_min_W=0.25,               # placement and routing: parts dissipating less are not pulled (placement) and
+                                   # get no thermal vias (routing)
+    thermal_vias=1,                # routing (kae.route.thermal_vias): 1: vias from a hot part's thermal pad and
+                                   # pour pads into the same net's copper on the face of a region sink under it,
+                                   # when the operating facts name one on the other face; 0: off
+    thermal_via_pitch=1.0,         # mm: grid pitch of thermal vias (the board's same-net via pitch still applies)
+    thermal_via_max=16,            # thermal vias per part at most
+    thermal_via_in_pad=1,          # 1: thermal vias inside an exposed pad (as critical routing's plane vias); 0:
+                                   # only on the pour around it (for assembly that cannot plug vias in pads)
     escape_fanout=0,               # placement: 1 also reserves the dog-bone via sites of each ball grid on the
                                    # other side (no part there covers them); 0: off
 )
