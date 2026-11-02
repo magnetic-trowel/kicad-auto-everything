@@ -100,3 +100,23 @@ def test_heat_accounts_every_dc_loss_vias_and_lumped_parts():
     assert lump["L1"] > 0.19                                  # 2 A through 50 mOhm
     assert Q.sum() + sum(lump.values()) == pytest.approx(P, rel=1e-3)
     assert H.lumped_heat(info["net"], info["x"], {"L1": "D_on"}) == {}     # a diode's loss is V_f I in part_heat
+
+
+def test_copper_loss_budget_and_drop_share_the_unknown_rail_fallback():
+    """With no rail voltage known, the loss budget was 0 and the loss u 0 (perfect) whatever the copper
+    lost; it now takes the drop check's 3.3 V. A negative drop is no credit (phi clamps at 0)."""
+    from types import SimpleNamespace
+
+    import numpy as np
+
+    from kae.excite import harm as HA
+    pl = _plan()
+    pl.volts = {}
+    pl.loss_share, pl.drop_share, pl.dT_max = DC.LOSS_SHARE, DC.DROP_SHARE, DC.DT_MAX
+    cv = {("dc:U2", "I_A"): 0.2, "cell:c": {"I_A": 1.0, "D": 0.6}}
+    inj = DC.injections(pl, cv)
+    V = {t: (0.01 if a > 0 else 0.0) for t, a in inj.items()}          # 10 mV across the copper per source
+    info = dict(net=SimpleNamespace(off={"l": 0}, n_br=0), x=np.zeros(0), sys=SimpleNamespace(zdiag=np.zeros(0)))
+    u, P_cu, budget = DC.observe(pl, cv, V, info)["loss"]
+    assert P_cu > 0 and budget > 0 and u == pytest.approx(P_cu / budget)
+    assert HA.phi(-0.5) == 0.0 and HA.phi(0.5) == 0.5

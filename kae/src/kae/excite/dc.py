@@ -382,7 +382,9 @@ def observe(pl, cv, V, info, tracks=None):
     P_l = float(np.sum(np.abs(Il) ** 2 * np.real(sysm.zdiag[lo:net.n_br]))) if len(Il) else 0.0
     P_cu = max(P_all - P_l, 0.0)
     xs = load_currents(pl, cv)
-    P_del = sum(xk * (pl.volts.get(ld["rail"]) or 0.0) for ld, xk in zip(pl.loads, xs))
+    # a rail without a known voltage at the drop check's 3.3 V: at 0 V the budget was 0 and the loss u 0
+    # (perfect) whatever the copper lost, or P_cu of every rail was divided by the known rails' budget
+    P_del = sum(xk * (pl.volts.get(ld["rail"]) or 3.3) for ld, xk in zip(pl.loads, xs))
     budget = pl.loss_share * P_del
     out = dict(loss=(P_cu / budget if budget > 0 else 0.0, P_cu, budget), drops=[], heat=[])
     for ld, xk in zip(pl.loads, xs):
