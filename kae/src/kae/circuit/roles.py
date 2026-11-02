@@ -1047,6 +1047,27 @@ DIFF_IN_PIN = rx(r'^(V?IN[+-]|[+-]V?IN|V?IN[PN]|SENSE[+-PN]|[+-]SENSE|CS[+-PN]|R
 # a rail-like name with a control suffix is a control line: 12V0_OUT_EN, VBUS_DET, 3V3_PG
 CTRL_SUFFIX = rx(r'[_-](N?EN|ENABLE|N?PG|PGOOD|PWRGD|POK|OK|GOOD|FAULT|FLT|ALERT|OFF|CTRL|CTL|SEL|DET|STAT|STATUS|INT|IRQ|MON|SENSE|SNS|'
                  r'ADC|DIV|FB|BTN)$')
+# a signal or control word as a whole token of a net name, or glued after PWR/POWER or ending a token
+# (PWRSTAT, PWRKEY, NETSTAT, SIMRST): the net carries that signal, and a voltage in the same name is its
+# level (PWRSTAT_5V, RI_5V, SDA_5V: a level-shifted signal), not a supply. A name led by a supply word
+# (VCC_CLK, VDD_TX, 3V3_LED) is a supply of that block; trailing control words are CTRL_SUFFIX's.
+SIGNAL_TOKEN = rx(r'^(\w*STAT|STATUS|\w*KEY|N?RI|RING|DTR|DSR|DCD|N?CTS|N?RTS|U?TXD?\d?|U?RXD?\d?|N?RST\w*|\w+RST|'
+                  r'N?RESET\w*|PWM\d*|SDA\d*|SCL\d*|MISO|MOSI|SCK|SCLK|N?CS\d?|CLK\w*|IRQ\w*|N?EN|ENABLE|N?PG|PGOOD|ALERT\w*|'
+                  r'N?FAULT\w*|DATA\d*|GPIO\w*|IO\d+|BTN\w*|BUTTON\w*|WAKE\w*|SIG|DET|MODE\d?|SEL\d?|DIN|DOUT|SDI|SDO|'
+                  r'PWR(EN|ON|OFF|OK|GD|GOOD|BTN|SW|DWN|DN)|POWER(EN|ON|OFF|OK|GOOD|BTN))$')
+SUPPLY_LEAD = rx(r'^(\+|-?\d+(\.\d+)?V|\d+V\d|P\d+V|V(CC|DD|BAT|BUS|IN|SYS|IO|CORE|REG|MOT|SUP|AUX|LOGIC|LED|USB|DRV|PP)|[ADP]V(DD|CC)|V_)')
+
+
+def signal_word(short: str) -> str | None:
+    """The signal word a net name carries ('PWRSTAT' in 'PWRSTAT_5V', 'RI' in 'RI_5V'), or None. A name
+    led by a supply word is a block's supply (VCC_CLK), not a signal."""
+    s = short.rsplit('/', 1)[-1].strip().upper()
+    if not s or SUPPLY_LEAD.match(s):
+        return None
+    for tok in re.split(r'[^A-Z0-9]+', s):
+        if tok and SIGNAL_TOKEN.match(tok):
+            return tok
+    return None
 # logic pin names: a power type on one of these is a library error (EN or GPIO typed power_in)
 SIGNAL_PIN = rx(r'^(GPIO\w*|IO\d+\w*|P[A-K]\d{1,2}(\W\w*)?|P\d[._]\d+\w*|SDA\w*|SCL\w*|MOSI|MISO|SCK|SCLK|COPI|CIPO|N?CS\d?|NSS|'
                 r'TXD?\d?|RXD?\d?|RTS|CTS|INT\w*|IRQ\w*|PWM\w*|D\d{1,2}|A\d|EN\w*|SHDN\w*|N?RST\w*|RESET\w*|MODE\d?|SEL\d?|'
@@ -1106,8 +1127,9 @@ def _unannotated_pin_sem(net) -> str | None:
         return None
     if GND_NET.search(leaf):
         return 'ground'
-    if PWR_NET.match(leaf) and not CTRL_NET.search(leaf) and not CTRL_SUFFIX.search(leaf) and not _sw_name(leaf.upper()):
-        return 'supply'          # ('1V25_SW' names its converter's output voltage but is the switch node)
+    if PWR_NET.match(leaf) and not CTRL_NET.search(leaf) and not CTRL_SUFFIX.search(leaf) and not _sw_name(leaf.upper()) \
+            and not signal_word(leaf):
+        return 'supply'          # ('1V25_SW' names its converter's output voltage but is the switch node; PWRSTAT_5V a signal)
     return None
 
 
@@ -1128,14 +1150,17 @@ def _rails(nl: Netlist, roles: Roles):
             continue
         s = nv.short
         evs = []
-        name = bool(PWR_NET.search(s)) and not GND_ANY.search(s)
-        weak = bool(PWR_WEAK.search(s))
+        # a signal word in the name (PWRSTAT, RI_5V, SDA_5V) voids the name's supply evidence: its 'PWR' or
+        # '5V' names the signal's level or subject, not a supply
+        sigw = signal_word(s)
+        name = bool(PWR_NET.search(s)) and not GND_ANY.search(s) and not sigw
+        weak = bool(PWR_WEAK.search(s)) and not sigw
         vname = V.net_voltage(net)
         if name:
             evs.append(ev('name', f"name '{s}' matches a rail pattern", MODERATE + 1.0))
         elif weak:
             evs.append(ev('name', f"name '{s}' contains a supply word", WEAK))
-        if vname and not name:
+        if vname and not name and not sigw:
             evs.append(ev('name', f"name '{s}' states a voltage ({vname[1]})", WEAK))
         cls = nv.netclass.upper()
         if re.search(r'POWER|PWR|VCC|VDD|\dV|BIGPOWER|HIPOWER|SUPPLY|VBUS|VIN|VOUT|BOLD|RAIL|HV\b|\bV\d|POWER_\d|AMP', cls) and 'DEFAULT' != cls:
@@ -1184,7 +1209,11 @@ def _rails(nl: Netlist, roles: Roles):
         if conns and (name or weak):
             evs.append(ev('topology', f"on connector {conns[0].ref}", 0.5))
         powered = bool(p_out or reg_out or p_in or ind_out or name_pin_in or fed_rail)
-        if CTRL_NET.search(s) and not (p_out or reg_out or ind_out or name):
+        own_supply_pins = [p for p in p_in + name_pin_in if p.fn]      # named so by the part, not by this net
+        if sigw and not (p_out or reg_out or ind_out or own_supply_pins):
+            evs.append(ev('name', f"signal word '{sigw}' in name '{s}' and no supply source or supply pin "
+                                  f"(a status, control or level-shifted line)", -4.0))
+        elif CTRL_NET.search(s) and not (p_out or reg_out or ind_out or name):
             evs.append(ev('name', f"control/signal name '{s}'", -3.0))
         sig = [p for p in pins if roles.sem(p) == 'signal' and roles.parts[p.ref].kind in ('ic', 'module')]
         if diff_in and not (p_out or reg_out or ind_out or p_in or name_pin_in):

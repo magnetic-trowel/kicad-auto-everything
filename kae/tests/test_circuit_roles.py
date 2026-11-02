@@ -560,3 +560,41 @@ def test_dac_and_class_ab_headphone_amp_have_no_bridge_outputs_but_class_d_does(
     nl, r = roles_of(parts)
     assert not {'OUT_L', 'OUT_R', 'HP_L', 'HP_R'} & set(r.switch_nodes)
     assert r.switch_nodes['SPK_P']['kind'] == 'bridge_output'
+
+
+def test_signal_word_in_a_net_name():
+    from kae.circuit.roles import signal_word
+    for s in ('PWRSTAT', 'PWRSTAT_5V', 'RI_5V', 'NETSTAT_5V', 'PWRKEY', 'PWRKEY_5V', 'RXD_5V', 'RESET_5V', '/sda_5v', 'SCL_3V3',
+              'CHG_STAT', 'PWR_EN', 'PWRON'):
+        assert signal_word(s), s
+    # supplies, including a block's supply led by a supply word
+    for s in ('+5V', 'VBAT', 'VBUS', '3V3', 'VCCIO', 'VCC_CLK', 'VDD_TX', '3V3_LED', 'USB_5V', 'PWR_IN', 'V_USB', '1.8V', 'VDD_IO'):
+        assert signal_word(s) is None, s
+
+
+def test_level_shifted_status_lines_are_not_rails():
+    """Adafruit FONA (an Eagle import without pin names or types): a 74VHCT125 between a GSM module's
+    status lines and the header. PWRSTAT, RI_5V, PWRSTAT_5V and the diode-isolated PWRKEY/PWRKEY_5V
+    pair are signals at a level, not supplies; VBAT (module supply, bulk caps) and VCCIO (the buffer's
+    supply from the header) stay rails."""
+    u = lambda ref, value, lib, nets: fp(ref, value, lib, [(str(i + 1), n, '', '') for i, n in enumerate(nets)])
+    parts = [u('IC1', '74VHCT125PW', 'TSSOP14', ['PWRSTAT', 'PWRSTAT_5V', 'RI', 'RI_5V', 'NETSTAT', 'NETSTAT_5V', 'GND', 'VCCIO']),
+             u('U1', 'SIM800H', 'SIM800H', ['VBAT', 'VBAT', 'GND', 'PWRSTAT', 'PWRKEY', 'RI', 'NETSTAT', '2.8V']),
+             u('JP1', 'HEADER', 'Connector_PinHeader_2.54mm:PinHeader_1x08',
+               ['VCCIO', 'PWRSTAT_5V', 'RI_5V', 'NETSTAT_5V', 'PWRKEY_5V', 'RXD_5V', 'VBAT', 'GND']),
+             D('D5', '1N4148', 'PWRKEY', 'PWRKEY_5V'), D('D4', '1N4148', 'UART_RXD', 'RXD_5V'),
+             R('R4', '10k', 'PWRSTAT_5V', 'GND'),
+             C('C5', '10pF', 'VBAT', 'GND'), C('C6', '33pF', 'VBAT', 'GND'), C('C7', '100uF', 'VBAT', 'GND'),
+             fp('SW1', 'KMR2', 'Button_Switch_SMD:SW_SPST_KMR2', [('1', 'GND', '', ''), ('2', 'PWRKEY', '', '')])]
+    nl, r = roles_of(parts)
+    for n in ('PWRSTAT', 'PWRSTAT_5V', 'RI_5V', 'NETSTAT_5V', 'PWRKEY', 'PWRKEY_5V', 'RXD_5V'):
+        assert n not in r.rails, (n, r.rails[n].evidence)
+    assert 'VBAT' in r.rails and 'VCCIO' in r.rails
+
+
+def test_a_block_supply_named_after_its_block_stays_a_rail():
+    parts = [IC('U1', 'CDCLVC1104', 'Package_SO:TSSOP-8', [('1', 'VDD', 'VCC_CLK', 'power_in'), ('2', 'GND', 'GND', 'power_in'),
+                                                          ('3', 'CLKIN', 'CLK_IN', 'input'), ('4', 'Y0', 'CLK0', 'output')]),
+             C('C1', '100nF', 'VCC_CLK', 'GND'), C('C2', '10uF', 'VCC_CLK', 'GND')]
+    nl, r = roles_of(parts)
+    assert 'VCC_CLK' in r.rails
