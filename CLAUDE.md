@@ -14,6 +14,8 @@ CC-BY-4.0 (see `LICENSING.md`). New source files carry SPDX headers.
 - Before using any `.kicad_dru` you wrote or edited, run `kae dru-check FILE` (from `kae/`:
   `PYTHONPATH=src python -m kae.board.dru_check FILE`). KiCad silently drops the whole file on
   one syntax error, so DRC would pass without your rules; exit 1 means fix it first.
+  After a KiCad version bump, run `pytest kae/tests/test_board_dru_check.py` (drift tests) and
+  follow `docs/topics/kicad/drc-rule-language-reference.md#keeping-the-checker-in-sync-with-kicad`.
 
 ## Local board corpus
 
