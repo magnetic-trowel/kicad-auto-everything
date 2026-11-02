@@ -1,14 +1,22 @@
 # SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Thermal vias: hot parts over a heat-sink plate on the other face get vias to it.
+"""Thermal vias: hot parts get vias from their thermal pad into the same net's copper on the
+other face, to a heat-sink plate there or to a pour that sheds heat by convection.
 
-The board's operating facts (kae.place.heat: requirements.thermal.heatsinks, parts.<ref>.
-P_sustained_W) may name a region sink, a plate or a fan's air under part of the board on one face:
-{"side": "top"|"bottom", "region": [x0, y0, x1, y1] board mm | "board", ...}. A part that dissipates
-at least `heat_min_W` and sits on the OTHER face over that region reaches the plate only through the
-board: FR-4 conducts ~0.3 W/m/K, a plated barrel (25 um copper, 0.3 mm drill) ~1,000 times more per
-area. So the part's own copper gets through vias into the same net's copper on the sink face:
+FR-4 conducts ~0.3 W/m/K, a plated barrel (25 um copper, 0.3 mm drill) ~1,000 times more per area,
+so a part's heat reaches the other face of the board through vias or hardly at all. Every part the
+board's operating facts (kae.place.heat: parts.<ref>.P_sustained_W) give at least `heat_min_W` gets
+them, in one of two modes:
 
+- "sink": a region sink (requirements.thermal.heatsinks: {"side": "top"|"bottom", "region": [x0, y0,
+  x1, y1] board mm | "board", ...}, a plate or a fan's air) on the other face covers the part. The
+  vias land in the thermal net's copper on the sink face; the thermal pad itself carries the heat on
+  the part's face.
+- "both faces": no such sink. As human boards do it, the net's pours on both outer faces are stitched
+  under and around the part, so heat leaves the board from both faces by natural convection; a net
+  poured on one face only gets nothing ("no copper on the other face"). This pass makes no zones.
+
+Which copper:
 - the thermal pad first: the part's largest pad when it is at least twice the next (an exposed pad,
   a SOT-223 / DPAK tab). Vias go inside it, on a grid at `thermal_via_pitch`, as the existing
   handling of exposed pads does (critical_modules: "thermal pads always allow them"), unless
@@ -17,14 +25,12 @@ area. So the part's own copper gets through vias into the same net's copper on t
 - then the part's other pads whose net is poured on both faces (ground, power), around each pad.
 
 A via is placed only where the net's fill (KiCad's refill of the routed board) covers the whole via
-disk on the sink face, and, outside the pad, on the part's face in a fill piece that touches the pad,
-so it carries heat from the pad to the plate; and only where Space.via_violations finds nothing (the
-board's own rules, exactly as KiCad checks them). A net without a zone on the sink face gets nothing,
-and the report says so (a plate under a net that has no copper there is reached only by the other
-pads). Part sinks (a clip-on sink on the part) and region sinks on the part's own face need no vias.
+disk on the other face, and, outside the pad, on the part's face in a fill piece that touches the
+pad, so it carries heat from the pad through the board; and only where Space.via_violations finds
+nothing (the board's own rules, exactly as KiCad checks them).
 
-`run` is the bridge's pass after the repair and last-mile rounds: the vias are written onto the
-routed board, KiCad's DRC judges it like every repair round (no more unconnected items, no more
+`run` is the bridge's final stage after the repair and last-mile rounds: the vias are written onto
+the routed board, KiCad's DRC judges it like every repair round (no more unconnected items, no more
 errors, or none beyond the input's own: repair.errors_no_worse); vias a new violation names are
 dropped once and the board judged again; otherwise the board stays as it was.
 """
@@ -40,8 +46,19 @@ from shapely.ops import unary_union
 
 from . import constraints as CN
 
+# Calibration: kae's research report on PCB cooling (2026-11; [n] are that report's source numbers).
+# Vias belong under the exposed pad and in a ring just outside it: with inner GND planes, vias
+# outside the pad region changed theta_JA by 0.5 % or less (TI AN-1520 [2], FEA), and on 2-layer
+# boards a ring around the part helps up to about 2-4 rings (Shen et al., IEEE TPEL 2019 [8]);
+# across the rest of the pour the faces equalise through the FR-4 within ~1 cm anyway. Returns fall
+# fast: 5-9 vias suffice for a small die (TI PowerPAD SLMA002H [4]), a 6 x 6 array gives 90 % of an
+# 11 x 11's benefit (Electronics Cooling 2004 [12]): hence thermal_via_max 16 and 1.0 mm pitch (TI
+# QFN 1.0 mm [5], ROHM 1.2 mm [15]). The drill comes from the board's own via rules; unfilled
+# 0.25-0.33 mm is the sweet spot (0.2 mm costs 15-25 % on pads of <= 4 vias [2]), so the report
+# flags a drill outside it.
 EP_RATIO = 2.0      # an exposed pad is at least this many times the part's next-largest pad (area)
-RING_MM = 2.5       # vias outside a pad: within this distance of the pad's copper
+RING_MM = 2.5       # vias outside a pad: within this distance of the pad's copper (~2 rings at 1 mm)
+DRILL_MM = (0.25, 0.33)   # unfilled thermal-via drill sweet spot [2][8]
 
 
 def _log(msg):
@@ -58,8 +75,11 @@ def _region_covers(rg, x, y):
 
 
 def targets(board, op, board_path=None, opts=None):
-    """([{ref, W, side, sink_side}], report rows): the parts that need thermal vias. Empty when
-    thermal_vias is 0 or the operating facts name no region sink or no hot part."""
+    """([{ref, W, side, sink_side, mode}], report rows): the parts that get thermal vias: every part
+    the operating facts give at least `heat_min_W` (P_sustained_W). mode "sink": a region sink on
+    the other face covers it (vias into the sink face's copper); "both faces": none does (vias
+    stitch its net's pours on both outer faces, so heat leaves the board from both by convection).
+    Empty when thermal_vias is 0, or without operating facts or a hot part."""
     from kae.place import heat
     if not op or float(CN.setting("thermal_vias", board_path, opts)) <= 0:
         return [], []
@@ -68,8 +88,6 @@ def targets(board, op, board_path=None, opts=None):
     clip = {h.get("part") for h in sinks if h.get("part")}
     w_min = float(CN.setting("heat_min_W", board_path, opts))
     hot = {r: w for r, w in heat.watts(op).items() if w >= w_min}
-    if not regions or not hot:
-        return [], []
     by_ref = {f.ref: f for f in board.footprints}
     out, rows = [], []
     for ref, w in sorted(hot.items(), key=lambda kv: -kv[1]):
@@ -77,17 +95,13 @@ def targets(board, op, board_path=None, opts=None):
         if f is None:
             rows.append(dict(part=ref, skipped="no such part"))
             continue
-        if ref in clip:
-            rows.append(dict(part=ref, skipped="part sink: cooled from the top, no vias needed"))
-            continue
         side = "top" if f.side == "F" else "bottom"
-        over = [h for h in regions if _region_covers(h["region"], f.x, f.y)]
-        other = [h for h in over if h["side"] != side]
-        if not other:
-            rows.append(dict(part=ref, skipped="region sink on the part's own face: no vias needed" if over
-                             else "no region sink under the part"))
-            continue
-        out.append(dict(ref=ref, W=w, side=side, sink_side=other[0]["side"]))
+        other = [h for h in regions if h["side"] != side and _region_covers(h["region"], f.x, f.y)]
+        t = dict(ref=ref, W=w, side=side, sink_side="bottom" if side == "top" else "top",
+                 mode="sink" if other else "both faces")
+        if ref in clip:
+            t["note"] = "part sink on top as well"
+        out.append(t)
     return out, rows
 
 
@@ -143,7 +157,8 @@ def place(sp, board, tgts, fills, board_path=None, opts=None, log=_log):
         own = sp.cu[0] if t["side"] == "top" else sp.cu[-1]
         sink = sp.cu[0] if t["sink_side"] == "top" else sp.cu[-1]
         pads = [p for p in sp.pads_by_fp.get(f.uuid, []) if p.kind == "pad" and p.net and own in p.layers]
-        row = dict(part=t["ref"], W=t["W"], sink_face=sink, vias=0, nets={}, notes=[])
+        row = dict(part=t["ref"], W=t["W"], mode=t.get("mode", "sink"), to_face=sink, vias=0, nets={},
+                   notes=[t["note"]] if t.get("note") else [])
         rows.append(row)
         if not pads:
             row["notes"].append(f"no pads with a net on {own}")
@@ -159,10 +174,17 @@ def place(sp, board, tgts, fills, board_path=None, opts=None, log=_log):
         for net in order:
             if n_part >= vmax:
                 break
-            if not sp.zones_of(net, sink):
-                if tp is not None and net == tp.net:
-                    row["notes"].append(f"{net} (thermal pad): no copper (zone) on {sink}, the sink face: no vias "
-                                        f"for it")
+            thermal = tp is not None and net == tp.net
+            on_sink, on_own = bool(sp.zones_of(net, sink)), bool(sp.zones_of(net, own))
+            # a pad other than the thermal pad reaches a via only through its pour; without a plate the
+            # vias stitch the net's pours on both faces, so the net needs pour on both
+            need_own = t["mode"] == "both faces" or not thermal
+            if not on_sink or (need_own and not on_own):
+                if thermal or on_sink or on_own:
+                    where = (f"pour on {own if on_own else sink} only" if on_own or on_sink
+                             else f"no pour on {own} or {sink}")
+                    row["notes"].append(f"{net}{' (thermal pad)' if thermal else ''}: {where}: no copper on the "
+                                        f"other face, no vias")
                 continue
             under = unary_union(_pieces(fills, net, sink)) if _pieces(fills, net, sink) else None
             if under is None:
@@ -173,10 +195,6 @@ def place(sp, board, tgts, fills, board_path=None, opts=None, log=_log):
             ok_sink = under.buffer(-rv)
             got = dict(in_pad=0, around=0)
             net_pads = [p for p in pads if p.net == net]
-            if net != (tp.net if tp is not None else None) and not sp.zones_of(net, own):
-                # a pad that is no thermal pad helps only through a pour on its own face
-                row["notes"].append(f"{net}: no zone on {own}: not a pour net, no vias")
-                continue
             # 1. inside the exposed pad (an SMD pad; a plated hole is a barrel already)
             if tp is not None and net == tp.net and in_pad_ok and tp.smd and tp.hole is None:
                 inner = tp.geom.buffer(-rv - 0.05)
@@ -221,11 +239,60 @@ def place(sp, board, tgts, fills, board_path=None, opts=None, log=_log):
                 row["notes"].append(f"{net}: no fill on {own} and no via in its pad")
             row["nets"][net] = got
         row["vias"] = n_part
+        if n_part:
+            row["notes"] += _path_notes(sp, board_path, tp, own, row, added)
         if not n_part and not row["nets"]:
-            row["notes"].append(f"no pad net of the part is poured on {sink} (and on {own}, outside a thermal pad)")
-        log(f"{t['ref']} ({t['W']} W, sink on {sink}): {n_part} vias {row['nets']}"
+            row["notes"].append(f"no pad net of the part is poured on both {own} and {sink}")
+        log(f"{t['ref']} ({t['W']} W, {row['mode']}, to {sink}): {n_part} vias {row['nets']}"
             + (f" [{'; '.join(row['notes'])}]" if row["notes"] else ""))
     return added, rows
+
+
+def _path_notes(sp, board_path, tp, own, row, added):
+    """What in the board's own settings chokes the heat path the vias open, reported, never changed:
+    - the thermal pad joined to its pour through thermal reliefs (the pad's or zone's setting). For
+      exposed pads and thermal vias the sources ask for a solid connection (TI PowerPAD [4]); a
+      relief is ~18 K/W per pad (the report's calc), more than a 2-layer board's spreading floor;
+    - a custom rule giving vias a zone connection other than solid (KiCad connects vias solid by
+      default);
+    - vias in the pad left untented on the component side: TI asks to cap them there (mask = drill +
+      0.1 mm); tenting only from the far side raised voiding [4][5];
+    - a drill outside the 0.25-0.33 mm sweet spot."""
+    out = []
+    mine = [v for v in added if v.owner == ("thermal_via", row["part"])]
+    if tp is not None:
+        k = getattr(tp, "idx", None)
+        pd = (sp.info.get("pads") or [])[k] if k is not None else {}
+        for z in sp.info.get("zones") or []:
+            if z.get("net") != tp.net or own not in (z.get("layers") or []) or z.get("rule_area"):
+                continue
+            conn = pd.get("zone_connection") or "inherited"
+            if conn == "inherited":
+                conn = z.get("pad_connection") or "thermal"
+            if conn == "thermal" or (conn == "thru_hole_only" and pd.get("attr") == "pth"):
+                out.append(f"thermal pad {tp.owner[1]} joins its {own} pour through thermal reliefs (the "
+                           f"board's pad/zone setting, kept): the heat path on {own} is choked")
+                break
+    if board_path:
+        dru = Path(board_path).with_suffix(".kicad_dru")
+        try:
+            txt = dru.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            txt = ""
+        if "zone_connection" in txt and "via" in txt.lower():
+            out.append("the board's custom rules set a zone connection that may name vias: if it gives them "
+                       "reliefs, the vias are choked (kept as the board says)")
+    in_pad = sum(1 for v in mine if tp is not None and tp.geom.contains(v.geom))
+    tent = (sp.settings or {}).get("tent_vias_front" if own == sp.cu[0] else "tent_vias_back", True)
+    if in_pad and tent is False:
+        out.append(f"{in_pad} vias in the pad untented on {own}, the component side (board setting): cap or plug "
+                   f"them against solder wicking")
+    drills = sorted({round(v.drill, 3) for v in mine})
+    row["via_mm"] = sorted({(round(v.width, 3), round(v.drill, 3)) for v in mine})
+    if any(d < DRILL_MM[0] - 1e-9 or d > DRILL_MM[1] + 1e-9 for d in drills):
+        out.append(f"via drill {drills} mm (the board's via rule) is outside the {DRILL_MM[0]}-{DRILL_MM[1]} mm "
+                   f"sweet spot for unfilled thermal vias")
+    return out
 
 
 def _too_close(added, x, y, pitch):
