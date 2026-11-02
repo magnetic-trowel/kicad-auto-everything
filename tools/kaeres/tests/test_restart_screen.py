@@ -61,3 +61,18 @@ def test_halving_promotes_the_top_half_then_resumes_the_best():
     assert (c["id"], r, src) == (1, 1, 1)    # the best judged board, at the top rung
     s = h.summary()
     assert [len(x["rungs"]) for x in s["candidates"]] == [1, 2, 1, 2] and s["budgets"] == [100, 200]
+
+
+def test_outside_reads_only_edge_cuts_graphics(tmp_path):
+    """A silk graphic before an Edge.Cuts one widened the outline to it (mulcmu-plimsoll-3:
+    (100,100)-(142,150) read as (-2.95,-2.85)-(142,150)), so a part staged there was not outside."""
+    b = tmp_path / "board.kicad_pcb"
+    b.write_text('(kicad_pcb\n'
+                 '\t(gr_line (start -3 -3) (end 0 0) (stroke (width 0.1) (type solid)) (layer "F.SilkS") (uuid "s"))\n'
+                 '\t(gr_text "x" (at -3 -3) (layer "F.SilkS"))\n'
+                 '\t(gr_rect (start 100 100) (end 142 150) (stroke (width 0.1) (type solid)) (fill none) (layer "Edge.Cuts"))\n'
+                 '\t(footprint "R" (layer "F.Cu") (at 120 120) (pad "1" smd rect (at 0 0) (size 1 1)))\n'
+                 '\t(footprint "R" (layer "F.Cu") (at 10 10) (pad "1" smd rect (at 0 0) (size 1 1)))\n'
+                 '\t(footprint "R" (locked yes) (layer "F.Cu") (at 20 10) (pad "1" smd rect (at 0 0) (size 1 1)))\n'
+                 '\t(footprint "R" (layer "F.Cu") (at 200 120) (pad "1" smd rect (at 0 0) (size 1 1)))\n)\n')
+    assert restart.outside(b) == 2  # the parts at (10, 10) and (200, 120); the locked one may overhang

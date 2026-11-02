@@ -193,13 +193,47 @@ def overlaps(report):
 NUM = r"(-?[0-9.]+)"
 
 
+def block(txt, i):
+    """The S-expression block opening at txt[i] == "(" (to the end of txt if it never closes)."""
+    d, j, n, in_str = 0, i, len(txt), False
+    while j < n:
+        c = txt[j]
+        if in_str:
+            if c == "\\":
+                j += 1
+            elif c == '"':
+                in_str = False
+        elif c == '"':
+            in_str = True
+        elif c == "(":
+            d += 1
+        elif c == ")":
+            d -= 1
+            if d == 0:
+                return txt[i:j + 1]
+        j += 1
+    return txt[i:]
+
+
+def edge_cuts_graphics(txt):
+    """Board graphics (gr_line/arc/rect/poly/circle) on Edge.Cuts, each its own block. A regex from
+    a graphic to the next `(layer "Edge.Cuts")` took in every graphic on another layer before an
+    Edge.Cuts one (mulcmu-plimsoll-3: outline (100,100)-(142,150) read as (-2.95,-2.85)-(142,150);
+    6 of 115 corpus boards inflated), so parts staged on that side were not counted outside."""
+    for m in re.finditer(r"\((?:gr_line|gr_arc|gr_rect|gr_poly|gr_circle)\b", txt):
+        blk = block(txt, m.start())
+        lay = re.search(r'\(layer "?([^"\s)]*)', blk)
+        if lay and lay.group(1) == "Edge.Cuts":
+            yield blk
+
+
 def outside(board):
     """Unlocked footprints with pads whose anchor lies outside the Edge.Cuts bounding box (a part left staged
     off the board, which DRC does not flag): a cheap stand-in for the harness's legality check.
     Locked parts are the task's fixed interface and may overhang the edge."""
     txt = board.read_text(errors="replace")
-    pts = [(float(x), float(y)) for m in re.finditer(r"\((?:gr_line|gr_arc|gr_rect|gr_poly|gr_circle)\b(.*?)\(layer \"Edge\.Cuts\"\)", txt, re.S)
-           for x, y in re.findall(r"\((?:start|end|mid|xy|center) " + NUM + " " + NUM, m.group(1))]
+    pts = [(float(x), float(y)) for blk in edge_cuts_graphics(txt)
+           for x, y in re.findall(r"\((?:start|end|mid|xy|center) " + NUM + " " + NUM, blk)]
     if not pts:
         return 0
     x0, x1 = min(p[0] for p in pts), max(p[0] for p in pts)
