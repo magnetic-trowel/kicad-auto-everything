@@ -24,6 +24,7 @@ import argparse
 import concurrent.futures
 import difflib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -56,6 +57,17 @@ FUNCTIONS: set = set()
 DEPRECATED_FUNCTIONS: dict = {}
 MASTER_ONLY_FUNCTIONS: set = set()
 PROPERTIES: set = set()
+BOARD_LAYERS: set = set()   # a board's own layer names (user names such as "L1_TOP.Cu"), see board_layers()
+
+
+def board_layers(pcb: Path) -> set:
+    """Canonical and user layer names declared in a .kicad_pcb's (layers ...) block."""
+    head = Path(pcb).read_text(encoding="utf-8", errors="ignore")[:200000]
+    m = re.search(r"\(layers\b(.*?)\n\s*\)", head, re.S)
+    names = set()
+    for line in (m.group(1) if m else "").splitlines():
+        names.update(re.findall(r'"([^"]+)"', line))
+    return names
 
 
 def use_vocab(label: str | None = None) -> str:
@@ -519,7 +531,7 @@ def _check_rule(node: Node, issues: list) -> str:
         if h == "severity" and v.text not in SEVERITIES:
             issues.append(Issue(v.line, v.col, "error", f"severity '{v.text}' not one of "
                                                         f"{', '.join(sorted(SEVERITIES))}", name))
-        elif h == "layer" and not _LAYER.fullmatch(v.text):
+        elif h == "layer" and not _LAYER.fullmatch(v.text) and v.text not in BOARD_LAYERS:
             issues.append(Issue(v.line, v.col, "error", f"layer '{v.text}' is not a KiCad layer name "
                                                         f"(e.g. \"F.Cu\", \"In1.Cu\", \"F.Courtyard\", outer, inner)", name))
         elif h == "condition":
@@ -624,14 +636,29 @@ class KicadResult:
     empty: bool = False                             # no rules or other forms: nothing to load
 
 
-def _kicad_accepts(cli: list, rules_text: str, tmp: Path) -> tuple[bool, str]:
+# On a real board the sentinel is a rule every board breaks: a 1 m minimum track width or
+# edge clearance (layer names, stackup and nets are then the board's own).
+_BOARD_SENTINELS = (f'(rule "{SENTINEL}" (constraint track_width (min 1000mm)))\n'
+                    f'(rule "{SENTINEL}_edge" (constraint edge_clearance (min 1000mm)))')
+
+
+def _kicad_accepts(cli: list, rules_text: str, tmp: Path, board: Path | None = None,
+                   timeout: int = 300) -> tuple[bool, str]:
     d = Path(tempfile.mkdtemp(dir=tmp))
-    (d / "probe.kicad_pcb").write_text(_PROBE_PCB)
-    (d / "probe.kicad_pro").write_text("{}\n")
-    (d / "probe.kicad_dru").write_text(rules_text.rstrip("\n") + "\n" + _SENTINEL_RULE + "\n")
+    if board:
+        board = Path(board)
+        os.symlink(board.resolve(), d / "probe.kicad_pcb")
+        pro = board.with_suffix(".kicad_pro")
+        (d / "probe.kicad_pro").write_text(pro.read_text() if pro.exists() else "{}\n")
+        sentinel = _BOARD_SENTINELS
+    else:
+        (d / "probe.kicad_pcb").write_text(_PROBE_PCB)
+        (d / "probe.kicad_pro").write_text("{}\n")
+        sentinel = _SENTINEL_RULE
+    (d / "probe.kicad_dru").write_text(rules_text.rstrip("\n") + "\n" + sentinel + "\n")
     out = d / "drc.json"
     r = subprocess.run([*cli, "pcb", "drc", "--format", "json", "-o", str(out), str(d / "probe.kicad_pcb")],
-                       capture_output=True, text=True, timeout=300)
+                       capture_output=True, text=True, timeout=timeout)
     if not out.exists():
         raise RuntimeError(f"kicad-cli wrote no report (rc {r.returncode}): {r.stderr.strip()[-400:]}")
     rep = json.loads(out.read_text())
@@ -639,8 +666,11 @@ def _kicad_accepts(cli: list, rules_text: str, tmp: Path) -> tuple[bool, str]:
     return hit, rep.get("kicad_version", "")
 
 
-def kicad_check(text: str, cli: list | None = None, workers: int = 8) -> KicadResult:
-    """Ask KiCad itself whether it loads `text`; if not, find the rules it rejects."""
+def kicad_check(text: str, cli: list | None = None, workers: int = 8, board: Path | None = None,
+                timeout: int = 300) -> KicadResult:
+    """Ask KiCad itself whether it loads `text`; if not, find the rules it rejects. With
+    `board`, the check runs on that board (its layer names, stackup and project file) with a
+    full DRC per probe, instead of on the built-in two-track probe board."""
     if cli is None:
         from kae.route.drc import kicad_cli
         cli = kicad_cli()
@@ -649,12 +679,13 @@ def kicad_check(text: str, cli: list | None = None, workers: int = 8) -> KicadRe
     base = Path(tempfile.gettempdir())
     with tempfile.TemporaryDirectory(dir=base) as tmp:
         tmp = Path(tmp)
-        ok, ver = _kicad_accepts(cli, text, tmp)
+        ok, ver = _kicad_accepts(cli, text, tmp, board, timeout)
         if ok:
             return KicadResult(True, version=ver)
         rules = rule_spans(text)
         with concurrent.futures.ThreadPoolExecutor(max(1, workers)) as ex:
-            alone = list(ex.map(lambda r: _kicad_accepts(cli, "(version 1)\n" + r[2], tmp)[0], rules))
+            alone = list(ex.map(lambda r: _kicad_accepts(cli, "(version 1)\n" + r[2], tmp, board, timeout)[0],
+                                rules))
         culprits = [(name, line) for (name, line, _), good in zip(rules, alone) if not good]
         return KicadResult(False, culprits, outside_rules=not culprits, version=ver)
 
@@ -665,6 +696,8 @@ def add_arguments(ap: argparse.ArgumentParser):
     ap.add_argument("--kicad", default="auto", choices=("auto", "on", "off"),
                     help="also run KiCad's own parser (auto: when kicad-cli is found)")
     ap.add_argument("--strict", action="store_true", help="treat warnings as errors")
+    ap.add_argument("--board", help="run the KiCad pass on this .kicad_pcb (its layer names and project "
+                                    "file count; slower: a full DRC per probe)")
     ap.add_argument("--vocab", help="KiCad vocabulary label for the static pass (default: the installed "
                                     "KiCad's, else the newest bundled release)")
 
@@ -687,6 +720,8 @@ def run(a) -> int:
             print(f"warning: no bundled vocabulary for KiCad {ver}; static pass uses the newest one. "
                   f"Generate it: python -m kae.board.dru_vocab fetch <tag>; ... sync <src> <major.minor> --verify")
     label = use_vocab(label)
+    global BOARD_LAYERS
+    BOARD_LAYERS = board_layers(a.board) if a.board else set()
     worst = 0
     for f in a.files:
         text = sys.stdin.read() if f == "-" else Path(f).read_text(encoding="utf-8", errors="replace")
@@ -699,7 +734,7 @@ def run(a) -> int:
             print(f"{f}: no static problems (vocabulary {label})")
         if cli:
             try:
-                res = kicad_check(text, cli)
+                res = kicad_check(text, cli, board=a.board, timeout=3600 if a.board else 300)
             except Exception as e:
                 print(f"{f}: error: KiCad pass failed to run: {e}")
                 return 2
