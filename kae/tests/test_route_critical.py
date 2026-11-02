@@ -985,3 +985,20 @@ def test_writer_edits_kicad6_files_with_spaces_and_tstamps(tmp_path):
     W.edit(src, dst, remove=["11111111-1111-1111-1111-111111111111", "33333333-3333-3333-3333-333333333333"])
     text = dst.read_text()
     assert "1111" not in text and "3333" not in text and "2222" in text and "(arc (start 1 1)" in text
+
+
+def test_recheck_pairs_an_unpaired_decap_with_its_nearest_power_pin(routed, tmp_path):
+    """A nearest_pin decap's capacitor is priced at the IC power pin nearest it, as the
+    module stage and the place terms pair it, not at power_pins[0] (helios U4: caps 0.9 mm
+    from their pins were priced at pin 1, 6-8 mm away)."""
+    from kae.board.kicad_file import load
+    from kae.route import critical_recheck as R
+    dst = tmp_path / "b.kicad_pcb"
+    routed.write(dst)
+    b = load(dst)
+    rb = R.RoutedBoard(b, fills=None, brief=routed.brief)
+    uid = {f.ref: f.uuid for f in b.footprints}
+    s = dict(kind="decap", ic=uid["U2"], rail="+3V3", ground="GND", power_pins=["4", "8"], caps=[uid["C3"]],
+             pairing="nearest_pin", pin_caps={})
+    pairs, _ = R.decap_pairs(rb, s)
+    assert [(p, c) for p, c, _ in pairs] == [("8", uid["C3"])]
