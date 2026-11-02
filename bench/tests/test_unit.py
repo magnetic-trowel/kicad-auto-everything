@@ -490,6 +490,36 @@ def test_capped_drc_types_are_flagged():
     assert score._uncapped("unused.kicad_pcb", 12) == (12, False)  # below the cap: DRC's own count
 
 
+def _project(d, severity):
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "board.kicad_pro").write_text(json.dumps(
+        {"board": {"design_settings": {"rule_severities": {"unconnected_items": severity}}}}))
+    return d / "board.kicad_pcb"
+
+
+def test_unconnected_is_counted_where_the_project_ignores_it(tmp_path, monkeypatch):
+    """A project with "unconnected_items": "ignore" makes DRC report none: the start and every
+    output read 0 and an empty output scored complete (gamaphy-freedom-rp2040). Both are then
+    counted by pcbnew's connectivity, the same way."""
+    counts = {}
+    monkeypatch.setattr(tools, "run_ops", lambda op, board, *a: dict(unconnected=counts[Path(board).parent.name]))
+    ign, warn = _project(tmp_path / "ign", "ignore"), _project(tmp_path / "warn", "warning")
+    counts.update(ign=40, warn=99)
+    assert boardfiles.unconnected_ignored(ign) and not boardfiles.unconnected_ignored(warn)
+    assert not boardfiles.unconnected_ignored(tmp_path / "none" / "board.kicad_pcb")
+    assert score._uncapped(ign, 0) == (40, False)
+    assert score._uncapped(warn, 0) == (0, False)  # a warning is still reported by DRC (--severity-all)
+    cache = tmp_path / "ign" / "unconnected.json"
+    assert score._uncapped(ign, 0, cache=cache) == (40, False) and json.loads(cache.read_text()) == {"unconnected": 40}
+    counts["ign"] = 1
+    assert score._uncapped(ign, 0, cache=cache) == (40, False)  # the start's cache
+    # prepare: the human layout and the task start are counted the same way
+    from kaebench import prepare
+    monkeypatch.setattr(tools, "run_drc", lambda b, o: dict(violations=[], unconnected_items=[]))
+    assert prepare._drc(ign, None)["unconnected"] == 1
+    assert prepare._drc(warn, None)["unconnected"] == 0
+
+
 def test_tools_get_absolute_paths_under_a_relative_workdir(tmp_path, monkeypatch):
     """Methods and Freerouting run with cwd=<attempt dir>, so relative paths would miss."""
     monkeypatch.chdir(tmp_path)

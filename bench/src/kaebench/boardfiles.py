@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Board file handling: project file sets and raw S-expression checks."""
 import hashlib
+import json
 import re
 import shutil
 from pathlib import Path
@@ -12,6 +13,17 @@ PROJECT_EXTS = (".kicad_pro", ".kicad_dru")
 
 def board_path(d):
     return Path(d) / f"{STEM}.kicad_pcb"
+
+
+def unconnected_ignored(board):
+    """True when the project beside `board` sets the unconnected_items check to "ignore". KiCad's
+    DRC then reports no unconnected items at all, even with --severity-all (DRC_ENGINE::RunTests
+    gives an ignored check an error limit of 0), so a DRC count says nothing about connectivity."""
+    try:
+        pro = json.loads(Path(board).with_suffix(".kicad_pro").read_text(encoding="utf-8"))
+        return pro["board"]["design_settings"]["rule_severities"]["unconnected_items"] == "ignore"
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
 
 
 def install_rules(rules_dir, dest_dir):
