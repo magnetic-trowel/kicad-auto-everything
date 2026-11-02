@@ -1102,3 +1102,15 @@ def test_rail_design_current_keeps_its_margin_without_a_source_rating(tmp_path, 
     for r in plan:
         total = sum(r["loads"].values())
         assert r["design"] == pytest.approx(max(3.0 * total, total + 0.1))
+
+
+def test_board_physics_names_a_module_kind_without_a_routed_value(monkeypatch):
+    from types import SimpleNamespace as NS
+    from kae.route import critical_recheck as CR
+    from kae.route import critical_modules as CM
+    from kae.board.kicad_file import load
+    from pathlib import Path
+    b = load(Path(__file__).parent / "data" / "board" / "fixture.kicad_pcb")
+    monkeypatch.setattr(CM, "modules_from_brief", lambda brief, kinds: [NS(id="g1", kind="rgroup", spec={})])
+    out = CR.board_physics(b, brief={"nets": {}, "parts": {}}, fills=None, terms={}, rails=False)
+    assert out["g1"]["error"] == "no routed value for kind 'rgroup'"

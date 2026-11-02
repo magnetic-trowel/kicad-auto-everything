@@ -620,6 +620,9 @@ def board_physics(board, brief=None, fills="kicad", kinds=("cell", "path", "deca
         if window is not None and not _in_window(rb, m, window):
             continue
         fn = VALUES.get(m.kind)
+        if fn is None and m.kind != "decap":
+            out[m.id] = dict(kind=m.kind, error=f"no routed value for kind {m.kind!r}")
+            continue
         try:
             if m.kind == "decap":
                 v, extra = decap_values(rb, m.spec, place_structs(terms, m.id), allocation(actx, m))
