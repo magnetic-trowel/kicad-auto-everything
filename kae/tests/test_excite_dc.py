@@ -84,3 +84,16 @@ def test_ics_on_boards_without_pin_data_draw_from_their_rails():
     assert not DC.draws_from([("1", "+3V3", "power_out", "3V3")], "+3V3", rails)     # its output, not a draw
     assert not DC.draws_from([("1", "PWRSTAT", "", "")], "PWRSTAT", set())           # a status line
     assert not DC.draws_from([("1", "VBAT", "", "")], "+3V3", rails)                 # no pad on that rail
+
+
+def test_a_charger_drawing_from_a_rail_is_not_heated_by_what_it_passes_on():
+    """An MCU's draw is its heat; a charger's or regulator's draw goes on to a battery or another
+    rail, so it adds no V*I heat as a load (its own loss is a feed's conversion loss)."""
+    from types import SimpleNamespace
+    from kae.excite import heat as HT
+    pl = DC.Plan()
+    pl.loads = [dict(ref="U1", rail="VBUS", key=("dc:U1@VBUS", "I_A")), dict(ref="U2", rail="VBUS", key=("dc:U2@VBUS", "I_A"))]
+    pl.volts = {"VBUS": 5.0}
+    bd = SimpleNamespace(part_kind={"U1": ("ic", "mcu", "mcu"), "U2": ("ic", "charger", "charger")})
+    heat = HT.part_heat(bd, pl, {("dc:U1@VBUS", "I_A"): 0.1, ("dc:U2@VBUS", "I_A"): 0.5}, {}, {})
+    assert heat == {"U1": pytest.approx(0.5)}

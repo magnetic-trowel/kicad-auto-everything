@@ -27,6 +27,10 @@ T_MAX = {"ic": 125.0, "module": 85.0, "diode": 125.0, "transistor": 125.0, "indu
          "capacitor": 105.0, "resistor": 125.0, "ferrite": 125.0, "led": 85.0, "connector": 85.0}
 V_F = (0.3, 0.4, 0.5)           # V, a small Schottky's forward drop (lo, typ, hi)
 R_ON = (0.03, 0.1, 0.3)         # ohm, an integrated switch's on-resistance without a datasheet value
+# parts that pass the power they draw on to another rail or a battery: what they draw is not their heat
+# (a charger's or regulator's own loss is its conversion loss, kae.excite.dc's feeds)
+PASS_ON = ("charger", "regulator_linear", "regulator_switching", "regulator_module", "pmic", "load_switch",
+           "charge_pump")
 
 
 def _theta_jb(npins):
@@ -85,7 +89,8 @@ def part_heat(bd, dcp, cv, val, inj, ac_parts=None, losses=None):
                 losses[ref] = losses.get(ref, 0.0) + w
     xs = DC.load_currents(dcp, cv)
     for ld, x in zip(dcp.loads, xs):
-        if (bd.part_kind.get(ld["ref"], ("",))[0]) != "connector":
+        pk = bd.part_kind.get(ld["ref"], ("", None))
+        if pk[0] != "connector" and (pk[1] if len(pk) > 1 else None) not in PASS_ON:
             add(ld["ref"], x * (dcp.volts.get(ld["rail"]) or 0.0), loss=False)
     for r, f in dcp.feeds.items():
         if f["kind"] == "cell":
@@ -151,6 +156,27 @@ def evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, tot, 
     ncp = n_corners + 3
     hc = corners(hp, n=n_corners, seed=seed + 2)
     own = corners(dcp.params, n=n_corners, seed=seed + 1) if dcp.params else [{} for _ in range(ncp)]
+    # a package's thermal time constant is seconds: its temperature follows the sustained draw, not a
+    # radio's transmit burst or a boot peak, so the loads' currents sit at their typical point here (the
+    # corners still span cooling, ambient, theta and the converters' operating points; the DC band keeps
+    # the peaks for drop and heating of the copper)
+    # A connector's export current that nothing states (a class prior, a tenth of its rating) is not
+    # evidence of heat: a header's 3V3 pin usually feeds a sensor. Temperatures take such exports at
+    # their low end (1% of the rating), so a guess cannot make a regulator overheat; a stated one counts.
+    sustained = dict(own[0])
+    exports = {ld["key"] for ld in dcp.loads if ld.get("key") and bd.part_kind.get(ld["ref"], ("",))[0] == "connector"}
+    for p in dcp.params:
+        if p.name != "I_A" or not str(p.subject).startswith("dc:"):
+            continue
+        ref = p.subject[3:].rsplit("@", 1)[0]
+        iv = ((intent or {}).get("parts") or {}).get(ref, {}).get("I_sustained_A")
+        if isinstance(iv, (int, float)) and iv >= 0:      # the intent's typical draw (its datasheet's)
+            sustained[(p.subject, p.name)] = min(max(float(iv), p.lo), p.hi)
+        elif (p.subject, p.name) in exports and p.source == "prior":
+            sustained[(p.subject, p.name)] = p.lo
+    for c in range(len(own)):
+        own[c] = dict(own[c])
+        own[c].update({k: v for k, v in sustained.items() if k[1] == "I_A" and str(k[0]).startswith("dc:")})
     cvs = []
     for c in range(ncp):
         cv = dict(own[c])

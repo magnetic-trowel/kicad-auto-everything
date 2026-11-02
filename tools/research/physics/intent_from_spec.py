@@ -3,7 +3,7 @@
 """A board's two structured inputs from its spec (numbers a model or a designer states about the board):
 
   OPERATING  kae.excite.evaluate --intent: what the board does electrically. cells.<cell id>.{V_V,
-             f_sw_Hz, I_A, t_i_s}, parts.<ref>.I_A (loads and output connectors), nets.<rail>.source,
+             f_sw_Hz, I_A, t_i_s}, parts.<ref>.{I_A, I_sustained_A} (loads and output connectors; the sustained draw sets temperatures), nets.<rail>.source,
              requirements.thermal.T_amb_C. Each replaces one of the evaluator's priors.
   INTENT     kae.intent: what matters. Standing priorities on every board (copper loss = power loss and
              efficiency; ripple), the spec's limits (rail tolerance -> drop.rail, rail and IC ripple ->
@@ -227,6 +227,9 @@ def compile_spec(spec, summary):
             lo, hi = (typ or mx) * (0.5 if typ else 0.3), (mx or typ * 2)
             op["parts"][r] = {"I_A": [round(min(lo, hi), 6), round(max(lo, hi), 6)]}
             opwhy[f"parts.{r}.I_A"] = why(l, "load current")
+            if typ:                                    # what heats the part: its typical draw, not the peak
+                op["parts"][r]["I_sustained_A"] = round(min(typ, max(lo, hi)), 6)
+                opwhy[f"parts.{r}.I_sustained_A"] = why(l, "sustained (typical) load current, for temperatures")
     # converters: the brief's switching cells
     for i, c in enumerate(spec.get("converters") or []):
         w = f"converters[{i}]"
@@ -291,7 +294,7 @@ def compile_spec(spec, summary):
                                   f"({app:g} A per pad)")
                 I = cap
         if c.get("direction") == "output" and I:
-            op["parts"][ref] = {"I_A": [round(0.5 * I, 6), round(1.5 * I, 6)]}
+            op["parts"][ref] = {"I_A": [round(0.5 * I, 6), round(1.5 * I, 6)], "I_sustained_A": round(I, 6)}
             opwhy[f"parts.{ref}.I_A"] = why(c, f"export current ({c.get('function') or 'output'})")
         L = S.num(c, "cable_length_m", "m", w)
         if L:
