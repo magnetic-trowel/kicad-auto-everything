@@ -743,6 +743,8 @@ def _job_group(bid, row, hc, kae, items, human, ws, env, log, kicad, a, size):
     tids = {}  # one task per kind; the route task keeps the id it had before other kinds existed
     for kind in kinds:
         task_recipe = dict(board_sha256=record.get("pcb_sha256"), task_spec=record.get("task_spec"), kind=kind, kicad=kicad)
+        if row.get("dru_fix"):  # rules file repaired in the corpus (dru_fixes.py): a different task
+            task_recipe["dru_fix"] = row["dru_fix"]["sha256_after"] or "removed"
         tids[kind] = ident(task_recipe)
         tdir = board_dir(bid) / "tasks" / tids[kind]
         if not (tdir / "task.json").exists():
