@@ -340,7 +340,7 @@ def test_jobs_run_at_nice_19_and_sched_idle(kq, tmp_path):
     assert cls == "IDL" and ni in ("19", "-")  # ps prints "-" for the nice of SCHED_IDLE on some versions
 
 
-LEASE = dict(lease_release_frac=0.25, mem_overrun=1.5, lease_release_gb=2.0, lease_release_after_s=120, lease_margin_mb=512, lease_step_gb=1.0,
+LEASE = dict(warmup_s=300, lease_release_frac=0.25, mem_overrun=1.5, lease_release_gb=2.0, lease_release_after_s=120, lease_margin_mb=512, lease_step_gb=1.0,
              lease_step_frac=0.25, lease_stall_s=900)
 
 
@@ -348,12 +348,13 @@ def test_lease_plan_grows_by_priority_trims_idle_grants_and_stalls_the_rest(kq):
     jobs = [dict(id=1, prio=0, started=10, grant=4096, use=4000),     # at its grant
             dict(id=2, prio=0, started=20, grant=4096, use=3900),     # at its grant, younger
             dict(id=3, prio=0, started=5, grant=20480, use=1024, slack_since=1.0)]  # holds far more than it uses
-    p = kq.lease_plan(jobs, 500.0, LEASE, now=200.0)
+    assert kq.lease_plan(jobs, 500.0, LEASE, now=200.0)["grants"][3] == 20480   # under 5 min old: kept
+    p = kq.lease_plan(jobs, 500.0, LEASE, now=400.0)
     assert p["grants"][3] == pytest.approx(2048)            # trimmed to use + 1 GB: 18 GB freed
     assert p["grants"][1] == pytest.approx(4096 + 1024)     # the older job first, one step of max(1 GB, 25%)
     assert p["grants"][2] == pytest.approx(4096 + 1024)
     assert p["stalled"] == [] and p["victim"] is None
-    p = kq.lease_plan(jobs[:2], 1200.0, LEASE, now=200.0)   # room for one step: the older job gets it
+    p = kq.lease_plan(jobs[:2], 1200.0, LEASE, now=400.0)   # room for one step: the older job gets it
     assert p["grants"][1] > 4096 and p["grants"][2] == 4096 and p["stalled"] == [2]
 
 
@@ -406,7 +407,7 @@ def test_lease_stalls_a_job_at_its_grant_instead_of_killing_it(kq, tmp_path):
 
 
 def test_lease_gives_back_what_a_job_no_longer_uses(kq, tmp_path):
-    d = _lease_daemon(kq, tmp_path, lease_release_gb=0.5, lease_release_after_s=2)
+    d = _lease_daemon(kq, tmp_path, lease_release_gb=0.5, lease_release_after_s=2, warmup_s=0)
     submit(kq, HOG.format(n=8, after="a.clear()\n", hold=30), name="hog", mem="300M", timeout="2m")
     drive(kq, d, lambda: d.c.execute("SELECT grant_mb FROM jobs").fetchone()[0] >= 2000, secs=40)
     drive(kq, d, lambda: d.c.execute("SELECT grant_mb FROM jobs").fetchone()[0] <= 1200, secs=30)

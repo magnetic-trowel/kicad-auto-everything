@@ -539,7 +539,7 @@ def cg_set_high(cg, mb):
 def lease_plan(jobs, free_mb, cfg, now):
     """One pass of the memory leases. jobs: [{id, prio, started, grant, use, slack_since, stall_since}] (MB, s);
     free_mb: memory nobody holds (free minus the reserve, minus every grant's unused part). Grants far above use
-    for a while are trimmed (that memory is free again); jobs near their grant get one more step each, by
+    for a while (and past the job's first warmup_s) are trimmed (that memory is free again); jobs near their grant get one more step each, by
     priority then age, while memory is free; the rest are stalled (the kernel holds them at their grant). A job
     stalled lease_stall_s with nothing freeing names a victim among jobs of no higher priority: the one furthest
     past mem_overrun x its declared --mem ("declared", MB; a runaway), else the newest other job (a job within its declaration that only
@@ -551,7 +551,8 @@ def lease_plan(jobs, free_mb, cfg, now):
     rel = cfg["lease_release_gb"] * 1024
     for j in jobs:
         g, u = grants[j["id"]], j["use"]
-        if g - u > max(rel, cfg.get("lease_release_frac", 0.25) * u):
+        young = now - (j["started"] or now) < cfg.get("warmup_s", 300)   # still growing into its declared --mem
+        if g - u > max(rel, cfg.get("lease_release_frac", 0.25) * u) and not young:
             slack[j["id"]] = slack[j["id"]] or now
             if now - slack[j["id"]] >= cfg["lease_release_after_s"]:
                 ng = max(u * 1.25, u + 1024)
