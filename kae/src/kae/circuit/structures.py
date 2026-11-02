@@ -731,7 +731,9 @@ def _converter(b: _B, L, lpart, swn, other):
     return _struct('commutation_cell', cid, evs, conf_cap=conf_cap, prior=-0.5,
                    **{'class': kind, 'loop': loop, 'rail': rail, 'sw': swn, 'gnd': gnd, 'excite': exc,
                       'controller': ctrl, 'inductor': L, 'caps': caps, 'caps_p': cp,
-                      'switches': {'high': hs or (ctrl if kind == 'buck' else None), 'low': ls or d_catch or (ctrl if not d_boost else None),
+                      # an asynchronous boost's controller is its low-side switch: the loop above runs
+                      # through its SW and ground pads (it was None there, unlike a synchronous one)
+                      'switches': {'high': hs or (ctrl if kind == 'buck' else None), 'low': ls or d_catch or ctrl,
                                    'rectifier': (d_boost[0] if d_boost else d_catch)},
                       'vin': vin_net, 'vout': out if kind == 'buck' else rail, 'output_caps': out_caps[:6] if kind == 'buck' else [],
                       'input_caps': out_caps[:6] if kind == 'boost' else [], 'series_shunt': series_shunt,
