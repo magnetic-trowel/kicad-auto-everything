@@ -116,6 +116,31 @@ def test_same_net_vias_keep_hole_to_hole_through_both_drills(tmp_path):
             assert math.dist((cx, cy), (x, y)) - big.drill / 2 - d / 2 >= pitch - d
 
 
+def test_set_pose_moves_the_bare_layer_barrels_of_pth_pads(tmp_path):
+    """A PTH pad with no ring on B.Cu (remove_unused_layers) is a barrel obstacle there; it
+    stayed at the old pose when a joint move set the part's pose."""
+    from kae.board.kicad_file import load
+    from kae.route import constraints as CN
+    from kae.route.critical_space import Space
+    p = F.write_board(tmp_path)
+    b = load(p)
+    info = F.synth_info(b)
+    for pd in info["pads"]:
+        if pd["ref"] == "J1":
+            pd["layers"] = ["F.Cu"]
+    sp = Space(load(p), info, plan=CN.plan(info, p, {}))
+    j1 = next(f for f in sp.board.footprints if f.ref == "J1")
+    barrels = [it for it in sp.items["B.Cu"] if it.owner and it.owner[0] == "J1"]
+    assert len(barrels) == 2
+    x0 = [it.geom.centroid.x for it in barrels]
+    old = (j1.x, j1.y, j1.rot, j1.side)
+    sp.set_pose(j1.uuid, old, (j1.x + 3.0, j1.y, j1.rot, j1.side))
+    for it, x in zip(barrels, x0):
+        assert abs(it.geom.centroid.x - x - 3.0) < 1e-6 and abs(it.hole[0].x - it.pos[0]) < 1e-6
+    hit = sp.query("B.Cu", (j1.x + 3.0, j1.y - 1.0, j1.x + 3.0, j1.y - 1.0), 0.1)
+    assert any(it in barrels for it in hit)
+
+
 def test_grid_route_is_exactly_legal(tmp_path):
     s = F.session(tmp_path)
     sp, gr = s.space, s.router

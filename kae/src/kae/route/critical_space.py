@@ -195,6 +195,7 @@ class Space:
         self.pads_of = {}                          # (fp uuid, number) -> [pad Item]
         self.pads_by_fp = {}
         self.corridors_by_fp = {}
+        self.barrels_by_fp = {}      # PTH barrels on layers where the pad has no ring
         self.routed = []                           # committed critical copper (Items)
         self.existing = []                         # tracks and vias already in the board
         self.zones = []                            # (net, layer, polygon, rec)
@@ -256,6 +257,7 @@ class Space:
                     hb.kind, hb.fp, hb.idx, hb.uuid, hb.pos = it.kind, it.fp, k, it.uuid, it.pos
                     for l in bare:
                         self.items[l].append(hb)
+                    self.barrels_by_fp.setdefault(it.fp, []).append(hb)
 
     def _build_obstacles(self):
         plan = self.plan
@@ -706,7 +708,10 @@ class Space:
         from kae.board import transform as T
         if old[3] != new[3]:
             raise ValueError("set_pose cannot flip a part")
-        its = list(self.pads_by_fp.get(fp_uuid) or []) + list(self.corridors_by_fp.get(fp_uuid) or [])
+        # the bare-layer barrels move with their pads (they stayed behind as ghosts at the old
+        # pose, and nothing marked the moved hole on those layers)
+        its = (list(self.pads_by_fp.get(fp_uuid) or []) + list(self.corridors_by_fp.get(fp_uuid) or [])
+               + list(self.barrels_by_fp.get(fp_uuid) or []))
         if not its:
             return
         inv = _inverse(T.affine(*old))
