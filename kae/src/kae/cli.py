@@ -380,6 +380,11 @@ def main(argv=None):
     sb.add_argument("input")
     sb.add_argument("--out")
     sb.set_defaults(fn=cmd_brief)
+    sd = sub.add_parser("dru-check", help="check .kicad_dru custom rules (static, then KiCad's own parser); "
+                                          "KiCad silently drops the whole file on any error")
+    from kae.board import dru_check
+    dru_check.add_arguments(sd)
+    sd.set_defaults(fn=dru_check.run)
     a = ap.parse_args(argv)
     nc = _numba_cache()
     if nc:
