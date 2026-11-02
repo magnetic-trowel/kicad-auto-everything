@@ -400,3 +400,13 @@ Vs <C3.1> 0 DC 3.3
     rep = EV.evaluate(TB.parse(text), ctx, jobs=1)
     row = rep["tests"][0]["requirements"][0]
     assert row["ideal_status"] == "pass" and row["routed_status"] == "error" and row["status"] == "error"
+
+
+def test_line_capacitance_uses_the_dielectric_under_its_layer():
+    from types import SimpleNamespace as NS
+    from kae.sim.extract import _er
+    st = NS(er=[3.0, 4.5, 6.0])                          # 4 copper layers, gaps top to bottom
+    rb = NS(board=NS(stackup=st), cu=["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"],
+            z={"F.Cu": 0.0, "In1.Cu": 0.2, "In2.Cu": 1.4, "B.Cu": 1.6}, er=3.0)
+    assert _er(rb, "F.Cu") == 3.0 and _er(rb, "B.Cu") == 6.0      # was 3.0 (the top prepreg) for both
+    assert _er(NS(board=NS(stackup=None), cu=[], z={}, er=4.3), "B.Cu") == 4.3
