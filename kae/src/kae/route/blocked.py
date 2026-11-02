@@ -172,7 +172,14 @@ def _terms(sp, it, net, kind, layer, width):
         if it.kind == "via" or kind == "via":
             v, rule = _c(rb, "hole_clearance", other if it.kind == "via" else me, me if it.kind == "via" else other,
                          layer)
-            out.append((v - (it.width - it.drill) / 2 if it.kind == "via" else v, "hole_clearance", *_source(rule)))
+            # hole clearance is from the drill: copper to copper it is less a via's ring, the
+            # binding hole the one with the thinner ring (the routed via's own ring was left out:
+            # a 0.6/0.3 via at 0.25 hole clearance to a track was reported needing 0.25, not 0.10)
+            rings = [(it.width - it.drill) / 2] if it.kind == "via" else []
+            if kind == "via":
+                D, d = sp.via_size(net)
+                rings.append((D - d) / 2)
+            out.append((v - min(rings), "hole_clearance", *_source(rule)))
     elif k in ("pad", "pad_nopin") and 0 <= it.idx < len(info.get("pads") or []):
         pad = info["pads"][it.idx]
         pi = CN.pad_item(info, pad)
