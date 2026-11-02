@@ -94,3 +94,20 @@ def test_a_lumped_thermal_relief_matches_the_resolved_copper(gap, sw):
     lumped = _pad_rise(0.25, gap, sw, "lumped") - _pad_rise(0.25, gap, sw, "solid")
     assert truth > 20                                     # 1 W through four spokes: tens of kelvin
     assert lumped == pytest.approx(truth, rel=0.12)
+
+
+def test_a_cooling_variant_solved_on_the_base_factor_matches_its_own_factorization():
+    """Other surface cooling and sink conductance: the CG solve on the base factorization equals a fresh one."""
+    m = Mesh.over(0, 0, 40, 30, 0.5, [Layer("T", 1.6, 0.035, 1), Layer("B", 0, 0.035, 1)])
+    m.rect(0, "A", 0, 0, 25, 30)
+    m.rect(1, "B", 10, 0, 40, 30)
+    ny, nx = m.lab.shape[1:]
+    mask = np.zeros((ny, nx))
+    mask[:, nx // 2:] = 1.0
+    Q = np.zeros(m.lab.shape)
+    Q[0, ny // 2, nx // 4] = 0.5
+    base = TH.Thermal(m, [1.6], h=12.0, sinks=[(1, 0.01 * mask)])
+    for h, g, t in ((8.0, 0.002, 5.0), (20.0, 0.05, -3.0)):
+        fresh = TH.Thermal(m, [1.6], h=h, sinks=[(1, g * mask)]).solve(Q, t_sinks=[t])
+        var = base.variant(h=h, sinks=[(1, g * mask)]).solve(Q, t_sinks=[t])
+        assert np.allclose(var, fresh, rtol=1e-6, atol=1e-6)

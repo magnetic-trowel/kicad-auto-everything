@@ -104,7 +104,27 @@ class Thermal:
         for l, G in self.sinks:
             diag[idx[l].ravel()] += G.ravel()
         A = sp.csc_matrix((vals, (rows, cols)), shape=(n, n)) + sp.diags(diag)
-        self.lu = sla.splu(A.tocsc(), permc_spec="MMD_AT_PLUS_A", options=dict(SymmetricMode=True))
+        self.A, self.diag, self.h, self.p2, self.idx = A.tocsc(), diag, h, p * p, idx
+        self.lu = sla.splu(self.A, permc_spec="MMD_AT_PLUS_A", options=dict(SymmetricMode=True))
+        self.delta = None                # a variant's diagonal change (cooling), solved by CG on this factor
+
+    def variant(self, h=None, sinks=None):
+        """The same network with other surface cooling h and other sink conductances (the same sinks' layers
+        and cells, other G): only the diagonal changes, so its solves reuse this factorization as the
+        preconditioner of a conjugate-gradient solve (a few iterations) instead of factoring again."""
+        v = object.__new__(Thermal)
+        v.__dict__.update(self.__dict__)
+        d = np.zeros_like(self.diag)
+        if h is not None and h != self.h:
+            d[self.idx[0].ravel()] += (h - self.h) * self.p2
+            d[self.idx[-1].ravel()] += (h - self.h) * self.p2
+        new = [(int(l), np.asarray(G, float)) for l, G in sinks] if sinks is not None else self.sinks
+        for (l, G0), (_, G1) in zip(self.sinks, new):
+            d[self.idx[l].ravel()] += (G1 - G0).ravel()
+        v.sinks, v.h = new, (h if h is not None else self.h)
+        v.delta = d if np.any(d) else None
+        v.Av = self.A + sp.diags(d) if v.delta is not None else None
+        return v
 
     def solve(self, Q, t_sinks=None):
         """Temperature rise (K) of every cell, (L, ny, nx), for heat Q (W) per cell, same shape; Q may
@@ -114,4 +134,15 @@ class Thermal:
             if t:
                 Q[l] += (G * t).reshape(G.shape + (1,) * (Q.ndim - 3))
         flat = Q.reshape(int(np.prod(self.shape)), -1)
-        return self.lu.solve(flat).reshape(Q.shape)
+        X = self.lu.solve(flat)
+        if self.delta is None:
+            return X.reshape(Q.shape)
+        # a variant: A + diag(delta), symmetric positive definite; the base factor preconditions CG
+        A = self.Av
+        M = sla.LinearOperator(A.shape, matvec=lambda r: self.lu.solve(np.asarray(r, float)), dtype=float)
+        for k in range(flat.shape[1]):
+            x, info = sla.cg(A, flat[:, k], x0=X[:, k], rtol=1e-9, atol=0.0, M=M, maxiter=200)
+            if info != 0:                # not converged: factor this variant exactly (never seen in tests)
+                return sla.splu(A.tocsc(), permc_spec="MMD_AT_PLUS_A", options=dict(SymmetricMode=True)).solve(flat).reshape(Q.shape)
+            X[:, k] = x
+        return X.reshape(Q.shape)

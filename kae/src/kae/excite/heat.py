@@ -392,9 +392,11 @@ def evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, tot, 
             t_sinks.append((tc[0] - val[("heat", "T_amb_C")]) if tc else 0.0)
             key.append(round(G, 6))
         key = tuple(key)
-        if key not in th_cache:
-            th_cache = {key: TH.Thermal(m, gaps, h=h, sinks=sinks, cut=cut, links=links)}   # one factor at a time
-        th = th_cache[key]
+        # one factorization, at the first corner (the typical point); every other corner's cooling differs only on
+        # the diagonal and is solved on it by preconditioned CG (factoring each corner took most of this band's time)
+        if "base" not in th_cache:
+            th_cache["base"] = TH.Thermal(m, gaps, h=h, sinks=sinks, cut=cut, links=links)
+        th = th_cache["base"] if c == 0 else th_cache["base"].variant(h=h, sinks=sinks)
         V, info = res[c]
         Q = copper_heat(info["net"], info["x"], m.lab.shape)
         lc = {}
