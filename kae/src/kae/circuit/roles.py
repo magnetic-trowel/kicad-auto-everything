@@ -284,16 +284,18 @@ IC_RULES = [  # specific families first: the first match wins
                                r'\bBL8530|\bCE8301|\bRT9266|\bHT77\d\d|\bACT4\d{3}|\bSGM61\d{2}|\bLM5\d{3}|\bLM3478|\bMAX1724|\bMIC2250|'
                                r'\bME2108|\bLT8364|\bLM25119|\bTPS55340|\bLM2842|\bLM2853|\bAP3211|\bMIC28517|\bR7\d{3}|\bbuck\b|\bboost\b|'
                                r'step.?down|step.?up|switching regulator|\bDC-?DC\b|DC/DC')),
+    # TLV7: TI's TLV70x/TLV73x-TLV76x LDOs, but TLV7011-TLV7044 are comparators (opendrone whoop TLV7031
+    # made its push-pull output /OSD_SYNC a rail)
     ('regulator_linear', rx(r'\bLDO\b|\b(AMS|AZ|LM|LT|LD|NCP|SPX|TLV|BL|REG|IL|CJT|MC33|UA)?1117|\bLM317|\bLM337|\b(L|LM|MC|UA|KA|NJM|AN|LM3)?78[LM]?\d\d\b|'
                             r'\b(L|LM|MC|UA|KA)?79[LM]?\d\d\b|\bAP21\d{2}|\bAP22\d{2}|\bAP7\d{3}|\bMCP17\d{2}|\bMCP18\d{2}|\bXC62\d{2}|\bRT90\d{2}|'
-                            r'\bRT91\d{2}|\bTLV7\d{2,3}|\bTLV1117|\bTPS7\d{2}|\bTPS7A|\bLP59\d{2}|\bLP29\d{2}|\bLP38\d{2}|\bMIC5\d{3}|\bMIC29\d{3}|'
+                            r'\bRT91\d{2}|\bTLV7(?!0[1-4][1-4](?!\d))\d{2,3}|\bTLV1117|\bTPS7\d{2}|\bTPS7A|\bLP59\d{2}|\bLP29\d{2}|\bLP38\d{2}|\bMIC5\d{3}|\bMIC29\d{3}|'
                             r'\bSPX\d{4}|\bHT7[0-9]{3}|\bME62\d{2}|\bME2188|\bLD39\d{3}|\bLD29\d{3}|\bLDL\d|\bLDLN|\bLDO\d{2}|\bL4931|'
                             r'\bNCP1[01]\d|\bNCP7\d{2}|\bNCV\d{4}|\bNCP177|\bNJM\d{4}|\bLT1129|\bLT1763|\bLT3042|\bLT1086|\bADP1\d{2}|\bADP7\d{3}|'
                             r'\bRT9078|\bSGM2\d{3}|\bTC1185|\bTC1262|\bTPL810|\bR5617|\bZLDO|\blinear regulator|\blow.?dropout|\bvoltage regulator')),
     ('opamp', rx(r'\bLM358|\bLM324|\bLM2904|\bLM6\d{3}|\bTL07\d|\bTL08\d|\bNE5532|\bNE5534|\bOPA\d{3,4}|\bMCP60\d{2}|\bMCP6\d{3}|\bMCP6N|'
                    r'\bLMV3\d{2}|\bLMV7\d{2}|\bAD8\d{2,3}|\bAD86\d{2}|\bADA4\d{3}|\bLT1\d{3}|\bLT6\d{3}|\bTLV9\d{3}|\bTLV2\d{3}|'
                    r'\bTSV\d{3}|\bGS32\d|\bGSV33\d|\bINA8\d{2}|\bINA12\d|\bTHS4\d{3}|\bECC83|\bop.?amp|\boperational amplifier|'
-                   r'\binstrumentation amp|\bLM393|\bLM339|\bLMV331|\bTLV3\d{3}|\bcomparator|\bAD8338|\bLT1794')),
+                   r'\binstrumentation amp|\bLM393|\bLM339|\bLMV331|\bTLV3\d{3}|\bTLV70[1-4][1-4](?!\d)|\bcomparator|\bAD8338|\bLT1794')),
     ('logic', rx(r'\b74[A-Z]*\d{2,4}|\bSN74|\bCD40\d{2}|\bCD74|\bNC7[SZ]|\bHEF4\d{3}|\bMC14\d{3}|\bTC74|\bAiP74|\b4C\d{3}|\bTC7S|\bMAX809|'
                    r'\bAPX8\d{2}|\bTPS3\d{3}|\bSTM6\d{3}|\bMCP1[0-3]\d\b|\bsupervisor|\bDS1\d{3}|\bNE555|\bLM555|\bTLC555|\bICM7555')),
 ]

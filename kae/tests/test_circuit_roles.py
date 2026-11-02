@@ -27,6 +27,12 @@ def test_part_kinds_from_names_values_footprints():
     # a bead on a resistor footprint, named by its impedance
     assert kind('FB1', '600R@100MHz', 'Resistor_SMD:R_0603_1608Metric', [('1', 'A', '', ''), ('2', 'B', '', '')])[0] == 'ferrite'
     assert kind('L2', '600OHM/2A', 'Inductor_SMD:L_0805_2012Metric', [('1', 'A', '', ''), ('2', 'B', '', '')])[0] == 'ferrite'
+    # TLV70x1/TLV70x2 are comparators, TLV70033/TLV75733 LDOs
+    sot = 'Package_TO_SOT_SMD:SOT-23-5'
+    assert kind('U3', 'TLV7031', sot, [('1', 'OUT', 'OUT', 'output'), ('2', 'GND', 'V-', 'power_in')])[1] != 'regulator_linear'
+    assert kind('U3', 'TLV7042DGKR', sot, [('1', 'OUT', 'OUT', 'output'), ('2', 'GND', 'V-', 'power_in')])[1] != 'regulator_linear'
+    assert kind('U3', 'TLV70033', sot, [('1', 'IN', 'IN', 'power_in'), ('5', 'OUT', 'OUT', 'power_out')])[1] == 'regulator_linear'
+    assert kind('U3', 'TLV75733PDRVR', sot, [('1', 'IN', 'IN', 'power_in'), ('5', 'OUT', 'OUT', 'power_out')])[1] == 'regulator_linear'
     k, sub, _ = kind('D1', 'SMBJ15A', 'Diode_SMD:D_SMB', [('1', 'A', 'K', ''), ('2', 'B', 'A', '')])
     assert (k, sub) == ('diode', 'tvs')
     k, sub, _ = kind('U5', 'USBLC6-2SC6', 'Package_TO_SOT_SMD:SOT-23-6',
