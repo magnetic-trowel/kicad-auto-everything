@@ -15,7 +15,6 @@ bastardkb-dilemma-dilemma-3
 bastardkb-holder-daughterboard-daughterboard
 bcecoop-bce-pcb-rmlv1616a-bce-pcb-rmlv1616a
 berkeleyauv-robosub-hw-noggin
-bkw777-teeprom-mee2732
 buildacubesat-archive-bac-hardware-tpsm5d1806-buck-module-v1
 buildacubesat-project-bac-hardware-bq25306-charger-module-v1
 chrischrislolo-bancouver40-dogema48-cfx
@@ -29,6 +28,7 @@ fm4dd-pmod-i2c24io-i2c24io-2
 folknology-mystorm-mystorm
 gcy-atrial-fibrillation-detection-blood-pressure-monitor-oscillometric-method-bpm
 glydrfreak-vspeed-vario-adafruit-feather-zero-ble-rev-b
+greatscottgadgets-ubertooth-ubertooth-one
 gregification-beems-mini-orion-tem
 heypcb-kestrel-esc-kestrel-esc
 hussamkoman-devotchi-devotchi
@@ -49,7 +49,6 @@ seniordesignmay1607-pcb-hdmi2rgb-hdmi2rgb
 shazmeenshz-esp32-flight-controller-flight-controller-rev2
 siderakb-ergo-snm-keyboard-ergosnm-right
 sinara-hw-sinara-zotino
-sirawit7205-tl59025-devboard-tl59025-devboard
 solderedelectronics-dasduino-coreplus-hardware-design-dasduino-coreplus
 sparkfun-edison-micro-sd-block-micro-sd-block
 sparkfun-micro-bit-moto-bit-sparkfun-micro-bit-moto-bit
@@ -62,6 +61,5 @@ transistorfet-z280-z280-sbc
 unaldevelopment-rf-design-rf-design
 ut8ifg-ptt-usb-cable-ptt-usb-cable
 watterott-rpi-display-rpi-display-bplus-v10
-xuyuanp-korne-board
 yamanseyravan-undercontrol-hardware-design-undercontrol-v6
 zephray-nekoink-pcb-2

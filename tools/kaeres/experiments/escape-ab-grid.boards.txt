@@ -2,6 +2,7 @@ antmicro-arvsom-arvsom
 antmicro-polarfire-som-polarfire-som
 antmicro-sdi-mipi-video-converter-hw-sdi-mipi-video-converter
 bcecoop-bce-pcb-rmlv1616a-bce-pcb-rmlv1616a
+circuitmonkey-chips-0123-class-d-amp-max98365
 dimoustroufis-librewave-ecp5-librewave-ecp5
 kocer-direct-sampling-sdr-dogrudan-sdr-a
 logisim-evolution-gecko5education-gecko5education
