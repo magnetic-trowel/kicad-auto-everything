@@ -31,65 +31,75 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# ---------------------------------------------------------------- KiCad 10.0 vocabulary
-# Constraint -> allowed argument forms. Source: drc_rule_parser.cpp @10.0, checked on 10.0.7.
+# ---------------------------------------------------------------- vocabulary
+# Names come from kae/board/dru_vocab/<label>.json, generated from KiCad's source and
+# verified against a running KiCad (kae.board.dru_vocab); use_vocab() loads one.
+# Argument forms are not in the source in a parseable shape and stay here.
 RANGE = "range"            # (min v) (opt v) (max v)
-CONSTRAINTS = {
-    "clearance": RANGE, "physical_clearance": RANGE, "physical_hole_clearance": RANGE,
-    "hole_clearance": RANGE, "edge_clearance": RANGE, "courtyard_clearance": RANGE,
-    "creepage": RANGE, "connection_width": RANGE, "silk_clearance": RANGE,
-    "hole_size": RANGE, "hole_to_hole": RANGE, "annular_width": RANGE, "via_diameter": RANGE,
-    "via_count": RANGE, "track_width": RANGE, "track_angle": RANGE,
-    "track_segment_length": RANGE, "diff_pair_gap": RANGE, "diff_pair_uncoupled": RANGE,
-    "length": RANGE, "skew": RANGE, "solder_mask_expansion": RANGE, "solder_mask_sliver": RANGE,
-    "solder_paste_abs_margin": RANGE, "solder_paste_rel_margin": RANGE,
-    "text_height": RANGE, "text_thickness": RANGE, "thermal_relief_gap": RANGE,
-    "thermal_spoke_width": RANGE,
-    "via_dangling": "none", "bridged_mask": "none",
-    "disallow": "disallow", "zone_connection": "zone_connection",
-    "min_resolved_spokes": "int", "assertion": "string",
-}
-DEPRECATED_CONSTRAINTS = {"mechanical_clearance": "physical_clearance",
-                          "mechanical_hole_clearance": "physical_hole_clearance", "hole": "hole_size"}
-MASTER_ONLY_CONSTRAINTS = {"microvia_stack_depth", "hole_aspect_ratio", "microvia_aspect_ratio",
-                           "net_chain_length", "stub_length", "return_path"}
+FORMS = {"via_dangling": "none", "bridged_mask": "none", "disallow": "disallow",
+         "zone_connection": "zone_connection", "min_resolved_spokes": "int", "assertion": "string"}
 UNITLESS = {"via_count", "min_resolved_spokes"}
 TIME_OK = {"length", "skew"}
 ANGLE = {"track_angle"}
-DISALLOW_ITEMS = {"track", "via", "through_via", "blind_via", "buried_via", "micro_via", "pad",
-                  "zone", "text", "graphic", "hole", "footprint"}
-ZONE_CONNECTIONS = {"solid", "thermal_reliefs", "none"}
-SEVERITIES = {"error", "warning", "ignore", "exclusion"}
 UNITS = {"mm", "mil", "in", "deg", "ps", "fs"}
-FUNCTIONS = {
-    "enclosedbyarea", "intersectsarea", "intersectskeepout", "existsonlayer", "fromto",
-    "getfield", "hascomponentclass", "hasnetclass", "hasexactnetclass", "indiffpair",
-    "iscoupleddiffpair", "intersectscourtyard", "intersectsfrontcourtyard",
-    "intersectsbackcourtyard", "isblindvia", "isburiedvia", "isblindburiedvia", "ismicrovia",
-    "isplated", "memberofgroup", "memberoffootprint", "memberofsheet", "memberofsheetorchildren",
-}
-DEPRECATED_FUNCTIONS = {"insidearea": "enclosedByArea/intersectsArea",
-                        "insidecourtyard": "intersectsCourtyard",
-                        "insidefrontcourtyard": "intersectsFrontCourtyard",
-                        "insidebackcourtyard": "intersectsBackCourtyard",
-                        "memberof": "memberOfGroup"}
-MASTER_ONLY_FUNCTIONS = {"customproperty", "hascustomproperty", "hasnetchain", "innetchain",
-                         "innetchainclass", "isstackedvia"}
-# Properties known to resolve on 10.0 (lower case, '_' for space). KiCad accepts any
-# registered PROPERTY, so an unknown name is a warning here and the KiCad pass decides.
-PROPERTIES = {
-    "layer", "locked", "parent", "position_x", "position_y", "type", "netclass", "netname",
-    "componentclass", "component_class", "reference", "value", "orientation", "do_not_populate",
-    "keywords", "library_link", "clearance_override", "exempt_from_courtyard_requirement",
-    "pad_number", "pad_type", "pin_name", "pin_type", "size_x", "size_y", "hole_size_x",
-    "hole_size_y", "pad_to_die_length", "pad_to_die_delay", "width", "start_x", "start_y",
-    "end_x", "end_y", "diameter", "hole", "layer_top", "layer_bottom", "via_type",
-    "target_length", "target_skew", "target_skew_delay", "name", "priority", "hole_shape",
-    "keep_out_tracks", "keep_out_vias", "keep_out_pads", "keep_out_zone_fills",
-    "keep_out_footprints", "source_type", "source_name", "remove_islands",
-    "minimum_island_area", "net", "net_class", "shape", "fabrication_property", "side",
-    "exclude_from_bom", "exclude_from_position_files", "not_in_schematic", "dnp",
-}
+REPLACEMENTS = {"insidearea": "enclosedByArea/intersectsArea", "insidecourtyard": "intersectsCourtyard",
+                "insidefrontcourtyard": "intersectsFrontCourtyard",
+                "insidebackcourtyard": "intersectsBackCourtyard", "memberof": "memberOfGroup"}
+VOCAB_LABEL = ""
+CONSTRAINTS: dict = {}
+DEPRECATED_CONSTRAINTS: dict = {}
+MASTER_ONLY_CONSTRAINTS: set = set()
+DISALLOW_ITEMS: set = set()
+ZONE_CONNECTIONS: set = set()
+SEVERITIES: set = set()
+FUNCTIONS: set = set()
+DEPRECATED_FUNCTIONS: dict = {}
+MASTER_ONLY_FUNCTIONS: set = set()
+PROPERTIES: set = set()
+
+
+def use_vocab(label: str | None = None) -> str:
+    """Load the vocabulary for `label` (e.g. '10.0'); default: the newest release label."""
+    global VOCAB_LABEL, CONSTRAINTS, DEPRECATED_CONSTRAINTS, MASTER_ONLY_CONSTRAINTS, DISALLOW_ITEMS
+    global ZONE_CONNECTIONS, SEVERITIES, FUNCTIONS, DEPRECATED_FUNCTIONS, MASTER_ONLY_FUNCTIONS, PROPERTIES
+    from kae.board import dru_vocab
+    have = dru_vocab.labels()
+    releases = sorted((l for l in have if re.fullmatch(r"\d+\.\d+", l)), key=lambda l: tuple(map(int, l.split("."))))
+    label = label or (releases[-1] if releases else have[-1])
+    if label == VOCAB_LABEL:
+        return label
+    v = dru_vocab.load(label)
+    CONSTRAINTS = {c: FORMS.get(c, RANGE) for c in v["constraints"]}
+    DEPRECATED_CONSTRAINTS = dict(v["deprecated_constraints"])
+    DISALLOW_ITEMS, ZONE_CONNECTIONS = set(v["disallow_items"]), set(v["zone_connections"])
+    SEVERITIES = set(v["severities"])
+    FUNCTIONS = {f.lower() for f in v["functions"]}
+    DEPRECATED_FUNCTIONS = {f.lower(): REPLACEMENTS.get(f.lower(), "a current function")
+                            for f in v["deprecated_functions"]}
+    PROPERTIES = {p.lower() for p in v["properties"]}
+    MASTER_ONLY_CONSTRAINTS, MASTER_ONLY_FUNCTIONS = set(), set()
+    if "master" in have and label != "master":
+        m = dru_vocab.load("master")
+        MASTER_ONLY_CONSTRAINTS = set(m["constraints"]) - set(CONSTRAINTS)
+        MASTER_ONLY_FUNCTIONS = {f.lower() for f in m["functions"]} - FUNCTIONS
+    VOCAB_LABEL = label
+    return label
+
+
+def kicad_version(cli: list) -> str:
+    r = subprocess.run([*cli, "version"], capture_output=True, text=True, timeout=120)
+    return r.stdout.strip().splitlines()[-1] if r.stdout.strip() else ""
+
+
+def vocab_for(version: str) -> str | None:
+    """The bundled vocabulary label for a KiCad version string ('10.0.7' -> '10.0'), or None."""
+    from kae.board import dru_vocab
+    m = re.match(r"(\d+)\.(\d+)", version)
+    if m and f"{m.group(1)}.{m.group(2)}" in dru_vocab.labels():
+        return f"{m.group(1)}.{m.group(2)}"
+    return None
+
+
 _LAYER = re.compile(r"(F|B)\.(Cu|Adhes|Adhesive|Paste|SilkS|Silkscreen|Mask|CrtYd|Courtyard|Fab)"
                     r"|In([1-9]|[12][0-9]|30)\.Cu|Dwgs\.User|Cmts\.User|Eco[12]\.User"
                     r"|User\.(Drawings|Comments|Eco[12]|[1-9][0-9]?)|Edge\.Cuts|Margin|outer|inner"
@@ -285,8 +295,8 @@ def _check_expr(expr: str, where: tuple, rule: str, issues: list):
         nl = name.lower()
         if is_call:
             if nl in MASTER_ONLY_FUNCTIONS:
-                issues.append(Issue(line, col, "error", f"{name}() exists only in KiCad 11 development "
-                                                        f"builds; KiCad 10 rejects the file", rule))
+                issues.append(Issue(line, col, "error", f"{name}() exists only in KiCad master, not in "
+                                                        f"KiCad {VOCAB_LABEL}; it rejects the file", rule))
             elif nl in DEPRECATED_FUNCTIONS:
                 issues.append(Issue(line, col, "warning", f"{name}() is deprecated; use "
                                                           f"{DEPRECATED_FUNCTIONS[nl]}()", rule))
@@ -302,9 +312,11 @@ def _check_expr(expr: str, where: tuple, rule: str, issues: list):
             issues.append(Issue(line, col, "error", f"unknown property '{name}'; did you mean '{near}'? "
                                                     f"(KiCad rejects the file on an unknown property)", rule))
         elif nl not in PROPERTIES:
-            issues.append(Issue(line, col, "warning", f"property '{name}' is not in the known list; KiCad "
-                                                      f"rejects the whole file if it is not a registered "
-                                                      f"property (run with --kicad to confirm)", rule))
+            hint = (" (use A.getField('Value'))" if nl == "value" else
+                    "; '-' is read as minus, so hyphenated property names cannot be used" if "-" in t else "")
+            issues.append(Issue(line, col, "error", f"'{name}' is not among the {len(PROPERTIES)} properties "
+                                                    f"KiCad {VOCAB_LABEL} accepts{hint}; KiCad rejects the "
+                                                    f"whole file", rule))
     if toks and toks[-1] == ("bad", "'"):
         return  # unterminated string: structure checks would only repeat that warning
     # operand/operator alternation: catches dangling or doubled operators and missing ones
@@ -395,8 +407,8 @@ def _check_constraint(node: Node, rule: str, issues: list) -> str:
         return ""
     ctype = it[1].text
     if ctype in MASTER_ONLY_CONSTRAINTS:
-        issues.append(Issue(it[1].line, it[1].col, "error", f"'{ctype}' exists only in KiCad 11 development "
-                                                            f"builds; KiCad 10 rejects the whole file", rule))
+        issues.append(Issue(it[1].line, it[1].col, "error", f"'{ctype}' exists only in KiCad master, not "
+                                                            f"in KiCad {VOCAB_LABEL}; it rejects the whole file", rule))
         return ctype
     if ctype in DEPRECATED_CONSTRAINTS:
         issues.append(Issue(it[1].line, it[1].col, "warning",
@@ -519,8 +531,10 @@ def _check_rule(node: Node, issues: list) -> str:
     return name
 
 
-def static_check(text: str) -> list[Issue]:
-    """All problems found without KiCad, sorted by position."""
+def static_check(text: str, vocab: str | None = None) -> list[Issue]:
+    """All problems found without KiCad, sorted by position. `vocab`: KiCad version label
+    ('10.0'); default: the one already loaded, else the newest bundled release."""
+    use_vocab(vocab) if vocab or not VOCAB_LABEL else None
     issues: list[Issue] = []
     top = _read(text, issues)
     names, version_seen = {}, False
@@ -651,48 +665,57 @@ def add_arguments(ap: argparse.ArgumentParser):
     ap.add_argument("--kicad", default="auto", choices=("auto", "on", "off"),
                     help="also run KiCad's own parser (auto: when kicad-cli is found)")
     ap.add_argument("--strict", action="store_true", help="treat warnings as errors")
+    ap.add_argument("--vocab", help="KiCad vocabulary label for the static pass (default: the installed "
+                                    "KiCad's, else the newest bundled release)")
 
 
 def run(a) -> int:
+    cli = None
+    if a.kicad != "off":
+        try:
+            from kae.route.drc import kicad_cli
+            cli = kicad_cli()
+        except Exception as e:  # kicad-cli missing
+            if a.kicad == "on":
+                print(f"error: KiCad pass requested but kicad-cli not found ({e})")
+                return 2
+    label = a.vocab
+    if not label and cli:
+        ver = kicad_version(cli)
+        label = vocab_for(ver)
+        if not label:
+            print(f"warning: no bundled vocabulary for KiCad {ver}; static pass uses the newest one. "
+                  f"Generate it: python -m kae.board.dru_vocab fetch <tag>; ... sync <src> <major.minor> --verify")
+    label = use_vocab(label)
     worst = 0
     for f in a.files:
         text = sys.stdin.read() if f == "-" else Path(f).read_text(encoding="utf-8", errors="replace")
         issues = static_check(text)
         for i in issues:
             print(f"{f}:{i}")
-        errors = [i for i in issues if i.severity == "error" or (a.strict and i.severity == "warning")]
-        if a.kicad != "off":
-            try:
-                from kae.route.drc import kicad_cli
-                cli = kicad_cli()
-            except Exception as e:  # kicad-cli missing
-                if a.kicad == "on":
-                    print(f"{f}: error: KiCad pass requested but kicad-cli not found ({e})")
-                    return 2
-                cli = None
-            if cli:
-                try:
-                    res = kicad_check(text, cli)
-                except Exception as e:
-                    print(f"{f}: error: KiCad pass failed to run: {e}")
-                    return 2
-                if res.empty:
-                    print(f"{f}: no rules (only comments or blank)")
-                elif res.accepted:
-                    print(f"{f}: KiCad {res.version} loads the file")
-                else:
-                    worst = 1
-                    print(f"{f}: error: KiCad {res.version} REJECTS this file: DRC would silently run "
-                          f"without any of its custom rules")
-                    for name, line in res.culprits:
-                        print(f"{f}:{line}: error: KiCad rejects rule {name!r}")
-                    if res.outside_rules:
-                        print(f"{f}: error: every rule loads alone; the problem is outside the rules "
-                              f"(comment, stray token, missing (version 1))")
-        if errors:
+        if any(i.severity == "error" or (a.strict and i.severity == "warning") for i in issues):
             worst = 1
         if not issues:
-            print(f"{f}: no static problems")
+            print(f"{f}: no static problems (vocabulary {label})")
+        if cli:
+            try:
+                res = kicad_check(text, cli)
+            except Exception as e:
+                print(f"{f}: error: KiCad pass failed to run: {e}")
+                return 2
+            if res.empty:
+                print(f"{f}: no rules (only comments or blank)")
+            elif res.accepted:
+                print(f"{f}: KiCad {res.version} loads the file")
+            else:
+                worst = 1
+                print(f"{f}: error: KiCad {res.version} REJECTS this file: DRC would silently run "
+                      f"without any of its custom rules")
+                for name, line in res.culprits:
+                    print(f"{f}:{line}: error: KiCad rejects rule {name!r}")
+                if res.outside_rules:
+                    print(f"{f}: error: every rule loads alone; the problem is outside the rules "
+                          f"(comment, stray token, missing (version 1))")
     return worst
 
 

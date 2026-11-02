@@ -1,15 +1,26 @@
 # SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""kae.board.dru_check against KiCad 10.0.7's own verdicts.
+"""kae.board.dru_check against KiCad's own verdicts, and drift tests for KiCad updates.
 
-Each case's `kicad_loads` was measured with kae.board.dru_check.kicad_check (sentinel rule
-on a probe board; KiCad drops the whole file on any parse error, without a message). The
-static pass must flag an error exactly when KiCad rejects the file, except for property
-names it cannot know (KiCad accepts any registered PROPERTY): those are warnings.
+Each case's `kicad_loads` was measured on KiCad 10.0.7 with kae.board.dru_check.kicad_check
+(sentinel rule on a probe board; KiCad drops the whole file on any parse error, without a
+message). The static pass (vocabulary 10.0) must flag an error exactly when KiCad rejects.
+
+Drift tests (need kicad-cli; run them after every KiCad bump):
+- test_installed_kicad_has_vocabulary: a vocabulary exists for the installed major.minor
+- test_kicad_verdicts_unchanged: the installed KiCad still gives every case's verdict
+- test_vocabulary_still_accepted: every function and property of that vocabulary still loads
+When one fails: `python -m kae.board.dru_vocab fetch <tag>`, then `sync <src> <major.minor>
+--verify`, re-measure the changed cases, and update the docs (drc-rule-language-reference).
 """
+import os
+
 import pytest
 
-from kae.board import dru_check
+from kae.board import dru_check, dru_vocab
+
+MEASURED_ON = "10.0.7"
+VOCAB = "10.0"
 
 CASES = [
     ('ok', '(version 1)\n(rule "u" (constraint track_width (min 0.1mm)))', True),
@@ -65,12 +76,12 @@ CASES = [
     ("bare_L", "(version 1)\n(rule \"u\" (constraint silk_clearance (min 0.1mm)) (condition \"L == 'F.Mask' || L == 'B.Mask'\"))", True),
     ("repeated_opt", '(version 1)\n(rule "u" (constraint length (min 233.7ps)(opt 235ps)(opt 235.3ps)))', True),
 ]
-STATIC_WARN_ONLY = {"unknownprop_far"}
+STATIC_WARN_ONLY: set = set()
 
 
 @pytest.mark.parametrize("name,text,kicad_loads", CASES, ids=[c[0] for c in CASES])
 def test_static_matches_kicad(name, text, kicad_loads):
-    issues = dru_check.static_check(text)
+    issues = dru_check.static_check(text, VOCAB)
     errors = [i for i in issues if i.severity == "error"]
     if name in STATIC_WARN_ONLY:
         assert not errors and any(i.severity == "warning" for i in issues)
@@ -102,7 +113,61 @@ def _cli():
         return None
 
 
-@pytest.mark.skipif(_cli() is None, reason="kicad-cli not found")
+def test_vocabulary_consistent():
+    v = dru_vocab.load(VOCAB)
+    assert set(dru_check.FORMS) <= set(v["constraints"])
+    import re
+    assert set(re.split(r",\s*(?:or\s+)?", v["units_message"])) == dru_check.UNITS
+    assert v["source_ref"] == v["verified_with"] == MEASURED_ON
+
+
+def test_value_property_hint():
+    text = "(version 1)\n(rule \"a\" (condition \"A.Value == '10k'\") (constraint clearance (min 1mm)))"
+    assert any("getField('Value')" in i.message for i in dru_check.static_check(text, VOCAB))
+
+
+@pytest.mark.skipif(not os.environ.get("KAE_KICAD_SRC"), reason="set KAE_KICAD_SRC to a KiCad checkout")
+def test_vocabulary_matches_source():
+    """KAE_KICAD_SRC=<checkout of the vocabulary's tag>: the committed file is what sync makes."""
+    old = dru_vocab.load(VOCAB)
+    new = dru_vocab.extract(os.environ["KAE_KICAD_SRC"])
+    for k, rej in old.get("rejected", {}).items():
+        new[k] = [n for n in new[k] if n not in rej]
+    assert dru_vocab.diff(old, new) == []
+
+
+needs_kicad = pytest.mark.skipif(_cli() is None, reason="kicad-cli not found")
+
+
+@needs_kicad
+def test_installed_kicad_has_vocabulary():
+    ver = dru_check.kicad_version(_cli())
+    assert dru_check.vocab_for(ver), (f"no dru vocabulary for KiCad {ver}: run python -m kae.board.dru_vocab "
+                                      f"fetch {ver}; ... sync <src> <major.minor> --verify")
+
+
+@needs_kicad
+def test_kicad_verdicts_unchanged():
+    import concurrent.futures
+    cli = _cli()
+    with concurrent.futures.ThreadPoolExecutor(8) as ex:
+        got = list(ex.map(lambda c: dru_check.kicad_check(c[1], cli, workers=1).accepted, CASES))
+    changed = [(c[0], c[2], g) for c, g in zip(CASES, got) if c[2] != g]
+    assert not changed, (f"KiCad {dru_check.kicad_version(cli)} changed verdicts vs {MEASURED_ON} "
+                         f"(case, was, now): {changed}")
+
+
+@needs_kicad
+def test_vocabulary_still_accepted():
+    cli = _cli()
+    label = dru_check.vocab_for(dru_check.kicad_version(cli)) or VOCAB
+    v = dru_vocab.load(label)
+    again = dru_vocab.verify(v, cli)
+    lost = {k: sorted(set(v[k]) - set(again[k])) for k in ("functions", "deprecated_functions", "properties")}
+    assert not any(lost.values()), f"KiCad no longer accepts: {lost}"
+
+
+@needs_kicad
 def test_kicad_pass_finds_culprit():
     good = dru_check.kicad_check(dict((c[0], c[1]) for c in CASES)["ok"], _cli())
     assert good.accepted
