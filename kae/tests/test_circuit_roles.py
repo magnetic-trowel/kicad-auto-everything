@@ -56,6 +56,28 @@ def test_regulator_part_number_voltage():
     assert regulator_vout('TLV74318PDBVR')[0] == 1.8
     assert regulator_vout('LM317') is None
     assert regulator_vout('SPX1117-ADJ') is None
+    assert regulator_vout('AZ1117CH-3.3TRG1')[0] == 3.3
+    assert regulator_vout('R-78B5.0-2.0')[0] == 5.0
+    assert regulator_vout('TPS7A20285PDQNR')[0] == 2.85          # TI x.xx code
+    assert regulator_vout('TLV75733PDRVR')[0] == 3.3
+    assert regulator_vout('LD1117S33TR')[0] == 3.3
+
+
+def test_regulator_voltage_reads_part_numbers_not_sizes_or_currents():
+    """A decimal needs a V or a part-number position: footprint pitches and body sizes,
+    current ratings and input ranges are not an output voltage (opendrone whoop TPS7A20285 read
+    1.0 V from 'X2SON-4_L1.0', TPS63001 read 1.8 V from '1.8A')."""
+    from types import SimpleNamespace
+
+    from kae.circuit.roles import part_number_text
+    assert regulator_vout('TPS62130 Package_DFN_QFN:VQFN-16-1EP_3x3mm_P0.5mm_EP1.68x1.68mm') is None
+    assert regulator_vout('MP2307 Package_SO:SOIC-8_3.9x4.9mm_P1.27mm') is None
+    assert regulator_vout('TPS63001 buck-boost 1.8A') is None
+    assert regulator_vout('TLV7031DPWR') is None                     # a comparator, no code
+    p = SimpleNamespace(value='TPS7A20285', lib_id='Package_SON:Texas_X2SON-4_L1.0',
+                        fields={'Description': 'LDO 300 mA, VIN 1.6-6.0 V', 'MPN': 'TPS7A20285PDQNR'})
+    assert 'X2SON' not in part_number_text(p) and 'VIN' not in part_number_text(p)
+    assert regulator_vout(part_number_text(p))[0] == 2.85
 
 
 # ------------------------------------------------------------------------------- grounds and rails

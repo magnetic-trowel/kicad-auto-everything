@@ -502,13 +502,29 @@ def _ic_subtype(part: Part) -> tuple[str | None, str]:
     return None, ''
 
 
+PART_NUMBER_FIELDS = ('MPN', 'Manufacturer Part Number', 'Manufacturer_Part_Number', 'Part Number', 'PartNumber',
+                      'MFR_PN', 'MFN', 'Mfr. No.', 'Comment', 'Val')
+
+
+def part_number_text(part: Part) -> str:
+    """Value and part-number fields only: no footprint name, Description or datasheet, whose
+    pitches, body sizes, current ratings and input ranges ('P0.5mm', '3.9x4.9mm', '1.8A',
+    'VIN 0.5-5.5 V') are not an output voltage."""
+    return ' '.join([part.value] + [str(part.fields[k]) for k in PART_NUMBER_FIELDS if part.fields.get(k)])
+
+
 def regulator_vout(text: str) -> tuple[float, str] | None:
     """Fixed output voltage from a regulator part number ('AMS1117-3.3', 'MCP1700-3302E', 'XC6206P332MR',
-    'L7805', 'NCP177AMX330', 'TLV74318'); None for adjustable or unknown parts."""
+    'L7805', 'NCP177AMX330', 'TLV74318'); None for adjustable or unknown parts. Pass the part-number
+    text (part_number_text), not Part.text()."""
     t = (text or '').upper().replace(',', '.')
     if re.search(r'ADJ', t):
         return None
-    m = re.search(r'(?<![\d.])(\d{1,2})\.(\d{1,2})\s*V?(?![\d])', t)          # -3.3, 3.3V, 5.0
+    # a decimal is a voltage only with a V ('3.3V', '5.0 V') or as a part-number suffix ('-3.3',
+    # 'B5.0', not followed by another unit): a bare decimal read the first number anywhere, so
+    # 'X2SON-4_L1.0' made a 2.85 V LDO (TPS7A20285) 1.0 V and '1.8A' made a buck-boost 1.8 V
+    m = (re.search(r'(?<![\d.])(\d{1,2})\.(\d{1,2})\s*V(?![\d])', t)                    # 3.3V, 5.0 V
+         or re.search(r'(?<=[-_A-Z])(\d{1,2})\.(\d{1,2})(?![\d.X]|\s*(?:MM|MA|A\b|W\b|[UNP][FH]|[KM]?HZ|%))', t))  # -3.3, -3.3TRG1, R-78B5.0-2.0
     if m and 0.5 <= float(f"{m.group(1)}.{m.group(2)}") <= 60:
         return float(f"{m.group(1)}.{m.group(2)}"), m.group(0)
     m = re.search(r'(?<!\d)(\d)V(\d)(?!\d)', t)                               # 3V3
@@ -519,7 +535,7 @@ def regulator_vout(text: str) -> tuple[float, str] | None:
         v = float(m.group(2))
         return (-v if m.group(1) == '79' else v), m.group(0)
     fam = (r'(ME62\d\d[A-Z]?|ME2188[A-Z]?|XC62\d\d[A-Z]?|HT7[0-9]?|MCP17\d\d[A-Z]?-?|MCP18\d\d[A-Z]?-?|L4931[A-Z]{0,2}|LDLN\d{3}[A-Z]?|'
-           r'LDL1117[A-Z]*|AP7375[A-Z]?-?|AP21\d\d[A-Z]?-?|AP22\d\d[A-Z]?-?|TLV7\d\d|TLV76\d|TLV75\d|TLV73\d|TLV1117LV|TPS76\d|TPS7A\d\d|'
+           r'LDL1117[A-Z]*|LD1117[A-Z]?|AP7375[A-Z]?-?|AP21\d\d[A-Z]?-?|AP22\d\d[A-Z]?-?|TLV7\d\d|TLV76\d|TLV75\d|TLV73\d|TLV1117LV|TPS72\d|TPS76\d|TPS7A\d\d|'
            r'LP59\d\d[A-Z]*-?|RT9013-?|RT9193-?|RT9080-?|NJM\d{4}[A-Z]?|SPX3819[A-Z0-9]*-?|MIC5219-?|MIC5317-?|LDO40LPU|NCP177[A-Z]{2,4}|'
            r'NCV59801[A-Z]{2,4}|BL8555-?|SGM20\d\d-?|AP632|AP633|TLV1117-)')
     m = re.search(fam + r'(\d{2,4})', t)
@@ -530,7 +546,9 @@ def regulator_vout(text: str) -> tuple[float, str] | None:
         if len(code) == 2:
             v = float(code[0] + '.' + code[1])
         elif len(code) == 3:
-            v = float(code[0] + '.' + code[1:]) if m.group(1).startswith(('NCP177', 'NCV59801')) else float(code[0] + '.' + code[1])
+            # NCP177 and TI's TPS7A/TLV7 code x.xx (TPS7A20285: 2.85 V); XC62xx adds an accuracy digit (332: 3.3 V)
+            v = float(code[0] + '.' + code[1:]) if m.group(1).startswith(('NCP177', 'NCV59801', 'TPS7A', 'TLV7')) \
+                else float(code[0] + '.' + code[1])
         else:
             v = float(code[0] + '.' + code[1])
         if m.group(1).startswith(('AP632', 'AP633')):
@@ -1422,7 +1440,7 @@ def _rail_voltage(nl, roles, net, vname, pd_ctrl):
     for p in nl.nets[net].pins:
         pr = roles.parts.get(p.ref)
         if pr and pr.subtype in ('regulator_linear', 'regulator_switching', 'regulator_module') and (OUT_PIN.match(p.fn) or roles.sem(p) == 'supply_out'):
-            rv = regulator_vout(nl.parts[p.ref].text())
+            rv = regulator_vout(part_number_text(nl.parts[p.ref]))
             if rv:
                 srcs.append(('regulator', rv[0], f"{p.ref} part number '{rv[1]}'", abs(rv[0]) * 0.97, abs(rv[0]) * 1.03))
     if re.search(r'VBUS|USB_?5V|VUSB', s) and not vname:
@@ -1918,7 +1936,7 @@ def _part_roles(nl: Netlist, roles: Roles):
             if sub in ('regulator_linear', 'regulator_switching', 'regulator_module', 'charge_pump', 'pmic'):
                 pr.attrs['regulator'] = {'regulator_linear': 'linear', 'regulator_switching': 'switching', 'regulator_module': 'module',
                                          'charge_pump': 'charge_pump', 'pmic': 'pmic'}[sub]
-                rv = regulator_vout(part.text())
+                rv = regulator_vout(part_number_text(part))
                 if rv:
                     pr.attrs['vout'] = belief(rv[0], 'V', f"part number '{rv[1]}'", rv[0] * 0.97, rv[0] * 1.03)
             elif sub is None and _looks_like_regulator(part, roles):
