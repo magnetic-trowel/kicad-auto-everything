@@ -68,6 +68,8 @@ DEFAULT_OPTS = dict(
     blocked=True,            # at the end, diagnose the connections still open (kae.route.blocked): the report's
                              # "blocked" names the board rule (or kae default) that makes each impossible
     blocked_s=30.0,          # with blocked: seconds kept for it at most (taken from the repair rounds)
+    thermal_via_s=60.0,      # with thermal vias to place (kae.route.thermal_vias: a hot part over a heat-sink
+                             # plate on the other face): seconds kept from the repair rounds for their pass and DRC
     pad_shapes="kicad",      # pin shapes in the DSN: "kicad" (KiCad's export: rounded corners and arcs as
                              # chords inside the outline, up to 4 um at r 0.25 mm, 10 um on custom pads) or
                              # "outside" (polygons that contain the pad's copper, translate.circumscribe_pins)
@@ -217,11 +219,28 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
 
         # 5: DRC and repair
         diag_s = min(float(opts.get("blocked_s") or 0.0), 0.05 * time_s) if opts.get("blocked") else 0.0
+        from . import thermal_vias
+        try:
+            hot = thermal_vias.planned(original_input, opts)[0]
+        except Exception as e:  # noqa: BLE001 - unreadable operating facts: no thermal vias
+            log(f"thermal vias: {type(e).__name__}: {e}")
+            hot = []
+        tv_s = min(float(opts.get("thermal_via_s") or 0.0), 0.1 * time_s) if hot else 0.0
         if opts.get("repair") and left() > 30:
             from . import repair
             report["repair"] = repair.loop(input_path, output_path, wd, p, info, opts,
-                                           deadline=t0 + time_s - 10 - diag_s, log=log)
+                                           deadline=t0 + time_s - 10 - diag_s - tv_s, log=log)
             final_rep = report["repair"].pop("_report", None)
+            if hot and left() > 20:
+                # after the repair and last-mile rounds, which judge connections only: the hot parts'
+                # thermal vias, judged by KiCad's DRC like a round (kae.route.thermal_vias)
+                report["thermal_vias"] = thermal_vias.run(input_path, output_path, wd, p, info, opts,
+                                                          deadline=t0 + time_s - 10 - diag_s,
+                                                          best=report["repair"].get("final"), log=log)
+                tv_rep = report["thermal_vias"].pop("_report", None)
+                if report["thermal_vias"].get("kept"):
+                    report["repair"]["final"] = report["thermal_vias"]["after"]
+                    final_rep = tv_rep or final_rep
             if diag_s and final_rep and (report["repair"].get("final") or {}).get("unconnected"):
                 report["blocked"] = diagnose(output_path, input_path, original_input, info, p, final_rep, sev, wd,
                                              deadline=time.monotonic() + max(5.0, left() - 8), log=log)
