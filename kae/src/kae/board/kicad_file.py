@@ -392,8 +392,13 @@ class _Reader:
         fp.silk, fp.silk_text = self._silk(fp, node, by_layer, lib, frot, s)
         if not fp.courtyard:
             fp.body = self._body(fp, pieces_on, by_layer)
+        k0, z0 = len(self.keepouts), len(self.zones)
         for z in kids(node, "zone"):
             self.zone(z, fp.uuid)
+        # load() makes footprint uuids unique only after every footprint is read: it gives
+        # these areas their owner's final uuid then (a missing uuid made a part's own keepout
+        # board-level, a repeated one handed it to the earlier part)
+        self.fp_areas.append((fp, self.keepouts[k0:] + self.zones[z0:]))
         return fp
 
     def pad(self, pd, fx, fy, frot, c, sn, s, fp_clear=0.0):
@@ -1021,7 +1026,7 @@ def load(path, *, arc_tol=geom.ARC_TOL, rules=True):
     if not tree or tree[0] not in ("kicad_pcb",):
         raise ValueError(f"{path}: not a KiCad board")
     rd = _Reader(tree, path, arc_tol)
-    rd.keepouts, rd.zones = [], []
+    rd.keepouts, rd.zones, rd.fp_areas = [], [], []
     fps = []
     for node in tree:
         if type(node) is list and node and node[0] in ("footprint", "module"):
@@ -1032,6 +1037,9 @@ def load(path, *, arc_tol=geom.ARC_TOL, rules=True):
             fp.flags.append("uuid_synthesized" if not fp.uuid else "uuid_duplicate")
             fp.uuid = synth_uuid(fp.lib_id, fp.x, fp.y, fp.rot, fp.side, i)
         seen.add(fp.uuid)
+    for fp, areas in rd.fp_areas:
+        for a in areas:
+            a.footprint = fp.uuid
     for node in tree:
         if type(node) is list and node and node[0] == "zone":
             rd.zone(node)

@@ -186,6 +186,44 @@ def test_uuid_synthesis(tmp_path):
     assert "uuid_duplicate" in b3.footprints[1].flags
 
 
+DUP_ZONES = """(kicad_pcb (version 20240108) (generator "pcbnew") (generator_version "8.0")
+	(general (thickness 1.6))
+	(layers (0 "F.Cu" signal) (31 "B.Cu" signal) (44 "Edge.Cuts" user) (47 "F.CrtYd" user))
+	(net 0 "")
+	(footprint "t:A" (layer "F.Cu") (uuid "11111111-0000-0000-0000-000000000001") (at 10 10)
+		(property "Reference" "U1" (at 0 0) (layer "F.SilkS"))
+		(pad "1" smd rect (at 0 0) (size 1 1) (layers "F.Cu")))
+	(footprint "t:A" (layer "F.Cu") (uuid "11111111-0000-0000-0000-000000000001") (at 20 10)
+		(property "Reference" "U2" (at 0 0) (layer "F.SilkS"))
+		(pad "1" smd rect (at 0 0) (size 1 1) (layers "F.Cu"))
+		(zone (net 0) (net_name "") (layers "F.Cu") (uuid "22222222-0000-0000-0000-000000000001") (hatch edge 0.5)
+			(connect_pads (clearance 0)) (min_thickness 0.25)
+			(keepout (tracks not_allowed) (vias not_allowed) (pads not_allowed) (copperpour not_allowed) (footprints not_allowed))
+			(fill (thermal_gap 0.5) (thermal_bridge_width 0.5))
+			(polygon (pts (xy 19 9) (xy 21 9) (xy 21 11) (xy 19 11)))))
+	(footprint "t:B" (layer "F.Cu") (at 30 10)
+		(fp_text reference "U3" (at 0 0) (layer "F.SilkS"))
+		(pad "1" smd rect (at 0 0) (size 1 1) (layers "F.Cu"))
+		(zone (net 0) (net_name "") (layers "F.Cu") (hatch edge 0.5)
+			(keepout (tracks not_allowed) (vias not_allowed) (pads not_allowed) (copperpour not_allowed) (footprints not_allowed))
+			(polygon (pts (xy 29 9) (xy 31 9) (xy 31 11) (xy 29 11)))))
+	(gr_rect (start 0 0) (end 40 40) (stroke (width 0.05) (type solid)) (fill none) (layer "Edge.Cuts"))
+)
+"""
+
+
+def test_footprint_rule_areas_take_the_final_uuid(tmp_path):
+    """A footprint's own keepout took fp.uuid before load() made uuids unique: with no uuid
+    (U3) it became a board-level keepout, with a repeated one (U2) it followed U1."""
+    p = tmp_path / "dupz.kicad_pcb"
+    p.write_text(DUP_ZONES)
+    b = kicad_file.load(p, rules=False)
+    by = {f.ref: f for f in b.footprints}
+    assert {"uuid_duplicate"} <= set(by["U2"].flags) and {"uuid_synthesized"} <= set(by["U3"].flags)
+    owner = {round(k.outline.bounds[0]): k.footprint for k in b.keepouts}
+    assert owner == {19: by["U2"].uuid, 29: by["U3"].uuid}
+
+
 def test_staging_detection_uses_outline(board):
     # U7 sits right of the board, like kaebench's place-task staging area
     u7 = next(f for f in board.footprints if f.ref == "U7")
