@@ -545,12 +545,39 @@ def cmd_exp_create(a):
     print(json.dumps(e, indent=1))
 
 
+_TASK_SPECS, _BOARD_SHAS = {}, {}
+
+
+def harness_task_spec(commit):
+    """kaebench's TASK_SPEC at a frozen harness commit (None if its code is not here)."""
+    if commit not in _TASK_SPECS:
+        p = code_dir(commit) / "bench" / "src" / "kaebench" / "prepare.py"
+        m = re.search(r"^TASK_SPEC = (\d+)", p.read_text(), re.M) if p.exists() else None
+        _TASK_SPECS[commit] = int(m.group(1)) if m else None
+    return _TASK_SPECS[commit]
+
+
+def exp_task_id(e, bid, kind):
+    """The id of the task an experiment's harness prepares for a board and task kind, as _job_group
+    names it (the corpus board file's sha256, the harness's TASK_SPEC, the kind, KiCad); None when the
+    harness code or the board is not here, and then any task matches (as before task ids were checked)."""
+    spec = harness_task_spec(e["harness"]["commit"])
+    if bid not in _BOARD_SHAS:
+        row = corpus_rows().get(bid)
+        p = CORPUS / row["path"] / "board.kicad_pcb" if row else None
+        _BOARD_SHAS[bid] = sha256_file(p) if p and p.exists() else None
+    if spec is None or _BOARD_SHAS[bid] is None:
+        return None
+    return ident(dict(board_sha256=_BOARD_SHAS[bid], task_spec=spec, kind=kind, kicad=e["kicad"]))
+
+
 def missing(e, bid):
-    """Methods of the experiment without a finished run on this board (any task)."""
+    """Methods of the experiment without a finished run on this board's task of the experiment (a run
+    on an older board file, task spec or KiCad does not count: it is not comparable)."""
     out = []
     for a_ in range(e["attempts"]):
         for m in e["methods"]:
-            d, r = find_run(bid, m["id"], a_)
+            d, r = find_run(bid, m["id"], a_, exp_task_id(e, bid, _run_kind(dict(method_id=m["id"]))))
             if d is None:
                 out.append((m["id"], a_))
     return out
@@ -1145,12 +1172,13 @@ def cmd_rerun(a):
 
 # ------------------------------------------------------------------ experiment reports
 def exp_rows(e):
-    """(rows, bugs, prepare failures) of an experiment: each method's run on each board, viewed through
+    """(rows, bugs, prepare failures) of an experiment: each method's run on each board's task of the
+    experiment (exp_task_id; a run on another task is not comparable and is left out), viewed through
     the experiment's evaluators (falling back to the run's newest evaluation of the same type)."""
     boards = (exp_dir(e["name"]) / "boards.txt").read_text().split()
     human = next((m for m in methods().values() if m["recipe"]["runner"]["type"] == "reference"), None)
     want = ([dict(id=human["id"], name=human["name"])] if human else []) + [m for m in e["methods"] if not human or m["id"] != human["id"]]
-    rows, bugs, fails = [], [], []
+    rows, bugs, fails, stale = [], [], [], 0
     evs = e["evaluators"]
     for bid in boards:
         bd = board_dir(bid)
@@ -1160,8 +1188,9 @@ def exp_rows(e):
             fails.append(read_json(p))
         task_meta = None
         for m in want:
-            d, r = find_run(bid, m["id"], 0)
+            d, r = find_run(bid, m["id"], 0, exp_task_id(e, bid, _run_kind(dict(method_id=m["id"]))))
             if d is None:
+                stale += find_run(bid, m["id"], 0)[0] is not None
                 continue
             if task_meta is None:
                 task_meta = (read_json(bd / "tasks" / r["task_id"] / "task.json") or {}).get("record") or {}
@@ -1180,6 +1209,9 @@ def exp_rows(e):
                      layers=b.get("layers"), footprints=b.get("footprints"), collection=b.get("collection"), license_tier=b.get("license_tier"))
             rows.append(v)
             bugs += read_json(d / "bugs.json", [])
+    if stale:
+        print(f"{stale} runs left out: made on another task (board file, task spec or KiCad) than this experiment's",
+              file=sys.stderr)
     return rows, bugs, fails
 
 

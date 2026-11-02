@@ -42,3 +42,32 @@ def test_method_table_means_over_common_boards():
     cells = {ln.split(" | ")[0].strip("| "): ln.split(" | ") for ln in out[4:6]}
     assert cells["a"][6:8] == ["5.00 (2)", "0.00"] and cells["b"][6:8] == ["2.00 (1)", "2.00"]
     assert cells["a"][14:16] == ["5.000 (2)", "1.000"] and cells["b"][14:16] == ["3.000 (1)", "3.000"]
+
+
+def test_runs_of_another_task_are_missing_and_not_reported(tmp_path, monkeypatch):
+    """A run made on an older board file, task spec or KiCad satisfied missing() and was reported
+    beside fresh ones; only runs on the experiment's own task count now."""
+    corpus, code = tmp_path / "corpus", tmp_path / "code"
+    (corpus / "boards" / "b1").mkdir(parents=True)
+    (corpus / "boards" / "b1" / "board.kicad_pcb").write_text("(kicad_pcb)\n")
+    prep = code / "bench" / "src" / "kaebench" / "prepare.py"
+    prep.parent.mkdir(parents=True)
+    prep.write_text("TASK_SPEC = 8\n")
+    monkeypatch.setattr(kaeres, "CORPUS", corpus)
+    monkeypatch.setattr(kaeres, "corpus_rows", lambda: {"b1": dict(path="boards/b1")})
+    monkeypatch.setattr(kaeres, "code_dir", lambda c: code)
+    monkeypatch.setattr(kaeres, "_run_kind", lambda r: "route")
+    monkeypatch.setattr(kaeres, "_TASK_SPECS", {})
+    monkeypatch.setattr(kaeres, "_BOARD_SHAS", {})
+    e = dict(name="x", harness=dict(commit="c" * 40), kicad="10.0.7", attempts=1,
+             methods=[dict(id="fresh", name="fresh"), dict(id="old", name="old")])
+    tid = kaeres.exp_task_id(e, "b1", "route")
+    sha = kaeres.sha256_file(corpus / "boards" / "b1" / "board.kicad_pcb")
+    assert tid == kaeres.ident(dict(board_sha256=sha, task_spec=8, kind="route", kicad="10.0.7"))
+    runs = [(tmp_path / "r1", dict(method_id="fresh", attempt=0, task_id=tid)),
+            (tmp_path / "r2", dict(method_id="old", attempt=0, task_id="0" * 12))]
+    monkeypatch.setattr(kaeres, "board_runs", lambda bid: runs)
+    assert kaeres.missing(e, "b1") == [("old", 0)]
+    monkeypatch.setattr(kaeres, "_TASK_SPECS", {e["harness"]["commit"]: None})  # harness code not here: any task
+    assert kaeres.missing(e, "b1") == []
+
