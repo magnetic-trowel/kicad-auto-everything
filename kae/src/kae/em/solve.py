@@ -491,13 +491,15 @@ def open_islands(net, injections, open_):
     return sorted(out, key=lambda d: -abs(d["current"]))
 
 
-def potentials_many(mesh, inj_list, f, read=None, tol=TOL, net=None, op=None, warm=None, light=False, system=None):
+def potentials_many(mesh, inj_list, f, read=None, tol=TOL, net=None, op=None, warm=None, light=False, system=None,
+                    x0=None):
     """potentials() for several injection sets at once (one batched COCG). Returns a list of
     ({terminal: V}, info) in the order given; an unbalanced set returns (None, info). light: the infos keep
     only the system's diagonal (info["sys"].zdiag), not the system with its factorization, and no warm-start
     state: a caller that keeps many results (kae.excite.evaluate) would otherwise hold every frequency's
     factorization (about 1 GB each on a mid-size board) to the end. system: a System(op, f) built already
-    (two callers solving the same frequency on the same network share one factorization)."""
+    (two callers solving the same frequency on the same network share one factorization). x0: per injection set,
+    a starting solution on this same network (or None), e.g. the same source solved at another frequency."""
     net = net or Network(mesh)
     op = op or Operator(net)
     sysm = system if system is not None else System(op, f)
@@ -529,6 +531,10 @@ def potentials_many(mesh, inj_list, f, read=None, tol=TOL, net=None, op=None, wa
         X0 = None
         if warm is not None and any(w is not None for w in warm[k:k + BATCH]):
             X0 = sysm.warm(list(warm[k:k + BATCH]))
+        elif x0 is not None and any(v is not None for v in x0[k:k + BATCH]):
+            # a zero column starts where a cold one does (X0 + psolve(rhs - A X0) = psolve(rhs))
+            n = net.n_br + sysm.nfree
+            X0 = np.stack([np.zeros(n, complex) if v is None else np.asarray(v, complex) for v in x0[k:k + BATCH]], axis=1)
         Xk, ik = sysm.solve_many(np.stack(cols[k:k + BATCH], axis=1), tol=tol, X0=X0)
         Xs.append(Xk)
         itss.append(ik)

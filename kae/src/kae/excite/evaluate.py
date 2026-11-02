@@ -14,6 +14,8 @@ import sys
 import time
 from types import SimpleNamespace
 
+import numpy as np
+
 from . import dc as DC
 from . import harm as HA
 from . import models as M
@@ -146,6 +148,7 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
         f"{len(srcs)} sources, {len(obs)} observers, {len(pads)} pads ({len(missing)} outside or unresolved), "
         f"bands {[round(f / 1e6, 3) for f in freqs]} MHz, setup {time.time() - t0:.1f}s")
     solved, solver_stats = {}, []
+    last = {}            # source -> (f, injections, solution): the start of its next band's solve
     for f in freqs:
         keys = [k for k, (ff, _) in pats.items() if ff == f]
         injs = [{p: j for p, j in pats[k][1].items() if p in bm.m.terminals} for k in keys]
@@ -157,9 +160,13 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
         keys = [k for k, z in zip(keys, none_) if not z]
         injs = [i for i, z in zip(injs, none_) if not z]
         t_band = time.time()
-        band_res = ES.potentials_many(bm.m, injs, f, net=net, op=op, light=True) if keys else []
-        for k, res in zip(keys, band_res):
+        band_res = ES.potentials_many(bm.m, injs, f, net=net, op=op, light=True,
+                                      x0=[_band_start(last.get(k[0]), inj, f, net.n_br) for k, inj in zip(keys, injs)]) \
+            if keys else []
+        for k, inj, res in zip(keys, injs, band_res):
             solved[k] = res
+            if res[1].get("x") is not None and not res[1].get("unbalanced"):
+                last[k[0]] = (f, inj, res[1]["x"])
         if band_res:
             solver_stats.append(_solver_row(f, band_res, time.time() - t_band))
             log("solver: " + _solver_line(solver_stats[-1]))
@@ -329,6 +336,25 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
                 solver_stats=solver_stats,
                 notes=notes + [f"pad {p}: not in the copper model" for p in missing][:20],
                 assumptions=bd.assumptions)
+
+
+def _band_start(prev, inj, f, n_br):
+    """A source's solution at an earlier band as the start of its solve at f: its branch currents scaled by the
+    injections' ratio (least squares over the terminals), its node potentials by that and f / f_prev too (above a
+    few MHz the copper is inductive: the same currents' voltages grow with frequency). None without one."""
+    if prev is None or not np.isfinite(f) or f <= 0:
+        return None
+    f0, inj0, x = prev
+    if not np.isfinite(f0) or f0 <= 0:
+        return None
+    ts = [t for t in inj if t in inj0]
+    den = sum(abs(inj0[t]) ** 2 for t in ts)
+    if not ts or den == 0:
+        return None
+    c = sum(inj[t] * np.conj(inj0[t]) for t in ts) / den
+    out = np.array(x, complex) * c
+    out[n_br:] *= f / f0
+    return out
 
 
 def _solver_row(f, results, seconds, band=None):
