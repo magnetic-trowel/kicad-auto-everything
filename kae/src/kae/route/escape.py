@@ -904,10 +904,38 @@ def _across(p, q):
     return max(xs) - min(xs)
 
 
+def _exit_gap(p, nbs, pkg, w, ovl):
+    """Clearance a track `w` wide keeps to pad `p`'s row neighbours `nbs` when it leaves `p`
+    outward (away from the package's middle), at its best end point: from the pad centre out to
+    the last point where its copper still overlaps the pad by `ovl` (KiCad connects any overlap;
+    the router's _escapes starts there when the centre is too tight). The track runs outward
+    from its end, so the end is its closest point to the neighbours."""
+    px, py = p.pos
+    mx = sum(q.pos[0] for q in pkg["pads"]) / len(pkg["pads"])
+    my = sum(q.pos[1] for q in pkg["pads"]) / len(pkg["pads"])
+    rx, ry = nbs[0].pos[0] - px, nbs[0].pos[1] - py              # along the row
+    n = math.hypot(rx, ry) or 1.0
+    ux, uy = -ry / n, rx / n                                     # across it
+    if ux * (px - mx) + uy * (py - my) < 0:
+        ux, uy = -ux, -uy                                        # outward
+    best, d = -1.0, 0.0
+    step = 0.005
+    while True:
+        s = Point(px + d * ux, py + d * uy)
+        if d > 0 and p.geom.distance(s) > w / 2 - ovl + 1e-9:
+            break
+        best = max(best, min(q.geom.distance(s) for q in nbs) - w / 2)
+        d += step
+        if d > 5.0:
+            break
+    return best
+
+
 def ring_certificate(sp, pkg, log=print):
     """A fine-pitch pad ring (QFN, QFP): the signal pads a track of the board's minimum width
-    cannot leave between its two neighbours (a track's end lies inside its pad, so it runs
-    alongside both neighbours) -> the blocked entry, or None."""
+    cannot leave between its two neighbours at any end point the router may use (_exit_gap:
+    inside the pad, or just past it while its copper still overlaps the pad by
+    pad_entry_overlap) -> the blocked entry, or None."""
     count = _counts(sp)
     zoned = {z[0] for z in sp.zones}
     bad, total, need_w, need_c, detail = 0, 0, [], [], None
@@ -929,7 +957,7 @@ def ring_certificate(sp, pkg, log=print):
         mn, opt, _ = sp.width_limits(p.net, pkg["layer"])
         w = mn or 0.0                  # the rules' minimum (none: any width)
         c = sp._generic_need(p.net, "track", pkg["layer"])
-        gap = pitch - a / 2 - w / 2
+        gap = _exit_gap(p, [q for _d, _i, q in nb], pkg, w, float(getattr(sp, "pad_overlap", 0.0)))
         if gap < c - 1e-6:
             bad += 1
             need_w.append(2 * (pitch - a / 2 - c))

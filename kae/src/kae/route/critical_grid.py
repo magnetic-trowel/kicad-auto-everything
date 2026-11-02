@@ -25,7 +25,9 @@ A pad none of whose cells is free (a 0.4 mm-pitch QFN pin 0.2 mm wide, 0.2 mm fr
 neighbours at 0.2 mm clearance: the one legal track is exactly as wide as the pad, centred on
 it, and the margins above leave it no cell) is left through an escape (`_escapes`): a straight
 piece from its centre along one of its axes, legal with no margin at all (EXACT_TOL), to the
-nearest free cell past the tight spot; a route through an escape is verified the same way.
+nearest free cell past the tight spot; where no piece from the centre is legal, one that starts
+on the axis just past the pad, its copper overlapping the pad by `pad_entry_overlap` (KiCad
+connects any overlap). A route through an escape is verified the same way.
 
 The result is a list of segments and vias, every one checked exactly against KiCad's
 requirements; nothing is committed until the caller does so.
@@ -713,35 +715,57 @@ class GridRouter:
             n = math.hypot(dx, dy)
             if n > 1e-9:
                 axes.append((dx / n, dy / n))
+        # a round pad's (polygonized circle's) smallest rectangle turns by whatever angle its
+        # vertices give (28 degrees for a 0.24 mm ball): the board's axes too, where they differ
+        for ax in ((1.0, 0.0), (0.0, 1.0)):
+            if all(abs(ax[0] * v - ax[1] * u) > 1e-3 for u, v in axes):
+                axes.append(ax)
         reach = max(math.dist(c, p) for p in pts) + sp.max_need + width + 2 * grid.res
         step = grid.res / 2
         flat = cost.reshape(-1)
+        ovl = float(getattr(sp, "pad_overlap", 0.05))
+
+        def walk(s0, dx, dy):
+            """The first free cell reached by a legal straight piece from s0 along (dx, dy)."""
+            k = 1
+            while k * step <= reach:
+                p = (s0[0] + k * step * dx, s0[1] + k * step * dy)
+                k += 1
+                if sp.track_violations(net, layer, width, s0, p, first=True, tol=EXACT_TOL):
+                    return None
+                i0 = int(math.floor((p[0] - grid.x0) / grid.res))
+                j0 = int(math.floor((p[1] - grid.y0) / grid.res))
+                cells = [(i, j) for i in (i0, i0 + 1) for j in (j0, j0 + 1) if grid.inside(i, j)]
+                cells.sort(key=lambda ij: math.dist(grid.xy(*ij), p))
+                for i, j in cells:
+                    kk = li * plane + j * grid.nx + i
+                    if not np.isfinite(flat[kk]):
+                        continue
+                    q = grid.xy(i, j)
+                    if not sp.track_violations(net, layer, width, p, q, first=True, tol=EXACT_TOL):
+                        return (kk, [tuple(s0), p])
+            return None
+
         out = []
         for ux, uy in axes:
             for sx in (1.0, -1.0):
                 dx, dy = sx * ux, sx * uy
-                k = 1
-                while k * step <= reach:
-                    p = (c[0] + k * step * dx, c[1] + k * step * dy)
-                    k += 1
-                    if sp.track_violations(net, layer, width, c, p, first=True, tol=EXACT_TOL):
-                        break
-                    i0 = int(math.floor((p[0] - grid.x0) / grid.res))
-                    j0 = int(math.floor((p[1] - grid.y0) / grid.res))
-                    cells = [(i, j) for i in (i0, i0 + 1) for j in (j0, j0 + 1) if grid.inside(i, j)]
-                    cells.sort(key=lambda ij: math.dist(grid.xy(*ij), p))
-                    hit = None
-                    for i, j in cells:
-                        kk = li * plane + j * grid.nx + i
-                        if not np.isfinite(flat[kk]):
-                            continue
-                        q = grid.xy(i, j)
-                        if not sp.track_violations(net, layer, width, p, q, first=True, tol=EXACT_TOL):
-                            hit = (kk, [tuple(c), p])
+                hit = walk(tuple(c), dx, dy)
+                if hit is None and ovl > 0:
+                    # the track's end outside the pad, its copper still overlapping the pad by
+                    # `ovl` (KiCad connects any overlap): beside a 0.4 mm-pitch ball the centre is
+                    # 0.18 mm from the neighbours for a 0.2 mm track at 0.2 mm clearance, while
+                    # just past the rim the gap opens (circuitmonkey chips-0123's U1, 4 balls)
+                    h = max((p[0] - c[0]) * dx + (p[1] - c[1]) * dy for p in pts)
+                    d = step / 2
+                    while hit is None and d <= h + width / 2 - ovl + 1e-9:
+                        s0 = (c[0] + d * dx, c[1] + d * dy)
+                        d += step / 2
+                        if g.distance(Point(s0)) > width / 2 - ovl + 1e-9:
                             break
-                    if hit is not None:
-                        out.append(hit)
-                        break
+                        hit = walk(s0, dx, dy)
+                if hit is not None:
+                    out.append(hit)
         return out
 
     # ------------------------------------------------------------------ path -> geometry
