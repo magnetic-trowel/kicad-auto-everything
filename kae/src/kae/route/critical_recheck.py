@@ -46,7 +46,7 @@ from kae.physics.boardview import body_z
 from kae.physics.kernels import lprime_hj
 
 from .copper import NetGraph
-from .critical_physics import INF, Loop, r_track, r_via, trace_capacitance_pf
+from .critical_physics import INF, Loop, dielectric_er, r_track, r_via, trace_capacitance_pf
 
 GND_HINT = ("GND", "VSS", "GROUND", "EARTH")
 
@@ -484,7 +484,11 @@ def crystal_value(rb, s):
     for t in rb.board.tracks:
         if t.net in nets:
             h = rb.strip_h(t.layer, t.start, t.end, n=3)
-            C += trace_capacitance_pf(math.dist(t.start, t.end), t.width, h if h != INF else rb.thickness, rb.er)
+            # the dielectric between the track and that plane (the copper layer h away), not the top one
+            zl = rb.z.get(t.layer, 0.0)
+            pl = min(rb.cu, key=lambda l: abs(abs(rb.z[l] - zl) - h)) if h != INF else None
+            er = dielectric_er(rb.cu, rb.z, list(rb.board.stackup.er or []) if rb.board.stackup else [], t.layer, pl)
+            C += trace_capacitance_pf(math.dist(t.start, t.end), t.width, h if h != INF else rb.thickness, er)
     # each net's C adds to one load capacitor: C_L = C1 C2 / (C1 + C2) moves by C / 4 (place
     # terms' CrystalComp)
     return S * C / 4.0, dict(c_trace_pf=round(C, 4))

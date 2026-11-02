@@ -1002,3 +1002,17 @@ def test_recheck_pairs_an_unpaired_decap_with_its_nearest_power_pin(routed, tmp_
              pairing="nearest_pin", pin_caps={})
     pairs, _ = R.decap_pairs(rb, s)
     assert [(p, c) for p, c, _ in pairs] == [("8", uid["C3"])]
+
+
+def test_crystal_trace_capacitance_uses_the_dielectric_under_the_trace():
+    """A bottom-side crystal trace is priced with the dielectric between it and its plane, not the
+    top prepreg (er[0] for every layer)."""
+    from kae.route.critical_physics import dielectric_er
+    cu = ["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"]
+    z = {"F.Cu": 0.0, "In1.Cu": 0.2, "In2.Cu": 1.4, "B.Cu": 1.6}
+    er = [3.7, 4.6, 4.0]
+    assert dielectric_er(cu, z, er, "F.Cu", "In1.Cu") == 3.7
+    assert dielectric_er(cu, z, er, "B.Cu", "In2.Cu") == 4.0
+    assert dielectric_er(cu, z, er, "B.Cu", None) == 4.0
+    assert dielectric_er(cu, z, er, "F.Cu", "In2.Cu") == pytest.approx((3.7 * 0.2 + 4.6 * 1.2) / 1.4)
+    assert dielectric_er(cu, z, [], "B.Cu", None) == 4.3
