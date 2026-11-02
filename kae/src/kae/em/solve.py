@@ -19,6 +19,7 @@ f = inf solves the inductive limit (R = 0): L = Im Z.
 from __future__ import annotations
 
 import time
+from types import SimpleNamespace
 
 import numpy as np
 import scipy.fft as sfft
@@ -490,12 +491,16 @@ def open_islands(net, injections, open_):
     return sorted(out, key=lambda d: -abs(d["current"]))
 
 
-def potentials_many(mesh, inj_list, f, read=None, tol=TOL, net=None, op=None, warm=None):
+def potentials_many(mesh, inj_list, f, read=None, tol=TOL, net=None, op=None, warm=None, light=False, system=None):
     """potentials() for several injection sets at once (one batched COCG). Returns a list of
-    ({terminal: V}, info) in the order given; an unbalanced set returns (None, info)."""
+    ({terminal: V}, info) in the order given; an unbalanced set returns (None, info). light: the infos keep
+    only the system's diagonal (info["sys"].zdiag), not the system with its factorization, and no warm-start
+    state: a caller that keeps many results (kae.excite.evaluate) would otherwise hold every frequency's
+    factorization (about 1 GB each on a mid-size board) to the end. system: a System(op, f) built already
+    (two callers solving the same frequency on the same network share one factorization)."""
     net = net or Network(mesh)
     op = op or Operator(net)
-    sysm = System(op, f)
+    sysm = system if system is not None else System(op, f)
     cols, infos = [], []
     for injections in inj_list:
         bal = {}
@@ -531,7 +536,11 @@ def potentials_many(mesh, inj_list, f, read=None, tol=TOL, net=None, op=None, wa
     out = []
     for q, info in enumerate(infos):
         x = X[:, q]
-        info.update(iters=int(its[q]), net=net, op=op, sys=sysm, x=x, I=x[:net.n_br], state=sysm.state_of(x))
+        info["t_factor"] = sysm.t_factor
+        if light:
+            info.update(iters=int(its[q]), net=net, op=op, sys=SimpleNamespace(zdiag=sysm.zdiag), x=x, I=x[:net.n_br])
+        else:
+            info.update(iters=int(its[q]), net=net, op=op, sys=sysm, x=x, I=x[:net.n_br], state=sysm.state_of(x))
         if info["unbalanced"]:
             out.append((None, info))
             continue

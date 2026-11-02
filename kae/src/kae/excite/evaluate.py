@@ -145,7 +145,7 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
     log(f"{n_lumped} parts lumped into the copper; mesh {bm.m.nx}x{bm.m.ny}x{len(bm.m.layers)} at {pitch} mm, "
         f"{len(srcs)} sources, {len(obs)} observers, {len(pads)} pads ({len(missing)} outside or unresolved), "
         f"bands {[round(f / 1e6, 3) for f in freqs]} MHz, setup {time.time() - t0:.1f}s")
-    solved = {}
+    solved, solver_stats = {}, []
     for f in freqs:
         keys = [k for k, (ff, _) in pats.items() if ff == f]
         injs = [{p: j for p, j in pats[k][1].items() if p in bm.m.terminals} for k in keys]
@@ -156,8 +156,13 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
             solved[k] = (None, dict(unbalanced=0, no_copper=True))
         keys = [k for k, z in zip(keys, none_) if not z]
         injs = [i for i, z in zip(injs, none_) if not z]
-        for k, res in zip(keys, ES.potentials_many(bm.m, injs, f, net=net, op=op) if keys else []):
+        t_band = time.time()
+        band_res = ES.potentials_many(bm.m, injs, f, net=net, op=op, light=True) if keys else []
+        for k, res in zip(keys, band_res):
             solved[k] = res
+        if band_res:
+            solver_stats.append(_solver_row(f, band_res, time.time() - t_band))
+            log("solver: " + _solver_line(solver_stats[-1]))
     notes = []
     uncomputed = []
     # an aggressor whose pattern drives current into a pad outside the copper model loses that current
@@ -285,13 +290,18 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
             observations.append(ob)
     part_power = {}
     if dcp:
-        harms += _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes, log, obs_out=observations)
+        # the DC band and the heat band solve the same network at f = 0: one factorization for both, handed to the
+        # heat band in a holder it empties (freed before the heat band factors its own conduction network)
+        sys_dc = {"sys": ES.System(op_dc, 0.0)}
+        harms += _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes, log, obs_out=observations,
+                           system=sys_dc["sys"])
         if dcp.loads and not any(n.startswith("DC: copper open") for n in notes):
             # part temperatures from the board's own heat flow, and each part's loss (kae.excite.heat)
             from . import heat as HT
             harms += HT.evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, [0.0] * ncp, notes,
                                  intent, log=log, ledger=ledger, obs_out=observations,   # not in the legacy total
-                                 power_out=part_power)
+                                 power_out=part_power, system=sys_dc)
+        del sys_dc
     harms.sort(key=lambda h: -(h["u_hi"] or 0))
     # each cell's parasitic ring: its copper loop with the switch node's capacitance
     rings = []
@@ -316,8 +326,23 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
                 observers=[dict(name=o.name, kind=o.kind, bound=o.bound, basis=o.basis) for o in obs],
                 harms=harms, observations=observations,
                 part_power_W={k: round(v, 6) for k, v in sorted(part_power.items())},
+                solver_stats=solver_stats,
                 notes=notes + [f"pad {p}: not in the copper model" for p in missing][:20],
                 assumptions=bd.assumptions)
+
+
+def _solver_row(f, results, seconds, band=None):
+    """One band's solver statistics: right-hand sides, COCG iterations, factorization and total time."""
+    its = sorted(int(info.get("iters", 0)) for _, info in results)
+    tf = next((info.get("t_factor") for _, info in results if info.get("t_factor") is not None), None)
+    return dict(band=band or ("dc" if f == 0 else "ac"), f_Hz=f, rhs=len(results), iters_min=its[0], iters_med=its[len(its) // 2],
+                iters_max=its[-1], t_factor_s=round(tf, 2) if tf is not None else None, t_total_s=round(seconds, 2))
+
+
+def _solver_line(r):
+    f = "DC" if r["f_Hz"] == 0 else f"{r['f_Hz'] / 1e6:g} MHz"
+    return (f"{r['band']} {f}: {r['rhs']} rhs, COCG iterations {r['iters_min']}/{r['iters_med']}/{r['iters_max']} "
+            f"(min/median/max), factor {r['t_factor_s']} s, total {r['t_total_s']} s")
 
 
 def open_note(info, net_of=None):
@@ -356,7 +381,8 @@ def print_total(t):
 DC_VOID = ("DC: copper open", "DC: pads outside the copper model")
 
 
-def _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes, log, ac_copper=None, obs_out=None):
+def _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes, log, ac_copper=None, obs_out=None,
+              system=None):
     """The DC band's harms (kae.excite.dc) at every corner, added into the per-corner totals `tot`. A
     corner's cells take the values of the same corner of their switching harms (one operating point).
     ac_copper: the switching harmonics' copper loss per corner (W), counted with the DC copper loss.
@@ -383,7 +409,9 @@ def _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes,
     if not any(injs):
         notes.append("DC: no rail with a source and a load; the DC band is empty")
         return []
-    res = ES.potentials_many(m, injs, 0.0, net=net_dc, op=op_dc)
+    t_band = time.time()
+    res = ES.potentials_many(m, injs, 0.0, net=net_dc, op=op_dc, light=True, system=system)
+    log("solver: " + _solver_line(_solver_row(0.0, res, time.time() - t_band, band="dc")))
     trk = DC.track_currents(bm, b.tracks, net_dc, nets=set(dcp.feeds) | set(dcp.grounds))
     loss, drops, heat = [], {}, []
     for c, (V, info) in enumerate(res):

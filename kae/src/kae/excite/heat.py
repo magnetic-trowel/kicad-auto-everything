@@ -233,7 +233,7 @@ def copper_heat(net, x, shape):
 
 
 def evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes, intent=None, ac_parts=None,
-             log=print, ledger=None, obs_out=None, power_out=None):
+             log=print, ledger=None, obs_out=None, power_out=None, system=None):
     """Thermal harms per part at every corner, added into the per-corner totals. ac_parts: {ref: [W per
     corner]} from the switching harmonics. obs_out: a list that gets kae.intent observations: each
     dissipating part's junction temperature (temp.junction, C) and its loss (loss.part, W) per corner.
@@ -312,7 +312,11 @@ def evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, tot, 
         ac_parts = {k: [w * ac_scale.get(k, [1.0] * ncp)[c] for c, w in enumerate(v)] for k, v in ac_parts.items()}
     m = bm.m
     injs = [{q: a for q, a in DC.injections(dcp, cv).items() if q in m.terminals} for cv in cvs]
-    res = ES.potentials_many(m, injs, 0.0, net=net_dc, op=op_dc)
+    from .evaluate import _solver_line, _solver_row
+    t_band = time.time()
+    res = ES.potentials_many(m, injs, 0.0, net=net_dc, op=op_dc, light=True,
+                             system=system.pop("sys", None) if isinstance(system, dict) else system)
+    log("solver: " + _solver_line(_solver_row(0.0, res, time.time() - t_band, band="heat")))
     if any(V is None for V, _ in res):
         notes.append("thermal: the DC flow does not close in the copper; temperatures not computed")
         return []
