@@ -98,6 +98,16 @@ def block_end(text, start):
     return None
 
 
+def _closed_block_end(text, start):
+    """block_end, for callers that go on scanning after the block: an unbalanced file (a truncated
+    download) raises a clear error instead of a TypeError on None."""
+    end = block_end(text, start)
+    if end is None:
+        raise ValueError(f"unbalanced S-expression: the {text[start:start + 20]!r}... block at offset {start} "
+                         "never closes (truncated file?)")
+    return end
+
+
 _BARE_NET = re.compile(r'\(net (\d+) ([-+]?(?:\d+\.?\d*|\.\d+))\)')
 _PROPS_FIRST = re.compile(r'\(kicad_pcb(\s+)((?:\(property "(?:[^"\\]|\\.)*" "(?:[^"\\]|\\.)*"\)\s+)+)(\(version \d+\))')
 _USER_VIA = re.compile(r'\(user_via ([\d.]+) ([\d.]+)(?: \d+)+\)')
@@ -151,7 +161,7 @@ def art_zones_to_polys(text):
         elif c == "(":
             depth += 1
             if depth in (2, 3) and text.startswith("zone", i + 1) and text[i + 5].isspace():
-                end = block_end(text, i)
+                end = _closed_block_end(text, i)
                 zone = text[i:end]
                 layer = _ZONE_LAYER.search(zone)
                 pi = zone.find("(pts", zone.find("(polygon"))
@@ -216,7 +226,7 @@ def remove_top_level(text, head, uuids):
         elif c == "(":
             depth += 1
             if depth == 2 and text.startswith(head, i + 1) and not text[i + 1 + len(head)].isalnum():
-                end = block_end(text, i)
+                end = _closed_block_end(text, i)
                 uid = _ZONE_UUID.search(text, i, end)
                 if uid and uid.group(1) in uuids:
                     start = i

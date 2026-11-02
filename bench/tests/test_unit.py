@@ -174,6 +174,14 @@ def test_art_zones_to_polys():
     assert new.count("(zone") == 3  # copper zone, keepout and the string are untouched
 
 
+def test_unbalanced_board_text_is_a_clear_error():
+    cut = '(kicad_pcb (version 1)\n (zone (net 0) (uuid "a") (layer "F.SilkS")'
+    with pytest.raises(ValueError, match="unbalanced"):
+        boardfiles.remove_top_level(cut, "zone", ["a"])
+    with pytest.raises(ValueError, match="unbalanced"):
+        boardfiles.art_zones_to_polys(cut)
+
+
 def test_micro_arc_pile_and_remove_top_level():
     def arc(x, uid, layer="F.Cu", d=0.0000005):
         return (f'\t(arc\n\t\t(start {x} 5) (mid {x + d} 5.0000004) (end {x + 2 * d} 5)\n'
