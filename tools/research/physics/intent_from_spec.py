@@ -29,6 +29,50 @@ BOUNDS = {"V": (0.3, 1000.0), "pct": (0.05, 50.0), "mV": (0.01, 5000.0), "A": (1
 RATE = {"guess": 1.0, "typical": 1.0, "datasheet": 1.0}   # one rate scale: the basis is recorded, not weighted
 
 
+_LIB = None
+
+
+def library():
+    """The datasheet library's identified parts (datasheet_prompt.md), as (compiled match, facts)."""
+    global _LIB
+    if _LIB is None:
+        import glob
+        import os
+        import re
+        d = os.path.expanduser(os.environ.get("KAE_DATASHEETS", "~/kae-datasheets"))
+        _LIB = []
+        for p in sorted(glob.glob(f"{d}/facts/*.json")):
+            try:
+                f = json.load(open(p))
+                pat = re.sub(r"\$$", r"\\b", f.get("match") or re.escape(f.get("part") or f.get("query") or ""))
+                if f.get("identified") and pat:
+                    _LIB.append((re.compile(pat, re.I), f))
+            except (ValueError, OSError, re.error):
+                continue
+    return _LIB
+
+
+def datasheet(part):
+    """The library facts for a board part (its value, then value + lib_id, as kae's part table matches)."""
+    text = f"{part.get('value') or ''} {part.get('lib_id') or ''}"
+    for rx, f in library():
+        if rx.search(part.get("value") or "") or rx.search(text):
+            return f
+    return None
+
+
+def verified(f, name):
+    """(typ, max, cite) of a verified datasheet value, or None."""
+    v = ((f or {}).get("values") or {}).get(name)
+    if not isinstance(v, dict) or not v.get("verified"):
+        return None
+    typ = v.get("typ") if isinstance(v.get("typ"), (int, float)) else None
+    mx = v.get("max") if isinstance(v.get("max"), (int, float)) else None
+    if typ is None and mx is None:
+        return None
+    return typ, mx, f"{f.get('part') or f.get('query')} datasheet p.{v.get('page')}"
+
+
 AMPS_PER_PAD = 3.0      # A a connector pin carries at most, generously (0.1" headers ~3 A)
 AMPS_BY_KIND = ((r"screw|terminal|\bTB\d|barrel|jack|DCJ|XT\d\d|anderson|mini.?fit|micro.?fit|power", 15.0),
                 (r"JST.?(SH|GH|ZH)|SM\d\dB.?SR|picoblade", 1.0))
@@ -173,6 +217,12 @@ def compile_spec(spec, summary):
         w = f"loads[{i}]"
         r = S.ref(l.get("ref"), w)
         typ, mx = S.num(l, "I_typ_A", "A", w), S.num(l, "I_max_A", "A", w)
+        ds = verified(datasheet(S.part.get(r) or {}), "I_supply_typ_A") if r else None
+        dm = verified(datasheet(S.part.get(r) or {}), "I_supply_max_A") if r else None
+        if ds or dm:                                   # the datasheet's current replaces the model's estimate
+            typ = (ds[0] if ds and ds[0] is not None else (ds[1] if ds else None)) or typ
+            mx = (dm[1] if dm and dm[1] is not None else (dm[0] if dm else None)) or mx
+            l = dict(l, basis="datasheet", why=f"{(ds or dm)[2]}" + (f"; max {dm[2]}" if dm else ""))
         if r and (typ or mx):
             lo, hi = (typ or mx) * (0.5 if typ else 0.3), (mx or typ * 2)
             op["parts"][r] = {"I_A": [round(min(lo, hi), 6), round(max(lo, hi), 6)]}
@@ -270,6 +320,11 @@ def compile_spec(spec, summary):
         t = l.get("T_max_C")
         if l.get("ref") in S.refs and isinstance(t, (int, float)) and 40 <= t <= 200:
             own[l["ref"]] = float(t)
+    for p in summary.get("parts") or []:                 # datasheet junction ratings, any part with a sheet
+        tj = verified(datasheet(p), "T_j_max_C")
+        t = (tj[1] if tj and tj[1] is not None else (tj[0] if tj else None))
+        if isinstance(t, (int, float)) and 40 <= t <= 200:
+            own[p["ref"]] = float(t)
     by_kind = {}
     for p in summary.get("parts") or []:
         if p["ref"] not in own and p.get("kind") in T_MAX:
