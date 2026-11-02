@@ -583,7 +583,7 @@ class KaeStages:
                              time_s=min(float(o.get("replace_time", 25.0)), max(5.0, 0.2 * time_s)),
                              cong_mult=float(o.get("cong_mult", 2.0)) * (1.5 ** min(attempt, 3)),
                              history_scale=float(o.get("history_scale", 1.0)), bump_mm=float(o.get("bump_mm", 0.25)),
-                             bump_refs=bump_refs, margin=float(o.get("margin", 0.3)), legal_refs=legal_refs,
+                             bump_refs=bump_refs, margin=float(o.get("replace_margin", 0.3)), legal_refs=legal_refs,
                              legal_mm=float(o.get("legal_mm", 0.15)) * (1 + min(attempt, 3)), drc_report=drc,
                              net_weights={n: float(o.get("net_mult", 2.0)) for sp in window.spots
                                           if sp.kind == "unrouted" for n in sp.nets},
