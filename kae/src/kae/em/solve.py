@@ -62,7 +62,7 @@ except ImportError:                                   # pragma: no cover
 
 # relative residual of the iterative solves: port quantities are variational (their error is second
 # order), so 1e-5 gives them to ~3e-7 in about two thirds of the iterations 1e-8 takes
-TOL = 1e-5
+TOL = float(os.environ.get("KAE_EM_TOL", "1e-5"))   # COCG relative residual (KAE_EM_TOL overrides)
 BATCH = 8               # right-hand sides solved together (memory: FFT arrays per batch)
 PATCH = 2               # preconditioner blocks: all filaments of one orientation in PATCH x PATCH cells
 
