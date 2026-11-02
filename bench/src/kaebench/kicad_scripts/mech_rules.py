@@ -50,7 +50,8 @@ Rules, in order; the first that matches decides:
                diode package is not an SMA connector
   5. name      patterns on the footprint name (NAME_RULES): USB, PinHeader/PinSocket,
                JST, Molex, FPC/FFC, Jack, SMA/U.FL, microSD/SIM, card edge, terminal
-               block, RJ45, D-Sub, CON/CONN; MountingHole, standoff, fiducial, hole (with
+               block, RJ45, D-Sub, CON/CONN, castellated pads (castellat*, CAST01),
+               4UCONN parts; MountingHole, standoff, fiducial, hole (with
                at most one net: TSOP39238_Standoff is a part, not a standoff);
                switch, button, encoder, pot, OLED/LCD/display, buzzer, key switches
                (MX, Choc, Kailh)
@@ -87,7 +88,7 @@ CLASSES = ("connector", "mounting", "user")
 #    switches by value/reference (RST, BOOT), a trimmer's panel hole stays a hole
 # 4: the user's judgement calls: SIMM sockets, microphone headers and pots whose value
 #    says trim are free (NPTH-only parts stay fixed as mounting)
-RULES_VERSION = 4
+RULES_VERSION = 5
 
 _I = re.IGNORECASE
 
@@ -218,6 +219,8 @@ NAME_RULES = (
     ("connector", "JST/Molex", re.compile(r"(?<![a-z])jst|molex|micro-?fit|pico-?blade|(?<![a-z])jwt", _I)),
     ("connector", "FPC/FFC", re.compile(r"(?<![a-z])(fpc|ffc)(?![a-z])", _I)),
     ("connector", "jack", re.compile(r"jack|switchcraft|(?<![a-z])(trs|trrs|xlr)(?![a-z])", _I)),
+    ("connector", "castellated pad", re.compile(r"castellat|(?<![a-z])cast[-_]?\d", _I)),
+    ("connector", "maker", re.compile(r"(?<![a-z0-9])4uconn", _I)),
     ("connector", "RF", re.compile(r"(?<![a-z])(sma|smb|bnc|mmcx|mcx|u\.?fl|ipex|coax|subclick)(?![a-z])", _I)),
     ("connector", "card slot", re.compile(
         r"micro_?sd|(?<![a-z])(sd|tf)_?card|(?<![a-z])sim(?![a-z])|sim_?card|card_?edge|edge_?conn|"

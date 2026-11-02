@@ -41,9 +41,11 @@ TASK_KINDS = ("route", "place", "place-fixed")
 #    of earlier specs stay valid
 # 7: place-fixed tasks (and joint-fixed from their input); route and place tasks unchanged
 # 8: place-fixed classifier rules 4 (the user's judgement calls); other kinds unchanged
-TASK_SPEC = 8
+# 9: place-fixed classifier rules 5: castellated edge pads and 4UCONN connectors are connectors
+#    (14 parts on 4 of the 213 merit boards changed class); other kinds unchanged
+TASK_SPEC = 9
 # Oldest spec each task kind is still valid under (spec 5 changed only place tasks).
-MIN_TASK_SPEC = {"route": 4, "place": 5, "joint": 5, "place-fixed": 8, "joint-fixed": 8}
+MIN_TASK_SPEC = {"route": 4, "place": 5, "joint": 5, "place-fixed": 9, "joint-fixed": 9}
 # The task input each kind starts from (joint = place and route, from the place task's input).
 INPUT_KIND = {"route": "route", "place": "place", "joint": "place",
               "place-fixed": "place-fixed", "joint-fixed": "place-fixed"}

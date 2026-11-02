@@ -584,6 +584,10 @@ def _fp(ref, fpid, value="", pads=2, pth=0, npth=0):
     (_fp("J4", "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical", "UART", pads=4, pth=4),
      "connector", "lib"),
     (_fp("JST1", "battery_connector_jst_ph_2", pads=2, pth=2), "connector", "name"),
+    # castellated edge pads (circuitmonkey chips-0123: +12, GND, DAI0-2, EN) and 4UCONN micro-USB
+    (_fp("DAI1", "CAST01-2.00MM:CAST-01X12.00MM", pads=3, pth=3), "connector", "name"),
+    (_fp("+5", "x:Castellated_Pad_2mm", pads=1, pth=1), "connector", "name"),
+    (_fp("X2", "x:4UCONN_20329", "MicroB", pads=13, pth=6), "connector", "name"),
 ])
 def test_mech_classifier_fixes(fp, cls, rule):
     from kaebench.kicad_scripts import mech_rules
