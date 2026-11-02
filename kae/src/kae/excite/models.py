@@ -134,7 +134,7 @@ def build(board, brief=None):
         if pk:
             bd.port[ref] = pk
             if pk != kind:
-                bd.assumptions.append(f"{ref}: a {kind} part named '{part.value} {part.lib_id}': taken as a connector")
+                bd.assumptions.append(f"{ref} ({kind} in the brief) is named '{part.value} {part.lib_id}': taken as a connector")
             continue                 # no circuit inside the board: the world is outside
         _part(bd, ref, part, pins, kind, sub, role, rec, in_cell)
     from kae.board import transform
