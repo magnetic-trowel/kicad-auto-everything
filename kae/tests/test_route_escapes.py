@@ -193,3 +193,28 @@ def test_without_an_overlap_allowance_the_tight_ball_stays_shut(tmp_path):
     src = Anchor(a.geom, tuple(sorted(a.layers)), a.pos, kind="pad")
     dst = Anchor(b.geom, tuple(sorted(b.layers)), b.pos, kind="pad")
     assert GridRouter(sp).connect("WB", [src], [dst], 0.2, ["F.Cu"], via=False) is None
+
+
+def test_escapes_meeting_in_one_cell_are_drawn_not_counted_as_touching(tmp_path):
+    """Two same-net 0.3 mm pads 0.15 mm apart, foreign pads above and below: their escapes
+    meet in the one free cell between them. connect returned an empty Route ("already
+    touching") though no copper joins them; it now emits both escape pieces."""
+    from kae.route.critical_grid import Grid
+    from kae.route.critical_modules import anchor
+    X, Y, P, S = 130.0, 120.0, 0.45, 0.3
+    pads = [("1", "NB", 0, 0), ("2", "NB", P, 0), ("3", "N1", 0, P), ("4", "N2", P, P), ("5", "N3", 0, -P),
+            ("6", "N4", P, -P)]
+    s = F.session(tmp_path, extra=[("U9", "X", "Package_BGA:test", X, Y, 0.0,
+                                     [(n, net, lx, ly, S, S, "smd", 0.0, "", "passive") for n, net, lx, ly in pads],
+                                     (1.0, 1.0))])
+    sp, gr = s.space, s.router
+    fu = next(f.uuid for f in s.board.footprints if f.ref == "U9")
+    ta, tb = sp.terminal(fu, ["1"]), sp.terminal(fu, ["2"])
+    res = 0.05
+    g = Grid(X + P / 2 - 40 * res, Y - 40 * res, X + P / 2 + 40 * res, Y + 40 * res, res)
+    rt = gr.connect("NB", [anchor(ta)], [anchor(tb)], 0.2, ["F.Cu"], via=False, window=g)
+    assert rt is not None and rt.segs
+    line = LineString([rt.segs[0][1]] + [e for _, _, e in rt.segs]).buffer(0.1)
+    assert line.intersects(ta.geom) and line.intersects(tb.geom)
+    for l, a, b in rt.segs:
+        assert not sp.track_violations("NB", l, 0.2, a, b, tol=EXACT_TOL)

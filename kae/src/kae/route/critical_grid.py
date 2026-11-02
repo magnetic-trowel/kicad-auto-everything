@@ -658,8 +658,25 @@ class GridRouter:
             return self.connect(net, sources, targets, width, layers, layer_factor=layer_factor, via=via, window=g2,
                                 via_cost=via_cost, skip=skip, max_len=max_len, avoid=avoid, phys=phys,
                                 _aligned=True)
-        if dst[src].any():
-            return Route(net=net, width=width, res=grid.res)     # already touching
+        hit = src[dst[src]]
+        if hit.size:
+            # a shared cell touches both ends only when it is a real anchor cell of both: an
+            # escape cell is free board reached by a piece _geometry has yet to emit (two
+            # same-net balls 0.15 mm apart whose escapes meet in the cell between them were
+            # counted routed with no copper)
+            if any(k not in esc_src and k not in esc_dst for k in hit.tolist()):
+                return Route(net=net, width=width, res=grid.res)     # already touching
+            for k in hit.tolist():
+                rt = self._geometry(grid, net, width, layers, np.array([k], np.int64), sources, targets,
+                                    esc_src, esc_dst)
+                if rt is not None and (max_len is None or rt.length <= max_len):
+                    rt.res = grid.res
+                    self.stats["found"] += 1
+                    return rt
+            dst = dst.copy()
+            dst[hit] = False          # those meetings do not verify: search for another way
+            if not dst.any():
+                return None
         xs, ys = tb[0::4] + tb[1::4], tb[2::4] + tb[3::4]
         tx0, tx1, ty0, ty1 = min(xs), max(xs), min(ys), max(ys)
         vc = self.via_cost if via_cost is None else via_cost
