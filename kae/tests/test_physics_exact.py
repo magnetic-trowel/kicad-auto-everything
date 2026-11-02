@@ -355,3 +355,11 @@ def test_side_change_vias_pair_by_direction():
     d = lambda a, b: math.hypot(px[a] - px[b], py[a] - py[b])
     want = 4 * S + 2 * (M(d(1, 3)) + M(d(2, 0))) - 2 * (M(d(1, 2)) + M(d(1, 0)) + M(d(2, 3)) + M(d(3, 0)))
     assert four == pytest.approx(want)
+
+
+def test_hot_loop_budget_matches_its_docstring_examples():
+    from kae.physics import priors as PR
+    assert PR.hot_loop_budget("buck", 12.0, 120.0, 1.5).value == pytest.approx(0.78, abs=0.01)
+    a = (0.85 * 20.0 - 13.2) / 13.2                       # the research case's rating and input
+    s = 1.5 / 2.563
+    assert s * s / (2 * 0.12 * math.log(1 / (a * math.exp(math.pi / 16)))) == pytest.approx(1.36, abs=0.01)
