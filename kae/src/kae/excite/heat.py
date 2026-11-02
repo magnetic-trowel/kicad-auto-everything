@@ -260,13 +260,14 @@ def evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, tot, 
     # their low end (1% of the rating), so a guess cannot make a regulator overheat; a stated one counts.
     sustained = dict(own[0])
     exports = {ld["key"] for ld in dcp.loads if ld.get("key") and bd.part_kind.get(ld["ref"], ("",))[0] == "connector"}
+    share_of = {ld["key"]: ld.get("part_share", 1.0) for ld in dcp.loads if ld.get("key")}
     for p in dcp.params:
         if p.name != "I_A" or not str(p.subject).startswith("dc:"):
             continue
         ref = p.subject[3:].rsplit("@", 1)[0]
         iv = ((intent or {}).get("parts") or {}).get(ref, {}).get("I_sustained_A")
-        if isinstance(iv, (int, float)) and iv >= 0:      # the intent's typical draw (its datasheet's)
-            sustained[(p.subject, p.name)] = min(max(float(iv), p.lo), p.hi)
+        if isinstance(iv, (int, float)) and iv >= 0:      # the intent's typical draw (its datasheet's), this rail's share
+            sustained[(p.subject, p.name)] = min(max(float(iv) * share_of.get((p.subject, p.name), 1.0), p.lo), p.hi)
         elif (p.subject, p.name) in exports and p.source == "prior":
             sustained[(p.subject, p.name)] = p.lo
     for c in range(len(own)):
@@ -281,7 +282,7 @@ def evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, tot, 
             return sustained.get(ld["key"], 0.0)
         iv = ((intent or {}).get("parts") or {}).get(ld["ref"], {}).get("I_sustained_A")
         if isinstance(iv, (int, float)) and iv >= 0:
-            return float(iv)
+            return float(iv) * ld.get("part_share", 1.0)
         return ld.get("prior", 0.0) / (10.0 if bd.part_kind.get(ld["ref"], ("",))[0] == "connector" else 1.0)
     cell_out = {}
     for f in dcp.feeds.values():

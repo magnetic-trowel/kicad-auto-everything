@@ -232,6 +232,12 @@ def plan(board, brief, bd, P, srcs, intent=None):
         if f["kind"] != "cell":
             f["rating"] = source_rating(ctx, uuid_of.get(f["ref"]), r, {})
     feeders = {f["ref"] for f in pl.feeds.values()}
+
+    def part_share(ref, r):
+        """Rail r's share of part ref's supply pads over the fed rails it draws from (not one it feeds)."""
+        n = {r2: len(supply(ref, r2)) for r2 in pl.feeds if pl.feeds[r2].get("ref") != ref
+             and any(net == r2 for _, net, _, _ in pads.get(ref, []))}
+        return n.get(r, 0) / sum(n.values()) if sum(n.values()) else 1.0
     # loads: parts that draw from a rail and return at their own ground
     shares = {}
     for r in sorted(pl.feeds):
@@ -255,12 +261,17 @@ def plan(board, brief, bd, P, srcs, intent=None):
                 continue
             ld = dict(ref=ref, rail=r, sup=supply(ref, r), gnd=g, prior=a)
             iv = ((intent or {}).get("parts") or {}).get(ref, {}).get("I_A")
+            # the intent states a part's whole current: on several rails it is split by their share of the part's
+            # supply pads (an MCU's 3V3 pins carry its current, not its VBUS-detect pin as well)
+            ld["part_share"] = share = part_share(ref, r)
             if pl.feeds[r]["kind"] == "cell":
                 shares.setdefault(r, []).append(ld)
             else:
                 if iv is not None:
                     lo, hi = (iv if isinstance(iv, list) else [iv, iv])
-                    p = Param(f"dc:{ref}@{r}", "I_A", math.sqrt(lo * hi) if lo > 0 else hi, lo, hi, "A", "intent", "the intent file")
+                    lo, hi = lo * share, hi * share
+                    p = Param(f"dc:{ref}@{r}", "I_A", math.sqrt(lo * hi) if lo > 0 else hi, lo, hi, "A", "intent",
+                              "the intent file" + (f" ({share:.0%} of the part's current: its share of supply pads)" if share < 1 else ""))
                 else:
                     lo, hi = (a / 10, 5 * a) if kind == "connector" else (a / 3, 3 * a)
                     p = Param(f"dc:{ref}@{r}", "I_A", a, lo, hi, "A", "prior",
