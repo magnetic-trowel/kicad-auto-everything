@@ -139,6 +139,56 @@ class BoardMesh:
                 if win.contains(Point(x, y)):
                     m.via(x, y, [self.li[l] for l, _, _ in lst if l in self.li], p.net, drill=p.drill)
 
+    def reliefs(self, max_gap=2.0, step=0.05):
+        """Thermal reliefs between pads and their pours, read from KiCad's refill (which has applied every zone's
+        and pad's connection setting): around a pad its own net's fill either closes in (a solid connection) or
+        leaves a gap that only spokes cross. Per relieved pad and layer: {token, layer (index), gap_mm, spokes:
+        [(width_mm, (x, y) inner end, (x, y) outer end)]}. A pad without its own net's fill nearby, or one the fill
+        reaches all round, is not listed. Cached."""
+        if getattr(self, "_reliefs", None) is not None:
+            return self._reliefs
+        from shapely.ops import unary_union
+        out = []
+        fills = {}
+        for net, per in (self.fills or {}).items():
+            for layer, pgs in per.items():
+                if layer in self.li and pgs:
+                    fills[(net, layer)] = unary_union(pgs)
+        for tok, lst in self.pads.items():
+            for layer, g, p in lst:
+                f = fills.get((p.net, layer))
+                if f is None or g is None or g.is_empty or not f.intersects(g.buffer(max_gap)):
+                    continue
+                # the gap: the first distance from the pad at which the fill covers most of a thin ring
+                gap = None
+                d = step
+                while d <= max_gap:
+                    ring = g.buffer(d + step).difference(g.buffer(d))
+                    if ring.area > 0 and f.intersection(ring).area / ring.area > 0.8:
+                        gap = d
+                        break
+                    d += step
+                if gap is None or gap <= step:
+                    continue                       # no pour around it, or one that reaches it all round: solid
+                band = g.buffer(gap).difference(g.buffer(step / 2))
+                sp = f.intersection(band)
+                pieces = [q for q in getattr(sp, "geoms", [sp]) if q.area > 1e-4]
+                spokes = []
+                for q in pieces:
+                    w = q.area / max(gap - step / 2, 1e-3)
+                    # its ends, each in a cell of copper: just inside the pad's edge, and in the pour beyond the gap
+                    # (a point on the edge itself falls in a gap cell, which carries no copper)
+                    core = g.buffer(-0.6 * self.m.pitch)
+                    core = core if not core.is_empty and hasattr(core, "exterior") else None
+                    inner = core.exterior.interpolate(core.exterior.project(q.centroid)) if core is not None else g.centroid
+                    far = g.buffer(gap + self.m.pitch).exterior
+                    outer = far.interpolate(far.project(q.centroid))
+                    spokes.append((round(w, 4), (inner.x, inner.y), (outer.x, outer.y)))
+                out.append(dict(token=tok, layer=self.li[layer], layer_name=layer, gap_mm=round(gap, 3), spokes=spokes,
+                                ring=g.buffer(gap).difference(g)))
+        self._reliefs = out
+        return out
+
     def pad(self, token):
         """Terminal for pad REF.NUM: its copper on every layer it has (one equipotential)."""
         if token in self.m.terminals:

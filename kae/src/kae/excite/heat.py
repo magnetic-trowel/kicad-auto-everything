@@ -345,6 +345,22 @@ def evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, tot, 
     if regions:
         notes.append("thermal: heat sinks under " + ", ".join(f"{int(mk.sum())} cells of {names[li] or li}" for _, li, mk, _ in regions))
     part_sinks = {hs["part"] for hs in heatsinks(intent) if hs.get("part")}
+    # thermal reliefs between pads and their pours (kae.em.kicad.BoardMesh.reliefs, from KiCad's refill): the gap
+    # carries no copper, each spoke is k_cu t w / gap
+    cut, links, relieved = [], [], {}
+    for rl in (bm.reliefs() if hasattr(bm, "reliefs") else []):
+        li = rl["layer"]
+        cut.append((li, m.cells_in(rl["ring"])))
+        t_m = m.layers[li].t * 1e-3
+        G = 0.0
+        for w, a, z in rl["spokes"]:
+            links.extend(TH.spoke_links(m, li, w, a, z, rl["gap_mm"]))
+            G += TH.K_CU * t_m * w / rl["gap_mm"]
+        ref = rl["token"].rsplit(".", 1)[0]
+        relieved.setdefault(ref, []).append((rl["token"], rl["layer_name"], len(rl["spokes"]), G))
+    if relieved:
+        notes.append(f"thermal: {sum(len(v) for v in relieved.values())} pad(s) of {len(relieved)} part(s) join their pour "
+                     f"through thermal reliefs (spokes priced as k_cu t w / gap)")
     # each part's own area (mm2): its datasheet's body (the intent's parts.<ref>.body_mm2), else the largest of
     # its courtyard, body outline and pad span
     from shapely.ops import unary_union
@@ -377,7 +393,7 @@ def evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, tot, 
             key.append(round(G, 6))
         key = tuple(key)
         if key not in th_cache:
-            th_cache = {key: TH.Thermal(m, gaps, h=h, sinks=sinks)}   # one factor at a time (memory)
+            th_cache = {key: TH.Thermal(m, gaps, h=h, sinks=sinks, cut=cut, links=links)}   # one factor at a time
         th = th_cache[key]
         V, info = res[c]
         Q = copper_heat(info["net"], info["x"], m.lab.shape)
@@ -449,7 +465,9 @@ def evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, tot, 
             kind = bd.part_kind.get(ref, ("",))[0]
             obs_out.append(dict(id="temp.junction", unit="C", values=[float(t) for t in ts], u=list(U[ref]),
                                 scope=dict(kind="heat", observer=f"heat:{ref}", source="dc", part=ref, parts=[ref],
-                                           part_kind=kind),
+                                           part_kind=kind,
+                                           reliefs=[dict(pad=t, layer=ly, spokes=n, G_W_K=round(G, 5))
+                                                    for t, ly, n, G in relieved.get(ref, [])]),
                                 reference=dict(value=T_MAX.get(kind, 85.0), basis=f"{kind or 'part'} class rating"),
                                 label=f"junction temperature of {ref}"))
         for ref, ws in Lp.items():

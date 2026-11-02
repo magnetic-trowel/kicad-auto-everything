@@ -36,6 +36,8 @@ physical bounds. This file is the instruction given to the model.
  "connectors": [{"ref": "<connector ref>", "function": "short", "direction": "input|output|bidirectional|unknown",
                  "rail": "<net it carries, or null>", "V_V": 5, "I_A": 0.5, "cable_length_m": 1.0,
                  "basis": "...", "why": "..."}],
+ "assembly": {"process": "reflow|hot_plate|vapor_phase|hand|wave|unknown", "hand_solder_ok": null,
+              "basis": "...", "why": "..."},
  "thermal": {"T_amb_C": [0, 40], "enclosure": "none|plastic|metal|unknown", "track_rise_max_K": 20,
              "airflow_h_W_m2K": null,
              "heatsinks": [{"part": "<ref>", "sink_part": "<heat sink part number or null>", "theta_sa_C_W": 12,
@@ -73,6 +75,10 @@ physical bounds. This file is the instruction given to the model.
 - `connectors`: every connector. `direction` is power/signal flow seen from the board; `I_A` is what flows
   through it; `cable_length_m` only when a cable leaves the board from it (USB, jack, terminal block,
   wire-to-board), null for headers that mate with another board.
+- `assembly.process`: how the board is meant to be assembled, from its evidence: fine-pitch QFN/DFN/BGA/LGA
+  parts imply reflow; the repository's notes or BOM (a stencil, "reflow", "hand assembly", a kit) say more;
+  all through-hole parts and no SMD suggest wave or hand. `unknown` when nothing says. `hand_solder_ok`: true
+  only when the board is meant to be hand soldered (a kit, a hobby board with large parts), else null.
 - `thermal.heatsinks`: only cooling the board shows or its documentation states: a heat sink footprint
   or a TO-220/TO-247 tab with a mounting hole next to a part (`part`, with `sink_part` when the board names
   the sink, and `theta_sa_C_W` from that sink's datasheet or its class: clip-on SOT-223/DPAK 20-40,

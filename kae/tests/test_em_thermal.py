@@ -60,3 +60,37 @@ def test_a_cold_plate_under_the_board_takes_the_heat_and_sets_its_temperature():
     assert free[:, 12, 12].mean() == pytest.approx(q / 4e-6 / 20.0, rel=0.05)   # still air: q/(2h), 12.5 K
     assert T[1, 12, 12] == pytest.approx(15.0 + q / g, rel=0.1)
     assert T[0, 12, 12] > T[1, 12, 12]           # the heat crosses the laminate to reach the plate
+
+
+def _pad_rise(p, gap, sw, mode):
+    """Mean rise of a 2 mm pad carrying 1 W in a 20 mm pour: solid, the relief's true copper, or the relief lumped."""
+    from shapely.geometry import box
+    from shapely.ops import unary_union
+    pad = box(-1, -1, 1, 1)
+    ring = pad.buffer(gap, join_style=2).difference(pad)
+    w = sw / 2
+    spokes = unary_union([box(1, -w, 1 + gap, w), box(-1 - gap, -w, -1, w), box(-w, 1, w, 1 + gap), box(-w, -1 - gap, w, -1)])
+    m = Mesh.over(-10, -10, 10, 10, p, [Layer("C", 0, 0.035, 1)])
+    if mode == "true":
+        m.paint(0, "X", box(-10, -10, 10, 10).difference(ring).union(spokes))
+    else:
+        m.rect(0, "X", -10, -10, 10, 10)
+    cut, links = (), ()
+    if mode == "lumped":
+        cut = [(0, m.cells_in(ring))]
+        ends = (((0.85, 0), (1 + gap + p, 0)), ((-0.85, 0), (-1 - gap - p, 0)), ((0, 0.85), (0, 1 + gap + p)), ((0, -0.85), (0, -1 - gap - p)))
+        links = [lk for a, z in ends for lk in TH.spoke_links(m, 0, sw, a, z, gap)]
+    padm = m.cells_in(pad)
+    Q = np.zeros(m.lab.shape)
+    Q[0][padm] = 1.0 / padm.sum()
+    return TH.Thermal(m, [], h=10.0, k_fr4=1e-6, cut=cut, links=links).solve(Q)[0][padm].mean()
+
+
+@pytest.mark.parametrize("gap,sw", [(0.25, 0.3), (0.5, 0.5)])
+def test_a_lumped_thermal_relief_matches_the_resolved_copper(gap, sw):
+    """Four spokes between a pad and its pour: what they add to the pad's rise over a solid connection, lumped at
+    the evaluator's 0.25 mm pitch, against the relief's own copper resolved at 0.05 mm."""
+    truth = _pad_rise(0.05, gap, sw, "true") - _pad_rise(0.05, gap, sw, "solid")
+    lumped = _pad_rise(0.25, gap, sw, "lumped") - _pad_rise(0.25, gap, sw, "solid")
+    assert truth > 20                                     # 1 W through four spokes: tens of kelvin
+    assert lumped == pytest.approx(truth, rel=0.12)

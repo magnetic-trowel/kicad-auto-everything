@@ -8,6 +8,9 @@ every copper layer above ambient, for heat injected anywhere.
     between      layer l and l + 1 through their dielectric gap: k_fr4 p^2 / gap per cell, plus every
                  via's plated barrel, k_cu pi d t_plating / gap
     to the air   both outer layers: h p^2 per cell (natural convection and radiation)
+    reliefs      optional (cut, links): a thermal relief's gap cells carry no copper in plane (their raster
+                 labels the pad's or pour's copper), and each spoke is a lumped link k_cu t w / gap between
+                 the pad and the pour
     to a sink    optional (sinks): extra conductance per cell to a body at its own temperature (a cold
                  plate or enclosure under the board, a fan's stronger cooling over a region)
 
@@ -26,12 +29,34 @@ H_AIR = 12.0            # W/(m^2 K): natural convection plus radiation from a bo
 T_PLATING = 25e-6       # m, via barrel plating
 
 
+SPOKE_SPREAD = 1.25     # a spoke's resistance over its bar's, w / (k t gap): the spreading where it meets pad and
+                        # pour, from the resolved geometry (tests: 0.25-0.5 mm gaps, 0.25-0.5 mm spokes at 0.05 mm)
+
+
+def spoke_links(m, layer, w, a, z, gap, k_cu=K_CU):
+    """A thermal-relief spoke as lumped links for Thermal(links=...): k_cu t w / (gap SPOKE_SPREAD) in all,
+    across the spoke's width (one link per cell of it, side by side between its two ends a and z, (x, y) mm),
+    so the heat enters pad and pour along the spoke's width as it does in copper, not through one cell. A raster
+    at the evaluator's pitch cannot resolve a relief: painted, a 0.25-0.3 mm gap reads the same whatever its
+    spokes' width."""
+    n = max(1, int(round(w / m.pitch)))
+    dx, dy = z[0] - a[0], z[1] - a[1]
+    L = max(np.hypot(dx, dy), 1e-9)
+    tx, ty = -dy / L, dx / L
+    G = k_cu * m.layers[layer].t * 1e-3 * w / gap / SPOKE_SPREAD / n
+    out = []
+    for k in range(n):
+        o = (k - (n - 1) / 2) * m.pitch
+        out.append(((layer, *m.cell(a[0] + tx * o, a[1] + ty * o)), (layer, *m.cell(z[0] + tx * o, z[1] + ty * o)), G))
+    return out
+
+
 class Thermal:
     """The conduction network of a mesh. gaps: dielectric thickness (mm) between consecutive layers.
     sinks: [(layer index, G)] with G an (ny, nx) array of W/K per cell from that layer's cells to a sink
     (solve() takes each sink's temperature rise above ambient; 0 = at ambient)."""
 
-    def __init__(self, m, gaps, h=H_AIR, k_fr4=K_FR4, k_cu=K_CU, sinks=()):
+    def __init__(self, m, gaps, h=H_AIR, k_fr4=K_FR4, k_cu=K_CU, sinks=(), cut=(), links=()):
         self.m = m
         self.sinks = [(int(l), np.asarray(G, float)) for l, G in sinks]
         L, ny, nx = m.lab.shape
@@ -41,13 +66,16 @@ class Thermal:
         idx = np.arange(n).reshape(L, ny, nx)
         lam = k_fr4 * sum(gaps) * 1e-3 / L                         # each layer's share of the laminate
         g = np.where(m.lab >= 0, k_cu * np.array([l.t for l in m.layers])[:, None, None] * 1e-3, 0.0) + lam
+        for l, mask in cut:                                        # relief gaps: laminate only
+            g[l] = np.where(mask, lam, g[l])
         rows, cols, vals = [], [], []
 
         def link(a, b, G):
             rows.extend([a, b, a, b]), cols.extend([a, b, b, a]), vals.extend([G, G, -G, -G])
         # in plane: half-cells in series (a square: the sheet conductance itself)
         for (sa, sb) in ((np.s_[:, :, :-1], np.s_[:, :, 1:]), (np.s_[:, :-1, :], np.s_[:, 1:, :])):
-            G = 2.0 / (1.0 / g[sa] + 1.0 / g[sb])
+            with np.errstate(divide="ignore"):                    # a cell without copper or laminate joins nothing
+                G = 2.0 / (1.0 / g[sa] + 1.0 / g[sb])
             link(idx[sa].ravel(), idx[sb].ravel(), G.ravel())
         # between layers: the dielectric under each cell, and the vias' barrels
         for l in range(L - 1):
@@ -64,6 +92,9 @@ class Thermal:
                     continue
                 link(np.array([idx[la, j, i]]), np.array([idx[lb, j, i]]),
                      np.array([k_cu * np.pi * v.drill * 1e-3 * T_PLATING / dz]))
+        for (la, ja, ia), (lb, jb, ib), G in links:                # relief spokes and other lumped paths
+            if 0 <= ja < ny and 0 <= ia < nx and 0 <= jb < ny and 0 <= ib < nx:
+                link(np.array([idx[la, ja, ia]]), np.array([idx[lb, jb, ib]]), np.array([float(G)]))
         rows = np.concatenate([np.atleast_1d(r) for r in rows])
         cols = np.concatenate([np.atleast_1d(c) for c in cols])
         vals = np.concatenate([np.atleast_1d(v) for v in vals])

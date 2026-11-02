@@ -4,7 +4,8 @@
 
   OPERATING  kae.excite.evaluate --intent: what the board does electrically. cells.<cell id>.{V_V,
              f_sw_Hz, I_A, t_i_s}, parts.<ref>.{I_A, I_sustained_A} (loads and output connectors; the sustained draw sets temperatures), nets.<rail>.source,
-             requirements.thermal.{T_amb_C, airflow_h_W_m2K, heatsinks}. Each replaces one of the evaluator's priors.
+             requirements.thermal.{T_amb_C, airflow_h_W_m2K, heatsinks}, requirements.assembly.{process,
+             hand_solder_ok, reflow_only_parts}. Each replaces one of the evaluator's priors.
   INTENT     kae.intent: what matters. Standing priorities on every board (copper loss = power loss and
              efficiency; ripple), the spec's limits (rail tolerance -> drop.rail, rail and IC ripple ->
              supply.peak, sensitive pins -> pickup.peak, switch ratings -> overshoot.peak hard, track heat),
@@ -27,6 +28,7 @@ BASES = ("datasheet", "typical", "guess")
 BOUNDS = {"V": (0.3, 1000.0), "pct": (0.05, 50.0), "mV": (0.01, 5000.0), "A": (1e-9, 200.0), "Hz": (1e3, 1e8),
           "s": (1e-10, 1e-5), "C": (-55.0, 150.0), "K": (1.0, 200.0), "m": (0.01, 50.0), "K/W": (0.01, 500.0),
           "W/m2K": (5.0, 20000.0), "mm": (0.0, 2000.0)}
+ASSEMBLY = ("reflow", "hot_plate", "vapor_phase", "hand", "wave", "unknown")
 RATE = {"guess": 1.0, "typical": 1.0, "datasheet": 1.0}   # one rate scale: the basis is recorded, not weighted
 
 
@@ -444,6 +446,22 @@ def compile_spec(spec, summary):
     if sinks:
         op["requirements"].setdefault("thermal", {})["heatsinks"] = sinks
         opwhy["requirements.thermal.heatsinks"] = f"{len(sinks)} heat sink(s) from the spec"
+    # how the board is assembled (the router keeps or drops thermal reliefs by it): the spec's statement, beside the
+    # board's own evidence (packages that need reflow: leadless or ball-grid ones)
+    asm = spec.get("assembly") or {}
+    proc = str(asm.get("process") or "unknown").lower()
+    if proc not in ASSEMBLY:
+        S.rejected.append(f"assembly.process={asm.get('process')!r}: not one of {', '.join(ASSEMBLY)}")
+        proc = "unknown"
+    import re as _re
+    reflow_only = sorted(p["ref"] for p in summary.get("parts") or []
+                         if _re.search(r"QFN|DFN|BGA|LGA|CSP|\bW?SON\b|\dEP(?![A-Za-z])|ThermalVias", p.get("lib_id") or "", _re.I))
+    a = {"process": proc, "reflow_only_parts": reflow_only[:50], "n_reflow_only_parts": len(reflow_only)}
+    if isinstance(asm.get("hand_solder_ok"), bool):
+        a["hand_solder_ok"] = asm["hand_solder_ok"]
+    op["requirements"]["assembly"] = a
+    opwhy["requirements.assembly"] = why(asm, "assembly") + (f"; the board has {len(reflow_only)} leadless or ball-grid "
+                                                             f"part(s), which need reflow" if reflow_only else "")
     intent = {"schema": "kae.intent/1", "generation": 1, "currency": "mW_eq", "defaults": "neutral/1",
               "environment": {"enclosure": {"kind": th.get("enclosure") or "unknown", "why": why(th, "enclosure")},
                               "cables": cables if radios else []},

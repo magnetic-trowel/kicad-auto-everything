@@ -32,3 +32,15 @@ def test_heat_sinks_and_airflow_reach_the_operating_facts_and_bad_ones_are_rejec
     assert plate == {"side": "bottom", "region": "board", "theta_C_W": 0.5, "T_C": 45,
                      "why": "heat sink (guess: enclosure)"}
     assert len(rej) == 3 and any("U9" in r for r in rej) and any("without theta_sa" in r for r in rej)
+
+
+def test_assembly_process_is_recorded_with_the_boards_own_evidence():
+    summary = dict(SUMMARY, parts=SUMMARY["parts"] + [{"ref": "U2", "kind": "ic", "value": "ESP32-C3",
+                                                         "lib_id": "Package_DFN_QFN:QFN-32-1EP_5x5mm", "nets": {}}])
+    spec = {"schema": "kae.board-spec/1", "rails": [], "loads": [], "assembly": {"process": "hand", "why": "a kit"}}
+    _, op = I.compile_spec(spec, summary)
+    a = op["requirements"]["assembly"]
+    assert a["process"] == "hand" and a["reflow_only_parts"] == ["U2"]
+    _, op = I.compile_spec(dict(spec, assembly={"process": "glue"}), summary)
+    assert op["requirements"]["assembly"]["process"] == "unknown"
+    assert any("assembly.process" in r for r in op["provenance"]["rejected"])
