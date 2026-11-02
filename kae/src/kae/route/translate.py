@@ -676,6 +676,9 @@ def apply(tree, plan, info):
         # a class's own rule must hold typed clearances, so that its vias get their own
         # clearance class before Freerouting creates the class's via infos
         d0 = plan.matrix.get((n, n, cu[0]))
+        # the plan has no own pair only for a one-net class, whose rule never sits between two
+        # nets (every pair of classes gets its class_class rule below: on 25 merit boards no pair
+        # missed a layer; the fallback held 5 one-net classes), so the fallback is never priced
         diag = {l: plan.matrix.get((n, n, l)) or d0 or (0.2, 0.2, 0.2) for l in cu}
         nets = [Q(x) for x in rc.nets if x in known]
         network.append(["class", n, *nets, ["circuit", ["use_via", Q(vias[n])]],
