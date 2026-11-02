@@ -299,9 +299,9 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
     if dcp:
         # the DC band and the heat band solve the same network at f = 0: one factorization for both, handed to the
         # heat band in a holder it empties (freed before the heat band factors its own conduction network)
-        sys_dc = {"sys": ES.System(op_dc, 0.0)}
+        sys_dc = {}                          # built by the first solve that needs it (_dc_system)
         harms += _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes, log, obs_out=observations,
-                           system=sys_dc["sys"])
+                           system=sys_dc)
         if dcp.loads and not any(n.startswith("DC: copper open") for n in notes):
             # part temperatures from the board's own heat flow, and each part's loss (kae.excite.heat)
             from . import heat as HT
@@ -336,6 +336,15 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
                 solver_stats=solver_stats,
                 notes=notes + [f"pad {p}: not in the copper model" for p in missing][:20],
                 assumptions=bd.assumptions)
+
+
+def _dc_system(holder, op):
+    """The DC system shared by the DC and heat bands, built on first use (a board whose DC band solves nothing
+    never builds one) and kept in the holder for the heat band, which empties it."""
+    if "sys" not in holder:
+        from kae.em import solve as ES
+        holder["sys"] = ES.System(op, 0.0)
+    return holder["sys"]
 
 
 def _band_start(prev, inj, f, n_br):
@@ -436,7 +445,8 @@ def _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes,
         notes.append("DC: no rail with a source and a load; the DC band is empty")
         return []
     t_band = time.time()
-    res = ES.potentials_many(m, injs, 0.0, net=net_dc, op=op_dc, light=True, system=system)
+    res = ES.potentials_many(m, injs, 0.0, net=net_dc, op=op_dc, light=True,
+                             system=_dc_system(system, op_dc) if isinstance(system, dict) else system)
     log("solver: " + _solver_line(_solver_row(0.0, res, time.time() - t_band, band="dc")))
     trk = DC.track_currents(bm, b.tracks, net_dc, nets=set(dcp.feeds) | set(dcp.grounds))
     loss, drops, heat = [], {}, []

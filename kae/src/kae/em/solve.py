@@ -200,7 +200,7 @@ class System:
         first = np.full(net.ncomp, -1)
         uc, fi = np.unique(net.comp, return_index=True)
         first[uc] = fi
-        g = np.array([ground.get(c, first[c]) for c in range(net.ncomp)])
+        g = np.array([ground.get(c, first[c]) for c in range(net.ncomp)], dtype=np.int64)   # empty: no components
         free = np.ones(net.n_nodes, bool)
         free[g] = False
         self.free_idx = -np.ones(net.n_nodes, np.int64)

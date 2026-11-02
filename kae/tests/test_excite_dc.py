@@ -187,3 +187,18 @@ def test_dc_currents_left_out_of_the_copper_void_the_score():
     assert E._dc_harms(pl, bm, b, None, None, {}, [], 1, 0, [0.0] * 4, notes, lambda *a: None) == []
     assert any(n.startswith(E.DC_VOID) for n in notes)
     assert E.totals([0.0] * 4, ["dc"])["complete"] is False
+
+
+def test_a_dc_band_that_solves_nothing_builds_no_system():
+    """The DC system the DC and heat bands share is built on first use: a band with nothing to solve builds
+    none (eagerly built, it failed on boards whose DC network has no components)."""
+    from types import SimpleNamespace
+
+    from kae.excite import evaluate as E
+    pl = _plan()
+    pl.params = []
+    holder = {}
+    bm = SimpleNamespace(m=SimpleNamespace(terminals={}))
+    b = SimpleNamespace(footprints=[], tracks=[])
+    E._dc_harms(pl, bm, b, None, None, {}, [], 1, 0, [0.0] * 4, [], lambda *a: None, system=holder)
+    assert holder == {}
