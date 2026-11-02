@@ -1,27 +1,18 @@
 # Crystals and clocks
 
-*Tags: [P] primary, [S] snippet, [I] inference. VR = verification_rules.md.*
+Scope: crystal placement window, parasitic budget, guard/keep-out, vendor conflicts; clock driver placement, clock vias, differential clock buffers, spread spectrum. Not here: slow multi-drop clock topology -> [interfaces/i2c-spi-qspi.md](interfaces/i2c-spi-qspi.md#slow-multi-drop-clock-topology-limits); EMC zoning -> [emc-placement.md](emc-placement.md).
+Keys: crystal, oscillator, Pierce, XIN, XOUT, load capacitance, C_L, stray capacitance, pullability, guard ring, metal can, AN2867, AVR186, SLAA322D, Espressif, clock buffer, REFCLK, spread spectrum, SSC, xtal_pierce, XTAL-DMAX
+Tags: [P] primary, [S] snippet, [I] inference, [VR] verification_rules.md.
 
-**TL;DR**
-- **Crystal placement is an annulus.** The upper bound is ≤12 mm from the oscillator pins, on the same side (Microchip). Some vendors add a minimum: ESP32 ≥2.7 mm and ESP32-S3 ≥2.0 mm from the chip's clock pin (Espressif). The common "≤5 mm" figure is a heuristic [VR].
-- **Score parasitic capacitance, not just distance.** Typical figures are XIN–GND 1 pF, XOUT–GND 2 pF and XIN–XOUT 0.5 pF, with total stray 2–5 pF. Each 0.1 pF shifts frequency by ppm (0.175 pF × 45 ppm/pF ≈ 7.8 ppm, ST).
-- **Topology rules everyone agrees on:**
-  - XIN cap first; C0G caps;
-  - a short symmetric loop, with the cap grounds together;
-  - a guard pour or ring around the circuit (how it ties to ground is a vendor switch, below);
-  - no foreign nets inside or under the guard;
-  - no test points;
-  - no magnetics or high-speed traces nearby.
-- **Vendor conflicts need a switch:** whether to ground a metal can (ST: no; TI/AVR: yes), copper under the crystal (most: solid ground; TI CDCE925: cut), and how the guard ties to ground (a local oscillator ground with a single tie to MCU GND/AVSS, as in ST AN2867 and TI SLAA322D, vs stitched into the main ground with dense GND vias, as in Espressif).
-- **Clock routing:**
-  - put the clock driver next to its oscillator;
-  - use a C-shaped GND-via ring at clock transitions;
-  - never use a spread-spectrum clock as a transceiver, PLL or RF reference;
-  - multi-drop slow clocks: star branches within 30 mm of each other, daisy-chain stubs <7 mm.
+## Crystal placement and scoring rules
+1. Placement is an annulus: `distance_window` [dist_min (vendor: ESP32 ≥2.7 mm, ESP32-S3 ≥2.0 mm), 12 mm (Microchip)] as objective (minimise inside the window); `same_side`; caps on both sides of the crystal, CL1 (XIN cap) first, series R at the chip side. "≤5 mm" is a heuristic [VR].
+2. Score parasitic capacitance (trace length × C′ from the stackup) against XIN–GND 1 pF / XOUT–GND 2 pF / XIN–XOUT 0.5 pF (total stray 2–5 pF); each 0.1 pF matters (0.175 pF × 45 ppm/pF ≈ 7.8 ppm, ST).
+3. Keep-out: rule area `disallow track via` for foreign nets on F.Cu and the adjacent layer; HS traces and magnetics radius 3 mm [I] (uncalibrated warning); zero test points on oscillator nets; XIN/XOUT separation `D ≥ H·√(1/K − 1)` ([si-fundamentals.md](si-fundamentals.md)) [I], not a bare "3W".
+4. GND guard ring around the circuit, no foreign nets inside or under it; tie scheme, can grounding and copper-under are switched by the MCU vendor profile (single tie to MCU GND/AVSS per ST AN2867, TI SLAA322D vs stitched into main ground with dense GND vias per Espressif).
 
-## Key facts
+## Crystal rule table
+Source: [IF] §7.
 
-### Crystal rule table ([IF] §7)
 | ID | Value | Source |
 |---|---|---|
 | XTAL-DMAX | ≤12 mm (½ in) from the oscillator pins; same side; load caps adjacent and on the same side; grounded pour around the circuit routed directly to MCU ground, with no signal or power traces inside; on 2-sided boards, no traces under the crystal; tie broken guard sections to a mirrored ground layer | [Microchip dsPIC33AK](https://onlinedocs.microchip.com/oxy/GUID-E48B4A26-F201-4F0A-BCBA-16461582816A-en-US-4/GUID-AA04B64F-3C38-4E1C-8B51-49DE3CFE2419.html) [P] |
@@ -37,46 +28,19 @@
 | **XTAL-CAN** | **Conflict:** ST: "do not connect [a metal can] to the oscillator ground". TI SLAA322D/AVR186: housing to ground. TUSB9261: VSSOSC must not connect to the PCB ground plane | Vendor switch |
 | **Copper under crystal** | **Conflict:** solid or clean ground (Microchip, AVR186, SLAA322D, SWRA495L, Espressif, Nordic) vs "cut ground and power planes" (TI CDCE925 [S]). Resolution: ground for an MCU Pierce; cut only when the device datasheet asks | — |
 
-### Clocks
+## Clock routing rules
 - **Clock driver placement.** Place the clock driver next to its oscillator. Any part that talks exclusively to one other part goes next to it ([LearnEMC](https://learnemc.com/other-good-emc-design-guidelines) [P]).
 - **Clock vias.** Clock vias should be "completely surrounded": use a C-shaped ring of GND vias at every clock and RF transition ([Qualcomm CXO](https://docs.qualcomm.com/doc/80-PV086-5P/topic/CXO-and-SLEEP_CLK-routing.html) [P]).
-- **Slow multi-drop clocks (SLEEP_CLK).** Star branches must be within 30 mm of each other; daisy-chain stubs <7 mm (Qualcomm).
-- **Differential clock buffers (Renesas, PCIe):**
-  - nothing between the two lines;
-  - 0402/0201 parts;
-  - same layer and same via count;
-  - "1 mm ⇒ 6 ps";
-  - GND via at each layer change;
-  - ≥3W spacing (5W optimal);
-  - one GND via per decap.
-  
-  Source: [Renesas](https://www.renesas.com/en/document/apn/pcie-buffer-mux-layout-recommendations?r=1565126) [P].
+- **Slow multi-drop clocks (SLEEP_CLK):** star branches within 30 mm, daisy stubs <7 mm (Qualcomm) -> [interfaces/i2c-spi-qspi.md](interfaces/i2c-spi-qspi.md#slow-multi-drop-clock-topology-limits).
+- **Differential clock buffers (Renesas, PCIe)** ([Renesas](https://www.renesas.com/en/document/apn/pcie-buffer-mux-layout-recommendations?r=1565126) [P]): nothing between the two lines; 0402/0201 parts; same layer and via count; "1 mm ⇒ 6 ps"; GND via at each layer change; ≥3W spacing (5W optimal); one GND via per decap.
 - **Spread-spectrum clocking** lowers peak readings only when the new spectral lines are >100 kHz apart. Never use it as a reference for Ethernet, Fibre Channel or SONET transceivers, PLL-based CPUs, or RF ([Johnson](https://www.sigcon.com/Pubs/edn/clockmod.htm) [P]). Prefer slower edges and differential or low-swing clocks.
 - **Edge rate.** Clock rise/fall below 10% of the period is an Ott red flag.
 - **Placement order.** Clocks go next to their consumer, away from the I/O zone and the edges ([emc-placement.md](emc-placement.md)).
 
-## Recommendations for our system
-- **Placer.** Use a `distance_window` annulus [dist_min (vendor), 12 mm] as the objective (minimise inside the window). Add a `same_side` constraint, and adjacency rules: caps on both sides of the crystal, CL1 first, series R at the chip side.
-- **Score parasitic capacitance** as trace length × C′ from the stackup, checked against the XIN/XOUT/XIN–XOUT budgets. ST's pullability figures make each 0.1 pF meaningful.
-- **Keep-out and guard.**
-  - A keep-out rule area (`disallow track via` for foreign nets) on F.Cu and the adjacent layer.
-  - A heuristic radius for HS traces and magnetics: 3 mm [I], uncalibrated. Tag it [I] and keep it a warning.
-  - A GND guard ring, tied by the vendor profile's scheme: single tie to MCU GND/AVSS, or stitched into the main ground.
-  - XIN/XOUT separation from the crosstalk budget, D ≥ H·√(1/K − 1) ([si-fundamentals.md](si-fundamentals.md)) [I], not a bare "3W".
-  - Zero test points on the oscillator nets.
-- **Vendor switches.** Can grounding, copper-under and the guard tie scheme are switched by the MCU vendor profile.
-
-## Conflicts and open questions
-- **No primary numeric distance** from crystal nets to switch nodes, inductors or HS traces. The 3 mm and 5 mm figures are heuristics.
-- **Blocked sources.** Silicon Labs AN0016 and the Abracon notes could not be retrieved.
+## Open questions
+- No primary numeric distance from crystal nets to switch nodes, inductors or HS traces; 3 mm and 5 mm are heuristics.
+- Silicon Labs AN0016 and Abracon notes not retrievable.
 
 ## Sources
-- Research notes:
-  - [interface_rule_packs.md § 7, 11 (xtal_pierce)](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/interface_rule_packs.md)
-  - [verification_rules.md § 1A crystal row, 1B AMS-08, 2](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md)
-  - [rules_highspeed_emi.md § 4, 7](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_highspeed_emi.md)
-
-See also:
-- [emc-placement.md](emc-placement.md)
-- [rule-pack-format.md](rule-pack-format.md)
-- [interfaces/pcie.md](interfaces/pcie.md)
+- [interface_rule_packs.md § 7, 11 (xtal_pierce)](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/interface_rule_packs.md); [verification_rules.md § 1A crystal row, 1B AMS-08, 2](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md); [rules_highspeed_emi.md § 4, 7](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_highspeed_emi.md)
+- See also [rule-pack-format.md](rule-pack-format.md), [interfaces/pcie.md](interfaces/pcie.md).

@@ -1,15 +1,17 @@
 # Datasheet layout language → typed constraints, and hard vs soft vs context-switch rules
 
-**TL;DR**
-- **Datasheet layout sections mix five kinds of statement:** qualitative proximity, relative priority, pin/point-specific connectivity, explicit numbers, and ordered procedures (plus reference figures and designs). Each maps to a constraint type.
-- **Prefer comparative constraints** (rank orders, distance ratios) over invented millimetres. They are more faithful to the source and still checkable.
-- **Every rule carries:** a match pattern, typed units, `source_scope`, `statement_strength`, `contested_by` and provenance/precedence. Conflicts are recorded, never silently resolved.
-- **Hard:** fab limits and topology facts that all primary sources state the same way. **Soft:** millimetre "closeness" numbers and spacing multipliers. **Context switch:** rules primary experts dispute.
-- **VR's meta-finding:** catalog numbers were mostly right, but lost their applicability conditions. Scope fields matter more than the numbers.
+Scope: datasheet layout language → typed constraints; hard / soft / context-switch classification (power/RF/analog/DFM scope); severity recalibrations. Not here: pack contract, precedence, floors, resolution -> [rule-pack-format.md](rule-pack-format.md); myths -> [myths-and-contested.md](myths-and-contested.md); DRU syntax -> [../kicad/drc-rule-language-reference.md](../kicad/drc-rule-language-reference.md).
+Keys: datasheet layout guidelines, statement types, translation table, comparative constraint, distance ratio, rank order, applies_if, source_scope, statement_strength, contested_by, hard rule, soft rule, context switch, severity S1 S2 S3, fab floor, relative_placement_template, placement_priority
 
-## Key facts
+## Datasheet translation rules
+1. Datasheet layout sections mix five statement kinds (qualitative proximity, relative priority, pin/point connectivity, explicit numbers, ordered procedures) plus reference figures/designs; each maps to a constraint type (tables below). Parse "Layout Guidelines" and "Layout Example" sections into typed constraints with strength and scope; extract figures as relative templates.
+2. Prefer comparative constraints (rank orders, distance ratios) over invented mm: more faithful, still checkable. The LLM's value-add is this translation plus explaining *why* a rule is hard or soft; disagreements are surfaced, not hidden.
+3. Every rule carries a match pattern, typed units, `source_scope`, `statement_strength`, `contested_by`, provenance (URL + tag) and precedence. Authority [P] > [S] > [V] > [I]. Conflicts are recorded, never silently resolved. Datasheet constraints override generic design-intent defaults, never fab or safety floors.
+4. VR meta-finding: catalog numbers were mostly right but lost their applicability conditions; scope fields matter more than the numbers.
+5. No published taxonomy or test corpus of datasheet layout language exists: building one is novel work.
 
-**Statement types** (RPA §8) [P examples]:
+## Statement types
+RPA §8 [P examples].
 
 | Type | Example | Source |
 |---|---|---|
@@ -21,7 +23,8 @@
 | Ordered procedure | SLYT614's five steps; BQ25895 "according to this specific order is essential" | [SLYT614](https://www.ti.com/lit/an/slyt614/slyt614.pdf); [BQ25895](https://www.ti.com/lit/ds/symlink/bq25895.pdf) |
 | Reference design deference | Nordic: use the reference design, because matching differs QFN vs WLCSP | Nordic |
 
-**Translation table** [I] (defaults are heuristics to calibrate):
+## Translation table
+[I]; defaults are heuristics to calibrate.
 
 | Phrase pattern | Constraint type | Default quantification | Notes |
 |---|---|---|---|
@@ -37,22 +40,25 @@
 | Layout example figure | `relative_placement_template` | Vision extraction, normalised to pin-1 orientation | Initial placement seed |
 | Ordered steps | `placement_priority` | — | Place and route in that order |
 
-**Comparative constraints** (VR §3) [I]:
+## Comparative constraints
+VR §3 [I].
 - Examples: "Place the protected IC much further from the TVS than the TVS is to the connector" becomes a distance ratio. "Inductor close, but not as close as CIN" becomes a rank order.
 - These are more faithful than blog millimetres and machine-checkable.
 
-**Rule record fields** (VR) [I]:
+## Rule record fields
+VR [I].
 - `applies_if` and `source_scope` (device family / data rate / power level / enclosure vs PCB);
 - `statement_strength` (mandatory / must / should / as close as possible / good guideline);
 - `contested_by` (rule IDs + sources).
 
-**Rule-pack contract, precedence for design-intent values (20 interface < 30 vendor family < 40 device datasheet), fab and safety floors (not ranks: applied after resolution as effective_min = max(resolved_min, fab_min, safety_min); a pack asking for less raises a conflict, "needs a different fab class"), resolution policy ("stricter" + info finding; [S] never overrides [P]; [I] stays a warning until calibrated) and mandatory vendor profiles** (values differ 5–25×) are specified once in [rule-pack-format.md](rule-pack-format.md). Worked packs: [power/buck.md](power/buck.md) (`buck_sync`) and [crystals-clocks.md](crystals-clocks.md).
+Rule-pack contract (precedence 20 interface < 30 vendor family < 40 device datasheet; floors `effective_min = max(resolved_min, fab_min, safety_min)`; resolution policy; vendor profiles, values differ 5–25×) -> [rule-pack-format.md](rule-pack-format.md). Worked packs: [power/buck.md](power/buck.md) (`buck_sync`) and [crystals-clocks.md](crystals-clocks.md).
 
-**Hard vs soft classification** (VR §3, power/RF/analog/DFM scope; cross-domain tiers in [rule-pack-format.md](rule-pack-format.md), myth handling in [myths-and-contested.md](myths-and-contested.md)):
+## Hard vs soft classification
+(VR §3, power/RF/analog/DFM scope; cross-domain tiers in [rule-pack-format.md](rule-pack-format.md), myth handling in [myths-and-contested.md](myths-and-contested.md)):
 
 | Class | Rules | Encoding |
 |---|---|---|
-| **Hard: DRC** | DFM-01 fab absolute limits (router at recommended); DFM-02 courtyards; DFM-10 IPC-2221B floor (raised by the safety standard); DFM-11 JLC silk ≥1.0 / 0.15 mm | Board setup + `.kicad_dru`. Fab minimums go in Board Setup → Constraints, which KiCad uses as a floor for net-class clearances, implicit diff-pair gaps and pad/footprint overrides; a matching custom rule is used as written, so the compiler also clamps every emitted rule to the floors [P] ([drc_engine.cpp @10.0](https://gitlab.com/kicad/code/kicad/-/blob/10.0/pcbnew/drc/drc_engine.cpp)) |
+| **Hard: DRC** | DFM-01 fab absolute limits (router at recommended); DFM-02 courtyards; DFM-10 IPC-2221B floor (raised by the safety standard); DFM-11 JLC silk ≥1.0 / 0.15 mm | Fab minimums in Board Setup → Constraints + `.kicad_dru`; custom rules escape the board-minimum floor ([clearance resolution](../kicad/drc-rule-language-reference.md#clearance-resolution)), so the compiler clamps every emitted rule to the floors |
 | **Hard: topology** | No split/void crossing; single bridge if split; PWR-01 topology (CIN on the IC layer for integrated converters; hot-loop vias and plane coverage are scored through the loop-inductance estimate, so vertical loops stay legal); PWR-06 FB/VOS from the COUT pad; PWR-07 single AGND–PGND tie where "mandatory"; RF-03 shunt via the named VSS pin; RF-05 PCB keep-out polygon from the module datasheet; RF-07 no digital under RF; AMS-02 (low-digital-current converters). Cross-domain: connector→TVS→IC with no stub or via; 0 test points on SerDes | Geometric checker; reject |
 | **Hard within scope** | Vendor numbers tied to a family, interface or data rate | Activate only when the scope matches |
 | **Soft, strong** | PWR-02 next-layer GND ≤0.13 mm; PWR-10 ≥1 via/A; PWR-12 C_boot ≥10·C_g, C_VDD ≥10·C_boot; PDN-06 bead ≤20% rated; PWR-15 EP vias 0.3 mm at 1.0–1.2 mm | High-weight cost terms; warnings quoting the source |
@@ -60,29 +66,25 @@
 | **Context switch** (not emitted by default) | Copper under the inductor (Rohm vs TI); PWR-08 CIN/COUT ground (Rohm vs MPS/TI); thermal-via tenting (SLOA122 vs SLUA271/TB389); "smallest cap closest" (MT-101 vs Bogatin/Archambeault); perimeter stitching (Ott vs Hubing); PMIC ground cuts (DA9080); 20-H (Montrose "fact, not fiction" for high-density multilayer vs Shim/Hubing measurements; LearnEMC "debunked"); crystal can/VSSOSC grounding | Both variants + a selector (power level, layer count, fab process, datasheet mandate); ask; log the choice |
 | **Scoped myth exceptions** | 90° corners are a myth for single-ended nets below about 2 Gb/s, but ≤45° or curved on ESD paths (SLVA680A: arcing below ~2.6 mm radius at 8 kV), arcs/135° on RF, and bend rules stay for differential pairs and ≥10 Gb/s nets | Corner rule on `ESD_UNPROTECTED`, `RF50`, differential pairs and ≥10 Gb/s nets |
 
-**Severity recalibrations** (VR):
+## Severity recalibrations
+VR.
 - Remove PWR-08 as a default.
 - Split RF-05 into a hard PCB polygon plus an enclosure clearance on the mechanical checklist.
 - Keep AMS-02 at S1, with the escape only for scheme-specified multi-converter parts.
 - Datasheet "mandatory" maps to hard.
 
-**Why vendors disagree:** they optimise different objectives. Rohm targets conducted HF noise and inductor Q; TI and MPS target loop area and shielding. Store both, with the condition that selects between them.
+## Why vendors disagree
+ they optimise different objectives. Rohm targets conducted HF noise and inductor Q; TI and MPS target loop area and shielding. Store both, with the condition that selects between them.
 
-**Anti-folklore.**
+## Anti-folklore
 - Hubing: boards laid out "by people trying to adhere to a long list of EMC guidelines are worse than boards laid out by people with no EMC guidance at all"; "Blindly adhering" heads his error list ([slides](https://r6.ieee.org/scv-emcs/wp-content/uploads/sites/111/022019ToddHubing.pdf)) [P].
 - LearnEMC calls even its own good guidelines "not necessarily the best advice in every situation".
 
-## Recommendations for our system
-- **Parse datasheet "Layout Guidelines" and "Layout Example" sections** into typed constraints with strength and scope. Extract figures as relative templates. Datasheet constraints override generic design-intent defaults, never the fab or safety floors.
-- **The LLM's value-add** is turning relative language into comparative constraints and explaining *why* a rule is hard or soft. Disagreements are surfaced, not hidden.
-- **Keep provenance on every constraint** (URL + tag). Authority order: [P] > [S] > [V] > [I].
-- **Build a taxonomy and test corpus of datasheet layout language.** None exists in the literature; this is novel work.
-
-## Conflicts and open questions
-- **No published taxonomy of datasheet layout language exists;** the table above is a synthesis.
-- **KiCad DRU syntax** for 10.0 is in [drc-rule-language-reference.md](../kicad/drc-rule-language-reference.md) (`insideArea` is deprecated there; use `intersectsArea`/`enclosedByArea`). Test generated rules on the installed KiCad.
+## Open questions
+- No published taxonomy of datasheet layout language exists; the tables above are a synthesis.
+- KiCad DRU syntax for 10.0 is in [drc-rule-language-reference.md](../kicad/drc-rule-language-reference.md) (`insideArea` is deprecated there; use `intersectsArea`/`enclosedByArea`). Test generated rules on the installed KiCad.
 
 ## Sources
-- research notes: [rules_power_rf_analog_dfm.md § 8, § 20](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_power_rf_analog_dfm.md); [verification_rules.md § 1 Inferences, § 3](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md); [interface_rule_packs.md § 11](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/interface_rule_packs.md)
+- [rules_power_rf_analog_dfm.md § 8, § 20](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_power_rf_analog_dfm.md); [verification_rules.md § 1 Inferences, § 3](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md); [interface_rule_packs.md § 11](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/interface_rule_packs.md)
 
 See also: [rule-pack-format.md](rule-pack-format.md), [myths-and-contested.md](myths-and-contested.md), [checkers-power.md](checkers-power.md), [power/buck.md](power/buck.md), [placement-methodology.md](placement-methodology.md), [crystals-clocks.md](crystals-clocks.md)

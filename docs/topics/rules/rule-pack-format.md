@@ -1,37 +1,19 @@
 # Rule-pack format, rule strength tiers and knowledge-base schema
 
-*Tags: [P] primary, [S] snippet, [I] inference. VR = verification_rules.md.*
+Scope: canonical pack schema, precedence and resolution policy, fab/safety floors, rule strength tiers (cross-domain), vendor spread, knowledge-base record. Not here: datasheet-language translation and power/RF tier detail -> [datasheet-to-constraints.md](datasheet-to-constraints.md); contested rules -> [myths-and-contested.md](myths-and-contested.md); shared interface conventions -> [interfaces/common.md](interfaces/common.md); constraint IR -> [../architecture/constraint-ir.md](../architecture/constraint-ir.md).
+Keys: rule pack, pack schema v0, precedence 20 30 40, vendor_profile, by_vendor, resolution policy, stricter, window intersection, ask, fab floor, safety floor, effective_min, Board Setup Constraints, drc_engine.cpp, rule strength tiers, hard, soft-strong, soft-weak, context switch, vendor spread, knowledge-base record, check_type K K11 G S
+Tags: [P] primary, [S] snippet, [I] inference, [VR] verification_rules.md.
 
-**TL;DR**
-- **Every rule must carry five things:**
-  1. a match pattern that binds it to schematic objects;
-  2. typed, unit-carrying parameters, including formulas in UI, W, h or fractions of t_r;
-  3. provenance and precedence, with conflicts **recorded rather than silently resolved**;
-  4. a check backend: `kicad_dru`, `geometric`, `simulation` or `bom`;
-  5. a placement intent, kept separate from the routing constraints.
-- **Vendor profiles are mandatory.** Primary values for the same interface differ 5–25×. When the vendor is unknown, the current policy is to use the tightest [P] value and add an `info` finding that names the looser alternatives.
-  - For two-sided windows, take the intersection of the [P] windows. If it is empty, raise a conflict (`ask`) and never synthesise a composite.
-  - The policy is under review. The per-interface packs' defaults currently differ from it (e.g. USB2 defaults to 50 mil skew, not SPRAAR7A's 2 mil).
-- **Precedence and resolution:**
-  - Precedence order, for design-intent values only: interface default 20 < vendor family 30 < device datasheet 40.
-  - **Fab and safety minimums are not ranks in this ladder.** They are floors applied after resolution: effective_min = max(resolved_min, fab_min, safety_min). A pack that asks for less raises a conflict ("needs a different fab class") instead of winning. Also compile the fab minimums into Board Setup → Constraints (`.kicad_pro`). KiCad floors net-class clearances, implicit diff-pair gaps and pad/footprint overrides at that minimum, but uses a matching custom rule as written (a negative min even allows overlap), so the compiler must also clamp every emitted rule to the floors ([P] [drc_engine.cpp @10.0](https://gitlab.com/kicad/code/kicad/-/blob/10.0/pcbnew/drc/drc_engine.cpp)).
-  - A snippet-sourced [S] value never overrides a primary [P] value at equal precedence.
-  - Our heuristics [I] default to `warning` until calibrated against vendor evaluation-board layouts.
-- **Rule strength tiers** ([VR] §3):
-  - hard fab limits;
-  - hard topology;
-  - hard within a declared scope;
-  - soft-strong;
-  - soft-weak (heuristic);
-  - context switch;
-  - exceptions to myths.
-  
-  Millimetre values that come only from blogs become rank or comparative objectives, never DRC errors.
-- **Required fields:** `source_scope`, `statement_strength` and `contested_by`. Then the LLM can explain *why* a constraint is hard or soft and surface any disagreement.
+## Rule-pack requirements
+1. Every rule carries: (1) a match pattern binding it to schematic objects; (2) typed, unit-carrying parameters, incl. formulas in UI, W, h or fractions of t_r; (3) provenance and precedence, conflicts **recorded, not silently resolved**; (4) a check backend `kicad_dru` | `geometric` | `simulation` | `bom`; (5) a placement intent separate from routing constraints. Required fields `source_scope`, `statement_strength`, `contested_by` let the LLM explain *why* a constraint is hard or soft.
+2. Vendor profiles are mandatory: primary values for the same interface differ 5–25× (table below). Unknown vendor, current policy: tightest [P] value + `info` finding naming looser alternatives; two-sided windows take the intersection of [P] windows, empty → conflict (`ask`), never a synthesised composite. Policy under review: per-interface pack defaults differ (e.g. USB2 defaults to 50 mil skew, not SPRAAR7A's 2 mil).
+3. Fab and safety minimums are floors, not precedence ranks (formula: [resolution policy](#resolution-policy) step 6); a pack asking for less raises a conflict ("needs a different fab class"). Also compile fab minimums into Board Setup → Constraints (`.kicad_pro`) and clamp every emitted rule to the floors: a matching custom rule escapes KiCad's board-minimum floor ([clearance resolution](../kicad/drc-rule-language-reference.md#clearance-resolution); [drc_engine.cpp @10.0](https://gitlab.com/kicad/code/kicad/-/blob/10.0/pcbnew/drc/drc_engine.cpp) [P]).
+4. mm values that come only from blogs become rank or comparative objectives, never DRC errors.
+5. Express budgets as physics, not lengths (dB budgets, per-material dB/in, per-via ≈2 in TI SLLU149E / ≈1 in Heck, ESD+CMC ≈1 in, UI formulas, cable IL input); compute L_max per stackup ([interfaces/common.md](interfaces/common.md#loss-budget-instead-of-length)). Delay packs (DDR, HDMI, D-PHY, RGMII, SD) emit ps rules directly, TI "<20% of limit" as `opt`, full limit as `max`.
+6. Placement intents come from packs: chain order, distance windows and annuli, end-node termination, "AC cap within N mm of either endpoint". Keep packs as data so they can be calibrated against vendor evaluation boards.
 
-## Key facts
-
-### Pack schema v0 ([IF] §11 proposal)
+## Pack schema v0
+[IF] §11 proposal.
 ```yaml
 pack:
   id: <interface-or-circuit id>        # usb2_hs, buck_sync, xtal_pierce
@@ -53,7 +35,7 @@ pack:
   overrides: {datasheet_reference_layout: {precedence: 40}}
 ```
 
-**Resolution policy:**
+## Resolution policy
 1. Use the highest precedence (design-intent values only).
 2. Then use `by_vendor[vendor_profile]`.
 3. Then apply the declared `resolution`. The default is "stricter", and it raises an `info` finding citing both sources. "Stricter" is defined for one-sided scalar bounds; two-sided windows take the intersection, and an empty intersection is a conflict (`ask`). Contested rules ([VR] §3) take a selector or `ask`, never "stricter".
@@ -61,33 +43,15 @@ pack:
 5. [D]/[I] values are warnings until calibrated.
 6. Finally apply the fab and safety floors: effective_min = max(resolved_min, fab_min, safety_min). A resolved value below a floor is a conflict, not an override.
 
-### Worked examples (full YAML in [IF] §11)
-- **usb2_hs.** See [interfaces/usb2.md](interfaces/usb2.md).
-  - Roles and parameters:
-    - roles conn, phy, esd, cmc;
-    - zdiff 90 ±15% with by_vendor {qualcomm 75–105, microchip 90 +5/−10};
-    - intra-skew 1.27 mm {qualcomm 2.0, ti_usb_controllers 3.81};
-    - length warn 150 mm, max 250 mm {ti 304.8};
-    - ≤4 vias;
-    - gaps 0.762 mm (others) and 1.27 mm (clocks);
-    - GND overhang 5× pair gap;
-    - esd_conn_max 5 mm [I].
-  - Shield-termination conflict: resolution `ask`.
-  - Placement: anchor the connector on the board edge, then order conn → esd → cmc → phy.
-  - Checks:
-    - DRU: `skew … within_diff_pairs`, `via_count (max 4)`, `length` with `fromTo`, USB2-vs-others clearance;
-    - geometric: no T-junctions or test points; GND covers the offset polygon; ESD path order with a GND via ≤1 mm;
-    - BOM: no series caps.
-- **buck_sync.** Owned by the power cluster: [power/buck.md](power/buck.md).
-  - Parameters: Cin ≤2 mm (MPS); bulk ≤20 mm (Rohm); loop area 2/10/20 mm²; 5 A/ns; L1–L2 ≤0.127 mm; 1 via/A; 1 mm/A; SW ≤2.54 mm; FB ≤3 mm [I].
-  - Datasheet reference-layout override at precedence 40.
-- **xtal_pierce.** See [crystals-clocks.md](crystals-clocks.md).
-  - Placement: annulus from a vendor-specific minimum distance to 12 mm.
-  - Parameters: parasitic limits; hs_keepout 3 mm [I]; metal-can vendor switch.
-  - DRU: disallow foreign tracks and vias in `XTAL_KEEPOUT`.
-- The DRU token forms (`within_diff_pairs`, `insideArea`, `track_angle`) must be tested on the installed KiCad.
+## Worked pack examples
+Full YAML in [IF] §11.
+- `usb2_hs` -> [interfaces/usb2.md](interfaces/usb2.md#worked-pack-usb2_hs) (shield-termination conflict resolution `ask`).
+- `buck_sync` -> [power/buck.md](power/buck.md#irp-buck_sync-rule-pack) (datasheet reference-layout override at precedence 40).
+- `xtal_pierce` -> [crystals-clocks.md](crystals-clocks.md): annulus from vendor minimum to 12 mm; parasitic limits; hs_keepout 3 mm [I]; metal-can vendor switch; DRU disallows foreign tracks and vias in `XTAL_KEEPOUT`.
+- Test the DRU token forms (`within_diff_pairs`, `insideArea`, `track_angle`) on the installed KiCad.
 
-### Rule strength tiers ([VR] §3)
+## Rule strength tiers
+[VR] §3.
 | Tier | Examples | Encoding |
 |---|---|---|
 | Hard: fab/assembly | Fab absolute minimums (router targets the recommended values); courtyard non-overlap; IPC-2221B floor; JLC silk 1.0 mm / 0.15 mm | Floors applied after resolution, not a precedence rank; Board setup + `.kicad_dru` ([dfm-fab-limits.md](dfm-fab-limits.md)) |
@@ -98,13 +62,14 @@ pack:
 | Context switch | See [myths-and-contested.md](myths-and-contested.md) | Store both variants plus a selector; ask; log |
 | Myth exceptions | 90° corners are a myth only for single-ended nets below about 2 Gb/s; keep corner/bend rules on ESD and RF nets, differential pairs and nets ≥10 Gb/s | Net-class scoped |
 
-**Severity recalibrations ([VR]):**
+## Severity recalibrations
+[VR].
 - TL-5 (test points on SerDes) becomes hard.
 - EMI-7: the millimetre distance becomes soft; the topology stays P0.
 - EMI-6: the 10–15 mm stitch pitch is soft; the P0 is "no crossing without a bridge or stitch".
 - RF-05 splits into a hard PCB keep-out plus an enclosure clearance for the mechanical checklist (15 mm for ESP32).
 
-### Vendor spread (why vendor profiles are mandatory)
+## Vendor spread
 | Quantity | Tightest | Loosest | Ratio |
 |---|---|---|---|
 | USB3 intra-pair | 2 mil (TUSB1046) | 0.7 mm (Qualcomm) | ~14× |
@@ -114,7 +79,8 @@ pack:
 | Ethernet PHY↔magnetics | <1 in (Microchip) | ≥25 mm (Pulse) | opposite directions |
 | PCIe AC cap (Gen3+) | 75–220 nF (TI) | 176–265 nF (Qualcomm) | 220 nF fits both; Gen1/2-only parts may cap at 200 nF ([interfaces/pcie.md](interfaces/pcie.md)) |
 
-### Knowledge-base record ([HS] §12 + [VR])
+## Knowledge-base record
+[HS] §12 + [VR].
 - `rule_id, family, statement`
 - `numeric{value, unit, basis: mm|ps|W|h|λ|fraction_of_tr}`
 - `physics_why`
@@ -125,35 +91,10 @@ pack:
 - Negative (myth) rules are included.
 - Precedence: spec and vendor requirements override rules of thumb, and physics drives the checkers.
 
-## Recommendations for our system
-- **Express budgets as physics, not lengths.** Store:
-  - dB budgets and per-material dB/in tables;
-  - per-via penalties (≈2 in, TI SLLU149E; ≈1 in, Heck);
-  - per-component penalties (ESD+CMC ≈1 in);
-  - UI formulas and the cable insertion-loss input.
-  
-  Compute L_max per stackup.
-- **Delay packs** (DDR, HDMI, D-PHY, RGMII, SD) emit ps rules directly. Use TI's "<20% of limit" as `opt` and the full limit as `max`.
-- **Placement intents** come from packs:
-  - chain order;
-  - distance windows and annuli;
-  - end-node termination;
-  - "AC cap within N mm of either endpoint".
-- **Let the LLM turn relative source wording into comparative constraints**, e.g. "protected IC much further from the TVS than the TVS is to the connector" becomes a distance ratio. This is more faithful than inventing millimetre values.
-- **Keep packs as data**, so they can be calibrated against vendor evaluation boards.
-
-## Conflicts and open questions
+## Open questions
 - The schema is a proposal. The geometric backends exist only as function names.
 - `statement_strength` has to be read from the source wording by hand (or by the LLM). No source supplies it as structured data.
 
 ## Sources
-- Research notes:
-  - [interface_rule_packs.md § 11](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/interface_rule_packs.md)
-  - [rules_highspeed_emi.md § 10, 12](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_highspeed_emi.md)
-  - [verification_rules.md § 1 Inferences, 3](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md)
-
-See also:
-- [myths-and-contested.md](myths-and-contested.md)
-- [checkers-si-emi.md](checkers-si-emi.md)
-- [interfaces/usb2.md](interfaces/usb2.md)
-- [../architecture/constraint-ir.md](../architecture/constraint-ir.md)
+- [interface_rule_packs.md § 11](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/interface_rule_packs.md); [rules_highspeed_emi.md § 10, 12](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_highspeed_emi.md); [verification_rules.md § 1 Inferences, 3](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md)
+- See also [checkers-si-emi.md](checkers-si-emi.md).

@@ -1,15 +1,16 @@
 # Motor drivers and H-bridges
 
-**TL;DR**
-- **Critical loop:** supply+ → HS FET → winding → opposite LS FET → supply−, plus the per-half-bridge commutation loop. Put small ceramics (<10 µF) right at each half-bridge and bulk electrolytics (>10 µF) at the power entry.
-- **Switch node short and wide** (HS source to LS drain). Ringing is an LC effect of PCB and FET parasitics.
-- **Gate traces ≥20 mil,** routed with their return (SHx for the high side).
-- **Shunts and VDRAIN use Kelvin connections enforced with net ties.**
-- **TI SLVA959 contains errors:** its per-via thermal resistance, a unit typo and a "90° bends reflect" claim. Do not encode them.
+Scope: H-bridge/3-phase motor-driver layout per TI SLVA959B, its errors, MOT rule IDs. Not here: gate drive -> [gate-drive-bootstrap.md](gate-drive-bootstrap.md); Kelvin/net ties -> [current-sense-kelvin.md](current-sense-kelvin.md); via ampacity -> [high-current.md](high-current.md#via-ampacity).
+Keys: motor driver, H-bridge, half-bridge, 3-phase, BLDC, stepper, SLVA959B, predriver, VDRAIN, SHx, GHx, CSA, bulk cap, commutation loop, MOT-01, MOT-07
 
-## Key facts
+## Motor-driver checks to emit
+- Critical loops: supply+ → HS FET → winding → opposite LS FET → supply−, plus each half-bridge's commutation loop; ceramics <10 µF at each half-bridge, bulk >10 µF at power entry. Ringing is an LC effect of PCB + FET parasitics.
+- Detector: N-FET pairs sharing an SH node that goes to a connector; driver pins GHx/SHx/GLx/SLx/SPx/SNx/VDRAIN/VCP. Roles: per-phase bypass cap, shunt, CSA filter caps, bulk cap.
+- Net ties for shunt Kelvin pairs and VDRAIN, proposed as schematic changes ([current-sense-kelvin.md](current-sense-kelvin.md)).
+- Use the conservative via-current table; flag SLVA959's thermal equation as an erroneous source in provenance.
 
-**TI SLVA959B "Best Practices for Board Layout of Motor Drivers"** (Oct 2021; [PDF](https://www.ti.com/lit/pdf/slva959)) [P]:
+## TI SLVA959B motor-driver rules
+TI SLVA959B "Best Practices for Board Layout of Motor Drivers" (Oct 2021; [PDF](https://www.ti.com/lit/pdf/slva959)) [P].
 - **Grounding:**
   - Single-point distribution for power traces, star ground for signals.
   - Partition into areas; do not physically split.
@@ -40,17 +41,19 @@
 - **Thermal and vias:**
   - Continuous top pours from the thermal pad to the planes; 1.5–2 oz copper.
   - Direct-connect thermal vias, never spokes, not mask-covered (voiding). 20 mil pad / 8 mil hole vias.
-  - IPC-2152 via current (1 oz, 10 °C): 6 mil 0.2 A; 8 mil 0.55 A; 10 mil 0.81 A; 12 mil 0.84 A; 16 mil 1.1 A.
+  - IPC-2152 via-current table (1 oz, 10 °C; 12 mil 0.84 A) -> [high-current.md#via-ampacity](high-current.md#via-ampacity).
   - Multiple vias where current enters or leaves pins; no via clusters that split the plane.
   - Doubling copper thickness halves lateral thermal resistance.
 
-**Errors in SLVA959** (RPA §11 analysis) [I]:
+## Errors in SLVA959
+RPA §11 analysis [I]. Do not encode these.
 - Its Eq. 4 claims **5.73 °C/W** for one 20/8 mil via. That treats the pad diameter and hole as radii and the annulus as solid copper. A plated barrel is far worse: SNVA419 gives 261 °C/W (12 mil, 0.5 oz), blogs about 150 °C/W.
 - Its Eq. 2 prints λ as "25 °C·cm/W", but Eq. 3 uses 0.25. The 71.4 °C/W result for 1 cm² of 1 oz copper matches 0.25.
 - "90° bend … can cause the current to reflect" is not credible at motor-drive frequencies (see the HS/EMI myths docs). Obtuse corners are fine.
 - Its via-current table (0.84 A at 12 mil) is about half the calculators' figure (~1.9 A for 0.3 mm). It remains the conservative default ([high-current.md](high-current.md)).
 
-**Rules** (RPA §11) [I]:
+## Motor-driver rule IDs
+RPA §11 [I].
 
 | ID | Rule | Numeric | Check | Sev |
 |---|---|---|---|---|
@@ -62,15 +65,10 @@
 | MOT-06 | Bulk at the entry, ceramics at the bridge | >10 µF / <10 µF | Value/type classification + distances | S2 |
 | MOT-07 | Thermal pad: continuous pour + direct-connect vias | 2 oz if possible | Via count; zone connection = solid | S2 |
 
-## Recommendations for our system
-- **H-bridge / 3-phase detector:** N-FET pairs sharing an SH node that goes to a connector; gate-driver pins GHx/SHx/GLx/SLx/SPx/SNx/VDRAIN/VCP. Roles: per-phase bypass cap, shunt, CSA filter caps, bulk cap.
-- **Propose net ties** for shunt Kelvin pairs and VDRAIN as schematic changes; KiCad net ties need a symbol ([current-sense-kelvin.md](current-sense-kelvin.md)).
-- **Use the conservative via-current table,** and flag SLVA959's thermal equation as an erroneous source in provenance.
-
-## Conflicts and open questions
+## Open questions
 - **No stepper- or BLDC-specific notes** beyond SLVA959, and no motor-connector or cable-shielding data, were read.
 
 ## Sources
-- research notes: [rules_power_rf_analog_dfm.md § 11, § 20](../../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_power_rf_analog_dfm.md)
+- [rules_power_rf_analog_dfm.md § 11, § 20](../../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_power_rf_analog_dfm.md)
 
 See also: [gate-drive-bootstrap.md](gate-drive-bootstrap.md), [current-sense-kelvin.md](current-sense-kelvin.md), [high-current.md](high-current.md), [../thermal.md](../thermal.md)

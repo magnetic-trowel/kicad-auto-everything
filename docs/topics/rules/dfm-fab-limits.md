@@ -1,15 +1,17 @@
 # DFM, DFA and fab limits
 
-**TL;DR**
-- **DRC minimums = the fab's absolute limits; router targets = the fab's recommended values + margin.** Fab profiles set `min` only. Fab and safety minimums are floors applied after rule resolution, not precedence ranks: effective_min = max(resolved_min, fab_min, safety_min), and a pack that asks for less raises a conflict ("needs a different fab class"). Also compile them into Board Setup → Constraints (`.kicad_pro`). KiCad floors net-class clearances, implicit diff-pair gaps and pad/footprint overrides at that minimum, but uses a matching custom rule as written, so the compiler must also clamp every emitted rule to the floors [P] ([drc_engine.cpp @10.0](https://gitlab.com/kicad/code/kicad/-/blob/10.0/pcbnew/drc/drc_engine.cpp)).
-- **JLCPCB 1 oz:** 0.10/0.10 mm (1–2 layer), 0.09/0.09 mm (multilayer); annular ring 0.25/0.20 mm recommended; copper ≥0.2 mm from routed edges, ≥0.4 mm from V-cuts; silk ≥1.0 mm text / 0.15 mm line (CORRECTED).
-- **Courtyards:** IPC-7351 Level B 0.25 mm per side. Tombstoning needs symmetric thermal connection on 0201/0402.
-- **Corrected assembly numbers:** fiducial edge distance = SMEMA 7.62 mm + clearance when the board rides the conveyor on its own edges, otherwise the assembler's panel/rail spec (not "≥5 mm"); test pads 1.0 mm from components (not 2.5 mm).
-- **Mounting-hole keep-outs have no standard.** Derive from screw head + margin; RP2040 reference: 6 mm around a 2.75 mm hole.
+Scope: canonical home for fab profiles (JLCPCB, PCBWay, OSH Park, Eurocircuits), copper-weight minimums, courtyards, tombstoning, fiducials, test points, depaneling, orientation/silk, mounting holes, DFM rule IDs. Not here: floor semantics -> [rule-pack-format.md](rule-pack-format.md#rule-pack-requirements); HV spacing -> [isolation-creepage.md](isolation-creepage.md); current capacity -> [power/high-current.md](power/high-current.md).
+Keys: DFM, DFA, fab limits, JLCPCB, PCBWay, OSH Park, Eurocircuits, trace/space, annular ring, drill, V-cut, mouse bite, castellation, panel, copper weight, courtyard, IPC-7351 Level B, tombstoning, fiducial, SMEMA 7.62 mm, test point, flying probe, depaneling, MLCC crack, mounting hole, ISO 273, DFM-01, DFM-12
 
-## Key facts
+## DFM rules
+1. DRC minimums = fab absolute limits; router targets = fab recommended + margin. Fab-profile packs set `min` only, `recommended` as router `opt`. They are floors applied after resolution, not a precedence rank: no interface, vendor or datasheet pack can relax them ([rule-pack-format.md](rule-pack-format.md#rule-pack-requirements)); also written into Board Setup → Constraints.
+2. Most limits are native KiCad constraints (`track_width`, `clearance`, `hole_size`, `annular_width`, `edge_clearance`, `hole_to_hole`, `text_height`, `text_thickness`, `silk_clearance`, `courtyard_clearance`); Python checks for tombstone symmetry, fiducial and test-point coverage, part-class edge/V-score distances.
+3. Copper-weight choice feeds pad-gap checks ([power/high-current.md](power/high-current.md), HC-03).
+4. Corrected assembly numbers: fiducial edge distance = SMEMA 7.62 mm + clearance on own-edge conveying, else the assembler's rail spec (not "≥5 mm"); test pads 1.0 mm from components (not 2.5 mm); silk ≥1.0 mm text / 0.15 mm line (CORRECTED).
+5. Mounting-hole keep-outs have no standard: screw head + margin; RP2040 reference 6 mm around a 2.75 mm hole.
 
-**Fab profiles** (official pages read 2026-10-20; compiled in [interface_rule_packs.md § 10](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/interface_rule_packs.md)) [P]:
+## Fab profiles
+Official pages read 2026-10-20; compiled in [interface_rule_packs.md § 10](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/interface_rule_packs.md)) [P]:
 
 | Parameter | JLCPCB 2L (rec / abs) | JLCPCB ML (rec / abs) | PCBWay std | OSH Park 2L | OSH Park 4L | KiCad check |
 |---|---|---|---|---|---|---|
@@ -26,7 +28,8 @@
 
 Sources: [JLCPCB PCB](https://jlcpcb.com/capabilities/pcb-capabilities); [JLCPCB assembly](https://jlcpcb.com/capabilities/pcb-assembly-capabilities); [PCBWay](https://www.pcbway.com/capabilities.html); [OSH Park 2L](https://docs.oshpark.com/services/two-layer/), [4L](https://docs.oshpark.com/services/four-layer/); [Eurocircuits](https://www.eurocircuits.com/pcb-design-guidelines-classification/).
 
-**JLCPCB detail** (incl. V-cut, castellation and panel geometry; [interface_rule_packs.md § 10](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/interface_rule_packs.md)) [P]:
+## JLCPCB detail
+Incl. V-cut, castellation and panel geometry; [interface_rule_packs.md § 10](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/interface_rule_packs.md)) [P]:
 - **Copper weight → min track/space:** 2 oz 0.16 (2L) / 0.15 mm (ML); 2.5 oz 0.20; 3.5 oz 0.25; 4.5 oz 0.30 mm (2L only). Available weights: 2L 1/2/2.5/3.5/4.5 oz; ML outer 1–2 oz, inner 0.5 oz default.
 - **Tolerances:** track width ±20%. PTH annular ring at 2 oz ≥0.254 mm; NPTH ring ≥0.45 mm.
 - **Vias:** ≥0.15 mm hole / 0.25 mm diameter (0.1/0.2 only for ≤1 mm boards with ENIG/OSP); diameter = hole + 0.1 (0.15 preferred); "Preferred Min. Via hole size: 0.2mm". Drill range 0.15–6.3 mm.
@@ -41,49 +44,57 @@ Sources: [JLCPCB PCB](https://jlcpcb.com/capabilities/pcb-capabilities); [JLCPCB
 - **Materials:** FR-4 Dk 4.5 (2L), 7628 4.4, 3313 4.1, 2116 4.16. Backdrill on 4–32 layers, ≥0.8 mm thick.
 - **Assembly:** min IC pitch 0.35 mm (standard) / 0.40 mm (economic); BGA pitch 0.3/0.5 mm; 01005 supported; recommended max panel 250 × 250 mm. Part-to-outline 0.2 (routed) / 0.4 mm (V-cut) per a support reply [S].
 
-**Other fabs** [P]:
+## Other fabs
+[P]
 - PCBWay: PTH hole tolerance ±0.08 / NPTH ±0.05 mm; half-holes ≥0.4 mm; panel spacing 1.6 mm (routing) / 0 (V-score); line-to-edge 0.25/0.20 mm (CNC).
 - OSH Park 2L: edge keep-out 15 mil; drill tolerance ±2.5 mil; no blind, buried or filled vias. 4L: FR408HR, L1–L2 prepreg 7.87 mil, core 39 mil.
 - Eurocircuits: inner pad isolation = IAR + 0.075 (≥0.200 mm); connected NPTH ring ≥0.30 mm.
 - Third-party blog numbers (e.g. "5 mil") lose to official pages.
 
-**Courtyards and spacing.**
+## Courtyards and spacing
 - IPC-7351 courtyard excess per side: Level A (most) ≈0.50, **B (nominal) 0.25**, C (least) ≈0.10 mm. Density levels are solder-fillet goals, not quality classes. B gives ≥0.5 mm land-to-land.
 - Hausherr (PCB Libraries): customers use 0.10/0.20/0.40; "Siemens, Cadence and Zuken users turn off all Courtyard Excess values" ([forum](https://www.pcblibraries.com/forum/placement-courtyard-excess_topic3372.html)) [S], VERIFIED.
 - Secondary [S]: 1.0 mm courtyard around BGAs, ~1.5 mm BGA rework clearance; Cadence 0.25–0.3 mm side-to-side and 0.5–1 mm to edge; TI ≥0.508 mm between land areas.
 
-**Tombstoning** [S]:
+## Tombstoning
+[S]
 - One end wets first and surface tension stands the part up; 0201/0402 are most susceptible.
 - Symmetric IPC-7351 pads; thermal relief on plane-connected pads (spokes 0.10–0.20 mm, gaps 0.20–0.30 mm); mirror any via within 1 mm of one pad; balance paste; a longer soak helps ([JLCPCB](https://jlcpcb.com/blog/pcb-tombstone); [AtlasPCB](https://www.atlaspcb.com/blog/pcb-tombstoning-prevention-smt/)).
 
-**Fiducials** ([Solutions Mfg](https://www.solutionsmfg.com/images/pdf/fiducial.pdf)) [P], CORRECTED:
+## Fiducials
+Source: ([Solutions Mfg](https://www.solutionsmfg.com/images/pdf/fiducial.pdf)) [P], CORRECTED:
 - Minimum 1 mm, maximum 3 mm. Clear area ≥ the mark radius, preferably equal to the diameter.
 - Edge distance ≥ 7.62 mm (SMEMA transport clearance) + fiducial clearance for a board conveyed on its own edges. On railed panels the assembler's rail spec applies (JLC: 1 mm fiducials 3.85 mm from the panel edges on 5 mm rails, VR). There is no "≥5 mm" in the primary.
 - Local fiducials for ≤0.020" (0.5 mm) pitch; others use <1.0 or ≤0.4 mm.
 - Three global fiducials in an asymmetric L, all the same size; mask never covers them.
 
-**Test points** ([Test Electronics](https://testelectronics.com/info/whitepapers/dft.php)) [P], CORRECTED:
+## Test points
+Source: ([Test Electronics](https://testelectronics.com/info/whitepapers/dft.php)) [P], CORRECTED:
 - Pitch 0.100" whenever possible, 0.050" minimum; pads ~0.035".
 - ≥0.125" from the board edge; ≥0.040" (1.0 mm) from components; handlers may need up to 0.138".
 - All on one side.
 - Flying probe [S]: pads 0.5 minimum / 0.75 mm recommended, spacing 60/80 mil.
 
-**Depaneling and panels** [S]:
+## Depaneling and panels
+[S]
 - Components ≥2 mm from the V-cut centreline; MLCCs 3–5 mm (5 mm on 0.8 mm boards), because flex cracks pass test and fail later; use soft-termination MLCCs near edges.
 - Stress ranking from lowest: push-back < slit < V-groove < perforation.
 - Rails 5–10 mm; tooling holes 2–4 mm NPTH, asymmetric, ≥2 mm clear; mouse bites 0.5–1.0 mm with tabs 2–3 mm wide every 50–90 mm; parts 1.5–2.5 mm from tabs.
 
-**Orientation and silk** [S]:
+## Orientation and silk
+[S]
 - Polarized parts in one direction, 0/90°; clear pin-1 and polarity marks; avoid THT ([Cadence DFA](https://resources.pcb.cadence.com/home/2024-dfa-guidelines-for-pcb)).
 - FEDEVEL: extra silk on connectors and slots to prevent placement errors.
 
-**Mounting holes** (no standard; [interface_rule_packs.md § 10](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/interface_rule_packs.md)):
+## Mounting holes
+(No standard; [interface_rule_packs.md § 10](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/interface_rule_packs.md)):
 - Raspberry Pi RP2040 reference: "NPTH FD2.75mm SM3.15mm KO6mm"; other Pi boards FD2.7 / SM5.8 / KO6.2 ([RP2040 HW design](https://datasheets.raspberrypi.com/rp2040/hardware-design-with-rp2040.pdf)) [P].
 - ISO 273 clearance holes (M2 2.2/2.4/2.6; M2.5 2.7/2.9/3.1; **M3 3.2/3.4/3.6**; M4 4.3/4.5/4.8 mm) [S].
 - M3 socket head ≈5.5 mm; ~7 mm clearance in practice [S].
 - TI: no high-speed traces near mounting holes [P].
 
-**Rules** (RPA §6, VR) [I]:
+## DFM rule IDs
+RPA §6, VR [I].
 
 | ID | Rule | Numeric | Check | Class |
 |---|---|---|---|---|
@@ -100,17 +111,12 @@ Sources: [JLCPCB PCB](https://jlcpcb.com/capabilities/pcb-capabilities); [JLCPCB
 | DFM-11 | Silk legible, off pads, pin-1 outside the body | JLC ≥1.0 mm / 0.15 mm | `text_height`, silk DRC | Hard (JLC) |
 | DFM-12 | Height zones from the enclosure | Mechanical drawing | 3-D height vs rule areas | S1 |
 
-## Recommendations for our system
-- **Fab-profile packs** set `min` only, with `recommended` as the router's `opt`. They are floors applied after resolution, not a precedence rank, so no interface, vendor or datasheet pack can relax them; a pack that asks for less raises a conflict ("needs a different fab class"). Write the minimums into Board Setup → Constraints as well ([datasheet-to-constraints.md](datasheet-to-constraints.md), [rule-pack-format.md](rule-pack-format.md)).
-- **Copper-weight choice feeds pad-gap checks** ([power/high-current.md](power/high-current.md), HC-03).
-- **Most limits are native KiCad constraints** (`track_width`, `clearance`, `hole_size`, `annular_width`, `edge_clearance`, `hole_to_hole`, `text_height`, `text_thickness`, `silk_clearance`, `courtyard_clearance`). Python checks are needed for tombstone symmetry, fiducial and test-point coverage, and part-class edge/V-score distances.
-
-## Conflicts and open questions
+## Open questions
 - **JLCPCB SMD pad spacing:** RPA §6 [P] lists "≥0.10 mm (1 oz) / 0.20 mm (2 oz)", while VR/IRP list different-net pad-to-pad 0.15 mm. These may be different parameters (mask-bridge vs different-net); re-check before encoding.
 - **Not readable:** JLCPCB's component-spacing table (JavaScript) and PCBWay's assembly spacing.
 - **No authoritative source** for the double-sided assembly cost premium or a mounting-hole standard. IPC-7351 and IPC-2221B are paywalled (expert reproductions used).
 
 ## Sources
-- research notes: [rules_power_rf_analog_dfm.md § 6](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_power_rf_analog_dfm.md); [verification_rules.md § 1B, § 2](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md); [interface_rule_packs.md § 10](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/interface_rule_packs.md)
+- [rules_power_rf_analog_dfm.md § 6](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_power_rf_analog_dfm.md); [verification_rules.md § 1B, § 2](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md); [interface_rule_packs.md § 10](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/interface_rule_packs.md)
 
 See also: [isolation-creepage.md](isolation-creepage.md), [power/high-current.md](power/high-current.md), [placement-methodology.md](placement-methodology.md)

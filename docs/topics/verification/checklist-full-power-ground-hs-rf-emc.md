@@ -1,18 +1,13 @@
 # Review checklist (full): power, ground, high-speed, RF, analog, EMC
 
-**TL;DR**
-- Physics items need a role/constraint model (currents, frequencies, part roles) before they can be computed.
-- GND-02 (no high-speed net over a split/void) is the most agreed item in the whole checklist (8 sources).
-- Hot loop, decoupling distance/order and return vias at layer changes are the highest-priority semantic critics.
-- This file holds 81 of the 299 checklist items (PDN 15, PWR 9, GND 13, HS 24, RF 6, ANA 4, EMC 10). The Critical items and the most-agreed Major items are summarized in [review-checklist.md](review-checklist.md).
+Scope: 81 items (PDN 15, PWR 9, GND 13, HS 24, RF 6, ANA 4, EMC 10) of the 299 layout-review items, full rows. Not here: structure, statistics, codes and the Critical/most-agreed summary -> [review-checklist.md](review-checklist.md); source keys -> [checklist-sources.md](checklist-sources.md).
+Keys: review checklist, power integrity, decoupling, hot loop, ground, return path, high-speed, diff pair, RF, analog, EMC, ESD, PDN-01, GND-02, HS-01
 
-## Key facts
+Physics items need a role/constraint model (currents, frequencies, part roles) before they can be computed; GND-02 (no HS net over a split/void) is the most agreed item in the whole checklist (8 sources); hot loop, decoupling distance/order and return vias at layer changes are the highest-priority semantic critics. [I]
 
-Merged from about 30 checklists by the expert-workflow note. Severity and automation tags are that note's assignments, based on each source's rationale [I]. Numeric thresholds are the cited sources' values; they are fab-specific and conflict between sources, so treat them as profile parameters. Source keys (AZ, GD, KD, AL, ...) are defined in [checklist-sources.md](checklist-sources.md).
+Columns and codes (Sev C/M/m, Auto A/S/J) -> [review-checklist.md#severity-and-automation-codes](review-checklist.md#severity-and-automation-codes). Thresholds are the cited sources' values: fab-specific, conflicting, treat as profile parameters. KiCad DRC key names follow the source note except where marked "KiCad 10 keys" (verified list: [../kicad/drc-rule-language-reference.md](../kicad/drc-rule-language-reference.md)).
 
-- **Sev**: C = critical (dead or unsafe board, unmanufacturable, unassemblable → respin); M = major (SI/PI/EMC/thermal/yield/reliability risk); m = minor (debug, documentation, cosmetics).
-- **Auto**: A = geometry/DRC only (KiCad check or custom-rule constraint named where applicable); S = semi-automatic (needs net classes, part roles or datasheet parameters); J = judgment, external info or simulation.
-
+## Checklist items
 | ID | Category | What to check | Why | Sev | Auto | Sources |
 |---|---|---|---|---|---|---|
 | PDN-01 | Power integrity | Decoupling caps as close as possible to power pins, one per pin (Altium: under 15 mm; CE default <3 mm) | Loop inductance | M (C for fast ICs) | S (cap-to-pin association) | AZ, JN, KG, CE, AL, UW, SCR |
@@ -52,11 +47,11 @@ Merged from about 30 checklists by the expert-workflow note. Severity and automa
 | GND-11 | Ground/return | Two-layer boards: no ground loops; ground track sized for each device's return; unbroken pour under every high-speed trace; power and ground run over each other; length:width ≤3:1 | 2-layer return control | M | S | AL, TI-EMI |
 | GND-12 | Ground/return | No buried signal traces in the ground plane (use the +V plane if unavoidable) | Plane integrity | M | A | TI-EMI |
 | GND-13 | Ground/return | No loops in power and ground nets | Loop antennas | M | S | SCR, AL |
-| HS-01 | High-speed | Differential pairs coupled at impedance gap, as close as possible; uncoupled length limited | Mode conversion | C | A (diff_pair_gap, diff_pair_uncoupled) | AZ, HH, KD, AL, VSE |
+| HS-01 | High-speed | Differential pairs coupled at impedance gap, as close as possible; uncoupled length limited | Mode conversion | C | A (diff_pair_gap, diff_pair_uncoupled); KiCad 10 keys: `diff_pair_gap`, `diff_pair_uncoupled` | AZ, HH, KD, AL, VSE |
 | HS-02 | High-speed | Intra-pair skew matched (serpentines at the mismatched end) | Mode conversion | M | A (skew) | AZ, JN, KD, TI-HS |
 | HS-03 | High-speed | Inter-signal length matching per interface (DDR, PCIe, Ethernet, LVDS, HDMI, USB3+, MIPI) | Timing | M | A (length/skew rules) | AZ, JR, AL |
 | HS-04 | High-speed | Clearance to aggressors; pair-to-pair spacing maximized; clocks isolated | Crosstalk | M | S | AZ, GD, TI-HS, VSE, SC |
-| HS-05 | High-speed | Stubs and layer changes minimized; via count limited | Reflections | M | A/S (via_count) | HH, AZ, KD, SC, SCR, FL |
+| HS-05 | High-speed | Stubs and layer changes minimized; via count limited | Reflections | M | A/S (via_count); KiCad 10 keys: `via_count` | HH, AZ, KD, SC, SCR, FL |
 | HS-06 | High-speed | Terminations present and at the correct end | Reflections | M | S | HH, JN, AL |
 | HS-07 | High-speed | Mitered/curved bends on impedance-sensitive traces (Flux: a 90° corner on a 20.5 mil trace is transparent below ~25 GHz, so this is mostly DFM/aesthetic for single-ended nets below about 2 Gb/s; keep bend rules for differential pairs and ≥10 Gb/s, [../rules/myths-and-contested.md](../rules/myths-and-contested.md)) | Minor discontinuity | m | A (track_angle) | HH, JN, FL, SF |
 | HS-08 | High-speed | Wide connector/SMD pads compensated (plane cutouts/voids under pads) | Impedance dip | M | J/sim | AZ, TI-HS |
@@ -97,22 +92,5 @@ Merged from about 30 checklists by the expert-workflow note. Severity and automa
 | EMC-09 | EMC/ESD | Decoupling at connectors where needed; separate ESD earth paths considered | EMC | m | J | AL |
 | EMC-10 | EMC/ESD | Board-to-board cables: ≥1 ground return per 9 signals (1 per 4 if >1 ft) | Return path in cables | m | S | TI-EMI |
 
-## Recommendations for our system
-
-- Store these rows as machine-readable data (ID, severity, automation class, threshold, threshold source, KiCad key) and drive the critic stack from it; see [critic-stack.md](critic-stack.md).
-- Load every numeric threshold from a fab/assembler profile with provenance (datasheet > fab profile > house default) [I].
-
-## Conflicts and open questions
-
-- Severity/automation tags are one author's assignments and need validation against escaped-error data [I].
-- Thresholds conflict between sources (e.g. silk height 25 mil vs 1.0 mm vs 50 mil; edge clearance 8 vs 10 mil; part-to-edge 125 mil vs 5 mm).
-- KiCad DRC key names in the Auto column follow the source note; the verified KiCad 10 key list is in [../kicad/drc-rule-language-reference.md](../kicad/drc-rule-language-reference.md).
-
 ## Sources
-
-- research notes: [expert_workflow_and_checklists.md § Q4 Master checklist table](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/expert_workflow_and_checklists.md)
-- corrections: [verification_kicad_and_tools.md § 1 Corrections table](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_kicad_and_tools.md)
-- corrections (VR): [verification_rules.md § 1 (RP-2, PDN-07, EMI-4, "smallest closest"), § 3](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md)
-- source checklists and their URLs: [checklist-sources.md](checklist-sources.md)
-
-See also: [review-checklist.md](review-checklist.md), [critic-stack.md](critic-stack.md), [respin-and-fab-hold-data.md](respin-and-fab-hold-data.md)
+- [expert_workflow_and_checklists.md § Q4 Master checklist table](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/expert_workflow_and_checklists.md); corrections: [verification_kicad_and_tools.md § 1 Corrections table](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_kicad_and_tools.md); corrections (VR): [verification_rules.md § 1 (RP-2, PDN-07, EMI-4, "smallest closest"), § 3](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md)
