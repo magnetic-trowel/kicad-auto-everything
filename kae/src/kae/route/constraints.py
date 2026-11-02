@@ -171,6 +171,10 @@ DEFAULTS = dict(
     escape_band_scale=1.0,         # band depth per side = scale x escapes on that side x (track + clearance)
     escape_band_max_mm=2.5,        # mm: the deepest band on one side
     escape_ring_pitch=0.5,         # mm: pad rings (QFN, QFP) at most this fine get bands
+    operating="",                  # placement and routing: the board's operating facts (JSON: requirements.thermal
+                                   # heat sinks, parts' P_sustained_W; kae.place.heat); "" none
+    heat_pull_w=1.0,               # placement: label-term weight per sustained W pulling a hot part into a region sink
+    heat_min_W=0.25,               # placement: parts dissipating less are not pulled
     escape_fanout=0,               # placement: 1 also reserves the dog-bone via sites of each ball grid on the
                                    # other side (no part there covers them); 0: off
 )
