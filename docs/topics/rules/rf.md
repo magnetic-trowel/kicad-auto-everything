@@ -1,15 +1,17 @@
 # RF layout: CPWG, matching, via fences, antenna keep-outs, module integration
 
-**TL;DR**
-- **RF geometry is fixed by the module or RF-IC datasheet and reference design.** That means a 50 Ω CPWG/microstrip over continuous ground, the matching network at the pin, and an antenna keep-out polygon from the module figure. Store this data **per part**.
-- **Hard rules:** shunt match parts grounded through the *named* pin (Nordic VSS pin 31); only GND under RF traces on every layer, apart from voids the part's datasheet mandates (U.FL pad, matching network); the PCB antenna keep-out polygon.
-- **Corrected:** Espressif's 15 mm is **enclosure** clearance, not a PCB keep-out. The u-blox "≤0.5 mm / ≤2 mm" via-fence numbers were **NOT FOUND**. The RF↔SMPS "20 mm" has no primary source.
-- **Use λ_g/20 at the highest harmonic** as a soft fence and stitching objective.
-- **90° corners are a myth for single-ended nets below about 2 Gb/s.** On RF nets use arcs or 135° (vendor rule); bend rules also stay for differential pairs and ≥10 Gb/s nets.
+Scope: RF trace geometry (CPWG/microstrip), matching at the pin, module and antenna keep-outs, via fences, RF bends, vendor module rules (u-blox, Nordic, Espressif). Not here: 90° corner myth -> [myths-and-contested.md](myths-and-contested.md); perimeter stitching dispute -> [emc-placement.md](emc-placement.md#stitching); crystals -> [crystals-clocks.md](crystals-clocks.md).
+Keys: RF, CPWG, coplanar waveguide, microstrip, 50 ohm, matching network, antenna keep-out, U.FL, IPEX, via fence, λ_g/20, shield can, SMPS separation, miter, NORA-B2, MAX-M5Q, nRF52832, ESP32, RF50, RF-01
 
-## Key facts
+## RF rules
+1. RF geometry is fixed by the module or RF-IC datasheet and reference design (50 Ω CPWG/microstrip over continuous ground, match at the pin, antenna keep-out polygon from the module figure). Store per-part RF records: keep-out polygons (vision extraction from datasheet figures, human-reviewed), stacks, stub specs, power widths, supply-ripple limits. Never generalise across modules.
+2. Hard: shunt match parts grounded through the *named* pin (Nordic VSS pin 31); only GND under RF traces on every layer except datasheet-mandated voids (U.FL pad, matching network); PCB antenna keep-out polygon as an all-layer KiCad rule area disallowing tracks, vias, zones. Enclosure clearance goes in a separate mechanical report.
+3. Corrected: Espressif's 15 mm is **enclosure** clearance, not PCB keep-out; u-blox "≤0.5 mm / ≤2 mm" via-fence numbers NOT FOUND; RF↔SMPS "20 mm" has no primary source (ranked objective; prefer fences or cans on dense boards).
+4. Fence and stitching: λ_g/20 at the highest harmonic, soft objective.
+5. Net class `RF50`: width/gap from the stackup solver; point-to-point topology check; arcs or 135° corners (vendor rule); fence-gap scoring along the centreline; reference-plane integrity raster.
 
-**u-blox** ([NORA-B2 SIM](https://content.u-blox.com/sites/default/files/documents/NORA-B2-u-connectXpress_SIM_UBXDOC-465451970-3906.pdf); [MAX-M5Q HIM](https://content.u-blox.com/sites/default/files/MAX-M5Q_HardwareIntegrationManual_(UBX-13002460).pdf); [LEA-6 HIM](https://content.u-blox.com/sites/default/files/products/documents/LEA-NEO-MAX-6_HIM_(UBX-14054794)_1.pdf)) [P]:
+## u-blox module rules
+Sources: ([NORA-B2 SIM](https://content.u-blox.com/sites/default/files/documents/NORA-B2-u-connectXpress_SIM_UBXDOC-465451970-3906.pdf); [MAX-M5Q HIM](https://content.u-blox.com/sites/default/files/MAX-M5Q_HardwareIntegrationManual_(UBX-13002460).pdf); [LEA-6 HIM](https://content.u-blox.com/sites/default/files/products/documents/LEA-NEO-MAX-6_HIM_(UBX-14054794)_1.pdf)) [P]:
 - **Geometry:**
   - 50 Ω; coplanar microstrip most common; trace width ≥200 µm; trace-to-ground clearance ≥2× the trace width.
   - Route in arcs (preferred) or 45°.
@@ -32,7 +34,8 @@
   - Stitched ground ring at the PCB edge, power planes kept back from the edge.
   - "Add GND stitching vias around transmission lines" (no pitch number, VR).
 
-**Nordic nRF52832** (PS v1.0, [mirror](https://cdn.sparkfun.com/datasheets/Wireless/Bluetooth/nRF52832_PS_v1.0.pdf)) [P]:
+## Nordic nRF52832 rules
+Source: PS v1.0 ( [mirror](https://cdn.sparkfun.com/datasheets/Wireless/Bluetooth/nRF52832_PS_v1.0.pdf)) [P]:
 - The radio output is not 50 Ω, so a matching network is required; it also filters the 2nd/3rd harmonics.
 - "C3 … is not directly connected to the ground plane, but grounded via VSS pin 31 … to create additional filtering of harmonic components."
 - Keep-out on the inner layers directly below the matching circuit. ≥1 via per VSS pin.
@@ -41,7 +44,8 @@
 - The reference layout has no bottom-side components.
 - DevZone [S]: continuous ground under the centre pad and RF path; no plane under the antenna; use the reference design, because matching differs between QFN and WLCSP. The "4×4 via grid" was NOT RETRIEVABLE.
 
-**Espressif ESP32** ([PCB layout guide](https://docs.espressif.com/projects/esp-hardware-design-guidelines/en/latest/esp32/pcb-layout-design.html)) [P]:
+## Espressif ESP32 RF rules
+Source: ([PCB layout guide](https://docs.espressif.com/projects/esp-hardware-design-guidelines/en/latest/esp32/pcb-layout-design.html)) [P]:
 - **Antenna placement:**
   - "At least 15 mm" clearance **inside the housing** (VR +CTX). The PCB keep-out is the module's "Keepout Zone" figure.
   - Antenna outside the board or feed at the edge; cut the board on both sides of and below the antenna; never mid-board with four-side cut-outs.
@@ -55,17 +59,18 @@
   - 2nd-harmonic stub on the shunt-cap ground pad: 15 mil, 100 Ω ±10% (not needed for 0402 and up).
   - RF trace on the outer layer, no vias, constant width, no branches; 135° or arcs. Keep all layers clear under the IPEX connector. On 2-layer boards the RF trace is normally >20 mil.
 - **Other numbers:**
-  - SDIO ±50 mil to CLK, 50 Ω ±10%, ideally ≤2000 mil.
+  - SDIO ±50 mil to CLK, 50 Ω ±10%, ideally ≤2000 mil ([interfaces/sata-ufs-sd.md](interfaces/sata-ufs-sd.md)).
   - Touch traces ≤300 mm, width ≤0.18 mm, 0.5–1 mm gap to ground, electrodes 8–15 mm.
   - Supply ripple <80 mV (MCS7 at 11n) and <120 mV (11 MHz at 11b).
 
-**Separation and shielding** (vendor knowledge base) [V]:
+## Separation and shielding
+Vendor knowledge base [V].
 - ~20 mm SMPS↔RF start; LNA input far from SMPS (harmonic spurs).
 - Shield-can footprint: continuous 0.5–1.0 mm ground ring with vias ≤1.0 mm pitch.
 - Fence ≥3× substrate height from the trace edge; double staggered rows for TX/RX isolation; 30–70 dB shielding (rough) ([RF Essentials](https://rfessentials.com/rf-knowledge-base/how-do-i-design-a-shielded-compartment-on-a-pcb-to-isolate-sensitive-rf-stages/); [AtlasPCB](https://www.atlaspcb.com/blog/emc-shielding-pcb-via-fence-ground-plane/)).
 - Primary sources are qualitative: route RF "far from any noise source, such as switching supplies" (u-blox).
 
-**Via fences and stitching.**
+## Via fences and stitching
 - Pitch < λ_g/20 at f_max, so the fence looks solid; single-via self-resonance is a few hundred MHz to a few GHz ([Wikipedia](https://en.wikipedia.org/wiki/Via_fence)) [S].
 - At 77 GHz, λ/20 ≈ 0.1 mm, which needs microvias ([AtlasPCB](https://www.atlaspcb.com/blog/gcpw-coplanar-waveguide-pcb-design-rf-mmwave/)) [V].
 - Worked values [I] (εr 4.3, conservative for microstrip):
@@ -76,14 +81,13 @@
   | 2.4 GHz | ~60 mm | ~3.0 mm | ~6 mm |
   | 5.8 GHz | ~25 mm | ~1.25 mm | ~2.5 mm |
 
-**Bends.**
-- The myth traces to one figure in the 1971 MECL handbook. A 5-mil corner (8.5 fF) has no noticeable effect until well over 70 GHz (Bogatin data via [Altium](https://resources.altium.com/p/slaying-900-right-angle-bend-dragon)) [S].
-- Johnson: fine to 2 Gbps, starting to matter at 10 Gbps [P].
-- Mitering gave 20 dB at 77 GHz (simulation, [GaTech](https://tentzeris.ece.gatech.edu/ECTC09_Rida.pdf)) and may be worthwhile from ~5.8 GHz [S].
-- The "50–60% optimal miter" is NOT FOUND. Johnson/Edwards: rounding removes 21% of the corner copper; neutralising needs 70–90% removed ([Johnson](https://www.sigcon.com/Pubs/edn/bigbadbend.htm)) [P].
-- Acute angles are an acid-trap fab concern.
+## RF bends
+- 90° corner physics (5-mil corner 8.5 fF, no effect until well over 70 GHz; Johnson fine to 2 Gbps, matters at 10 Gbps; rounding removes 21%, neutralising needs 70–90%) -> [myths-and-contested.md](myths-and-contested.md#myths-and-context-dependent-rules).
+- Mitering gave 20 dB at 77 GHz (simulation, [GaTech](https://tentzeris.ece.gatech.edu/ECTC09_Rida.pdf)); may be worthwhile from ~5.8 GHz [S]. Bogatin data via [Altium](https://resources.altium.com/p/slaying-900-right-angle-bend-dragon) [S]; [Johnson](https://www.sigcon.com/Pubs/edn/bigbadbend.htm) [P].
+- "50–60% optimal miter" NOT FOUND. Acute angles are an acid-trap fab concern.
 
-**Rules** (RPA §3 with VR status):
+## RF rule IDs
+RPA §3 with VR status.
 
 | ID | Rule | Numeric | Class |
 |---|---|---|---|
@@ -97,17 +101,11 @@
 | RF-08 | Arcs/135° above a few GHz; acute angles banned | — | S4 below 1 GHz, S3 above 5 GHz |
 | RF-09 | Pour stitching | ≤ λ/20 (λ/10 looser) | Soft |
 
-## Recommendations for our system
-- **Per-part RF records:** keep-out polygons (vision extraction from datasheet figures, human-reviewed), stacks, stub specs, power widths and supply-ripple limits. Never generalise across modules.
-- **Antenna keep-out:** an all-layer KiCad rule area disallowing tracks, vias and zones. Enclosure clearance goes in a separate mechanical report.
-- **Net class `RF50`:** width/gap from the stack-up solver; point-to-point topology check; arc corners; fence-gap scoring along the centreline; reference-plane integrity raster.
-- **RF↔SMPS separation** is a ranked objective. Prefer fences or cans on dense boards.
-
-## Conflicts and open questions
-- **Perimeter stitching:** Hubing says perimeter-only stitching can create a resonant cavity and to distribute vias instead; Ott stitches the two grounds of a G/S/S/G board around the periphery. Context switch.
-- **Not extracted:** Nordic/u-blox keep-out dimensions from figures (needed per module); a primary optimal-miter value.
+## Open questions
+- Perimeter stitching (Hubing vs Ott): context switch -> [emc-placement.md](emc-placement.md#stitching).
+- Not extracted: Nordic/u-blox keep-out dimensions from figures (needed per module); a primary optimal-miter value.
 
 ## Sources
-- research notes: [rules_power_rf_analog_dfm.md § 3, § 8](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_power_rf_analog_dfm.md); [verification_rules.md § 1B, § 2](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md)
+- [rules_power_rf_analog_dfm.md § 3, § 8](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_power_rf_analog_dfm.md); [verification_rules.md § 1B, § 2](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md)
 
 See also: [crystals-clocks.md](crystals-clocks.md), [datasheet-to-constraints.md](datasheet-to-constraints.md), [checkers-power.md](checkers-power.md)

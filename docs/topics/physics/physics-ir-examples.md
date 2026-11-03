@@ -1,12 +1,13 @@
 # Physics IR worked examples: buck, USB3, crystal, 24-bit ADC, 2.4 GHz feed, 48 V half-bridge
 
-**TL;DR**
-- Six circuits in the `physics:` grammar of [physics-ir.md](physics-ir.md). Every YAML block passes `tools/research/physics/vo_ir_check.py` with 0 errors; its warnings flag references to entities defined elsewhere on the board [C].
-- In each case the binding budget differs from what the rule of thumb names: switch-node C and FB pickup (buck), dB spend (USB3), pF of uncertainty (crystal), 15 µΩ of common impedance (ADC), the plane as half the antenna (2.4 GHz), common-source and mutual inductance (motor drive).
-- Design points are illustrative assumptions [I]; numbers marked [C] come from `tools/research/physics/vo_numbers.py`.
-- Code drafts most entities; the LLM writes requirement links, allocations and `ops`. `src` fields are omitted.
+Scope: six circuits written in the `physics:` grammar of [physics-ir](physics-ir.md) (buck, USB3, crystal, 24-bit ADC, 2.4 GHz feed, 48 V half-bridge), each with its binding budget derived; the regression set for validator, compiler and critics. Not here: grammar and compile targets -> [physics-ir](physics-ir.md); narrative worked cases (different design points: 2 A buck, 24 MHz crystal, 0.2 mm tab pad) -> [worked-thought-experiments](worked-thought-experiments.md).
+Keys: physics IR examples, buck 12→3.3 V, USB3 Gen1, Pierce crystal pullability, 24-bit ADC common impedance, 2.4 GHz antenna feed, 48 V half-bridge, common-source inductance, FB pickup, loss spend dB/in, stray-capacitance uncertainty, fence pitch λ_g/20, heatsink tab capacitance, vo_numbers.py, vo_ir_check.py
 
-## Key facts
+- Every YAML block passes `tools/research/physics/vo_ir_check.py` with 0 errors; its warnings flag references to entities defined elsewhere on the board [C].
+- In each case the binding budget differs from what the rule of thumb names (table). Design points are illustrative assumptions [I]; [C] numbers from `tools/research/physics/vo_numbers.py`. Code drafts most entities; the LLM writes requirement links, allocations and `ops`; `src` fields omitted.
+- Use as regression set: every budget must yield a ledger row with a model id and trust status. Implement buck (loop, node, coupling, sense) → USB3 (channel, discontinuity, antenna) → ADC (exclusion, common impedance, thermal): together all compile targets except full-wave. Never convert these budgets back to a millimetre DRU rule without tagging it a proxy with its derivation (I2) [I].
+
+## Summary of the six cases
 
 | Example | Dominant primitives | Binding budget [C] | Rule of thumb it replaces |
 |---|---|---|---|
@@ -17,7 +18,7 @@
 | 2.4 GHz feed | channel, designed antenna, shield, exclusion | S11 ≤ −10 dB; fence pitch ≤ λ_g/20 = 3.4 mm | "15 mm keep-out", "no 90° bends" |
 | 48 V half-bridge | cell, gate loop, sense port, coupling to chassis | L_cs ≤ 1 nH; M(hot, sense) ≤ 0.05 nH; tab C·dv/dt | "short wide switch node" |
 
-### 1. Synchronous buck, 12 V → 3.3 V, 3 A, 1 MHz, integrated FETs
+## 1. Synchronous buck, 12 V → 3.3 V, 3 A, 1 MHz, integrated FETs
 
 ```yaml
 bands:
@@ -46,12 +47,12 @@ ops:
 ```
 
 - **Spectra** [C]: di/dt = 1.5 A/ns, dv/dt = 6 V/ns; knee 1/(π·t_r) = 159 MHz, which defines the `edge` band.
-- **The hot loop budget is a peak voltage, not an area.** Code chooses the spend model by regime. When the edge is shorter than the ring period, an LC step model applies instead of L·di/dt; [dr_switch_cell_budget.py](../../../tools/research/physics/dr_switch_cell_budget.py) shows that the two can disagree by an order of magnitude [C]. The `alloc` splits the budget across the cap's ESL and pads, the vias and the lateral path, so the ledger can attribute spend.
-- **The switch node is the second aggressor and has the opposite sign.** A 20 mm² SW pour over a plane 0.1 mm down is 7.6 pF and injects C·dv/dt = 46 mA of displacement current each edge [C]. `widen_to_pour` would help the feed and hurt this node, which is why node and loop are separate primitives.
-- **FB coupling.** Johnson's K = 1/(1+(D/H)²) as a capacitive-divider bound: at H = 0.1 mm a fully parallel FB trace picks up 462 mV at D = 0.5 mm, 119 mV at 1 mm and 30 mV at 2 mm [C, rough]. The compiler emits `clearance (min 2mm)` between SW and FB as a proxy; the checker integrates the actual parallel length.
-- **Feed.** 3 A over 20 mm of 1 mm, 1 oz track is 9.8 mΩ (29 mV, 88 mW); a 5 mm pour is 2 mΩ [C]. That is why `R ≤ 5 mOhm` triggers `widen_to_pour` on VOUT but not on SW.
+- **Hot-loop budget is a peak voltage, not an area.** Code picks the spend model by regime: edge shorter than the ring period → LC step model instead of L·di/dt; the two can disagree by an order of magnitude ([dr_switch_cell_budget.py](../../../tools/research/physics/dr_switch_cell_budget.py)) [C]. `alloc` splits the budget across cap ESL and pads, vias, lateral path, so the ledger attributes spend.
+- **Switch node: second aggressor, opposite sign.** 20 mm² SW pour over a plane 0.1 mm down = 7.6 pF, C·dv/dt = 46 mA displacement current each edge [C]. `widen_to_pour` helps the feed and hurts this node: hence separate node and loop primitives.
+- **FB coupling:** Johnson's K = 1/(1+(D/H)²) as a capacitive-divider bound, H = 0.1 mm, fully parallel FB trace: 462 mV at D = 0.5 mm, 119 mV at 1 mm, 30 mV at 2 mm [C, rough]. Compiler emits `clearance (min 2mm)` SW–FB as a proxy; the checker integrates actual parallel length.
+- **Feed:** 3 A over 20 mm of 1 mm, 1 oz track = 9.8 mΩ (29 mV, 88 mW); a 5 mm pour 2 mΩ [C]; so `R ≤ 5 mOhm` triggers `widen_to_pour` on VOUT, not on SW.
 
-### 2. USB 3.x Gen1 SuperSpeed TX through a Type-C receptacle
+## 2. USB 3.x Gen1 SuperSpeed TX through a Type-C receptacle
 
 ```yaml
 bands:
@@ -78,11 +79,11 @@ ops:
 ```
 
 - **Loss spend** [C]: FR-4 (Df 0.02), 5 mil traces: 0.21 dB/in dielectric (Bogatin-style 2.3·f·Df·√Dk) + 0.25 dB/in conductor ≈ 0.46 dB/in. Two vias (about 1 in each), ESD+CMC (about 1 in) and 0.5 dB for AC caps and receptacle [I] leave 3.6 dB, about 200 mm of trace. The conductor-loss constant is from memory, unverified [I].
-- **Skew is a common-mode budget, not a length.** 5 mil is 0.77 ps at 6 ps/mm; with a 60 ps edge and 0.5 V leg swing, the CM spike is about 3 mV [C]. The vendor spread (2 mil to 0.7 mm, [usb3-usb4-typec](../rules/interfaces/usb3-usb4-typec.md)) collapses into one `V_cm` budget that each vendor profile can tighten.
-- **The connector is a reference transition.** The discontinuity entity makes the return device explicit (GND vias within 1 mm), compiled as a via-site reservation (R3).
+- **Skew is a CM budget, not a length:** 5 mil = 0.77 ps at 6 ps/mm; 60 ps edge, 0.5 V leg swing → CM spike ≈ 3 mV [C]. The vendor spread (2 mil to 0.7 mm, [usb3-usb4-typec](../rules/interfaces/usb3-usb4-typec.md)) collapses into one `V_cm` budget each vendor profile can tighten.
+- **Connector = reference transition:** the discontinuity entity makes the return device explicit (GND vias within 1 mm), compiled as a via-site reservation (R3).
 - **The antenna has two named halves:** J1's shell and the DC jack J4's shell. The budget is LearnEMC's 1 mV between antenna halves and Ott's 5 µA cable CM current for Class B ([emc-placement](../rules/emc-placement.md)) [P]. `relocate_port` (both connectors on one edge) is the cheapest fix, consistent with LearnEMC's connector zoning [P].
 
-### 3. 32 MHz Pierce crystal for an 802.15.4 radio
+## 3. 32 MHz Pierce crystal for an 802.15.4 radio
 
 ```yaml
 physics:
@@ -105,10 +106,10 @@ physics:
 ```
 
 - **The budget is in pF, derived from ppm** [C]. Pullability S = C1/(2(C0+CL)²) = 27.7 ppm/pF for C1 = 5 fF, C0 = 1.5 pF, CL = 8 pF. The ±40 ppm 802.15.4 budget minus 10 (tolerance), 10 (temperature) and 3 (aging) leaves ±17 ppm, so the stray-capacitance *uncertainty* must stay within ±0.61 pF. At 0.10 pF/mm (0.15 mm trace over 0.1 mm), 0.3 pF is 2.9 mm of trace. The "≤ 5 mm" rule is a lossy encoding of this.
-- **Uncertainty, not value, is spent.** A known stray is absorbed by choosing CL; only the unknown part costs ppm.
+- **Uncertainty, not value, is spent:** a known stray is absorbed by choosing CL; only the unknown part costs ppm.
 - **XOUT is an aggressor** (peak 0.10 V/ns at 1 Vpp [C]) and XIN a high-impedance victim, so one cell carries both roles. ST's 0.175 pF × 45 ppm/pF ≈ 7.8 ppm example ([crystals-clocks](../rules/crystals-clocks.md)) is the same budget for a more pullable 32 kHz crystal [P].
 
-### 4. 24-bit bridge ADC front end (ratiometric)
+## 4. 24-bit bridge ADC front end (ratiometric)
 
 ```yaml
 physics:
@@ -131,12 +132,12 @@ physics:
 
 - **Thresholds** [C]: LSB over a 5 V span is 298 nV; with fewer than 24 noise-free bits, a 0.3 µV layout share is generous [I].
 - **Common impedance decides the topology.** 20 mA of digital return through the analog reference must see ≤ 15 µΩ, that is 0.031 squares of 1 oz copper (0.49 mΩ/sq) [C]. No pour is that good, so the physics forces a sense port (ratiometric reference taken at the bridge, J5.2/J5.5) and a current exclusion zone. "Split the ground" is a lossy encoding of `exclusion` plus `sense`. Splitting without the exclusion check can make it worse ([si-fundamentals](../rules/si-fundamentals.md)).
-- **The input pair is in the R regime.** At 10 Hz the return current spreads by resistance: the "return under the trace" regime starts only at f_x ≈ R_□/(2πµ0h), about 0.3 MHz at h = 0.2 mm [C, `vo_return_spread.py`]. Star-point thinking is correct here, and wrong for the buck.
+- **The input pair is in the R regime.** At 10 Hz the return current spreads by resistance: the "return under the trace" regime starts only at f_x ≈ R_□/(2πµ0h), about 0.3 MHz at h = 0.2 mm ([vocabulary](vocabulary.md#bands-and-regimes)) [C, `vo_return_spread.py`]. Star-point thinking is correct here, and wrong for the buck.
 - **Thermal EMF** [C]: Cu–Sn/Pb solder joints are 1–3 µV/°C and Cu–Kovar 40–75 µV/°C ([Keithley](https://xdevs.com/doc/Keithley/Appnotes/LV_LR_e-hnbook_91113.pdf) [P]). A 0.1 K difference between the two input joints is 0.1–0.3 µV, or 4 µV with Kovar leads. The thermal coupling (LDO heat path → input pair) is a budget in kelvin, realized by `symmetrize` and `isothermalize`.
 - **Leakage and 50 Hz pickup** [C]: 5 V across 10 GΩ of surface leakage into a 10 kΩ node is 5 µV, hence the driven guard. A 1 A, 50 Hz conductor 10 mm away induces 0.63 µV in a 1 cm² input loop, so `area ≤ 10 mm²` is derived from the mains coupling, not chosen.
 - **Honest magnitude.** Direct MHz magnetic coupling from a buck into a 10 SPS sigma-delta input is mostly removed by its digital filter. What matters is DC/LF common impedance, heat, leakage, and aliasing or rectification near the modulator frequency [I].
 
-### 5. 2.4 GHz antenna feed (SoC → π match → chip antenna)
+## 5. 2.4 GHz antenna feed (SoC → π match → chip antenna)
 
 ```yaml
 bands:
@@ -163,7 +164,7 @@ physics:
 - **The ground plane is half the antenna.** `ant1.halves` names `ref.l2_rf`, so the same reference body is both a return (for `rf.feed`) and a radiator. Plane size and cuts near E1 become antenna parameters, not ground-quality issues. The keep-out is an `exclusion` of copper, sized per module ([rf](../rules/rf.md)).
 - **Honest magnitude.** 90° corners do not matter at 2.45 GHz on a 0.35 mm line ([rf](../rules/rf.md)). A clean trapezoid (12 V, 1 MHz, 2 ns) is 90 dB below its low-frequency amplitude at 2.45 GHz [C], so desense comes mostly from SW-node *ringing* at hundreds of MHz and its harmonics. The aggressor spectrum therefore has to come from the layout-aware cell model, not from t_r alone.
 
-### 6. 48 V half-bridge motor phase with low-side shunt
+## 6. 48 V half-bridge motor phase with low-side shunt
 
 ```yaml
 bands:
@@ -197,13 +198,7 @@ ops:
 - **The heatsink is a capacitor to chassis** [C]: a TO-220 tab (150 mm²) on a 0.23 mm pad (εr 4.5) is 26 pF; at 3.2 V/ns it drives 83 mA peaks into the chassis. That is a common-mode source the schematic never shows.
 - **No barrier entity.** 48 V (54 V max) stays below the 60 V DC ES1/SELV limit [I], so creepage is a functional, not a safety, budget here.
 
-## Recommendations for our system
-
-- Use these six blocks as the regression set for the validator, compiler and critics; every budget must yield a ledger row with a model id and trust status [I].
-- Implement in this order: buck (loop, node, coupling, sense), USB3 (channel, discontinuity, antenna), ADC (exclusion, common impedance, thermal). They exercise all compile targets except full-wave [I].
-- Do not convert any of these budgets back to a millimetre DRU rule without tagging it as a proxy with its derivation (I2).
-
-## Conflicts and open questions
+## Open questions
 
 - The undamped LC-step model of [dr_switch_cell_budget.py](../../../tools/research/physics/dr_switch_cell_budget.py) predicts near-100% overshoot almost independent of L for both power examples, so V_pk budgets need a damped, vendor-calibrated cell model before they gate anything.
 - The Johnson K bound for FB pickup and the dB/in loss rule are rough; both need a 2D field-solver check ([solver-ladder](solver-ladder.md)).
@@ -216,4 +211,4 @@ ops:
 - LearnEMC trapezoid harmonics: https://learnemc.com/ext/calculators/trapezoid_harmonics/index.html [S]
 - Scripts: [vo_numbers.py](../../../tools/research/physics/vo_numbers.py), [vo_return_spread.py](../../../tools/research/physics/vo_return_spread.py), [vo_ir_check.py](../../../tools/research/physics/vo_ir_check.py)
 
-See also: [physics-ir.md](physics-ir.md), [vocabulary.md](vocabulary.md), [worked-thought-experiments.md](worked-thought-experiments.md), [../rules/power/hot-loops.md](../rules/power/hot-loops.md), [../rules/precision-sensing.md](../rules/precision-sensing.md)
+- Related: [vocabulary](vocabulary.md), [hot-loops](../rules/power/hot-loops.md), [precision-sensing](../rules/precision-sensing.md).

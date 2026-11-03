@@ -37,7 +37,7 @@ de-duplicated id list; `todo.txt` the ids still to enrich when this was committe
 `corpus.py` turns the reviewed manifests (`bench/manifests/wide*.jsonl`, built by `merge.py`
 from the results files above) plus `candidates.jsonl` into one local folder of boards
 (`bench/scripts/build-corpus.sh` on the branch runs it with the committed inputs). The folder layout
-and manifest fields are in [board-corpus.md](../../../docs/research/data/board-corpus.md#local-corpus-layout).
+and manifest fields are in [board-corpus.md](../../../docs/topics/data/local-board-corpus.md#layout).
 
 ## Running enrich on a big host
 

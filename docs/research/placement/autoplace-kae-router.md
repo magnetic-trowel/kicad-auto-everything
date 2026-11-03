@@ -1,5 +1,8 @@
 # autoplace with kae's router in the loop, and the speed-ups
 
+Scope: defensive publication of autoplace `sa-loop` with the kae bridge as in-loop router, and two exact geometry speed-ups. Not here: the autoplace placer and its arms -> [autoplace](autoplace.md).
+Keys: autoplace, sa-loop, --router kae, _route_kae, route_probe, cell-grid containment, _Cells, _crossings, _within, _legal_mask, separable overlap masks, bit-identical, autoplace sa-loop kae (restarts), merit-500r3
+
 **Status:** not finished. The variant runs in the 500-board comparison; no result yet.
 **First published:** 2026-10-26, commit [46e7f89](https://github.com/magnetic-trowel/kicad-auto-everything/commit/46e7f894e8357fad7d6f3f0e9093f5515a097ed6) on branch `autoplace-experiments` (speed-ups [eb39565](https://github.com/magnetic-trowel/kicad-auto-everything/commit/eb395651b95ead5a8575befff9527bc2b91e9f12) and [54be032](https://github.com/magnetic-trowel/kicad-auto-everything/commit/54be03254b821394bc218ecb9a9d71c7914d5e70), 2026-10-27).
 

@@ -1,259 +1,282 @@
-# Idea inventory: ecosystem cluster (KiCad integration, existing tools, commercial systems, patents, licensing)
+# Idea inventory: ecosystem (KiCad integration, existing tools, commercial systems, patents, licensing)
 
-Every distinct approach, technique, design idea, tool-design principle or recommendation found in the ecosystem notes, one per line. Each links to the topic doc that holds the detail and evidence.
-
-**Source notes:** `existing_tools_and_apis.md`, `verification_kicad_and_tools.md`, `kicad_mcp_codebases.md`, `patents_and_industry.md` and `licensing.md` in [research_notes](../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/).
-
-**Licensing:** code is GPL-3.0-or-later; items have been re-assessed accordingly.
+Scope: one line per approach, tool-design principle or recommendation from the ecosystem notes (`existing_tools_and_apis.md`, `verification_kicad_and_tools.md`, `kicad_mcp_codebases.md`, `patents_and_industry.md`, `licensing.md` in [research_notes](../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/)); detail in the linked topic doc. Items re-assessed for our GPL-3.0-or-later licence.
+Keys: KiCad 10/11, IPC API, kipy, SWIG, kicad-cli, DRC rules, BoardSession, Freerouting, MCP servers, agent tool surface, evaluation, licensing, patents, commercial tools
 
 ## KiCad interface and backend
-1. Target KiCad 10.0.x; pin kipy 0.8.x (raw protobuf for `SetNetClasses` and variants); gate features on point releases (≥10.0.1, 10.0.6, 10.0.7). [ipc-api](../topics/kicad/ipc-api-10-vs-11.md)
-2. A `BoardSession` abstraction with backends: live IPC, KiCad 11 headless `api-server`, file-level splice. [ipc-api](../topics/kicad/ipc-api-10-vs-11.md)
-3. Four-channel 10.x backend: IPC CRUD in commits, `.kicad_dru` writes, kicad-cli DRC referee, SWIG DSN/SES helper. [ipc-api](../topics/kicad/ipc-api-10-vs-11.md)
-4. Headless CI on 10.x: SWIG, S-expressions plus kicad-cli, or GUI under Xvfb with IPC (undocumented). [ipc-api](../topics/kicad/ipc-api-10-vs-11.md)
-5. A maintained S-expression layer: kiutils and kicad-skip are stale for 9/10 formats. [file-format](../topics/kicad/file-format-and-version-hazards.md)
-6. Keep SWIG in a short-lived helper process (crash isolation; removed in KiCad 11). [kipy-swig](../topics/kicad/kipy-and-swig-bindings.md)
-7. `kicad-cli pcb drc --format json --schematic-parity --severity-all --refill-zones --exit-code-violations` on a saved copy as ground truth. [kicad-cli](../topics/kicad/kicad-cli.md)
-8. Library footprints on 10.0 via `ParseAndCreateItemsFromString` from `.kicad_mod` text, then `UpdateItems` for pad nets. [ipc-api](../topics/kicad/ipc-api-10-vs-11.md)
-9. Poll after async `RefillZones` (retry only `AS_BUSY`, 60 s budget, 50 ms polls). [ipc-api](../topics/kicad/ipc-api-10-vs-11.md)
-10. Plan the KiCad 11 migration point (headless, rules over IPC, DSN/SES jobs, SWIG removal). [ipc-api](../topics/kicad/ipc-api-10-vs-11.md)
-11. A KiCad 11 `CustomRule` protobuf emitter sharing the IR with `.kicad_dru`; validate by round trip. [drc-ref](../topics/kicad/drc-rule-language-reference.md)
-12. Single connection, busy-retry semantics and bounded timeouts. [ipc-api](../topics/kicad/ipc-api-10-vs-11.md)
-13. `RunAction` "Attempt Finish Selected" for local completion, wrapped in a version-checked adapter. [built-ins](../topics/kicad/built-in-automation-features.md)
-14. Component classes, custom DRC, rule areas, Design Blocks and tuning profiles as agent levers. [built-ins](../topics/kicad/built-in-automation-features.md)
-15. Multichannel Repeat Layout as a placement multiplier; prefer hierarchical-sheet channels. [built-ins](../topics/kicad/built-in-automation-features.md)
-16. Reuse known-good sub-layouts via PCB Design Blocks. [built-ins](../topics/kicad/built-in-automation-features.md)
-17. Ship an IPC-runtime PCM plugin plus MCP server (zero AI plugins in the PCM). [ai-tools](../topics/landscape/kicad-ai-tools-and-mcp-servers.md)
-18. Vendor IPC `.proto` files and generate bindings in any language (GPL makes this fine). [reuse-matrix](../topics/licensing/reuse-matrix.md)
-19. Version-gated emitters: numeric nets ≤20241229, named after; canonical layer names. [file-format](../topics/kicad/file-format-and-version-hazards.md)
-20. CI matrix on KiCad 9.0.x and 10.0.x across Linux, macOS and Windows. [testing](../topics/kicad/mcp-server-testing-practices.md)
-21. Validate every layer name before an IPC send (unknown layers crash 10.0.5). [file-format](../topics/kicad/file-format-and-version-hazards.md)
-22. Never socket-probe NNG; discover via filesystem metadata. [file-format](../topics/kicad/file-format-and-version-hazards.md)
-23. Treat `AS_TOKEN_MISMATCH` as a session break. [kipy-swig](../topics/kicad/kipy-and-swig-bindings.md)
-24. Correlate requests by ID (off-by-one replies after timeouts). [mcp-lessons](../topics/kicad/mcp-server-lessons.md)
-25. Native operations first, AI workflow second, own replacement by exception. [mcp-lessons](../topics/kicad/mcp-server-lessons.md)
-26. Never write through pcbnew `SaveBoard` or kipy whole-object setters. [file-format](../topics/kicad/file-format-and-version-hazards.md)
-27. "A subprocess may compute, never write": splice computed fills into the file. [file-format](../topics/kicad/file-format-and-version-hazards.md)
-28. Byte-preserving CST file layer (reuse POA `_cst.py`). [file-format](../topics/kicad/file-format-and-version-hazards.md)
-29. Atomic writes; validate values before writing; serialize concurrent mutations. [file-format](../topics/kicad/file-format-and-version-hazards.md)
-30. Content-hash save guards (not mtime); restore project settings after pcbnew saves. [file-format](../topics/kicad/file-format-and-version-hazards.md)
-31. Pin a session to IPC only when the GUI provably holds the same board. [file-format](../topics/kicad/file-format-and-version-hazards.md)
-32. Once seen live, refuse file fallback (`unsafe_file_fallback`). [file-format](../topics/kicad/file-format-and-version-hazards.md)
-33. Board-write gates: active-board check, fail-closed IPC write, refuse file edits while open. [file-format](../topics/kicad/file-format-and-version-hazards.md)
-34. One transform module, ported from KiCad's `RotatePoint`/`Flip` (GPL OK), oracle-tested on drill and Gerber. [transforms](../topics/kicad/transform-math-pitfalls.md)
-35. Never trust proto comments about coordinate frames; verify by readback. [transforms](../topics/kicad/transform-math-pitfalls.md)
-36. Reject unparseable angle spellings; write angles KiCad's way (footprints in (−180, 180], pads in [0, 360), omit 0). [transforms](../topics/kicad/transform-math-pitfalls.md)
-37. Snapshot and re-attach 3D models around kipy orientation writes; tripwire test. [kipy-swig](../topics/kicad/kipy-and-swig-bindings.md)
-38. Chunk bulk creates into groups of ≤32 per commit (one Undo restored 70 footprints). [ipc-api](../topics/kicad/ipc-api-10-vs-11.md)
-39. Verify only after the commit push (staged items are invisible). [ipc-api](../topics/kicad/ipc-api-10-vs-11.md)
-40. Never blind-retry uncertain writes; enter a recovery-required state. [mcp-lessons](../topics/kicad/mcp-server-lessons.md)
-41. `EnableAPILogging=1` for debugging IPC traffic. [ipc-api](../topics/kicad/ipc-api-10-vs-11.md)
-42. Raise `ManualStepRequiredError` for GUI-only steps instead of faking them. [kicad-cli](../topics/kicad/kicad-cli.md)
-43. Revision-bound DSN export from the IPC snapshot with a reverse manifest. [specctra](../topics/kicad/specctra-freerouting-integration.md)
-44. Prefer native `FlipItems` (10.0.6+, includes 3D models) over recomputed geometry. [transforms](../topics/kicad/transform-math-pitfalls.md)
+1. Target KiCad 10.0.x; pin kipy 0.8.x (raw protobuf for `SetNetClasses` and variants); gate features on point releases [ipc-api]
+2. A `BoardSession` abstraction with backends: live IPC, KiCad 11 headless `api-server`, file-level splice [ipc-api]
+3. Four-channel 10.x backend: IPC CRUD in commits, `.kicad_dru` writes, kicad-cli DRC referee, SWIG DSN/SES helper [ipc-api]
+4. Headless CI on 10.x: SWIG, S-expressions plus kicad-cli, or GUI under Xvfb with IPC (undocumented) [ipc-api]
+5. A maintained S-expression layer: kiutils and kicad-skip are stale for 9/10 formats [file-format]
+6. Keep SWIG in a short-lived helper process [kipy-swig]
+7. `kicad-cli pcb drc --format json --schematic-parity --severity-all --refill-zones --exit-code-violations` on a saved copy as ground truth [kicad-cli]
+8. Library footprints on 10.0 via `ParseAndCreateItemsFromString` from `.kicad_mod` text, then `UpdateItems` for pad nets [ipc-api]
+9. Poll after async `RefillZones` [ipc-api]
+10. Plan the KiCad 11 migration point (headless, rules over IPC, DSN/SES jobs, SWIG removal) [ipc-api]
+11. A KiCad 11 `CustomRule` protobuf emitter sharing the IR with `.kicad_dru`; validate by round trip [drc-ref]
+12. Single connection, busy-retry semantics and bounded timeouts [ipc-api]
+13. `RunAction` "Attempt Finish Selected" for local completion, wrapped in a version-checked adapter [built-ins]
+14. Component classes, custom DRC, rule areas, Design Blocks and tuning profiles as agent levers [built-ins]
+15. Multichannel Repeat Layout as a placement multiplier; prefer hierarchical-sheet channels [built-ins]
+16. Reuse known-good sub-layouts via PCB Design Blocks [built-ins]
+17. Ship an IPC-runtime PCM plugin plus MCP server (zero AI plugins in the PCM) [ai-tools]
+18. Vendor IPC `.proto` files and generate bindings in any language (GPL makes this fine) [reuse-matrix]
+19. Version-gated emitters: numeric nets ≤20241229, named after; canonical layer names [file-format]
+20. CI matrix on KiCad 9.0.x and 10.0.x across Linux, macOS and Windows [testing]
+21. Validate every layer name before an IPC send [file-format]
+22. Never socket-probe NNG; discover via filesystem metadata [file-format]
+23. Treat `AS_TOKEN_MISMATCH` as a session break [kipy-swig]
+24. Correlate requests by ID (off-by-one replies after timeouts) [mcp-lessons]
+25. Native operations first, AI workflow second, own replacement by exception [mcp-lessons]
+26. Never write through pcbnew `SaveBoard` or kipy whole-object setters [file-format]
+27. "A subprocess may compute, never write": splice computed fills into the file [file-format]
+28. Byte-preserving CST file layer (reuse POA `_cst.py`) [file-format]
+29. Atomic writes; validate values before writing; serialize concurrent mutations [file-format]
+30. Content-hash save guards (not mtime); restore project settings after pcbnew saves [file-format]
+31. Pin a session to IPC only when the GUI provably holds the same board [file-format]
+32. Once seen live, refuse file fallback (`unsafe_file_fallback`) [file-format]
+33. Board-write gates: active-board check, fail-closed IPC write, refuse file edits while open [file-format]
+34. One transform module, ported from KiCad's `RotatePoint`/`Flip` (GPL OK), oracle-tested on drill and Gerber [transforms]
+35. Never trust proto comments about coordinate frames; verify by readback [transforms]
+36. Reject unparseable angle spellings; write angles KiCad's way (footprints in (−180, 180], pads in [0, 360), omit 0) [transforms]
+37. Snapshot and re-attach 3D models around kipy orientation writes; tripwire test [kipy-swig]
+38. Chunk bulk creates into groups of ≤32 per commit [ipc-api]
+39. Verify only after the commit push (staged items are invisible) [ipc-api]
+40. Never blind-retry uncertain writes; enter a recovery-required state [mcp-lessons]
+41. `EnableAPILogging=1` for debugging IPC traffic [ipc-api]
+42. Raise `ManualStepRequiredError` for GUI-only steps instead of faking them [kicad-cli]
+43. Revision-bound DSN export from the IPC snapshot with a reverse manifest [specctra]
+44. Prefer native `FlipItems` over recomputed geometry [transforms]
 
 ## Constraint compiler and DRC feedback
-45. Emit only canonical units: mm, deg, ps. [drc-ref](../topics/kicad/drc-rule-language-reference.md)
-46. One condition per rule with explicit parentheses (`&&` binds looser than `||`). [drc-ref](../topics/kicad/drc-rule-language-reference.md)
-47. One constraint per type per rule. [drc-ref](../topics/kicad/drc-rule-language-reference.md)
-48. Order rules general to specific (last match wins; net ties and overrides beat rules). [drc-ref](../topics/kicad/drc-rule-language-reference.md)
-49. IR-ID rule names plus a sidecar map plus a regex on `description` to attribute violations. [drc-loop](../topics/kicad/drc-report-and-repair-loop.md)
-50. Treat the DRC `type` key as coarse (`physical_clearance` reports as `clearance`). [drc-loop](../topics/kicad/drc-report-and-repair-loop.md)
-51. Lint emitted rules with kicad-cli on a scratch copy. [drc-loop](../topics/kicad/drc-report-and-repair-loop.md)
-52. Time-domain first: tuning profiles in `.kicad_pro` (10.0 IPC only names them via `SetNetClasses`), plus ps `length`/`skew` with `within_diff_pairs`. [drc-ref](../topics/kicad/drc-rule-language-reference.md)
-53. Compile placement intent into courtyard rules, layer/orientation assertions, rule areas, edge and keepout rules. [drc-ref](../topics/kicad/drc-rule-language-reference.md)
-54. Own checker for pairwise pad distance, alignment, symmetry, loop area. [drc-ref](../topics/kicad/drc-rule-language-reference.md)
-55. Retarget return-path checks to master's `return_path` net-chain constraint if 11 ships it. [drc-ref](../topics/kicad/drc-rule-language-reference.md)
-56. Diff-pair detection by KiCad's suffix rule; guard against XTAL_P/N false positives. [drc-ref](../topics/kicad/drc-rule-language-reference.md)
-57. Emit intent as KiCad-native artifacts so it is inspectable and DRC-checkable. [drc-ref](../topics/kicad/drc-rule-language-reference.md)
-58. One tolerant parser for KiCad and Freerouting drc.v1 JSON. [drc-loop](../topics/kicad/drc-report-and-repair-loop.md)
-59. Never drop `unconnected_items` or `schematic_parity`; keep rule keys and positions. [drc-loop](../topics/kicad/drc-report-and-repair-loop.md)
-60. Name every waived or ignored check; re-open the saved board under project rules. [drc-loop](../topics/kicad/drc-report-and-repair-loop.md)
-61. Compare KiCad DRC with Freerouting DRC to expose DSN translation losses. [specctra](../topics/kicad/specctra-freerouting-integration.md)
-62. Synchronize live state (save, compare, refill) before trusting DRC. [drc-loop](../topics/kicad/drc-report-and-repair-loop.md)
-63. Focused DRC slices and quality gates (placement, transfer, bounded fix loop). [drc-loop](../topics/kicad/drc-report-and-repair-loop.md)
+45. Emit only canonical units: mm, deg, ps [drc-ref]
+46. One condition per rule with explicit parentheses (`&&` binds looser than `||`) [drc-ref]
+47. One constraint per type per rule [drc-ref]
+48. Order rules general to specific (last match wins; net ties and overrides beat rules) [drc-ref]
+49. IR-ID rule names plus a sidecar map plus a regex on `description` to attribute violations [drc-loop]
+50. Treat the DRC `type` key as coarse (`physical_clearance` reports as `clearance`) [drc-loop]
+51. Lint emitted rules with kicad-cli on a scratch copy [drc-loop]
+52. Time-domain first: tuning profiles in `.kicad_pro`, plus ps `length`/`skew` with `within_diff_pairs` [drc-ref]
+53. Compile placement intent into courtyard rules, layer/orientation assertions, rule areas, edge and keepout rules [drc-ref]
+54. Own checker for pairwise pad distance, alignment, symmetry, loop area [drc-ref]
+55. Retarget return-path checks to master's `return_path` net-chain constraint if 11 ships it [drc-ref]
+56. Diff-pair detection by KiCad's suffix rule; guard against XTAL_P/N false positives [drc-ref]
+57. Emit intent as KiCad-native artifacts so it is inspectable and DRC-checkable [drc-ref]
+58. One tolerant parser for KiCad and Freerouting drc.v1 JSON [drc-loop]
+59. Never drop `unconnected_items` or `schematic_parity`; keep rule keys and positions [drc-loop]
+60. Name every waived or ignored check; re-open the saved board under project rules [drc-loop]
+61. Compare KiCad DRC with Freerouting DRC to expose DSN translation losses [specctra]
+62. Synchronize live state (save, compare, refill) before trusting DRC [drc-loop]
+63. Focused DRC slices and quality gates (placement, transfer, bounded fix loop) [drc-loop]
 
 ## Routing
-64. Freerouting as default bulk router (CLI, REST or MCP; vendoring or forking allowed under GPL). [specctra](../topics/kicad/specctra-freerouting-integration.md)
-65. One `route_with_freerouting` tool returning scores, unrouted count and compact DRC, not geometry. [specctra](../topics/kicad/specctra-freerouting-integration.md)
-66. Local Freerouting server with auth disabled and the required headers. [specctra](../topics/kicad/specctra-freerouting-integration.md)
-67. Adopt `V2_CONTINUOUS` and `V2_LOWER_BOUND` scores. [specctra](../topics/kicad/specctra-freerouting-integration.md)
-68. Hash-pinned Freerouting binary; always pass `-da`. [specctra](../topics/kicad/specctra-freerouting-integration.md)
-69. Best-of-N with a varied pass schedule and completion scoring. [specctra](../topics/kicad/specctra-freerouting-integration.md)
-70. Force `-mt 1` (multi-threaded optimization creates clearance violations). [specctra](../topics/kicad/specctra-freerouting-integration.md)
-71. Grow hole keepouts by the edge-clearance delta; promote footprint keepouts. [specctra](../topics/kicad/specctra-freerouting-integration.md)
-72. Strip the SES placement block; reconcile net-name slashes; export netclasses to DSN. [specctra](../topics/kicad/specctra-freerouting-integration.md)
-73. Detect Java from the JAR class version; Docker/Podman or GraalVM native fallback. [specctra](../topics/kicad/specctra-freerouting-integration.md)
-74. Guard against stale SES; stage artifacts in temp; SES units: value × unit ÷ resolution (KiCad's importer), Y negated. [specctra](../topics/kicad/specctra-freerouting-integration.md)
-75. Import SES into a candidate board; fix displaced text; read back and run DRC. [specctra](../topics/kicad/specctra-freerouting-integration.md)
-76. Lock copper to keep before SES import (10.0 import is destructive). [specctra](../topics/kicad/specctra-freerouting-integration.md)
-77. fastroute as a faster drop-in candidate. [routers](../topics/landscape/open-source-routers.md)
-78. KRT for fanout, diff pairs, plane repair, time matching. [routers](../topics/landscape/open-source-routers.md)
-79. PCBWorld-Engine (PNS) as engine-grounded interactive router for critical nets and repair. [routers](../topics/landscape/open-source-routers.md)
-80. Port PCBWorld-Engine to KiCad 10/11 and upstream it. [routers](../topics/landscape/open-source-routers.md)
-81. tscircuit capacity mesh/hypergraph as a reference for global routing and congestion estimates. [routers](../topics/landscape/open-source-routers.md)
-82. Keep DSN/SES first-class for user-supplied commercial routers. [specctra](../topics/kicad/specctra-freerouting-integration.md)
-83. LLM orchestrates, constrains and repairs; never emits copper coordinates. [comparisons](../topics/landscape/measured-tool-comparisons.md)
-84. LLM plans and critiques; specialized solvers or small RL policies execute. [comparisons](../topics/landscape/measured-tool-comparisons.md)
-85. Interactive engine-grounded tool use beats plan-then-execute and engine-free generation. [comparisons](../topics/landscape/measured-tool-comparisons.md)
-86. Offer the LLM a small masked candidate-action set (PCBWorld style). [comparisons](../topics/landscape/measured-tool-comparisons.md)
-87. Deterministic net ordering, or full routing of a few LLM-proposed orders (FTO-safe). [patents](../topics/landscape/patents-watchlist.md)
-88. Several router strategies, forming an X.Y candidate matrix. [patterns](../topics/landscape/commercial-architecture-patterns.md)
-89. BGA/QFN fanout as a dedicated stage. [patterns](../topics/landscape/commercial-architecture-patterns.md)
-90. Correct-by-construction impedance geometry from a solver; IPC-2152/2221 power widths. [patterns](../topics/landscape/commercial-architecture-patterns.md)
-91. Pour and plane planning covering same-net vias, then refill and recheck. [quilter](../topics/landscape/quilter.md)
-92. Route critical nets first, then bulk, then refine (widths, thermal vias, dangling tracks). [mcp-lessons](../topics/kicad/mcp-server-lessons.md)
-93. Target the DDR, length and skew space that vendors exclude. [patterns](../topics/landscape/commercial-architecture-patterns.md)
-94. Benchmark against Freerouting 2.5, not 2.1. [comparisons](../topics/landscape/measured-tool-comparisons.md)
-95. Pad-to-pad L-bend helper that reads pad geometry first; null geometry ≠ zero size. [mcp-lessons](../topics/kicad/mcp-server-lessons.md)
-96. Include via delay in length tuning (Speedrun lesson). [quilter](../topics/landscape/quilter.md)
-97. Use Freerouting DRC-summary hotspots and correction hints for repair. [drc-loop](../topics/kicad/drc-report-and-repair-loop.md)
-98. Route in a separate process with progress phases and DSN fallback (Freerouting 2.5 IPC). [specctra](../topics/kicad/specctra-freerouting-integration.md)
-99. Topological routing family: Topola, route-rnd, TopoR, Situs, JITX continuous geometry. [routers](../topics/landscape/open-source-routers.md)
-100. Shape-based gridless routing with cost-based conflict reduction and push-and-shove (Electra, Specctra). [commercial](../topics/landscape/commercial-incumbents-and-startups.md)
-101. Octilinear A* with rip-up; pose-based A* with a Dubins heuristic for diff pairs (KRT). [routers](../topics/landscape/open-source-routers.md)
-102. PathFinder negotiated congestion with a GPU SSSP kernel for huge regular backplanes (OrthoRoute). [routers](../topics/landscape/open-source-routers.md)
-103. Capacity-mesh successive approximation instead of sequential routing (tscircuit). [routers](../topics/landscape/open-source-routers.md)
-104. Pin and gate swap inside the router (JITX); KiCad 10 pin/gate swap with back-annotation. [commercial](../topics/landscape/commercial-incumbents-and-startups.md)
-105. Rewrite hot router paths in C++/Rust (Quilter 6.7× local and 4× global; fastroute; KRT). [quilter](../topics/landscape/quilter.md)
-106. Vision-model routing trained on large synthetic image sets (tscircuit Z01). [comparisons](../topics/landscape/measured-tool-comparisons.md)
+64. Freerouting as default bulk router (CLI, REST or MCP; vendoring or forking allowed under GPL) [specctra]
+65. One `route_with_freerouting` tool returning scores, unrouted count and compact DRC, not geometry [specctra]
+66. Local Freerouting server with auth disabled and the required headers [specctra]
+67. Adopt `V2_CONTINUOUS` and `V2_LOWER_BOUND` scores [specctra]
+68. Hash-pinned Freerouting binary; always pass `-da` [specctra]
+69. Best-of-N with a varied pass schedule and completion scoring [specctra]
+70. Force `-mt 1` (multi-threaded optimization creates clearance violations) [specctra]
+71. Grow hole keepouts by the edge-clearance delta; promote footprint keepouts [specctra]
+72. Strip the SES placement block; reconcile net-name slashes; export netclasses to DSN [specctra]
+73. Detect Java from the JAR class version; Docker/Podman or GraalVM native fallback [specctra]
+74. Guard against stale SES; stage artifacts in temp; SES units: value × unit ÷ resolution (KiCad's importer), Y negated [specctra]
+75. Import SES into a candidate board; fix displaced text; read back and run DRC [specctra]
+76. Lock copper to keep before SES import [specctra]
+77. fastroute as a faster drop-in candidate [routers]
+78. KRT for fanout, diff pairs, plane repair, time matching [routers]
+79. PCBWorld-Engine (PNS) as engine-grounded interactive router for critical nets and repair [routers]
+80. Port PCBWorld-Engine to KiCad 10/11 and upstream it [routers]
+81. tscircuit capacity mesh/hypergraph as a reference for global routing and congestion estimates [routers]
+82. Keep DSN/SES first-class for user-supplied commercial routers [specctra]
+83. LLM orchestrates, constrains and repairs; never emits copper coordinates [comparisons]
+84. LLM plans and critiques; specialized solvers or small RL policies execute [comparisons]
+85. Interactive engine-grounded tool use beats plan-then-execute and engine-free generation [comparisons]
+86. Offer the LLM a small masked candidate-action set (PCBWorld style) [comparisons]
+87. Deterministic net ordering, or full routing of a few LLM-proposed orders (FTO-safe) [patents]
+88. Several router strategies, forming an X.Y candidate matrix [patterns]
+89. BGA/QFN fanout as a dedicated stage [patterns]
+90. Correct-by-construction impedance geometry from a solver; IPC-2152/2221 power widths [patterns]
+91. Pour and plane planning covering same-net vias, then refill and recheck [quilter]
+92. Route critical nets first, then bulk, then refine (widths, thermal vias, dangling tracks) [mcp-lessons]
+93. Target the DDR, length and skew space that vendors exclude [patterns]
+94. Benchmark against Freerouting 2.5, not 2.1 [comparisons]
+95. Pad-to-pad L-bend helper that reads pad geometry first; null geometry ≠ zero size [mcp-lessons]
+96. Include via delay in length tuning (Speedrun lesson) [quilter]
+97. Use Freerouting DRC-summary hotspots and correction hints for repair [drc-loop]
+98. Route in a separate process with progress phases and DSN fallback [specctra]
+99. Topological routing family: Topola, route-rnd, TopoR, Situs, JITX continuous geometry [routers]
+100. Shape-based gridless routing with cost-based conflict reduction and push-and-shove (Electra, Specctra) [commercial]
+101. Octilinear A* with rip-up; pose-based A* with a Dubins heuristic for diff pairs (KRT) [routers]
+102. PathFinder negotiated congestion with a GPU SSSP kernel for huge regular backplanes (OrthoRoute) [routers]
+103. Capacity-mesh successive approximation instead of sequential routing (tscircuit) [routers]
+104. Pin and gate swap inside the router (JITX); KiCad 10 pin/gate swap with back-annotation [commercial]
+105. Rewrite hot router paths in C++/Rust (Quilter 6.7× local and 4× global; fastroute; KRT) [quilter]
+106. Vision-model routing trained on large synthetic image sets (tscircuit Z01) [comparisons]
 
 ## Placement
-107. Constraint-aware placement as the main differentiator. [placers](../topics/landscape/open-source-placers.md)
-108. LLM floorplan and intent → packing seed → FD/SA/analytical refinement → legalize. [placers](../topics/landscape/open-source-placers.md)
-109. Cost = HPWL + congestion from a fast global router; score candidates by a fast router pass. [placers](../topics/landscape/open-source-placers.md)
-110. Refine perturbatively from a human-like seed; constraint capture is the bottleneck (KRT). [placers](../topics/landscape/open-source-placers.md)
-111. A user-confirmed floorplan (regions, pre-placed connectors, anchors, pin-distance limits) first. [patterns](../topics/landscape/commercial-architecture-patterns.md)
-112. Metric before placer; apply only on strict score improvement. [placers](../topics/landscape/open-source-placers.md)
-113. Block non-converged plans; require `max_displacement`. [placers](../topics/landscape/open-source-placers.md)
-114. Small explicit moves plus readback plus score plus DRC as the default edit path. [placers](../topics/landscape/open-source-placers.md)
-115. Decap association needs a shared non-ground net with ≤8 references. [placers](../topics/landscape/open-source-placers.md)
-116. Parse `(locked yes)` properly; never move locked parts. [placers](../topics/landscape/open-source-placers.md)
-117. Outline classification (rect/unproven/missing); refuse to plan on unproven outlines. [placers](../topics/landscape/open-source-placers.md)
-118. Polygon courtyards and polygon containment, not AABB only. [tool-spec](../topics/kicad/mcp-tool-surface-spec.md)
-119. Pin-facing rotation pass (0/90/180/270) plus grid snap. [placers](../topics/landscape/open-source-placers.md)
-120. Weighted springs: power 3×, diff pairs 5×, IC↔decap links. [placers](../topics/landscape/open-source-placers.md)
-121. N diverse placements; route the top-k to rank (proxies can't separate near-equals). [placers](../topics/landscape/open-source-placers.md)
-122. Spend more placement time where routing payoff is large. [deeppcb](../topics/landscape/deeppcb.md)
-123. PRC-based placement terms: decap pin distance, crystal and converter loop size. [patterns](../topics/landscape/commercial-architecture-patterns.md)
-124. Quilter floorplan levels: clustering, anchoring, off-board regions (+anchor), rooms, manual lock. [quilter](../topics/landscape/quilter.md)
-125. Component-proximity constraint (child within N mm of a parent pin). [quilter](../topics/landscape/quilter.md)
-126. Cypress via a KiCad→Bookshelf converter (rotation off; sides fixed; `/FIXED`). [placers](../topics/landscape/open-source-placers.md)
-127. kicad-tools FD/GA/CMA-ES placers; HierPlace clustering. [placers](../topics/landscape/open-source-placers.md)
-128. Sequential Optimal Packing (pack order, cost function, boundary search, hardened constraints). [placers](../topics/landscape/open-source-placers.md)
-129. Router-in-the-loop placement repair (KRT `place_route_loop`). [placers](../topics/landscape/open-source-placers.md)
-130. Union-find net clustering from the schematic (Konnect; later retired). [placers](../topics/landscape/open-source-placers.md)
-131. Group by sheet and function; edge connectors; mounting; decap proximity; thermal and noisy/sensitive zones. [placers](../topics/landscape/open-source-placers.md)
-132. A placement benchmark: strip D3 placements and score downstream results. [comparisons](../topics/landscape/measured-tool-comparisons.md)
-133. Learned routability predictor or RL placement policy only after patent review. [patents](../topics/landscape/patents-watchlist.md)
-134. Single-sided versus two-sided region semantics. [quilter](../topics/landscape/quilter.md)
-135. Feasibility-study mode (need another layer pair?) and Rev-to-Rev ECO (re-place only changes). [commercial](../topics/landscape/commercial-incumbents-and-startups.md)
-136. Power-net-aware placement orienting same-net pins to planned pours; region ground pours. [quilter](../topics/landscape/quilter.md)
+107. Constraint-aware placement as the main differentiator [placers]
+108. LLM floorplan and intent → packing seed → FD/SA/analytical refinement → legalize [placers]
+109. Cost = HPWL + congestion from a fast global router; score candidates by a fast router pass [placers]
+110. Refine perturbatively from a human-like seed; constraint capture is the bottleneck (KRT) [placers]
+111. A user-confirmed floorplan (regions, pre-placed connectors, anchors, pin-distance limits) first [patterns]
+112. Metric before placer; apply only on strict score improvement [placers]
+113. Block non-converged plans; require `max_displacement` [placers]
+114. Small explicit moves plus readback plus score plus DRC as the default edit path [placers]
+115. Decap association needs a shared non-ground net with ≤8 references [placers]
+116. Parse `(locked yes)` properly; never move locked parts [placers]
+117. Outline classification (rect/unproven/missing); refuse to plan on unproven outlines [placers]
+118. Polygon courtyards and polygon containment, not AABB only [tool-spec]
+119. Pin-facing rotation pass plus grid snap [placers]
+120. Weighted springs: power 3×, diff pairs 5×, IC↔decap links [placers]
+121. N diverse placements; route the top-k to rank (proxies can't separate near-equals) [placers]
+122. Spend more placement time where routing payoff is large [deeppcb]
+123. PRC-based placement terms: decap pin distance, crystal and converter loop size [patterns]
+124. Quilter floorplan levels: clustering, anchoring, off-board regions (+anchor), rooms, manual lock [quilter]
+125. Component-proximity constraint (child within N mm of a parent pin) [quilter]
+126. Cypress via a KiCad→Bookshelf converter (rotation off; sides fixed; `/FIXED`) [placers]
+127. kicad-tools FD/GA/CMA-ES placers; HierPlace clustering [placers]
+128. Sequential Optimal Packing (pack order, cost function, boundary search, hardened constraints) [placers]
+129. Router-in-the-loop placement repair (KRT `place_route_loop`) [placers]
+130. Union-find net clustering from the schematic (Konnect; later retired) [placers]
+131. Group by sheet and function; edge connectors; mounting; decap proximity; thermal and noisy/sensitive zones [placers]
+132. A placement benchmark: strip D3 placements and score downstream results [comparisons]
+133. Learned routability predictor or RL placement policy only after patent review [patents]
+134. Single-sided versus two-sided region semantics [quilter]
+135. Feasibility-study mode (need another layer pair?) and Rev-to-Rev ECO (re-place only changes) [commercial]
+136. Power-net-aware placement orienting same-net pins to planned pours; region ground pours [quilter]
 
 ## Agent and tool surface
-137. About 15–30 high-level verifiable tools, about 12 always visible, rather than 200+ CRUD tools. [tool-spec](../topics/kicad/mcp-tool-surface-spec.md)
-138. Two-tool catalog/invoke mode for clients that cap tool counts. [mcp-lessons](../topics/kicad/mcp-server-lessons.md)
-139. Dynamic toolsets only if the client honours `list_changed`. [mcp-lessons](../topics/kicad/mcp-server-lessons.md)
-140. Server instructions name the start tools; test that the names exist. [mcp-lessons](../topics/kicad/mcp-server-lessons.md)
-141. Source tag on every read (`source`, `board_rev`, `kicad_version`). [tool-spec](../topics/kicad/mcp-tool-surface-spec.md)
-142. `propose_*` → candidate with diff and predicted score → `apply_candidate(expected_rev)`. [tool-spec](../topics/kicad/mcp-tool-surface-spec.md)
-143. Dry run by default for batch operations; plan-revision binding. [mcp-lessons](../topics/kicad/mcp-server-lessons.md)
-144. One undo entry per agent step. [tool-spec](../topics/kicad/mcp-tool-surface-spec.md)
-145. Outcome envelope (complete/partial/refused/uncertain/check_unavailable); null, not 0. [tool-spec](../topics/kicad/mcp-tool-surface-spec.md)
-146. An echo is not evidence; read back and compare with intent. [mcp-lessons](../topics/kicad/mcp-server-lessons.md)
-147. Automatic verification hooks on every apply. [tool-spec](../topics/kicad/mcp-tool-surface-spec.md)
-148. Escape hatches: a restricted `kicad_cli` tool and a verified `raw_edit` splice. [tool-spec](../topics/kicad/mcp-tool-surface-spec.md)
-149. Never forbid file reads or kicad-cli in skills (POA A/B: 18/18 vs 3/18). [mcp-lessons](../topics/kicad/mcp-server-lessons.md)
-150. Cover every edit class or permit a verified direct edit. [mcp-lessons](../topics/kicad/mcp-server-lessons.md)
-151. Bulk sync tools must not rewrite unrelated objects. [mcp-lessons](../topics/kicad/mcp-server-lessons.md)
-152. Bounded outputs (limit/offset, `_total`/`_truncated`; 200 items, 50k characters). [mcp-lessons](../topics/kicad/mcp-server-lessons.md)
-153. Render images only on request, with highlights. [kicad-cli](../topics/kicad/kicad-cli.md)
-154. Tool annotations (read-only, destructive, idempotent, headless, needs-KiCad) and profiles. [mcp-lessons](../topics/kicad/mcp-server-lessons.md)
-155. Call logging (ring buffer plus jsonl; `get_recent_calls`, `server_stats`). [mcp-lessons](../topics/kicad/mcp-server-lessons.md)
-156. Read-only default profile; opt-in write and release profiles. [mcp-lessons](../topics/kicad/mcp-server-lessons.md)
-157. Copy patterns, not code, from Konnect (AGPL); reuse KMS, PRO and POA code. [reuse-matrix](../topics/licensing/reuse-matrix.md)
-158. Ship Claude Code skills and playbooks (KRT, JITX, Konnect, POA styles). [mcp-lessons](../topics/kicad/mcp-server-lessons.md)
-159. MCP plus Agent Skills interop with Siemens Fuse, CELUS and Flux MCP. [commercial](../topics/landscape/commercial-incumbents-and-startups.md)
-160. Cooper UX: read → summarize → propose → per-item accept → one undo entry. [deeppcb](../topics/landscape/deeppcb.md)
-161. Ship the configuration and review agent first (setup errors are the main failure). [deeppcb](../topics/landscape/deeppcb.md)
-162. Stage-0 comprehension: Quilter heuristics plus LLM recall (datasheets, interfaces, currents). [patterns](../topics/landscape/commercial-architecture-patterns.md)
-163. Heuristics: _P/_N; cap-to-ground with parent-pin priority; X/Y crystals; U+L converters; 200/500 mA power nets. [quilter](../topics/landscape/quilter.md)
-164. Comprehension replaces the layout-kickoff meeting: the engineer verifies interpreted constraints. [quilter](../topics/landscape/quilter.md)
-165. Router setup pre-check (planes typed with no net, missing pairs, empty net classes). [deeppcb](../topics/landscape/deeppcb.md)
-166. Human in the loop: proposals, diffs and renders, per-net accept, undoable commits. [ai-tools](../topics/landscape/kicad-ai-tools-and-mcp-servers.md)
-167. Layout-quality checks beyond DRC: signals on planes, return-path splits, decap distance, skew, vias. [drc-loop](../topics/kicad/drc-report-and-repair-loop.md)
-168. PRC suite following Quilter's 8 definitions and thresholds (restated, CC0). [quilter](../topics/landscape/quilter.md)
-169. Lexicographic ranking: validity → priority PRCs → conservative fab → layers → other PRCs → length and vias. [quilter](../topics/landscape/quilter.md)
-170. LLM-written review report naming every waived check. [patterns](../topics/landscape/commercial-architecture-patterns.md)
-171. Supervisor/worker agents, recovery loops, checkpoints, audit trails, self-verification (Fuse). [commercial](../topics/landscape/commercial-incumbents-and-startups.md)
-172. Code as the ground truth that AI edits (JITX). [commercial](../topics/landscape/commercial-incumbents-and-startups.md)
-173. A coding agent emits editor-API scripts (EasyEDA API Skill). [commercial](../topics/landscape/commercial-incumbents-and-startups.md)
-174. Persistent project memory of approved rules plus curated system knowledge (Flux). [commercial](../topics/landscape/commercial-incumbents-and-startups.md)
-175. Chat panel inside KiCad with an embedded MCP server (KiCad-AI-Assistant, Cooper). [ai-tools](../topics/landscape/kicad-ai-tools-and-mcp-servers.md)
-176. Git-snapshot each mutation; roll back on failed verification (copperhead). [ai-tools](../topics/landscape/kicad-ai-tools-and-mcp-servers.md)
-177. LLM planning with deterministic execution, evidence and rollback (kicad-agentic-mcp). [ai-tools](../topics/landscape/kicad-ai-tools-and-mcp-servers.md)
-178. Human review gates after each step; multi-agent skill pipelines with reviewer subagents. [ai-tools](../topics/landscape/kicad-ai-tools-and-mcp-servers.md)
-179. Part search with live stock data (JLC/LCSC). [ai-tools](../topics/landscape/kicad-ai-tools-and-mcp-servers.md)
-180. Computer use mixed with tools and skills for GUI-only gaps. [ai-tools](../topics/landscape/kicad-ai-tools-and-mcp-servers.md)
-181. Per-layer-class bounding boxes; categorized placement-clearance conflicts. [mcp-lessons](../topics/kicad/mcp-server-lessons.md)
-182. Circuit-pattern and signal-path detectors (buck/LDO; kicad-happy's 21 detectors). [ai-tools](../topics/landscape/kicad-ai-tools-and-mcp-servers.md)
-183. Closed-form SI/PI/EMC/thermal estimates, explicitly not sign-off. [ai-tools](../topics/landscape/kicad-ai-tools-and-mcp-servers.md)
-184. Local models need large context (128k) for reliable tool calls. [ai-tools](../topics/landscape/kicad-ai-tools-and-mcp-servers.md)
-185. Cloud services optional and off by default (privacy, training clauses). [compliance](../topics/licensing/compliance-checklist.md)
-186. MCP prompts carrying strategy guidance (KMS `component_placement_strategy`). [mcp-lessons](../topics/kicad/mcp-server-lessons.md)
-187. Field-solver-driven net-class and rule generation (Z0 Field Solver plugin). [ai-tools](../topics/landscape/kicad-ai-tools-and-mcp-servers.md)
-188. A2A agent card alongside MCP (Freerouting). [specctra](../topics/kicad/specctra-freerouting-integration.md)
-189. Accessibility-API GUI driving and DRC scraping as a last resort (KMS AT-SPI). [drc-loop](../topics/kicad/drc-report-and-repair-loop.md)
-190. Native bridge driving the user's KiCad GUI with screenshots back to the AI (Adom). [ai-tools](../topics/landscape/kicad-ai-tools-and-mcp-servers.md)
-191. KiCad fork with LLM instrumentation (Backplane). [ai-tools](../topics/landscape/kicad-ai-tools-and-mcp-servers.md)
-192. Cloud design-as-a-service behind MCP (HeyPCB), with privacy trade-offs. [ai-tools](../topics/landscape/kicad-ai-tools-and-mcp-servers.md)
-193. Schematic auto-placement: Sugiyama/FD plus VF2 motif composer (eda-agent). [ai-tools](../topics/landscape/kicad-ai-tools-and-mcp-servers.md)
+137. About 15–30 high-level verifiable tools, about 12 always visible, rather than 200+ CRUD tools [tool-spec]
+138. Two-tool catalog/invoke mode for clients that cap tool counts [mcp-lessons]
+139. Dynamic toolsets only if the client honours `list_changed` [mcp-lessons]
+140. Server instructions name the start tools; test that the names exist [mcp-lessons]
+141. Source tag on every read (`source`, `board_rev`, `kicad_version`) [tool-spec]
+142. `propose_*` → candidate with diff and predicted score → `apply_candidate(expected_rev)` [tool-spec]
+143. Dry run by default for batch operations; plan-revision binding [mcp-lessons]
+144. One undo entry per agent step [tool-spec]
+145. Outcome envelope (complete/partial/refused/uncertain/check_unavailable); null, not 0 [tool-spec]
+146. An echo is not evidence; read back and compare with intent [mcp-lessons]
+147. Automatic verification hooks on every apply [tool-spec]
+148. Escape hatches: a restricted `kicad_cli` tool and a verified `raw_edit` splice [tool-spec]
+149. Never forbid file reads or kicad-cli in skills [mcp-lessons]
+150. Cover every edit class or permit a verified direct edit [mcp-lessons]
+151. Bulk sync tools must not rewrite unrelated objects [mcp-lessons]
+152. Bounded outputs [mcp-lessons]
+153. Render images only on request, with highlights [kicad-cli]
+154. Tool annotations (read-only, destructive, idempotent, headless, needs-KiCad) and profiles [mcp-lessons]
+155. Call logging (ring buffer plus jsonl; `get_recent_calls`, `server_stats`) [mcp-lessons]
+156. Read-only default profile; opt-in write and release profiles [mcp-lessons]
+157. Copy patterns, not code, from Konnect (AGPL); reuse KMS, PRO and POA code [reuse-matrix]
+158. Ship Claude Code skills and playbooks (KRT, JITX, Konnect, POA styles) [mcp-lessons]
+159. MCP plus Agent Skills interop with Siemens Fuse, CELUS and Flux MCP [commercial]
+160. Cooper UX: read → summarize → propose → per-item accept → one undo entry [deeppcb]
+161. Ship the configuration and review agent first (setup errors are the main failure) [deeppcb]
+162. Stage-0 comprehension: Quilter heuristics plus LLM recall (datasheets, interfaces, currents) [patterns]
+163. Heuristics: _P/_N; cap-to-ground with parent-pin priority; X/Y crystals; U+L converters; 200/500 mA power nets [quilter]
+164. Comprehension replaces the layout-kickoff meeting: the engineer verifies interpreted constraints [quilter]
+165. Router setup pre-check (planes typed with no net, missing pairs, empty net classes) [deeppcb]
+166. Human in the loop: proposals, diffs and renders, per-net accept, undoable commits [ai-tools]
+167. Layout-quality checks beyond DRC: signals on planes, return-path splits, decap distance, skew, vias [drc-loop]
+168. PRC suite following Quilter's 8 definitions and thresholds (restated, CC0) [quilter]
+169. Lexicographic ranking: validity → priority PRCs → conservative fab → layers → other PRCs → length and vias [quilter]
+170. LLM-written review report naming every waived check [patterns]
+171. Supervisor/worker agents, recovery loops, checkpoints, audit trails, self-verification (Fuse) [commercial]
+172. Code as the ground truth that AI edits (JITX) [commercial]
+173. A coding agent emits editor-API scripts (EasyEDA API Skill) [commercial]
+174. Persistent project memory of approved rules plus curated system knowledge (Flux) [commercial]
+175. Chat panel inside KiCad with an embedded MCP server (KiCad-AI-Assistant, Cooper) [ai-tools]
+176. Git-snapshot each mutation; roll back on failed verification (copperhead) [ai-tools]
+177. LLM planning with deterministic execution, evidence and rollback (kicad-agentic-mcp) [ai-tools]
+178. Human review gates after each step; multi-agent skill pipelines with reviewer subagents [ai-tools]
+179. Part search with live stock data (JLC/LCSC) [ai-tools]
+180. Computer use mixed with tools and skills for GUI-only gaps [ai-tools]
+181. Per-layer-class bounding boxes; categorized placement-clearance conflicts [mcp-lessons]
+182. Circuit-pattern and signal-path detectors [ai-tools]
+183. Closed-form SI/PI/EMC/thermal estimates, explicitly not sign-off [ai-tools]
+184. Local models need large context for reliable tool calls [ai-tools]
+185. Cloud services optional and off by default (privacy, training clauses) [compliance]
+186. MCP prompts carrying strategy guidance (KMS `component_placement_strategy`) [mcp-lessons]
+187. Field-solver-driven net-class and rule generation (Z0 Field Solver plugin) [ai-tools]
+188. A2A agent card alongside MCP (Freerouting) [specctra]
+189. Accessibility-API GUI driving and DRC scraping as a last resort (KMS AT-SPI) [drc-loop]
+190. Native bridge driving the user's KiCad GUI with screenshots back to the AI (Adom) [ai-tools]
+191. KiCad fork with LLM instrumentation (Backplane) [ai-tools]
+192. Cloud design-as-a-service behind MCP (HeyPCB), with privacy trade-offs [ai-tools]
+193. Schematic auto-placement: Sugiyama/FD plus VF2 motif composer (eda-agent) [ai-tools]
 
 ## Evaluation and testing
-194. PCBWorld-Bench primary; PCBench/Freerouting suite and tscircuit datasets secondary. [comparisons](../topics/landscape/measured-tool-comparisons.md)
-195. Report clean pass, routability, DRV, vias, length vs lower bound, time, layout checks. [comparisons](../topics/landscape/measured-tool-comparisons.md)
-196. Re-run PCBWorld with current routers. [comparisons](../topics/landscape/measured-tool-comparisons.md)
-197. PCBGolf and devbisme dual-ADC as fetch-only showcases. [comparisons](../topics/landscape/measured-tool-comparisons.md)
-198. Commercial tools as external baselines, not dependencies. [comparisons](../topics/landscape/measured-tool-comparisons.md)
-199. PRO attempt accounting (full denominator; manual repair is not autonomous). [testing](../topics/kicad/mcp-server-testing-practices.md)
-200. Tool-selection evals: expected/forbidden tools, safety tiers, call budgets, nondeterminism. [testing](../topics/kicad/mcp-server-testing-practices.md)
-201. Independent judge plus negative control for every guard. [testing](../topics/kicad/mcp-server-testing-practices.md)
-202. Test ladder (bytes → end to end), autouse kicad-cli load checks, strict xfails, Hypothesis. [testing](../topics/kicad/mcp-server-testing-practices.md)
-203. Netlist node-set diffing around every mutating call. [testing](../topics/kicad/mcp-server-testing-practices.md)
-204. Live-versus-file DRC regression recipe. [testing](../topics/kicad/mcp-server-testing-practices.md)
-205. Fixtures: PRO's 14 golden projects, KiCad demos read from the install, Antmicro routed ground truth. [testing](../topics/kicad/mcp-server-testing-practices.md)
-206. Head-to-head trials: tools only vs tools plus escape hatches vs coding agent only. [tool-spec](../topics/kicad/mcp-tool-surface-spec.md)
-207. Transparent evaluation: publish failures; include multilayer boards. [comparisons](../topics/landscape/measured-tool-comparisons.md)
-208. Prove layout on a fixed schematic; parallel seeded runs with varied constraints (Speedrun method). [quilter](../topics/landscape/quilter.md)
-209. Copy the project to a fresh directory to re-verify portability (Astra review). [commercial](../topics/landscape/commercial-incumbents-and-startups.md)
-210. Measure the token cost of board-read tools. [mcp-lessons](../topics/kicad/mcp-server-lessons.md)
-211. "0 DRC" is weak: combine clean pass with efficiency and layout-quality checks. [comparisons](../topics/landscape/measured-tool-comparisons.md)
-212. Run tests against real KiCad, never mocks (kipy and pcbnew API shapes). [testing](../topics/kicad/mcp-server-testing-practices.md)
+194. PCBWorld-Bench primary; PCBench/Freerouting suite and tscircuit datasets secondary [comparisons]
+195. Report clean pass, routability, DRV, vias, length vs lower bound, time, layout checks [comparisons]
+196. Re-run PCBWorld with current routers [comparisons]
+197. PCBGolf and devbisme dual-ADC as fetch-only showcases [comparisons]
+198. Commercial tools as external baselines, not dependencies [comparisons]
+199. PRO attempt accounting (full denominator; manual repair is not autonomous) [testing]
+200. Tool-selection evals: expected/forbidden tools, safety tiers, call budgets, nondeterminism [testing]
+201. Independent judge plus negative control for every guard [testing]
+202. Test ladder (bytes → end to end), autouse kicad-cli load checks, strict xfails, Hypothesis [testing]
+203. Netlist node-set diffing around every mutating call [testing]
+204. Live-versus-file DRC regression recipe [testing]
+205. Fixtures: PRO's 14 golden projects, KiCad demos read from the install, Antmicro routed ground truth [testing]
+206. Head-to-head trials: tools only vs tools plus escape hatches vs coding agent only [tool-spec]
+207. Transparent evaluation: publish failures; include multilayer boards [comparisons]
+208. Prove layout on a fixed schematic; parallel seeded runs with varied constraints (Speedrun method) [quilter]
+209. Copy the project to a fresh directory to re-verify portability (Astra review) [commercial]
+210. Measure the token cost of board-read tools [mcp-lessons]
+211. "0 DRC" is weak: combine clean pass with efficiency and layout-quality checks [comparisons]
+212. Run tests against real KiCad, never mocks (kipy and pcbnew API shapes) [testing]
 
 ## Licensing, data and patents
-213. GPL-3.0-or-later code: vendor, port or link GPL engines; choose processes for technical reasons only. [reuse-matrix](../topics/licensing/reuse-matrix.md)
-214. Keep AGPL (Konnect) reference-only to avoid the §13 network clause. [gpl-notes](../topics/licensing/kicad-and-gpl-ecosystem-notes.md)
-215. Avoid GPL-2.0-only, non-commercial, unlicensed, Triangle, OptiMathSAT; Gurobi only as user-installed. [reuse-matrix](../topics/licensing/reuse-matrix.md)
-216. Document that bundles including GPL-3.0-only Freerouting are GPL-3.0 as a whole. [reuse-matrix](../topics/licensing/reuse-matrix.md)
-217. Don't upstream Freerouting-derived code to KiCad until provenance is resolved. [gpl-notes](../topics/licensing/kicad-and-gpl-ecosystem-notes.md)
-218. REUSE layout, SPDX headers, `reuse lint`. [compliance](../topics/licensing/compliance-checklist.md)
-219. cargo-deny, pip-licenses/licensecheck and ScanCode gates; `THIRD_PARTY_NOTICES`. [compliance](../topics/licensing/compliance-checklist.md)
-220. DCO with inbound=outbound; no CLA. [compliance](../topics/licensing/compliance-checklist.md)
-221. AI-contribution rule: no AGPL, unlicensed, non-commercial or proprietary source in prompts; keep ported headers. [compliance](../topics/licensing/compliance-checklist.md)
-222. Dataset manifests (pinned SHA, SPDX, evidence) fetched at run time; tiers R/SA/E; exclude NC/ND. [data](../topics/licensing/data-rulepacks-weights.md)
-223. Keep extracted footprint corpora separate (CC-BY-SA WITH exception). [data](../topics/licensing/data-rulepacks-weights.md)
-224. Rule packs as paraphrased facts plus structured citations, CC0; no verbatim text or PDFs. [data](../topics/licensing/data-rulepacks-weights.md)
-225. Weights from Apache/MIT bases only; OSAID model cards; record synthetic-data generators. [data](../topics/licensing/data-rulepacks-weights.md)
-226. Prefer solver- or DRC-generated supervision over API-model SFT data. [data](../topics/licensing/data-rulepacks-weights.md)
-227. Takedown and contact process plus data cards. [data](../topics/licensing/data-rulepacks-weights.md)
-228. Re-verify licenses at every release. [compliance](../topics/licensing/compliance-checklist.md)
-229. FTO watch-list in the repo; counsel before RL place/via/route policies or learned routability predictors. [patents](../topics/landscape/patents-watchlist.md)
-230. Collect prior art predating 2024-04-03 against NVIDIA US 2025/0315590. [patents](../topics/landscape/patents-watchlist.md)
-231. Treat vendor facts as perishable; re-check before citing. [commercial](../topics/landscape/commercial-incumbents-and-startups.md)
-232. Synthetic, physics-scored training data (Quilter) as a clean route to learned components. [quilter](../topics/landscape/quilter.md)
-233. Flagged: learn constraints or reusable modules from prior boards (Cadence '060, Wistron). [patents](../topics/landscape/patents-watchlist.md)
-234. Noted (patented or flagged): hierarchical RL with a dispatcher; imitation bootstrap; SMC net-order look-ahead; ray/octagon candidates; GPU stencil overlap; ML parasitic display. [patents](../topics/landscape/patents-watchlist.md)
-235. Fast simulator plus actor-learner RL training (Sebulba/EnvPool). [deeppcb](../topics/landscape/deeppcb.md)
-236. A brain learned from a user's past designs that can be "untaught" by a dirty design (Zuken). [commercial](../topics/landscape/commercial-incumbents-and-startups.md)
-237. The commercial input contract (outline, pre-placed connectors, locked copper, named planes) as our setup checklist. [patterns](../topics/landscape/commercial-architecture-patterns.md)
-238. Expect most fab friction from docs, libraries, BOM and process tier; check them too. [patterns](../topics/landscape/commercial-architecture-patterns.md)
+213. GPL-3.0-or-later code: vendor, port or link GPL engines; choose processes for technical reasons only [reuse-matrix]
+214. Keep AGPL (Konnect) reference-only to avoid the §13 network clause [gpl-notes]
+215. Avoid GPL-2.0-only, non-commercial, unlicensed, Triangle, OptiMathSAT; Gurobi only as user-installed [reuse-matrix]
+216. Document that bundles including GPL-3.0-only Freerouting are GPL-3.0 as a whole [reuse-matrix]
+217. Don't upstream Freerouting-derived code to KiCad until provenance is resolved [gpl-notes]
+218. REUSE layout, SPDX headers, `reuse lint` [compliance]
+219. cargo-deny, pip-licenses/licensecheck and ScanCode gates; `THIRD_PARTY_NOTICES` [compliance]
+220. DCO with inbound=outbound; no CLA [compliance]
+221. AI-contribution rule: no AGPL, unlicensed, non-commercial or proprietary source in prompts; keep ported headers [compliance]
+222. Dataset manifests (pinned SHA, SPDX, evidence) fetched at run time; tiers R/SA/E; exclude NC/ND [data]
+223. Keep extracted footprint corpora separate (CC-BY-SA WITH exception) [data]
+224. Rule packs as paraphrased facts plus structured citations, CC0; no verbatim text or PDFs [data]
+225. Weights from Apache/MIT bases only; OSAID model cards; record synthetic-data generators [data]
+226. Prefer solver- or DRC-generated supervision over API-model SFT data [data]
+227. Takedown and contact process plus data cards [data]
+228. Re-verify licenses at every release [compliance]
+229. FTO watch-list in the repo; counsel before RL place/via/route policies or learned routability predictors [patents]
+230. Collect prior art predating 2024-04-03 against NVIDIA US 2025/0315590 [patents]
+231. Treat vendor facts as perishable; re-check before citing [commercial]
+232. Synthetic, physics-scored training data (Quilter) as a clean route to learned components [quilter]
+233. Flagged: learn constraints or reusable modules from prior boards [patents]
+234. Noted (patented or flagged): hierarchical RL with a dispatcher; imitation bootstrap; SMC net-order look-ahead; ray/octagon candidates; GPU stencil overlap; ML parasitic display [patents]
+235. Fast simulator plus actor-learner RL training (Sebulba/EnvPool) [deeppcb]
+236. A brain learned from a user's past designs that can be "untaught" by a dirty design (Zuken) [commercial]
+237. The commercial input contract (outline, pre-placed connectors, locked copper, named planes) as our setup checklist [patterns]
+238. Expect most fab friction from docs, libraries, BOM and process tier; check them too [patterns]
+
+[built-ins]: ../topics/kicad/built-in-automation-features.md
+[drc-loop]: ../topics/kicad/drc-report-and-repair-loop.md
+[drc-ref]: ../topics/kicad/drc-rule-language-reference.md
+[file-format]: ../topics/kicad/file-format-and-version-hazards.md
+[ipc-api]: ../topics/kicad/ipc-api-10-vs-11.md
+[kicad-cli]: ../topics/kicad/kicad-cli.md
+[kipy-swig]: ../topics/kicad/kipy-and-swig-bindings.md
+[mcp-lessons]: ../topics/kicad/mcp-server-lessons.md
+[testing]: ../topics/kicad/mcp-server-testing-practices.md
+[tool-spec]: ../topics/kicad/mcp-tool-surface-spec.md
+[specctra]: ../topics/kicad/specctra-freerouting-integration.md
+[transforms]: ../topics/kicad/transform-math-pitfalls.md
+[patterns]: ../topics/landscape/commercial-architecture-patterns.md
+[commercial]: ../topics/landscape/commercial-incumbents-and-startups.md
+[deeppcb]: ../topics/landscape/deeppcb.md
+[ai-tools]: ../topics/landscape/kicad-ai-tools-and-mcp-servers.md
+[comparisons]: ../topics/landscape/measured-tool-comparisons.md
+[placers]: ../topics/landscape/open-source-placers.md
+[routers]: ../topics/landscape/open-source-routers.md
+[patents]: ../topics/landscape/patents-watchlist.md
+[quilter]: ../topics/landscape/quilter.md
+[compliance]: ../topics/licensing/compliance-checklist.md
+[data]: ../topics/licensing/data-rulepacks-weights.md
+[gpl-notes]: ../topics/licensing/kicad-and-gpl-ecosystem-notes.md
+[reuse-matrix]: ../topics/licensing/reuse-matrix.md

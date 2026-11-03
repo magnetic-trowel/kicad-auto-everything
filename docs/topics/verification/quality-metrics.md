@@ -1,19 +1,19 @@
 # Layout quality metrics beyond DRC
 
-**TL;DR**
-- Published metrics fall into three layers:
-  - **legality and connectivity**: Clean Pass, NRR/PRR, open and short rates, DRC violations by cause;
-  - **efficiency**: wirelength, vias, layers, runtime;
-  - **physics checks (Quilter PRCs)**: pin distance, layer switches, ground-plane overlap, length mismatch, uncoupled spacing, overheated length.
-- There is one published human-likeness metric, OmniRouting's Multi-Scale Graph Similarity (MGS). It measures agreement with the expert reference, not correctness, so use it only as a diagnostic.
-- Human reference boards are not perfect (OmniRouting human NRR 93.58%). Score humans on the same metrics and normalize against them.
-- HPWL and crossings cannot tell a sensible layout from a scattered one, so add intent conformance and convention metrics.
-- No validated figure of merit links any score to lab EMC/SI/thermal outcomes.
-
-## Key facts
-
+Scope: canonical home for published layout-quality metric definitions (PCBWorld, OmniRouting, Quilter, Cypress, RL_PCB, KRT, Freerouting scores), kaebench cpk vs CP@5, and our union metric set. Not here: convention ("looks right") metrics -> [looks-right-metrics.md](looks-right-metrics.md); benchmark tracks -> [benchmark-plan.md](benchmark-plan.md); harness -> [harness.md](harness.md).
+Keys: quality metrics, Clean Pass, CP, CP@5, potential gain Φ, NRR, PRR, Open, PShort, NShort, DRV, wirelength, TWL, MGS, Multi-Scale Graph Similarity, PRC, Quilter, Cypress routability, HPWL, V2_CONTINUOUS, V2_LOWER_BOUND, normalized_score, cpk, any-clean@k, figure of merit
 Tags: [P] primary; [S] snippet/secondary; [V] vendor; [I] inference.
 
+## Metric rules
+1. Published metrics form three layers: legality and connectivity (CP, NRR/PRR, open/short rates, DRV by cause); efficiency (wirelength, vias, layers, runtime); physics checks (Quilter PRCs: pin distance, layer switches, ground-plane overlap, length mismatch, uncoupled spacing, overheated length). Adopt the union set below.
+2. Human reference boards are not perfect (OmniRouting human NRR 93.58%): report human scores on every metric and normalize. PCBWorld keeps only boards DRV-free after conversion [I].
+3. MGS (the one published human-likeness metric) measures agreement with the expert reference, not correctness: diagnostic only, never an objective (valid alternative routes score low) [I].
+4. HPWL and crossings cannot tell a sensible layout from a scattered one: add intent conformance and convention metrics.
+5. Add from workflow and practitioner research [I]: checklist Critical/Major pass counts ([review-checklist.md](review-checklist.md)); convention score ([looks-right-metrics.md](looks-right-metrics.md)); blind expert acceptance and review time; edits outside the requested scope; determinism (same inputs → same board hash); human setup minutes; predicted vs actual outcome agreement.
+6. Expose Freerouting's `normalized_score` and optimizer score to the LLM as compact routing feedback [I].
+7. No validated figure of merit links any score to lab EMC/SI/thermal outcomes.
+
+## Published metric definitions
 | Source | Metrics and definitions | Tag |
 |---|---|---|
 | PCBWorld | **CP** (Clean Pass: fully connected and 0 error-level DRVs); **Potential gain** Φ over unconnected, DRV, WL and vias; Routability; DRV; WL; Via; Time; Parse-fail. @5 = best of five rollouts by Φ (CP@5 is the clean status of that one rollout, so a clean rollout with a worse Φ does not count), with Time averaged over all rollouts. DRC is re-run on saved boards against each board's own rules, after D3's `.kicad_pro` severity and floor edits (VP #7) ([METRICS.md](https://github.com/LGAI-Research/PCBWorld/blob/main/docs/METRICS.md)) | [P] |
@@ -28,9 +28,10 @@ Tags: [P] primary; [S] snippet/secondary; [V] vendor; [I] inference.
 | Quilter blog | Routing metrics without first-pass yield or bring-up data do not prove boards work | [S] |
 | Practitioners | "how to calculate a figure of merit for an attempt at a PCB, which is a necessary step in reinforcement learning" (AndyC_772); AI needs "a clear definition of a correct vs incorrect classification" (TheHeintzel) | [P] |
 
-**kaebench best-of-k is a different metric.** kaebench's `cpk` is "any-clean@k": any clean attempt counts (attempts ranked clean → completion → errors → length). It is not PCBWorld's Φ-selected CP@5 and can only be ≥ it. Its Freerouting attempts vary only the `-mp` pass schedule, and Freerouting seeds `Random(0)`, so attempts are not independent samples ([harness.md](harness.md), [dev-eval-plan.md](dev-eval-plan.md)).
+## kaebench cpk vs CP@5
+ kaebench's `cpk` is "any-clean@k": any clean attempt counts (attempts ranked clean → completion → errors → length). It is not PCBWorld's Φ-selected CP@5 and can only be ≥ it. Its Freerouting attempts vary only the `-mp` pass schedule, and Freerouting seeds `Random(0)`, so attempts are not independent samples ([harness.md](harness.md), [dev-eval-plan.md](dev-eval-plan.md)).
 
-### Recommended union metric set
+## Union metric set
 
 | Layer | Metrics |
 |---|---|
@@ -40,21 +41,7 @@ Tags: [P] primary; [S] snippet/secondary; [V] vendor; [I] inference.
 | Physics PRCs | Pin distance, layer-switch count, ground-plane overlap, length mismatch, uncoupled spacing, overheated length, return-path violations, IR-drop margin |
 | Human-relative | MGS-style graph similarity; WL, via and HPWL ratios to the human board |
 
-## Recommendations for our system
-
-- Adopt the union set above. Report human scores on every metric and normalize, because human boards are themselves not 100% clean. PCBWorld keeps only boards that were DRV-free after conversion [I].
-- Use MGS as a diagnostic of human-likeness, never as an optimization objective: valid alternative routes score low on it [I].
-- Add these metrics from the workflow and practitioner research [I]:
-  - checklist Critical/Major pass counts ([review-checklist.md](review-checklist.md));
-  - convention score ([looks-right-metrics.md](looks-right-metrics.md));
-  - blind expert acceptance and review time;
-  - edits outside the requested scope;
-  - determinism (same inputs → same board hash);
-  - human setup minutes;
-  - agreement between the agent's predicted and actual outcomes.
-- Expose Freerouting's `normalized_score` and optimizer score to the LLM as compact routing feedback [I].
-
-## Conflicts and open questions
+## Open questions
 
 - No human-rated aesthetic or "expert acceptability" dataset exists.
 - No published score correlates with lab EMC/SI/thermal results; any composite needs calibration on real boards.
@@ -62,9 +49,7 @@ Tags: [P] primary; [S] snippet/secondary; [V] vendor; [I] inference.
 
 ## Sources
 
-- research notes: [constraints_verification_benchmarks.md § Q3](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/constraints_verification_benchmarks.md)
-- research notes: [practitioner_discussions.md § Q2c, Q5 Gaps](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/practitioner_discussions.md)
+- [constraints_verification_benchmarks.md § Q3](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/constraints_verification_benchmarks.md); [practitioner_discussions.md § Q2c, Q5 Gaps](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/practitioner_discussions.md)
 - corrections: [verification_kicad_and_tools.md § 4 Freerouting](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_kicad_and_tools.md)
 - corrections (VP): [verification_papers.md § 1 (#7), § 2.1](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_papers.md)
-
-See also: [benchmarks.md](benchmarks.md), [benchmark-plan.md](benchmark-plan.md), [looks-right-metrics.md](looks-right-metrics.md)
+- See also [benchmarks.md](benchmarks.md).

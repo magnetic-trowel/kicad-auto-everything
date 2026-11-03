@@ -1,10 +1,11 @@
 # Physics research
 
-The physics-first line asked what a layout tool should optimise if it reasoned from the physics behind design rules instead of the rules themselves. Over about a day of focused work (2026-10-22, branch `claude/vigilant-mayer-i91rrr`) it produced a rule genealogy, seven first-principles "lenses", domain solvers, a representation design, real-board critics and passports, a red team, and a validation plan.
+Scope: our physics-first methods (what to optimise if layout reasoned from the physics behind rules, not the rules), with provenance, mechanism, numbers, verdict. Not here: derivations -> [topics/physics](../../topics/physics/README.md); idea catalog -> [ideas/physics-first](../../ideas/physics-first/README.md).
+Keys: physics-first, rule genealogy, red team, lenses, PEEC, conductor passports, physics critics, validation program, field solver, intent, branch `claude/vigilant-mayer-i91rrr`, `physics-functional-eval`
 
-**Read this first: all of it is model against model.** The numbers come from closed forms, small field solvers and PEEC models checked against each other, against independent re-derivations, against published vendor/literature anchors, and against FastHenry on four loops (within 1.3%). **No physics-first number has been checked against a measurement of a real board.** The [red team](redteam-corrections.md) corrected about a quarter of the load-bearing claims; each page carries the corrections that touch it.
-
-What reached the tools: `kae`'s fast place terms and exact PEEC/thermal check (`kae/src/kae/physics/`), the circuit comprehension brief, and the routed-copper physics used by the critical-copper router. Those are covered in the [placement](../placement/README.md) and [routing](../routing/README.md) areas.
+- Origin: ~1 day of focused work, 2026-10-22, branch `claude/vigilant-mayer-i91rrr`: rule genealogy, seven first-principles "lenses", domain solvers, representation design, real-board critics and passports, red team, validation plan.
+- **All of it is model against model**: closed forms, small field solvers and PEEC models checked against each other, independent re-derivations, published vendor/literature anchors, and FastHenry on four loops (within 1.3%). **No physics-first number has been checked against a measurement of a real board.** The [red team](redteam-corrections.md) corrected ~1/4 of the load-bearing claims; each page lists the corrections that touch it.
+- Reached the tools: `kae` fast place terms and exact PEEC/thermal check (`kae/src/kae/physics/`), the circuit comprehension brief, routed-copper physics of the critical-copper router -> [placement](../placement/README.md), [routing](../routing/README.md).
 
 | Path | Status | One-line result | Page | Code |
 |---|---|---|---|---|
@@ -19,6 +20,4 @@ What reached the tools: `kae`'s fast place terms and exact PEEC/thermal check (`
 | Field-solver evaluation, intent, intent-driven routing (2026-10-27 .. 11-01) | partial | reduced model DC .. quasi-static passes its gates; intent decides the objective; intent widths beat the human on copper loss on boost from a bare placement, but locked power routing blocks completion on dense boards | [field-solver-routing-and-intent](field-solver-routing-and-intent.md) | `kae/src/kae/em/`, `kae/src/kae/excite/`, `kae/src/kae/intent/`, `tools/research/physics/{em_*,new_board.sh,route_view}` |
 | Joint place-and-route theory and synthetic test | see page | joint search refines but ties an equal-CPU restart portfolio (5/10) | [kae-joint-loop](../joint/kae-joint-loop.md) | `tools/research/physics/jpr_*.py`, `rt_jpr_stats.py` |
 
-Depth: the imported topic docs in [docs/topics/physics](../../topics/physics/README.md), the [physics-first digest](../../digests/physics-first.md), the [executive report](../../../reports/Physics-first%20PCB%20layout.md) and about 890 catalogued ideas in [docs/ideas/physics-first](../../ideas/physics-first/README.md).
-
-Related areas: [routing](../routing/README.md), [placement](../placement/README.md), [joint](../joint/README.md).
+Depth: [physics-first digest](../../digests/physics-first.md), [executive report](../../../reports/Physics-first%20PCB%20layout.md), ~890 ideas in [ideas/physics-first](../../ideas/physics-first/README.md). Related areas: [routing](../routing/README.md), [placement](../placement/README.md), [joint](../joint/README.md).

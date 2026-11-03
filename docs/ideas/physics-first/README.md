@@ -1,10 +1,14 @@
 # Physics-first ideas catalog
 
-About 890 ideas: ~660 in eleven theme files and 232 in seven first-principles lens files. They build on the [original-ideas catalog](../original/README.md) (I1 budget ledger, N7 hot-loop placer, N8 decap assignment, R2 shadow returns, V1/V2 verification gates) and do not repeat it.
+Scope: index of ~890 physics-first ideas (~660 in eleven theme files, 232 in seven first-principles lens files), build order, aliases. Not here: philosophy -> [topics/physics/README](../../topics/physics/README.md); principles -> [foundations](../../topics/physics/foundations.md); the [original-ideas catalog](../original/README.md) (I1 budget ledger, N7 hot-loop placer, N8 decap assignment, R2 shadow returns, V1/V2 verification gates), which these build on and do not repeat.
+Keys: physics-first, idea ids, RG, LA, DR, JPR, OP, SIM, PW, FE, TM, PC, XD, VP, CT, SY, LS, TH, IN, CD, build order, aliases, same idea several names
+Where an idea quotes a number, the topic doc it links to is authoritative. Find an id: `grep -rn '\*\*XD113\*\*' docs/ideas/physics-first/` (one list line per id, starting with the id).
 
-The philosophy is in [topics/physics/README](../../topics/physics/README.md) and the principles in [foundations](../../topics/physics/foundations.md). Where an idea quotes a number, the topic doc it links to is authoritative.
+## Tags and effort
 
-Tags inside each file: **new** (not in the corpus), **combo** (known parts, new combination), **sharp** (an existing idea made buildable or given a number). Effort: S (days), M (weeks), L (months). Everything is untested [I] unless a number is tagged [C] (computed by us) or [P].
+- Novelty: **new** (not in the corpus), **combo** (known parts, new combination), **sharp** (an existing idea made buildable or given a number).
+- Effort: S (days), M (weeks), L (months).
+- Evidence: everything is untested [I] unless a number is tagged [C] (computed by us) or [P]; tags per [CONVENTIONS](../../CONVENTIONS.md#evidence-tags-and-links).
 
 ## Theme files
 
@@ -20,7 +24,8 @@ Tags inside each file: **new** (not in the corpus), **combo** (known parts, new 
 | [si-emi-rf](si-emi-rf.md) | FE1–FE56 | 56 | return-path EMF ledger, EMI chain as a placement loss, cavities and stitching, pad voids, RF structures |
 | [thermal-hv-mfg](thermal-hv-mfg.md) | TM1–TM54 | 54 | thermal kernels, HV inception margin, altitude, yield and σ-margin costs, solder and stress physics |
 | [critics](critics.md) | PC1–PC44 | 44 | physics scorecard, DRC-equivalent mutation benchmark, return-path quality, calibration |
-| [cross-domain](cross-domain.md) | XD1–XD125 | 125 | IC power grids, power modules, stream-function coils, flow networks, topology optimization, graphics, biology |
+| [cross-domain](cross-domain.md) | XD1–XD58 | 58 | IC power grids, power modules, stream-function coils, flow networks |
+| [cross-domain-fields-and-computation](cross-domain-fields-and-computation.md) | XD59–XD125 | 67 | topology optimization, harness practice, cavities, graphics, biology, multiscale |
 
 ## Lens files
 
@@ -36,49 +41,49 @@ Tags inside each file: **new** (not in the corpus), **combo** (known parts, new 
 
 ## Start here: 30 ideas in build order
 
-Ordered so that each step gives the next one something to stand on: measurement and exact kernels before optimization.
+Order: each step gives the next one something to stand on; measurement and exact kernels before optimization.
 
 **1. Anchor in reality** ([validation-program](../../topics/physics/validation-program.md))
-- **IN27** pre-registered bring-up as the measurement rung: predict every budget before the first board is built.
-- **LS30** the ℓ_m return-band coupon: highest value per cost, and it decides whether a transition-band solver gets built.
-- **PC29 + PC30** DRC-equivalent mutation benchmark with physics-labelled mutants.
-- **IN13 + IN17** report P(LII ≤ 1), and use separate evaluators for ranking and for compliance.
+- IN27: pre-registered bring-up as the measurement rung: predict every budget before the first board is built.
+- LS30: the ℓ_m return-band coupon: highest value per cost, and it decides whether a transition-band solver gets built.
+- PC29 + PC30: DRC-equivalent mutation benchmark with physics-labelled mutants.
+- IN13 + IN17: report P(LII ≤ 1), and use separate evaluators for ranking and for compliance.
 
 **2. Exact kernels** ([physics-core-v2](../../topics/physics/physics-core-v2.md))
-- **CT27 + CT28** topological gate first, metric weight second; physics events in the joint state.
-- **CD1 + CD2 + CD3** piece passports; the exact removal cost of every piece from one diagonal; Thevenin additions.
-- **SY7 / CT1** cut price for any objective (the same law follows from conservation, images, spanning-tree leverage and energy).
-- **VP2 + VP3 + VP7** certified floors with dual certificates, avoidable-loss reports, and evaluators that return guaranteed intervals.
-- **LS1** complex-image PEEC across the R–L band.
-- **SIM46** one PEEC core for every workstream.
+- CT27 + CT28: topological gate first, metric weight second; physics events in the joint state.
+- CD1 + CD2 + CD3: piece passports; the exact removal cost of every piece from one diagonal; Thevenin additions.
+- SY7 / CT1: cut price for any objective (the same law follows from conservation, images, spanning-tree leverage and energy).
+- VP2 + VP3 + VP7: certified floors with dual certificates, avoidable-loss reports, and evaluators that return guaranteed intervals.
+- LS1: complex-image PEEC across the R–L band.
+- SIM46: one PEEC core for every workstream.
 
 **3. Understand the circuit as physics**
-- **DR1 + DR3** net passports from schematic simulation, and `.noise` as the adjoint susceptibility engine.
-- **SY2** periodic adjoint for switching and sampled victims.
-- **CT9 + CT16** board–world charge ledger; the world node made mandatory.
-- **LS5** impedance-level classifier with Z0 targets.
-- **TH1 + TH2** modal Q ledger and an alarm for modes damped only by copper.
+- DR1 + DR3: net passports from schematic simulation, and `.noise` as the adjoint susceptibility engine.
+- SY2: periodic adjoint for switching and sampled victims.
+- CT9 + CT16: board–world charge ledger; the world node made mandatory.
+- LS5: impedance-level classifier with Z0 targets.
+- TH1 + TH2: modal Q ledger and an alarm for modes damped only by copper.
 
 **4. Replace slogans with budgets**
-- **RG2** regime predicates as dimensionless groups.
-- **CT22 / SY22** every voltage budget names its closed loop.
-- **FE1** return-path EMF ledger.
-- **PW25** height × squares instead of loop area (with MS2, SIM15).
-- **LS8 + LS9** wire-medium model and the f_p band plan, replacing λ/20 stitching.
+- RG2: regime predicates as dimensionless groups.
+- CT22 / SY22: every voltage budget names its closed loop.
+- FE1: return-path EMF ledger.
+- PW25: height × squares instead of loop area (with MS2, SIM15).
+- LS8 + LS9: wire-medium model and the f_p band plan, replacing λ/20 stitching.
 
 **5. Optimize jointly with physics**
-- **VP4 + VP20** convex-first continuation; tag every term as self, interaction or mask.
-- **JPR1 + JPR14 + JPR41** band-tension placement forces, a channel-width legalizer, delayed acceptance.
-- **LS15** switch representation (to modes, lines or dampers) when the loop gain reaches 1.
-- **TH3** tuned snubber synthesis.
-- **OP38** adjoint copper advisor, with edits priced by their shape (polarization tensor).
-- **JPR46** joint-versus-portfolio protocol at equal CPU.
+- VP4 + VP20: convex-first continuation; tag every term as self, interaction or mask.
+- JPR1 + JPR14 + JPR41: band-tension placement forces, a channel-width legalizer, delayed acceptance.
+- LS15: switch representation (to modes, lines or dampers) when the loop gain reaches 1.
+- TH3: tuned snubber synthesis.
+- OP38: adjoint copper advisor, with edits priced by their shape (polarization tensor).
+- JPR46: joint-versus-portfolio protocol at equal CPU.
 
 Runners-up worth a day each: PW2, PW41, PW46, XD2, XD22, XD39, XD47, TM20+TM22, TM30, TM39, LA7, OP29, FE40, CD10, CD18, SY11, TH14, TH24, VP11, CT19, IN8+IN9.
 
 ## Same idea, several names
 
-Merge these when building; the ids stay valid as aliases. Independent rediscovery is evidence, so these concepts carry more weight.
+Merge these when building; the ids stay valid as aliases. Independent rediscovery is evidence: these concepts carry more weight.
 
 | Concept | Ids |
 |---|---|

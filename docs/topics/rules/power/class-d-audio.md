@@ -1,12 +1,14 @@
 # Class-D amplifiers and low-frequency audio grounding
 
-**TL;DR**
-- **Class-D stages publish quantified loop-inductance budgets.** TI TAS2xxx targets 750–1150 pH total (pin-to-pin + cap ESL) per supply loop, with the smallest cap within 1 mm of the pin. This makes "close" measurable.
-- **Switching outputs never run adjacent-layer to other signals** without a ground layer between.
-- **Output EMC filter and snubbers at the IC;** the speaker connector lands on the filter-cap pads. Inputs go on the quiet side with ground floods.
-- **Below ~100 kHz,** return currents don't hug the trace, so audio and precision DC need explicit return-path planning and a star at the power entry.
+Scope: class-D output stage layout, quantified decoupling-loop budgets, LF audio grounding. Not here: generic decoupling -> [../decoupling-pdn.md](../decoupling-pdn.md); analog grounding -> [../analog-mixed-signal.md](../analog-mixed-signal.md).
+Keys: class-D, audio amplifier, TAS2xxx, SLAA896, TPA3110D2, loop inductance budget, pH, Vsense, VBST, PVDD, output EMC filter, snubber, audio grounding, star ground, <100 kHz, AUD-01
 
-## Key facts
+## Class-D checks to emit
+- Detector: pins OUT±/SW/BST/PVDD/VBST/Vsense → AUD-01…03.
+- SLAA896 pH budgets (750–1150 pH per supply loop) are calibration targets for the [loop-inductance estimator](../checkers-power.md).
+- Below ~100 kHz returns do not hug the trace: plan returns, star at the power entry (AUD-05).
+
+## Class-D evidence by source
 - **TI SLAA896** ("PCB Layout Guidelines for TAS2xxx Series Class-D Boosted Audio Amplifier", [PDF](https://www.ti.com/lit/pdf/slaa896)) [P]:
   - 4–6 layers with epoxy-filled vias is ideal.
   - Short all ground pins together at the balls on top, stitched to a solid L2 ground with multiple vias; a dedicated ground layer is strongly recommended.
@@ -37,7 +39,8 @@
 - [TI SLYT182](https://www.ti.com/lit/an/slyt182/slyt182.pdf) [S]: continuous plane; power-section decoupling terminated near the ground pins.
 - [EE Times](https://www.eetimes.com/circuit-board-layout-guidelines-for-class-d-amplifiers/) [S]: small output-filter loop; speaker connector close to the filter; filter grounds stitched.
 
-**Rules** (RPA §16) [I]:
+## Class-D rule IDs
+RPA §16 [I].
 
 | ID | Rule | Check | Sev |
 |---|---|---|---|
@@ -47,14 +50,10 @@
 | AUD-04 | Inputs on the quiet side, with floods; AGND to the EP centre | Region partition distance | S2 |
 | AUD-05 | <100 kHz audio: plan returns; star the power entry; avoid ground loops through connectors/chassis | Flag shared ground copper between high-current returns (amp, LED, motor) and audio input references | S2 |
 
-## Recommendations for our system
-- **Class-D detector:** pins OUT±/SW/BST/PVDD/VBST/Vsense → AUD-01…03.
-- **Use the SLAA896 pH budgets as calibration targets** for the [loop-inductance estimator](../checkers-power.md).
-
-## Conflicts and open questions
+## Open questions
 - **Not researched:** the "pin 1 problem", cable-shield-to-chassis practice (Muncy, Rane) and analog audio grounding from primary sources.
 
 ## Sources
-- research notes: [rules_power_rf_analog_dfm.md § 14, § 16](../../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_power_rf_analog_dfm.md)
+- [rules_power_rf_analog_dfm.md § 14, § 16](../../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_power_rf_analog_dfm.md)
 
 See also: [../decoupling-pdn.md](../decoupling-pdn.md), [../analog-mixed-signal.md](../analog-mixed-signal.md), [../checkers-power.md](../checkers-power.md)

@@ -29,7 +29,7 @@ kae = "kae.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-kae = ["board/kicad_scripts/*.py"]
+kae = ["board/kicad_scripts/*.py", "board/dru_vocab/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

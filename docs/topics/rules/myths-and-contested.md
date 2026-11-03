@@ -1,29 +1,16 @@
 # Myths, context-dependent and contested rules
 
-*Tags: [P] primary, [S] snippet, [I] inference. VR statuses as in [si-fundamentals.md](si-fundamentals.md).*
+Scope: canonical home for myths (negative rules) and CONTESTED rules with selectors. Not here: the replacement physics -> [si-fundamentals.md](si-fundamentals.md), [emc-placement.md](emc-placement.md); selector/record format -> [rule-pack-format.md](rule-pack-format.md).
+Keys: myth, negative rule, contested, selector, 90° corner, right-angle bend, 20-H rule, split ground, guard trace, ground fill, 3W rule, perimeter stitching, microstrip vs stripline, termination threshold, copper under inductor, smallest cap closest, thermal-via tenting, PMIC ground cuts, source_type = myth, replacement_check, contested_by
+Tags: [P] primary, [S] snippet, [I] inference. VR statuses as in [si-fundamentals.md](si-fundamentals.md).
 
-**TL;DR**
-- **Many famous rules of thumb are wrong in general, or valid only in narrow contexts.**
-  - Store each one as a **negative rule**: it stops the LLM emitting the slogan as a constraint, and it carries the physics-based check that replaces it.
-  - Hubing: "a board that complies with 90% of the guidelines may be much worse than a board that complies with only one or two."
-- **Some rules are genuinely CONTESTED between primary experts:**
-  - 20-H;
-  - perimeter stitching;
-  - microstrip vs stripline for HS pairs;
-  - termination threshold;
-  - guard traces;
-  - copper under inductors;
-  - CIN/COUT grounds;
-  - "smallest cap closest";
-  - thermal-via tenting;
-  - PMIC ground cuts.
-  
-  Never emit any of these by default. Store both variants plus a selector, ask the user, and log the choice.
-- **90° corners are a myth for single-ended nets below about 2 Gb/s, but they matter on ESD paths (≤45°), RF lines (arcs or 135°), differential pairs (each corner adds skew) and nets at ≥10 Gb/s.** So the corner rule applies to the `ESD_UNPROTECTED` and `RF50` net classes, every differential pair, and nets at ≥10 Gb/s ([diff-pairs.md](diff-pairs.md) bends >135°).
+## How myths and contested rules are stored
+1. Myth = knowledge-base record `source_type = myth` + slogan text patterns (to block it) + `replacement_check` (e.g. 3W → K-budget clearance) + `source_scope`, so a blocked slogan never strips a rule another doc requires: crystal guard rings ([crystals-clocks.md](crystals-clocks.md)), driven analog guards ([analog-mixed-signal.md](analog-mixed-signal.md)), isolation barriers ([isolation-creepage.md](isolation-creepage.md)). Hubing: "a board that complies with 90% of the guidelines may be much worse than a board that complies with only one or two."
+2. Contested rule = `contested_by[]` + `selector`; never emitted by default; ask the user or follow the datasheet; log the decision with rationale ([rule-pack-format.md](rule-pack-format.md)).
+3. Corner-angle rules apply only to `ESD_UNPROTECTED` and `RF50` net classes, every differential pair, and nets ≥10 Gb/s (ESD ≤45°, RF arcs or 135°, pairs: each corner adds skew, [diff-pairs.md](diff-pairs.md) bends >135°).
+4. When explaining "why not", the LLM quotes the primary verdict (Johnson, LearnEMC).
 
-## Key facts
-
-### Myths and context-dependent rules
+## Myths and context-dependent rules
 Split grounds (VERIFIED+CTX), 20-H and guard traces (both in the selector table below) are not myths: each holds in a stated context.
 
 | Slogan | Verdict | Status / source |
@@ -51,7 +38,8 @@ Split grounds (VERIFIED+CTX), 20-H and guard traces (both in the selector table 
 | Follow as many guidelines as possible | 90% compliance can be worse than following only one or two rules | LearnEMC |
 | Other anti-rules | "Power traces ≥3× signal width"; ground islands under ICs ("bad idea"); "daisy chain, no stubs" ("sometimes yes, sometimes no"); "ground E-field shields in ≥2 places" ("terrible advice") | [VR] LearnEMC not-so-good |
 
-### Contested rules requiring an explicit selector ([VR] §3)
+## Contested rules requiring an explicit selector
+[VR] §3.
 | Rule | Side A | Side B | Selector |
 |---|---|---|---|
 | 20-H | Shim & Hubing, LearnEMC: no | Montrose: yes, on high-density multi-plane boards | Board density and plane count |
@@ -67,25 +55,10 @@ Split grounds (VERIFIED+CTX), 20-H and guard traces (both in the selector table 
 | Ethernet PHY↔magnetics; ESD side | Pulse ≥25 mm; ESD at the connector | Microchip <1 in; TI ESD on the PHY side | Vendor ([interfaces/ethernet.md](interfaces/ethernet.md)) |
 | Crystal can grounding; copper under the crystal | ST: can not tied to osc GND; most: solid ground | TI/AVR: can to ground; CDCE925: cut planes | Vendor ([crystals-clocks.md](crystals-clocks.md)) |
 
-## Recommendations for our system
-- Store each myth as a knowledge-base record with `source_type = myth`, the slogan's text patterns (to block it), and a `replacement_check` (for example, 3W → the K-budget clearance).
-  - Each record also carries its `source_scope`, so a blocked slogan never strips a rule another doc requires: crystal guard rings ([crystals-clocks.md](crystals-clocks.md)), driven analog guards ([analog-mixed-signal.md](analog-mixed-signal.md)) or isolation barriers ([isolation-creepage.md](isolation-creepage.md)).
-- Contested rules carry `contested_by[]` and a `selector`. The system asks the user, or follows the datasheet, and logs the decision with its rationale (see [rule-pack-format.md](rule-pack-format.md)).
-- Scope corner-angle rules to the `ESD_UNPROTECTED` and `RF50` net classes, every differential pair, and nets at ≥10 Gb/s.
-- When explaining "why not", the LLM should quote the primary verdict (Johnson, LearnEMC). This addresses the user's need to understand why each choice was made.
-
-## Conflicts and open questions
+## Open questions
 - **20-H:** Archambeault's own 20-H papers were not retrieved, and Shim & Hubing's 3.6 dB figure is NOT RETR.
 - **TI "no stripline":** TI does not say what drives this advice, so the selector cannot yet be parameterised from the source alone.
 
 ## Sources
-- Research notes:
-  - [rules_highspeed_emi.md § 9](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_highspeed_emi.md)
-  - [verification_rules.md § 1A, 2, 3](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md)
-- LearnEMC worst guidelines: https://learnemc.com/some-of-the-worst-emc-design-guidelines
-- LearnEMC not-so-good guidelines: https://learnemc.com/not-so-good-emc-design-guidelines
-
-See also:
-- [si-fundamentals.md](si-fundamentals.md)
-- [emc-placement.md](emc-placement.md)
-- [rule-pack-format.md](rule-pack-format.md)
+- [rules_highspeed_emi.md § 9](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_highspeed_emi.md); [verification_rules.md § 1A, 2, 3](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md)
+- LearnEMC worst guidelines: https://learnemc.com/some-of-the-worst-emc-design-guidelines; not-so-good: https://learnemc.com/not-so-good-emc-design-guidelines

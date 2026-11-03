@@ -1,21 +1,16 @@
 # Review checklist (full): thermal, routing, zones, paste, assembly, test
 
-**TL;DR**
-- Thermal reliefs, zone refill, paste segmentation and via-in-pad rules are DRC-checkable.
-- Assembly items depend on assembler tables (spacing, fiducials) and should load from an assembler profile.
-- Test/debug items are mostly judgment but cheap to suggest automatically (test points per rail, GND hooks).
-- This file holds 55 of the 299 checklist items (THM 6, RTE 11, ZON 7, PST 5, ASM 13, DFT 13). The Critical items and the most-agreed Major items are summarized in [review-checklist.md](review-checklist.md).
+Scope: 55 items (THM 6, RTE 11, ZON 7, PST 5, ASM 13, DFT 13) of the 299 layout-review items, full rows. Not here: structure, statistics, codes and the Critical/most-agreed summary -> [review-checklist.md](review-checklist.md); source keys -> [checklist-sources.md](checklist-sources.md).
+Keys: review checklist, thermal relief, routing, zones, paste, via-in-pad, assembly, fiducials, test points, DFT, THM-01, ZON-01, ASM-13
 
-## Key facts
+Thermal reliefs, zone refill, paste segmentation and via-in-pad rules are DRC-checkable; assembly items depend on assembler tables (spacing, fiducials) and load from an assembler profile; test/debug items are mostly judgment but cheap to suggest automatically (test points per rail, GND hooks). [I]
 
-Merged from about 30 checklists by the expert-workflow note. Severity and automation tags are that note's assignments, based on each source's rationale [I]. Numeric thresholds are the cited sources' values; they are fab-specific and conflict between sources, so treat them as profile parameters. Source keys (AZ, GD, KD, AL, ...) are defined in [checklist-sources.md](checklist-sources.md).
+Columns and codes (Sev C/M/m, Auto A/S/J) -> [review-checklist.md#severity-and-automation-codes](review-checklist.md#severity-and-automation-codes). Thresholds are the cited sources' values: fab-specific, conflicting, treat as profile parameters. KiCad DRC key names follow the source note except where marked "KiCad 10 keys" (verified list: [../kicad/drc-rule-language-reference.md](../kicad/drc-rule-language-reference.md)).
 
-- **Sev**: C = critical (dead or unsafe board, unmanufacturable, unassemblable → respin); M = major (SI/PI/EMC/thermal/yield/reliability risk); m = minor (debug, documentation, cosmetics).
-- **Auto**: A = geometry/DRC only (KiCad check or custom-rule constraint named where applicable); S = semi-automatic (needs net classes, part roles or datasheet parameters); J = judgment, external info or simulation.
-
+## Checklist items
 | ID | Category | What to check | Why | Sev | Auto | Sources |
 |---|---|---|---|---|---|---|
-| THM-01 | Thermal | Thermal reliefs on plane connections for solderability/rework (except heat-sinking or high-current pads) | Cold joints | M | A (zone_connection) | AZ, GD, PK, JN, UW, PP |
+| THM-01 | Thermal | Thermal reliefs on plane connections for solderability/rework (except heat-sinking or high-current pads) | Cold joints | M | A (zone_connection); KiCad 10 keys: `zone_connection` | AZ, GD, PK, JN, UW, PP |
 | THM-02 | Thermal | Solid connections plus thermal-via arrays under dissipating pads; copper area for regulators, SMPS, LED drivers, FETs, motor drivers, CPUs, PAs | Junction temperature | M | S | AZ, JN, HH, AL, SCR |
 | THM-03 | Thermal | Thermal balance on 2-terminal chips (UWARG: copper on one pad <2× the other for ≤0805; KH heuristic: copper ratio <0.3 high risk) | Tombstoning | M | S | AZ, GD, UW, KH |
 | THM-04 | Thermal | Thermal lands unmasked; exposed pads on the correct net | Heat transfer, function | M | S | JN, HH, SCD |
@@ -71,21 +66,5 @@ Merged from about 30 checklists by the expert-workflow note. Severity and automa
 | DFT-12 | Test/debug | No test points under BGAs; ≥5.08 mm between adjacent BGAs for test-point access | Probe access | m | A | SCD |
 | DFT-13 | Test/debug | Test point on every node where feasible; dedicated pad ≥1 mm | Testability | m | S | MF |
 
-## Recommendations for our system
-
-- Store these rows as machine-readable data (ID, severity, automation class, threshold, threshold source, KiCad key) and drive the critic stack from it; see [critic-stack.md](critic-stack.md).
-- Load every numeric threshold from a fab/assembler profile with provenance (datasheet > fab profile > house default) [I].
-
-## Conflicts and open questions
-
-- Severity/automation tags are one author's assignments and need validation against escaped-error data [I].
-- Thresholds conflict between sources (e.g. silk height 25 mil vs 1.0 mm vs 50 mil; edge clearance 8 vs 10 mil; part-to-edge 125 mil vs 5 mm).
-- KiCad DRC key names in the Auto column follow the source note; the verified KiCad 10 key list is in [../kicad/drc-rule-language-reference.md](../kicad/drc-rule-language-reference.md).
-
 ## Sources
-
-- research notes: [expert_workflow_and_checklists.md § Q4 Master checklist table](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/expert_workflow_and_checklists.md)
-- corrections: [verification_kicad_and_tools.md § 1 Corrections table](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_kicad_and_tools.md)
-- source checklists and their URLs: [checklist-sources.md](checklist-sources.md)
-
-See also: [review-checklist.md](review-checklist.md), [critic-stack.md](critic-stack.md), [respin-and-fab-hold-data.md](respin-and-fab-hold-data.md)
+- [expert_workflow_and_checklists.md § Q4 Master checklist table](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/expert_workflow_and_checklists.md); corrections: [verification_kicad_and_tools.md § 1 Corrections table](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_kicad_and_tools.md)

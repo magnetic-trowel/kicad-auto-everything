@@ -1,43 +1,26 @@
 # SI/EMI checkers: KiCad-native vs custom (A–I) vs simulation, and existing open-source checkers
 
-*Tags: [P] primary/code read, [S] snippet, [V] unverified project claim, [I] inference.*
+Scope: SI/EMI checking: KiCad native constraints (9/10/master), custom checkers A–I + IF, simulation backend, encodability matrix, existing open-source and commercial checkers. Not here: the physics -> [si-fundamentals.md](si-fundamentals.md), [emc-placement.md](emc-placement.md); DRC syntax -> [../kicad/drc-rule-language-reference.md](../kicad/drc-rule-language-reference.md); licences -> [../licensing/reuse-matrix.md](../licensing/reuse-matrix.md).
+Keys: SI checker, EMI checker, return_path, stub_length, net_chain_length, PCB_VIA_STITCH, fromTo, time domain, ps, backdrill, kipy, IPC API, reference-layer map, checker A, checker B, checker H, MREMC, encodability matrix, kicad-happy, EMI Guardian, emcvisual, RF-tools-KiCAD, EMC Auditor, HyperLynx DRC
+Tags: [P] primary/code read, [S] snippet, [V] unverified project claim, [I] inference.
 
-**TL;DR**
-- **Use native KiCad first.**
-  - KiCad 9/10 check width, gap, clearance, uncoupled length, skew, length, via count, edge clearance and angle.
-  - KiCad 10 adds ps-domain delay (per-layer and via delay), `fromTo()` pad-to-pad paths, and backdrill modelling.
-  - KiCad master (unreleased) adds `return_path`, `stub_length`, net chains and a via-stitch generator.
-- **Nine custom checkers cover what is not native.** Build them in this order:
-  1. B: return-path continuity.
-  2. C: reference changes.
-  3. H: via stubs.
-  4. F: connector between-ness.
-  5. E: crosstalk.
-  6. G: stitching.
-  7. I: protection topology, islands, edge rate.
-  8. D: loop ranking.
-  
-  All of them depend on A, the reference-layer map built from the stackup plus zone fills.
-- **Code licence is GPL-3.0-or-later.** Code from MIT (kicad-happy, EMI Guardian, kipy), 0BSD-style (emcvisual) and GPL-3.0 (RF-tools-KiCAD, KiCad itself) projects can be reused directly. The unlicensed `return_path` checker and the non-commercial EMC Auditor are **references for their algorithms only**.
-- **KiCad 10 IPC cannot create persistent custom DRC markers.** Report findings through an HTML/JSON overlay, and use IPC selection and zoom to point at them.
-- **Rank findings by consequence** (estimated V_cm, far-field share, risk score), not by count. Johnson: good EMI tools are "more like expert systems than simulators".
+## SI/EMI checker policy
+1. Native KiCad first: KiCad 9/10 check width, gap, clearance, uncoupled length, skew, length, via count, edge clearance, angle; KiCad 10 adds ps-domain delay (per-layer and via), `fromTo()` pad-to-pad paths, backdrill; KiCad master (unreleased) adds `return_path`, `stub_length`, net chains, via-stitch generator. Emit native constraints wherever possible (KiCad 10: ps profiles, `fromTo`, `diff_pair_uncoupled`, `via_count`, per-layer `edge_clearance` ≥2–3h; master: `return_path (layer <ref>) (net GND*)` per net chain and layer, `stub_length`), each tagged with `rule_id`, `source_url`, provenance.
+2. Nine custom checkers for the rest, built in order B (return path), C (reference change), H (via stubs), F (connector between-ness), E (crosstalk), G (stitching), I (protection topology, islands, edge rate), D (loop ranking); all depend on A (reference-layer map from stackup + zone fills). Implement against IPC data.
+3. Code licence GPL-3.0-or-later: MIT (kicad-happy, EMI Guardian, kipy), 0BSD-style (emcvisual), GPL-3.0 (RF-tools-KiCAD, KiCad) are reusable (fork or vendor); the unlicensed `return_path` checker and non-commercial EMC Auditor are algorithm references only (reimplement from descriptions).
+4. KiCad 10 IPC cannot create persistent custom DRC markers: report via HTML/JSON overlay, point with IPC selection and zoom.
+5. Rank findings by consequence (estimated V_cm, far-field share, risk score), not count. Johnson: good EMI tools are "more like expert systems than simulators".
+6. Net classification: regex seeds + LLM confirmation from pin function and datasheet + user overrides (`return_path_classes.json` style).
+7. Close the loop: checkers inside the agent's generate → route → check loop; no public tool does this.
 
-## Key facts
-
-### KiCad native capability
-- **KiCad 9/10 constraints:** `track_width`, `clearance`, `diff_pair_gap`, `diff_pair_uncoupled`, `skew`, `length`, `via_count`, `edge_clearance`, `track_angle`, `track_segment_length`, `assertion`, `hole_size`, `annular_width`, `hole_to_hole`, `silk_clearance`, `courtyard_clearance`, `text_height`/`text_thickness`, `physical_clearance`, `via_diameter`, `disallow`.
-  - `skew` is measured against the longest net; add `within_diff_pairs` to check each pair separately.
-  - `length` also sets the tuner's target length.
-  - Conditions: `hasNetclass`, `inDiffPair`, `isCoupledDiffPair`, `intersectsArea`, `intersectsCourtyard`, `memberOfSheet(OrChildren)` (from 9.0.2).
-  - KiCad 10 adds `fromTo('U1-A*','U2-B*')`.
-  - Sources: [KiCad 9](https://docs.kicad.org/9.0/en/pcbnew/pcbnew.html); [KiCad 10](https://docs.kicad.org/10.0/en/pcbnew/pcbnew_advanced.html) [P].
+## KiCad native capability
+- **KiCad 9/10 constraints, conditions, `skew`/`within_diff_pairs`, `length` as tuner target, `fromTo()`:** -> [drc-rule-language-reference](../kicad/drc-rule-language-reference.md#constraints-parsed-in-100), [functions](../kicad/drc-rule-language-reference.md#functions-100). `memberOfSheet(OrChildren)` exists from 9.0.2 ([KiCad 9](https://docs.kicad.org/9.0/en/pcbnew/pcbnew.html); [KiCad 10](https://docs.kicad.org/10.0/en/pcbnew/pcbnew_advanced.html) [P]).
 - **KiCad 10 time domain.**
   - Delay = Σ(length × per-layer unit delay) + via delay (stackup height × via unit delay, with per-layer-pair overrides) + pad-to-die delay.
   - Tuning profiles hold targets in ps. KiCad recommends them for DDR, PCIe and USB, even on a single layer.
-  - ps and mm cannot be mixed within one constraint.
   - Backdrill can be set on vias and pads, from one or both sides, with a "must-cut" layer.
   - Source: [docs](https://docs.kicad.org/10.0/en/pcbnew/pcbnew.html) [P].
-- **KiCad master keywords:** `return_path`, `stub_length`, `net_chain_length`, `hole_aspect_ratio`, `microvia_stack_depth`, `net` ([keywords](https://gitlab.com/kicad/code/kicad/-/raw/master/common/drc_rules.keywords) [P]).
+- **KiCad master keywords** (`return_path`, `stub_length`, `net_chain_length`, `hole_aspect_ratio`, `microvia_stack_depth`, `net`): -> [master-only constraints](../kicad/drc-rule-language-reference.md#master-only-constraints-kicad-11-development) ([keywords](https://gitlab.com/kicad/code/kicad/-/raw/master/common/drc_rules.keywords) [P]). Checker-relevant behaviour:
   - **`(constraint return_path (layer "B.Cu") (net "GND"))`** works like this:
     1. Union the zone fills on the reference layer.
     2. Subtract that union from each track or arc polygon of the net chain.
@@ -52,7 +35,9 @@
   - Useful calls: `Board.get_stackup()`, `get_zones()`, `refill_zones()`, `get_pad_shapes_as_polygons()`, `hit_test()`, `Zone.filled_polygons`.
   - The SWIG bindings do not expose the stackup, so it has to be parsed from `.kicad_pcb`.
 
-### Custom checker specifications ([HS] §11 synthesis [I]; each step cites its physics in [si-fundamentals.md](si-fundamentals.md) / [emc-placement.md](emc-placement.md))
+## Custom checker specifications
+[HS] §11 synthesis [I]; physics in [si-fundamentals.md](si-fundamentals.md) / [emc-placement.md](emc-placement.md).
+
 | ID | Checker | Algorithm |
 |---|---|---|
 | A | Reference-layer map | 1. Read the stackup (IPC or `.kicad_pcb`). 2. For each signal layer, record both neighbours, h_up/h_down, and whether each is filled with GND or a declared reference net. 3. Take the nearer filled layer as the reference; for stripline keep both (about 75% returns on the nearer). 4. Refill zones first. Lints Ott's objective 1 |
@@ -68,7 +53,7 @@
 
 **Simulation backend (S):** loss budgets (Σ length × dB/in + allowances), DDR IBIS PVT, termination current (Archambeault), guard traces (3-D), and width/gap field solves. The MREMC estimate serves as a pre-screen.
 
-### Encodability matrix
+## Encodability matrix
 | Rule family | KiCad 9/10 | KiCad master | External |
 |---|---|---|---|
 | Width/gap per layer for Z0 | native `(layer …)` | same | S: field solve |
@@ -85,7 +70,9 @@
 | Stitching / fence pitch | — | generator only | G (G) |
 | Protection topology; plane-edge offsets | rule areas, partly | — | G (I) |
 
-### Existing open-source checkers (read from code)
+## Existing open-source checkers
+Read from code.
+
 | Project | Licence → reuse under GPL-3.0+ | What it checks |
 |---|---|---|
 | [aklofas/kicad-happy](https://github.com/aklofas/kicad-happy/blob/main/emc-precompliance.md) | MIT → **reusable** | An agent skill (Claude Code/Codex) running on analyser JSON, with 44 rule IDs in 18 categories: ground-plane voids; transitions without a GND via; trace near edge (< h); stitching (√(area/count) vs λ/20 at 3× the highest crystal frequency); outer-layer "3H" crosstalk (≥5 mm coupled); skew→CM; ESD path; connector filtering and ground-pin ratio; cavity; switching harmonics; PDN. Outputs a 0–100 risk score (≤3 findings per rule), band prioritisation, interface risk ranking, and XY near-field probe points |
@@ -97,37 +84,19 @@
 | [RolandWa/KiCAD_Custom_DRC](https://github.com/RolandWa/KiCAD_Custom_DRC) "EMC Auditor" | **Non-commercial proprietary → reference only** | TOML rules: GND via within 2 mm of critical vias; decap within 3 mm; plane continuity sampled every 0.5 mm in a 1 mm band; plane and board edge distance; 3W; connector filter topology; IEC 60664-1 creepage |
 | rjwalters/kicad-tools | not checked | Protocol-aware pair rules emitting native `diff_pair_gap`, uncoupled, `skew` and `via_count` [S] |
 
-### Commercial references
+## Commercial references
 - **HyperLynx DRC EMI rules** (parameterised): edge rate/period, edge shield, exposed length, filter placement, ICs over a split, I/O coupling, metal island, net crossing a gap, net near a plane edge, reference-plane change, via stub ([whitepaper](https://schematicsforfree.com/files/Manufacturing%20and%20Design/PC%20Board%20Design%20and%20Fabrication/PCB%20Design,%20Layout%20&%20Routing/USING%20HYPERLYNX%20DRC%20TO%20FIND%20EMI%20ISSUES.pdf) [P]).
 - **Other tools:** NEC EMISTREAM; IBM EMSAT (Archambeault; "hundreds of man-years" [S]); Zuken CR-8000 EMC Adviser EX.
 - **How these tools classify nets:** manual entry, net-name substrings, a component database, or IBIS/simulation data. Names alone "can not provide detailed information" ([LearnEMC](https://learnemc.com/commercial-emc-rule-checkers) [P]).
 - **Clemson:** source/path/antenna combinations are computer-identifiable from layout plus component data [S].
 
-## Recommendations for our system
-- **Constraint emission.** Generate native constraints wherever possible:
-  - KiCad 10: ps profiles, `fromTo`, `diff_pair_uncoupled`, `via_count`, per-layer `edge_clearance` ≥2–3h;
-  - KiCad master: `return_path (layer <ref>) (net GND*)` per net chain and layer, plus `stub_length`.
-  
-  Tag each emitted rule with `rule_id`, `source_url` and provenance.
-- **Python checker suite.** Implement A–I against IPC data (stackup and fills), in the priority order above. kicad-happy, EMI Guardian, emcvisual and RF-tools can be forked or vendored. The `return_path` checker and EMC Auditor are reimplemented from their algorithm descriptions only.
-- **Reporting.** Show findings in an HTML/JSON overlay with IPC selection and zoom.
-- **Net classification.** Combine regex seeds, LLM confirmation from pin function and datasheet, and user overrides (in the style of `return_path_classes.json`).
-- **Closing the loop.** Add these checkers to the agent's generate → route → check loop. No public tool does this.
-
-## Conflicts and open questions
-- **Unreleased features.** KiCad master's `return_path` and net chains are unreleased, and their syntax may change.
-- **Accuracy.** None of the open-source checkers has been benchmarked against measurement or full-wave results.
-- **API stability.** IPC stability across 10.x and 11 was not verified.
+## Open questions
+- KiCad master `return_path` and net chains are unreleased; syntax may change.
+- No open-source checker has been benchmarked against measurement or full-wave results.
+- IPC stability across 10.x and 11 not verified.
 
 ## Sources
-- Research notes:
-  - [rules_highspeed_emi.md § 11, 12](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_highspeed_emi.md)
-  - [interface_rule_packs.md § 11](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/interface_rule_packs.md)
+- [rules_highspeed_emi.md § 11, 12](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_highspeed_emi.md); [interface_rule_packs.md § 11](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/interface_rule_packs.md)
 - KiCad source (GitLab master): drc_rule_parser.cpp, drc_test_provider_matched_length.cpp, pcb_via_stitch.cpp.
 
-See also:
-- [si-fundamentals.md](si-fundamentals.md)
-- [emc-placement.md](emc-placement.md)
-- [rule-pack-format.md](rule-pack-format.md)
-- [../kicad/drc-rule-language-reference.md](../kicad/drc-rule-language-reference.md)
-- [../licensing/reuse-matrix.md](../licensing/reuse-matrix.md)
+- See also [rule-pack-format.md](rule-pack-format.md).

@@ -1,28 +1,14 @@
 # PCIe Gen2–Gen6 layout rules
 
-*Tags: [P] primary source read, [S] snippet only, [I] our inference. VR = verification_rules.md.*
+Scope: PCIe channel loss budgets, impedance, skew, AC caps, vias/stubs, edge fingers, REFCLK. Not here: shared interface rules -> [common.md](common.md); stub physics -> [../si-fundamentals.md](../si-fundamentals.md); stackup -> [../stackup.md](../stackup.md).
+Keys: PCIe, Gen3, Gen4, Gen5, Gen6, PAM4, CEM, add-in card, edge fingers, loss budget, SDD21, SNLA426, SLLU149E, AC cap 220 nF, backdrill, REFCLK, return vias
+Tags: [P] primary, [S] snippet, [I] inference, [VR] verification_rules.md.
 
-**TL;DR**
-- **Budget loss, not length.** TI SNLA426 totals are 23.5 / 28 / 36 dB for Gen3 / Gen4 / Gen5. A 9 in high-loss motherboard trace takes 13 / 14 / 16 dB of that. FR4 loses 0.686 dB/in at 8 GHz and 1.289 dB/in at 16 GHz.
-  - Single-board budgets (Qualcomm): Gen2 −6 dB at 2.5 GHz (≤250 mm); Gen3 −10 dB at 4 GHz (≤300 mm).
-  - Each via costs about 2 in of length (Gen2, FR4).
-- **Impedance and skew:**
-  - The spec allows 70–100 Ω. Add-in cards need **85 Ω**. TI SoC tables use 100 Ω ±10% or 95 Ω ±5%.
-  - Intra-pair skew ≤5 mil, *additive over segments*. Qualcomm allows 5 ps ≈ 0.7 mm.
-  - Lane-to-lane matching is not required.
-- **AC caps.** For Gen3+, 220 nF satisfies every range quoted (TI 75–220 nF; Qualcomm, Efinix and NXP 176–265 nF). Gen1/2-only parts may cap at 200 nF (PCIe 2.0: 75–200 nF [I; PCIe 2.0 base spec]; NXP QorIQ Gen2), so use their datasheet value, e.g. SLLU149E's 0.1 µF. Placement disputes reduce to "near the connector for add-in cards; near either endpoint on one board; never mid-line or staggered".
-- **Vias and stubs:**
-  - Return vias within 50 mil (TI Gen5) or ≥2 within 100–200 mil (EMA).
-  - Stubs <15 mil preferred. TI's Gen5 quarter-wave maximum is ≈51–54 mil, a resonance ceiling rather than a target: Bogatin's 0.3/Gbps gives ≈9 mil at 32 GT/s [I].
-  - Antipads 40 mil with 10/20 mil drill/pad; non-functional pads removed.
-- **Edges and layers:**
-  - ≥max(5W, 5H) from the plane edge; ≥4H from voids.
-  - Edge-finger keep-outs on add-in cards.
-  - Microstrip vs stripline is contested between TI documents.
+Budget loss, not length: `L_max ≈ (budget − Σ via/cap/connector allowances) / (dB/in at Nyquist)` [I]; store budgets and material tables, compute the limit per stackup. Qualcomm anchor points imply ~0.85 dB/in at 4 GHz and ~0.6 dB/in at 2.5 GHz; TI FR4 with Gen4's 14 dB gives ~20 in before vias, realistically 9–12 in on FR-4, much less at Gen5.
 
-## Key facts
+## PCIe loss budget TI SNLA426
+Source: [TI SNLA426](https://www.ti.com/lit/pdf/snla426) [P], dB.
 
-### Loss budget ([TI SNLA426](https://www.ti.com/lit/pdf/snla426) [P]), dB
 | Item | Gen3 | Gen4 | Gen5 |
 |---|---|---|---|
 | CPU package | 3.5 | 5 | 9.0 |
@@ -35,7 +21,9 @@
 
 Eye height after EQ is 25 mV for Gen3 and 15±1.5 mV for Gen4/5; eye width is 0.3 UI.
 
-### 1-inch SDD21 by material (TI SNLA426 Table 9-1)
+## 1-inch SDD21 by material
+Source: TI SNLA426 Table 9-1.
+
 | Material (Dk, Df) | 8 GHz | 16 GHz |
 |---|---|---|
 | Megtron 6 (3.4, 0.002) | 0.189 dB | 0.336 dB |
@@ -45,7 +33,7 @@ Eye height after EQ is 25 mV for Gen3 and 15±1.5 mV for Gen4/5; eye width is 0.
 | FR4 (4.4, 0.014) | 0.686 dB | 1.289 dB |
 | Tetrafunctional FR4 (4.1, 0.022) | 0.961 dB | 1.844 dB |
 
-### Other loss figures
+## Other PCIe loss figures
 - **[Efinix AN063](https://www.efinixinc.com/docs/an063-high-speed-transceiver-design-guidelines-v1.2.pdf) [P]:**
   - At 6.25 GHz, about 0.5 dB/in for Megtron 6 and about 1 dB/in for FR4.
   - Maximum RX channel loss: 25 dB.
@@ -58,7 +46,7 @@ Eye height after EQ is 25 mV for Gen3 and 15±1.5 mV for Gen4/5; eye width is 0.
   - Add-in cards ≤4 in; system boards <12 in.
 - **NXP AN12864** [S]: Gen4 adds 1.0–1.2 dB/in and 1–5 ps of jitter per inch.
 
-### Rules
+## PCIe rules table
 | Param | Default | Variants / **conflicts** | Check |
 |---|---|---|---|
 | Zdiff | 85 Ω for CEM add-in; the spec allows 70–100 Ω (excluding vias, cap pads, connectors and cables) | TI SoC tables: **100 Ω ±10% (AM57xx/KeyStone), 95 Ω ±5% (AM64x/AM65x)** [VR]; Qualcomm 70–100 Ω; SLLU149E 100 Ω / 50–55 Ω SE; REFCLK 100 Ω with ≤200 fs RMS RJ | K + S |
@@ -69,7 +57,7 @@ Eye height after EQ is 25 mV for Gen3 and 15±1.5 mV for Gen4/5; eye width is 0.
 | Via count | Qualcomm: layer transitions only at breakout and connectors | TI SoC tables: **0 vias (AM57xx/KeyStone) vs 2 (AM65xx)** [VR] | K `via_count` |
 | Via geometry | 10/20/40 mil drill/pad/antipad; as many GND stitches around the antipad as possible; via-in-pad preferred; non-functional pads removed (SNLA426) | EMA: 8–10 mil drill, 18–22 mil pad, 30–35 mil antipad | G |
 | Return vias | Within 50 mil (1.27 mm) at Gen5 (SNLA426) | EMA: ≥2 within 100–200 mil, on both sides of a pair; SPRAAR7J 200 mil; SLLU149E: bypass caps next to the vias if the reference changes | G |
-| Via stubs | <15 mil, otherwise backdrill. Gen5 quarter-wave maximum ≈54 mil (Megtron 6) / 51 mil (FR4), a resonance ceiling, not a target | EMA: "a 20 mil stub resonates near 8–16 GHz" contradicts f ≈ 1.5/L (≈75 GHz at 20 mil) [I]; don't use it | G (stub from stackup) |
+| Via stubs | <15 mil, otherwise backdrill. Gen5 quarter-wave maximum ≈54 mil (Megtron 6) / 51 mil (FR4), a resonance ceiling, not a target; Bogatin's 0.3/Gbps gives ≈9 mil at 32 GT/s [I] | EMA: "a 20 mil stub resonates near 8–16 GHz" contradicts f ≈ 1.5/L (≈75 GHz at 20 mil) [I]; don't use it | G (stub from stackup) |
 | AC-cap value | **Conflict:** TI SNLA426 75–220 nF (220 nF typical); Qualcomm Gen3 176–265 nF, Gen2 75–265 nF; Efinix 176–265 nF (220 nF conventional); NXP QorIQ Gen2 75–200, Gen3 176–265 nF [S]; SLLU149E 0.1 µF 0402 | **220 nF fits all Gen3+ ranges**; BOM window 176–220 nF for Gen3+ [I]. Gen1/2-only parts: 75–200 nF (PCIe 2.0 [I; PCIe 2.0 base spec]) or the part's own range | M |
 | AC-cap position | **Conflict:** chip-to-chip near RX (SNLA426); same board near TXP/TXN (SLLU149E); TX side (Efinix); "anywhere … better close to source or receiver" (Qualcomm). Agreed: add-in/edge-finger → near the connector. Qualcomm: do not stagger caps | Treat "within N mm of TX pins *or* RX pins" as satisfied; pair caps side by side | G |
 | AC-cap package and void | Smallest package (0201 pad 12 mil vs a 5–7 mil 85 Ω trace); Efinix recommends 0201. Pad void 100%, two layers, larger than the pad | — | G / M |
@@ -78,35 +66,19 @@ Eye height after EQ is 25 mV for Gen3 and 15±1.5 mV for Gen4/5; eye width is 0.
 | Bends | Round preferred, 45° acceptable, no right angles (Efinix); 45° preferred (SLLU149E) | — | K `track_angle` |
 | Layering | Efinix: TX and RX on different layers | **Conflict:** SPRAAR7J "does not recommend stripline"; SNLA426 and Efinix favour closely coupled stripline at Gen4–5 | selector |
 | Edge fingers (PCIe 4.0 CEM) | No inner conductor within 0.381 mm below the edge-card connector; inner planes must not extend >2 mm into the edge-finger footprint (Efinix) | — | G: inner-layer keep-out zones |
-| Clock buffer / REFCLK | Renesas: no parts or vias between the lines; 0402/0201; same layer and via count; "1 mm ⇒ 6 ps"; GND via at each change; ≥3W (5W optimal); one GND via per decap. See [../crystals-clocks.md](../crystals-clocks.md) | — | G |
+| Clock buffer / REFCLK | Renesas differential clock-buffer rules ("1 mm ⇒ 6 ps", ≥3W, GND via per layer change) -> [../crystals-clocks.md](../crystals-clocks.md#clock-routing-rules) | — | G |
 
-## Recommendations for our system
-- **Length from budget [I].** L_max ≈ (budget − Σ via/cap/connector allowances) / dB-per-inch at Nyquist.
-  - Qualcomm's anchor points imply about 0.85 dB/in at 4 GHz and 0.6 dB/in at 2.5 GHz.
-  - TI's FR4 figure with Gen4's 14 dB gives about 20 in before vias; realistically 9–12 in on FR-4, and much less at Gen5.
-  - Store budgets and material tables; compute the limit per stackup.
-- **Checks to emit:**
-  - BOM: 176–220 nF window for Gen3+; 75–200 nF (or the part's range) for Gen1/2-only links.
-  - Placement: "cap within N mm of either endpoint", or of the connector on add-in cards.
-  - Stub check (via checker H).
-  - Return-via check, rate-scaled.
-  - Inner-layer keep-outs under the edge fingers.
+## PCIe checks to emit
+- BOM: 176–220 nF for Gen3+; 75–200 nF (or the part's range) for Gen1/2-only links.
+- Placement: cap within N mm of either endpoint, or of the connector on add-in cards.
+- Stub check (via checker H); rate-scaled return-via check; inner-layer keep-outs under edge fingers.
 
-## Conflicts and open questions
-- **AC-cap value and position.** Resolved above.
-- **Microstrip vs stripline.** Unresolved; TI's motive is unexplained.
-- **Lane-skew inconsistency** within SNLA426.
-- **Missing sources:**
-  - The PCI-SIG Base and CEM specs (C_TX table, M.2 budgets) were not accessible.
-  - No primary per-via dB figure exists at 8/16 GHz.
+## Open questions
+- AC-cap value and position: resolved in the rules table (220 nF; near connector on add-in, near either endpoint on one board, never mid-line or staggered).
+- Microstrip vs stripline: unresolved; TI's motive unexplained ([../myths-and-contested.md](../myths-and-contested.md)).
+- Lane-skew inconsistency within SNLA426.
+- PCI-SIG Base and CEM specs (C_TX table, M.2 budgets) not accessible; no primary per-via dB figure at 8/16 GHz.
 
 ## Sources
-- Research notes:
-  - [interface_rule_packs.md § 2](../../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/interface_rule_packs.md)
-  - [verification_rules.md § 1A DP-6, § 2](../../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md)
-
-See also:
-- [../diff-pairs.md](../diff-pairs.md)
-- [../si-fundamentals.md](../si-fundamentals.md)
-- [../stackup.md](../stackup.md)
-- [usb3-usb4-typec.md](usb3-usb4-typec.md)
+- [interface_rule_packs.md § 2](../../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/interface_rule_packs.md); [verification_rules.md § 1A DP-6, § 2](../../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md)
+- See also [../diff-pairs.md](../diff-pairs.md), [usb3-usb4-typec.md](usb3-usb4-typec.md).

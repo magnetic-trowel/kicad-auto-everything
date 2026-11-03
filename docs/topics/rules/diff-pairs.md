@@ -1,25 +1,20 @@
 # Differential pairs
 
-*Tags:*
-- [P] primary source read
-- [S] snippet
-- [I] our inference
-- VR statuses as in [si-fundamentals.md](si-fundamentals.md)
+Scope: diff-pair physics (skew → common mode, coupling, corners, serpentines, diff vias), generic numeric rules, KiCad semantics. Not here: per-interface values -> [interfaces/common.md](interfaces/common.md) and its interface docs; return paths and crosstalk -> [si-fundamentals.md](si-fundamentals.md).
+Keys: differential pair, diff pair, skew, running skew, common mode, V_cm, coupling, serpentine, switchback, uncoupled length, diff via, antipad, bends 135°, diff_pair_gap, diff_pair_uncoupled, within_diff_pairs, inDiffPair, isCoupledDiffPair
+Tags: [P] primary, [S] snippet, [I] inference; VR statuses as in [si-fundamentals.md](si-fundamentals.md).
 
-**TL;DR**
-- **Each leg returns under itself.** Pairs are not self-returning, so every return-path rule applies to each leg.
-- **Skew turns differential signal into common mode.** 20% skew relative to t_r gives 10% common mode, and common mode dominates both EMI and crosstalk. Budget skew as skew_max = min(vendor spec, ≈0.1·t_r), and correct it with **running-skew** compensation placed near the mismatch.
-- **Coupling closer than about 0.5 mm buys no extra EMI benefit**, because driver imbalance dominates. Choose the gap for Zdiff and density. Rounded corners do **not** remove skew.
-- **TI's absolute keep-outs**, scoped to high-speed interface pairs on TI processors (e.g. USB, PCIe, SATA, HDMI; hard only within that declared scope, [VR] §3):
-  - 30 mil to any signal;
-  - 50 mil to clocks;
-  - 5W between pairs.
-- **Further rules (VR):** uncoupled length ≤45 mil (NXP); bends >135°; equal via counts; family-scoped via limits.
-- **Place ICs so each pair leaves the driver heading the same way it enters the receiver.** The left and right turns then cancel.
+## Diff-pair design rules
+1. Each leg returns under itself: pairs are not self-returning; every return-path rule applies per leg.
+2. Skew budget: `skew_max = min(spec or vendor value, k·t_r)`, k ≈ 0.1, tighter for balanced links (Ethernet). 20% skew relative to t_r → 10% common mode; common mode dominates EMI and crosstalk. Convert ps → mm with the per-layer delay (KiCad 10 profiles; fallback Ott 150/180 ps/in).
+3. Running-skew compensation: walk both legs, insert a tune near the mismatch wherever |running skew| > ~0.2 × budget [I]; end-of-route totals alone are not enough. Rounded corners do **not** remove skew.
+4. Coupling closer than ~0.5 mm buys no extra EMI benefit (driver imbalance dominates): choose the gap for Zdiff and density.
+5. Placer: pair leaves the driver heading the same way it enters the receiver (left/right turns cancel); cost on exit/entry direction alignment.
+6. Router: symmetric breakouts; short or uncoupled serpentine switchbacks; GND vias beside every diff via pair; equal via counts on both legs; enter connector pads from the non-stub end.
+7. Constraints to emit: `diff_pair_gap`, `diff_pair_uncoupled (max 1.14mm)`, `skew within_diff_pairs`, `via_count`; for high-speed interface pairs (TI scope) pair-to-other clearance 0.762 mm (30 mil) and 1.27 mm (50 mil to clocks). Other pairs take spacing from the crosstalk budget ([si-fundamentals.md](si-fundamentals.md)). Interface packs override ([interfaces/usb3-usb4-typec.md](interfaces/usb3-usb4-typec.md), [interfaces/pcie.md](interfaces/pcie.md), [interfaces/ddr.md](interfaces/ddr.md)).
 
-## Key facts
-
-### Physics ([Johnson] [P])
+## Diff-pair physics
+Source: [Johnson] [P].
 - **Common mode from skew.** V_cm ≈ Δv·Δt/(2t_r) ([CMA of Skew](https://www.sigcon.com/Pubs/edn/CMAofSkew.htm)). kicad-happy implements the same relation as V_CM = V_diff·skew/(2T_rise).
 - **Spacing.** In theory, 0.5 mm spacing gives about 40 dB of cancellation. In practice, drivers rarely balance better than 1:100, so "0.5 mm is close enough" ([Reducing EMI](https://www.sigcon.com/Pubs/edn/ReducingEMI.htm)). LearnEMC: an imbalanced pair radiates like a single-ended line.
 - **Corners** ([Skewed Layout](https://www.sigcon.com/Pubs/edn/SkewedLayout.htm)):
@@ -32,7 +27,9 @@
   - Delay matching must also match configuration, width, Dk, loading, thresholds and terminations, not just length.
 - **Differential vias (XFP).** Use an oval antipad with ground vias pinning the planes at each end. Without them, crosstalk is higher and "falls off less rapidly". Avoid long stubs ([XtkDiffViaGnds](https://www.sigcon.com/Pubs/edn/XtkDiffViaGnds.htm)).
 
-### Numeric rules (VR corrections applied)
+## Diff-pair numeric rules
+VR corrections applied. TI absolute keep-outs (30 mil to any signal, 50 mil to clocks, 5W between pairs) are scoped to high-speed interface pairs on TI processors (USB, PCIe, SATA, HDMI); hard only within that scope ([VR] §3).
+
 | Rule | Value | Source / status |
 |---|---|---|
 | Pair-to-pair | ≥5W (6 mil traces → 30 mil) | [TI SPRAAR7J](https://www.ti.com/lit/pdf/spraar7) [P; VERIFIED] |
@@ -50,7 +47,8 @@
 | Width / breakout | Constant width after BGA escape; after breakout keep pairs clear of the SoC | SPRAAR7J p.9–10 [VR addition] |
 | Return vias | Symmetric, ≤200 mil, scaled by data rate | [si-fundamentals.md](si-fundamentals.md) |
 
-### KiCad semantics ([KiCad 9 docs](https://docs.kicad.org/9.0/en/pcbnew/pcbnew.html) [P])
+## KiCad diff-pair semantics
+Source: [KiCad 9 docs](https://docs.kicad.org/9.0/en/pcbnew/pcbnew.html) [P].
 - `skew` is measured against the **longest** matched net, not the average (corrected).
 - `within_diff_pairs` checks each pair separately.
 - `diff_pair_gap` is not checked on non-parallel fanout.
@@ -59,33 +57,12 @@
 - KiCad 10 can express skew in ps (time domain), with per-layer and via delay.
 - kicad-happy carries per-protocol skew limits that we have not verified: USB HS 25 ps, PCIe 5 ps, Ethernet 50 ps, HDMI 20 ps ([MIT](https://github.com/aklofas/kicad-happy/blob/main/emc-precompliance.md) [P]).
 
-## Recommendations for our system
-- **Skew budget.** skew_max = min(spec or vendor value, k·t_r), with k ≈ 0.1, or tighter for balanced links such as Ethernet. Convert ps to mm with the per-layer delay: use KiCad 10 profiles, with Ott's 150/180 ps/in as a fallback.
-- **Running-skew compensation.** Walk both legs and insert a tune wherever |running skew| exceeds about 0.2 × the budget [I]. Checking only the end-of-route totals is not enough.
-- **Placer.** Add a cost for pair direction alignment, i.e. same exit and entry direction.
-- **Router.**
-  - Use symmetric breakouts.
-  - Keep serpentine switchbacks short or uncoupled.
-  - Put GND vias beside every differential via pair.
-  - Keep via counts equal on both legs.
-  - Route into connector pads from the non-stub end.
-- **Constraints to emit:** `diff_pair_gap`, `diff_pair_uncoupled (max 1.14mm)`, `skew within_diff_pairs`, `via_count`, and, for high-speed interface pairs (TI's scope), pair-to-other clearances of 0.762 mm (30 mil) and 1.27 mm (50 mil to clocks). Other pairs take their spacing from the crosstalk budget ([si-fundamentals.md](si-fundamentals.md)). Interface packs override these defaults (e.g. [interfaces/usb3-usb4-typec.md](interfaces/usb3-usb4-typec.md), [interfaces/pcie.md](interfaces/pcie.md), [interfaces/ddr.md](interfaces/ddr.md)).
-
-## Conflicts and open questions
-- **Vendor intra-pair skew differs by up to 14× for USB3.** See [interfaces/usb3-usb4-typec.md](interfaces/usb3-usb4-typec.md).
+## Open questions
+- Vendor intra-pair skew differs up to 14× for USB3 ([interfaces/usb3-usb4-typec.md](interfaces/usb3-usb4-typec.md)).
 - **No general primary rule for the number or distance of return GND vias per differential via**, beyond TI's 200 mil and the XFP figure, whose dimensions are illegible.
 - **The SPRAAR7J bend-figure annotations** (">1.5 x Trace Width", ">5 x Trace Width") are unexplained.
 
 ## Sources
-- Research notes:
-  - [rules_highspeed_emi.md § 3](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_highspeed_emi.md)
-  - [verification_rules.md § 1A, 2](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md)
-- Primary documents:
-  - TI SPRAAR7J: https://www.ti.com/lit/pdf/spraar7
-  - Johnson articles: https://www.sigcon.com/Pubs/edn/
-
-See also:
-- [si-fundamentals.md](si-fundamentals.md)
-- [checkers-si-emi.md](checkers-si-emi.md)
-- [interfaces/usb2.md](interfaces/usb2.md)
-- [interfaces/pcie.md](interfaces/pcie.md)
+- [rules_highspeed_emi.md § 3](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_highspeed_emi.md); [verification_rules.md § 1A, 2](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md)
+- TI SPRAAR7J: https://www.ti.com/lit/pdf/spraar7; Johnson articles: https://www.sigcon.com/Pubs/edn/
+- See also [checkers-si-emi.md](checkers-si-emi.md).

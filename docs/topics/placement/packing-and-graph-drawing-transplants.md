@@ -1,13 +1,14 @@
 # Packing, graph drawing, cartography and other transplants for PCB placement
 
-**TL;DR**
-- **sparrow** (MIT) on **jagua-rs** (MPL-2.0) is open SOTA 2D irregular nesting: allow overlaps, eliminate them with guided local search — a ready legalizer/compactor with courtyards and keep-outs as "hazards".
-- **Sequence-pair completion** turns any consistent (acyclic) set of LLM left-of/below relations into a guaranteed non-overlapping packing; contradictory (cyclic) relations have no completion, and outline, fixed-part and keep-out legality still needs the legalizer [I].
-- **HOLA** (graph drawing) gives human-grounded aesthetic criteria and a "core + trees outside" layout; **IPSep-CoLa** enforces hard separation constraints inside stress majorization (signal-flow order, containment).
-- **Map labeling by SA** is a quick win for silkscreen reference designators; **metro-map MIP** gives octilinear bus schematization.
-- **DEE** (protein design) prunes provably dominated rotation/side states before exact selection.
+Scope: packing, nesting, graph drawing, cartography and protein-design methods transplantable to PCB placement. Not here: geometry libraries -> [geometry](../solvers/geometry-libraries.md).
+Keys: sparrow, jagua-rs, hazards, guided local search, irregular nesting, sequence-pair completion, HOLA, IPSep-CoLa, stress majorization, map labeling SA, metro-map MIP, octilinear, DEE, dead-end elimination, libavoid
 
-## Key facts
+**Results**
+1. sparrow on jagua-rs is a ready open legalizer/compactor (courtyards and keep-outs as hazards).
+2. Sequence-pair completion turns acyclic LLM left-of/below relations into a non-overlapping packing; HOLA/IPSep-CoLa give human-grounded layout criteria and hard separation constraints; DEE prunes dominated rotation/side states.
+3. Quick wins: map-labeling SA for silkscreen refdes, metro-map MIP for octilinear buses [I].
+
+## Methods and results
 
 **Nesting / packing**
 - SVGnest/Deepnest: orbital NFP (Burke 2006) + GA over order and rotation; MIT; deepnest-next moving core to Rust [S/P].
@@ -28,10 +29,10 @@
 **Other domains**
 - **Dead-end elimination** (Nature 1992): proves rotamers cannot be in the global minimum; with A* or B&B + MAP bounds (BroMAP) guarantees the optimum for pairwise energies; iMinDEE for continuous flexibility [S].
 - **ASP for PCG** (Smith & Mateas 2011): design space as an answer-set program; enumerate/sample valid artifacts. **WFC / model synthesis** (Merrell; Gumin): tile-adjacency propagation; struggles on large outputs [S]. LLM ↔ ASP loops (clingo) improve spatial reasoning; DecompSR [S].
-- **Control cabinets**: Pareto SA on wire length vs heat (~2× / 1.6× better, ~4.7% of configs evaluated); duct auto-wiring with fill-level and EMC segregation (Zuken E3.panel) [S].
+- **Control cabinets**: Pareto SA on wire length vs heat → [sides/thermal](sides-thermal-emc-reuse.md#methods-and-results); duct auto-wiring with fill-level and EMC segregation (Zuken E3.panel) [S].
 - **Origami/foldable PCBs**: PCB Origami, PCBend joints free of rigid parts, Miura-ori stretchable boards [S].
 
-## Recommendations for our system
+## Use in kae
 - **sparrow-style legalizer** [I]: fix outline; courtyards = interior hazards; outline complement, keep-outs, hole clearances, connector-overhang zones = hazards with per-type filters (height zones under heatsinks, no-back-side zones); allow overlaps; GLS on weighted overlap proxy + displacement-from-target + HPWL; then compress block bounding boxes. Keep connectivity terms or inflate courtyards by channel margins (nesting ignores nets).
 - **Sequence-pair bridge** [I]: LLM pairwise relations = partial SP → complete by topological sort (tie-break by netlist proximity) → longest-path decode = non-overlapping packing (reject cyclic relation sets first; outline/keep-out/fixed-part legality via the legalizer); anneal remaining freedom with the LLM's partial order as hard precedence.
 - **Block floorplanning as UAFLP**: LLM supplies flow matrix (net count × criticality) and area estimates; slicing-tree GA or MIP [I].
@@ -43,11 +44,9 @@
 - **ASP/WFC** for tiled regions (keyboard matrices, LED arrays, multichannel front-ends) inside KiCad multichannel rooms; LLM → ASP facts to catch contradictions, strict-order cycles and edge-slot over-subscription before solving [I].
 - Rigid-flex: panel assignment as constrained bin assignment with no rigid parts at folds [I].
 
-## Conflicts and open questions
+## Open questions
 - No PCB application of NFP/GLS nesting, HOLA, IPSep, DEE, ASP or WFC found.
 - Licenses: jagua-rs MPL-2.0 and sparrow MIT (verified in [solver_toolbox.md § 6](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/solver_toolbox.md)); Adaptagrams license unverified.
 
 ## Sources
-- research notes: [cross_domain_ideas.md § Q3, Q6, Q8, Q10](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/cross_domain_ideas.md); [solver_toolbox.md § 6](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/solver_toolbox.md)
-
-See also: [legalization](legalization.md) · [solvers/geometry-libraries](../solvers/geometry-libraries.md) · [../../ideas/cross-domain-transplants](../../ideas/cross-domain-transplants.md)
+- [cross_domain_ideas.md § Q3, Q6, Q8, Q10](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/cross_domain_ideas.md); [solver_toolbox.md § 6](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/solver_toolbox.md)

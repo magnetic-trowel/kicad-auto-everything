@@ -1,18 +1,13 @@
 # Review checklist (full): mechanical, placement, footprints
 
-**TL;DR**
-- Mechanical fit, connector orientation and board thickness are Critical and mostly need MCAD data or judgment.
-- Placement items encode the expert floorplan heuristics; most are semi-automatic once part roles exist.
-- Footprint and pinout errors (wrong package, mirrored or bottom-view drawings, SOT-23 flips) are among the most common board killers.
-- This file holds 61 of the 299 checklist items (MEC 21, PLC 27, FP 13). The Critical items and the most-agreed Major items are summarized in [review-checklist.md](review-checklist.md).
+Scope: 61 items (MEC 21, PLC 27, FP 13) of the 299 layout-review items, full rows. Not here: structure, statistics, codes and the Critical/most-agreed summary -> [review-checklist.md](review-checklist.md); source keys -> [checklist-sources.md](checklist-sources.md).
+Keys: review checklist, mechanical fit, enclosure, connector orientation, placement, floorplan, footprint, pinout, SOT-23, MEC-01, PLC-27, FP-12
 
-## Key facts
+Mechanical fit, connector orientation and board thickness are Critical and mostly need MCAD data or judgment; placement items encode expert floorplan heuristics (semi-automatic once part roles exist); footprint and pinout errors (wrong package, mirrored or bottom-view drawings, SOT-23 flips) are among the most common board killers. [I]
 
-Merged from about 30 checklists by the expert-workflow note. Severity and automation tags are that note's assignments, based on each source's rationale [I]. Numeric thresholds are the cited sources' values; they are fab-specific and conflict between sources, so treat them as profile parameters. Source keys (AZ, GD, KD, AL, ...) are defined in [checklist-sources.md](checklist-sources.md).
+Columns and codes (Sev C/M/m, Auto A/S/J) -> [review-checklist.md#severity-and-automation-codes](review-checklist.md#severity-and-automation-codes). Thresholds are the cited sources' values: fab-specific, conflicting, treat as profile parameters. KiCad DRC key names follow the source note except where marked "KiCad 10 keys" (verified list: [../kicad/drc-rule-language-reference.md](../kicad/drc-rule-language-reference.md)).
 
-- **Sev**: C = critical (dead or unsafe board, unmanufacturable, unassemblable → respin); M = major (SI/PI/EMC/thermal/yield/reliability risk); m = minor (debug, documentation, cosmetics).
-- **Auto**: A = geometry/DRC only (KiCad check or custom-rule constraint named where applicable); S = semi-automatic (needs net classes, part roles or datasheet parameters); J = judgment, external info or simulation.
-
+## Checklist items
 | ID | Category | What to check | Why | Sev | Auto | Sources |
 |---|---|---|---|---|---|---|
 | MEC-01 | Mechanical | Outline, dimensions and mounting holes match the enclosure (checked in 3D with accurate models, including mechanical parts) | Board doesn't fit | C | S (MCAD) | AZ, AL, CE, VSE |
@@ -22,7 +17,7 @@ Merged from about 30 checklists by the expert-workflow note. Severity and automa
 | MEC-05 | Mechanical | Clearance for mating plug/cable and latch access; connector courtyard covers the larger mating part; mating 3D model placed | Can't plug/unplug | M | S (3D) | AZ, GD, SC, UW |
 | MEC-06 | Mechanical | UI elements on the outward-facing side, logically arranged | Usability | M | J | AZ, HH |
 | MEC-07 | Mechanical | Component heights within the enclosure; heatsink/fan clearance | Collisions | M | S (3D) | AZ, HH, VSE |
-| MEC-08 | Mechanical | No part collisions or courtyard overlaps (3D body check, nothing under other parts) | Unassemblable | C | A (Courtyards overlap) | AZ, KG, KD, UW, SCR |
+| MEC-08 | Mechanical | No part collisions or courtyard overlaps (3D body check, nothing under other parts) | Unassemblable | C | A (Courtyards overlap); KiCad 10 keys: `courtyards_overlap` | AZ, KG, KD, UW, SCR |
 | MEC-09 | Mechanical | Perimeter keepouts (card guides, conveyor border ~3 mm, mouse bites) respected | Handling, depaneling | M | A (rule area) | AZ, GD |
 | MEC-10 | Mechanical | MLCCs/stress-sensitive parts away from V-scores, tabs and mounting holes, oriented against flex; soft termination for >1210 | Cracked caps | M | S | AZ, PK, SCD |
 | MEC-11 | Mechanical | Connectors mechanically anchored (THT posts/hybrid), especially RF and frequently mated | Pad lift | M | J | PK, GD |
@@ -77,21 +72,5 @@ Merged from about 30 checklists by the expert-workflow note. Severity and automa
 | FP-12 | Footprints | SOT-23 transistor/MOSFET pinouts verified (N vs P, NPN vs PNP; G/S/D, B/C/E) | "Common error is getting SOT-23 … pinouts flipped" | C | S | MF2, SFC |
 | FP-13 | Footprints | Courtyard reflects the real body where it extends beyond the pads | Pick-and-place collisions | M | S | ALP |
 
-## Recommendations for our system
-
-- Store these rows as machine-readable data (ID, severity, automation class, threshold, threshold source, KiCad key) and drive the critic stack from it; see [critic-stack.md](critic-stack.md).
-- Load every numeric threshold from a fab/assembler profile with provenance (datasheet > fab profile > house default) [I].
-
-## Conflicts and open questions
-
-- Severity/automation tags are one author's assignments and need validation against escaped-error data [I].
-- Thresholds conflict between sources (e.g. silk height 25 mil vs 1.0 mm vs 50 mil; edge clearance 8 vs 10 mil; part-to-edge 125 mil vs 5 mm).
-- KiCad DRC key names in the Auto column follow the source note; the verified KiCad 10 key list is in [../kicad/drc-rule-language-reference.md](../kicad/drc-rule-language-reference.md).
-
 ## Sources
-
-- research notes: [expert_workflow_and_checklists.md § Q4 Master checklist table](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/expert_workflow_and_checklists.md)
-- corrections: [verification_kicad_and_tools.md § 1 Corrections table](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_kicad_and_tools.md)
-- source checklists and their URLs: [checklist-sources.md](checklist-sources.md)
-
-See also: [review-checklist.md](review-checklist.md), [critic-stack.md](critic-stack.md), [respin-and-fab-hold-data.md](respin-and-fab-hold-data.md)
+- [expert_workflow_and_checklists.md § Q4 Master checklist table](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/expert_workflow_and_checklists.md); corrections: [verification_kicad_and_tools.md § 1 Corrections table](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_kicad_and_tools.md)

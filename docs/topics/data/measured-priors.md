@@ -1,24 +1,16 @@
 # Measured layout priors from human boards
 
-**TL;DR**
-- The cheap learnable signal in human boards is **relational and per-package**, and it can seed soft constraints immediately, with no ML model [I].
-- **Decaps (1 nF–1 µF):**
-  - median **3.29 mm** from the IC power pad (0402: **2.51 mm**, 95% on the same side);
-  - only **17% within 2 mm**;
-  - p90 is **7.7 mm on 4-layer** vs **26.0 mm on 2-layer** boards [P, measured].
-- **Routing style:** 89% of boards have a GND zone; signal width 0.25 mm, power 0.40 mm, power/signal ratio **1.88** [P, measured].
-- **Corpus priors are looser than datasheet guidance.** Use them as *soft* targets conditioned on package and layer count, and datasheet distances as *tight* targets scoped to that part (single-vendor millimetre numbers are soft objectives, not DRC) [I].
-- The measurement is heuristic: net-name rules and a nearest-same-net-IC-pad proxy, not human-annotated [P].
+Scope: decoupling-distance and routing-style priors measured on 128 permissive human boards, and how to use them as soft constraints. Not here: decoupling physics and datasheet rules -> [../rules/decoupling-pdn.md](../rules/decoupling-pdn.md); relation vocabulary -> [../llm/interfaces-relations-vs-coordinates.md](../llm/interfaces-relations-vs-coordinates.md).
+Keys: decap distance, decoupling prior, same side, GND zone, track width, power/signal ratio, decap_stats.py, prior tables, soft constraint
 
-## Key facts
+## Method (note author's measurement)
 
-### Method (note author's measurement)
-- **Boards:** all **128 permissively licensed** boards (MIT, Apache-2.0, BSD-3, CC0, CERN-OHL-P, CC-BY) in the circuit-skills manifest, fetched at pinned commits; 110 have ICs. The licences are GitHub-detected and unaudited; `minuet`, recorded as MIT, has CERN-OHL-W hardware ([open-board-sources.md](open-board-sources.md)).
-- **Parser:** a minimal S-expression parser computes absolute pad positions (footprint `at` plus rotated pad offset). The rotation convention was validated: pads land on track ends 66.9% of the time with the chosen sign vs 30.5% with the opposite sign.
-- **Decap definition:** a 2-pad `C*` part with one pad on a GND-like net and one on a power-like net (name heuristics).
-- **Distance:** Euclidean, from the cap power-pad centre to the centre of the nearest pad of any `U*`/`IC*` on the same net. The 1 nF–1 µF value filter is applied after the script. Script: [`tools/research/layout-data/decap_stats.py`](../../../tools/research/layout-data/decap_stats.py).
+- Boards: all **128 permissively licensed** boards (MIT, Apache-2.0, BSD-3, CC0, CERN-OHL-P, CC-BY) in the circuit-skills manifest, fetched at pinned commits; 110 have ICs. Licences GitHub-detected, unaudited (`minuet`, recorded MIT, has CERN-OHL-W hardware; [open-board-sources](open-board-sources.md#open-questions)).
+- Parser: minimal S-expression parser; absolute pad position = footprint `at` + rotated pad offset. Rotation sign validated: pads land on track ends 66.9% with the chosen sign vs 30.5% with the opposite.
+- Decap: 2-pad `C*` part, one pad on a GND-like net, one on a power-like net (name heuristics).
+- Distance: Euclidean, cap power-pad centre → centre of nearest pad of any `U*`/`IC*` on the same net. 1 nF–1 µF filter applied after the script. Script: [`tools/research/layout-data/decap_stats.py`](../../../tools/research/layout-data/decap_stats.py).
 
-### Decoupling-distance priors
+## Decoupling-distance priors
 
 | Slice | n | Median (mm) | Other stats |
 |---|---|---|---|
@@ -34,7 +26,7 @@
 | By GitHub stars (<100 / 100–1k / >1k) | — | 3.35 / 3.28 / 2.96 | stars barely matter |
 | Bulk caps >1 µF | 398 | 5.33 | p90 34 |
 
-### Routing-style priors (same 128 boards)
+## Routing-style priors (same 128 boards)
 
 | Measure | Value |
 |---|---|
@@ -43,32 +35,28 @@
 | Power-net width | 0.40 mm (IQR 0.25–0.50) |
 | Power/signal width ratio | median **1.88**; 69% of boards >1.2× |
 
-### Comparison points
-- **Datasheet and vendor guidance:**
-  - Microchip: ≤6 mm trace through a via;
-  - Quilter Pin Distance example: 0–1 cm;
-  - kicad-happy decap check: caps within 10 mm;
-  - TI: "as close as possible".
+## Comparison points
 
-  These measure other things (Microchip: trace length; Quilter: closest pin edges), so convert our centre-to-centre distances before comparing. See [../llm/function-to-recipe-mapping.md](../llm/function-to-recipe-mapping.md).
-- **Ranker evidence:** decap distance carries weight in circuit-skills' learned route-cleanliness ranker (+1.24 per log unit) ([score_study.md](https://github.com/punkfab/circuit-skills/blob/main/evals/corpus/score_study.md)) [P, third-party].
+- Datasheet and vendor guidance: Microchip ≤6 mm trace through a via; Quilter Pin Distance example 0–1 cm; kicad-happy decap check: caps within 10 mm; TI "as close as possible". These measure other things (Microchip: trace length; Quilter: closest pin edges): convert our centre-to-centre distances before comparing -> [../llm/function-to-recipe-mapping.md](../llm/function-to-recipe-mapping.md).
+- Ranker evidence: decap distance weighs +1.24 per log unit in circuit-skills' route-cleanliness ranker ([imitation-and-learned-scores](imitation-and-learned-scores.md#which-placement-measures-predict-a-clean-route)) [P, third-party].
 
-## Recommendations for our system
+## Using the priors [I]
 
-1. **Ship prior tables now** as soft constraints, keyed by (anchor package, pin function, satellite package, layer count, tier): Δx, Δy, Δθ, side, pad-to-pad distance percentiles [I].
-2. **Calibrate relation magnitudes** from these tables: e.g. "tight" for a 0402 decap ≈ p25–p50 of its slice. No 0402 × 4-layer slice has been measured yet; the all-package p25 is 2.21 mm and the 0402 median (all layer counts) is 2.51 mm, both centre-to-centre. The datasheet bound, if any, overrides it. See [../llm/interfaces-relations-vs-coordinates.md](../llm/interfaces-relations-vs-coordinates.md).
-3. **Never learn priors from "all boards"** unconditioned; that encodes the 2-layer hobby tail (p90 26 mm).
-4. **Width defaults:** power ≈ 1.9× signal as a soft prior; ampacity calculators override it.
-5. **Publish the tables** as CDLA-Permissive-2.0 data products, computed only from tier-A boards (facts, not geometry).
-6. **Extend:** relative-pose tables for all satellite types; diff-pair spacing; via counts; plane usage.
+The cheap learnable signal in human boards is relational and per-package; it seeds soft constraints now, without an ML model. Corpus priors are looser than datasheet guidance.
 
-## Conflicts and open questions
+1. Ship prior tables now as soft constraints keyed by (anchor package, pin function, satellite package, layer count, tier): Δx, Δy, Δθ, side, pad-to-pad distance percentiles.
+2. Calibrate relation magnitudes: "tight" for a 0402 decap ≈ p25–p50 of its slice. No 0402 × 4-layer slice measured yet; all-package p25 = 2.21 mm, 0402 median (all layer counts) = 2.51 mm, both centre-to-centre. A datasheet bound, if any, overrides: datasheet distances are *tight* targets scoped to that part; single-vendor millimetre numbers are soft objectives, not DRC.
+3. Never learn priors from "all boards" unconditioned: that encodes the 2-layer hobby tail (p90 26 mm).
+4. Width default: power ≈ 1.9× signal as a soft prior; ampacity calculators override.
+5. Publish the tables as CDLA-Permissive-2.0 data products from tier-A boards only (facts, not geometry).
+6. Extend: relative-pose tables for all satellite types; diff-pair spacing; via counts; plane usage.
 
-- The measurement is heuristic and unvalidated against human annotation; 82 boards.
-- Nobody has measured whether these priors raise clean-route rates on held-out boards. Coarse hints did not (see [layout-retrieval-and-reuse.md](layout-retrieval-and-reuse.md)).
-- Cross-board variance per motif (how consistently the same buck is laid out) is unmeasured.
+## Open questions
+
+- Heuristic, unvalidated against human annotation; 82 boards.
+- Nobody has measured whether these priors raise clean-route rates on held-out boards; coarse hints did not ([layout-retrieval-and-reuse](layout-retrieval-and-reuse.md#how-much-do-coarse-human-derived-constraints-transfer)).
+- Cross-board variance per motif (how consistently the same buck is laid out) unmeasured.
 
 ## Sources
-- research notes: [learning_from_layout_data.md § Q3 (measured priors), § Q7](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/learning_from_layout_data.md)
 
-See also: [corpora-and-yield.md](corpora-and-yield.md), [imitation-and-learned-scores.md](imitation-and-learned-scores.md), [../rules/decoupling-pdn.md](../rules/decoupling-pdn.md)
+- research notes: [learning_from_layout_data.md § Q3 (measured priors), § Q7](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/learning_from_layout_data.md)

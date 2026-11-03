@@ -1,16 +1,15 @@
 # Review checklist: source checklists and keys
 
-**TL;DR**
-- About 30 sources were merged into the 299-item checklist: open-source checklist repos, vendor/fab checklists, team checklists, a NASA standard, TI app notes, expert columns and KiCad's DRC catalogue.
-- The source keys below (AZ, GD, KD, AL, SC, PP, TI-HS, ...) are the ones used in the `Sources` column of the `checklist-full-*.md` files.
-- Fab-side sources (PCB Power, Sierra, AtlasPCB) push many Critical items toward output and documentation correctness.
-- Several well-known checklists are not public (NCAB form-gated, Antikernel internal "over 120" items) or were unreachable (ADI).
+Scope: the ~30 source checklists merged into the 299-item checklist, with the keys used in the `Sources` column of the `checklist-full-*.md` files. Not here: the items -> [review-checklist.md](review-checklist.md).
+Keys: checklist sources, source keys, AZ Zonenberg, GD, PK, HH, JN, KD, AL Altium, SC Sierra, PP PCB Power, MF MacroFab, SF SparkFun, UW UWARG, NASA GSFC-STD-8001A, TI-HS SPRAAR7J, Flux, AtlasPCB, kicad-happy, claude-eda, NCAB
+Tags: [P] page read and checked (in full); [S] snippet only, wording approximate.
 
-## Key facts
+## Source-use rules
+1. Keep each threshold's source key next to the value in the machine-readable checklist so conflicts stay visible [I].
+2. DFM thresholds: prefer fab/assembler sources (PCB Power, Sierra, the chosen CM's DRC file); physics thresholds: datasheets and TI notes [I]. Fab-side sources push many Critical items toward output and documentation correctness.
+3. Not public or unreachable: NCAB (form-gated), Antikernel internal list ("over 120" items), ADI (unreachable).
 
-Tags: [P] = page read and checked; [S] = snippet only, wording approximate.
-
-**Source checklists** ([P] = read in full; [S] = snippet only)
+## Source checklists and keys
 - **AZ** Andrew Zonenberg *pcb-checklist*: 72 layout and 60 schematic items. "Nearly every line item here came from the school of hard knocks" — [layout](https://github.com/azonenberg/pcb-checklist/blob/master/layout-checklist.md), [repo](https://github.com/azonenberg/pcb-checklist) [P]. His company Antikernel Labs runs an internal review checklist of "over 120 different potential problems" that is not public — [Antikernel PCB](https://www.antikernel.net/pcb.html) [P].
 - **GD** grosdode — [pcb_checklist.md](https://github.com/grosdode/PCB-design/blob/main/PCB_Checklist/pcb_checklist.md) [P].
 - **PK** Pikafu — [README](https://github.com/Pikafu/pcb_design) [P].
@@ -29,7 +28,7 @@ Tags: [P] = page read and checked; [S] = snippet only, wording approximate.
 - **SC** Sierra Circuits (Poulomi Ghosh), "PCB Design Checklist to Build a Flawless Board" (2022-06-22) [P] — [ProtoExpress](https://www.protoexpress.com/blog/pcb-design-checklist-to-build-flawless-board/).
   - Sections: mechanical, drill, placement, routing, mask/paste, silkscreen, fab notes, production files, BOM.
   - Sample values: mounting holes ≥3.3 mm, with screw head ≥40 mil larger than the hole; drill tolerances ±3 mil PTH and ±2 mil NPTH; mask bridge 8 mil (5 mil minimum); ≥3 fiducials.
-  - This is the "Sierra Circuits layout checklist" I could not get in the first pass.
+  - The "Sierra Circuits layout checklist" missing from the first research pass.
 - **SCD** Sierra DFA checklist (2026-04-08) [P] — [ProtoExpress DFA](https://www.protoexpress.com/blog/pcb-design-for-assembly-checklist-important-checks-for-layout-engineers/).
   - Passive spacing table.
   - Part-to-hole ≥8 mil; part-to-annular-ring ≥7 mil.
@@ -78,12 +77,7 @@ Tags: [P] = page read and checked; [S] = snippet only, wording approximate.
   - ADI: analog.com unreachable.
 
 
-## Recommendations for our system
-
-- Keep each threshold's source key next to the value in the machine-readable checklist so conflicts stay visible [I].
-- Prefer fab/assembler sources (PCB Power, Sierra, the chosen CM's DRC file) for DFM thresholds and datasheets/TI notes for physics thresholds [I].
-
-## Conflicts and open questions
+## Open questions
 
 - Same-publisher keys (SC/SCD/SCR; AL/ALP/AL3/AL6; MF/MF2; BO/BOH; TI-*) are counted separately in consensus counts, which inflates their items.
 - Official JLCPCB/PCBWay DFM checklists, MacroFab's capabilities PDF, ADI layout notes and NCAB's checklist were not retrieved.
@@ -91,6 +85,6 @@ Tags: [P] = page read and checked; [S] = snippet only, wording approximate.
 
 ## Sources
 
-- research notes: [expert_workflow_and_checklists.md § Q4 Source checklists](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/expert_workflow_and_checklists.md)
+- [expert_workflow_and_checklists.md § Q4 Source checklists](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/expert_workflow_and_checklists.md)
 
 See also: [review-checklist.md](review-checklist.md), [checklist-full-process-dfm-stackup.md](checklist-full-process-dfm-stackup.md)

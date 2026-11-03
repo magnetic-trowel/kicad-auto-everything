@@ -1,13 +1,16 @@
 # LLM layout generation in other fields (scenes, UI, floorplans, CAD) → PCB placement
 
-**TL;DR**
-- Three generations: (1) LLM emits absolute coordinates (collisions); (2) LLM emits relational constraints, a solver places (Holodeck: MRR 0.706 vs 0.364 for coordinates); (3) **LLM writes structured relative-placement code/relations and an LLM-free numeric repair stays close to that intent** (Brown PSDL: preferred 82.9% over a declarative DSL and 94.3% over Holodeck; LayoutVLM +40.8 PSA).
-- **Top PCB transplant: a "PCB-PSDL" imperative placement language** with pin handles, local frames and shared variables (`row`, `ring`), repaired by greedy local search over constant and direction rewrites, minimizing loss + an edit distance to the LLM's program (d_edit, which keeps its intent) + an area-weighted transport term (VP-corrected).
-- **Self-consistency filter** (LayoutVLM): keep only LLM relations already satisfied by its own rough poses (removing it cost 12.4 PSA).
-- Avoid long chains of relative references (R3L drift) and global crossing-free geometry (PlanarBench) — anchor relations to a parent IC's pins or the board frame.
-- A VLM asked to list **pros and cons before choosing** between two layouts agreed with humans ~77% — a cheap ranking judge.
+Scope: LLM layout generation in scenes, UI, floorplans and CAD, and what transplants to PCB placement. Not here: PCB LLM placers -> [LLM-guided placement](llm-guided-placement.md); LLM write-interface rule and RAC -> [interfaces-relations-vs-coordinates](../llm/interfaces-relations-vs-coordinates.md).
+Keys: Holodeck, MRR, PSDL, Brown PSDL, LayoutVLM, PSA, self-consistency filter, PCB-PSDL, d_edit, R3L drift, PlanarBench, VLM pros/cons judge, open-universe scene repair, centroid-direction gradient
 
-## Key facts
+**Results**
+1. Three generations: (1) LLM emits absolute coordinates (collisions); (2) LLM emits relational constraints, a solver places (Holodeck); (3) **LLM writes structured relative-placement code/relations and an LLM-free numeric repair stays close to that intent** (Brown PSDL; LayoutVLM +40.8 PSA).
+2. **Top PCB transplant: a "PCB-PSDL" imperative placement language** with LLM-free repair that keeps the program's intent (d_edit) (VP-corrected; design in [Use in kae](#use-in-kae)).
+3. **Self-consistency filter** (LayoutVLM): keep only LLM relations already satisfied by its own rough poses.
+4. Avoid long chains of relative references (R3L drift) and global crossing-free geometry (PlanarBench) — anchor relations to a parent IC's pins or the board frame.
+5. A VLM asked to list **pros and cons before choosing** between two layouts is a cheap ranking judge (PSDL).
+
+## Methods and results
 
 | System | Representation / solver | Result |
 |---|---|---|
@@ -24,11 +27,11 @@
 | RoomCraft, I-Design, LLplace, DiagrammerGPT (planner–auditor loop), Make It Home (SA + Metropolis–Hastings over ergonomic priors) | — | [S] |
 | CAD code | Text-to-CadQuery 58.8 → 69.3% exact match; CAD-Coder GRPO with Chamfer reward (CD 6.54 vs 29.29) | [S] |
 
-**Direct evidence on LLM spatial ability**: **PlanarBench** — crossing-free ASCII drawings of 2–7-vertex planar graphs; edge count predicts difficulty (r = −0.85) far better than vertex count; best 159.5/199; frontier failures remain ([arXiv 2606.02010](https://arxiv.org/abs/2606.02010) [P]). **Graph Drawing for LLMs**: layout style and readability of rendered graphs change GPT-4o/Claude 3.7 accuracy ([arXiv 2505.03678](https://arxiv.org/abs/2505.03678) [P]); an earlier EuroVis short paper found ChatGPT could apply graph layout algorithms "not perfect, but promising" [S]. LLMs writing constraint models: Text2Zinc ≤25.39% (MiniZinc); CP-Bench ~70% with docs, sampling and self-verification, Python (CPMpy, CP-SAT) easier ([solvers/llm-evolved-heuristics](../solvers/llm-evolved-heuristics.md)).
+**Direct evidence on LLM spatial ability**: **PlanarBench** (crossing-free drawing; edge count, not vertex count, drives difficulty) -> [spatial-reasoning-limits](../llm/spatial-reasoning-limits.md) [P]. **Graph Drawing for LLMs**: layout style and readability of rendered graphs change GPT-4o/Claude 3.7 accuracy ([arXiv 2505.03678](https://arxiv.org/abs/2505.03678) [P]); an earlier EuroVis short paper found ChatGPT could apply graph layout algorithms "not perfect, but promising" [S]. LLMs writing constraint models: Text2Zinc ≤25.39% (MiniZinc); CP-Bench ~70% with docs, sampling and self-verification, Python (CPMpy, CP-SAT) easier ([solvers/llm-evolved-heuristics](../solvers/llm-evolved-heuristics.md)).
 
 **Multi-agent critique precedents**: LLM participatory urban planning (planner + resident agents in a "fishbowl"; SOTA satisfaction on two Beijing regions) [S]; LayoutCopilot ([analog](analog-constraint-placement.md)).
 
-## Recommendations for our system
+## Use in kae
 - **PCB-PSDL** [I]: footprints expose `.min/.max/.center` (courtyard), `.facing` ∈ {0,90,180,270}, `.side`, pin handles (`U1.pin["VDD"]`); operators `set_frame(U1)`, `row(R1..R8, pitch=p)`, `ring(caps, around=U1, gap=g)` with shared variables; repair by greedy local search over constant rewrites (×(±4^Y)) and 90° direction rewrites, minimizing loss + d_edit(P, P₀) + d_OT; loss = courtyard overlap + outline protrusion + keep-out intrusion + hole/connector clearance + decap-to-pin + crystal loop; d_OT weighted by footprint area so ICs/connectors stay put; regenerate via LLM only on identity/semantic errors. PCBs are 4-orientation, matching PSDL's main limit.
 - Hybrid: ask for rough (x, y, θ) **and** relations, keep self-consistent relations, DIoU courtyard loss, projected GD into the outline, group-by-group with re-render [I].
 - Use frame-free or pin-anchored relations; detect PCB contradiction patterns (`edge(J1,W)` + `edge(J1,E)`, 12 caps "within 1 mm", part on both sides); declare unsat after k restarts; centroid no-overlap gradient + repel schedule in gradient placers [I].
@@ -36,11 +39,9 @@
 - Relation hypergraph + **skill library** of verified macros (QFN decap ring, buck hot loop, USB-C + ESD, crystal + load caps); HSM-style levels board → block regions (KiCad rooms) → IC neighbourhoods → pin slots [I].
 - Board-plan planner–auditor loop (DiagrammerGPT); VLM pros/cons pairwise judge for best-of-N; treat render style as a hyperparameter; PCB subsystem critic agents (PI, SI, thermal, DFM, mechanical) [I].
 
-## Conflicts and open questions
+## Open questions
 - No published system applies Holodeck/PSDL-style languages to PCBs; behaviour under pad clearance and via-in-pad rules is untested.
 - VP replaced the repair neighbourhood details (×2/×0.5/±δ in CD notes) with ×(±4^Y) sampling and an extra d_edit term.
 
 ## Sources
-- research notes: [cross_domain_ideas.md § Q1, Q8, Q10](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/cross_domain_ideas.md); [verification_papers.md § 1 rows 39–40, § 2.10](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_papers.md)
-
-See also: [llm-guided-placement](llm-guided-placement.md) · [packing-and-graph-drawing-transplants](packing-and-graph-drawing-transplants.md) · [../../ideas/cross-domain-transplants](../../ideas/cross-domain-transplants.md)
+- [cross_domain_ideas.md § Q1, Q8, Q10](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/cross_domain_ideas.md); [verification_papers.md § 1 rows 39–40, § 2.10](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_papers.md)
