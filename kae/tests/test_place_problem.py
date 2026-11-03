@@ -171,8 +171,27 @@ def test_project_severity_relaxes_courtyards(tmp_path):
     pro.setdefault("board", {}).setdefault("design_settings", {})["rule_severities"] = {"courtyards_overlap": "ignore"}
     dst.with_suffix(".kicad_pro").write_text(json.dumps(pro))
     strict = {p.ref: p for p in Problem.build(load(FIXTURE)).parts}
-    relaxed_P = Problem.build(load(dst))
+    relaxed_P = Problem.build(load(dst), severity="board")
     assert not relaxed_P.is_error("courtyards_overlap") and relaxed_P.is_error("clearance")
+    relaxed = {p.ref: p for p in relaxed_P.parts}
+    hz = relaxed_P.severity_hazards()
+    assert [h["code"] for h in hz] == ["project_check_ignored"] and hz[0]["objects"] == ["courtyards_overlap"]
+    # level_c keeps courtyards an error on the same project, at IPC Level C, with a warn hazard
+    fixed_P = Problem.build(load(dst), severity="level_c")
+    assert fixed_P.severity_mode == "level_c" and fixed_P.is_error("courtyards_overlap")
+    assert fixed_P.downgraded == {"courtyards_overlap": "ignore"}
+    assert [(h["code"], h["severity"]) for h in fixed_P.severity_hazards()] == [("project_check_kept_strict", "warn")]
+    # ... at IPC Level C: courtyards taken in by 0.15 mm, never down to the pads only
+    assert abs(fixed_P.cy_shrink - 0.15) < 1e-9
+    for p in fixed_P.parts:
+        a, f, r = strict[p.ref].rots[0].own, p.rots[0].own, relaxed[p.ref].rots[0].own
+        area = lambda q: (q[2] - q[0]) * (q[3] - q[1])   # noqa: E731
+        assert area(r) - 1e-9 <= area(f) <= area(a) + 1e-9
+    # 'strict' (the default) keeps the drawn courtyards, with an info hazard
+    strict_P = Problem.build(load(dst))
+    assert strict_P.severity_mode == "strict" and strict_P.cy_shrink == 0.0 and strict_P.is_error("courtyards_overlap")
+    assert [(h["code"], h["severity"]) for h in strict_P.severity_hazards()] == [("project_check_kept_strict", "info")]
+    assert all(p.rots[0].own == strict[p.ref].rots[0].own for p in strict_P.parts)
     relaxed = {p.ref: p for p in relaxed_P.parts}
     shrunk = 0
     for ref, p in strict.items():
@@ -343,10 +362,11 @@ def test_rule_areas_follow_project_severity_and_copper_layers(tmp_path):
     pro = json.loads(FIXTURE.with_suffix(".kicad_pro").read_text())
     pro.setdefault("board", {}).setdefault("design_settings", {})["rule_severities"] = {"items_not_allowed": "warning"}
     dst.with_suffix(".kicad_pro").write_text(json.dumps(pro))
-    P = Problem.build(_with_owned_keepouts(load(dst)))
+    P = Problem.build(_with_owned_keepouts(load(dst)), severity="board")
     assert not P.is_error("items_not_allowed")
+    assert Problem.build(_with_owned_keepouts(load(dst))).is_error("items_not_allowed")   # strict profile
     u2 = next(p for p in P.parts if p.ref == "U2")
-    bare = next(p for p in Problem.build(load(dst)).parts if p.ref == "U2")
+    bare = next(p for p in Problem.build(load(dst), severity="board").parts if p.ref == "U2")
     assert u2.rots[0].own_rects == bare.rots[0].own_rects
     assert not any("keepout" in o.why for o in P.obstacles)
     st = _state_at_input(P)
@@ -485,3 +505,93 @@ def test_board_min_clearance_floors_the_pad_inflation():
     # every pad grows by at least half the floor, so two disjoint parts' pads keep it
     assert own[0] <= raw[0] - 0.25 + 1e-9 and own[1] <= raw[1] - 0.25 + 1e-9
     assert own[2] >= raw[2] + 0.25 - 1e-9 and own[3] >= raw[3] + 0.25 - 1e-9, (raw, own)
+
+
+def _project_with(tmp_path, severities=None, text_vars=None):
+    import json
+    import shutil
+    dst = tmp_path / "board.kicad_pcb"
+    shutil.copy(FIXTURE, dst)
+    shutil.copy(FIXTURE.with_suffix(".kicad_dru"), dst.with_suffix(".kicad_dru"))
+    pro = json.loads(FIXTURE.with_suffix(".kicad_pro").read_text())
+    if severities:
+        pro.setdefault("board", {}).setdefault("design_settings", {})["rule_severities"] = severities
+    if text_vars:
+        pro["text_variables"] = text_vars
+    dst.with_suffix(".kicad_pro").write_text(json.dumps(pro))
+    return dst
+
+
+def test_strict_profile_keeps_edge_clearance_and_the_project_variable_selects_the_mode(tmp_path):
+    """The strict profile (default) keeps copper-to-edge an error on a project that ignores it;
+    KAE_PLACE_SEVERITY=board in the project restores the project's severities; an explicit
+    argument wins over the variable; an unknown mode is refused."""
+    import pytest
+    sev = {"copper_edge_clearance": "ignore", "hole_clearance": "warning"}
+    dst = _project_with(tmp_path, sev)
+    fixed = Problem.build(load(dst))
+    assert fixed.is_error("copper_edge_clearance") and fixed.is_error("hole_clearance")
+    assert fixed.edge_clearance == Problem.build(load(FIXTURE)).edge_clearance
+    board = Problem.build(load(dst), severity="board")
+    assert board.edge_clearance == 0.0 and not board.is_error("hole_clearance")
+    assert sorted(h["objects"][0] for h in board.severity_hazards()) == ["copper_edge_clearance", "hole_clearance"]
+    dst2 = _project_with(tmp_path / "v", sev, {"KAE_PLACE_SEVERITY": "board"}) if (tmp_path / "v").mkdir() is None else None
+    assert Problem.build(load(dst2)).severity_mode == "board"
+    assert Problem.build(load(dst2), severity="level-c").severity_mode == "level_c"
+    with pytest.raises(ValueError):
+        Problem.build(load(dst), severity="lenient")
+
+
+def test_clearance_hazard_only_where_kae_drops_the_check(tmp_path):
+    """Pad clearance and shorts are checked by the exact model in both modes: a project that
+    ignores them gets no 'ignored' hazard in the board mode (kae still checks them)."""
+    dst = _project_with(tmp_path, {"clearance": "ignore", "shorting_items": "warning"})
+    assert Problem.build(load(dst), severity="board").severity_hazards() == []
+    assert {h["code"] for h in Problem.build(load(dst)).severity_hazards()} == {"project_check_kept_strict"}
+
+
+def test_edge_connector_and_castellated_pads_are_exempt_from_edge_clearance():
+    """KiCad skips castellated pads and edge-connector ('connect') pads in its copper-to-edge
+    check (drc_test_provider_edge_clearance.cpp); so do the occupancy and the exact model."""
+    from kae.place.legalize import exact_check
+    from kae.place.problem import edge_exempt
+    b = load(FIXTURE)
+    assert all(q.fab == "" for f in b.footprints for q in f.pads)
+    P = Problem.build(b)
+    assert P.edge_clearance > 0
+    p = next(q for q in P.parts if q.movable and len(q.fp.pads) >= 2 and not q.tht)
+    st = _state_at_input(P)
+
+    def edge_findings(PP, s):
+        return [v for v in exact_check(PP, s) if p.ref in str(v.get("parts", v)) or p.ref in str(v)]
+    # slide the part left until its copper crowds the edge, before any pad leaves the board
+    hit = None
+    for _ in range(4000):
+        st.X[p.i] -= 1
+        f = edge_findings(P, st)
+        if any(v["type"] == "pad_outside" for v in f):
+            break
+        if any(v["type"] == "copper_edge_clearance" for v in f):
+            hit = st.X[p.i]
+            break
+    assert hit is not None
+    for q in p.fp.pads:
+        q.fab = "castellated"
+    assert all(edge_exempt(q) for q in p.fp.pads)
+    P2 = Problem.build(b)
+    a, r = P.parts[p.i].rots[0].board, P2.parts[p.i].rots[0].board
+    assert (r[2] - r[0]) * (r[3] - r[1]) <= (a[2] - a[0]) * (a[3] - a[1]) + 1e-9
+    st2 = _state_at_input(P2)
+    st2.X[p.i] = hit
+    assert not [v for v in edge_findings(P2, st2) if v["type"] == "copper_edge_clearance"]
+
+
+def test_place_severity_from_the_environment(monkeypatch, tmp_path):
+    """Problem.build without a mode (the joint loop's windows) follows KAE_PLACE_SEVERITY in the
+    environment when the project sets none; the project's variable wins over it."""
+    dst = _project_with(tmp_path, {"courtyards_overlap": "ignore"})
+    monkeypatch.setenv("KAE_PLACE_SEVERITY", "board")
+    assert Problem.build(load(dst)).severity_mode == "board"
+    (tmp_path / "v").mkdir()
+    dst2 = _project_with(tmp_path / "v", {"courtyards_overlap": "ignore"}, {"KAE_PLACE_SEVERITY": "level_c"})
+    assert Problem.build(load(dst2)).severity_mode == "level_c"

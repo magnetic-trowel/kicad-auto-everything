@@ -114,6 +114,26 @@ def excess(summary, base):
     return sum(max(0, n - base.get(t, 0)) for t, n in (summary.get("by_type") or {}).items())
 
 
+def promote_severities(staged_board, checks):
+    """Set `checks` to 'error' in the staged board's .kicad_pro (a copy: stage_board), so KiCad's
+    DRC reports what kae's fixed placement profile treats as errors. Returns the checks changed.
+    Custom .kicad_dru rules with their own severity still apply (a designer's per-object waiver)."""
+    pro = Path(staged_board).with_suffix(".kicad_pro")
+    if not pro.exists():
+        return []           # no project: KiCad's defaults, all of these are errors already
+    try:
+        d = json.loads(pro.read_text(encoding="utf-8", errors="replace"))
+    except ValueError:
+        return []
+    rs = d.setdefault("board", {}).setdefault("design_settings", {}).setdefault("rule_severities", {})
+    changed = [c for c in checks if rs.get(c, "error") != "error"]
+    if changed:
+        for c in changed:
+            rs[c] = "error"
+        pro.write_text(json.dumps(d, indent=2))
+    return changed
+
+
 def stage_board(src_board, project_board, dest_dir):
     """Copy `src_board` into `dest_dir` as board.kicad_pcb with the project files of
     `project_board` (its .kicad_pro and .kicad_dru) beside it; returns the staged path."""

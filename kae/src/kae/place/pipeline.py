@@ -98,12 +98,29 @@ def _net_roles(brief):
     return out
 
 
-def _escalate(P, st, workers, seed, log, time_s):
-    """Legality before wishes: drop the routing margin, then let bodies without courtyards
-    overlap (KiCad does not check them), legalizing again after each step. Returns the steps
-    taken with what each left illegal."""
+def _severity_mode(board, board_path, opts):
+    """'strict', 'level_c' or 'board' (Problem._severities): the project's KAE_PLACE_SEVERITY text
+    variable, else opts['place_severity'], else None (the environment, else the default)."""
+    tv = (getattr(getattr(board, "rules", None), "kae_vars", None) or {}).get("KAE_PLACE_SEVERITY")
+    if tv or (opts or {}).get("place_severity"):
+        return tv or opts["place_severity"]
+    return None      # Problem._severities: the environment, else the default
+
+
+def body_hazards(rep, P, st):
+    """(Re)compute the relaxed-body hazards of a report at the state's poses (Problem.
+    relaxed_body_hazards); the KiCad loop calls it again after moving parts."""
+    hz = [h for h in rep.get("hazards", []) if h.get("code") not in ("body_overlap", "body_relaxed")]
+    rep["hazards"] = hz + P.relaxed_body_hazards(st)
+    return rep["hazards"]
+
+
+def _escalate(P, st, workers, seed, log, time_s, relax_ok=False):
+    """Legality before wishes: drop the routing margin, then (relax_ok: relax_bodies 'escalate'
+    or 'auto') let bodies without courtyards overlap (KiCad does not check them), legalizing
+    again after each step. Returns the steps taken with what each left illegal."""
     steps = []
-    for step in ("escape bands off", "margin 0", "bodies relaxed"):
+    for step in ("escape bands off", "margin 0") + (("bodies relaxed",) if relax_ok else ()):
         if not grid_violations(st):
             break
         if step == "escape bands off":
@@ -235,14 +252,25 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
             rep["fixed"]["staged"] = staged_fixed
             log(f"fixed parts off the board (they stay there): {', '.join(staged_fixed[:8])}")
     P = Problem.build(board, net_kinds=_net_kinds(brief), held={fp.uuid for fp in held} | fixed,
-                      angle_step=angle_step)
+                      angle_step=angle_step, severity=_severity_mode(board, board_path, opts))
+    rep["severity"] = dict(mode=P.severity_mode, project_downgrades=dict(P.downgraded))
+    rep.setdefault("hazards", []).extend(P.severity_hazards())
     if fixed_text(board):
         # board-level copper text: KiCad's glyphs for the exact check (and the silk texts with
         # them, one pcbnew call)
         rep["silk_text"] = exactmod.refine_silk_text(P, log=log)
     if angle_step:
         rep["angle_step"] = angle_step
-    if max(P.utilization()) > 0.95:
+    # relax_bodies (kae-exact-legality.md, "Bodies"): 'off' (default) keeps the body of a part
+    # without a courtyard as an obstacle; 'escalate' frees it to its pads only when legalization
+    # or the floorplan fails; 'auto' also up front on a board over 95% full (the old behaviour)
+    from kae.route.constraints import setting
+    relax_mode = str(setting("relax_bodies", board_path, opts)).strip().lower()
+    if relax_mode not in ("off", "escalate", "auto"):
+        raise ValueError(f"relax_bodies {relax_mode!r}: 'off', 'escalate' or 'auto'")
+    relax_ok = relax_mode != "off"
+    rep["relax_bodies"] = relax_mode
+    if relax_mode == "auto" and max(P.utilization()) > 0.95:
         rep["bodies_relaxed"] = P.relax_bodies()       # too full to treat bodies as obstacles
     margin = P.auto_margin()
     P.set_margin(margin)
@@ -369,7 +397,7 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
                                 infeasible=model.infeasible_items)
         # a proven infeasibility (not a timeout) frees the macros, then shrinks the margin, then
         # lets bodies without courtyards overlap
-        for m2 in ([margin] if macros else []) + [margin / 2, 0.0, "relax"]:
+        for m2 in ([margin] if macros else []) + [margin / 2, 0.0] + (["relax"] if relax_ok else []):
             if sol is not None or model.status != "INFEASIBLE":
                 break
             if m2 == "relax":
@@ -408,7 +436,7 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         rep["legalize_seed"] = legalize(P, st, time_s=max(3.0, 0.15 * (deadline - time.monotonic())),
                                         workers=workers, seed=seed, log=log, window_share=0.0 if big else 0.6)
         if grid_violations(st):
-            rep["legalize_seed_escalation"] = _escalate(P, st, workers, seed, log, max(3.0, 0.1 * budget))
+            rep["legalize_seed_escalation"] = _escalate(P, st, workers, seed, log, max(3.0, 0.1 * budget), relax_ok)
         stage("legalize_seed", t)
     if big and not grid_violations(st) and time.monotonic() < deadline - 0.5 * budget:
         # big boards: CP-SAT floorplans region by region (the global one stops at
@@ -495,7 +523,7 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     st = final
     viol = grid_violations(st)
     if viol:
-        rep["legalize_escalation"] = _escalate(P, st, workers, seed, log, max(3.0, 0.1 * budget))
+        rep["legalize_escalation"] = _escalate(P, st, workers, seed, log, max(3.0, 0.1 * budget), relax_ok)
         viol = grid_violations(st)
     if viol and (P.margin > 0 or getattr(P, "escape_on", False)):
         # the routing margin and the escape bands are wishes, legality is not: judge (and repair)
@@ -563,6 +591,7 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
             rep["exact"] = exact_check(P, st)
         stage("silk_fix", t)
     rep.update(grid_verdict(P, st, rep["exact"]))
+    body_hazards(rep, P, st)
     rep["hpwl"] = round(st.hpwl(), 2)
     rep["hpwl_signal"] = round(st.hpwl(signal_only=True), 2)
     res = Result(poses={}, report=rep, state=st, problem=P, terms=report_terms, order=order)
