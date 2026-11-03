@@ -53,6 +53,7 @@ DEFAULTS = dict(
     min_iter_s=60.0,       # an iteration is not started with less than this left
     iter_share=0.25,       # one window's repair gets at most this share of the budget (at least min_iter_s)
     phys_slack=0.10,       # routed physics a strict completion/DRC gain may cost (scorecard.accept)
+    eff_tiebreak=False,    # equal on everything else: keep a board with dominating copper (length, vias); A/B arm
     rudy_scale=0.5,        # RUDY overflow near failures added to the history (0: off)
     finish=True,           # a finishing stage: the full bridge over the whole board, critical copper locked
     finish_share=0.20,     # time reserved for it up front: max(finish_min_s, finish_share x budget)
@@ -151,7 +152,8 @@ class JointLoop:
         drc = card.checked.get("drc", True)
         row = dict(iter=it, unconnected=unc, errors=err, placement_errors=card.placement_errors if drc else None,
                    physics=phys, place_terms=None if card.place_terms is None else round(card.place_terms, 4),
-                   flagged=flagged, checked=dict(card.checked), note=card.note or None)
+                   track_length_mm=None if card.track_length_mm is None else round(card.track_length_mm, 2),
+                   vias=card.vias, flagged=flagged, checked=dict(card.checked), note=card.note or None)
         row.update(kw)
         return row
 
@@ -304,7 +306,7 @@ class JointLoop:
                                  seconds=round(time.monotonic() - t, 1), repair=rrep))
                 continue
             self._history(hist, cand, fb)
-            keep, why = accept(best_card, card, phys_slack=o["phys_slack"])
+            keep, why = accept(best_card, card, phys_slack=o["phys_slack"], eff_tiebreak=bool(o["eff_tiebreak"]))
             dt = time.monotonic() - t
             est = max(float(o["min_iter_s"]), 0.5 * est + 0.5 * dt)
             rows.append(self._row(it, card, window=win.to_dict(), accepted=keep, why=why, seconds=round(dt, 1),
@@ -349,7 +351,7 @@ class JointLoop:
                 share = 0.6 if (mode is None and len(tries_fin) > 1) else 0.85
                 cand = st.route(base, it, seed=derive_seed(seed, it), time_s=max(60.0, share * left()), finish=True)
                 card, fb = st.evaluate(cand, it)
-                keep, why = accept(best_card, card, phys_slack=o["phys_slack"])
+                keep, why = accept(best_card, card, phys_slack=o["phys_slack"], eff_tiebreak=bool(o["eff_tiebreak"]))
             except Exception as e:  # noqa: BLE001 - the incumbent stands
                 cand, card, fb, keep, why = None, None, None, False, f"error: {type(e).__name__}: {e}"
             dt = time.monotonic() - t
@@ -379,7 +381,7 @@ class JointLoop:
             try:
                 cand = st.close_open(best, it, nets, time_s=budget)
                 card, fb = st.evaluate(cand, it)
-                keep, why = accept(best_card, card, phys_slack=o["phys_slack"])
+                keep, why = accept(best_card, card, phys_slack=o["phys_slack"], eff_tiebreak=bool(o["eff_tiebreak"]))
             except Exception as e:  # noqa: BLE001 - the incumbent stands
                 cand, card, fb, keep, why = None, None, None, False, f"error: {type(e).__name__}: {e}"
             dt = time.monotonic() - t
