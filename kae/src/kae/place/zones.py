@@ -459,68 +459,94 @@ def report(P, st, Z=None):
 PIN_MIN = 8.0            # kind-weighted pads with a zone a part needs to be pinned over it
 
 
-def pin_packages(Z, P, objs, pos, min_pads=PIN_MIN, step_mm=0.5):
-    """{object: (X, Y, K)}: single-part seed objects with at least `min_pads` (kind-weighted)
-    pads on fixed zones of their nets, put where the zone term is least (searched on a
-    step_mm lattice, every right-angle rotation, inside the outline and off fixed obstacles
-    and each other; nearest the quadratic position on a tie), largest first. A big package
-    owns its island: gecko5's FPGA U6 has 25 +1V2 core balls over a fixed In4 island and the
-    quadratic seed put it near it (125, 70 mm; island 114-142 x 65-106), but the density
-    spread then moved it 50 mm away, where the annealer cannot bring it back."""
+def pin_packages(Z, P, objs, pos, min_pads=PIN_MIN, step_mm=0.5, rot_of=None):
+    """{object: (x, y, {part: (X, Y, K)}, grid rect)}: seed objects (a part, or a macro as
+    laid out) with at least `min_pads` (kind-weighted) pads on fixed zones of their nets, put
+    where the zone term is least (searched on a step_mm lattice; a single part in every
+    right-angle rotation, a macro in its layout's), inside the outline and off fixed
+    obstacles and each other, nearest the quadratic position on a tie; largest first. (x, y)
+    is the object's centre in mm. A big package owns its island: gecko5's FPGA U6 has 25
+    +1V2 core balls over a fixed In4 island; the quadratic seed put it near it (125, 70 mm;
+    island 114-142 x 65-106), the density spread then moved it 50 mm away, where the
+    annealer cannot bring it back. rot_of: {part: layout rotation} of macro members."""
     if Z is None or not Z.pull_of:
         return {}
     g = P.g
     s = max(1, int(round(step_mm / g)))
+    rot_of = rot_of or {}
     cand = []
     for o, (members, w, h, rel) in enumerate(objs):
-        if len(members) != 1:
-            continue
-        i = members[0]
-        kw = sum(k for (_, _, k) in Z.pull_of.get(i, ()))
-        if kw >= min_pads:
-            cand.append((-P.parts[i].area, o, i))
+        kw = sum(k for i in members for (_, _, k) in Z.pull_of.get(i, ()))
+        if kw >= min_pads and all(P.parts[i].movable for i in members):
+            cand.append((-w * h, o))
     out = {}
     taken = []                  # (side, grid rect) of the pinned ones
-    for _, o, i in sorted(cand):
-        p = P.parts[i]
-        side = 0 if p.s > 0 else 1
-        n_ortho = getattr(p, "n_ortho", len(p.rots))
-        qx, qy = pos[o, 0] + objs[o][3][i][0], pos[o, 1] + objs[o][3][i][1]   # quadratic origin, mm
+    for _, o in sorted(cand):
+        members, w, h, rel = objs[o]
+        # the lattice is over the object's centre cell; member origins sit at fixed offsets
+        if len(members) == 1:
+            i = members[0]
+            p = P.parts[i]
+            choices = [[(i, int(round(rel[i][0] / g)), int(round(rel[i][1] / g)), k)]
+                       for k in range(getattr(p, "n_ortho", len(p.rots)))]
+        else:
+            choices = [[(i, int(round(rel[i][0] / g)), int(round(rel[i][1] / g)), int(rot_of.get(i, 0)))
+                        for i in members]]
+        qc = ((pos[o, 0] - P.ox) / g, (pos[o, 1] - P.oy) / g)
         best = None
-        for k in range(n_ortho):
-            r = p.rots[k]
-            a, b, c, d = r.g_own
-            blocks = [ob.g for ob in P.obstacles if ob.side == side or p.tht] + \
-                     [t for sd, t in taken if sd == side or p.tht]
-            Xs = np.arange(-a, P.ncx - b + 1, s)
-            Ys = np.arange(-c, P.ncy - d + 1, s)
+        for mem in choices:
+            if len(members) == 1:
+                # a single part turns about its own box: its centre cell stays the object's
+                i, _, _, k = mem[0]
+                a, b, c, d = P.parts[i].rots[k].g_own
+                mem = [(i, -(a + b) // 2, -(c + d) // 2, k)]
+            lo_x = max(-(P.parts[i].rots[k].g_own[0] + dx) for (i, dx, dy, k) in mem)
+            hi_x = min(P.ncx - P.parts[i].rots[k].g_own[1] - dx for (i, dx, dy, k) in mem)
+            lo_y = max(-(P.parts[i].rots[k].g_own[2] + dy) for (i, dx, dy, k) in mem)
+            hi_y = min(P.ncy - P.parts[i].rots[k].g_own[3] - dy for (i, dx, dy, k) in mem)
+            Xs = np.arange(lo_x, hi_x + 1, s)
+            Ys = np.arange(lo_y, hi_y + 1, s)
             if not len(Xs) or not len(Ys):
                 continue
-            cost = Z.lattice(i, k, Xs, Ys)
+            cost = np.zeros((len(Xs), len(Ys)))
             ok = np.ones(cost.shape, bool)
-            for (t0, t1, u0, u1) in blocks:
-                ok &= ~(((Xs + a) < t1) & (t0 < (Xs + b)))[:, None] | ~(((Ys + c) < u1) & (u0 < (Ys + d)))[None, :]
-            dist = np.sqrt(((P.ox + Xs * g - qx) ** 2)[:, None] + ((P.oy + Ys * g - qy) ** 2)[None, :])
+            for (i, dx, dy, k) in mem:
+                cost += Z.lattice(i, k, Xs + dx, Ys + dy)
+                a, b, c, d = P.parts[i].rots[k].g_own
+                side = 0 if P.parts[i].s > 0 else 1
+                blocks = [ob.g for ob in P.obstacles if ob.side == side or P.parts[i].tht] + \
+                         [t for sd, t in taken if sd == side or P.parts[i].tht]
+                for (t0, t1, u0, u1) in blocks:
+                    ok &= ~(((Xs + dx + a) < t1) & (t0 < (Xs + dx + b)))[:, None] | \
+                        ~(((Ys + dy + c) < u1) & (u0 < (Ys + dy + d)))[None, :]
+            dist = g * np.sqrt(((Xs - qc[0]) ** 2)[:, None] + ((Ys - qc[1]) ** 2)[None, :])
             key = np.where(ok, np.round(cost, 9) * 1e9 + dist * 1e-3, np.inf)
             for _ in range(64):         # the best few by the lattice key, checked on the outline
                 f = int(np.argmin(key))
                 if not np.isfinite(key.flat[f]):
                     break
                 xi, yi = np.unravel_index(f, key.shape)
-                X, Y = int(Xs[xi]), int(Ys[yi])
-                if P.outside_cells_all(X, Y, r.g_boards or (r.g_board,)):
+                Xc, Yc = int(Xs[xi]), int(Ys[yi])
+                if any(P.outside_cells_all(Xc + dx, Yc + dy, P.parts[i].rots[k].g_boards or (P.parts[i].rots[k].g_board,))
+                       for (i, dx, dy, k) in mem):
                     key[xi, yi] = np.inf
                     continue
                 kk = (round(float(cost[xi, yi]), 9), float(dist[xi, yi]))
                 if best is None or kk < best[0]:
-                    best = (kk, X, Y, k)
+                    best = (kk, Xc, Yc, mem)
                 break
         if best is None:
             continue
-        _, X, Y, k = best
-        a, b, c, d = p.rots[k].g_own
-        taken.append((side, (X + a, X + b, Y + c, Y + d)))
-        out[o] = (X, Y, k)
+        _, Xc, Yc, mem = best
+        poses, rects = {}, []
+        for (i, dx, dy, k) in mem:
+            poses[i] = (Xc + dx, Yc + dy, k)
+            a, b, c, d = P.parts[i].rots[k].g_own
+            r = (Xc + dx + a, Xc + dx + b, Yc + dy + c, Yc + dy + d)
+            rects.append(r)
+            taken.append((0 if P.parts[i].s > 0 else 1, r))
+        box = (min(r[0] for r in rects), max(r[1] for r in rects), min(r[2] for r in rects), max(r[3] for r in rects))
+        out[o] = (P.ox + Xc * g, P.oy + Yc * g, poses, box)
     return out
 
 

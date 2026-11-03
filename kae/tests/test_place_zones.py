@@ -161,7 +161,7 @@ def test_lattice_prices_like_part_and_pinning_puts_a_package_over_its_zone():
     pos = seedmod.quadratic(P, objs, owner, {n.i: n.weight for n in P.nets})
     pins = Z.pin_packages(T, P, objs, pos, min_pads=1.0)
     assert owner[i] in pins
-    X, Y, k = pins[owner[i]]
+    X, Y, k = pins[owner[i]][2][i]
     vcc = [kk for kk, pd in enumerate(P.parts[i].fp.pads) if pd.net == "VCC"][0]
     x = P.ox + X * P.g + P.parts[i].rots[k].pins[vcc, 0]
     y = P.oy + Y * P.g + P.parts[i].rots[k].pins[vcc, 1]

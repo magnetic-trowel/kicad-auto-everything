@@ -145,13 +145,10 @@ def _seed_state(P, macros, net_w, seed, log, partition=False, jitter=0.0, zones=
             if not za:
                 break
             pos = seedmod.quadratic(P, objs, owner, net_w, anchors={**za, **anchors})
-    # big packages with many pads on fixed zones go where their zones are, and stay there
-    pinned = zonesmod.pin_packages(zones, P, objs, pos) if (zones is not None and zone_w > 0) else {}
-    pin_spread = {}
-    for o, (X, Y, k) in pinned.items():
-        i = objs[o][0][0]
-        a, b, c, d = P.parts[i].rots[k].g_own
-        pin_spread[o] = (P.ox + (X + (a + b) / 2) * P.g, P.oy + (Y + (c + d) / 2) * P.g, (X + a, X + b, Y + c, Y + d))
+    # big packages (or macros) with many pads on fixed zones go where their zones are, and stay
+    lay_k = {i: off[2] for mac in macros for i, off in mac.layouts[0].offsets.items()}
+    pinned = zonesmod.pin_packages(zones, P, objs, pos, rot_of=lay_k) if (zones is not None and zone_w > 0) else {}
+    pin_spread = {o: (x, y, box) for o, (x, y, _, box) in pinned.items()}
     if jitter > 0:
         x0, y0, x1, y1 = P.outline.bounds
         rng = np.random.default_rng(seed)
@@ -173,9 +170,11 @@ def _seed_state(P, macros, net_w, seed, log, partition=False, jitter=0.0, zones=
             X, Y = P.grid_of(pos[o, 0] + dx, pos[o, 1] + dy)
             st.X[i], st.Y[i] = X, Y
             st.K[i] = lay_of.get(i, (0, 0, 0))[2] if i in lay_of else 0
-    for o, (X, Y, k) in pinned.items():
-        i = objs[o][0][0]
-        st.X[i], st.Y[i], st.K[i] = X, Y, k
+    for o, (_, _, poses, _) in pinned.items():
+        for i, (X, Y, k) in poses.items():
+            st.X[i], st.Y[i], st.K[i] = X, Y, k
+    # the regional floorplan keeps them (it minimizes HPWL alone)
+    P.zone_pinned = {i for o in pinned for i in pinned[o][2]}
     return st, objs
 
 
@@ -441,7 +440,7 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         t = time.monotonic()
         rep["regional_floorplan"] = seedmod.regional_refine(
             P, st, free_macros, net_w, time_s=min(60.0, 0.15 * (deadline - time.monotonic())), workers=workers,
-            seed=seed, log=log)
+            seed=seed, log=log, hold=getattr(P, "zone_pinned", ()))
         stage("regional_floorplan", t)
     seed_state = st.copy()
     seed_legal = not grid_violations(seed_state)

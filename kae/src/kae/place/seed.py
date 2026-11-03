@@ -322,14 +322,17 @@ def floorplan(P, items, time_s, workers=2, seed=0, w_wl=1.0, w_disp=0.2, net_w=N
     return sol, model
 
 
-def regional_refine(P, st, macros, net_w, time_s, workers=1, seed=0, log=None, max_items=30, margin_mm=2.0):
+def regional_refine(P, st, macros, net_w, time_s, workers=1, seed=0, log=None, max_items=30, margin_mm=2.0,
+                    hold=()):
     """Floorplan a big board region by region (the global CP-SAT floorplan handles at most
     FLOORPLAN_MAX_ITEMS items): the items (unanchored macros as rigid layouts x 4 rotations,
     single parts) are cut by recursive bisection of their centres into regions of at most
     `max_items`; each region is re-placed by CP-SAT inside its window (plus margin_mm),
     minimizing weighted HPWL with a little displacement, with every part outside it fixed (an
     obstacle, and a fixed pin of the nets it shares). Legal in, legal out: a region keeps its
-    placement unless CP-SAT returns one. Returns a report."""
+    placement unless CP-SAT returns one. `hold`: parts that stay where they are (fixed
+    geometry for the regions, as parts outside them), e.g. packages pinned over their zones.
+    Returns a report."""
     import time as _time
     from . import clusters
     from .state import grid_violations
@@ -345,8 +348,9 @@ def regional_refine(P, st, macros, net_w, time_s, workers=1, seed=0, log=None, m
         anchors.append(a)
         for i in mac.members:
             owner[i] = len(items) - 1
+    hold = set(hold)
     for i in P.mov:
-        if i not in owner:
+        if i not in owner and i not in hold:
             items.append(cpsat.single(P, i, int(st.X[i]), int(st.Y[i]), int(st.K[i])))
             anchors.append(i)
             owner[i] = len(items) - 1
