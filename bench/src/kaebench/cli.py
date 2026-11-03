@@ -277,10 +277,35 @@ def cmd_report(a):
     if len(versions) > 1:
         md += (f"\n\n**Mixed score versions** ({', '.join(map(str, versions))}): these attempts were "
                "scored by different scorers; `kaebench rescore` the older runs before comparing.")
+    md += _paired_sections(rows, a)
     print(md)
     if a.out:
         Path(a.out).write_text(md + "\n")
     return 0
+
+
+def _paired_sections(rows, a):
+    """Paired A/B sections of a report: each other adapter against the baseline, per kind with
+    clean-based scores (route, joint). The baseline is --baseline, else the last run given
+    (`kaebench report <run> <baseline-run>`) when it holds one adapter of that kind."""
+    out = []
+    last = str(Path(a.run_dirs[-1]))
+    for kind in ("route", "joint", "joint-fixed"):
+        ks = [r for r in rows if r["kind"] == kind]
+        adapters = sorted({r["adapter"] for r in ks})
+        if len(adapters) < 2:
+            continue
+        base = a.baseline if a.baseline in adapters else None
+        if base is None:
+            in_last = sorted({r["adapter"] for r in ks if str(Path(r.get("run", ""))) in (last, Path(last).name)})
+            base = in_last[0] if len(in_last) == 1 else None
+        if base is None:
+            out.append(f"\n\n({kind}: several adapters and no single baseline; pass --baseline ADAPTER for paired tests.)")
+            continue
+        for b in adapters:
+            if b != base:
+                out.append(f"\n\n#### {kind}\n\n" + report.compare_markdown(report.compare(ks, base, b)))
+    return "".join(out)
 
 
 def main(argv=None):
@@ -377,6 +402,8 @@ def main(argv=None):
     sp = sub.add_parser("report", help="summarize one or more runs")
     sp.add_argument("run_dirs", nargs="+")
     sp.add_argument("--out")
+    sp.add_argument("--baseline", help="adapter (as labelled in the table) the others are paired against; "
+                    "default: the last run's adapter")
     sp.set_defaults(fn=cmd_report)
 
     a = p.parse_args(argv)

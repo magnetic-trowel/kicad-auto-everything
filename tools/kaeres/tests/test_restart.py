@@ -155,3 +155,20 @@ def test_judge_counts_past_drcs_cap_of_499_with_pcbnew(tmp_path, monkeypatch):
     board.parent.mkdir()
     board.write_text("(kicad_pcb) OPEN=499\n")
     assert restart.drc(board, inp, 60)["unconnected"] == 499
+
+
+def test_judge_reports_unconnected_items_a_project_ignores(tmp_path):
+    """A project that sets unconnected_items to "ignore" makes kicad-cli list none at all
+    (gamaphy-freedom-rp2040): the judge's own copy turns the check back on, other
+    severities stay as the board set them."""
+    import json
+    import restart
+    pro = tmp_path / "board.kicad_pro"
+    sev = {"unconnected_items": "ignore", "clearance": "warning"}
+    pro.write_text(json.dumps({"board": {"design_settings": {"rule_severities": sev}}}))
+    restart.report_unconnected(pro)
+    got = json.loads(pro.read_text())["board"]["design_settings"]["rule_severities"]
+    assert got == {"unconnected_items": "error", "clearance": "warning"}
+    pro.write_text("{}")
+    restart.report_unconnected(pro)                       # no severities: left alone
+    assert pro.read_text() == "{}"

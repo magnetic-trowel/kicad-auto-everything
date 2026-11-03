@@ -22,7 +22,8 @@ and DRC errors must never get worse. A board that becomes clean (legal, fully ro
 DRC error) is always kept. Another strict gain in completion or DRC is kept when routed
 physics worsens by at most `phys_slack` (10 % of the incumbent's total) per item gained;
 with equal completion and DRC, physics must improve beyond `phys_tol` (float noise).
-Anything else is reverted. (A strict reading, physics never worse, is phys_slack=0: on the noisecard smoke
+Track length and vias are reported (the efficiency layer of quality-metrics.md); with
+eff_tiebreak they also break a tie of everything above. Anything else is reverted. (A strict reading, physics never worse, is phys_slack=0: on the noisecard smoke
 run it reverted a window that halved the unconnected items, 15 -> 7, at +33 % physics.)
 """
 from __future__ import annotations
@@ -54,6 +55,8 @@ class Scorecard:
     place_terms: float | None = None                 # straight-line place-terms total
     method: str = ""                                 # how `modules` were measured ('recheck', 'board_physics')
     worst_rail_mohm: float | None = None
+    track_length_mm: float | None = None             # total copper track length (efficiency, reported)
+    vias: int | None = None                          # via count (efficiency, reported)
     note: str = ""
     checked: dict = field(default_factory=lambda: dict(drc=True, physics=True, brief=True))
 
@@ -87,7 +90,9 @@ class Scorecard:
                     unconnected=unc, errors=err, errors_by_type=dict(self.errors_by_type), physics=phys,
                     modules={k: (None if v is None else round(v, 4)) for k, v in sorted(self.modules.items())},
                     flagged=flagged, place_terms=None if self.place_terms is None else round(self.place_terms, 4),
-                    worst_rail_mohm=self.worst_rail_mohm, **({"method": self.method} if self.method else {}),
+                    worst_rail_mohm=self.worst_rail_mohm,
+                    track_length_mm=None if self.track_length_mm is None else round(self.track_length_mm, 2),
+                    vias=self.vias, **({"method": self.method} if self.method else {}),
                     checked=dict(self.checked), note=self.note or None)
 
 
@@ -97,10 +102,13 @@ def _phys_on(card, ids):
     return physics_total({k: card.modules.get(k) for k in ids}, missing=U_CAP)
 
 
-def accept(old, new, phys_tol=0.005, phys_slack=0.10):
+def accept(old, new, phys_tol=0.005, phys_slack=0.10, eff_tiebreak=False, eff_tol=0.01):
     """(keep, why). See the module docstring. `phys_slack`: how much routed physics (share
     of the incumbent's total) each item of completion/DRC gain may cost; 0 makes physics a
-    hard guard except for a board that becomes clean."""
+    hard guard except for a board that becomes clean. `eff_tiebreak` (off by default, an A/B
+    arm): with equal completion, DRC and physics (within phys_tol), keep a board whose copper
+    dominates: no more vias and track length shorter by more than `eff_tol`, or fewer vias and
+    no longer track."""
     if new.placement_errors > old.placement_errors:
         return False, f"legality worse ({old.placement_errors} -> {new.placement_errors} placement errors)"
     if new.unconnected > old.unconnected:
@@ -127,4 +135,33 @@ def accept(old, new, phys_tol=0.005, phys_slack=0.10):
         return False, f"physics worse ({p0:.4f} -> {p1:.4f})"
     if p1 < p0 - phys_tol * scale:
         return True, f"physics better ({p0:.4f} -> {p1:.4f})"
+    if eff_tiebreak and k1 == k0 and None not in (old.track_length_mm, new.track_length_mm, old.vias, new.vias):
+        l0, l1, v0, v1 = old.track_length_mm, new.track_length_mm, old.vias, new.vias
+        if (v1 <= v0 and l1 < l0 * (1 - eff_tol)) or (v1 < v0 and l1 <= l0):
+            return True, f"copper better ({l0:.1f} -> {l1:.1f} mm, {v0} -> {v1} vias)"
     return False, "no improvement"
+
+
+def copper_totals(board):
+    """(track length in mm, via count) of a kae Board: segments straight, arcs by their
+    three points."""
+    import math
+    tot = 0.0
+    for t in board.tracks:
+        (x0, y0), (x1, y1) = t.start, t.end
+        if t.mid is None:
+            tot += math.hypot(x1 - x0, y1 - y0)
+            continue
+        xm, ym = t.mid
+        a, b, c = math.hypot(xm - x0, ym - y0), math.hypot(x1 - xm, y1 - ym), math.hypot(x1 - x0, y1 - y0)
+        area2 = abs((xm - x0) * (y1 - y0) - (x1 - x0) * (ym - y0))
+        if area2 < 1e-12 or c == 0:
+            tot += a + b
+            continue
+        r = a * b * c / (2 * area2)
+        half = min(1.0, c / (2 * r))
+        ang = 2 * math.asin(half)
+        if a * a + b * b > c * c:  # the mid point sees the chord at an acute angle: it is on the major arc
+            ang = 2 * math.pi - ang
+        tot += r * ang
+    return tot, len(board.vias)

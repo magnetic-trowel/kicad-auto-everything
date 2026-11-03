@@ -555,6 +555,11 @@ class KaeStages:
         card = Scorecard(unconnected=s["unconnected"], errors=s["errors"], errors_by_type=s["by_type"])
         card.placement_errors = placement_errors(rep)
         notes = []
+        try:
+            from .scorecard import copper_totals
+            card.track_length_mm, card.vias = copper_totals(self._load(lay.board))
+        except Exception as e:  # noqa: BLE001 - efficiency is reported, never needed
+            self.log(f"copper totals failed: {type(e).__name__}: {e}")
         if rep.get("error"):
             # acceptance keeps the sentinel (nothing beats an unchecked board); the report says
             # "not checked" (Scorecard.to_dict: null)

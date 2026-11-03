@@ -38,13 +38,24 @@ class ToolError(RuntimeError):
 # reports the command's rusage on a pipe. max_rss_mb is therefore the peak RSS of the
 # largest single process in the command's tree (ru_maxrss is a per-process maximum, not
 # a sum over the tree), with a floor of the launcher's ~10 MB.
+#
+# The launcher is a child subreaper and reports RUSAGE_CHILDREN after reaping its orphans.
+# wait4 on the command alone lost the whole sandbox: bwrap --unshare-pid takes the exit
+# status of its pid 1 from an eventfd and exits without reaping it (bubblewrap.c,
+# monitor_child), so every --command method read ~0 CPU seconds (kaeres index: 0.0 for all
+# 50+ sandboxed methods, while restart.py's own count for one run was 6,199 CPU s).
 
 _usage = threading.local()
 
 _LAUNCHER = r"""
-import os, sys
+import os, sys, time, resource
 fd = int(sys.argv[1]); argv = sys.argv[2:]
 os.set_inheritable(fd, False)
+try:  # orphans of the command (bwrap's pid 1) are re-parented here, so their CPU is reaped and counted
+    import ctypes
+    ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0)  # PR_SET_CHILD_SUBREAPER
+except Exception:
+    pass
 er, ew = os.pipe()
 pid = os.fork()
 if pid == 0:
@@ -64,8 +75,18 @@ err = os.read(er, 64)
 if err:
     os.write(fd, b"exec %s\n" % err)
 _, status, ru = os.wait4(pid, 0)
+end = time.monotonic() + REAP_S
+while True:  # reap what the command left (bwrap exits before its pid 1 is reaped), for a short while
+    try:
+        if os.wait4(-1, os.WNOHANG)[0] == 0:
+            if time.monotonic() > end:
+                break
+            time.sleep(0.02)
+    except ChildProcessError:
+        break
+ru = resource.getrusage(resource.RUSAGE_CHILDREN)  # every descendant reaped, whoever reaped it
 os.write(fd, ("done %d %r %r %d\n" % (status, ru.ru_utime, ru.ru_stime, ru.ru_maxrss)).encode())
-"""
+""".replace("REAP_S", "5.0")
 
 
 def usage_take():
