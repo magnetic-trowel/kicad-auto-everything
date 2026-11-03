@@ -83,6 +83,9 @@ Two protections around the loop:
 Since 2026-10-25 a repair round that moves parts also re-runs the silk pass: on a fixed
 pic-programmer, 40 evictions had left 18 silk errors.
 
+### What the report flags
+The report closes with `hazards` and `hazard_summary` ([hazards.md](../architecture/hazards.md)). Parts the placer relaxed to their pads (utilization > 0.95, or the legality escalation's last step; through-hole parts without courtyards, whose bodies may then overlap) are `bodies_relaxed` with their refs. The written board is rechecked with the safety checks forced on (`--recheck`), so a courtyard overlap, short or edge violation that the project's severities hide is reported even though the placer, like the scorer, followed the project.
+
 ### Silkscreen
 
 Silk is checked only where the project makes `silk_overlap` / `silk_over_copper` an
