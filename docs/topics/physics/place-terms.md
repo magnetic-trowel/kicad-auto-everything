@@ -23,7 +23,7 @@ with β = 4, u_sat = 10 and c_s = confidence × calibrated ownership; φ is C¹.
 | (a′) power path | loop L (nH) C_in → pass elements → C_out | load step: L ≤ 5%·V·100 ns/I, ≤ 50 nH |
 | (b) decap | loop L (nH) per power-pin cluster or capacitor | n_IC·Z_t/(2π·100 MHz) per pin, held to [L_c, 2L_c]; stability and module caps max(10 nH, L_c) |
 | (c) coupling | noise (mV) = 1e3·M·dI/dt + ΔV·C_m/(C_m + C_v + t_sw/Z_v) | feedback 10, sense 1, analog 1 mV |
-| (d) crystal | pulling (ppm) = S·C′·ℓ/4, S = C1/(2(C0 + C_L)²) | 5 ppm |
+| (d) crystal | pulling (ppm) = S·C′·ℓ/4, S = C1/(2(C0 + C_L)²); C_L 12.5 pF (32 kHz) / 12 pF (MHz), or the board's own with `KAE_CRYSTAL_CL=board` (A/B, [component-priors](../../research/physics/component-priors.md#crystal-load-capacitance)) | 5 ppm |
 | (e) thermal | rise above the board mean (K) | sources 20 K; victims by class |
 | (f) world | cable CM (µA); ESD surge path (nH); feed loss (dB) | 2.6 µA (the evaluator's line at 100 MHz); 5.3 nH; 0.5 dB |
 

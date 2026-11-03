@@ -478,7 +478,7 @@ def decap_pairs(rb, s):
 def crystal_value(rb, s):
     """Pulling (ppm) of the trace capacitance of the crystal nets' copper."""
     from kae.physics import priors as PR
-    _, S = PR.crystal_budget(s.get("f_Hz"))
+    _, S = PR.crystal_budget(s.get("f_Hz"), c_load_pf=PR.crystal_cl(s))
     nets = list(s.get("nets") or [])
     C = 0.0
     for t in rb.board.tracks:

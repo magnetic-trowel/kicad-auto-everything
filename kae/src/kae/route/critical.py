@@ -531,6 +531,7 @@ class Session:
             modules=[dict(id=m.id, kind=m.kind, status=m.status, items=len(m.copper), physics=m.physics,
                           notes=m.notes[:6], flags=m.flags) for m in self.modules],
             rails=self.rails,
+            hazards=[h for m in self.modules for h in m.hazards],
         )
 
 

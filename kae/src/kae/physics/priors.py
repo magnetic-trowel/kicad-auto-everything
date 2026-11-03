@@ -299,20 +299,49 @@ def victim_budget(cls):
 
 
 # ----------------------------------------------------------------------------- (d) crystals
-def crystal_budget(f_hz=None, ppm_layout=5.0):
+# Crystal load capacitance C_L (pF). The board states it through its load capacitors: C_L = C1 C2 /
+# (C1 + C2) + C_stray, C_stray 3.5 pF (pins and copper: 2-5 pF, AN826; AN-1469 implies ~3.5 pF;
+# crystals-clocks.md XTAL-PAR), or in the crystal's value ("12.5pF"). kae.circuit.structures puts it in
+# the crystal structure as C_L_pF. Without either, the corpus prior CRYSTAL_CL_PRIOR (the median of
+# what the corpus's boards use, tools/research/physics/corpus_parts_scan.py,
+# docs/research/physics/component-priors.md). The old fixed values (12.5 pF at 32 kHz, 12 pF for MHz
+# parts) stay the default until the A/B decides: KAE_CRYSTAL_CL=board uses the board's C_L.
+CRYSTAL_C_STRAY_PF = 3.5
+# corpus (14,597 boards, 3,177 crystals): C_L from load caps, median 9.5 pF at 32 kHz (n 249, p10-p90
+# 6.9-14.5) and 13.5 pF for MHz parts (n 1,494, 8.5-18.5); C_L stated in the part text: 12.5 and 18 pF
+CRYSTAL_CL_PRIOR = {'32k': 9.5, 'MHz': 13.5}
+CRYSTAL_CL_LEGACY = {'32k': 12.5, 'MHz': 12.0}
+
+
+def crystal_cl(structure):
+    """C_L (pF) the crystal term uses for this crystal structure, or None for the legacy fixed value
+    (KAE_CRYSTAL_CL unset or 'legacy'): the structure's own C_L_pF, else the corpus prior."""
+    import os
+    if os.environ.get('KAE_CRYSTAL_CL', 'legacy') != 'board':
+        return None
+    cl = (structure or {}).get('C_L_pF')
+    if cl:
+        return float(cl)
+    f = (structure or {}).get('f_Hz')
+    return CRYSTAL_CL_PRIOR['32k' if f is not None and f < 2e5 else 'MHz']
+
+
+def crystal_budget(f_hz=None, ppm_layout=5.0, c_load_pf=None):
     """Pulling budget of the layout's stray capacitance on a Pierce oscillator.
 
-    Pulling sensitivity S = C1 / (2 (C0 + C_L)^2) per pF of load change; motional C1 and
-    shunt C0 by class: 32.768 kHz tuning fork (C1 3 fF, C0 1.2 pF, C_L 12.5 pF) gives
-    ~8 ppm/pF; an AT-cut MHz crystal (C1 7 fF, C0 3 pF, C_L 12 pF) ~16 ppm/pF.
+    Pulling sensitivity S = C1 / (2 (C0 + C_L)^2) per pF of load change (ST AN2867 sec. 3.7: the
+    higher C_L, the lower the pullability); motional C1 and shunt C0 by class: 32.768 kHz tuning
+    fork (C1 3 fF, C0 1.2 pF), AT-cut MHz crystal (C1 7 fF, C0 3 pF). C_L: c_load_pf (crystal_cl:
+    the board's own), else 12.5 pF at 32 kHz (S ~8 ppm/pF) and 12 pF for MHz parts (~16 ppm/pF). An
+    LSE at ST's recommended C_L 7 pF has S ~22 ppm/pF; AN2867's 45 ppm/pF example is a higher-C1 part.
     Budget: 5 ppm of layout-induced shift (a quarter of a +-20 ppm part's tolerance).
     Returns (Belief in ppm, S in ppm/pF)."""
-    if f_hz is not None and f_hz < 2e5:
-        c1, c0, cl = 3e-3, 1.2, 12.5
-    else:
-        c1, c0, cl = 7e-3, 3.0, 12.0
+    k = '32k' if f_hz is not None and f_hz < 2e5 else 'MHz'
+    c1, c0 = (3e-3, 1.2) if k == '32k' else (7e-3, 3.0)
+    cl = c_load_pf or CRYSTAL_CL_LEGACY[k]
     s = c1 / (2.0 * (c0 + cl) ** 2) * 1e6
-    return Belief(ppm_layout, 'ppm', f'layout pulling budget; S = C1/(2(C0+C_L)^2) = {s:.1f} ppm/pF'), s
+    return Belief(ppm_layout, 'ppm', f'layout pulling budget; S = C1/(2(C0+C_L)^2) = {s:.1f} ppm/pF '
+                                     f'(C_L {cl:g} pF{"" if c_load_pf else ", class default"})'), s
 
 
 # ----------------------------------------------------------------------------- (e) thermal

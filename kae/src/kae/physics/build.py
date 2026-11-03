@@ -680,7 +680,7 @@ def _crystal(ctx, s, Struct):
                 ts.append(ctx.term(i, ks[:1]))
         return ts
     ti, to = side_terms(ni, ki), side_terms(no, ko)
-    alloc, sens = PR.crystal_budget(s.get('f_Hz'))
+    alloc, sens = PR.crystal_budget(s.get('f_Hz'), c_load_pf=PR.crystal_cl(s))
     alloc = ctx.budget(s, 'ppm') or alloc
     comp = CrystalComp(bv, ti, to, sens, detour=ctx.t.knobs.detour('crystal'))
     sid = s.get('id') or f'xtal:{bv.parts[y].ref}'
