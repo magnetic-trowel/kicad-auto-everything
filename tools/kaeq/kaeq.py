@@ -114,7 +114,12 @@ DEFAULTS = {
     "lease_release_after_s": 120,  # is trimmed to use x 1.25 (at least use + 1 GB)
     "lease_freeze_mb": 256,  # lease: a job that gets no more is frozen only once within max(this, 2 ticks of its
                              # measured growth) of its grant; until then it runs on in the room it already has
-    "lease_stall_s": 900,    # lease: a job stalled this long for memory that nothing frees requeues the newest other job
+    "lease_stall_s": 900,
+    "lease_hold_frac": 0.25, # lease: share of a job's unused grant counted as taken (1: grants are reservations;
+                             # 0: only real use counts, and jobs that collide take turns, frozen)
+    "lease_warm_s": 120,     # lease: a job this young counts its whole unused grant (it is still growing into it)
+    "lease_buffer_gb": 4.0,  # lease: free memory kept for growth between ticks: at least this, and
+    "lease_buffer_ticks": 3, # this many times the fleet's largest growth within one tick over the last 10 minutes    # lease: a job stalled this long for memory that nothing frees requeues the newest other job
     "mem_budget_gb": 0,      # cap on what all jobs together may use and hold (0: none beyond the reserve)
     "starts_per_tick": 1,    # ramp: at most this many job starts every 2 s, so new jobs show their memory before more start
     "cpu_affinity": "auto",  # auto: pin jobs to the first threads-reserve_cpu CPUs (a hard cap); off; or e.g. "0-101"
@@ -598,16 +603,22 @@ def cg_set_high(cg, mb):
         return False
 
 
-def lease_plan(jobs, free_mb, cfg, now):
-    """One pass of the memory leases. jobs: [{id, prio, started, grant, use, slack_since, stall_since}] (MB, s);
-    free_mb: memory nobody holds (free minus the reserve, minus every grant's unused part). Grants far above use
+def lease_plan(jobs, real_mb, cfg, now, buffer=0.0):
+    """One pass of the memory leases. jobs: [{id, prio, started, grant, use, slack_since, stall_since, grew}] (MB, s;
+    grew: MB the job grew since the last tick). real_mb: memory really free beyond the reserve (MemAvailable). A grant
+    is a limit, not a reservation: what is free for grants and new jobs is real_mb minus `buffer` (room for the
+    fleet's growth between two ticks), minus the unused grants of jobs younger than lease_warm_s (they are still
+    growing into them), minus lease_hold_frac of every other job's unused grant. Should real_mb fall below the
+    buffer anyway (jobs grew into room they were granted but nobody set aside), the jobs that grew this tick are
+    frozen at what they use, lowest priority and newest first; while real_mb stays above half the buffer, the
+    oldest of highest priority keeps running, so peaks take turns. Grants far above use
     for a while (and past the job's first warmup_s) are trimmed (that memory is free again); jobs near their grant get one more step each, by
     priority then age, while memory is free; of the rest, those at their grant (within lease_freeze_mb, or two
     ticks of their growth "rate", MB/s) are stalled and wait frozen, the others run on in the room they have. A job
     stalled lease_stall_s with nothing freeing names a victim among jobs of no higher priority: the one furthest
     past mem_overrun x its declared --mem ("declared", MB; a runaway), else the newest other job (a job within its declaration that only
     waits for other users' memory keeps waiting).
-    Returns {grants: {id: MB}, slack_since, stall_since, stalled: [ids], free, victim}."""
+    Returns {grants: {id: MB}, slack_since, stall_since, stalled: [ids], free, held, victim}."""
     grants = {j["id"]: j["grant"] for j in jobs}
     slack = {j["id"]: j.get("slack_since") or 0.0 for j in jobs}
     stall = {j["id"]: j.get("stall_since") or 0.0 for j in jobs}
@@ -620,13 +631,27 @@ def lease_plan(jobs, free_mb, cfg, now):
             if now - slack[j["id"]] >= cfg["lease_release_after_s"]:
                 ng = max(u * 1.25, u + 1024)
                 if ng < g:
-                    free_mb += g - ng
-                    grants[j["id"]] = ng
+                    grants[j["id"]] = ng      # what it no longer holds is free again (held, below)
                 slack[j["id"]] = 0.0
         else:
             slack[j["id"]] = 0.0
+    warm = cfg.get("lease_warm_s", 120)
+    hold = cfg.get("lease_hold_frac", 1.0)
+    held = sum(max(0.0, grants[j["id"]] - j["use"]) * (1.0 if now - (j["started"] or now) < warm else hold)
+               for j in jobs)
+    free_mb = real_mb - buffer - held
     stalled = []
+    if real_mb < buffer:     # the fleet grew into the buffer: freeze who grew, lowest priority and newest first
+        grew = sorted((j for j in jobs if j.get("grew", 0.0) > 0), key=lambda j: (j["prio"], -(j["started"] or 0)))
+        if grew and real_mb > buffer / 2:
+            grew.pop()                   # the oldest of highest priority grows on while there is half a buffer
+        for j in grew:
+            grants[j["id"]] = min(grants[j["id"]], j["use"])
+            stalled.append(j["id"])
+            stall[j["id"]] = stall[j["id"]] or now
     for j in sorted(jobs, key=lambda j: (-j["prio"], j["started"] or 0)):
+        if j["id"] in stalled:
+            continue
         g, u = grants[j["id"]], j["use"]
         margin = max(cfg["lease_margin_mb"], cfg.get("lease_margin_frac", 0.0) * g)
         if u < g - margin:
@@ -660,7 +685,8 @@ def lease_plan(jobs, free_mb, cfg, now):
             victim = max(others, key=lambda j: j["started"] or 0)["id"] if others else None
         if victim is not None:
             stall[s] = now          # the next victim only after another lease_stall_s
-    return dict(grants=grants, slack_since=slack, stall_since=stall, stalled=stalled, free=free_mb, victim=victim)
+    return dict(grants=grants, slack_since=slack, stall_since=stall, stalled=stalled, free=free_mb, held=held,
+                victim=victim)
 
 
 RISE_HIST = os.path.join(HOME, f"memrise.{HOST}.json")
@@ -822,7 +848,8 @@ class Daemon:
             self.organic = self.rise_hist[-1][1]
         self.rise, self.rise_ts = None, 0.0
         self.lease_st = {}       # job id -> {slack_since, stall_since, set, frozen_since, last, rate}: memory leases
-        self.cpu_s, self.cpu_ts = {}, 0.0  # job id -> CPU seconds of its current attempt (stored every minute)
+        self.cpu_s, self.cpu_ts = {}, 0.0
+        self.growth = []         # [(t, MB)]: how much running jobs together grew in each tick (last 10 minutes)  # job id -> CPU seconds of its current attempt (stored every minute)
         import threading
         threading.Thread(target=self.disk_loop, daemon=True).start()
 
@@ -1017,7 +1044,7 @@ class Daemon:
         """Grow, trim and enforce running jobs' memory grants (kaeq.lease_plan); requeue a victim if a job has
         waited lease_stall_s for memory nothing frees. Returns what the rest of the tick needs to know."""
         c = self.c
-        jobs, cgs, other = [], {}, 0.0
+        jobs, cgs, other, fleet = [], {}, 0.0, 0.0
         for j in running:
             cg = self.cgroups.get(j["id"]) or (job_cgroup(j["pid"]) if j["pid"] else None)
             m = cg_mem(cg) if cg else None
@@ -1034,6 +1061,8 @@ class Daemon:
                 if fs and not j["frozen_since"]:
                     c.execute("UPDATE jobs SET frozen_since=?, freezes=freezes+1 WHERE id=?", (fs, j["id"]))
             t0, u0 = st["last"]
+            grew = max(0.0, m[0] - u0)
+            fleet += grew
             if now > t0:       # growth rate (MB/s), rises at once and decays slowly; a frozen job does not grow
                 r = max(0.0, (m[0] - u0) / (now - t0))
                 st["rate"] = r if r > st["rate"] else 0.9 * st["rate"] + 0.1 * r
@@ -1041,15 +1070,18 @@ class Daemon:
             g = j["grant_mb"] or max(self.need_mb(j, cfg), m[0] + 2 * cfg["lease_margin_mb"])  # adopted job: a first grant
             jobs.append(dict(id=j["id"], prio=j["prio"], started=j["started"], grant=float(g), use=m[0], declared=j["mem_mb"],
                              slack_since=st["slack_since"], stall_since=st["stall_since"], rate=st["rate"],
-                             frozen=bool(st.get("frozen_since"))))
+                             frozen=bool(st.get("frozen_since")), grew=grew))
         for jid in set(self.lease_st) - set(cgs):
             del self.lease_st[jid]
         room = avail - reserve
         if cfg["mem_budget_gb"] > 0:
             used = sum(j["use"] for j in jobs) + sum(usage.get(j["id"], (0.0, 0))[0] for j in running if j["id"] not in cgs)
             room = min(room, cfg["mem_budget_gb"] * 1024 - used)
-        held = other + sum(max(0.0, j["grant"] - j["use"]) for j in jobs)
-        plan = lease_plan(jobs, room - held, cfg, now)
+        self.growth.append((now, fleet))      # the fleet's growth per tick, for the buffer
+        while self.growth and self.growth[0][0] < now - 600:
+            self.growth.pop(0)
+        buffer = max(cfg["lease_buffer_gb"] * 1024, cfg["lease_buffer_ticks"] * max(g for _, g in self.growth))
+        plan = lease_plan(jobs, room - other, cfg, now, buffer)
         by = {j["id"]: j for j in running}
         for j in jobs:
             st, g = self.lease_st[j["id"]], int(plan["grants"][j["id"]])
@@ -1081,7 +1113,8 @@ class Daemon:
             c.execute("UPDATE jobs SET mem_mb=?, grant_mb=0 WHERE id=?", (need, v["id"]))
         grants = {i: plan["grants"][i] for i in plan["grants"] if i != plan["victim"]}
         use = {j["id"]: j["use"] for j in jobs}
-        return dict(room=plan["free"], held=other + sum(max(0.0, g - use[i]) for i, g in grants.items()),
+        return dict(room=plan["free"], held=other + plan["held"] + buffer, buffer=buffer,
+                    unused=sum(max(0.0, g - use[i]) for i, g in grants.items()),
                     granted=sum(grants.values()), used=sum(use.values()), stalled=plan["stalled"],
                     victim=plan["victim"], jobs=len(jobs))
 

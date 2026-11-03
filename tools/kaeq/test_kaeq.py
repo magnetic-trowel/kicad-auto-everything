@@ -344,21 +344,26 @@ LEASE = dict(lease_margin_frac=0.15, warmup_s=300, lease_release_frac=0.25, mem_
              lease_step_frac=0.25, lease_stall_s=900)
 
 
+def plan(kq, jobs, free, cfg, now, buffer=0.0):
+    """lease_plan given memory nobody holds (the old meaning): real free memory = that + every unused grant."""
+    return kq.lease_plan(jobs, free + sum(max(0.0, j["grant"] - j["use"]) for j in jobs), cfg, now, buffer)
+
+
 def test_lease_plan_grows_by_priority_trims_idle_grants_and_stalls_the_rest(kq):
     jobs = [dict(id=1, prio=0, started=10, grant=4096, use=4000),     # at its grant
             dict(id=2, prio=0, started=20, grant=4096, use=3900),     # at its grant, younger
             dict(id=3, prio=0, started=5, grant=20480, use=1024, slack_since=1.0)]  # holds far more than it uses
-    assert kq.lease_plan(jobs, 500.0, LEASE, now=200.0)["grants"][3] == 20480   # under 5 min old: kept
-    p = kq.lease_plan(jobs, 500.0, LEASE, now=400.0)
+    assert plan(kq, jobs, 500.0, LEASE, now=200.0)["grants"][3] == 20480   # under 5 min old: kept
+    p = plan(kq, jobs, 500.0, LEASE, now=400.0)
     assert p["grants"][3] == pytest.approx(2048)            # trimmed to use + 1 GB: 18 GB freed
     # plenty free (the 18 GB trimmed): each grows by half its grant, well ahead of a fast-growing job
     assert p["grants"][1] == pytest.approx(4096 + 2048)
     assert p["grants"][2] == pytest.approx(4096 + 2048)
     # a job within 15% of its grant already gets more (here 3500 of 4096: within 614 MB)
-    q = kq.lease_plan([dict(id=9, prio=0, started=10, grant=4096, use=3500)], 100000.0, LEASE, now=400.0)
+    q = plan(kq, [dict(id=9, prio=0, started=10, grant=4096, use=3500)], 100000.0, LEASE, now=400.0)
     assert q["grants"][9] > 4096
     assert p["stalled"] == [] and p["victim"] is None
-    p = kq.lease_plan(jobs[:2], 1200.0, LEASE, now=400.0)   # room for one step: the older job gets it
+    p = plan(kq, jobs[:2], 1200.0, LEASE, now=400.0)   # room for one step: the older job gets it
     assert p["grants"][1] > 4096 and p["grants"][2] == 4096 and p["stalled"] == [2]
 
 
@@ -366,29 +371,29 @@ def test_lease_plan_requeues_the_newest_job_only_after_a_long_stall(kq):
     jobs = [dict(id=1, prio=0, started=10, grant=4096, use=4090, stall_since=100.0),
             dict(id=2, prio=0, started=50, grant=2048, use=1000),
             dict(id=3, prio=5, started=60, grant=2048, use=1000)]       # higher priority: never a victim for #1
-    assert kq.lease_plan(jobs, 0.0, LEASE, now=500.0)["victim"] is None  # stalled 400 s: wait
-    p = kq.lease_plan(jobs, 0.0, LEASE, now=1100.0)
+    assert plan(kq, jobs, 0.0, LEASE, now=500.0)["victim"] is None  # stalled 400 s: wait
+    p = plan(kq, jobs, 0.0, LEASE, now=1100.0)
     assert p["stalled"] == [1] and p["victim"] == 2 and p["stall_since"][1] == 1100.0
     # a runaway (far past its --mem) is the victim, even when it is the one waiting
     jobs[0]["declared"], jobs[1]["declared"] = 1024, 2048        # #1 uses 4x its --mem
-    assert kq.lease_plan(jobs, 0.0, LEASE, now=1100.0)["victim"] == 1
+    assert plan(kq, jobs, 0.0, LEASE, now=1100.0)["victim"] == 1
     # waiting only for other users' memory, alone: it keeps waiting
-    assert kq.lease_plan(jobs[:1] and [dict(jobs[0], declared=8192)], 0.0, LEASE, now=1100.0)["victim"] is None
+    assert plan(kq, jobs[:1] and [dict(jobs[0], declared=8192)], 0.0, LEASE, now=1100.0)["victim"] is None
 
 
 def test_lease_plan_freezes_only_a_job_at_its_grant(kq):
     """A job that wants more but still has room of its own runs on; it is frozen only at its grant, or when it grows
     fast enough to reach it within two ticks."""
     room = [dict(id=1, prio=0, started=10, grant=4096, use=3500)]               # within 15%: wants more
-    p = kq.lease_plan(room, 0.0, LEASE, now=400.0)
+    p = plan(kq, room, 0.0, LEASE, now=400.0)
     assert p["grants"][1] == 4096 and p["stalled"] == [] and p["stall_since"][1] == 0.0
     at = [dict(id=1, prio=0, started=10, grant=4096, use=3900)]                 # within lease_freeze_mb
-    assert kq.lease_plan(at, 0.0, LEASE, now=400.0)["stalled"] == [1]
+    assert plan(kq, at, 0.0, LEASE, now=400.0)["stalled"] == [1]
     fast = [dict(room[0], rate=200.0)]                                           # 200 MB/s: 800 MB in two ticks
-    assert kq.lease_plan(fast, 0.0, LEASE, now=400.0)["stalled"] == [1]
+    assert plan(kq, fast, 0.0, LEASE, now=400.0)["stalled"] == [1]
     frozen = [dict(room[0], frozen=True)]                                        # frozen: shows no growth; stays
-    assert kq.lease_plan(frozen, 0.0, LEASE, now=400.0)["stalled"] == [1]
-    assert kq.lease_plan(frozen, 8192.0, LEASE, now=400.0)["grants"][1] > 4096   # until it gets more
+    assert plan(kq, frozen, 0.0, LEASE, now=400.0)["stalled"] == [1]
+    assert plan(kq, frozen, 8192.0, LEASE, now=400.0)["grants"][1] > 4096   # until it gets more
 
 
 def test_frozen_time_does_not_count_towards_the_timeout(kq):
@@ -430,9 +435,33 @@ def test_a_requeued_attempt_is_counted_as_lost(kq):
     kq.kill_tree(j["pid"] or d.c.execute("SELECT pid FROM jobs").fetchone()[0])
 
 
+def test_lease_plan_counts_only_part_of_old_jobs_unused_grants(kq):
+    cfg = dict(LEASE, lease_hold_frac=0.25, lease_warm_s=120)
+    jobs = [dict(id=1, prio=0, started=1, grant=20480, use=10240),          # old: 10 GB unused, 2.5 GB counted
+            dict(id=2, prio=0, started=950, grant=4096, use=1024)]          # young: 3 GB unused, all counted
+    p = kq.lease_plan(jobs, 16384.0, cfg, now=1000.0, buffer=4096.0)
+    assert p["held"] == pytest.approx(2560 + 3072)
+    assert p["free"] == pytest.approx(16384 - 4096 - 2560 - 3072) and p["stalled"] == []
+
+
+def test_lease_plan_freezes_growers_when_the_buffer_is_eaten(kq):
+    cfg = dict(LEASE, lease_hold_frac=0.0)
+    jobs = [dict(id=1, prio=0, started=10, grant=60000, use=50000, grew=3000),   # oldest grower
+            dict(id=2, prio=0, started=20, grant=8000, use=4000, grew=500),
+            dict(id=3, prio=0, started=30, grant=8000, use=4000, grew=0),        # not growing: runs on
+            dict(id=4, prio=1, started=40, grant=8000, use=4000, grew=100)]      # higher priority, newest
+    p = kq.lease_plan(jobs, 3000.0, cfg, now=1000.0, buffer=4096.0)           # under the buffer, above half
+    assert sorted(p["stalled"]) == [1, 2] and p["grants"][1] == 50000 and p["grants"][2] == 4000
+    p = kq.lease_plan(jobs, 1000.0, cfg, now=1000.0, buffer=4096.0)           # under half: every grower waits
+    assert sorted(p["stalled"]) == [1, 2, 4] and p["grants"][3] == 8000
+    p = kq.lease_plan(jobs, 9000.0, cfg, now=1000.0, buffer=4096.0)           # room again: nobody frozen
+    assert p["stalled"] == []
+
+
 def _lease_daemon(kq, tmp_path, **cfg):
     conf = json.load(open(kq.CONF))
-    conf.update(cgroup="auto", slice="kaeqtest.slice", mem_pool="lease", **cfg)
+    conf.update(cgroup="auto", slice="kaeqtest.slice", mem_pool="lease", lease_buffer_gb=0.1, lease_buffer_ticks=0)
+    conf.update(cfg)
     json.dump(conf, open(kq.CONF, "w"))
     d = kq.Daemon()
     if not d.use_cgroup(kq.config()):

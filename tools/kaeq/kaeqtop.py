@@ -119,7 +119,8 @@ def frame(c, cfg, sampler, args, width):
     if ls:
         st = ls.get("stalled") or []
         L.append(f"     leases: {ls.get('jobs', 0)} jobs hold {gb(ls.get('granted', 0))} (memory.high), use {gb(ls.get('used', 0))}; "
-                 f"unused grants {gb(unreal)}"
+                 f"unused grants {gb(ls.get('unused', unreal))}, of which set aside {gb(unreal - ls.get('buffer', 0))}"
+                 f" + {gb(ls.get('buffer', 0))} growth buffer"
                  + (f"  << {len(st)} job(s) waiting at their grant for memory: no new starts ({', '.join('#%d' % i for i in st[:6])})"
                     if st else ""))
     elif bsys.get("mem_rise") is not None and str(bsys.get("mem_mode")) == "measured":
