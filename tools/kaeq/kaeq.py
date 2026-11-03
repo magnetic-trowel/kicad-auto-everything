@@ -158,7 +158,7 @@ DEFAULTS = {
                              # 0: only real use counts, and jobs that collide take turns, frozen)
     "lease_warm_s": 120,     # lease: a job this young counts its whole unused grant (it is still growing into it)
     "lease_buffer_gb": 4.0,  # lease: free memory kept for growth between ticks: at least this, and
-    "lease_buffer_ticks": 3, # this many times the fleet's largest growth within one tick over the last 10 minutes    # lease: a job stalled this long for memory that nothing frees requeues the newest other job
+    "lease_buffer_ticks": 3.0,  # this many times the fleet's largest growth within one tick over the last 10 minutes    # lease: a job stalled this long for memory that nothing frees requeues the newest other job
     "mem_budget_gb": 0,      # cap on what all jobs together may use and hold (0: none beyond the reserve)
     "starts_per_tick": 1,    # ramp: at most this many job starts every 2 s, so new jobs show their memory before more start
     "cpu_affinity": "auto",  # auto: pin jobs to the first threads-reserve_cpu CPUs (a hard cap); off; or e.g. "0-101"
