@@ -108,14 +108,14 @@ DEFAULTS = {
     # zram swap only ("zram"), any swap ("any", e.g. for tests), or "off". Swap that is not zram is disk: slow
     "compress_frozen": "zram",
     # squeeze: when free memory beyond the reserve falls below the growth buffer (before any requeue, at half of
-    # it), the biggest running timed job that is not growing (at least squeeze_min_gb anon) has up to twice the
+    # it), the biggest running timed job, preferring one not growing fast (at least squeeze_min_gb anon), has up to twice the
     # shortfall (at most half its memory) compressed into zram while it keeps running: the kernel's LRU takes its
     # oldest pages; it pays only when it touches them again. A job that pulls back (refaults) over a quarter of
     # what was squeezed out of it is hot and not squeezed again. One at a time, at most every squeeze_every_s.
     "squeeze": True,
     "squeeze_min_gb": 1.0,
     "squeeze_every_s": 5,
-    # squeeze_credit: admission counts this share of steady timed jobs' memory (past warm-up, not growing, not hot)
+    # squeeze_credit: admission counts this share of timed jobs' memory (past warm-up, running, not hot)
     # as squeezable, x (1 - 1/zram_ratio) freed by compressing it, capped by zram room: the queue runs into
     # shortages on purpose and squeezes to cover them (requeues at half the buffer stay the backstop). 0 = off
     "squeeze_credit": 0.25,
@@ -1502,7 +1502,7 @@ class Daemon:
         credit = 0.0
         if cfg["squeeze"] and cfg["squeeze_credit"] > 0:
             gain = 1 - 1 / max(1.0, cfg["zram_ratio"])
-            steady = sum(j["use"] for j in jobs if j["timed"] and not j.get("frozen") and j.get("rate", 0.0) < 1.0
+            steady = sum(j["use"] for j in jobs if j["timed"] and not j.get("frozen")
                          and now - (j["started"] or now) >= cfg.get("lease_warm_s", 120)
                          and not (self.lease_st.get(j["id"]) or {}).get("hot"))
             credit = min(cfg["squeeze_credit"] * steady, compress_room_mb(cfg["compress_frozen"])) * gain
@@ -1526,11 +1526,12 @@ class Daemon:
                     st["hot"] = True
                     dlog(f"#{j['id']}: hot ({fgb(back)} of {fgb(st['squeezed_total'])} squeezed came back): not squeezed again")
         cand = [(cg_anon_refaults(j["cg"])[0], j) for j in jobs if j["timed"] and not j.get("frozen")
-                and not (self.lease_st.get(j["id"]) or {}).get("hot") and j.get("rate", 0.0) < 1.0]
+                and not (self.lease_st.get(j["id"]) or {}).get("hot")]
         cand = [(anon, j) for anon, j in cand if anon >= cfg["squeeze_min_gb"] * 1024]
         if not cand or room < 256:
             return
-        anon, j = max(cand, key=lambda x: x[0])
+        # the biggest of the jobs not growing fast (under 50 MB/s), else the biggest
+        anon, j = max(cand, key=lambda x: (x[1].get("rate", 0.0) < 50.0, x[0]))
         cold = anon / 2
         mb = min(cold, room, max(1024.0, 2 * (buffer - real_mb)))
         self.squeezing, self.squeeze_ts = j["id"], now
