@@ -52,7 +52,7 @@ Spot weights are 4 (placement), 3 (unrouted), 2 (other errors) and 1 + rise + co
 
 u_b = (D_nets + D_escape + h_b·S_b) / S_b.
 
-The extra demand never moves with a part, so both engines (the reference `Annealer` and the compiled `FastAnnealer`) stay exactly incremental. In a window the congestion weight is doubled (30 → 60). Parts named by an unrouted connection are bumped 0.25 mm (`Problem.bump`, more occupancy on every side) and the routing margin is 0.3 mm. Both are dropped if they are what makes the window illegal.
+The extra demand never moves with a part, so both engines (`Annealer`, `FastAnnealer`) stay exactly incremental. In a window the congestion weight is doubled (30 → 60). Parts named by an unrouted connection are bumped 0.25 mm (`Problem.bump`: occupancy on every side) and the routing margin 0.3 mm. Both are dropped if they make the window illegal. Why this is not bloat, and its A/B: [kae-joint-loop](../../research/joint/kae-joint-loop.md).
 
 The re-anneal also carries the placer's physics terms and protection-order rules, and nets of the window's unrouted connections weigh 2× (the hook `local_replace(net_weights=…)` offers). Legality stays hard and closes with the placer's own loop: KiCad's placement errors become exact constraints (`exact.kicad_feedback`), then grid legality, the greedy legalizer, and the exact check repaired by `exact.repair(allowed=window parts)`. The rip-up region grows to cover wherever that repair moved a part. An illegal window is discarded before any routing. The annealer runs a fixed move count (6,000 per part), so a window is reproducible whenever its time budget does not bind.
 
