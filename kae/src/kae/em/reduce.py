@@ -67,6 +67,11 @@ class Reduced:
             self.E[b, len(ports) + j] = 1.0
         self.V = np.zeros((self.nb + self.sys0.nfree, 0))
         self.freqs = []
+        # snapshot frequencies at which some port's solve stopped at its iteration limit (its solution
+        # entered the basis anyway); `build` sets converged and estimated_error
+        self.unconverged = []
+        self.converged = None
+        self.estimated_error = None
         self.lo = self.net.off["l"]
 
     def _vec(self, inj):
@@ -83,7 +88,11 @@ class Reduced:
         solution's port impedances stay in self.last_Z (a free check of the model before it). sy: f's
         System when the caller already has it."""
         sy = sy or (getattr(self, "_sys", None) or {}).pop(f, None) or ES.System(self.op, f)   # f leaves the grid
-        X, its = sy.solve_many(self.P, tol=tol, maxiter=3000, E=self.E)
+        X, its, conv = sy.solve_many(self.P, tol=tol, maxiter=3000, E=self.E, with_converged=True)
+        if not conv.all():
+            self.unconverged.append(f)
+            self.log(f"reduce: snapshot {f / 1e6:.4g} MHz: {int((~conv).sum())} of {conv.size} ports did not "
+                     f"converge in 3000 iterations")
         X = np.concatenate([X[:self.nb], X[self.nb:] / sy.kap])
         self.last_Z = self.P.T @ X[self.nb:] - self.E.T @ X[:self.nb]
         self._extend(np.concatenate([X.real, X.imag], 1))
@@ -102,7 +111,9 @@ class Reduced:
 
         def one(f):
             sy = ES.System(self.op, f)
-            X, its = sy.solve_many(self.P[:, uniq], tol=tol, maxiter=3000, E=self.E[:, uniq])
+            X, its, conv = sy.solve_many(self.P[:, uniq], tol=tol, maxiter=3000, E=self.E[:, uniq], with_converged=True)
+            if not conv.all():
+                self.unconverged.append(f)
             X = np.concatenate([X[:self.nb], X[self.nb:] / sy.kap])
             X = X[:, back]
             return np.concatenate([X.real, X.imag], 1), its, self.P.T @ X[self.nb:] - self.E.T @ X[:self.nb]
@@ -296,7 +307,12 @@ class Reduced:
         true error there (before the snapshot joins it) calibrates the estimate: the stopping test uses
         the estimate times the largest ratio of true to estimated error seen so far (the estimator's
         dual error is one preconditioner application, typically pessimistic). snap_tol: the snapshots' solver
-        tolerance; keep_factors: see below."""
+        tolerance; keep_factors: see below.
+
+        Sets self.converged: False when the build stopped at max_snapshots with the calibrated estimate still
+        at or above tol, or when a snapshot's solve stopped at its iteration limit (self.unconverged: their
+        frequencies; such a snapshot also served as the 'true' error that calibrates the estimate).
+        self.estimated_error: the calibrated estimate at the stop."""
         t0 = time.time()
         # grid: the number of points (default 4.2 a decade: 25 over 1 kHz .. 300 MHz, 33 from 10 Hz)
         grid = grid or int(np.ceil(4.2 * np.log10(fmax / fmin))) + 1
@@ -345,6 +361,13 @@ class Reduced:
                      + (f" at {fw / 1e6:.4g} MHz" if fw else "")
                      + (f", calibrated {cw:.1e} (factor {cal:.2g})" if cal is not None else ""))
             if cw < tol or fw is None or len(self.freqs) >= max_snapshots:
+                # stopped by the snapshot limit, the error estimate is still above tol: not converged
+                self.estimated_error = cw
+                self.converged = (cw < tol or fw is None) and not self.unconverged
+                if not self.converged:
+                    self.log(f"reduce: NOT CONVERGED: estimated error {cw:.1e} against tol {tol:.0e}"
+                             + (f"; snapshots with unconverged solves at {[round(g / 1e6, 4) for g in self.unconverged]} MHz"
+                                if self.unconverged else ""))
                 break
             Zr = self.Z(fw)[np.ix_(rows, cols)]
             S = np.abs(Zr) if scale is None else scale(fw)

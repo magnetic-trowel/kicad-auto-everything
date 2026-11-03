@@ -49,6 +49,28 @@ def test_model_resolves_the_resonance_between_its_snapshots(model):
         assert np.max(np.abs(Zr - Zd)) <= 1e-3 * np.max(np.abs(Zd)), f
 
 
+def test_unconverged_solves_and_models_are_flagged(model):
+    """solve_many's columns stopped at maxiter looked converged, and build() stopped at max_snapshots
+    without recording that its error was still above tol (physics-frequency-coverage.md: stop at
+    estimated error < tol)."""
+    from types import SimpleNamespace
+
+    from kae.excite.wideband import _model_doubts
+    sy = ES.System(model.op, 2e6)
+    assert len(sy.solve_many(model.P, tol=1e-10, maxiter=3000)) == 2          # the old shape by default
+    _, its, conv = sy.solve_many(model.P, tol=1e-10, maxiter=3000, with_converged=True)
+    assert conv.all()
+    _, its, conv = sy.solve_many(model.P, tol=1e-14, maxiter=1, with_converged=True)
+    assert not conv.any() and (its == 1).all()
+    assert model.converged and model.estimated_error < 1e-4 and _model_doubts(model, model.estimated_error, 1e-4) == []
+    short = RD.Reduced(model.op, [{"s0": 1.0, "g0": -1.0}, {"s1": 1.0, "g1": -1.0}], log=lambda *a: None)
+    short.build(3e8, fmin=1e3, tol=1e-9, f0=(0.0, 10e6), max_snapshots=2)
+    assert short.converged is False and short.estimated_error > 1e-9
+    assert any("estimated error" in n for n in _model_doubts(short, short.estimated_error, 1e-9))
+    stuck = SimpleNamespace(unconverged=[1e8], converged=False)
+    assert any("iteration limit" in n for n in _model_doubts(stuck, 1e-5, 1e-3))
+
+
 def test_the_error_estimate_sees_a_reduced_solve_that_is_not_exact(model, monkeypatch):
     """The estimate's second term: an error in the reduced solve itself (rounding, where the model is
     ill-conditioned) changes Z at first order, which the residual-times-correction term alone cannot see."""

@@ -18,7 +18,8 @@ Model (each piece is a line over its reference plane; the plane carries the retu
 - a ground net: its pours are the reference node; its tracks and vias between pads and pours are extracted;
 - neighbours: same-layer pieces of different nets within `couple_mm` get mutual inductance with plane
   images (m_seg plus the image term) as a K element, and coupling capacitance from patch potential
-  coefficients (patch_coupling).
+  coefficients over the dielectric slab (patch_coupling; within 6 % of the field solver at gaps of 3 h
+  and more, up to 25 % low at gaps near h).
 
 Reduction: track pieces shorter than `lmin` keep their resistance but not their inductance, and their
 capacitance moves to their ends (micrometre pieces from junction splitting would otherwise put
@@ -298,17 +299,29 @@ class _Builder:
         self.net.stats["mutual_L_scaled"] = scaled
         self.net.stats["coupling_C"] = nc
 
-    def _cm(self, s, t, dl=1.0):
+    def _cm(self, s, t, dl=None):
+        """Coupling capacitance (F) between two same-layer sections: patches no longer than the sections'
+        distance (0.1..1 mm; a longer patch at a shorter distance reads as a point and overshoots), each
+        with its share of the line's own C (cprime_hj, fringing included), coupled by patch_coupling
+        (the slab's Green's function), then the two-conductor correction for strong coupling,
+        C_m / (1 - C_m^2 / (C_s C_t))."""
+        er = _er(self.rb, s[1])
+        if dl is None:
+            d = LineString([s[2][:2], s[3][:2]]).distance(LineString([t[2][:2], t[3][:2]]))
+            dl = min(1.0, max(0.1, d))
+
         def patches(x):
             p0, p1, w, h = np.array(x[2][:2]), np.array(x[3][:2]), x[4], x[5]
             ln = float(np.linalg.norm(p1 - p0))
             n = max(1, math.ceil(ln / dl))
-            return [(p0 + (k + 0.5) / n * (p1 - p0), w * ln / n, h) for k in range(n)]
-        tot = 0.0
-        for pa, aa, ha in patches(s):
-            for pv, av, hv in patches(t):
-                tot += patch_coupling(aa, av, float(np.linalg.norm(pa - pv)), ha, hv, eps_r=self.rb.er)
-        return tot * 1e-12
+            P = p0 + ((np.arange(n) + 0.5) / n)[:, None] * (p1 - p0)
+            return P, cprime_hj(w, h, er) * ln / n, n, h
+        Ps, cs, ns, hs = patches(s)
+        Pt, ct, nt, ht = patches(t)
+        r = np.sqrt(((Ps[:, None, :] - Pt[None, :, :]) ** 2).sum(-1))
+        cm = float(np.sum(patch_coupling(None, None, r, hs, ht, Ca=cs, Cv=ct, eps_r=er)))
+        k2 = cm * cm / (cs * ns * ct * nt)
+        return cm / (1.0 - min(k2, 0.5)) * 1e-12
 
     def finish(self):
         parent = {}

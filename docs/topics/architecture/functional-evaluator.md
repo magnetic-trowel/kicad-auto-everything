@@ -54,7 +54,7 @@ testbench.tb.cir ┴─ tests ─▶ per test × corner ────────
 | Via | barrel R and partial self-L between the layers it joins |
 | Pour of a non-ground net | the copper graph's pour links (2 mm strips) for R and L; plate capacitance εA/h over its contacts (coarse) |
 | Ground net | its pours are the reference node; tracks and vias between pads and pours are extracted |
-| Neighbours (signal profile) | same-layer pieces of different nets within 1 mm: mutual L with plane images (K, clamped at ±0.9) and coupling C from patch potential coefficients |
+| Neighbours (signal profile) | same-layer pieces of different nets within 1 mm: mutual L with plane images (K, clamped at ±0.9) and coupling C from patch potential coefficients over the dielectric slab (within 6 % of the layered field solver `kae.em.static` at gaps of 3 h and more, up to 25 % low near h) |
 
 **Profiles:**
 
@@ -109,6 +109,8 @@ A budget is applied only if all three hold; otherwise the closed-form allocation
 1. **The requirement comes from a trusted source:** human, board rule, datasheet, board value, schematic or standard. A budget derived from a prior bound is no better than the closed-form allocation, and on the boost below it was worse.
 2. **It is achievable:** at least the loop inductance of the parts' own internal paths alone (`critical_recheck.cell_body_floor`, the router's model). No layout of those parts can go lower.
 3. **It does not depend on the stand-in:** the sweep runs with a conservative stand-in (body-diode transit 20 ns, C_oss loss 0.05 Ω) and a lenient one (2 ns, 1 Ω). The budget is the conservative value, and is used only if the lenient one is within 3× of it.
+
+A sweep point where any corner gave no value, up to the first failing point, also blocks the budget: the requirement is then not known to hold at every corner.
 
 On the two smoke boards, no budget passes [M]. Both bounds are priors.
 - **Boost:** 1.16 nH, against a floor of 3.12 nH.
