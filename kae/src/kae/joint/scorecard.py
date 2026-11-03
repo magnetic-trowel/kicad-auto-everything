@@ -10,6 +10,10 @@ A Scorecard holds what KiCad and the routed-physics recheck say about a board:
   their sum, each capped at U_CAP, a module without a value counted at U_MISSING (reports) or
   U_CAP (acceptance); the place terms' straight-line total is reported beside it. `method`
   names the measurement (recheck of the module stage, or board_physics).
+- checked: which checks ran ({drc, physics, brief}). A check that did not run is reported as
+  null, never as a value (to_dict: unconnected/errors null without DRC, physics null without
+  the recheck); internally the card keeps sentinels (DRC failed: 10**6; physics: no modules)
+  so the acceptance rule stays conservative.
 
 `accept(old, new)` compares lexicographically: legality, then completion and DRC
 (unconnected + errors, then unconnected), then routed physics (on the modules both cards
@@ -51,6 +55,7 @@ class Scorecard:
     method: str = ""                                 # how `modules` were measured ('recheck', 'board_physics')
     worst_rail_mohm: float | None = None
     note: str = ""
+    checked: dict = field(default_factory=lambda: dict(drc=True, physics=True, brief=True))
 
     @property
     def physics(self):
@@ -68,13 +73,22 @@ class Scorecard:
         """Lower is better, lexicographically."""
         return (self.placement_errors, self.unconnected + self.errors, self.unconnected, round(self.physics, 6))
 
+    def reported(self):
+        """(unconnected, errors, physics, flagged) as reported: None for what was not checked."""
+        drc = bool(self.checked.get("drc", True))
+        phys = bool(self.checked.get("physics", True))
+        return (self.unconnected if drc else None, self.errors if drc else None,
+                round(self.physics, 4) if phys else None, list(self.flagged) if phys else None)
+
     def to_dict(self):
-        return dict(legal=self.legal, placement_errors=self.placement_errors, unconnected=self.unconnected,
-                    errors=self.errors, errors_by_type=dict(self.errors_by_type), physics=round(self.physics, 4),
+        unc, err, phys, flagged = self.reported()
+        drc = bool(self.checked.get("drc", True))
+        return dict(legal=self.legal if drc else None, placement_errors=self.placement_errors if drc else None,
+                    unconnected=unc, errors=err, errors_by_type=dict(self.errors_by_type), physics=phys,
                     modules={k: (None if v is None else round(v, 4)) for k, v in sorted(self.modules.items())},
-                    flagged=list(self.flagged), place_terms=None if self.place_terms is None else round(self.place_terms, 4),
+                    flagged=flagged, place_terms=None if self.place_terms is None else round(self.place_terms, 4),
                     worst_rail_mohm=self.worst_rail_mohm, **({"method": self.method} if self.method else {}),
-                    **({"note": self.note} if self.note else {}))
+                    checked=dict(self.checked), note=self.note or None)
 
 
 def _phys_on(card, ids):

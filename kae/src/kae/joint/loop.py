@@ -58,27 +58,54 @@ DEFAULTS = dict(
     finish_share=0.20,     # time reserved for it up front: max(finish_min_s, finish_share x budget)
     finish_min_s=120.0,
     finish_release=True,   # a second finishing try releases the module copper on open corridors
+    last_mile_min_s=60.0,  # with finish: when no finishing try could run (<= 60 s left), the kept
+                           # board's open nets still get lastmile.close for at least this long
+    diagnose_s=30.0,       # the final board's "blocked" diagnosis: at most this (and 5 % of the budget)
     recycle=True,          # when every window is exhausted and time is left, sample them all again
     min_cycle_s=5.0,       # ... unless the last cycle took less than this (nothing could be routed)
     patience_cycles=2,     # stop after this many full cycles over the windows in a row accept nothing
 )
 
 
+def share_cap(parts, o):
+    """The part-share cap: at most max_part_share of the board's movable parts (at least 3)."""
+    n_mov = sum(1 for g in parts.values() if not g.locked)
+    return max(3, int(round(o["max_part_share"] * n_mov)))
+
+
 def escalate(win, attempt, parts, bounds, o):
     """Window `win` for its attempt number: the same spots with the margin x1.5, two more
-    parts per earlier attempt, and parts with many pins allowed; the highest-priority window
-    they form."""
+    parts per earlier attempt (never beyond the part-share cap: on a 15-part board 5 -> 7 -> 9
+    parts was 60 % of the board, a global re-place), and parts with many pins allowed; the
+    highest-priority window they form. Spots are not merged beyond the cap either."""
     if attempt <= 0:
         return win
     k = min(attempt, 2)          # windows stop growing after two escalations; seeds still differ
+    cap = min(o["max_parts"] + 2 * k, share_cap(parts, o))
     ws = plan_windows(win.spots, parts, bounds, margin=o["margin"] * (1.5 ** k),
-                      max_parts=o["max_parts"] + 2 * k, max_pins=None)
+                      max_parts=cap, max_pins=None, merge_factor=1.0)
     return ws[0] if ws else win
 
 
 def derive_seed(seed, it, k=0):
     """The seed of iteration `it` (and sub-stage k): fixed by the run's seed."""
     return (int(seed) * 1000003 + it * 7919 + k * 104729) % 2_147_483_647
+
+
+def _route_info(row):
+    """The route report of an iteration row (iteration 0: stages; a window: repair; a finish)."""
+    return (row.get("route") or (row.get("stages") or {}).get("route")
+            or (row.get("repair") or {}).get("route")) or {}
+
+
+def _packages(rows):
+    """(packages, iteration) of the latest BGA escape certificate (balls no routing can escape
+    under the board's rules) any bridge run reported, else None."""
+    for r in reversed(rows):
+        p = (_route_info(r).get("blocked") or {}).get("packages")
+        if p:
+            return p, r.get("iter")
+    return None
 
 
 class JointLoop:
@@ -119,11 +146,43 @@ class JointLoop:
             rep.setdefault("interim_write_errors", []).append(f"{type(e).__name__}: {e}")
 
     def _row(self, it, card, **kw):
-        row = dict(iter=it, unconnected=card.unconnected, errors=card.errors, placement_errors=card.placement_errors,
-                   physics=round(card.physics, 4), place_terms=None if card.place_terms is None else round(card.place_terms, 4),
-                   flagged=list(card.flagged))
+        # a check that did not run reads null, and the stage's note says why (never 0 or 10**6)
+        unc, err, phys, flagged = card.reported()
+        drc = card.checked.get("drc", True)
+        row = dict(iter=it, unconnected=unc, errors=err, placement_errors=card.placement_errors if drc else None,
+                   physics=phys, place_terms=None if card.place_terms is None else round(card.place_terms, 4),
+                   flagged=flagged, checked=dict(card.checked), note=card.note or None)
         row.update(kw)
         return row
+
+    def _final_blocked(self, st, best, card, fb, best_it, rows, it, to_deadline, time_s):
+        """{blocked, blocked_note}: the diagnosis of the final board's open connections, or
+        null with the reason it is missing."""
+        o = self.opts
+        pk = _packages(rows)
+        if not card.checked.get("drc", True):
+            return dict(blocked=None, blocked_note="not diagnosed: the final board's DRC did not run")
+        if card.unconnected == 0:
+            return dict(blocked=None, blocked_note="nothing open")
+        own = ((getattr(best, "info", None) or {}).get("route") or {}).get("blocked")
+        if isinstance(own, dict) and ("undiagnosed" in own or "error" in own):
+            blk, note = dict(own), f"the bridge's diagnosis of iteration {best_it}"
+        elif not hasattr(st, "diagnose"):
+            blk, note = None, "not diagnosed: these stages have no diagnosis"
+        else:
+            t = min(float(o["diagnose_s"]), 0.05 * time_s, to_deadline() - 10.0)
+            if t < 5.0:
+                blk, note = None, f"not diagnosed: no time left ({max(0.0, to_deadline()):.0f}s)"
+            else:
+                try:
+                    blk = st.diagnose(best, fb.get("drc") or {}, it + 1, t)
+                    note = f"diagnosed on the final board (iteration {best_it}) in at most {t:.0f}s"
+                except Exception as e:  # noqa: BLE001 - a diagnosis never costs the board
+                    blk, note = None, f"not diagnosed: {type(e).__name__}: {e}"
+        if pk is not None and (blk is None or not blk.get("packages")):
+            blk = dict(blk or {})
+            blk["packages"], blk["packages_iter"] = pk
+        return dict(blocked=blk, blocked_note=note)
 
     # ------------------------------------------------------------------ run
     def run(self, output, time_s=900.0, seed=0, start=None):
@@ -144,6 +203,7 @@ class JointLoop:
         st = self.stages
         rows = []
         rep = dict(seed=seed, time_s=time_s, opts={k: v for k, v in o.items()}, iterations=rows)
+        self.rep = rep            # what the run got done so far, if a later stage raises (cli: "partial")
         # ---- iteration 0: the staged pipeline
         t = time.monotonic()
         if start is None:
@@ -164,7 +224,7 @@ class JointLoop:
         self._geom = st.geometry(lay)
         hist = CongestionHistory(self._geom[1], bin_mm=1.0)
         self._history(hist, lay, fb)
-        best, best_card, best_fb = lay, card, fb
+        best, best_card, best_fb, best_it = lay, card, fb, 0
         self._save(st, best, output, rep)
         tries = {}
         max_att = int(o["max_attempts"]) if o["max_attempts"] is not None else 2 + int(time_s // 1800)
@@ -178,7 +238,8 @@ class JointLoop:
         while True:
             if best_card.unconnected == 0 and best_card.errors == 0 and best_card.placement_errors == 0 \
                     and not best_card.flagged:
-                stop = "clean, nothing flagged"
+                stop = "clean, nothing flagged" if best_card.checked.get("physics", True) else \
+                    "clean, physics not checked"
                 break
             if o["max_iters"] is not None and it >= o["max_iters"]:
                 stop = "iteration cap"
@@ -188,8 +249,7 @@ class JointLoop:
                 break
             spots = self._spots(best_fb, best)
             parts, bounds, _, _ = self._geom
-            n_mov = sum(1 for g in parts.values() if not g.locked)
-            cap = min(o["max_parts"], max(3, int(round(o["max_part_share"] * n_mov))))
+            cap = min(o["max_parts"], share_cap(parts, o))
             o_win = dict(o, max_parts=cap)
             base = [w for w in plan_windows(spots, parts, bounds, margin=o["margin"], max_parts=cap,
                                             max_pins=o["max_pins"], merge_factor=1.0)
@@ -253,7 +313,7 @@ class JointLoop:
                      f"{card.errors} errors, physics {card.physics:.3f} -> {'kept' if keep else 'reverted'} ({why}, "
                      f"{dt:.0f}s)")
             if keep:
-                best, best_card, best_fb = cand, card, fb
+                best, best_card, best_fb, best_it = cand, card, fb, it
                 self._save(st, best, output, rep)
                 self._geom = st.geometry(best)
                 tries = {}               # the board changed: earlier failures may now succeed
@@ -267,6 +327,7 @@ class JointLoop:
         # (a restart portfolio as the finishing stage has its own restarts: one try)
         release = o.get("finish_release", True) and not getattr(st, "finish_restarts", False)
         tries_fin = [None, "release"] if release else [None]
+        finished = False          # a finishing try ran on the kept board (it ends in the last mile)
         for mode in tries_fin if o["finish"] else []:
             if best_card.clean or left() <= 60.0:
                 break
@@ -296,18 +357,52 @@ class JointLoop:
             if card is not None:
                 row = self._row(it, card, finish=mode or True, released=released, accepted=keep, why=why,
                                 seconds=round(dt, 1), route=(cand.info or {}).get("route"))
+            finished = finished or card is not None
             rows.append(row)
             self.log(f"finish{' (release ' + ', '.join(released) + ')' if released else ''}: "
                      f"{getattr(card, 'unconnected', '?')} unconnected, {getattr(card, 'errors', '?')} errors, "
                      f"physics {getattr(card, 'physics', float('nan')):.3f} -> {'kept' if keep else 'reverted'} "
                      f"({why}, {dt:.0f}s)")
             if keep:
-                best, best_card, best_fb = cand, card, fb
+                best, best_card, best_fb, best_it = cand, card, fb, it
+                self._save(st, best, output, rep)
+        # ---- the kept board always gets a last mile: when no finishing try could run (time
+        # spent, e.g. an iteration 0 that overran), lastmile.close on its open nets for at least
+        # last_mile_min_s, however late (it may use the write reserve; OUTPUT already holds the
+        # incumbent). The first route skipped its last mile only because a finish follows.
+        nets = sorted({n for sp in unrouted_spots(best_fb.get("drc") or {}) for n in sp.nets})
+        if (o["finish"] and not finished and not best_card.clean and nets and best_card.checked.get("drc", True)
+                and hasattr(st, "close_open")):
+            it += 1
+            t = time.monotonic()
+            budget = max(float(o["last_mile_min_s"]), left())
+            try:
+                cand = st.close_open(best, it, nets, time_s=budget)
+                card, fb = st.evaluate(cand, it)
+                keep, why = accept(best_card, card, phys_slack=o["phys_slack"])
+            except Exception as e:  # noqa: BLE001 - the incumbent stands
+                cand, card, fb, keep, why = None, None, None, False, f"error: {type(e).__name__}: {e}"
+            dt = time.monotonic() - t
+            row = dict(iter=it, finish="last mile", accepted=keep, why=why, seconds=round(dt, 1), budget_s=round(budget, 1))
+            if card is not None:
+                row = self._row(it, card, finish="last mile", accepted=keep, why=why, seconds=round(dt, 1),
+                                budget_s=round(budget, 1), route=(cand.info or {}).get("route"))
+            rows.append(row)
+            self.log(f"last mile on the kept board ({len(nets)} nets, {budget:.0f}s): "
+                     f"{'kept' if keep else 'reverted'} ({why}, {dt:.0f}s)")
+            if keep:
+                best, best_card, best_fb, best_it = cand, card, fb, it
                 self._save(st, best, output, rep)
         rep["final"] = best_card.to_dict()
+        rep["final"]["iter"] = best_it
         rep["initial"] = rows[0] if rows else None
         rep["accepted"] = sum(1 for r in rows[1:] if r.get("accepted"))
         rep["finish"] = st.finish(best, output)
+        # ---- what keeps the final board's open connections open (kae.route.blocked): the
+        # finishing bridge's own diagnosis when it made this board, else one run now (OUTPUT is
+        # written); the BGA escape certificates (balls no routing can escape) ride along
+        rep["final"].update(self._final_blocked(st, best, best_card, best_fb, best_it, rows, it,
+                                                lambda: deadline - time.monotonic(), time_s))
         rep["seconds"] = round(time.monotonic() - t0, 1)
         self.log(f"stop: {stop}; final {best_card.unconnected} unconnected, {best_card.errors} errors, physics "
                  f"{best_card.physics:.3f}; {rep['accepted']} of {len(rows) - 1} iterations kept ({rep['seconds']}s)")
