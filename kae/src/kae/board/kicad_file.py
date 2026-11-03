@@ -163,6 +163,30 @@ def synth_uuid(lib_id, x, y, rot, side, index):
     return str(_uuid.uuid5(_uuid.NAMESPACE_URL, f"kae-footprint:{lib_id}:{xn}:{yn}:{rm}:{side}:{index}"))
 
 
+def footprint_keys(nodes):
+    """The part key of each footprint node (`footprint`/`module` S-expression), in file
+    order, exactly as `load` assigns Footprint.uuid: the uuid, a KiCad 5 tstamp as a KIID,
+    or synth_uuid when the footprint has none or repeats an earlier one. Returns [(key,
+    flag)], flag "" or "uuid_synthesized" / "uuid_duplicate". Writers that find footprints
+    by key (kae.place.writer.write_sexpr) use this, so they accept every key the loader
+    hands out."""
+    out, seen = [], set()
+    for i, node in enumerate(nodes):
+        u = value(node, "uuid") or _kiid(value(node, "tstamp")) or ""
+        flag_ = ""
+        if not u or u in seen:
+            flag_ = "uuid_synthesized" if not u else "uuid_duplicate"
+            lib_id = node[1] if len(node) > 1 and type(node[1]) is str else ""
+            at = first(node, "at")
+            fx, fy = (float(at[1]), float(at[2])) if at else (0.0, 0.0)
+            frot = float(at[3]) if at is not None and len(at) > 3 else 0.0
+            side = "B" if value(node, "layer", "F.Cu") == "B.Cu" else "F"
+            u = synth_uuid(lib_id, fx, fy, norm_deg(frot), side, i)
+        seen.add(u)
+        out.append((u, flag_))
+    return out
+
+
 def _kiid(v):
     """KiCad 5 tstamps (8 hex digits) become KIIDs as pcbnew reads them."""
     if v and len(v) == 8 and re.fullmatch(r"[0-9A-Fa-f]{8}", v):
@@ -1049,16 +1073,12 @@ def load(path, *, arc_tol=geom.ARC_TOL, rules=True):
         raise ValueError(f"{path}: not a KiCad board")
     rd = _Reader(tree, path, arc_tol)
     rd.keepouts, rd.zones, rd.fp_areas = [], [], []
-    fps = []
-    for node in tree:
-        if type(node) is list and node and node[0] in ("footprint", "module"):
-            fps.append(rd.footprint(node))
-    seen = set()
-    for i, fp in enumerate(fps):   # the footprint uuid is the part key: make it unique
-        if not fp.uuid or fp.uuid in seen:
-            fp.flags.append("uuid_synthesized" if not fp.uuid else "uuid_duplicate")
-            fp.uuid = synth_uuid(fp.lib_id, fp.x, fp.y, fp.rot, fp.side, i)
-        seen.add(fp.uuid)
+    nodes = [n for n in tree if type(n) is list and n and n[0] in ("footprint", "module")]
+    fps = [rd.footprint(n) for n in nodes]
+    for fp, (key, flag_) in zip(fps, footprint_keys(nodes)):   # the footprint uuid is the part key
+        if flag_:
+            fp.flags.append(flag_)
+        fp.uuid = key
     for fp, areas in rd.fp_areas:
         for a in areas:
             a.footprint = fp.uuid

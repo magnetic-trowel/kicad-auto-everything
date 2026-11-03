@@ -3,6 +3,7 @@
 """kae.place.writer: the S-expression writer moves footprints the way pcbnew does."""
 import math
 import random
+import re
 import shutil
 from pathlib import Path
 
@@ -67,6 +68,52 @@ def test_sexpr_writer_refuses_flips_and_unknowns(tmp_path):
         write_sexpr(src, tmp_path / "o.kicad_pcb", {f.uuid: (f.x, f.y, 0.0, "B")})
     with pytest.raises(KeyError):
         write_sexpr(src, tmp_path / "o.kicad_pcb", {"no-such-uuid": (0.0, 0.0, 0.0, "F")})
+
+
+def test_sexpr_writer_spells_footprint_angles_as_kicad(tmp_path):
+    """FOOTPRINT::SetOrientation keeps the footprint angle in (-180, 180]: 270 is written -90."""
+    src = _copy(tmp_path)
+    b = kicad_file.load(src)
+    f = next(f for f in b.footprints if not f.locked and f.side == "F")
+    out = tmp_path / "o.kicad_pcb"
+    write_sexpr(src, out, {f.uuid: (f.x, f.y, 270.0, "F")})
+    text = out.read_text()
+    blk = text[text.index(f'(uuid "{f.uuid}")'):]
+    assert blk.split("(at ", 1)[1].split(")", 1)[0] == f"{fmt(f.x)} {fmt(f.y)} -90"
+    assert kicad_file.load(out).by_uuid()[f.uuid].rot % 360 == 270.0
+
+
+def test_sexpr_writer_takes_the_loaders_keys(tmp_path):
+    """Footprints with no uuid, a repeated uuid or a KiCad 5 tstamp are found by the key
+    kicad_file.load gives them, as pcbnew_io.write_poses finds them."""
+    text = FIXTURE.read_text()
+    uu = [m.group(1) for m in re.finditer(r'\t\(footprint "[^"]*"\n\t\t\(layer "[^"]*"\)\n\t\t\(uuid "([^"]*)"\)', text)]
+    assert len(uu) >= 3
+    text = text.replace(f'(uuid "{uu[1]}")', f'(uuid "{uu[0]}")', 1)          # repeated
+    text = text.replace(f'\t\t(uuid "{uu[2]}")\n', "", 1)                    # missing
+    p = tmp_path / "keys.kicad_pcb"
+    p.write_text(text)
+    b = kicad_file.load(p)
+    flags = {f.uuid: f.flags for f in b.footprints}
+    assert sum("uuid_duplicate" in v for v in flags.values()) == 1
+    assert sum("uuid_synthesized" in v for v in flags.values()) == 1
+    poses = {f.uuid: (f.x + 1.0, f.y, f.rot, f.side) for f in b.footprints if not f.locked}
+    out = tmp_path / "o.kicad_pcb"
+    assert write_sexpr(p, out, poses)["moved"] == len(poses)
+    # a synthesized key hashes the pose, so compare in file order
+    for f1, f2 in zip(b.footprints, kicad_file.load(out).footprints):
+        assert abs(f2.x - (poses[f1.uuid][0] if f1.uuid in poses else f1.x)) < 1e-6
+    # KiCad 5: (module ... (tstamp 5C0A1B2C)) is keyed as pcbnew reads it
+    k5 = ('(kicad_pcb (version 20171130) (host pcbnew 5.1.6)\n'
+          '  (module R_0603 (layer F.Cu) (tedit 5B301BBD) (tstamp 5C0A1B2C)\n    (at 10 20 90)\n'
+          '    (fp_text reference R1 (at 0 -1.4 90) (layer F.SilkS))\n'
+          '    (pad 1 smd rect (at -0.8 0 90) (size 0.8 0.9) (layers F.Cu F.Paste F.Mask))\n  )\n)\n')
+    p5 = tmp_path / "k5.kicad_pcb"
+    p5.write_text(k5)
+    key = kicad_file.load(p5).footprints[0].uuid
+    assert key == "00000000-0000-0000-0000-00005c0a1b2c"
+    write_sexpr(p5, tmp_path / "k5o.kicad_pcb", {key: (11.0, 20.0, 90.0, "F")})
+    assert kicad_file.load(tmp_path / "k5o.kicad_pcb").footprints[0].x == 11.0
 
 
 @pytest.mark.kicad
