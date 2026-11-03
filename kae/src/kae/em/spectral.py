@@ -52,6 +52,7 @@ import scipy.sparse.linalg as spla
 from scipy import ndimage
 
 from kae.excite import harm as HA
+from kae.physics import criteria as CR
 from kae.excite import observe as O
 from kae.excite import spectrum as SP
 
@@ -198,6 +199,7 @@ class Spectral:
         Z = np.einsum("mp,fmq->fpq", model.Pr[:, :nP0], Y)                 # (nF, nP, nP): Z_pq = p_p^T phi_q
         Zi = {j: np.stack([ideal(s, f) for f in F]) for j, s in enumerate(srcs)}     # (nF, nobs)
         ncp = len(next(iter(r.cval.values()), [None]))
+        shared = CR.shared_overshoot()          # the overshoot criterion of the evaluators (an A/B arm)
         tot = np.zeros(ncp)
         pairs = []                                  # (observer index, source index or None for cm, name key)
         U, sgn, peak_t = {}, {}, {}
@@ -220,9 +222,8 @@ class Spectral:
                         for q in np.nonzero(band)[0]:
                             d[fi[q]] = d.get(fi[q], 0.0) + abs(V[q])
                         continue
-                    bound = o.bound
-                    if o.kind == "overshoot" and "V_max_V" in val:
-                        bound = max(val["V_max_V"] - val.get("V_V", 0.0), 1e-3)
+                    bound = (HA.overshoot_bound(val, o.bound, None if shared else o.meta.get("bound_legacy"))
+                             if o.kind == "overshoot" else o.bound)
                     pk, sg_, th = peak(V)
                     us[c] = pk / bound if bound else 0.0
                     sg[c] = sg_ / bound if bound else 0.0
@@ -231,7 +232,7 @@ class Spectral:
                     U[(k, j)], sgn[(k, j)], peak_t[(k, j)] = us, sg, tt
                     tot += np.where(us <= 1, us, us + 4 * (us - 1) ** 2)
         for k, per in cm_amp.items():
-            us = np.array([max((v / (O.CM_V_LIM_HZ / F[q]) for q, v in d.items()), default=0.0) for d in per])
+            us = np.array([max((v / O.cm_v_lim(F[q]) for q, v in d.items()), default=0.0) for d in per])
             U[(k, None)] = us
             tot += np.where(us <= 1, us, us + 4 * (us - 1) ** 2)
         for c, ob in enumerate(r.dc_obs or []):

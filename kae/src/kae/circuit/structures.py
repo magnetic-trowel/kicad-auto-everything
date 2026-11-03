@@ -495,7 +495,16 @@ def _excite(b: _B, ctrl, L, V_, kind):
         basis.append(f"t_sw = {t_sw:g} ns, class default for an integrated converter at {V_ or '?'} V")
     if V_ is None:
         basis.append('V unknown: the rail has no voltage in its name or part numbers')
-    return {'V': V_, 'I': I_, 't_sw_ns': t_sw, 'f_sw_Hz': f_sw, 'basis': basis}
+    # the switch's absolute maximum from the curated part table (each entry cites its datasheet): the
+    # overshoot criterion's V_abs (kae.physics.criteria); the lowest stated value when it is a range
+    V_abs = None
+    if ctrl:
+        from kae.excite.beliefs import lookup
+        vm = lookup(text).get('v_sw_max_V')
+        if vm:
+            V_abs = vm[1]
+            basis.append(f"V_abs = {V_abs:g} V, the switch's rating ({vm[3][:80]})")
+    return {'V': V_, 'I': I_, 't_sw_ns': t_sw, 'f_sw_Hz': f_sw, 'V_abs': V_abs, 'basis': basis}
 
 
 def _caps_with_p(b: _B, rail, gnd, owner, competitors=()):

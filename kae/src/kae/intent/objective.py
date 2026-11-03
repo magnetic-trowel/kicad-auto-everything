@@ -38,6 +38,8 @@ import math
 import re
 from pathlib import Path
 
+from kae.physics import criteria as CR
+
 from . import sections as SE
 from . import units as U
 
@@ -73,7 +75,7 @@ KINDS = {
     "temp.junction": ("C", "A dissipating part's junction temperature: the board's heat flow (copper I^2 R, every "
                       "part's heat, face cooling) at its pads plus theta_jb times its power, at each corner."),
     "emission.cable_E": ("dBuV/m", "Field at 10 m from a declared cable driven by cable_cm.v (Ott 12-7: "
-                         "E = 1.26e-6 f l I / r, I = V / 150 Ohm), per connector pair with a declared cable."),
+                         "E = 1.26e-6 f l I / r capped at 2 x 60 I / r, I = V / 150 Ohm), per connector pair with a declared cable."),
 }
 SCOPE_KEYS = ("section", "from", "to", "observer", "source", "kind", "rail", "load", "net", "part", "connector")
 
@@ -173,7 +175,7 @@ def _emission(ob, cables):
     if not lens:
         return None
     l = max(lens)
-    vals = [U.to_log(1.26e-6 * f * l * (v / 150.0) / 10.0, "dBuV/m") if f else -300.0
+    vals = [U.to_log(CR.cable_e(f, v / CR.Z_CM, l), "dBuV/m") if f else -300.0
             for v, f in zip(ob["values"], ob.get("f_Hz") or [0.0] * len(ob["values"]))]
     sc = dict(ob["scope"])
     sc["cable_m"] = l

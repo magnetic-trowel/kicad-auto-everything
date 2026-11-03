@@ -77,7 +77,7 @@
 - **Loop-inductance estimator:**
   - Inputs: area, L1→L2 dielectric, via count.
   - Calibrate absolute nH on the SNVA803 and EPC data (2–20 mm² loops). Use AN-139 only for the trend with plane distance: its values are for a 10 × 10 cm test loop at 27 MHz.
-  - Report nH, overshoot = L_est × di/dt (warn if >0.2 × V_DS,max, IRP §11), and EPC-style efficiency impact.
+  - Report nH, overshoot = L_est × di/dt, and EPC-style efficiency impact. Criterion (placer, router prices and both evaluators, `kae.physics.criteria`): the switch-node peak V_in + overshoot ≤ 0.85 × V_abs, a warning above it, a **block hazard above V_abs itself** (the part is outside its rating). V_abs is the switch's rating (its SW-pin transient rating when the datasheet gives one) or a prior one ladder step above 1.25 × V_in. The 0.85 sits between ECSS-Q-ST-30-11C's 80% V_DS derating and Vishay AN-1005's "typically 90% or less"; TI SLYT465 keeps a 30 V FET under 20 V. The older "warn if > 0.2 × V_DS,max (IRP §11)" has no primary source and is not used ([component-priors](../../../research/physics/component-priors.md#overshoot)).
 - **Hard constraint:** CIN on the IC's layer for integrated converters. Via count and next-layer GND coverage (loop hull + 1 mm) are scored through the loop-inductance estimate, not gated, so vertical loops (vias to the first inner plane, as in SNVA803 and EPC) stay legal.
 - **Soft constraints:** area tiers. Never treat a millimetre number as DRC.
 - **Rank priorities:** the INTVCC/driver loop second.

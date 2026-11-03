@@ -53,6 +53,7 @@ class Module:
     status: str = "pending"
     notes: list = field(default_factory=list)
     flags: list = field(default_factory=list)       # dicts for the report: copper the current asks more of
+    hazards: list = field(default_factory=list)     # the shared hazard schema (critical report `hazards`)
 
 
 DT_MAX_K = 10.0           # IPC-2221 temperature rise (K) of critical copper (high-current.md), opts dT_max_K
@@ -777,7 +778,7 @@ def allocation(ctx, m):
     if m.kind == "cell":
         ex = s.get("excite") or {}
         vin = ex.get("V") or ctx.volts(s.get("rail")) or PR.V_IN_UNKNOWN.value
-        return PR.hot_loop_budget(s.get("class") or "unknown", vin, t_sw_ns=ex.get("t_sw_ns"))
+        return PR.hot_loop_budget(s.get("class") or "unknown", vin, t_sw_ns=ex.get("t_sw_ns"), v_abs=PR.budget_v_abs(ex))
     if m.kind == "path":
         ex = s.get("excite") or {}
         v = ex.get("V") or ctx.volts(s.get("rail_in")) or ctx.volts(s.get("rail_out")) or 5.0
