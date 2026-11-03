@@ -14,8 +14,9 @@ operating corner, each with its scope) are matched by the intent's terms:
 - tier "limit": met costs nothing; beyond it, rate x the excess (in the limit's own unit).
 - tier "cost": rate x the value, summed.
 - tier "report": listed, unpriced; "ignore": dropped from the report.
-- an observation the evaluator flags `implausible` (noise beyond half its rail: wrong inputs, not layout)
-  matches no term; it is listed first among the unclaimed, with its reason.
+- an observation the evaluator flags `implausible` (noise beyond half its rail) is priced at that cap (its
+  values clipped to it), the same for every layout: left unpriced, it let the worse of two layouts escape
+  its term whenever only that one crossed the cap. The status lists them under "implausible", with the reason.
 - where: scope filters (glob patterns): section, from, to (a boundary: from a section's sources into
   another section's observers), observer, source, kind, rail, load, net, part, connector.
 - agg over corners: worst (default for hard and limit), cvar20 (mean of the worst fifth; default for cost), typ.
@@ -31,6 +32,7 @@ from __future__ import annotations
 import fnmatch
 import json
 import math
+import re
 from pathlib import Path
 
 from . import sections as SE
@@ -237,14 +239,13 @@ def evaluate(ev, intent=None, brief=None):
         status["complete"] = False
         status["why_incomplete"] = "the evaluation has no observations: no score"
         return status
+    obs = [_capped(ob) for ob in obs]
     terms = list(intent.get("terms", [])) + _defaults(intent, obs, intent.get("terms", []))
     claimed = set()
     hard = limit = cost = 0.0
     rows = []
     for t in terms:
-        # an observation the evaluator flagged implausible (kae.excite.observe.implausible) is no term's:
-        # it is reported among the unclaimed with its reason, never priced
-        hit = [i for i, ob in enumerate(obs) if not ob.get("implausible") and _match(t, ob, secs)]
+        hit = [i for i, ob in enumerate(obs) if _match(t, ob, secs)]
         tier = t["tier"]
         claimed |= set(hit) if tier != "report" else set()
         if tier == "ignore":
@@ -339,6 +340,10 @@ def evaluate(ev, intent=None, brief=None):
             un[-1]["implausible"] = ob["implausible"]
     un.sort(key=lambda x: (not x.get("implausible"), -(x["ratio"] or 0)))
     status["unclaimed"] = un
+    # observations priced at their cap (implausible: noise beyond half the rail), with why
+    status["implausible"] = [dict(label=ob.get("label"), id=ob.get("id"), capped_at=ob.get("capped_at"),
+                                  worst=max((v for v in ob.get("values") or []), default=None), why=ob["implausible"])
+                             for ob in obs if ob.get("implausible")]
     status["questions"] = _questions(ev, intent, obs, rows)
     return status
 
@@ -394,6 +399,20 @@ def _gap(t, missing):
         pats = (pat if isinstance(pat, list) else [pat]) if pat else None
         out += [s for s in ac if pats is None or any(fnmatch.fnmatch(s, p) for p in pats)]
     return out
+
+
+def _capped(ob):
+    """An implausible observation (kae.excite.observe.implausible) with its values clipped at its cap:
+    cap_V, or for an evaluation from before that field, half the rail its reason names."""
+    if not ob.get("implausible"):
+        return ob
+    cap = ob.get("cap_V")
+    if cap is None:
+        m = re.search(r"exceeds (\d+)% of its ([0-9.eE+-]+) V rail", ob["implausible"])
+        cap = float(m.group(1)) / 100 * float(m.group(2)) if m else None
+    if cap is None:
+        return ob
+    return dict(ob, values=[min(v, cap) for v in ob.get("values") or []], capped_at=cap)
 
 
 def key(status, terms=None):

@@ -72,6 +72,8 @@ def text(st, detailed=False):
             ref = f" (reference {u['reference']}, x{u['ratio']:g})" if u.get("reference") else ""
             out.append(f"    {u['obs']:16s} {u['worst']:>12s}{ref}  {u['label']}"
                        + (f"  IMPLAUSIBLE: {u['implausible']}" if u.get("implausible") else ""))
+    for im in st.get("implausible") or []:
+        out.append(f"  priced at its cap ({im['capped_at']:.3g} V): {im['label']}: {im['why']}")
     for q in st["questions"][: (99 if detailed else 4)]:
         out.append(f"  question {q['id']}: {q['ask']}")
     return "\n".join(out)

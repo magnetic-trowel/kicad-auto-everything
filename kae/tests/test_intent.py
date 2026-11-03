@@ -205,22 +205,31 @@ def test_a_dc_band_gap_also_leaves_temperatures_and_part_losses_unpriced():
     assert rows["T0"]["incomplete"] and not rows["P4"].get("incomplete")
 
 
-def test_an_implausible_observation_is_reported_not_priced():
-    """kae.excite flags supply noise beyond half its rail (a signal taken for a rail); no term prices it."""
+def test_an_implausible_observation_is_priced_at_its_cap_for_every_layout():
+    """kae.excite flags supply noise beyond half its rail; kae.intent prices it clipped at that cap, so two
+    layouts past the cap price alike (left unpriced, the worse one escaped its term); the status lists it."""
     from kae.excite import observe as O
     sup = O.Observer("supply:IC1:PWRSTAT", "supply", "a", "g", bound=0.165, meta=dict(ref="IC1", rail="PWRSTAT", V=3.3))
     ok = O.Observer("supply:U2:VBAT", "supply", "a", "g", bound=0.185, meta=dict(ref="U2", rail="VBAT", V=3.7))
     assert O.implausible(sup, [0.5, 15.2]) and O.implausible(ok, [0.05, 0.2]) is None
     src = O.Observer("core:IC1:PWRSTAT", "core", "a", "g")
+    it = {"terms": [{"id": "S1", "tier": "limit", "obs": "supply.peak", "max": "0.1 V", "rate": "100 mW_eq/V", "why": "test"}]}
+    costs = []
+    for peak in (15.2, 4.0):                       # two layouts, both past the 1.65 V cap
+        ev = _ev([0.037] * 2, [0.004] * 2)
+        bad = O.observation(type("BD", (), {"pads_of": {}})(), sup, src, [0.5, peak], [0.0, 0.0])
+        assert bad["implausible"] and bad["cap_V"] == pytest.approx(1.65)
+        ev["observations"].append(bad)
+        st = OB.evaluate(ev, it, BRIEF)
+        s1 = next(r for r in st["terms"] if r["id"] == "S1")
+        assert s1["matched"] == 1 and s1["contribution"] > 0
+        assert st["implausible"][0]["label"] == bad["label"] and st["implausible"][0]["capped_at"] == pytest.approx(1.65)
+        costs.append(s1["contribution"])
+    assert costs[0] == pytest.approx(costs[1])
+    # an evaluation from before cap_V: the cap is read from the reason (half of the 3.3 V rail)
     ev = _ev([0.037] * 2, [0.004] * 2)
-    bad, good = [], []
-    for o, vals, out in ((sup, [0.5, 15.2], bad), (ok, [0.05, 0.2], good)):
-        ob = O.observation(type("BD", (), {"pads_of": {}})(), o, src, vals, [0.0, 0.0])
-        out.append(ob)
-    assert "implausible" in bad[0] and "implausible" not in good[0]
-    ev["observations"] += bad + good
-    it = {"terms": [{"id": "S1", "tier": "cost", "obs": "supply.peak", "rate": "100 mW_eq/V", "why": "test"}]}
-    st = OB.evaluate(ev, it, BRIEF)
-    s1 = next(r for r in st["terms"] if r["id"] == "S1")
-    assert s1["matched"] == 1 and s1["dominant"] == good[0]["label"]
-    assert st["unclaimed"][0]["implausible"] and st["unclaimed"][0]["label"] == bad[0]["label"]
+    old = O.observation(type("BD", (), {"pads_of": {}})(), sup, src, [0.5, 15.2], [0.0, 0.0])
+    old.pop("cap_V")
+    ev["observations"].append(old)
+    s1 = next(r for r in OB.evaluate(ev, it, BRIEF)["terms"] if r["id"] == "S1")
+    assert s1["contribution"] == pytest.approx(costs[0])
