@@ -641,6 +641,14 @@ class Bugs:
                                detail=str(detail)[:4000], evidence=list(evidence), **extra))
 
 
+def _pintypes_args(physics_board, pt):
+    """--pintypes only for a physics_board.py that takes it: an experiment's older harness
+    exits 2 on the flag, and boards gained pintypes.json after their first evaluation."""
+    if not pt.exists() or "--pintypes" not in Path(physics_board).read_text(errors="ignore"):
+        return []
+    return ["--pintypes", pt]
+
+
 def cmd_job(a):
     """One board: prepare the task, run every missing method, evaluate, archive under the board."""
     e = load_exp(a.experiment) if a.experiment else None
@@ -829,10 +837,11 @@ def _job_group(bid, row, hc, kae, items, human, ws, env, log, kicad, a, size):
         pout = ws / f"physics-{hc[:8]}.json"
         with Step("physics", steps):
             pt = board_dir(bid) / "pintypes.json"  # the schematic's pin types, as re-evaluation passes them
-            rc, to = run_logged([kv / "bin" / "python", d / "tools" / "kaeres" / "physics_board.py",
+            pb = d / "tools" / "kaeres" / "physics_board.py"
+            rc, to = run_logged([kv / "bin" / "python", pb,
                                  "--input", task / "route" / "input" / "board.kicad_pcb",
                                  *[x for n, p in boards.items() for x in ("--board", f"{n}={p}")], "--out", pout,
-                                 *(["--pintypes", pt] if pt.exists() else [])],
+                                 *_pintypes_args(pb, pt)],
                                 log, genv, timeout=int(1800 + 120 * size))
         phys = read_json(pout) or dict(error=f"physics step {'timed out' if to else f'failed rc={rc}'}")
         if phys.get("error"):
@@ -1468,7 +1477,10 @@ def cmd_rephysics_job(a):
     for hc, items in groups.items():  # rebuild with the harness that scored the runs
         hv = code_dir(hc).with_name(code_dir(hc).name + ".venv")
         man_p = ws / f"rebuild-{hc[:8]}.json"
-        rc, to = run_logged([hv / "bin" / "python", cd / "tools" / "kaeres" / "rebuild_boards.py",
+        rb_py = cd / "tools" / "kaeres" / "rebuild_boards.py"
+        if not rb_py.exists():  # harness older than rebuild_boards.py: this kaeres' copy rebuilds the same way
+            rb_py = Path(__file__).resolve().with_name("rebuild_boards.py")
+        rc, to = run_logged([hv / "bin" / "python", rb_py,
                              "--board-dir", CORPUS / row["path"], "--work", ws / f"rb-{hc[:8]}",
                              *[x for d, r in items for x in ("--run", f"{r['run']}={d / 'output.kicad_pcb.gz'}")],
                              *[x for d, r in items if _run_kind(r) in ("joint", "joint-fixed") for x in ("--joint", r["run"])],
@@ -1489,9 +1501,10 @@ def cmd_rephysics_job(a):
         if not boards:
             continue
         pout = ws / f"physics-{hc[:8]}.json"
-        run_logged([kv / "bin" / "python", cd / "tools" / "kaeres" / "physics_board.py", "--input", man["input"],
+        pb = cd / "tools" / "kaeres" / "physics_board.py"
+        run_logged([kv / "bin" / "python", pb, "--input", man["input"],
                     *[x for n, p in boards.items() for x in ("--board", f"{n}={p}")], "--out", pout,
-                    *(["--pintypes", pt] if pt.exists() else [])], log, env, timeout=int(1800 + 120 * size))
+                    *_pintypes_args(pb, pt)], log, env, timeout=int(1800 + 120 * size))
         phys = read_json(pout) or dict(error="physics step failed", log=tail(log, 30))
         for d, r in items:
             if r["run"] not in boards:
