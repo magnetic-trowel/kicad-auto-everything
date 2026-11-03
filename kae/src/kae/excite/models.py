@@ -227,6 +227,14 @@ def _port_supplies(bd):
             bd.assumptions.append(f"{net}: nothing on the board supplies it but {t}: {what}, returning at {g}")
 
 
+def legacy_parts():
+    """KAE_PART_MODELS=legacy: the capacitor models before the 2026-11 priors (nominal C, 10 mOhm for every
+    MLCC, 4 nH / 0.3 Ohm for every polarized part): an A/B arm for the methods that price with these models
+    (kae.em.spectral's router); the evaluators should keep the default."""
+    import os
+    return os.environ.get("KAE_PART_MODELS", "").strip().lower() == "legacy"
+
+
 def dielectric(text):
     """The ceramic dielectric named in a part's text ('C0G' for NP0/COG), or None."""
     m = DIELECTRIC_RE.search(text or "")
@@ -320,7 +328,9 @@ def _part(bd, ref, part, pins, kind, sub, role, rec, in_cell):
             bd.assumptions.append(f"{ref}: value '{part.value}' unread; 100 nF assumed")
         a, b = tw
         text = part.text() if hasattr(part, "text") else f"{part.value} {part.lib_id}"
-        if pkg.polarized:
+        if legacy_parts():
+            esl, esr = (4e-9, 0.3) if pkg.polarized else (6e-9 if pkg.through_hole else esl, 0.01)
+        elif pkg.polarized:
             esl, esr, why = polar_model(pkg, text)
             bd.assumptions.append(f"{ref}: {why} (class stand-in)")
         else:

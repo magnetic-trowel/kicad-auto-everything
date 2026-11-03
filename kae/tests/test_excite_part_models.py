@@ -51,3 +51,10 @@ def test_polarized_models_by_body(lib, text, esl_nH, esr):
     assert pkg.polarized
     l, r, why = M.polar_model(pkg, text)
     assert l * 1e9 == pytest.approx(esl_nH) and r == pytest.approx(esr) and why
+
+
+def test_legacy_switch(monkeypatch):
+    monkeypatch.delenv("KAE_PART_MODELS", raising=False)
+    assert not M.legacy_parts()
+    monkeypatch.setenv("KAE_PART_MODELS", "legacy")
+    assert M.legacy_parts()
