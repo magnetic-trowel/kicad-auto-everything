@@ -298,3 +298,21 @@ def test_fixed_parts_keep_their_input_pose_and_the_rest_moves(tmp_path):
     assert moved
     rep = json.loads(Path(str(out) + ".kae.json").read_text())
     assert rep["fixed"]["n"] == 2 and set(rep["fixed"]["refs"]) == {"U4", "J1"}
+
+
+def test_congestion_weight_and_margin_are_settings_and_physics_is_traced():
+    """Audit P5/P10: place_w_cong and place_margin (kae.route.constraints.DEFAULTS, so --set
+    and KAE_ text variables reach them) default to the current behaviour (30, auto) and switch
+    the RUDY term and the routing margin off at 0; P6: the report traces physics per stage."""
+    from kae.place.pipeline import place
+    from kae.route.constraints import DEFAULTS
+    assert DEFAULTS["place_w_cong"] == 30.0 and DEFAULTS["place_margin"] < 0
+    b = kicad_file.load(FIXTURE)
+    on = place(b, seed=0, time_s=10, physics=True, workers=1).report
+    assert "margin_set" not in on and on["w_cong"] == 30.0
+    stages = [t["stage"] for t in on.get("physics_trace", [])]
+    assert stages[:2] == ["seed", "anneal"] and all("total_linear" in t for t in on["physics_trace"])
+    off = place(kicad_file.load(FIXTURE), seed=0, time_s=10, physics=True, workers=1,
+                opts=dict(place_w_cong=0, place_margin=0)).report
+    assert off["margin_set"] == 0.0 and off["margin_mm"] == 0.0
+    assert off["w_cong"] == 0.0

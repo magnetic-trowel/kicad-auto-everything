@@ -171,6 +171,13 @@ DEFAULTS = dict(
     escape_band_scale=1.0,         # band depth per side = scale x escapes on that side x (track + clearance)
     escape_band_max_mm=2.5,        # mm: the deepest band on one side
     escape_ring_pitch=0.5,         # mm: pad rings (QFN, QFP) at most this fine get bands
+    place_w_cong=30.0,             # placement: weight of the annealer's RUDY + pin-escape congestion term
+                                   # (kae.place.cost.Congestion). Never ablated inside the placer; RUDY ranks
+                                   # PCB routability near chance (docs/research/placement/
+                                   # kae-routability-estimators.md). A/B arms 0 / 10 / 30 (audit P5)
+    place_margin=-1.0,             # placement: routing room between movable parts, mm (Problem.set_margin);
+                                   # negative = auto (Problem.auto_margin: 2 x (0.7 - utilization), 0..1 mm).
+                                   # A/B arms -1 / 0 (audit P10)
     escape_fanout=0,               # placement: 1 also reserves the dog-bone via sites of each ball grid on the
                                    # other side (no part there covers them); 0: off
 )

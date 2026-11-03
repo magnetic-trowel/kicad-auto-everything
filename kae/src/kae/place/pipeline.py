@@ -193,6 +193,12 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     def stage(name, t):
         rep["stages"][name] = round(time.monotonic() - t, 3)
 
+    def trace(name, state):
+        # physics after each stage that can move parts (anneal, legalize, the exact repairs),
+        # so a physics-blind stage's cost shows in the report (audit P6)
+        if report_terms is not None:
+            physics_trace(rep, name, report_terms, {p.uuid: state.pose(p.i) for p in P.parts})
+
     # ---- brief (net roles for both arms; structures only with physics)
     t = time.monotonic()
     src = "given"
@@ -244,12 +250,16 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         rep["angle_step"] = angle_step
     if max(P.utilization()) > 0.95:
         rep["bodies_relaxed"] = P.relax_bodies()       # too full to treat bodies as obstacles
-    margin = P.auto_margin()
+    from kae.route.constraints import setting
+    margin = float(setting("place_margin", board_path, opts))
+    if margin < 0:
+        margin = P.auto_margin()
+    else:
+        rep["margin_set"] = margin
     P.set_margin(margin)
     # escape bands (kae.place.escape_band): 1 a soft annealer term against parts unrelated to the
     # package, 2 hard occupancy against every part, 0 off
     from . import escape_band as EB
-    from kae.route.constraints import setting
     band_mode = int(setting("escape_band", board_path, opts))
     eb, rep["escape_bands"] = EB.bands(P, board_path, opts, log)
     ef = EB.fanout(P, board_path, opts, log)
@@ -426,10 +436,12 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     final = seed_state
     if anneal:
         t = time.monotonic()
-        kw = dict(w_phys=1.0 if terms is not None else 0.0, order=order)
+        kw = dict(w_phys=1.0 if terms is not None else 0.0, order=order,
+                  w_cong=float(setting("place_w_cong", board_path, opts)))
         kw.update(anneal_args or {})
         if terms is None:
             kw["w_phys"] = 0.0
+        rep["w_cong"] = float(kw.get("w_cong", 0.0) or 0.0)
         # parts named by board silk labels beside their label: by default the kinds validated on
         # the human placements (numbered rows) at a modest weight; anneal_args w_label and
         # label_kinds widen or switch it off (w_label 0)
@@ -477,9 +489,12 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         stage("anneal", t)
         t = time.monotonic()
         cand = ann.st
+        trace("seed", seed_state)
+        trace("anneal", cand)
         if grid_violations(cand):
             rep["legalize"] = legalize(P, cand, time_s=max(3.0, deadline - time.monotonic()), workers=workers,
                                        seed=seed, log=log)
+            trace("legalize", cand)
         stage("legalize", t)
         if not grid_violations(cand):
             # cost of the legal candidate, same weights and normalization as the seed's
@@ -509,6 +524,8 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     if viol and time.monotonic() < deadline + 0.1 * budget:
         rep["legalize_final"] = legalize(P, st, time_s=max(3.0, 0.1 * budget), workers=workers, seed=seed, log=log)
         viol = grid_violations(st)
+    if rep.get("legalize_escalation") or rep.get("legalize_final"):
+        trace("legalize_escalation", st)
     rep["legal_grid"] = not viol
     rep["margin_mm"] = P.margin
     t = time.monotonic()
@@ -524,6 +541,7 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         rep["closed_loop"] = exactmod.close_loop(P, st, time_s=left, log=log)
         rep["exact"] = exact_check(P, st)
         stage("closed_loop", t)
+        trace("closed_loop", st)
     if order:
         # protection-order rules an annealer cut short left broken: the protection part to the
         # nearest clean spot that keeps them, the physics total bounded (kae.place.exact)
@@ -542,6 +560,7 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
             rep["order_fix"] = dict(error=f"{type(e).__name__}: {e}")
         if rep["order_fix"].get("moved"):
             rep["exact"] = exact_check(P, st)
+            trace("order_fix", st)
         stage("order_fix", t)
     if exactmod.silk_on(P):
         # silkscreen where the project makes it an error: a soft pass, legality kept
@@ -561,6 +580,7 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
             rep["silk_fix"] = dict(error=f"{type(e).__name__}: {e}")
         if rep["silk_fix"].get("moved"):
             rep["exact"] = exact_check(P, st)
+            trace("silk_fix", st)
         stage("silk_fix", t)
     rep.update(grid_verdict(P, st, rep["exact"]))
     rep["hpwl"] = round(st.hpwl(), 2)
@@ -578,6 +598,23 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     poses.update(mated)          # held fixed here, but movable in the file: write them too
     res.poses = poses
     return res
+
+
+def physics_trace(rep, name, terms, poses):
+    """Append the physics after stage `name` to rep['physics_trace']: the linear total and the
+    utilization summed per structure kind (decap loops, crystals, ...). Never raises: a
+    diagnostic must not cost the placement."""
+    try:
+        rows = terms.breakdown(poses)
+        kinds = {}
+        for r in rows:
+            u = float(r.get("confidence", 1.0)) * float(r.get("util", r.get("utilization", 0.0)))
+            k = str(r.get("kind"))
+            kinds[k] = round(kinds.get(k, 0.0) + u, 4)
+        rep.setdefault("physics_trace", []).append(
+            dict(stage=name, total_linear=round(sum(kinds.values()), 4), by_kind=kinds))
+    except Exception as e:      # noqa: BLE001
+        rep.setdefault("physics_trace", []).append(dict(stage=name, error=f"{type(e).__name__}: {e}"))
 
 
 def final_physics(res):

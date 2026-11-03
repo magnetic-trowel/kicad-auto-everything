@@ -313,11 +313,14 @@ def _probe_select(a, board, kw, t0, write):
 def _refresh_physics(res):
     """A KiCad round moved parts: protection order and the physics scorecard again, for the
     board as written; the values place() reported stay as *_pre_drc."""
-    from kae.place.pipeline import final_physics
+    from kae.place.pipeline import final_physics, physics_trace
     for k in ("protection_order", "scorecard"):
         if k in res.report:
             res.report[f"{k}_pre_drc"] = res.report[k]
     final_physics(res)
+    if res.terms is not None:
+        physics_trace(res.report, "kicad_repair", res.terms,
+                      {p.uuid: res.state.pose(p.i) for p in res.problem.parts})
 
 
 def cmd_brief(a):
