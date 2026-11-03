@@ -731,3 +731,16 @@ def test_an_analog_word_alone_or_with_a_control_suffix_is_not_analog():
     for n in ('TEMP_ALERT', 'MIC_EN', 'NTC_EN', 'TEMP'):
         assert r.nets[n].role != 'analog', (n, r.nets[n])
     assert r.nets['ADC_VBAT'].role == 'analog'          # the name with its RC filter
+
+
+def test_zdiff_windows_match_the_interface_docs_they_cite():
+    """docs/topics/rules/interfaces/{usb3-usb4-typec,hdmi-dp,ddr,mipi}.md; vendor conflicts are listed in the basis."""
+    from kae.circuit.roles import ZDIFF, ZDIFF_SRC
+    assert ZDIFF['usb3'] == (90.0, 76.5, 103.5)          # 90 ohm +-15% default; vendor windows do not intersect
+    assert ZDIFF['hdmi'] == (100.0, 90.0, 110.0)         # SLLA414A +-15% intersected with AM57xx 90-110
+    assert ZDIFF['ddr'] == (100.0, 95.0, 105.0)          # SPRABI1D 100 ohm +-5% on DQS and CK
+    assert ZDIFF['mipi'][1:] == (85.0, 100.0)            # Qualcomm 70-100 intersected with TI 85-115
+    for k, (z, lo, hi) in ZDIFF.items():
+        assert lo <= z <= hi and k in ZDIFF_SRC
+    assert 'Qualcomm' in ZDIFF_SRC['mipi'] and 'TI' in ZDIFF_SRC['mipi']
+    assert 'conflict' in ZDIFF_SRC['usb3'] and 'Microchip' in ZDIFF_SRC['usb3']

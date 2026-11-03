@@ -440,16 +440,31 @@ def _class_overrides(evs: list) -> list:
 POLARITY = {'P': 'N', 'N': 'P', '+': '-', '-': '+', 'M': 'P', 'H': 'L', 'L': 'H', 'T': 'C', 'C': 'T', 'A': 'B', 'B': 'A'}
 COMPLEMENTS = (('P', 'N'), ('P', 'M'), ('+', '-'), ('H', 'L'), ('T', 'C'), ('A', 'B'))   # (positive, negative)
 
-ZDIFF = {'usb2': (90.0, 0.15), 'usb3': (90.0, 0.10), 'ethernet_mdi': (100.0, 0.10), 'hdmi': (100.0, 0.10), 'lvds': (100.0, 0.10),
-         'mipi': (100.0, 0.10), 'pcie': (85.0, 0.15), 'sata': (100.0, 0.15), 'serdes': (100.0, 0.10), 'ddr': (100.0, 0.10),
-         'displayport': (100.0, 0.10), 'can': (120.0, 0.10), 'rs485': (120.0, 0.10), 'clock': (100.0, 0.10)}
+# interface -> (Zdiff ohm, window low, window high). Where the cited doc gives vendor windows that conflict, the window is
+# their intersection, or the doc's default when they do not intersect; the alternatives and any conflict are listed in
+# ZDIFF_SRC, which is the brief's `basis` (docs/topics/rules/rule-pack-format.md: conflicts recorded, not silently resolved)
+def _pct(z, tol):
+    return (z, round(z * (1 - tol), 2), round(z * (1 + tol), 2))
+
+
+ZDIFF = {'usb2': _pct(90.0, 0.15), 'usb3': _pct(90.0, 0.15), 'ethernet_mdi': _pct(100.0, 0.10), 'hdmi': (100.0, 90.0, 110.0),
+         'lvds': _pct(100.0, 0.10), 'mipi': (92.5, 85.0, 100.0), 'pcie': _pct(85.0, 0.15), 'sata': _pct(100.0, 0.15),
+         'serdes': _pct(100.0, 0.10), 'ddr': _pct(100.0, 0.05), 'displayport': _pct(100.0, 0.10), 'can': _pct(120.0, 0.10),
+         'rs485': _pct(120.0, 0.10), 'clock': _pct(100.0, 0.10)}
 ZDIFF_SRC = {'usb2': 'docs/topics/rules/interfaces/usb2.md (TI SLLA414A: 90 ohm +-15%)',
-             'usb3': 'docs/topics/rules/interfaces/usb3-usb4-typec.md',
-             'ethernet_mdi': 'docs/topics/rules/interfaces/ethernet.md (TI SNLA387: 100 ohm +-10%)',
-             'hdmi': 'docs/topics/rules/interfaces/hdmi-dp.md', 'displayport': 'docs/topics/rules/interfaces/hdmi-dp.md',
-             'lvds': 'TIA/EIA-644 100 ohm termination [I]', 'mipi': 'docs/topics/rules/interfaces/mipi.md',
+             'usb3': 'docs/topics/rules/interfaces/usb3-usb4-typec.md: default 90 ohm +-15% (SLLA414A, TUSB9261, TUSB1046, SLLU149E). '
+                     'Vendor windows conflict (AM65xx 95 +-5% vs Microchip AN26.2 85 +-5 do not intersect), so the default is '
+                     'kept; alternatives: AM57xx 83.7-96.3, AM65xx 95 +-5%, Microchip 85 +-5, Qualcomm 70-100 ohm. Pick by PHY vendor',
+             'ethernet_mdi': 'docs/topics/rules/interfaces/ethernet.md (TI SNLA387: 100 ohm +-10%; Pulse +-15% is looser)',
+             'hdmi': 'docs/topics/rules/interfaces/hdmi-dp.md: intersection of SLLA414A 100 ohm +-15% and TI AM57xx 90-110 ohm; '
+                     'Intel 100 +-10% [S] agrees',
+             'displayport': 'docs/topics/rules/interfaces/hdmi-dp.md (SLLA414A: 100 ohm +-10%)',
+             'lvds': 'TIA/EIA-644 100 ohm termination [I]',
+             'mipi': 'docs/topics/rules/interfaces/mipi.md: intersection of Qualcomm 70-100 ohm and TI AM62x 85-115 ohm; '
+                     'value is its centre',
              'pcie': 'docs/topics/rules/interfaces/pcie.md (85 ohm CEM add-in)', 'sata': 'docs/topics/rules/interfaces/sata-ufs-sd.md',
-             'serdes': 'generic 100 ohm differential [I]', 'ddr': 'docs/topics/rules/interfaces/ddr.md',
+             'serdes': 'generic 100 ohm differential [I]',
+             'ddr': 'docs/topics/rules/interfaces/ddr.md (TI SPRABI1D: 100 ohm +-5% on DQS and CK pairs)',
              'can': 'docs/topics/rules/interfaces/can-rs485.md (120 ohm cable)', 'rs485': 'docs/topics/rules/interfaces/can-rs485.md (120 ohm cable)',
              'clock': 'differential clock, 100 ohm [I]'}
 

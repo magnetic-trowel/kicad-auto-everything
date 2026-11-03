@@ -309,9 +309,9 @@ def build(board, *, use_sheets: bool = True) -> dict:
         d = {'p': dp.p, 'n': dp.n, 'interface': dp.interface, 'speed': dp.speed, 'confidence': round(dp.confidence, 3),
              'evidence': evidence_json(dp.evidence, 6)}
         if dp.interface in ZDIFF:
-            z, tol = ZDIFF[dp.interface]
+            z, lo, hi = ZDIFF[dp.interface]
             d['budget'] = {'Zdiff': {'value': z, 'unit': 'ohm', 'class': 'E5', 'basis': ZDIFF_SRC[dp.interface],
-                                     'interval': [round(z * (1 - tol), 1), round(z * (1 + tol), 1)]}}
+                                     'interval': [round(lo, 1), round(hi, 1)]}}
         pairs.append(d)
     order = sorted(structures, key=lambda s: (-s['priority'], s['id']))
     placement_order = [{'id': s['id'], 'priority': s['priority'], 'confidence': s['confidence']} for s in order

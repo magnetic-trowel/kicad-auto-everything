@@ -124,3 +124,14 @@ def test_power_mux_group_is_the_controller_uuid_and_or_groups_name_the_rail():
     ps = [s for s in b['structures'] if s['kind'] == 'power_path']
     assert len(ps) == 2 and all(s['group'] == 'uuid-U1' == s['controller'] for s in ps)
     assert 'uuid-U1' not in {u for s in ps for u in s['members_ref'] if u not in s['switches']}
+
+
+def test_diff_pair_budget_uses_the_sourced_window():
+    from circuit_fixtures import R
+    soc = IC('U1', 'SOC', 'Package_BGA:BGA-100', [('A2', 'HDMI_TX0_P', 'HDMI_D0_P', 'output'), ('A3', 'HDMI_TX0_N', 'HDMI_D0_N', 'output'),
+                                                 ('B1', 'VDD', '+1V8', 'power_in'), ('B2', 'VSS', 'GND', 'power_in')])
+    j = fp('J1', 'HDMI_A', 'Connector_Video:HDMI_A_Molex_208658-1001_Horizontal',
+           [('1', 'HDMI_D0_P', 'D0+', 'passive'), ('3', 'HDMI_D0_N', 'D0-', 'passive'), ('2', 'GND', 'GND', 'passive')])
+    b = build(board([soc, j, C('C1', '100nF', '+1V8', 'GND'), R('R1', '10k', '+1V8', 'GND')]))
+    dp = next(d for d in b['diff_pairs'] if d['interface'] == 'hdmi')
+    assert dp['budget']['Zdiff']['interval'] == [90.0, 110.0] and 'AM57xx' in dp['budget']['Zdiff']['basis']
