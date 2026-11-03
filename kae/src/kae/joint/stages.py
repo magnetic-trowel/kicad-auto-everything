@@ -61,9 +61,30 @@ def _project(src_board, dst_board):
             shutil.copy2(s, t)
 
 
+# Every `opts` key the stages read (kae.joint.cli rejects a --set key that neither these, the
+# loop's DEFAULTS, the placer's limits (kae.route.constraints.DEFAULTS) nor bridge.KEY name).
+STAGE_KEYS = frozenset({
+    # set by kae.joint.cli from its flags
+    "keep", "no_physics", "no_modules", "budget_s", "route_parallel", "first_last_mile", "first_blocked",
+    # placer and module stage
+    "writer", "edge_mate", "angle_step", "module_time", "window_module_time", "drop_modules_attempt",
+    # window re-placement and rip-up
+    "replace_time", "replace_margin", "cong_mult", "history_scale", "bump_mm", "legal_mm", "net_mult",
+    "phys_mult", "big_pads", "max_cross",
+    # routing
+    "window_router", "window_route_s", "window_route_max_s", "window_passes", "window_rounds",
+    "window_restart_open", "window_last_mile", "min_route_s", "finish_rounds", "finish_last_mile",
+    "portfolio_routers", "portfolio_first_s", "portfolio_growth",
+    # evaluation
+    "drc_timeout",
+})
+
+
 class KaeStages:
-    """The real stages (see the module docstring). `opts` keys: module_time, route_share,
-    place_share, cong_mult, history_scale, bump_mm, margin, big_pads, max_cross, phys."""
+    """The real stages (see the module docstring). `opts`: the keys in STAGE_KEYS, any
+    kae.route.constraints limit (the placer reads them) and bridge.KEY (any kae.route.bridge
+    option for every bridge call). The window re-placement margin is replace_margin (0.3 mm);
+    the loop's window margin is the loop's own `margin` (loop.DEFAULTS)."""
 
     def __init__(self, input_path, workdir, opts=None, log=_log):
         self.input = Path(input_path).resolve()
@@ -72,6 +93,7 @@ class KaeStages:
         self.opts = dict(opts or {})
         self.log = log
         self.brief = None
+        self.brief_error = None          # why the brief failed (physics then not checked)
         self.terms = None
         self.locked = set()
         self.module_parts = {}
@@ -137,6 +159,7 @@ class KaeStages:
                 self.brief = build(board)
             except Exception as e:
                 self.log(f"brief failed ({type(e).__name__}: {e})")
+                self.brief_error = f"{type(e).__name__}: {e}"
                 self.brief = {"structures": [], "nets": {}, "parts": {}}
             from kae.route.critical_modules import modules_from_brief
             self.module_parts = {m.id: list(m.parts) for m in modules_from_brief(self.brief)}
@@ -398,11 +421,13 @@ class KaeStages:
         W.edit(raw, out, drop_guards=True)
         _project(self.input, out)
         best = rep.get("best") or {}
+        brep = rep.get("best_report") or {}
         new = Layout(board=str(out), poses=dict(lay.poses), crit=set(), owners={}, guards={},
                      status=dict(lay.status), stage=dict(lay.stage), info=dict(lay.info))
         new.info["route"] = dict(seconds=round(time.monotonic() - t0, 1), status="routed", finish=True,
                                  stops=dict(portfolio=rep.get("stop")), router=best.get("router"),
-                                 attempts=len(rep.get("attempts") or []), rank=best.get("rank"))
+                                 attempts=len(rep.get("attempts") or []), rank=best.get("rank"),
+                                 blocked=brep.get("blocked"))
         return new
 
     def route(self, lay, it, seed, time_s, finish=False, nets=None):
@@ -435,12 +460,17 @@ class KaeStages:
             bopts.update({k[len("bridge."):]: v for k, v in self.opts.items() if k.startswith("bridge.")})
             if it > 0 and not finish:
                 # window_router=bridge: the loop's own last mile on the window's nets follows
+                # (and the final board gets the "blocked" diagnosis, not each window)
                 bopts.update(rounds=int(self.opts.get("window_rounds", 3)), passes=int(self.opts.get("window_passes", 16)),
-                             last_mile=False)
+                             last_mile=False, blocked=False)
             if it == 0 and self.opts.get("first_last_mile") is not None:
                 # the first route follows the bridge's default (last mile on since c9c49d6);
                 # --set first_last_mile=0 keeps it comparable to runs made before that
                 bopts.update(last_mile=bool(self.opts["first_last_mile"]))
+            if it == 0 and self.opts.get("first_blocked") is not None:
+                # the bridge's diagnosis of what stays open (kae.route.blocked) is read for the
+                # final board only: when a finishing stage follows, iteration 0 does not spend it
+                bopts.update(blocked=bool(self.opts["first_blocked"]))
             if finish:
                 # the finishing stage: repair rounds until they stop improving, then the last
                 # mile (kae.route.lastmile: grid joins with negotiated rip-up)
@@ -464,8 +494,29 @@ class KaeStages:
         new.info["route"] = dict(seconds=round(time.monotonic() - t0, 1), status=rep.get("status"), guards=len(guards),
                                  finish=finish, stops=route_stops(rep), last_mile=lm,
                                  router_s=(rep.get("router") or {}).get("seconds"),
-                                 errors=fin.get("errors"), unconnected=fin.get("unconnected"))
+                                 errors=fin.get("errors"), unconnected=fin.get("unconnected"),
+                                 blocked=rep.get("blocked"))
         return new
+
+    def diagnose(self, lay, drc_report, it, time_s):
+        """kae.route.blocked on a board (as the bridge runs it on its final board): per open
+        connection the board rule (or kae default), fixed copper or congestion that keeps it
+        open, with the admissible relaxations. `drc_report`: the board's KiCad DRC report
+        (evaluate's). Returns the diagnosis, or dict(error=...)."""
+        from kae.board import pcbnew_io
+        from kae.route import bridge as BR
+        from kae.route import constraints
+        d = self.wd / f"it{it:02d}" / "diagnose"
+        d.mkdir(parents=True, exist_ok=True)
+        deadline = time.monotonic() + max(1.0, float(time_s))
+        try:
+            info = pcbnew_io.export_dsn(lay.board, d / "kicad.dsn")
+            sev = BR.severities(lay.board)
+            plan = constraints.plan(info, lay.board, dict(severities=sev))
+        except Exception as e:  # noqa: BLE001 - a diagnosis never costs the board
+            return dict(error=f"{type(e).__name__}: {e}")
+        return BR.diagnose(lay.board, self.input, self.input, info, plan, drc_report, sev, d, deadline=deadline,
+                           log=self.log)
 
     # ------------------------------------------------------------------ evaluate
     def evaluate(self, lay, it):
@@ -483,12 +534,20 @@ class KaeStages:
         s = D.summary(rep)
         card = Scorecard(unconnected=s["unconnected"], errors=s["errors"], errors_by_type=s["by_type"])
         card.placement_errors = placement_errors(rep)
+        notes = []
         if rep.get("error"):
-            card.unconnected, card.errors, card.note = 10 ** 6, 10 ** 6, "drc failed"
+            # acceptance keeps the sentinel (nothing beats an unchecked board); the report says
+            # "not checked" (Scorecard.to_dict: null)
+            card.unconnected, card.errors = 10 ** 6, 10 ** 6
+            card.checked["drc"] = False
+            notes.append(f"drc failed: {rep['error']}")
         rc = {}
         brief = self.brief
         if brief is None:
             brief = self._ensure_brief(self._load(lay.board))
+        if self.brief_error:
+            card.checked["brief"] = False
+            notes.append(f"brief failed: {self.brief_error}")
         stage = {k: v for k, v in lay.stage.items() if lay.status.get(k) in ("routed", "partial")}
         try:
             if stage:
@@ -506,6 +565,12 @@ class KaeStages:
         except Exception as e:  # noqa: BLE001 - routing results stand without physics
             self.log(f"recheck failed: {type(e).__name__}: {e}")
             rc = {}
+            card.modules, card.method = {}, ""
+            card.checked["physics"] = False
+            notes.append(f"physics not checked: recheck failed ({type(e).__name__}: {e})")
+        if self.brief_error and not card.modules:
+            # no brief: no module is known, so no physics was measured (not "0")
+            card.checked["physics"] = False
         card.flagged = sorted(rc.get("retweak") or [])
         rails = rc.get("rails") or {}
         worst = [v for res in rails.values() if isinstance(res, dict) for v in res.values()
@@ -516,6 +581,7 @@ class KaeStages:
                 card.place_terms = float(self.terms.total(dict(lay.poses)))
             except Exception as e:
                 self.log(f"place terms total failed: {type(e).__name__}: {e}")
+        card.note = "; ".join(notes)
         lay.info["evaluate_s"] = round(time.monotonic() - t0, 1)
         return card, dict(drc=rep, recheck=rc)
 

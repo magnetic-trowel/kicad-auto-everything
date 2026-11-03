@@ -21,7 +21,10 @@ goes to --report FILE; progress goes to stderr. As a kaebench method:
 `--physics-fidelity exact` makes the routed physics (recheck, board_physics, and so the
 accept rule's module values) PEEC (kae.physics.exact); `multi` uses closed forms to search
 and PEEC on each decision's top K and on finished boards; the default `fast` changes nothing.
-Exit status: 0 when an output was written, 2 otherwise.
+Exit status: 0 when an output was written, 2 otherwise. The report's status: "ok"; "partial"
+when a stage raised after OUTPUT was written (the iterations so far, `output_exists`, `error`);
+"error" (nothing written, or an unknown --set key: every key must be one the loop, the stages
+or the placer reads); "no_output".
 """
 from __future__ import annotations
 
@@ -56,6 +59,16 @@ def run(a):
     for kv in a.set or []:
         k, _, v = kv.partition("=")
         opts[k.strip()] = _value(v)
+    bad = sorted(k for k in opts if not _known_key(k))
+    if bad:
+        # a typo would otherwise be ignored silently and the run would not be what was asked
+        rep = dict(status="error", error=f"--set: unknown option(s) {', '.join(bad)} (known: loop.DEFAULTS, "
+                                         f"stages.STAGE_KEYS, kae.route.constraints.DEFAULTS, bridge.KEY)")
+        text = json.dumps(rep)
+        if a.report:
+            Path(a.report).write_text(text + "\n")
+        print(text, flush=True)
+        return 2
     sopts = dict(opts, keep=a.keep, no_physics=a.no_physics, no_modules=a.no_modules, budget_s=a.time)
     sopts.setdefault("route_parallel", a.route_parallel)
     # the finishing stage belongs to the loop: the staged baseline (--max-iters 0) has none
@@ -67,18 +80,27 @@ def run(a):
     # since c9c49d6). --set first_last_mile=1 overrides.
     if lopts["finish"]:
         sopts.setdefault("first_last_mile", False)
+        # the bridge's "blocked" diagnosis is for the final board (loop: rep["final"]["blocked"])
+        sopts.setdefault("first_blocked", False)
     rep = dict(status="error")
+    pre = _mtime(out)
+    loop = None
     try:
         stages = KaeStages(a.input, wd, opts=sopts, log=_log)
         loop = JointLoop(stages, opts={k: v for k, v in lopts.items() if k in _loop_keys()}, log=_log)
         rep = loop.run(out, time_s=a.time, seed=a.seed, start=a.start)
         rep["status"] = "ok" if out.exists() else "no_output"
-        rep["physics_fidelity"] = dict(mode=a.physics_fidelity, k=a.physics_k)
     except Exception as e:
         import traceback
         traceback.print_exc()
-        rep = dict(status="error", error=f"{type(e).__name__}: {e}")
+        # a board already written (the loop saves its incumbent as it goes) is a result: report
+        # "partial" with the iterations so far, not a bare error
+        written = out.exists() and _mtime(out) != pre
+        rep = dict(getattr(loop, "rep", None) or {})
+        rep.update(status="partial" if written else "error", error=f"{type(e).__name__}: {e}",
+                   output_exists=written)
     finally:
+        rep["physics_fidelity"] = dict(mode=a.physics_fidelity, k=a.physics_k)
         if own and not a.keep:
             shutil.rmtree(wd, ignore_errors=True)
         else:
@@ -87,7 +109,22 @@ def run(a):
     if a.report:
         Path(a.report).write_text(text + "\n")
     print(text, flush=True)
-    return 0 if rep.get("status") == "ok" else 2
+    return 0 if rep.get("status") in ("ok", "partial") else 2
+
+
+def _mtime(p):
+    try:
+        return Path(p).stat().st_mtime_ns
+    except OSError:
+        return None
+
+
+def _known_key(k):
+    """A --set key something reads: the loop, the stages, the placer's limits, bridge.KEY."""
+    from kae.route.constraints import DEFAULTS as LIMITS
+
+    from .stages import STAGE_KEYS
+    return k in _loop_keys() or k in STAGE_KEYS or k in LIMITS or (k.startswith("bridge.") and len(k) > 7)
 
 
 def _loop_keys():
@@ -118,7 +155,9 @@ def main(argv=None):
     r.add_argument("--keep", action="store_true", help="keep the work directory")
     r.add_argument("--report")
     r.add_argument("--set", action="append", metavar="KEY=VALUE",
-                   help="loop or stage option (loop.DEFAULTS, stages.KaeStages), JSON values")
+                   help="loop or stage option, JSON values (loop.DEFAULTS, stages.STAGE_KEYS, "
+                        "kae.route.constraints.DEFAULTS, bridge.KEY; unknown keys are an error). "
+                        "margin is the loop's window margin; replace_margin the re-placement's")
     from kae.physics import exact as EX
     EX.add_cli_args(r)                      # --physics-fidelity fast | exact | multi, --physics-k
     a = ap.parse_args(argv)
