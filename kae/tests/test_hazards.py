@@ -1,0 +1,83 @@
+# SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+import json
+
+import pytest
+
+from kae import hazards as H
+
+
+def test_make_validates():
+    h = H.make("short", "block", "electrical", "a short", objects=["GND", None, ""], evidence=dict(n=1), fix="move")
+    assert h == dict(code="short", severity="block", category="electrical", message="a short", objects=["GND"],
+                     evidence=dict(n=1), fix="move")
+    with pytest.raises(ValueError):
+        H.make("x", "error", "electrical", "m")
+    with pytest.raises(ValueError):
+        H.make("x", "warn", "elec", "m")
+
+
+def test_normalize_hand_written():
+    h = H.normalize(dict(code="c", severity="fatal", category="?", objects="U1"))
+    assert h["severity"] == "warn" and h["category"] == "data" and h["objects"] == ["U1"]
+    assert h["evidence"]["severity_given"] == "fatal"
+    assert H.normalize(dict(severity="block")) is None
+
+
+def test_dedupe_keeps_most_severe_and_sources():
+    a = dict(H.make("c", "warn", "data", "m", objects=["B", "A"]), source="x")
+    b = dict(H.make("c", "block", "data", "m", objects=["A", "B"]), source="y")
+    out = H.dedupe([a, b, H.make("c", "warn", "data", "m", objects=["C"])])
+    assert len(out) == 2
+    assert out[0]["severity"] == "block" and out[0]["sources"] == ["y", "x"]
+
+
+def test_sort_and_cap():
+    es = [H.make("w", "warn", "data", "m", objects=[str(i)]) for i in range(20)]
+    es += [H.make("b", "block", "electrical", "m", objects=[str(i)]) for i in range(3)]
+    es += [H.make("i", "info", "data", "m")]
+    shown, omitted = H.cap(es, max_entries=6, max_per_code=4)
+    assert [h["code"] for h in shown[:3]] == ["b"] * 3
+    assert len(shown) == 6 and omitted == dict(w=17, i=1)
+
+
+def test_cap_never_drops_block_for_space():
+    es = [H.make(f"b{i}", "block", "electrical", "m") for i in range(5)]
+    shown, omitted = H.cap(es, max_entries=2)
+    assert len(shown) == 5 and not omitted
+
+
+def test_compact_truncates_with_counts():
+    h = H.make("c", "warn", "data", "x" * 1000, objects=[f"N{i}" for i in range(30)])
+    shown, _ = H.cap([h])
+    assert len(shown[0]["message"]) == H.MAX_MESSAGE and shown[0]["objects_more"] == 30 - H.MAX_OBJECTS
+
+
+def test_finalize_hoists_nested_and_derives_flags():
+    rep = dict(status="ok",
+               critical=dict(hazards=[H.make("a", "warn", "data", "m")],
+                             modules=[dict(flags=[dict(flag="rail_max_cap", hop=0, net="+12V", I_A=5.0,
+                                                       ipc_mm=4.1, cap_mm=3.0)])]),
+               iterations=[dict(hazards=[H.make("a", "warn", "data", "m")]),
+                           dict(hazards=[H.make("s", "block", "electrical", "short", objects=["GND", "+5V"])])],
+               place=dict(dru_rejected="unknown token", bodies_relaxed=["J1", "J2"]),
+               hazards=[H.make("top", "info", "data", "m")])
+    H.finalize(rep)
+    assert list(rep)[-2:] == ["hazards", "hazard_summary"]
+    codes = [h["code"] for h in rep["hazards"]]
+    assert codes[0] == "s"
+    assert sorted(codes) == sorted(["s", "a", "rail_max_cap", "dru_rejected", "bodies_relaxed", "top"])
+    assert "hazards" not in rep["critical"] and "hazards" not in rep["iterations"][0]
+    s = rep["hazard_summary"]
+    assert s["blocked"] and s["block"] == 1 and s["warn"] == 4 and s["info"] == 1 and s["total"] == 6
+    assert s["block_codes"] == dict(s=1)
+    a = next(h for h in rep["hazards"] if h["code"] == "a")
+    assert a["sources"] == ["critical", "iterations[0]"]
+    json.dumps(rep)
+    H.finalize(rep)                       # idempotent
+    assert rep["hazard_summary"]["total"] == 6
+
+
+def test_finalize_empty():
+    rep = H.finalize(dict(status="ok"))
+    assert rep["hazards"] == [] and rep["hazard_summary"]["blocked"] is False
