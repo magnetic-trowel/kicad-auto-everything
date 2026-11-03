@@ -264,11 +264,19 @@ class Policy:
                                     f"on the routed board.",
                             objects=[t["id"]], evidence=dict(term=t["id"], obs=t["obs"]),
                             fix="Evaluate the routed board (kae.excite.evaluate, then kae.intent) before using it."))
+        worst = {}                       # one hazard per (net, term): its hop that needs the most copper
         for c in self.capped:
+            k = (c["net"], c["term"])
+            if k not in worst or c["w_need_mm"] > worst[k]["w_need_mm"]:
+                worst[k] = dict(c, hops=worst.get(k, {}).get("hops", 0) + 1)
+            else:
+                worst[k]["hops"] += 1
+        for c in worst.values():
             hard = c["tier"] == "hard"
             out.append(dict(code="heating_width_capped", severity="block" if hard else "warn", category="thermal",
                             message=f"{c['net']} needs {c['w_need_mm']:g} mm for {c['I_A']:g} A at {c['dT_K']:g} K "
-                                    f"rise ({c['term']}), but its width is capped at {c['w_cap_mm']:g} mm.",
+                                    f"rise ({c['term']}), but its width is capped at {c['w_cap_mm']:g} mm "
+                                    f"({c['hops']} hop{'s' if c['hops'] > 1 else ''}).",
                             objects=[c["net"], c["term"]], evidence=dict(c, basis="IPC-2221"),
                             fix="Raise the net class's or the route.width.max_mm knob's maximum width, use a "
                                 "pour or a second layer, or relax the heating term."))

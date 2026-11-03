@@ -413,9 +413,11 @@ def test_a_capped_heating_width_is_a_hazard():
             t["rate"] = "1 mW_eq/K"
         p = IR.Policy({"terms": [t]})
         w, _ = p.width("+12V", [5.0] * 3, 0.035, 0.2, ladder, 0.2, 0.5)
+        p.width("+12V", [2.0] * 3, 0.035, 0.2, ladder, 0.2, 0.5)          # a second hop: one hazard per net
         assert w == 0.5
         hz = [h for h in p.hazards() if h["code"] == "heating_width_capped"]
-        assert len(hz) == 1 and hz[0]["severity"] == sev and hz[0]["evidence"]["w_need_mm"] > 0.5
+        assert len(hz) == 1 and hz[0]["severity"] == sev and hz[0]["evidence"]["hops"] == 2
+        assert hz[0]["evidence"]["I_A"] == 5.0
 
 
 def test_a_defaulted_area_price_is_reported():
