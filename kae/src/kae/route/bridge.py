@@ -71,6 +71,8 @@ DEFAULT_OPTS = dict(
     pad_shapes="kicad",      # pin shapes in the DSN: "kicad" (KiCad's export: rounded corners and arcs as
                              # chords inside the outline, up to 4 um at r 0.25 mm, 10 um on custom pads) or
                              # "outside" (polygons that contain the pad's copper, translate.circumscribe_pins)
+    power_copper=False,      # after repair: kae.route.power_copper (widen rails and grounds into free space,
+                             # ground vias at decap/IC pads, stitch pours), kept only if DRC is no worse
 )
 
 
@@ -229,6 +231,10 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             staged = drc.stage_board(output_path, input_path, wd / "drc")
             rep = drc.run(staged, wd / "drc" / "drc.json", timeout=max(10, left() - 5))
             report["drc"] = drc.summary(rep)
+        if opts.get("power_copper") and left() > 60:
+            from . import power_copper
+            report["power_copper"] = power_copper.hook(output_path, input_path, wd / "power_copper",
+                                                       timeout=max(30, left() - 10), log=log)
         if report.get("blocked_packages"):
             # packages no routing can escape under the board's rules (escape.certificate), in front
             # of the per-connection diagnosis

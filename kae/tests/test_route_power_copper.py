@@ -1,0 +1,121 @@
+# SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""The pure rules of kae.route.power_copper: width choice, spacing, runs, via candidates, net classes."""
+import math
+
+import pytest
+from shapely.geometry import Point, box
+
+from kae.route import power_copper as pc
+
+
+def test_ipc_width_monotone_and_known_point():
+    # IPC-2221, 1 A, 10 K, 1 oz external: about 0.30 mm (12 mil)
+    assert 0.27 < pc.ipc_width(1.0) < 0.33
+    assert pc.ipc_width(2.0) > pc.ipc_width(1.0)
+    assert pc.ipc_width(1.0, external=False) > pc.ipc_width(1.0)
+    assert pc.ipc_width(0.0) == 0.0
+
+
+def test_width_ladder_never_narrows():
+    assert pc.width_ladder(0.25, 1.0) == [1.0, 0.8, 0.6, 0.5, 0.4, 0.3]
+    assert pc.width_ladder(0.5, 1.0) == [1.0, 0.8, 0.6]
+    assert pc.width_ladder(0.25, 0.55) == [0.5, 0.4, 0.3]
+    assert pc.width_ladder(1.2, 1.0) == []          # already wider than the cap: left alone
+    assert pc.width_ladder(1.0, 1.0) == []
+
+
+def test_victim_gap_from_crosstalk_budget():
+    # K = 1/(1+(D/h)^2): K 5% at h 0.2 mm -> D = 0.2*sqrt(19) = 0.87 mm
+    assert pc.victim_gap(0.2, 0.05, 0.0, 10.0) == pytest.approx(0.2 * math.sqrt(19))
+    k = 1.0 / (1.0 + (pc.victim_gap(0.3, 0.02, 0, 10) / 0.3) ** 2)
+    assert k == pytest.approx(0.02)
+    assert pc.victim_gap(1.5, 0.05, 0.5, 2.0) == 2.0       # 2-layer board: the cap
+    assert pc.victim_gap(0.01, 0.05, 0.5, 2.0) == 0.5      # never below the floor
+
+
+def test_signal_gap_beyond_clearance():
+    assert pc.signal_gap(0.2, 0.0) == pytest.approx(0.4)    # pads: twice the clearance
+    assert pc.signal_gap(0.15, 0.25) == pytest.approx(0.5)  # 3W centre to centre: 2x the signal's width
+    assert pc.signal_gap(0.3, 0.1, clr_mult=1.0, w_mult=0.0) == pytest.approx(0.3)
+
+
+def test_runs_take_minimum_and_merge_short():
+    xs = [i * 0.1 for i in range(31)]                       # 3 mm track
+    w = [1.0] * 31
+    assert pc.runs(w, xs, 0.25, 1.0) == [(0.0, pytest.approx(3.0), 1.0)]
+    # a 0.3 mm pinch in the middle: three runs, the pinch at the original width... widened
+    # neighbours are 1.4 mm long, so they stay; the pinch is kept narrow
+    w2 = [1.0] * 14 + [0.25] * 3 + [1.0] * 14
+    r = pc.runs(w2, xs, 0.25, 1.0)
+    assert [x[2] for x in r] == [1.0, 0.25, 1.0]
+    assert r[0][0] == 0.0 and r[-1][1] == pytest.approx(3.0)
+    for (a0, a1, _), (b0, b1, _) in zip(r, r[1:]):
+        assert a1 == pytest.approx(b0)                      # pieces join end to end
+    # a short wide run between narrow ones is lowered, never kept wider than its samples
+    w3 = [0.25] * 10 + [0.8] * 3 + [0.25] * 18
+    r3 = pc.runs(w3, xs, 0.25, 1.0)
+    assert all(x[2] == 0.25 for x in r3)
+    # every run is at most the minimum width of the samples it covers
+    w4 = [0.6] * 12 + [0.4] * 12 + [1.0] * 7
+    for x0, x1, wr in pc.runs(w4, xs, 0.25, 1.0):
+        cov = [wi for xi, wi in zip(xs, w4) if x0 - 1e-9 <= xi <= x1 + 1e-9]
+        assert wr <= min(cov) + 1e-9
+
+
+def test_runs_short_track_widened_whole():
+    xs = [0.0, 0.1, 0.2, 0.3]
+    assert pc.runs([0.6] * 4, xs, 0.25, 1.0) == [(0.0, 0.3, 0.6)]
+
+
+def test_ring_candidates_outside_pad_within_reach():
+    pad = box(-0.5, -0.3, 0.5, 0.3)
+    rv = 0.3
+    c = pc.ring_candidates(pad, rv, 1.0)
+    assert c, "no candidates"
+    ds = [d for d, _, _ in c]
+    assert ds == sorted(ds)                                  # nearest first
+    for d, x, y in c:
+        p = Point(x, y)
+        assert p.distance(pad) >= rv - 1e-6                  # the via clears the pad
+        assert p.distance(pad) <= 1.0 + rv + 1e-6            # within reach of the pad edge
+
+
+def test_classify_switch_nodes_never_power():
+    brief = dict(
+        nets={"+3V3": dict(role="rail"), "GND": dict(role="ground"), "SW": dict(role="switch_node"),
+              "XIN": dict(role="clock"), "FB": dict(role="signal"), "D0": dict(role="signal"),
+              "VSW": dict(role="rail")},
+        structures=[dict(kind="victim", nets=["FB"]), dict(kind="commutation_cell", sw="VSW")])
+    power, ground, switch, victims = pc.classify(brief, ["+3V3", "GND", "SW", "XIN", "FB", "D0", "VSW"])
+    assert power == {"+3V3"}
+    assert ground == {"GND"}
+    assert {"SW", "VSW"} <= switch
+    assert victims == {"XIN", "FB"}
+
+
+def test_net_currents_from_operating_facts():
+    op = dict(parts={"U1": dict(I_A=[0.01, 0.2], I_sustained_A=0.05), "U2": dict(I_sustained_A=0.3),
+                     "R1": dict(I_A=[0.0, 0.0])})
+    nets = {"U1": {"+3V3", "GND", "SDA"}, "U2": {"+5V", "GND"}, "R1": {"+3V3", "X"}}
+    cur = pc.net_currents(op, nets, {"+3V3", "+5V"}, {"GND"})
+    assert cur["+3V3"] == pytest.approx(0.2)        # upper end of I_A
+    assert cur["+5V"] == pytest.approx(0.3)         # I_sustained_A when no I_A
+    assert cur["GND"] == pytest.approx(0.5)         # every powered part's return
+    assert "SDA" not in cur
+
+
+def test_width_cap_grows_with_current_only():
+    assert pc.width_cap(1.0, 0.1) == 1.0            # small currents: the free-space default
+    assert pc.width_cap(1.0, None) == 1.0
+    w = pc.width_cap(1.0, 3.0)                      # 9 A design current: IPC asks for more
+    assert w == pytest.approx(min(3.0, pc.ipc_width(9.0)))
+    assert w > 1.0
+    assert pc.width_cap(1.0, 100.0) == 3.0          # capped
+
+
+def test_runs_short_pinch_between_wider_terminates():
+    xs = [i * 0.1 for i in range(31)]
+    w = [1.0] * 14 + [0.6] * 3 + [1.0] * 14             # a short 0.6 pinch, wider than the original
+    r = pc.runs(w, xs, 0.25, 1.0)
+    assert [x[2] for x in r] == [1.0, 0.6, 1.0]
