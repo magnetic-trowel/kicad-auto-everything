@@ -44,21 +44,23 @@ ROTS = (0.0, 90.0, 180.0, 270.0)
 COURTYARD_EXCESS = 0.25   # mm around pads for footprints that draw no courtyard
 GRID_LADDER = (0.025, 0.05, 0.1, 0.2, 0.25)
 EPS = 1e-6
-# Placement legality profile (kae-exact-legality.md, "Severities"). "strict" (default): these
-# checks are errors whatever the board's project says; a part that collides, sits on another net's copper,
-# crowds the board edge or enters a rule area is a defect on any board (DFM-01/02 in
-# dfm-fab-limits.md). Per-object waivers still work: custom .kicad_dru rules, KiCad's own
-# exemptions (castellated and edge-connector pads at the edge). "board": the project's
-# severities decide, as before (an A/B arm).
+# Placement legality profile (kae-exact-legality.md, "Severities"). FIXED_ERROR_CHECKS are errors
+# whatever the board's project says: a part that collides, sits on another net's copper, crowds
+# the board edge or enters a rule area is a defect on any board (DFM-01/02 in dfm-fab-limits.md).
+# Per-object waivers still work: custom .kicad_dru rules, KiCad's own exemptions (castellated and
+# edge-connector pads at the edge), violations inside one footprint.
+#   "level_c" (default): on a project that waives courtyards_overlap, courtyards are kept at
+#     IPC-7351 density Level C instead of as drawn: each is taken in by Level B's excess minus
+#     Level C's (0.25 - 0.10 mm), so neighbours' margins may overlap (the human layouts of such
+#     boards do: half their courtyard overlaps are < 10% of the smaller courtyard) but no part
+#     sits on or under another. On every other project it is the same as "strict". KiCad cannot
+#     check partial overlap (it skips a negative courtyard_clearance), so the scorer's
+#     legal_strict flags those margins; each such placement carries a warn hazard.
+#   "strict": drawn courtyards everywhere (a dense waiving board may then not fit: git4dcc d24).
+#   "board": the project's severities decide, as before.
 FIXED_ERROR_CHECKS = ("courtyards_overlap", "copper_edge_clearance", "items_not_allowed", "clearance",
                       "shorting_items", "hole_clearance")
-PLACE_SEVERITY = "strict"
-# "level_c": as strict, but on a project that waives courtyards_overlap courtyards are kept at
-# IPC-7351 density Level C instead of as drawn: each courtyard is taken in by Level B's excess minus Level
-# C's (0.25 - 0.10 mm, dfm-fab-limits.md), so neighbours' margins may overlap (the human layouts
-# of such boards do: half their KiCad courtyard errors overlap < 10% of the smaller courtyard)
-# but no part sits on or under another. KiCad cannot check that (a negative courtyard_clearance
-# is skipped), so the scorer's legal_strict still flags those overlaps; an A/B arm.
+PLACE_SEVERITY = "level_c"
 COURTYARD_LEVEL_C_SHRINK = 0.25 - 0.10
 # pads KiCad leaves out of the copper-to-edge check (drc_test_provider_edge_clearance.cpp):
 # castellated pads and edge-connector ("connect") pads
@@ -578,8 +580,9 @@ class Problem:
         that carry Edge.Cuts, whose place on the board the task does not tell).
         angle_step: also offer every multiple of this many degrees to parts that may turn
         freely (not heatsink-mount packages); the right angles stay the first rotations.
-        severity: 'strict' (FIXED_ERROR_CHECKS are errors whatever the project says), 'level_c'
-        (the same with courtyards at IPC Level C where the project waives them) or 'board' (the
+        severity: 'level_c' (FIXED_ERROR_CHECKS are errors whatever the project says, with
+        courtyards at IPC Level C where the project waives them), 'strict' (drawn courtyards
+        everywhere) or 'board' (the
         project's severities); None: the project's KAE_PLACE_SEVERITY text variable, else the
         KAE_PLACE_SEVERITY environment variable, else PLACE_SEVERITY."""
         P = cls()
@@ -612,7 +615,7 @@ class Problem:
         """DRC rule severities of the board's project (kae.board Rules.severities, from the
         .kicad_pro). In the 'board' mode a check the project sets to 'warning' or 'ignore' is no
         error, so legality does not need it (courtyards_overlap: ignore lets courtyards overlap
-        and only copper counts). In 'strict' (the default) and 'level_c' FIXED_ERROR_CHECKS stay
+        and only copper counts). In 'level_c' (the default) and 'strict' FIXED_ERROR_CHECKS stay
         errors; `downgraded` lists the ones the project had downgraded (reported as hazards)."""
         r = getattr(board, "rules", None)
         self.severity = dict(getattr(r, "severities", None) or {}) if r is not None else {}
@@ -670,7 +673,7 @@ class Problem:
                                                            courtyard_shrink_mm=self.cy_shrink if shrink else 0.0,
                                                            source="kae.place.problem.FIXED_ERROR_CHECKS; IPC-7351 "
                                                                   "courtyard excess B 0.25 / C 0.10 mm"),
-                                fix=("Re-place with --severity strict (the default) for full courtyards, or "
+                                fix=("Re-place with --severity strict for full courtyards, or "
                                      "--severity board to follow the project (parts may then sit on one another)."
                                      if shrink else
                                      "If the project's waiver is intended (stacked alternates, parts under a "
@@ -682,7 +685,7 @@ class Problem:
                                 message=f"The board's project sets {c} to '{sev}', so kae did not check it: {risk}.",
                                 objects=[c], evidence=dict(check=c, project=sev, used=sev,
                                                            source=".kicad_pro rule_severities"),
-                                fix="Re-place with the strict profile (the default; kae place --severity strict), "
+                                fix="Re-place with the default profile (kae place --severity level_c or strict), "
                                     "or confirm every such case is intended."))
         return out
 

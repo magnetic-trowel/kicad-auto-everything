@@ -8,9 +8,10 @@
 # only in two kae place flags, at one commit:
 #
 #   kae place legality old       --severity board  --relax-bodies auto      (the behaviour before the change)
-#   kae place legality strict    --severity strict --relax-bodies off       (new default)
-#   kae place legality level-c   --severity level_c --relax-bodies off      (courtyards at IPC Level C where waived)
-#   kae place legality escalate  --severity strict --relax-bodies escalate  (bodies freed only when stuck)
+#   kae place legality strict    --severity strict --relax-bodies off       (drawn courtyards everywhere)
+#   kae place legality level-c   --severity level_c --relax-bodies off      (new default: courtyards at IPC Level C
+#                                                                            where the project waives them)
+#   kae place legality escalate  --severity level_c --relax-bodies escalate (bodies freed only when stuck)
 #
 # Boards (experiments/):
 #   legality-ab.boards.txt          113: every merit-500 board whose project downgrades a strict check (26)
@@ -38,7 +39,7 @@ arm() {  # NAME SEVERITY RELAX
 arm "kae place legality old" board auto
 arm "kae place legality strict" strict off
 arm "kae place legality level-c" level_c off
-arm "kae place legality escalate" strict escalate
+arm "kae place legality escalate" level_c escalate
 cat tools/kaeres/experiments/legality-ab.boards.txt tools/kaeres/experiments/legality-ab-relax.boards.txt \
     tools/kaeres/experiments/legality-ab-control.boards.txt | sort -u > /tmp/legality-ab.$$.txt
 for kind in place place-fixed; do

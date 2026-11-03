@@ -376,10 +376,10 @@ def main(argv=None):
     sp.add_argument("--fix", default="", metavar="REF[,REF...]",
                     help="keep these parts at their input pose (fixed obstacles, as locked parts)")
     sp.add_argument("--severity", default=None, choices=("strict", "level_c", "board"),
-                    help="placement legality: 'strict' (default) keeps courtyards, copper-to-edge, rule areas, "
-                         "clearance, shorts and hole clearance errors whatever the project says; 'level_c' the "
-                         "same with courtyards at IPC Level C where the project waives them; 'board' follows "
-                         "the project's severities (also: the KAE_PLACE_SEVERITY text variable)")
+                    help="placement legality: 'level_c' (default) keeps courtyards, copper-to-edge, rule areas, "
+                         "clearance, shorts and hole clearance errors whatever the project says, with courtyards "
+                         "at IPC Level C (0.15 mm in) where the project waives them; 'strict' drawn courtyards "
+                         "everywhere; 'board' follows the project's severities (also: KAE_PLACE_SEVERITY)")
     sp.add_argument("--relax-bodies", default=None, choices=("off", "escalate", "auto"),
                     help="parts without a courtyard: 'off' (default) keeps their bodies as obstacles; 'escalate' "
                          "frees them to their pads when legalization fails; 'auto' also up front on a board over "

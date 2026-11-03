@@ -176,8 +176,8 @@ def test_project_severity_relaxes_courtyards(tmp_path):
     relaxed = {p.ref: p for p in relaxed_P.parts}
     hz = relaxed_P.severity_hazards()
     assert [h["code"] for h in hz] == ["project_check_ignored"] and hz[0]["objects"] == ["courtyards_overlap"]
-    # level_c keeps courtyards an error on the same project, at IPC Level C, with a warn hazard
-    fixed_P = Problem.build(load(dst), severity="level_c")
+    # level_c (default) keeps courtyards an error on the same project, at IPC Level C, with a warn hazard
+    fixed_P = Problem.build(load(dst))
     assert fixed_P.severity_mode == "level_c" and fixed_P.is_error("courtyards_overlap")
     assert fixed_P.downgraded == {"courtyards_overlap": "ignore"}
     assert [(h["code"], h["severity"]) for h in fixed_P.severity_hazards()] == [("project_check_kept_strict", "warn")]
@@ -187,8 +187,8 @@ def test_project_severity_relaxes_courtyards(tmp_path):
         a, f, r = strict[p.ref].rots[0].own, p.rots[0].own, relaxed[p.ref].rots[0].own
         area = lambda q: (q[2] - q[0]) * (q[3] - q[1])   # noqa: E731
         assert area(r) - 1e-9 <= area(f) <= area(a) + 1e-9
-    # 'strict' (the default) keeps the drawn courtyards, with an info hazard
-    strict_P = Problem.build(load(dst))
+    # 'strict' keeps the drawn courtyards, with an info hazard
+    strict_P = Problem.build(load(dst), severity="strict")
     assert strict_P.severity_mode == "strict" and strict_P.cy_shrink == 0.0 and strict_P.is_error("courtyards_overlap")
     assert [(h["code"], h["severity"]) for h in strict_P.severity_hazards()] == [("project_check_kept_strict", "info")]
     assert all(p.rots[0].own == strict[p.ref].rots[0].own for p in strict_P.parts)
@@ -364,7 +364,7 @@ def test_rule_areas_follow_project_severity_and_copper_layers(tmp_path):
     dst.with_suffix(".kicad_pro").write_text(json.dumps(pro))
     P = Problem.build(_with_owned_keepouts(load(dst)), severity="board")
     assert not P.is_error("items_not_allowed")
-    assert Problem.build(_with_owned_keepouts(load(dst))).is_error("items_not_allowed")   # strict profile
+    assert Problem.build(_with_owned_keepouts(load(dst))).is_error("items_not_allowed")   # default profile
     u2 = next(p for p in P.parts if p.ref == "U2")
     bare = next(p for p in Problem.build(load(dst), severity="board").parts if p.ref == "U2")
     assert u2.rots[0].own_rects == bare.rots[0].own_rects
@@ -523,7 +523,7 @@ def _project_with(tmp_path, severities=None, text_vars=None):
 
 
 def test_strict_profile_keeps_edge_clearance_and_the_project_variable_selects_the_mode(tmp_path):
-    """The strict profile (default) keeps copper-to-edge an error on a project that ignores it;
+    """The default profile keeps copper-to-edge an error on a project that ignores it;
     KAE_PLACE_SEVERITY=board in the project restores the project's severities; an explicit
     argument wins over the variable; an unknown mode is refused."""
     import pytest
