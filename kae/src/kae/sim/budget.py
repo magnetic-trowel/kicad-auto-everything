@@ -109,18 +109,31 @@ def cell_budgets(tests, ctx, jobs=8, timeout=600):
         worst = "hi" if q.op in ("<=", "<") else "lo"       # the requirement holds at every corner iff here
         lp = by_id.get(f"loop:{t.id}")
         l0 = ((lp or {}).get("info", {}).get("loop_nH", {}).get("ideal") or {}).get("typ")
-        per = {}
+        per, unknown = {}, {}
         for v in VARIANTS:
-            points, failed = [], []
+            points, failed, missing, missing_s = [], [], [], []
             for nh in SWEEP_NH:
                 r = by_id[f"{t.id}@L={fmt(nh)}n@{v}"]
                 row = next(x for x in r["requirements"] if x["meas"] == q.meas)
                 if any(p.startswith("ideal") for p in r.get("problems") or []):
                     failed.append(fmt(nh))
-                points.append((nh, (row.get("ideal") or {}).get(worst)))
+                val = (row.get("ideal") or {}).get(worst)
+                if row.get("ideal_status") == "error" or val is None:
+                    # a corner without a value: the extreme over the rest is not the worst corner,
+                    # so the sweep stops here (a missing measurement is a failure)
+                    missing.append(nh)
+                    missing_s.append(fmt(nh))
+                    val = None
+                points.append((nh, val))
             extra, note = _crossing(points, q.op, q.bound)
             if failed:
                 note = "; ".join(x for x in (note, f"corners failed at {', '.join(failed)} nH") if x)
+            # sweep points past the first failing one do not move the crossing
+            ok = (lambda x: x <= q.bound) if q.op in ("<=", "<") else (lambda x: x >= q.bound)
+            stop = next((nh for nh, x in points if x is not None and not ok(x)), SWEEP_NH[-1])
+            missing = [m for m, nh in zip(missing_s, missing) if nh <= stop]
+            if missing:
+                unknown[v] = missing
             per[v] = dict(added_nH=round(extra, 4), note=note, sweep=points)
         if l0 is None:
             b = dict(value=None, status="no reference: the loop test did not run")
@@ -133,6 +146,10 @@ def cell_budgets(tests, ctx, jobs=8, timeout=600):
                 why.append(f"prior bound ({src_kind}): the closed-form allocation stays")
             if floor is not None and cons < floor:
                 why.append(f"below the parts' own {fmt(floor)} nH: the requirement or the stand-in is wrong")
+            for v, nhs in unknown.items():
+                # the budget is the largest addition at which every corner holds: a corner that did
+                # not give its value leaves that unknown (functional-evaluator.md 5a)
+                why.append(f"corners failed in the {v} sweep at {', '.join(nhs)} nH: not every corner known")
             if cons <= 0 or len_ / cons > ROBUST_RATIO:
                 why.append(f"stand-in dependent ({fmt(cons)} to {fmt(len_)} nH): needs the parts' recovery and C_oss data")
             status = "; ".join(why) or "ok"

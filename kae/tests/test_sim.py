@@ -356,6 +356,39 @@ def test_budget_crossing_interpolates_to_the_first_failure():
     assert L == 0 and "converge" in note
 
 
+def test_a_budget_with_a_failed_corner_in_its_sweep_is_not_applied(monkeypatch):
+    """A sweep point where one corner gave no value took the extreme over the others: the crossing
+    was computed without the worst corner and the budget still read 'ok'."""
+    from types import SimpleNamespace as NS
+
+    from kae.sim import budget as BU
+    from kae.sim import evaluate as EV
+    from kae.sim.autotb import LOOP_LINK
+    q = NS(meas="vpk", op="<=", bound=13.0, src="datasheet:x")
+    cell = NS(id="cell:Q1", kind="cell", structure="cell:Q1", unknown=False, requires=[q],
+              lines=[f"{LOOP_LINK} a b 0"])
+    loop = NS(id="loop:cell:Q1", kind="loop", unknown=False)
+
+    def run(missing_at):
+        def evaluate(plan, ctx, jobs=1, timeout=0):
+            out = [dict(id="loop:cell:Q1", info={"loop_nH": {"ideal": {"typ": 1.0}}}, requirements=[], problems=[])]
+            for u in plan[:-1]:
+                nh = float(u.id.split("@L=")[1].split("n")[0])
+                row = dict(meas="vpk", ideal_status="pass", ideal=dict(typ=10 + nh, lo=10 + nh, hi=10 + nh))
+                if nh == missing_at and "conservative" in u.id:
+                    row["ideal_status"] = "error"          # one corner did not converge; the rest read low
+                out.append(dict(id=u.id, requirements=[row], problems=[]))
+            return dict(tests=out)
+        monkeypatch.setattr(EV, "evaluate", evaluate)
+        monkeypatch.setattr(BU, "_floors", lambda ctx, sids: {})
+        return BU.cell_budgets([cell, loop], NS())["cell:Q1"]
+
+    assert run(None)["status"] == "ok" and run(None)["value"] == 4.0    # crossing at 3 nH added
+    b = run(2.0)
+    assert b["status"] != "ok" and "not every corner known" in b["status"]
+    assert run(16.0)["status"] == "ok"            # past the first failure (4 nH) it cannot move the crossing
+
+
 def test_budget_sweep_replaces_the_loop_link_and_reaches_the_placer(tmp_path):
     from kae.physics.place_terms import Terms
     from kae.sim.autotb import LOOP_LINK

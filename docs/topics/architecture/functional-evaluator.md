@@ -110,6 +110,8 @@ A budget is applied only if all three hold; otherwise the closed-form allocation
 2. **It is achievable:** at least the loop inductance of the parts' own internal paths alone (`critical_recheck.cell_body_floor`, the router's model). No layout of those parts can go lower.
 3. **It does not depend on the stand-in:** the sweep runs with a conservative stand-in (body-diode transit 20 ns, C_oss loss 0.05 Ω) and a lenient one (2 ns, 1 Ω). The budget is the conservative value, and is used only if the lenient one is within 3× of it.
 
+A sweep point where any corner gave no value, up to the first failing point, also blocks the budget: the requirement is then not known to hold at every corner.
+
 On the two smoke boards, no budget passes [M]. Both bounds are priors.
 - **Boost:** 1.16 nH, against a floor of 3.12 nH.
 - **Motor driver:** 0.24 to 1.78 nH across the stand-ins, against a floor of 7.1 nH. Its prior, a ring that never reaches the rating at 50 ns edges and so is capped at 50 nH, ignores recovery altogether.
