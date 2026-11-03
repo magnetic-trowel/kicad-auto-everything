@@ -54,9 +54,12 @@ import time
 
 import numpy as np
 
+from kae import materials as MAT
+
 MU = 0.1            # mu0 / 4 pi, nH per mm
 T_CU = 0.035        # mm
-T_PLATE = 0.025     # mm via plating of the PEEC ring (pw_peec.Net.via default)
+T_PLATE = 0.025     # mm via plating of the PEEC ring: pw_peec.Net.via's, which this mirrors to rounding (it only sets
+                    # the filaments' GMD: 20 um moves a via's L by < 0.5 %); DC and heat use kae.materials' 20 um
 RVIA = 0.15         # mm
 N_RING = 6
 GMD = 0.2235
@@ -660,9 +663,9 @@ def routed_utilizations(board, brief=None, terms=None, stage=None, fills="kicad"
 
 
 # ============================================================================ thermal (FV)
-K_CU = 390.0        # W/mK
-K_XY = 0.8          # FR-4 in-plane
-K_Z = 0.3           # FR-4 through-plane
+K_CU = MAT.K_CU             # W/mK
+K_XY = MAT.K_FR4_IN         # FR-4 in-plane
+K_Z = MAT.K_FR4_THROUGH     # FR-4 through-plane
 
 
 def fv_operator(t_cu, gaps, cov, via, dx, h_top=10.0, h_bot=10.0):

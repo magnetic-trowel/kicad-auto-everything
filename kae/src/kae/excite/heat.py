@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from kae import materials as MAT
+
 from .beliefs import Param, corners, intent_value
 
 T_MAX = {"ic": 125.0, "module": 85.0, "diode": 125.0, "transistor": 125.0, "inductor": 125.0,
@@ -94,8 +96,8 @@ def params(bd, dcp, P, intent=None):
                      "ambient air temperature" + ("" if iv else " (unknown: 25-50 C)")))
     air = _rng((((intent or {}).get("requirements") or {}).get("thermal") or {}).get("airflow_h_W_m2K"))
     out.append(Param("heat", "h_W_m2K", *air, "W/m^2/K", "intent", "forced air over the board (the intent file)") if air else
-               Param("heat", "h_W_m2K", 12.0, 8.0, 20.0, "W/m^2/K", "prior",
-                     "still-air cooling of the board's faces, convection plus radiation"))
+               Param("heat", "h_W_m2K", MAT.H_AIR, 8.0, 20.0, "W/m^2/K", "prior",
+                     "still-air cooling of the board's faces, convection plus radiation (kae.materials.H_AIR)"))
     for k, hs in enumerate(heatsinks(intent)):
         why = hs.get("why") or "the intent file"
         if hs.get("part"):
