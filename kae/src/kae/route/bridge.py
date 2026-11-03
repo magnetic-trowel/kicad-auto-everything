@@ -226,7 +226,8 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             final_rep = report["repair"].pop("_report", None)
             if diag_s and final_rep and (report["repair"].get("final") or {}).get("unconnected"):
                 report["blocked"] = diagnose(output_path, input_path, original_input, info, p, final_rep, sev, wd,
-                                             deadline=time.monotonic() + max(5.0, left() - 8), log=log)
+                                             deadline=time.monotonic() + max(5.0, left() - 8), log=log, opts=opts)
+                report.setdefault("hazards", []).extend(report["blocked"].get("hazards") or [])
         elif opts.get("drc", True) and left() > 20:
             staged = drc.stage_board(output_path, input_path, wd / "drc")
             rep = drc.run(staged, wd / "drc" / "drc.json", timeout=max(10, left() - 5))
@@ -236,6 +237,9 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             # of the per-connection diagnosis
             blk = report.setdefault("blocked", {})
             blk["packages"] = report.pop("blocked_packages")
+            # relaxations beyond the fab's standard class are manufacturing hazards (kae.route.fab)
+            for c in blk["packages"]:
+                report.setdefault("hazards", []).extend(c.get("hazards") or [])
             blk["summary"] = [c["summary"] for c in blk["packages"]] + list(blk.get("summary") or [])
         return report
     finally:
@@ -248,7 +252,7 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             report["workdir"] = str(wd)
 
 
-def diagnose(output_path, input_path, original_input, info, plan, drc_report, sev, wd, deadline, log=_log):
+def diagnose(output_path, input_path, original_input, info, plan, drc_report, sev, wd, deadline, log=_log, opts=None):
     """kae.route.blocked on the final board: what makes each open connection impossible."""
     from kae.board.kicad_file import load
     from . import blocked
@@ -258,7 +262,7 @@ def diagnose(output_path, input_path, original_input, info, plan, drc_report, se
         inb = load(original_input)
         ids = {t.uuid for t in inb.tracks} | {v.uuid for v in inb.vias}
         out = blocked.diagnose(staged, info, plan, fills, drc_report, sev=sev, input_ids=ids, deadline=deadline,
-                               log=log)
+                               log=log, opts=opts)
         log(f"blocked: {len(out['blocked'])} connections the rules block, {len(out['congestion'])} congestion, "
             f"{out['undiagnosed']} not diagnosed ({out['seconds']} s)")
         return out
