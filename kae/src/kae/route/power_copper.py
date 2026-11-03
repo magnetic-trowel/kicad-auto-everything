@@ -76,7 +76,7 @@ DEFAULTS = dict(
     neck_via="own",           # ground via at a necked land: "own" (its own pad-to-via track, no wider than the
                               # neck, via edge >= neck_via_gap from the land: IPC-7351's "narrow conductor between
                               # the land area and the via") or "track" (on the land's routed track, neck_len away,
-                              # no second entry; 10 boards: copper loss 0.505 -> 0.748 of the input, not default)
+                              # no second entry; see docs/research/routing/kae-power-copper.md)
     neck_via_gap=0.25,        # mm, via edge to a necked land (Eurocircuits)
     share=True,               # competing power/ground nets share room at w ~ I (False: first come, first served,
                               # highest current first)
@@ -1217,6 +1217,7 @@ def main(argv=None):
                     help="vector copper as track strips (route tasks today) or KiCad zones")
     ap.add_argument("--no-share", action="store_true", help="first come, first served between power/ground nets")
     ap.add_argument("--no-neck", action="store_true", help="no necks at small two-terminal lands")
+    ap.add_argument("--neck-via", choices=("own", "track"), default=DEFAULTS["neck_via"])
     ap.add_argument("--operating", help="operating facts JSON (default: KAE_OPERATING of the .kicad_pro)")
     ap.add_argument("--workdir")
     ap.add_argument("--report")
@@ -1224,7 +1225,7 @@ def main(argv=None):
     a = ap.parse_args(argv)
     rep = run(a.input, a.output, dict(widen=not a.no_widen, vias=not a.no_vias, stitch=not a.no_stitch,
                                       max_width=a.max_width, current_cap=a.current_cap, mode=a.mode,
-                                      into_pours=a.into_pours, neck=not a.no_neck, share=not a.no_share, vector_out=a.vector_out, operating=a.operating), workdir=a.workdir, timeout=a.timeout)
+                                      into_pours=a.into_pours, neck=not a.no_neck, neck_via=a.neck_via, share=not a.no_share, vector_out=a.vector_out, operating=a.operating), workdir=a.workdir, timeout=a.timeout)
     txt = json.dumps(rep, indent=1)
     if a.report:
         Path(a.report).write_text(txt)

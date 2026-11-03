@@ -56,6 +56,71 @@ Same 10 boards, same physics. W*n* = track widening capped at *n* mm (`max_width
 - **Soldering.** Own SMD pads up to 0.6 mm short side (reflow, or process unknown, which is every compiled intent so far) or 1.6 mm (hand soldering) keep grown copper 0.3 mm away. Same-layer pads fed by copper wider than the pad: 0402 class 1/340 before and 2-3/350 after; 0603-1206 class 0/300 -> 41-54/330 (W1-W3); > 1 mm pads 0 -> 12-15.
 - **Gate.** When single-culprit attribution fails, changes are now added back batch by batch (ddmin), and the best no-worse board any check saw is kept. Without this, metro-m7 W2/W3/W20 and magtag V3/V20 fell back to the input.
 
+## Necks at small lands: tombstoning and manufacturability (2026-11-03)
+
+**What the sources say.**
+- **No primary source gives a number for trace width into a chip land.**
+  - IPC-7351 (2005) §3.4.6.2: wide conductors "act as a solder thief" and planes "act as a heat sink"; use "a narrow conductor between the land area and the via". §7.6.1 asks for "a short length of copper conductor" to isolate terminations ([IPC-7351 text](https://dn720001.ca.archive.org/0/items/ipc_20220718/IPC-7351%20eng_text.pdf)) [P].
+  - AVX: "necking of the conductive path at the component will largely eliminate" drawbridging ([Wicker & Maxwell](https://kyocera-avx.com/docs/techinfo/SurfaceMountCapacitors/soldpad.pdf)) [P].
+  - Murata: "bilateral symmetry" ([Murata](https://article.murata.com/article/basics-of-capacitors-6)) [P]. Kyocera: "equal heating to both terminations", 3216 (1206) and smaller ([Kyocera](https://ele.kyocera.com/en/product/capacitor/ceramic/mlcc-handling/mounting-09/)) [P].
+- **Numbers come from assembly houses.**
+  - Eurocircuits: "the track width to each pad of the component the same width", and that width runs "at least 0.25 mm from the pad edge", "longer is better"; vias ≥ 0.25 mm from the pad ([Eurocircuits](https://www.eurocircuits.com/pcb-assembly-guidelines-tombstoning/)) [S].
+  - Suntron (0402): copper exposure on each pad "must be equal (or very close)"; a mask-defined pad on a plane exposes about 65% more area ([Suntron](https://www.globalspec.com/Suntron/ref/FinalTombstone0402Whitepaper.pdf)) [S].
+  - Blog ratios such as "within 50% for the first 1 mm" are unsourced ([AtlasPCB](https://www.atlaspcb.com/blog/pcb-tombstoning-prevention-smt/)).
+- **Process.**
+  - A 192-board reflow DOE saw tombstones on 0402 only, not 0805/1206; nitrogen and fast profiles promote them ([TU Dresden/rehm](https://www.electronics.org/system/files/technical_resource/E10%26S30_02.pdf)) [P].
+  - Vapour phase "can exacerbate 0402 and smaller" tombstoning ([I-Connect007](https://iconnect007.com/article/95304/vapor-phase-technology-is-a-viable-solution-but-carries-a-learning-curve/95307/smt?page=2)) [S]; hot plate's slower ramps resist it (IPC-7351 §7.4.6).
+  - Coilcraft: avoid an iron on 0201/0402 ([Doc362](https://coilcraft.com/pdfs/Doc362_SolderingSMT.pdf)) [P].
+- **Physics.** The surface-tension to gravity torque ratio rises from 2 (1206) to 49 (0201), and what decides the outcome is the wetting lag between the two lands ([hv-and-manufacturing-physics](../../topics/physics/hv-and-manufacturing-physics.md)). A 0.15 × 2 mm neck cut the modelled lag by about 23%, and equal environments remove it.
+
+**The rule** (`neck_rule`, `NECK_TABLE`).
+- **Where it applies.** It covers the lands of two-terminal SMD parts. Within `neck_len` = 0.5 mm of the land edge (twice Eurocircuits' 0.25 mm), grown copper is at most the neck width. Beyond that, a capsule may be wider only where its edge stays 0.5 mm off the land (`neck_half`).
+- **Balance.** Both lands of a part get the same neck. That equalises what this pass adds; the routed track, which enters at its class width, is unchanged.
+- **Neck widths** (our choice, at most the land width; class by land width):
+
+| Process | 0201 | 0402 | 0603-0805 | 1206+ |
+|---|---|---|---|---|
+| reflow (and unknown, the case on every compiled intent so far) | 0.15 | 0.25 | 0.30 | none |
+| vapour phase | 0.15 | 0.25 | 0.30 | 0.50 |
+| hand | 0.15 | 0.25 | 0.30 | 0.50 |
+| wave (glued chips) | none | none | none | none |
+
+- **Current overrides the neck.** A part in series with a rail (fuse, ferrite, shunt, jumper) keeps the IPC-2221 width of 3× its current. It is not necked at all once that width exceeds the land.
+- **Where it does not apply.** A part to ground (a decap) carries no DC and is necked. ICs and parts with more than two terminals are not necked.
+- **Cost.** A neck costs 0.3 mm × 0.5 mm at 35 µm ≈ 0.8 mΩ.
+- **Vias.** Pad-to-via tracks at necked lands are no wider than the neck.
+- **Vector mode.** Grown copper stays 0.5 mm off necked lands.
+
+**Results.** All runs: 10 boards, 3 mm cap, sharing on, final gate.
+- **Variants:**
+  - W3: widening without necks.
+  - N3: widening with necks; ground vias keep their own neck-wide track, via edge ≥ 0.25 mm from the land.
+  - NT3: as N3, but the via sits on the land's routed track, so no second entry.
+  - NV3: vector mode with necks.
+- **Physics** (median after/before):
+
+| Term | W3 | N3 | NT3 | NV3 |
+|---|---|---|---|---|
+| loss.copper (7) | 0.519 | 0.556 | 0.748 | 0.880 |
+| drop.rail (20) | 0.668 | 0.679 | 0.862 | 0.936 |
+| heat.track (7) | 0.567 | 0.567 | 0.567 | 1.0 |
+| supply.peak (35) | 0.864 | 0.867 | 0.918 | 0.915 |
+| emission (4) | 0.906 | 0.921 | 0.926 | 0.935 |
+| pickup (1) | 0.942 | 0.943 | 0.943 | 0.858 |
+
+- **Board totals.** N3 is within 0.03 of W3 on every board, and DRC is never worse than the input.
+- **NT3 is worse:** magtag 0.87 vs 0.37, loss 0.75 vs 0.56. With one via per land and no second entry, the decap ground loops grow and the ground stitching thins out (via-to-pad distance is the decoupling lever in [decoupling-pdn](../../topics/rules/decoupling-pdn.md)). The default is therefore N3.
+- **Tombstone risk** over 260 two-terminal 0201–0805 parts on power/ground nets.
+
+| | before | W3 | N3 | NT3 | NV3 |
+|---|---|---|---|---|---|
+| lands fed by copper wider than the neck | 0 | 164 | 5 | 5 | 4 |
+| parts whose two lands lose heat unequally (copper crossing a circle just outside the land, or a pour, ratio > 2) | 155 | 186 | 151 | 155 | 152 |
+
+  With necks the pass adds no imbalance; the 151–155 are the routing's and the pours' own.
+- **Gate.** A wider (2.5 mm) spatial attribution is tried before ddmin, and the DRC budget is 80. Before this, magtag reverted 88 changes under the budget; now it reverts 6.
+- **Zones switch.** `--mode vector --vector-out zones` writes each vector piece as a KiCad zone: priority above the layer's zones, solid pad connection, thermal reliefs when hand soldered. Necked lands sit outside the zone outline (0.5 mm), so a solid connection never reaches them. On dream117er it wrote 31 zones, and the gate kept 28. Strips stay the default until route tasks may add zones.
+
 ## Verdict
 
 Not finished. Every board's physics total fell and DRC was never worse, but this is ten boards, one routed attempt each, model-measured physics (no lab measurement), and the router never saw the copper. Next: an A/B through the router's final stage (`power_copper=True`) on the 99-board set with cp1/cpk, and a look at the aifryz +BATT term.
