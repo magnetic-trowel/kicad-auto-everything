@@ -415,6 +415,24 @@ RF_NET = rx(r'(^|[^A-Z])(RF|ANT|ANTENNA|RFIN|RFOUT|RF_?IN|RF_?OUT|LNA|PA_?OUT|2G
 RESET_NET = rx(r'(^|[^A-Z])(N?RST|RESET|N?RESET|MCLR|POR|CHIP_?EN|CHIP_?PU|SRST|TRST|RST_?N|RESETN|RESETB|XRES|RUN)([^A-Z0-9]|$)')
 BOOT_NET = rx(r'(^|[^A-Z])(BOOT\d?|BOOTSEL|BOOT_?MODE|BOOT_?\d|USB_?BOOT|FLASH_?MODE|PROG_?MODE|STRAP)([^A-Z]|$)')
 
+# designer net classes are explicit intent, the first evidence layer (docs/topics/llm/net-role-classification.md): a class
+# that names a role is STRONG and can establish it alone; classes that name only a width, a level or a medium-speed bus
+# ('BOLD', '8.4V', 'QSPI') stay MODERATE corroboration
+RAIL_CLASS = rx(r'POWER|PWR|VCC|VDD|\dV|BIGPOWER|HIPOWER|SUPPLY|VBUS|VIN|VOUT|BOLD|RAIL|HV\b|\bV\d|POWER_\d|AMP')
+RAIL_CLASS_EXPLICIT = rx(r'POWER|PWR|VCC|VDD|SUPPLY|VBUS|VIN|VOUT|RAIL')
+GND_CLASS = rx(r'GND|GROUND|VSS|EARTH')
+HS_CLASS = rx(r'DIFF|(^|[^0-9])(85|90|100)_?(R|OHMS?)([^A-Z]|$)|HIGH_?SPEED|(^|[^A-Z])HS([^A-Z]|$)|IMPEDANCE|USB|LVDS|PCIE|HDMI|TMDS|'
+              r'(^|[^A])DDR|DRAM|MGT|SERDES|MIPI')
+HS_CLASS_ANY = rx(r'DIFF|ZDIFF|USB|LVDS|PCIE|MDI|HDMI|DDR|DRAM|SDRAM|RGMII|MGT|OCTOSPI|QSPI|SDIO|HS')
+
+
+def _class_overrides(evs: list) -> list:
+    """Name-layer and pin-count evidence against a role that the designer's net class states: kept for the record at
+    weight 0, since names rank below explicit intent (docs/topics/llm/net-role-classification.md)."""
+    return [ev(e.kind, e.fact + ' (outranked by the net class)', 0.0) if e.weight < 0 and e.kind in ('name', 'count') else e
+            for e in evs]
+
+
 POLARITY = {'P': 'N', 'N': 'P', '+': '-', '-': '+', 'M': 'P', 'H': 'L', 'L': 'H', 'T': 'C', 'C': 'T', 'A': 'B', 'B': 'A'}
 COMPLEMENTS = (('P', 'N'), ('P', 'M'), ('+', '-'), ('H', 'L'), ('T', 'C'), ('A', 'B'))   # (positive, negative)
 
@@ -804,7 +822,11 @@ def _grounds(nl: Netlist, roles: Roles):
             evs.append(ev('pintype', f"{len(pin_in)} ground-named pins typed power_in", 0.5))
         if two_pin_other[net] >= 3:
             evs.append(ev('topology', f"{two_pin_other[net]} two-pin capacitors touch it", min(2.0, 0.2 * two_pin_other[net])))
-        if 'GND' in nv.netclass.upper():
+        cls = nv.netclass.upper()
+        gnd_cls = bool(GND_CLASS.search(cls)) and not RAIL_CLASS_EXPLICIT.search(cls)    # 'PWR_GND' holds rails too
+        if gnd_cls:
+            evs.append(ev('netclass', f"net class '{nv.netclass}' names ground", STRONG))
+        elif 'GND' in cls:
             evs.append(ev('netclass', f"net class '{nv.netclass}'", MODERATE))
         if nl.zone_layers.get(net):
             evs.append(ev('zone', f"pour on {nl.zone_layers[net]} layer(s)", 0.5))
@@ -812,7 +834,7 @@ def _grounds(nl: Netlist, roles: Roles):
             evs.append(ev('name', f"name '{s}' matches a rail pattern", -STRONG))
         if not evs:
             continue
-        name_ev = any(e.kind == 'name' and e.weight > 0 for e in evs)
+        name_ev = any(e.kind == 'name' and e.weight > 0 for e in evs) or gnd_cls
         conf = confidence(evs, prior=-2.5 if name_ev else -4.0)
         if conf >= 0.5:
             cands[net] = (conf, evs)
@@ -1201,7 +1223,10 @@ def _rails(nl: Netlist, roles: Roles):
         if vname and not name and not sigw:
             evs.append(ev('name', f"name '{s}' states a voltage ({vname[1]})", WEAK))
         cls = nv.netclass.upper()
-        if re.search(r'POWER|PWR|VCC|VDD|\dV|BIGPOWER|HIPOWER|SUPPLY|VBUS|VIN|VOUT|BOLD|RAIL|HV\b|\bV\d|POWER_\d|AMP', cls) and 'DEFAULT' != cls:
+        rail_cls = bool(RAIL_CLASS_EXPLICIT.search(cls))
+        if rail_cls:
+            evs.append(ev('netclass', f"net class '{nv.netclass}' names power", STRONG))
+        elif RAIL_CLASS.search(cls) and 'DEFAULT' != cls:
             evs.append(ev('netclass', f"net class '{nv.netclass}'", MODERATE))
         pins = nv.pins
         # a power_out pin makes a source only on an IC or module: library symbols of connectors, fuses
@@ -1289,6 +1314,9 @@ def _rails(nl: Netlist, roles: Roles):
         strong = name or powered or len(caps) >= 2 or bool(nl.zone_layers.get(net)) or (vname is not None and len(caps) >= 1)
         if SENSE_NAME.search(s) and not (p_out or reg_out or ind_out):
             strong = False
+        if rail_cls:
+            strong = True
+            evs = _class_overrides(evs)
         if not strong:
             continue
         conf = confidence(evs, prior=-2.5)
@@ -1744,13 +1772,15 @@ def _pairs(nl: Netlist, roles: Roles):
             base = (pre + '*' + post)
             evs = []
             ok_pol = True
-            if c in 'HL' and not re.search(r'CAN', base):
+            # the interface-keyword gates on H/L, A/B, T/C and P/M names give way to a designer's diff-pair class
+            diff_cls = bool(HS_CLASS.search(nl.nets[n].netclass.upper()) and HS_CLASS.search(nl.nets[m].netclass.upper()))
+            if c in 'HL' and not re.search(r'CAN', base) and not diff_cls:
                 ok_pol = False
-            if c in 'AB' and not re.search(r'485|RS_?$|MODBUS|DMX', base):
+            if c in 'AB' and not re.search(r'485|RS_?$|MODBUS|DMX', base) and not diff_cls:
                 ok_pol = False
-            if c in 'TC' and not re.search(r'CLK|CK', base):
+            if c in 'TC' and not re.search(r'CLK|CK', base) and not diff_cls:
                 ok_pol = False
-            if o == 'M' and not re.search(r'D\*|USB', base):
+            if o == 'M' and not re.search(r'D\*|USB', base) and not diff_cls:
                 ok_pol = False
             if re.search(r'XTAL|XIN|XOUT|OSC_?(IN|OUT)|^X[12]?\*', base):
                 ok_pol = False          # a crystal's two terminals (XTALP/XTALN) are a resonator loop, not a pair
@@ -1774,7 +1804,9 @@ def _pairs(nl: Netlist, roles: Roles):
             else:
                 evs.append(ev('topology', 'no common IC or connector', -1.0))
             cl = (pa.netclass + ' ' + pb.netclass).upper()
-            if re.search(r'DIFF|ZDIFF|90R|100R|85R|USB|LVDS|PCIE|MDI|HDMI|TMDS|CLK DIFF|DDR DIFF|MGT|SERDES', cl):
+            if HS_CLASS.search(pa.netclass.upper()) and HS_CLASS.search(pb.netclass.upper()):
+                evs.append(ev('netclass', f"both nets in net class '{pa.netclass}'", STRONG))
+            elif re.search(r'DIFF|ZDIFF|90R|100R|85R|USB|LVDS|PCIE|MDI|HDMI|TMDS|CLK DIFF|DDR DIFF|MGT|SERDES', cl):
                 evs.append(ev('netclass', f"net class '{pa.netclass}'", MODERATE))
             pfa = {p.fn for p in pa.pins}
             pfb = {p.fn for p in pb.pins}
@@ -1908,14 +1940,23 @@ def _signal_roles(nl: Netlist, roles: Roles):
         # high-speed interfaces and pairs
         evs = []
         iface, speed = name_iface(s)
+        named = bool(iface and speed in ('gbps', 'hs', 'medium'))
         dp = pair_of.get(net)
         if dp and dp.interface not in ('analog',):
             iface, speed = dp.interface if dp.interface != 'unknown' else iface, dp.speed if dp.speed != 'unknown' else speed
             evs.append(ev('topology', f"member of differential pair {dp.p}/{dp.n}", MODERATE))
+        cl = nv.netclass.upper()
+        # a high-speed or diff class makes a net fast by itself, except a sideband line the class sweeps in (HDMI_HPD in 'HDMI')
+        hs_cls = bool(HS_CLASS.search(cl)) and speed != 'ls' and not SIDEBAND.search(s)
+        if hs_cls and not (iface and speed in ('gbps', 'hs', 'medium')):
+            ci, cs = name_iface(cl, skip=('i2c', 'uart', 'debug', 'spi', 'mdio'))
+            iface, speed = (ci, cs) if ci and cs in ('gbps', 'hs', 'medium') else ('unknown', 'hs')
         if iface and speed in ('gbps', 'hs', 'medium'):
-            evs.append(ev('name', f"interface keyword in '{s}' ({iface})", MODERATE))
-            cl = nv.netclass.upper()
-            if re.search(r'DIFF|ZDIFF|USB|LVDS|PCIE|MDI|HDMI|DDR|DRAM|SDRAM|RGMII|MGT|OCTOSPI|QSPI|SDIO|HS', cl):
+            if named:
+                evs.append(ev('name', f"interface keyword in '{s}' ({iface})", MODERATE))
+            if hs_cls:
+                evs.append(ev('netclass', f"net class '{nv.netclass}' names a high-speed or diff-pair class", STRONG))
+            elif HS_CLASS_ANY.search(cl):
                 evs.append(ev('netclass', f"net class '{nv.netclass}'", MODERATE))
             if speed == 'gbps' and not dp and not any(e.kind == 'netclass' for e in evs):
                 # a gigabit name needs a second fact: a pair (above), a net class (above), or a pin function or a

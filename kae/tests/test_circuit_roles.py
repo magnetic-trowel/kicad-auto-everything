@@ -687,3 +687,31 @@ def test_gigabit_names_need_a_second_fact_and_sidebands_are_not_high_speed():
     for n in ('DDR_DQ0', 'HDMI_D0_P', 'HDMI_D0_N', 'PCIE_TX0_P', 'PCIE_TX0_N'):
         assert r.nets[n].role == 'high_speed', (n, r.nets[n])
     assert {(p.p, p.n, p.interface) for p in r.pairs} >= {('HDMI_D0_P', 'HDMI_D0_N', 'hdmi'), ('PCIE_TX0_P', 'PCIE_TX0_N', 'pcie')}
+
+
+def test_designer_net_classes_establish_roles_on_their_own():
+    """Explicit intent is the first layer: a Power, ground, high-speed or diff class sets the role without a name match."""
+    mcu = IC('U1', 'MCU', 'Package_QFP:LQFP-48', [('1', 'PA1', 'SIG_X', 'bidirectional'), ('2', 'PA2', 'SIG_A', 'output'),
+                                                 ('3', 'PA3', 'SIG_B', 'output'), ('4', 'VDD', '+3V3', 'power_in'),
+                                                 ('5', 'VSS', 'GND', 'power_in'), ('6', 'VSSA', 'RET', 'power_in')])
+    ldo = IC('U2', 'LT3045', 'Package_SON:DFN-10', [('1', 'IN', 'LINEAR_HS', 'power_in'), ('2', 'GND', 'GND', 'power_in'),
+                                                   ('3', 'OUT', '+3V3', 'power_out')])
+    conn = fp('J1', 'Conn_01x04', 'Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical',
+              [('1', 'LINEAR_HS', '', 'passive'), ('2', 'SIG_A', '', 'passive'), ('3', 'SIG_B', '', 'passive'), ('4', 'RET', '', 'passive')])
+    parts = [mcu, ldo, conn, C('C1', '10uF', '+3V3', 'GND'), C('C2', '100nF', '+3V3', 'GND')]
+    classes = {'SIG_X': 'HighSpeed_90R', 'LINEAR_HS': 'Power', 'RET': 'GND', 'SIG_A': 'DIFF_100R', 'SIG_B': 'DIFF_100R'}
+    nl, r = roles_of(parts, netclasses=classes)
+    assert r.nets['SIG_X'].role == 'high_speed', r.nets['SIG_X']
+    assert r.nets['LINEAR_HS'].role == 'rail', r.nets['LINEAR_HS']
+    assert r.nets['RET'].role == 'ground', r.nets.get('RET')
+    assert any({p.p, p.n} == {'SIG_A', 'SIG_B'} for p in r.pairs)
+    # without the classes the names alone decide, and none of these names makes those roles
+    nl, r = roles_of(parts)
+    assert r.nets['SIG_X'].role != 'high_speed' and r.nets['LINEAR_HS'].role != 'rail'
+    assert not any({p.p, p.n} == {'SIG_A', 'SIG_B'} for p in r.pairs)
+
+
+def test_a_mixed_power_and_ground_class_does_not_make_a_rail_a_ground():
+    parts = buck_board()
+    nl, r = roles_of(parts, netclasses={'+3V3': 'PWR_GND', '+12V': 'PWR_GND', 'GND': 'PWR_GND'})
+    assert r.nets['+3V3'].role == 'rail' and r.nets['GND'].role == 'ground'
