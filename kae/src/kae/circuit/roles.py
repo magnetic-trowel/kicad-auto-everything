@@ -354,23 +354,24 @@ CTRL_NET = rx(r'(^|[^A-Z])(FB|VFB|BOOT|BST|BS|EN|ENABLE|COMP|SS|PG|PGOOD|ILIM|RT
 
 # net-name interfaces: (interface, speed, regex on the short name)
 IFACE = [
-    ('usb3', 'gbps', rx(r'SSTX|SSRX|USB3|SS_?TX|SS_?RX|^TX[12][+-PN]|^RX[12][+-PN]|USB_?SS')),
+    ('usb3', 'gbps', rx(r'USB3|(^|[^A-Z])SS_?(TX|RX)|^TX[12][+-PN]|^RX[12][+-PN]|USB_?SS')),
     ('usb2', 'hs', rx(r'USB.*(D[PMN+-]|DP|DM|DN|_P$|_N$|D\+|D-)|^D[+-]$|^USB_?D?[PMN+-]$|^(USB)?D[PMN]\d?$|^U?D[PM]$|^USB\d?_?[PN]$|^D_?[PN]$|'
                       r'HSIC|ULPI|^USB_?DATA[+-]')),
-    ('pcie', 'gbps', rx(r'PCIE|PCI_?E|PE[TR][PN]\d|PE_?[TR]X|PERST|CLKREQ|PCIE_?CLK')),
+    ('pcie', 'gbps', rx(r'PCIE|PCI_?E|(^|[^A-Z])(PE[TR][PN]\d|PE_?[TR]X|PERST|CLKREQ)')),
     ('sata', 'gbps', rx(r'SATA')),
-    ('hdmi', 'gbps', rx(r'HDMI|TMDS|^DDC|_DDC|CEC|HPD')),
-    ('displayport', 'gbps', rx(r'^DP_?(AUX|ML|LANE)|DISPLAYPORT|EDP')),
-    ('mipi', 'gbps', rx(r'MIPI|CSI|DSI')),
+    ('hdmi', 'gbps', rx(r'HDMI|TMDS|(^|[^A-Z])(DDC|CEC|HPD)')),
+    ('displayport', 'gbps', rx(r'^DP_?(AUX|ML|LANE)|DISPLAYPORT|(^|[^A-Z])EDP([^A-Z]|$)')),
+    ('mipi', 'gbps', rx(r'MIPI|(^|[^A-Z])(CSI|DSI)\d*([^A-Z]|$)')),
     ('lvds', 'gbps', rx(r'LVDS|^LV_')),
-    ('serdes', 'gbps', rx(r'SFP|QSFP|MGT|^GT[PXHY]|SERDES|_?TX_?[PN]\d?$|_?RX_?[PN]\d?$|^TX[PN]\d?$|^RX[PN]\d?$|SGMII|XAUI|XFI|GTREF')),
+    ('serdes', 'gbps', rx(r'SFP|(^|[^A-Z])MGT|^GT[PXHY]|SERDES|(^|[^A-Z])[TR]X_?[PN]\d?$|SGMII|XAUI|(^|[^A-Z])XFI|GTREF')),
     ('ethernet_mdi', 'hs', rx(r'MDI|TRD\d?_?[PN+-]|TRX\d?_?[PN+-]|ETH.*(TX|RX|TD|RD)\w*[PN+-]$|^TD_?[PN+-]$|^RD_?[PN+-]$|ETH_?(TX|RX)[+-]|'
                               r'^(TX|RX)[+-]$|MDI\.|^TPI|^TPO')),
     ('rgmii', 'hs', rx(r'RGMII|RMII|^MII|GMII|^E?TXD\d|^E?RXD\d|TX_?EN$|RX_?DV|CRS_?DV|TX_?CLK|RX_?CLK|ETH_?REF_?CLK|RX_?ER|TX_?ER|'
                        r'^ETH_?(TXD|RXD)|ETH_?(TX|RX)_?(EN|DV|CLK)')),
     ('mdio', 'ls', rx(r'MDIO|^MDC$|_MDC$')),
-    ('ddr', 'gbps', rx(r'DDR|DQS|^DQ\d|_DQ\d|DQM|^DM\d|_DM\d$|SDRAM|^MA\d|^BA\d|_BA\d|_A\d{1,2}$|RAS|CAS|ODT|CKE|^CK_?[PN]|DRAM|^WE$|_WE$|'
-                     r'HYPERBUS|HYPERRAM|^HB_')),
+    # tokens anchored at a word edge: unanchored, CAS/CKE/ODT/RAS/_A1/DDR matched CASE_TEMP, PLL_LOCKED, PODT, PHRASE, LED_A1, ADDR0
+    ('ddr', 'gbps', rx(r'(^|[^A-Z])(LP)?DDR|DQS|(^|_)DQ\d|DQM|^DM\d|_DM\d$|SDRAM|^MA\d{1,2}$|(^|_)BA\d$|(^|_)N?(RAS|CAS)(_?N|_?B|#)?$|'
+                     r'(^|_)(ODT|CKE)\d?(_|$)|^CK_?[PN]|DRAM|HYPERBUS|HYPERRAM|^HB_')),
     ('emmc_sd', 'medium', rx(r'SDIO|SDMMC|EMMC|MMC|SD_?(CMD|CLK|DAT|D\d)|SDC\d?_?(CMD|CLK|D\d)|^SD_|_SD_?(CMD|CLK|D\d)|^DAT[0-7]$|^CMD$')),
     ('qspi', 'medium', rx(r'QSPI|OSPI|OCTOSPI|QIO\d|QSPI_?SD|FLASH_?(IO|D)\d|^IO[0-3]$|_SIO\d|QSPI_?S?CLK|QSPI_?SS|OSPI_?')),
     ('spi', 'medium', rx(r'SPI|MOSI|MISO|^SCK|_SCK|SCLK|^SDO$|^SDI$|COPI|CIPO|^SDA$(?!)')),
@@ -383,16 +384,23 @@ IFACE = [
     ('video', 'medium', rx(r'VGA|HSYNC|VSYNC|CVBS|LUMA|CHROMA|^PAL$|^NTSC$|COMPOSITE|^Y_?IN|^C_?IN|VIDEO')),
 ]
 I2C_NAME = rx(r'I2C|IIC|TWI|SMBUS|PMBUS|I3C')
+# the slow sideband of a fast interface: hot-plug, CEC, DDC, PCIe reset and clock request, enables, resets,
+# power-downs, SFP status, Type-C CC/SBU. 'HDMI_HPD' is HDMI, but it is not a gigabit line
+# (docs/topics/llm/net-role-classification.md: "is this net fast?" is not a keyword question)
+SIDEBAND = rx(r'(^|[^A-Z])(HPD|CEC|DDC\w*|PERST\w*|CLKREQ\w*|WAKE\w*|PRSNT\w*|LOS|MOD_?ABS|MOD_?DEF\d?|TX_?FAULT|TX_?DIS(ABLE)?|RS[01]|'
+              r'N?EN|ENABLE|N?RST|RESET\w*|N?RESET|PWDN|PDN|PWR_?DN|SHDN|STBY|N?INT|IRQ|ALERT|SMB\w*|CC\d?|SBU\d?|ID|DET|LED\w*|'
+              r'PG|PGOOD|VREF\w*|VTT\w*|ZQ\d?|W_?DISABLE\w*)(_?N|_?B|#)?\d*([^A-Z0-9]|$)')
 
 
 def name_iface(s: str, skip=()) -> tuple[str | None, str | None]:
     """(interface, speed) from a net name: the first IFACE row that matches, except that an I2C word wins
-    (an 'I2C1_SCLK' is a two-wire bus, not SPI)."""
+    (an 'I2C1_SCLK' is a two-wire bus, not SPI), and a sideband word makes a fast interface's net low speed
+    ('HDMI_HPD', 'PCIE_PERST', 'CSI_EN' -> speed 'ls')."""
     if 'i2c' not in skip and I2C_NAME.search(s):
         return 'i2c', 'ls'
     for name_, sp, r in IFACE:
         if name_ not in skip and r.search(s):
-            return name_, sp
+            return name_, ('ls' if sp != 'ls' and SIDEBAND.search(s) else sp)
     return None, None
 
 
@@ -1805,6 +1813,22 @@ def _pairs(nl: Netlist, roles: Roles):
 
 
 # ------------------------------------------------------------------------------- clocks, high speed, analog, rf, reset, signal
+IFACE_CONN = {'usb3': ('usb',), 'hdmi': ('hdmi',), 'displayport': ('hdmi',), 'serdes': ('sfp', 'ethernet'), 'mipi': ('ffc_fpc',),
+              'lvds': ('ffc_fpc',), 'pcie': ('card', 'board_to_board'), 'sata': (), 'ddr': ()}
+
+
+def _iface_second_fact(roles: Roles, nv, iface: str):
+    """Evidence beyond the net name that a net belongs to a gigabit interface, or None: an IC or module pin whose own
+    function names the interface, or a connector of that interface."""
+    for p in nv.pins:
+        pr = roles.parts[p.ref]
+        if pr.kind in ('ic', 'module') and p.fn and name_iface(p.fn) == (iface, 'gbps'):
+            return ev('pinfunction', f"{iface} pin function {p.label}", MODERATE)
+        if pr.kind == 'connector' and pr.subtype in IFACE_CONN.get(iface, ()):
+            return ev('topology', f"{pr.subtype} connector {p.ref}", MODERATE)
+    return None
+
+
 def _signal_roles(nl: Netlist, roles: Roles):
     g = set(roles.grounds)
     pair_of = {}
@@ -1893,6 +1917,12 @@ def _signal_roles(nl: Netlist, roles: Roles):
             cl = nv.netclass.upper()
             if re.search(r'DIFF|ZDIFF|USB|LVDS|PCIE|MDI|HDMI|DDR|DRAM|SDRAM|RGMII|MGT|OCTOSPI|QSPI|SDIO|HS', cl):
                 evs.append(ev('netclass', f"net class '{nv.netclass}'", MODERATE))
+            if speed == 'gbps' and not dp and not any(e.kind == 'netclass' for e in evs):
+                # a gigabit name needs a second fact: a pair (above), a net class (above), or a pin function or a
+                # connector of that interface; a name alone ('PCIE_3V3', 'ROM_A13') is not a fast net
+                second = _iface_second_fact(roles, nv, iface)
+                evs.append(second or ev('name', f"only the name says {iface}: no pair, net class, {iface} pin function "
+                                                f"or {iface} connector", -1.5))
             if iface == 'usb2' and not any(roles.parts[p.ref].subtype == 'usb' or re.search(r'USB|D[+-PMN]$|DP|DM', p.fn) for p in pins):
                 evs.append(ev('topology', 'no USB connector or USB-named pin on the net', -1.0))
             add('high_speed', iface, evs, prior=-0.5, interface=iface, speed=speed)

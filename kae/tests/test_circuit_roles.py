@@ -646,3 +646,44 @@ def test_a_block_supply_named_after_its_block_stays_a_rail():
              C('C1', '100nF', 'VCC_CLK', 'GND'), C('C2', '10uF', 'VCC_CLK', 'GND')]
     nl, r = roles_of(parts)
     assert 'VCC_CLK' in r.rails
+
+
+# ------------------------------------------------------------------------------- net-role layering (docs/topics/llm/net-role-classification.md)
+def test_interface_keywords_are_anchored_and_sidebands_are_low_speed():
+    from kae.circuit.roles import name_iface
+    for s in ('HDMI_HPD', 'CEC', 'DDC_SCL', 'PCIE_PERST', 'CLKREQ', 'PCIE_CLKREQ_N', 'CSI_EN', 'DSI_RESET', 'MIPI_PWDN', 'SFP_LOS',
+              'USB3_SBU1'):
+        assert name_iface(s)[1] == 'ls', s
+    for s in ('PLL_LOCKED', 'CASE_TEMP', 'PHRASE', 'PODT', 'LED_A1', 'ADDR0', 'ROM_A13', 'CLASS_TX', 'FEEDPWR'):
+        assert name_iface(s)[1] != 'gbps', s
+    assert name_iface('USB_DP') == ('usb2', 'hs') and name_iface('USB_DM') == ('usb2', 'hs')
+    for s, want in (('PCIE_TX0_P', 'pcie'), ('PETP0', 'pcie'), ('DDR_DQ0', 'ddr'), ('DQ5', 'ddr'), ('DDR_CKE', 'ddr'), ('RAS_N', 'ddr'),
+                    ('CKE0', 'ddr'), ('HDMI_D0_P', 'hdmi'), ('TMDS_CLK_N', 'hdmi'), ('CSI0_D1_P', 'mipi'), ('SSTX_P', 'usb3'),
+                    ('LPDDR4_DQS0_T', 'ddr')):
+        assert name_iface(s) == (want, 'gbps'), s
+
+
+def _soc_ddr_hdmi_pcie():
+    soc = IC('U1', 'SOC', 'Package_BGA:BGA-100', [
+        ('A1', 'DDR_DQ0', 'DDR_DQ0', 'bidirectional'), ('A2', 'HDMI_TX0_P', 'HDMI_D0_P', 'output'), ('A3', 'HDMI_TX0_N', 'HDMI_D0_N', 'output'),
+        ('A4', 'PCIE_TX0_P', 'PCIE_TX0_P', 'output'), ('A5', 'PCIE_TX0_N', 'PCIE_TX0_N', 'output'), ('A6', 'GPIO1', 'HDMI_HPD', 'bidirectional'),
+        ('A7', 'GPIO2', 'PLL_LOCKED', 'bidirectional'), ('A8', 'GPIO3', 'PCIE_PERST', 'bidirectional'), ('A9', 'GPIO4', 'ROM_A13', 'bidirectional'),
+        ('B1', 'VDD', '+1V8', 'power_in'), ('B2', 'VSS', 'GND', 'power_in')])
+    ram = IC('U2', 'MT41K256', 'Package_BGA:BGA-96', [('C1', 'DQ0', 'DDR_DQ0', 'bidirectional'), ('C2', 'VDD', '+1V8', 'power_in'),
+                                                      ('C3', 'VSS', 'GND', 'power_in')])
+    hdmi = fp('J1', 'HDMI_A', 'Connector_Video:HDMI_A_Molex_208658-1001_Horizontal',
+              [('1', 'HDMI_D0_P', 'D0+', 'passive'), ('3', 'HDMI_D0_N', 'D0-', 'passive'), ('19', 'HDMI_HPD', 'HPD', 'passive'),
+               ('2', 'GND', 'GND', 'passive')])
+    m2 = fp('J2', 'M.2', 'Connector_PCBEdge:BUS_PCIexpress_x1', [('1', 'PCIE_TX0_P', 'PETp0', 'passive'),
+                                                                    ('2', 'PCIE_TX0_N', 'PETn0', 'passive'),
+                                                                    ('3', 'PCIE_PERST', 'PERST#', 'passive'), ('4', 'GND', 'GND', 'passive')])
+    return [soc, ram, hdmi, m2, C('C1', '100nF', '+1V8', 'GND'), C('C2', '100nF', '+1V8', 'GND')]
+
+
+def test_gigabit_names_need_a_second_fact_and_sidebands_are_not_high_speed():
+    nl, r = roles_of(_soc_ddr_hdmi_pcie())
+    for n in ('HDMI_HPD', 'PLL_LOCKED', 'PCIE_PERST', 'ROM_A13'):
+        assert r.nets[n].role != 'high_speed', (n, r.nets[n])
+    for n in ('DDR_DQ0', 'HDMI_D0_P', 'HDMI_D0_N', 'PCIE_TX0_P', 'PCIE_TX0_N'):
+        assert r.nets[n].role == 'high_speed', (n, r.nets[n])
+    assert {(p.p, p.n, p.interface) for p in r.pairs} >= {('HDMI_D0_P', 'HDMI_D0_N', 'hdmi'), ('PCIE_TX0_P', 'PCIE_TX0_N', 'pcie')}
