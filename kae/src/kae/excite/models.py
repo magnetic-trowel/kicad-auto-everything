@@ -22,6 +22,7 @@ driver resistance, inputs as their pin capacitance, analog inputs also high resi
 """
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass, field
 
@@ -34,8 +35,47 @@ from .circuit import Circuit
 ESL = {"0201": 0.3e-9, "0402": 0.45e-9, "0603": 0.6e-9, "0805": 0.8e-9, "1206": 1.0e-9, "1210": 1.1e-9,
        "1812": 1.3e-9, "2512": 2.0e-9}
 ESL_DEFAULT = 1.0e-9
-ESL_POLARIZED = 4e-9            # electrolytic and tantalum bodies
-ESL_THT = 6e-9
+ESL_THT = 7e-9                  # a through-hole disc or film capacitor: "a small 0.1 uF disc ... as low as 7 nH"
+#                                 (Bogatin, Smith & Sandler, SIJ 2020); Murata: ~10 nH with 10 mm of lead
+# MLCC capacitance under DC bias (docs/research/physics/component-priors.md). Class-2 ceramics lose
+# capacitance with the DC field in their layers (Zednicek, EPCI "High CV MLCC DC/AC bias, ageing:
+# capacitance loss explained", 2019: "proportional to the DC field (V/mm)"). A footprint gives the body,
+# not the layer thickness t; at fixed permittivity C/volume ~ 1/t^2, so the field V/t ~ V sqrt(C/volume)
+# (z, V sqrt(F/mm^3)) for a part that fills its body, as high-value parts do. C(V)/C = 1/(1 + (z/Z0)^P),
+# fitted to vendor bias curves (10 uF X5R 0402/0603/0805 and 100 nF X7R 0402/0603 at 3.3 and 5 V;
+# decoupling-pdn.md: 10 uF 6.3 V 0402 ~ 1.5 uF at 5 V; EPCI: 10 uF 6.3 V 0805 keeps 68-88 % at 3.3 V):
+# within about 0.15 of the curves, which spread 2x between vendors for one nominal part.
+DCB_Z0 = 0.011
+DCB_P = 1.3
+# body width = height of a full chip (mm), for its volume L x W x H with H = W (capped at 2.5 mm)
+CHIP_LW = {"01005": (0.4, 0.2), "0201": (0.6, 0.3), "0402": (1.0, 0.5), "0603": (1.6, 0.8), "0805": (2.0, 1.25),
+           "1206": (3.2, 1.6), "1210": (3.2, 2.5), "1812": (4.5, 3.2), "2220": (5.7, 5.0)}
+CLASS1_MAX_C = 1e-9             # an unmarked ceramic at or below 1 nF is taken as C0G (no bias loss)
+DIELECTRIC_RE = re.compile(r"\b(X5R|X7R|X7S|X7T|X6S|X8R|X8L|Y5V|Z5U|C0G|COG|NP0|NPO|U2J|X5S)\b", re.I)
+# MLCC ESR at self-resonance falls with capacitance (more electrodes in parallel): 10 mOhm x (C/1 uF)^-1/2
+# gives 32 mOhm at 100 nF, 3 mOhm at 10 uF, typical of vendor impedance curves (a class stand-in, stated
+# in the assumptions), clamped to 2 mOhm .. 0.5 Ohm.
+ESR_1UF = 0.01
+# Polarized capacitors (docs/research/physics/component-priors.md), ESL (H) and ESR (Ohm) at 100 kHz:
+# - tantalum chips by EIA case: ESL of molded MnO2 parts from Vishay's tantalum FAQ (doc 40110: A 1.2,
+#   B 1.6, C 2.4, D 2.7, E 2.9, V 2.5 nH); ESR from AVX TAJ maxima at 6.3-16 V (A 3-4, B 2.5-3, C 1-2,
+#   D 0.4-1.1, E 0.9 Ohm), taken near the low end (typicals sit below the maxima). Polymer parts share
+#   the case ESL; ESR 40 mOhm (Vishay polymer guide: 5-200 mOhm; KEMET T520 25-40 mOhm).
+# - SMD aluminium (V-chip) by can diameter: ESL 4 nH (Chemi-Con: "4nH for miniature radial"); ESR from
+#   Panasonic FK impedance at 100 kHz (6.3 mm 0.36, 10 mm 0.08 Ohm).
+# - radial aluminium by can diameter: ESL from TDK B41858 ("8...12.5 mm -> 20 nH; 16 mm -> 26 nH; 18 mm ->
+#   34 nH"), 10 nH below 8 mm (Chemi-Con 4 nH to Vishay's 5-25 nH range); ESR of low-impedance series at
+#   100 kHz (TDK B41858, Panasonic FR: 5 mm 0.3, 6.3 mm 0.13, 8 mm 0.15, 10 mm 0.08 Ohm). A general-purpose
+#   series runs higher. The "47 uF electrolytic ~30 nH" of decoupling-pdn.md is Bogatin's upper bound.
+TANT_CASE = {"A": (1.2e-9, 3.0), "B": (1.6e-9, 2.0), "C": (2.4e-9, 1.0), "D": (2.7e-9, 0.5), "E": (2.9e-9, 0.5),
+             "V": (2.5e-9, 0.5), "W": (2.6e-9, 0.5), "R": (1.2e-9, 4.0), "P": (1.2e-9, 4.0), "T": (1.6e-9, 2.0)}
+TANT_EIA = {"2012": "R", "3216": "A", "3528": "B", "6032": "C", "7343": "D", "7360": "E", "7361": "V"}
+POLYMER_ESR = 0.04
+SMD_ALU = ((4.0, 1.35), (5.0, 0.8), (6.3, 0.36), (8.0, 0.17), (10.0, 0.08), (99.0, 0.05))     # (<= D mm, ESR)
+SMD_ALU_ESL = 4e-9
+RADIAL = ((5.0, 10e-9, 0.3), (6.3, 10e-9, 0.13), (8.0, 20e-9, 0.15), (12.5, 20e-9, 0.08), (16.0, 26e-9, 0.05),
+          (999.0, 34e-9, 0.04))                                                         # (<= D mm, ESL, ESR)
+AXIAL = (20e-9, 0.3)
 PKG_L = 1.0e-9                  # IC pin: bond wire plus lead
 PKG_R = 5e-3
 DIE_C = {"logic": 1e-9, "memory": 5e-9, "mcu": 5e-9, "fpga": 50e-9, "opamp": 20e-12, "regulator_linear": 1e-9,
@@ -187,6 +227,77 @@ def _port_supplies(bd):
             bd.assumptions.append(f"{net}: nothing on the board supplies it but {t}: {what}, returning at {g}")
 
 
+def dielectric(text):
+    """The ceramic dielectric named in a part's text ('C0G' for NP0/COG), or None."""
+    m = DIELECTRIC_RE.search(text or "")
+    if not m:
+        return None
+    d = m.group(1).upper()
+    return "C0G" if d in ("COG", "NP0", "NPO", "U2J") else d
+
+
+def mlcc_bias_factor(C, v_bias, size, diel=None):
+    """(C(V)/C, basis) of a ceramic chip capacitor of nominal C (F) at DC bias v_bias (V), body `size`
+    (imperial code) and dielectric (None: unknown). See DCB_Z0."""
+    if diel == "C0G" or (diel is None and C <= CLASS1_MAX_C):
+        return 1.0, "class 1 (C0G): no DC-bias loss"
+    if not v_bias or v_bias <= 0:
+        return 1.0, "no DC bias known"
+    lw = CHIP_LW.get(size or "", CHIP_LW["0603"])
+    vol = lw[0] * lw[1] * min(lw[1], 2.5)
+    z = v_bias * math.sqrt(C / vol)
+    z0 = DCB_Z0 / (2.0 if diel in ("Y5V", "Z5U") else 1.0)
+    k = 1.0 / (1.0 + (z / z0) ** DCB_P)
+    return k, (f"DC bias {v_bias:g} V on {V.si(C, 'F')} {diel or 'class 2'} {size or '0603 (size unknown)'}: "
+               f"C x {k:.2f} (field proxy V sqrt(C/volume))")
+
+
+def mlcc_esr(C):
+    return min(max(ESR_1UF * (C / 1e-6) ** -0.5, 2e-3), 0.5)
+
+
+def polar_model(pkg, text):
+    """(ESL H, ESR Ohm, basis) of a polarized capacitor from its footprint and text (see TANT_CASE)."""
+    t = f"{pkg.text} {text}"
+    poly = re.search(r"polymer|POSCAP|SP-?Cap|OS-?CON|T52\d|T53\d|TPE|TCJ|NOJ|PolyTan", t, re.I)
+    if re.search(r"Tantal|CP_Tant|CP_EIA|TAJ|T491|T52\d|T53\d|TPS[A-Z]|293D|TCJ|NOJ|Case[-_][A-EVWRPT]\b", t, re.I) or \
+            (poly and not re.search(r"Elec|Radial|D\d", t)):
+        m = re.search(r"(?:Case|Kemet|AVX)[-_]([A-EVWRPT])\b", t)
+        e = re.search(r"EIA[-_]?(\d{4})", t)
+        case = m.group(1) if m else TANT_EIA.get(e.group(1)) if e else None
+        esl, esr = TANT_CASE.get(case or "B")
+        if poly:
+            esr = POLYMER_ESR
+        return esl, esr, (f"{'polymer' if poly else 'MnO2 tantalum'} chip, case {case or 'B (unknown)'}: "
+                          f"ESL {esl * 1e9:.2g} nH, ESR {esr * 1e3:.3g} mOhm")
+    d = re.search(r"(?:D|_)(\d+(?:\.\d+)?)(?:mm)?(?:_|x)", pkg.text)
+    dia = float(d.group(1)) if d else None
+    dia = dia if dia and 3.0 <= dia <= 40.0 else None
+    if re.search(r"Axial", t, re.I):
+        esl, esr = AXIAL
+        return esl, esr, f"axial aluminium electrolytic: ESL {esl * 1e9:.2g} nH, ESR {esr:g} Ohm"
+    if pkg.through_hole or re.search(r"Radial", t, re.I):
+        _, esl, esr = next(r for r in RADIAL if (dia or 6.3) <= r[0])
+        esr = POLYMER_ESR if poly else esr
+        return esl, esr, (f"radial aluminium {'polymer' if poly else 'electrolytic'}, D {dia or '6.3 (unknown)'} mm: "
+                          f"ESL {esl * 1e9:.2g} nH, ESR {esr * 1e3:.3g} mOhm")
+    esr = POLYMER_ESR if poly else next(r for r in SMD_ALU if (dia or 6.3) <= r[0])[1]
+    return SMD_ALU_ESL, esr, (f"SMD aluminium {'polymer' if poly else 'electrolytic'}, D {dia or '6.3 (unknown)'} mm: "
+                              f"ESL {SMD_ALU_ESL * 1e9:.2g} nH, ESR {esr * 1e3:.3g} mOhm")
+
+
+def _bias(bd, a, b):
+    """The DC voltage across two nets from the brief's rail voltages (grounds at 0), or None."""
+    def v(n):
+        if n in bd.grounds:
+            return 0.0
+        return bd.rails.get(n)
+    va, vb = v(a), v(b)
+    if va is None or vb is None:
+        return None
+    return abs(va - vb)
+
+
 def _two(pins):
     nets = {}
     for p in pins:
@@ -198,7 +309,7 @@ def _part(bd, ref, part, pins, kind, sub, role, rec, in_cell):
     c = bd.circuit
     tw = _two(pins)
     pkg = V.package(part.lib_id)
-    esl = ESL_POLARIZED if pkg.polarized else ESL_THT if pkg.through_hole else ESL.get(pkg.size or "", ESL_DEFAULT)
+    esl = ESL_THT if pkg.through_hole else ESL.get(pkg.size or "", ESL_DEFAULT)
 
     def tok(p):
         return f"{ref}.{p.number}"
@@ -207,8 +318,21 @@ def _part(bd, ref, part, pins, kind, sub, role, rec, in_cell):
         if C is None:
             C = 100e-9
             bd.assumptions.append(f"{ref}: value '{part.value}' unread; 100 nF assumed")
-        esr = 0.3 if pkg.polarized else 0.01
         a, b = tw
+        text = part.text() if hasattr(part, "text") else f"{part.value} {part.lib_id}"
+        if pkg.polarized:
+            esl, esr, why = polar_model(pkg, text)
+            bd.assumptions.append(f"{ref}: {why} (class stand-in)")
+        else:
+            esr = mlcc_esr(C)
+            vb = _bias(bd, a.net, b.net)
+            k, why = mlcc_bias_factor(C, vb, pkg.size, dielectric(text)) if not pkg.through_hole else (1.0, "")
+            if k < 0.97:
+                bd.assumptions.append(f"{ref}: {why}; ESR {esr * 1e3:.3g} mOhm (class stand-in)")
+            vr = V.rated_voltage(text)
+            if vr and vb and vb > vr:
+                bd.assumptions.append(f"{ref}: {vb:g} V across a part rated {vr:g} V")
+            C *= k
         c.z(ref, a.net, b.net, _rlc(esr, esl, C), tok(a), tok(b), "C")
     elif kind == "resistor" and len(tw) == 2:
         R = V.resistance(part.value)
