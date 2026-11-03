@@ -48,7 +48,7 @@
 - **Mechanism** (KiCad 10.0 `drc_engine.cpp` `RunTests`): an ignored check gets an error limit of 0, and `ReportViolation` drops every violation past its limit; other checks stop at `ERROR_LIMIT` (clearance and opens at the extended limit), so a count can be a floor [P].
 - **How.** One `kicad-cli pcb drc` (kae's wrapper `kae.route.drc.run`, as the scorer runs it: zones refilled, all severities, uncapped opens) on a scratch copy whose `.kicad_pro` has each check below raised to at least its required severity. Every violation of those checks becomes one hazard per check type, with count, objects (refs and nets parsed from the item descriptions), up to 3 locations, and `hidden_by_project` when the project's severity would have hidden it [M].
 - **When.** `--recheck auto` (default) runs it if kicad-cli is found and at least 20 s of the command's `--time` is left; it never takes routing time. If skipped, `recheck_skipped` says so: `warn` when the project downgrades a safety check, `info` otherwise (kae's own final DRC then ran at the right severities, and its counts become hazards). `--recheck on` runs it regardless of time; `off` never. `kae place --drc off` implies off [I].
-- **Cost.** One extra DRC of the output; measured in [the decision record](#conflicts-and-open-questions) below.
+- **Cost.** One extra DRC of the output, the same as kae's own DRC of it: 1.7, 2.7 and 28.7 s against 2.2, 2.7 and 26.6 s for the plain DRC, on Freerouting outputs at the median, 90th and 99th percentile of the scorer's time per board (8.9, 16.5 and 81 s over 14,541 boards; the slowest board took 1,091 s to score) [M]. Within `--time` this fits on most boards; on the biggest ones `auto` usually skips it, so ordering a big board calls for `--recheck on`.
 
 ### The check classes (`DRC_CHECKS`)
 
@@ -97,7 +97,7 @@
 - Run with `--recheck on` when the board will be ordered; `auto` keeps benchmark timing unchanged.
 
 ## Conflicts and open questions
-- **Cost of the recheck** (one DRC of the output): see the measured times in the decision record `decide-hazards` (2026-11-03) and the numbers added below when measured on the shared host.
+- **Errors the input already had** (a fixed via below the board's drill minimum, say) come back as hazards too; the report does not yet say which findings the input board already carried (that needs a DRC of the input).
 - **Clearance as block** follows the user's rule (never hand back a board that might not work). A designer who lowered `clearance` to warning on purpose (e.g. a known footprint conflict) will see a block; the evidence says `hidden_by_project`, so the LLM can confirm with them.
 - **The scorer is unchanged.** A fixed-severity scoring profile (register B1, [dev-eval-plan.md](../verification/dev-eval-plan.md) H12) is a separate scoring decision; the recheck only reports.
 - **Exclusions** (`excluded: true` violations the designer waived in KiCad) are not reported as hazards.
