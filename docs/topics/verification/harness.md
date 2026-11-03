@@ -31,7 +31,8 @@
 | Run | Private copy per attempt, timeout, resumable, parallel `-j` | `runner.py` |
 | Score (route) | Rebuild from input + routing (`transplant-routing`); `clean`, `completion`, error counts by type, `wl_ratio`, `via_delta`; integrity (placement, pad nets, layers, nets, no foreign changes); copy check against the human copper | `score.py`, `pcbnew_ops.py` |
 | Score (place) | Rebuild from input + poses (`transplant-placement`); `legal` (no courtyard, clearance, edge, hole or keepout errors; pads inside outline), `hpwl_ratio`, plus a probe route of the rebuilt board by a fixed router | `score.py`, `pcbnew_ops.py` |
-| Report | @1 and best-of-k (clean, completion, errors, length) per adapter × split | `report.py` |
+| Severities | `clean`/`legal` use each board's own `.kicad_pro` severities. Since score v10, `clean_strict`/`legal_strict` also need no shorts, clearance, hole-clearance, copper-to-edge, courtyard-overlap or rule-area errors, whatever the project says (`STRICT_CHECKS`; a second DRC runs only on boards that downgrade one of them). 184 of 2,454 qualified boards downgrade courtyards, 96 copper-to-edge, 49 clearance, 7 shorts. Results scored before v10 have no strict columns, so baselines must be re-run to compare them | `score.py` |
+| Report | @1 and best-of-k (clean, completion, errors, length) per adapter × split | `report.py` | (`cp1_strict`/`cpk_strict`/`legal_strict` when every result has them)
 
 - **KiCad-side operations** run in KiCad's own Python as a separate process, with JSON on a private stdout. Two pcbnew quirks were found while building it:
   - SWIG prints leak warnings on stdout at exit.

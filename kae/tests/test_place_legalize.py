@@ -754,3 +754,20 @@ def test_board_copper_text_is_fixed_copper_for_the_exact_check():
     far = P.outline.bounds
     P.fixed_text_cu = [(side, box(far[0] - 50, far[1] - 50, far[0] - 49, far[1] - 49), "away")]
     assert not [v for v in exact_check(P, st) if "copper text" in v.get("detail", "")]
+
+
+def test_intrinsic_footprint_violations_are_not_the_placers():
+    """A footprint's own Edge.Cuts against its own pad (a reverse-mount LED in its cut-out), or
+    two pads of one resistor array, is the footprint's design: KiCad reports it once the fixed
+    profile promotes the check, and no move fixes it."""
+    from kae.place.exact import _intrinsic as _own_cutout
+    own = dict(type="copper_edge_clearance", items=[dict(description="Arc of D68 on Edge.Cuts"),
+                                                    dict(description="Pad 1 [LED_PWR] of D68 on B.Cu")])
+    other = dict(type="copper_edge_clearance", items=[dict(description="Arc of D68 on Edge.Cuts"),
+                                                      dict(description="Pad 1 [X] of C3 on B.Cu")])
+    board = dict(type="copper_edge_clearance", items=[dict(description="Segment on Edge.Cuts"),
+                                                      dict(description="Pad 1 [X] of C3 on F.Cu")])
+    assert _own_cutout(own) and not _own_cutout(other) and not _own_cutout(board)
+    rn = dict(type="clearance", items=[dict(description="Pad 2 [SCDAT6] of RN2 on F.Cu"),
+                                      dict(description="Pad 1 [SCDAT7] of RN2 on F.Cu")])
+    assert _own_cutout(rn) and not _own_cutout(dict(type="clearance", items=rn["items"][:1]))

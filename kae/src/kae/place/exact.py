@@ -37,7 +37,7 @@ import shapely
 
 from kae.board import transform
 
-from .problem import edge_cut_polys, geom_to_lib, keepout_sides
+from .problem import edge_cut_polys, edge_exempt, geom_to_lib, keepout_sides
 
 AREA_EPS = 1e-6
 EDGE_TOL = 0.05    # mm the copper-to-edge check forgives (outline arcs are polygonized)
@@ -148,7 +148,8 @@ class ExactModel:
     def __init__(self, P, st):
         from .legalize import _copper_sides
         self.P, self.st = P, st
-        self.deflate = P.max_error
+        # KiCad's 5 um courtyard deflation, plus the level_c profile's take-in (Problem.cy_shrink)
+        self.deflate = P.max_error + float(getattr(P, "cy_shrink", 0.0) or 0.0)
         self.clr_of = {}
         # KiCad approximates arcs to max_error: a gap equal to the rule is legal
         self.tol = max(1e-4, float(getattr(P, "max_error", 0.005) or 0.005))
@@ -400,8 +401,8 @@ class ExactModel:
                 continue        # a straddling part's outer pads (Problem._straddle_check)
             if not outline.contains(geom.centroid):
                 add("pad_outside", [i], pd.number)
-            elif not edge_on or _no_copper(pd):
-                continue
+            elif not edge_on or _no_copper(pd) or edge_exempt(pd):
+                continue        # (KiCad skips castellated and edge-connector pads here)
             elif e > 0 and geom.distance(boundary) < e - etol:
                 add("copper_edge_clearance", [i], f"{pd.number} {geom.distance(boundary):.3f}<{e}")
             elif not outline.contains(geom):
@@ -1560,6 +1561,15 @@ def kicad_feedback(P, st, report, step=0.3):
                     fb["avoid"].setdefault(i, []).append((g, f"{v['type']} with zone {zones[0].net} (KiCad DRC)"))
                     out["constraints"] += 1
             continue
+        if _intrinsic(v):
+            # every item belongs to one footprint: its own Edge.Cuts against its own copper (a
+            # reverse-mount LED in its switch cut-out, 0xcb-dev-sl-060 and battoota), pads of a
+            # resistor array closer than the clearance (a4092-terminator), a hot-swap socket's
+            # MX and Choc pads: the footprint's design, the same at any pose. No move fixes it,
+            # so it is not the placer's (KiCad reports them where the strict profile promotes
+            # a check the project had waived)
+            out["fixed_only"] += 1
+            continue
         ps = sorted(violation_parts(P, st, v))
         mv = [i for i in ps if P.parts[i].movable]
         if not mv:
@@ -1594,6 +1604,22 @@ def kicad_feedback(P, st, report, step=0.3):
                     fb["avoid"].setdefault(i, []).append((g, f"{v['type']} at ({pos['x']:.2f}, {pos['y']:.2f}) (KiCad DRC)"))
                     out["constraints"] += 1
     return out
+
+
+def _intrinsic(v):
+    """A violation whose items all belong to the same footprint R ('Arc of D68 on Edge.Cuts'
+    and 'Pad 1 [..] of D68 on B.Cu'; 'Pad 2 [A] of RN2' and 'Pad 1 [B] of RN2')."""
+    import re
+    refs = set()
+    items = v.get("items", [])
+    if len(items) < 2:
+        return False
+    for it in items:
+        m = re.search(r"\bof (\S+)", it.get("description", ""))
+        if not m:
+            return False
+        refs.add(m.group(1))
+    return len(refs) == 1
 
 
 # ----------------------------------------------------------------------------- diagnosis

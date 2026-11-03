@@ -19,6 +19,15 @@ def _mean(xs):
     return round(statistics.fmean(xs), 3) if xs else None
 
 
+def _strict_mean(scores, key):
+    """Share of `key` (clean_strict, legal_strict) over the scores; None when any scored result
+    predates it (score v10), so a column never mixes the two definitions. A missing score
+    (no output) counts as not clean."""
+    if any(sc and key not in sc and sc.get("valid") is not False for sc in scores):
+        return None
+    return _mean([1.0 if sc.get(key) else 0.0 for sc in scores])
+
+
 def _median(xs):
     xs = [x for x in xs if x is not None]
     return round(statistics.median(xs), 3) if xs else None
@@ -68,6 +77,8 @@ def summarize(rows):
             sck = [r.get("score") or {} for r in best]
             m.update(cp1=_mean([1.0 if s.get("clean") else 0.0 for s in sc1]),
                      cpk=_mean([1.0 if s.get("clean") else 0.0 for s in sck]),
+                     # fixed-severity profile (score v10); None for results scored before it
+                     cp1_strict=_strict_mean(sc1, "clean_strict"), cpk_strict=_strict_mean(sck, "clean_strict"),
                      completion=_mean([s.get("completion", 0.0) for s in sck]),
                      errors=_mean([s.get("errors") for s in sck]),
                      scored=sum(1 for s in sck if s.get("errors") is not None),
@@ -76,12 +87,14 @@ def summarize(rows):
                      via_delta=_mean([s.get("via_delta") for s in sck]))
             if kind != "route":
                 m.update(legal=_mean([1.0 if s.get("legal") else 0.0 for s in sck]),
+                         legal_strict=_strict_mean(sck, "legal_strict"),
                          hpwl_ratio=_median([s.get("hpwl_ratio") for s in sck]))
         else:
             best = [_place_best(b) for b in boards]
             sck = [r.get("score") or {} for r in best]
             prb = [((r.get("probe") or {}).get("score")) or {} for r in best]
             m.update(legal=_mean([1.0 if s.get("legal") else 0.0 for s in sck]),
+                     legal_strict=_strict_mean(sck, "legal_strict"),
                      invalid=sum(1 for s in sck if s and not s.get("valid")),
                      hpwl_ratio=_median([s.get("hpwl_ratio") for s in sck]),
                      outside=_mean([s.get("outside") for s in sck]),
@@ -116,15 +129,16 @@ def _common_means(out, best_by):
                 out[k][f"{metric}_common"] = agg([best_by[k][b].get(metric) for b in common])
 
 
-ROUTE_COLS = ("adapter", "split", "boards", "k", "cp1", "cpk", "completion", "errors", "scored", "errors_common",
+ROUTE_COLS = ("adapter", "split", "boards", "k", "cp1", "cpk", "cp1_strict", "cpk_strict", "completion", "errors", "scored", "errors_common",
               "common", "invalid",
               "suspect", "wl_ratio", "via_delta", "time_s", "cpu_s", "rss_mb_max", "score_cpu_s", "partial",
               "timeouts", "capped", "failures", "missing_a0")
-JOINT_COLS = ("adapter", "split", "boards", "k", "cp1", "cpk", "legal", "completion", "errors", "scored",
+JOINT_COLS = ("adapter", "split", "boards", "k", "cp1", "cpk", "cp1_strict", "cpk_strict", "legal", "legal_strict",
+              "completion", "errors", "scored",
               "errors_common", "common", "invalid",
               "suspect", "hpwl_ratio", "wl_ratio", "via_delta", "time_s", "cpu_s", "rss_mb_max", "timeouts",
               "failures", "missing_a0")
-PLACE_COLS = ("adapter", "split", "boards", "k", "legal", "invalid", "suspect", "hpwl_ratio", "outside", "scored",
+PLACE_COLS = ("adapter", "split", "boards", "k", "legal", "legal_strict", "invalid", "suspect", "hpwl_ratio", "outside", "scored",
               "hpwl_ratio_common", "outside_common", "common",
               "probe_cp", "probe_completion", "time_s", "cpu_s", "rss_mb_max", "score_cpu_s", "failures")
 

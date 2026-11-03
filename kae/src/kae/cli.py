@@ -82,7 +82,9 @@ def cmd_place(a):
     anneal = "anneal" in stages and not a.no_anneal
     anneal_args = json.loads(a.anneal_args) if a.anneal_args else None
     kw = dict(physics=not a.no_physics, workers=a.workers, log=_log, anneal=anneal, edge_mate=a.edge_mate,
-              anneal_args=anneal_args, angle_step=a.angles, board_path=a.input)
+              anneal_args=anneal_args, angle_step=a.angles, board_path=a.input,
+              opts={k: v for k, v in (("place_severity", getattr(a, "severity", None)),
+                                      ("relax_bodies", getattr(a, "relax_bodies", None))) if v} or None)
     fix_classes = [c.strip() for c in (a.fix_class or "").split(",") if c.strip()]
     fix_refs = [r.strip() for r in (a.fix or "").split(",") if r.strip()]
     if fix_classes or fix_refs:
@@ -110,6 +112,8 @@ def cmd_place(a):
         kicad_clean, wrep2 = _kicad_loop(a, res, t0, write)
         if wrep2 is not None:
             res.report["writer"] = wrep2
+        from kae.place.pipeline import body_hazards
+        body_hazards(res.report, res.problem, res.state)
     res.report["total_s"] = round(time.monotonic() - t0, 2)
     legal = not res.report.get("exact") and not res.report.get("outline_incomplete") and kicad_clean is not False
     res.report["legal"] = bool(legal)
@@ -166,6 +170,12 @@ def _kicad_loop(a, res, t0, write):
             # a fresh staged copy each attempt; the first verdict may take nearly all that is
             # left, repairs need a share after
             staged = kdrc.stage_board(a.output, a.input, tempfile.mkdtemp(prefix="kae-drc-", dir=tmp))
+            if getattr(P, "severity_mode", "board") in ("strict", "level_c"):
+                # KiCad reports what the profile keeps as errors; courtyards taken in to Level C
+                # stay the exact model's alone (KiCad would object to the margins they allow)
+                from kae.place.problem import FIXED_ERROR_CHECKS
+                kdrc.promote_severities(staged, [c for c in FIXED_ERROR_CHECKS
+                                                 if not (c == "courtyards_overlap" and P.cy_shrink > 0)])
             left = t0 + 0.97 * float(a.time) - time.monotonic()
             try:
                 report = kdrc.run(staged, Path(staged).parent / "drc.json",
@@ -389,6 +399,15 @@ def main(argv=None):
                          "probe leaves the fewest open connections on (physics within 10%%; off by default)")
     sp.add_argument("--fix", default="", metavar="REF[,REF...]",
                     help="keep these parts at their input pose (fixed obstacles, as locked parts)")
+    sp.add_argument("--severity", default=None, choices=("strict", "level_c", "board"),
+                    help="placement legality: 'level_c' (default) keeps courtyards, copper-to-edge, rule areas, "
+                         "clearance, shorts and hole clearance errors whatever the project says, with courtyards "
+                         "at IPC Level C (0.15 mm in) where the project waives them; 'strict' drawn courtyards "
+                         "everywhere; 'board' follows the project's severities (also: KAE_PLACE_SEVERITY)")
+    sp.add_argument("--relax-bodies", default=None, choices=("off", "escalate", "auto"),
+                    help="parts without a courtyard: 'off' (default) keeps their bodies as obstacles; 'escalate' "
+                         "frees them to their pads when legalization fails; 'auto' also up front on a board over "
+                         "95%% full (the old behaviour). Relaxed parts are hazards in the report")
     sp.add_argument("--fix-class", default="", metavar="CLASS[,CLASS...]",
                     help="keep every part of these classes at its input pose: connectors, mounting, user "
                          "(kae.place.fixed.classify)")

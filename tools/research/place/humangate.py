@@ -36,7 +36,8 @@ def check_task(tdir):
     from kae.place.state import State
     t = json.loads((tdir / "task.json").read_text())
     ref = load(tdir / "reference" / "board.kicad_pcb")
-    P = Problem.build(ref)
+    # the gate compares with KiCad's DRC under the project's own severities: the same in kae
+    P = Problem.build(ref, severity="board")
     P.set_margin(0.0)
     st = State(P)
     for p in P.parts:

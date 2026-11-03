@@ -39,3 +39,17 @@ def test_summary_counts_with_pcbnew_when_the_project_ignores_unconnected(monkeyp
     pro = dict(board=dict(design_settings=dict(rule_severities=dict(unconnected_items="ignore"))))
     (tmp_path / "board.kicad_pro").write_text(json.dumps(pro))
     assert drc.summary(drc.run(b, tmp_path / "b.json"))["unconnected"] == 7
+
+
+def test_promote_severities_on_a_staged_copy(tmp_path):
+    """kae place's strict profile: the staged project reports the checks it keeps as errors."""
+    b = tmp_path / "board.kicad_pcb"
+    b.write_text("")
+    pro = dict(board=dict(design_settings=dict(rule_severities=dict(courtyards_overlap="ignore", clearance="warning",
+                                                                     silk_overlap="warning"))))
+    b.with_suffix(".kicad_pro").write_text(json.dumps(pro))
+    changed = drc.promote_severities(b, ("courtyards_overlap", "clearance", "shorting_items"))
+    assert sorted(changed) == ["clearance", "courtyards_overlap"]
+    rs = json.loads(b.with_suffix(".kicad_pro").read_text())["board"]["design_settings"]["rule_severities"]
+    assert rs == dict(courtyards_overlap="error", clearance="error", silk_overlap="warning")
+    assert drc.promote_severities(tmp_path / "none.kicad_pcb", ("clearance",)) == []

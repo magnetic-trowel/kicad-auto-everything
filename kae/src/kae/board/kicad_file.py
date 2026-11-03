@@ -95,6 +95,17 @@ def _f(v, default=0.0):
         return default
 
 
+def _pad_fab(pd):
+    """A pad's fabrication property, `(property pad_prop_castellated)` -> 'castellated'
+    ('' when it has none). KiCad's copper-to-edge check skips castellated pads
+    (drc_test_provider_edge_clearance.cpp)."""
+    for node in pd[1:]:
+        if type(node) is list and node and node[0] == "property" and len(node) > 1 and type(node[1]) is str \
+                and node[1].startswith("pad_prop_"):
+            return node[1][len("pad_prop_"):]
+    return ""
+
+
 def _xy(node):
     return float(node[1]), float(node[2])
 
@@ -439,7 +450,7 @@ class _Reader:
                    pintype=value(pd, "pintype", "") or "",
                    uuid=value(pd, "uuid") or value(pd, "tstamp") or "", slot=slot,
                    rratio=_f(value(pd, "roundrect_rratio"), 0.0), offset=offset,
-                   clearance=_f(value(pd, "clearance"), 0.0) or fp_clear,
+                   clearance=_f(value(pd, "clearance"), 0.0) or fp_clear, fab=_pad_fab(pd),
                    outline=self._pad_geometry(pd, shape, (sx, sy), s), layer_shapes=self._padstack(pd, s))
 
     def _pad_geometry(self, node, shape, size, s):
@@ -752,6 +763,7 @@ def read_rules(pcb_path, tree=None):
         r.mask_to_copper = float(rr.get("solder_mask_to_copper_clearance") or 0.0)
         r.severities = {str(k): str(v) for k, v in (ds.get("rule_severities") or {}).items()
                         if v in ("error", "warning", "ignore")}
+        r.kae_vars = {str(k): str(v) for k, v in (d.get("text_variables") or {}).items() if str(k).startswith("KAE_")}
         r.track_widths = [float(w) for w in ds.get("track_widths") or [] if w]
         r.via_sizes = [(float(v.get("diameter", 0)), float(v.get("drill", 0)))
                        for v in ds.get("via_dimensions") or [] if v.get("diameter")]
