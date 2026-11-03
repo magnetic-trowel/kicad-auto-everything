@@ -81,9 +81,11 @@ DRC_CHECKS = {
                            "separate the pads or restore the mask web"),
     "courtyards_overlap": ("warn", "assembly", "part courtyards overlap (assembly and rework clearance)",
                            "move the parts apart"),
-    "pth_inside_courtyard": ("warn", "assembly", "a plated hole sits inside another part's courtyard",
+    # info: 90 % of the corpus's projects (6,519 of 7,226) ignore these two, KiCad 6-9's default;
+    # a part-to-part conflict also shows as courtyards_overlap
+    "pth_inside_courtyard": ("info", "assembly", "a plated hole sits inside another part's courtyard",
                              "move the hole or the part"),
-    "npth_inside_courtyard": ("warn", "assembly", "a mounting hole sits inside a part's courtyard",
+    "npth_inside_courtyard": ("info", "assembly", "a mounting hole sits inside a part's courtyard",
                               "move the hole or the part"),
     "copper_sliver": ("warn", "manufacturing", "a thin copper sliver can lift off during etching",
                       "change the zone or the clearance"),
