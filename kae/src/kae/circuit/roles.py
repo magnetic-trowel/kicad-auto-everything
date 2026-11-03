@@ -410,6 +410,10 @@ ANALOG_NET = rx(r'(^|[^A-Z])(ADC|AIN|AN\d+|ANA|ANALOG|VREF|REF(IN|OUT|P|N)?|SENS
                r'AUDIO|MIC|LINE_?(IN|OUT)?|HP_?[LR]|HPL|HPR|HPCOM|IN[+-]|INP|INN|AINP|AINN|THERM|NTC|RTD|TC[+-]?|TEMP|BRIDGE|STRAIN|LOADCELL|'
                r'PIEZO|PHOTO|TIA|VCM|BIAS|ECG|EEG|EMG|XADC|CV|SIGNAL_?IN|PREAMP|GAIN|VOL|POT|DRY|WET|MIX|AUDIO|SPDIF|SENS|SENSOR|LDR|'
                r'CURR|CURRENT|SHUNT|VBAT_?SENSE|VBAT_?ADC|VDIV|DIV|ISET|IREF|IPROG|PROG|RSET)([^A-Z]|$)')
+# a control or bus suffix on an analog word names a digital line about the analog thing (TEMP_ALERT, MIC_EN, NTC_EN,
+# SENSE_ENABLE, TEMP_SCL), as CTRL_SUFFIX does for rails
+ANALOG_CTRL_SUFFIX = rx(r'[_-](N?EN|ENABLE|ALERT|DET|SEL|N?INT|IRQ|N?PG|PGOOD|PWRGD|FAULT|FLT|STAT|STATUS|CTRL|CTL|BTN|SCL|SDA|N?RST|RESET|'
+                        r'TRIG)\d?(_?N|_?B)?$')
 RF_NET = rx(r'(^|[^A-Z])(RF|ANT|ANTENNA|RFIN|RFOUT|RF_?IN|RF_?OUT|LNA|PA_?OUT|2G4|GNSS|GPS|LORA|SUBGHZ|915|868|433|BLE_?ANT|WIFI_?ANT|'
             r'RFIO|U\.?FL|SMA|COAX|50R|50OHM)([^A-Z]|$)')
 RESET_NET = rx(r'(^|[^A-Z])(N?RST|RESET|N?RESET|MCLR|POR|CHIP_?EN|CHIP_?PU|SRST|TRST|RST_?N|RESETN|RESETB|XRES|RUN)([^A-Z0-9]|$)')
@@ -1970,7 +1974,10 @@ def _signal_roles(nl: Netlist, roles: Roles):
         # analog-sensitive
         evs = []
         if ANALOG_NET.search(s) and not re.search(r'REFCLK|SCK|CLK', s):
-            evs.append(ev('name', f"name '{s}'", MODERATE))
+            if ANALOG_CTRL_SUFFIX.search(s):
+                evs.append(ev('name', f"analog word with a control suffix in '{s}' (an enable, alert, detect or select line)", -STRONG))
+            else:
+                evs.append(ev('name', f"name '{s}'", MODERATE))
         no_ana = ('logic', 'memory', 'motor_driver', 'gate_driver', 'load_switch')    # AIN1/BIN2 on a bridge driver are logic inputs
         ap = [p for p in pins if ANALOG_PIN.match(p.fn) and roles.parts[p.ref].kind in ('ic', 'module') and p.fn not in ('-', '+')
               and roles.parts[p.ref].subtype not in no_ana]
@@ -1985,13 +1992,18 @@ def _signal_roles(nl: Netlist, roles: Roles):
             evs.append(ev('topology', f"input of {roles.parts[ref].subtype} {ref} ({p.label})", STRONG))
         if net in xtal_nets:
             evs.append(ev('topology', 'crystal terminal (high impedance)', MODERATE))
+        if evs and roles.caps_to.get(net) and any(roles.parts[p.ref].kind == 'resistor' for p in pins):
+            # a series resistor and a capacitor to ground: an RC filter, the usual front end of an ADC or sense input;
+            # the topology layer that lifts an analog name above the gate (ADC_IN0 with its anti-alias RC)
+            evs.append(ev('topology', f"RC filter: resistor and capacitor {roles.caps_to[net][0][0]} to ground", WEAK))
         if evs:
             sub = 'adc_input' if re.search(r'ADC|AIN|AN\d', s + ' '.join(fns)) else 'reference' if re.search(r'REF', s + ' '.join(fns)) else (
                 'feedback' if re.search(r'(^|[^A-Z])V?FB|COMP', s + ' ' + ' '.join(fns)) else 'sense' if re.search(r'SENSE|SNS|CS[PN+-]|ISNS|IMON|SHUNT|CURR|SR[PN]\b', s + ' ' + ' '.join(fns))
                 or (net in opamp_in and roles.parts[opamp_in[net][0]].subtype == 'current_sense')
                 else 'audio' if re.search(r'AUDIO|MIC|LINE|HP|SPDIF|DRY|WET|MIX|VOL|PREAMP', s)
                 else ('cell_sense' if roles.parts[opamp_in[net][0]].subtype == 'battery_monitor' else 'opamp_input') if net in opamp_in else 'analog')
-            add('analog', sub, evs, prior=-1.5)
+            # names are the lowest layer: a name alone stays below the 0.5 gate (prior -1.6 + MODERATE -> 0.48)
+            add('analog', sub, evs, prior=-1.5 if any(e.weight > 0 and e.kind != 'name' for e in evs) else -1.6)
         # reset / boot
         evs = []
         if RESET_NET.search(s):

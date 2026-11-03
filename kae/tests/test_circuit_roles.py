@@ -715,3 +715,19 @@ def test_a_mixed_power_and_ground_class_does_not_make_a_rail_a_ground():
     parts = buck_board()
     nl, r = roles_of(parts, netclasses={'+3V3': 'PWR_GND', '+12V': 'PWR_GND', 'GND': 'PWR_GND'})
     assert r.nets['+3V3'].role == 'rail' and r.nets['GND'].role == 'ground'
+
+
+def test_an_analog_word_alone_or_with_a_control_suffix_is_not_analog():
+    mcu = IC('U1', 'MCU', 'Package_QFP:LQFP-48', [('1', 'PA1', 'TEMP_ALERT', 'bidirectional'), ('2', 'PA2', 'MIC_EN', 'output'),
+                                                 ('3', 'PA3', 'NTC_EN', 'output'), ('4', 'PA4', 'TEMP', 'bidirectional'),
+                                                 ('5', 'VDD', '+3V3', 'power_in'), ('6', 'VSS', 'GND', 'power_in'),
+                                                 ('7', 'PA5', 'ADC_VBAT', 'bidirectional')])
+    hdr = fp('J1', 'Conn_01x05', 'Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical',
+             [('1', 'TEMP_ALERT', '', 'passive'), ('2', 'MIC_EN', '', 'passive'), ('3', 'NTC_EN', '', 'passive'), ('4', 'TEMP', '', 'passive'),
+              ('5', 'GND', '', 'passive')])
+    parts = [mcu, hdr, C('C1', '100nF', '+3V3', 'GND'), C('C2', '10uF', '+3V3', 'GND'),
+             R('R1', '100k', '+3V3', 'ADC_VBAT'), C('C3', '100nF', 'ADC_VBAT', 'GND')]
+    nl, r = roles_of(parts)
+    for n in ('TEMP_ALERT', 'MIC_EN', 'NTC_EN', 'TEMP'):
+        assert r.nets[n].role != 'analog', (n, r.nets[n])
+    assert r.nets['ADC_VBAT'].role == 'analog'          # the name with its RC filter
