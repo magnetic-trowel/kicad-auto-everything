@@ -39,6 +39,10 @@ from . import observe as O
 from . import sources as S
 from . import spectrum as SP
 
+SKIN_VALIDITY = ("one-sided crowding (copper facing its return across a dielectric: traces and pours over planes, "
+                 "plane pairs): R within -8%..+7% of nsub = 8 solves, 1-200 MHz, at nsub = 2; two-sided crowding (go and "
+                 "return side by side without a plane, striplines) -30%..+9%, under-corrected above 100 MHz, so its ring "
+                 "Q stays high (docs/research/physics/field-solver-accuracy.md)")
 F_TOP = 3e8
 THETA = 0.3                 # electrical size below which the quasi-static model holds
 EPS_EFF = 3.5               # FR4 microstrip, for the limit's wave speed
@@ -76,7 +80,8 @@ def _wave_params(P, s, val):
     return val["I_A"], (val.get("D", 0.5) if s.kind == "cell" else 0.5), val["t_i_s"], val["f_sw_Hz"]
 
 
-def evaluate(path, pitch=0.25, nsub=2, intent=None, n_corners=16, seed=0, log=print, tol=1e-3, capacitive=True):
+def evaluate(path, pitch=0.25, nsub=2, intent=None, n_corners=16, seed=0, log=print, tol=1e-3, capacitive=True,
+             skin=True):
     from kae.board import transform
     from kae.board.kicad_file import load
     from kae.circuit import brief as B
@@ -103,6 +108,9 @@ def evaluate(path, pitch=0.25, nsub=2, intent=None, n_corners=16, seed=0, log=pr
             xs.append(x), ys.append(y)
     window = (min(xs) - 3, min(ys) - 3, max(xs) + 3, max(ys) + 3)
     bm = BoardMesh(path, window, pitch, nsub=nsub, b=b)
+    from .evaluate import mesh_report
+    priced = {bd.net_of.get(q) for x in list(srcs) + list(obs) for q in (x.pa, x.pb) if q} - {None}
+    mesh_rep, mesh_notes = mesh_report(bm.m, priced, nsub)
     pads = {q for e in bd.circuit.elems for q in (e.pa, e.pb) if q}
     pads |= {q for s in srcs for q in (s.pa, s.pb) if q} | {q for o in obs for q in (o.pa, o.pb) if q}
     pads |= {q for o in obs if o.kind == "cm" for q in o.meta.get("pads", ())} | dcp.dc_pads
@@ -164,6 +172,10 @@ def evaluate(path, pitch=0.25, nsub=2, intent=None, n_corners=16, seed=0, log=pr
         return np.abs(Zl) + 1e-3 * np.abs(Zl).max()
     model.build(f_max, tol=tol, rows=rows, cols=cols, scale=scale, f0=(0.0, min(10e6, f_max / 3)))
     est = model.history[-1][3] if model.history else None          # calibrated by the snapshots' true errors
+    if skin:
+        # the copper's crowding through its thickness beyond what nsub filaments hold (kae.em.skin): each layer's R
+        # times F/F_nsub at every harmonic, so AC copper loss and ring damping (Q, the ring-band peaks) follow
+        model.skin_correction()
     log(f"wideband: model of order {model.V.shape[1]} from snapshots {[round(f / 1e6, 4) for f in model.freqs]} MHz "
         f"in {model.seconds:.0f}s; estimated worst relative error {est:.1e}")
     # per corner, per source: the harmonic sums
@@ -262,7 +274,9 @@ def evaluate(path, pitch=0.25, nsub=2, intent=None, n_corners=16, seed=0, log=pr
                                                    "at 10 m against CISPR 32 class B; cables apart")
         harms.append(dict(observer=oname, source=sname, kind=kind, u=us[0], u_lo=min(us), u_hi=max(us),
                           basis=basis, f_worst_MHz=round(worst_f[oname] / 1e6, 2) if worst_f.get(oname) else None))
-    notes = []
+    notes = list(mesh_notes) + ([f"skin: each layer's copper R scaled by F/F_{nsub} per harmonic (kae.em.skin); valid for "
+                                 + SKIN_VALIDITY] if skin else [f"skin: off; copper R as {nsub} filaments hold it "
+                                                                 f"(reads low above ~10 MHz, ring Q high)"])
     dc_rows = _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes, log, ac_copper=ac_cu) \
         if dcp.loads else []
     harms += dc_rows
@@ -271,10 +285,15 @@ def evaluate(path, pitch=0.25, nsub=2, intent=None, n_corners=16, seed=0, log=pr
     for nm, v in parts.items():
         ref = nm.split(":")[0].split(".")[0]
         ac_by_ref[ref] = ac_by_ref.get(ref, np.zeros(ncp)) + v
+    tcr, hazards = {}, []
     if dcp.loads:
         harms += HT.evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes, intent,
-                             ac_parts=ac_by_ref, log=log, ledger=ledger)
+                             ac_parts=ac_by_ref, log=log, ledger=ledger, tcr_out=tcr)
+    from .evaluate import apply_tcr
+    apply_tcr(harms, tcr, tot, notes, hazards)
     harms.sort(key=lambda h: -(h["u_hi"] or 0))
+    from .evaluate import bias_hazards
+    hazards += bias_hazards(harms, pitch)
     from .evaluate import totals
     # the AC model carries the copper as it is (an open connection is physics here: a floating pad, or an
     # open loop that rings without bound), so only the DC band, which skips an open flow, voids the score
@@ -293,7 +312,8 @@ def evaluate(path, pitch=0.25, nsub=2, intent=None, n_corners=16, seed=0, log=pr
     return dict(board=path, pitch=pitch, seconds=round(time.time() - t0, 1), seed=seed, f_max=f_max,
                 model=dict(order=int(model.V.shape[1]), snapshots=model.freqs, estimated_error=est,
                            converged=bool(model.converged) and not uncertain, unconverged_snapshots=model.unconverged,
-                           history=model.history),
+                           history=model.history, nsub=nsub,
+                           skin_correction=dict(on=bool(skin), validity=SKIN_VALIDITY) if skin else dict(on=False)),
                 total=dict(totals(tot, unc), unrouted=sorted(unrouted), uncertain=bool(uncertain)),
                 ac_loss=dict(copper_W=dict(typical=float(ac_cu[0]), hi=float(ac_cu.max())),
                              parts_W={k: dict(typical=float(v[0]), hi=float(v.max())) for k, v in
@@ -301,7 +321,7 @@ def evaluate(path, pitch=0.25, nsub=2, intent=None, n_corners=16, seed=0, log=pr
                 left_out=left, ledger=ledger.rows(),
                 questions=[dict(subject=p.subject, name=p.name, lo=p.lo, hi=p.hi, unit=p.unit, basis=p.basis)
                            for p in ledger.flagged()],
-                harms=harms, notes=notes + ([f"{len(skipped)} parts with a pad outside the copper model: {skipped[:8]}"]
+                harms=harms, hazards=hazards, mesh=mesh_rep, notes=notes + ([f"{len(skipped)} parts with a pad outside the copper model: {skipped[:8]}"]
                                             if skipped else [])
                 + ([f"cable common mode computed to {f_max / 1e6:.0f} MHz of the CISPR band's {O.F_CM[1] / 1e6:.0f} MHz: "
                     f"above, the board is not electrically small and the quasi-static model does not hold"]
@@ -324,14 +344,17 @@ def main(argv=None):
     ap = argparse.ArgumentParser(prog="kae.excite.wideband")
     ap.add_argument("board")
     ap.add_argument("--pitch", type=float, default=0.25)
+    ap.add_argument("--nsub", type=int, default=2, help="filaments through each copper layer's thickness (kae.em.mesh.Layer)")
     ap.add_argument("--intent")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--tol", type=float, default=1e-3)
     ap.add_argument("--no-capacitive", action="store_true")
+    ap.add_argument("--no-skin-correction", action="store_true", help="copper R as nsub filaments hold it (kae.em.skin)")
     ap.add_argument("-o")
     a = ap.parse_args(argv)
     from .beliefs import load_intent
-    r = evaluate(a.board, a.pitch, intent=load_intent(a.intent), seed=a.seed, tol=a.tol, capacitive=not a.no_capacitive,
+    r = evaluate(a.board, a.pitch, nsub=a.nsub, intent=load_intent(a.intent), seed=a.seed, tol=a.tol, capacitive=not a.no_capacitive,
+                 skin=not a.no_skin_correction,
                  log=lambda m: print(m, file=sys.stderr, flush=True))
     from .evaluate import print_total
     print_total(r["total"])

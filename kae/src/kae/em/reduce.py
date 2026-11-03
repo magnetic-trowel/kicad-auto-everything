@@ -73,6 +73,39 @@ class Reduced:
         self.converged = None
         self.estimated_error = None
         self.lo = self.net.off["l"]
+        self.skin = None                        # per-layer resistance blocks once skin_correction() is on
+
+    def skin_correction(self, on=True):
+        """Evaluate the model with each copper layer's resistance times kae.em.skin.correction(f, t, nsub): the
+        crowding through the thickness that nsub filaments cannot hold (one-sided surface impedance; validity in
+        kae.em.skin). Off during build: the error estimate compares the model with the full system as meshed."""
+        if not on:
+            self.skin = None
+            return
+        net = self.net
+        VI = self.V[:self.nb]
+        lay = np.full(self.nb, -1)
+        for o in ("x", "y"):
+            f = net.fil[o]
+            lay[net.off[o]:net.off[o] + len(f["a"])] = net.layer_of_sub[f["s"]]
+        blocks = []
+        for l, L in enumerate(net.m.layers):
+            k = np.nonzero(lay == l)[0]
+            if len(k):
+                blocks.append((VI[k].T @ (net.R[k, None] * VI[k]), L.t * 1e-3, L.nsub))
+        self.skin = blocks
+
+    def G_R_at(self, f):
+        """The reduced copper resistance at f (with the skin correction when it is on)."""
+        if not self.skin or f <= 0:
+            return self.G_R
+        if self.skin[0][0].shape != self.G_R.shape:     # the basis grew since: the blocks follow it
+            self.skin_correction()
+        from .skin import correction
+        G = self.G_R.copy()
+        for B, t, n in self.skin:
+            G += (correction(f, t, n) - 1.0) * B
+        return G
 
     def _vec(self, inj):
         s = np.zeros(self.sys0.nfree, complex)
@@ -149,7 +182,7 @@ class Reduced:
         R = net.R.copy()
         R[self.lo:] = 0.0                       # lumped parts enter through z_l(w)
         self.G_R = VI.T @ (R[:, None] * VI)
-        self.G_Lc = VI.T @ (net.Lc[:, None] * VI)
+        self.G_Lc = VI.T @ net.Lc_apply(VI)
         # L V_I only for the columns new since the last projection (the basis only grows)
         old = getattr(self, "LV", None)
         k0 = 0 if old is None else old.shape[1]
@@ -221,7 +254,7 @@ class Reduced:
 
     def A(self, f):
         w = 2 * np.pi * f
-        return (self.G_R + 1j * w * (self.G_L + self.G_Lc) + self.Vl.T @ (self._zl(f)[:, None] * self.Vl)
+        return (self.G_R_at(f) + 1j * w * (self.G_L + self.G_Lc) + self.Vl.T @ (self._zl(f)[:, None] * self.Vl)
                 - self.G_D - self.G_D.T)
 
     def _solve(self, f, B):
@@ -253,7 +286,7 @@ class Reduced:
         Z = self.Pr.T @ Y
         quad = (lambda G: np.real(np.einsum("ij,ik,kj->j", Y.conj(), G, Y)))
         Il = self.Vl @ Y
-        return dict(Y=Y, Z=Z, delivered=0.5 * np.real(Z[cols, range(len(cols))]), copper=0.5 * quad(self.G_R),
+        return dict(Y=Y, Z=Z, delivered=0.5 * np.real(Z[cols, range(len(cols))]), copper=0.5 * quad(self.G_R_at(f)),
                     parts=0.5 * np.abs(Il) ** 2 * self._zl(f).real[:, None],
                     magnetic=0.25 * quad(self.G_L + self.G_Lc))
 
@@ -283,7 +316,10 @@ class Reduced:
         I, phi = X[:self.nb], X[self.nb:] * sy.kap
         # the residual without an FFT: L X_I = (L V_I) Y, kept from the projection
         w = 2 * np.pi * f
-        top = sy.kap * (sy.zdiag[:, None] * I + 1j * w * (self.LV @ Y)) - sy.D @ phi
+        LI = self.LV @ Y
+        if self.net.Lc_off is not None:
+            LI = LI + self.net.Lc_off @ I
+        top = sy.kap * (sy.zdiag[:, None] * I + 1j * w * LI) - sy.D @ phi
         rhs = np.concatenate([sy.kap * self.E[:, need].astype(complex), -self.P[:, need]])
         r = rhs - np.concatenate([top, -(sy.DT @ I)])
         # Z_kj - Z_r,kj = -u_k^T r_j / kap exactly (the scaled system is complex symmetric, A u_k = b_k), and

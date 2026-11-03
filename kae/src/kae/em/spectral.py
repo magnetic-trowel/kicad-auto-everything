@@ -385,7 +385,7 @@ class Spectral:
             np.concatenate([op.L_apply(VI[:, k:k + ES.BATCH].astype(complex)).real for k in range(0, mm, ES.BATCH)], 1)
         lu = spla.splu(G)
         phR = lu.solve(np.ascontiguousarray(Dc.T @ (net.R[:lo, None] * VI[:lo])))
-        phL = lu.solve(np.ascontiguousarray(Dc.T @ (LV[:lo] + net.Lc[:lo, None] * VI[:lo])))
+        phL = lu.solve(np.ascontiguousarray(Dc.T @ (LV[:lo] + net.Lc_apply(VI)[:lo])))
         del LV
         occ = net.node >= 0
         nd = net.node[occ]

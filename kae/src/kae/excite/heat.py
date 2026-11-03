@@ -238,8 +238,55 @@ def copper_heat(net, x, shape):
     return Q
 
 
+TCR_TOL_K = 0.1         # the fixed point's stop: the last step moved no cell by more than this (the error left is about the
+                        # loop gain times it: on the 14 thermal problem boards g <= 0.002, so one step usually suffices)
+TCR_MAX_IT = 40
+TCR_RUNAWAY_GAIN = 0.98  # a loop gain this close to 1 that has not converged: no steady state (thermal runaway)
+
+
+def tcr_solve(th, Qp, Qc0, a0, t_sinks=None, tol=TCR_TOL_K, max_it=TCR_MAX_IT):
+    """Temperature rise with hot copper: the copper's heat Qc0 (I^2 R at T_REF_C, per cell) grows with each cell's
+    own temperature, Qc = Qc0 (a0 + ALPHA_CU T), a0 = 1 + ALPHA_CU (T_amb - T_REF_C), at the DC flow's current
+    pattern (its redistribution toward cooler parallel copper, a stabilizing second-order effect, is left out).
+    Picard iteration T <- th.solve(Qp + Qc(T)): its increments shrink by the loop gain g, the spectral radius of
+    ALPHA_CU Theta diag(Qc0) (Theta the board's thermal resistance matrix). g >= 1 has no fixed point: the
+    copper's resistance rises with its temperature faster than the board sheds the heat (thermal-physics.md,
+    'TCR feedback': dT = dT0 / (1 - alpha dT0) for one conductor).
+    Returns (T, Qc, dict(iters, gain, converged, runaway))."""
+    ALPHA_CU = MAT.ALPHA_CU
+    T = T0 = th.solve(Qp + a0 * Qc0, t_sinks)
+    if not np.any(Qc0):
+        return T, a0 * Qc0, dict(iters=0, gain=0.0, converged=True, runaway=False, dT=0.0)
+    prev, g, it = None, 0.0, 0
+    for it in range(1, max_it + 1):
+        Tn = th.solve(Qp + Qc0 * (a0 + ALPHA_CU * T), t_sinks)
+        d = float(np.max(np.abs(Tn - T)))
+        if prev:
+            g = d / prev
+        T = Tn
+        if d < tol:
+            return T, Qc0 * (a0 + ALPHA_CU * T), dict(iters=it, gain=g, converged=True, runaway=False,
+                                                      dT=float(np.max(T - T0)))
+        if not np.isfinite(d) or (it >= 3 and g >= 1.0):
+            break
+        prev = d
+    return T, Qc0 * (a0 + ALPHA_CU * T), dict(iters=it, gain=g, converged=False, dT=float(np.max(T - T0)),
+                                              runaway=bool(not np.isfinite(g) or g >= TCR_RUNAWAY_GAIN))
+
+
+def _net_factors(m, Qc, Qc0):
+    """{net: its copper loss at temperature over its loss at T_REF_C} (nets with copper heat)."""
+    out = {}
+    for k, name in enumerate(m.nets):
+        sel = m.lab == k
+        q0 = float(Qc0[sel].sum())
+        if q0 > 0:
+            out[name] = float(Qc[sel].sum()) / q0
+    return out
+
+
 def evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes, intent=None, ac_parts=None,
-             log=print, ledger=None, obs_out=None, power_out=None, system=None):
+             log=print, ledger=None, obs_out=None, power_out=None, system=None, tcr_out=None):
     """Thermal harms per part at every corner, added into the per-corner totals. ac_parts: {ref: [W per
     corner]} from the switching harmonics. obs_out: a list that gets kae.intent observations: each
     dissipating part's junction temperature (temp.junction, C) and its loss (loss.part, W) per corner.
@@ -408,7 +455,8 @@ def evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, tot, 
             th_cache["base"] = TH.Thermal(m, gaps, h=h, sinks=sinks, cut=cut, links=links)
         th = th_cache["base"] if c == 0 else th_cache["base"].variant(h=h, sinks=sinks)
         V, info = res[c]
-        Q = copper_heat(info["net"], info["x"], m.lab.shape)
+        Qc0 = copper_heat(info["net"], info["x"], m.lab.shape)       # I^2 R at T_REF_C
+        Q = np.zeros(m.lab.shape)                                    # the parts' heat
         lc = {}
         heat = part_heat(bd, dcp, cvs[c], val, injs[c], {k: v[c] for k, v in (ac_parts or {}).items()}, losses=lc)
         for ref, w in lc.items():
@@ -424,7 +472,8 @@ def evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, tot, 
             if cells:
                 for (l, j, i) in cells:
                     Q[l, j, i] += w / len(cells)
-        T = th.solve(Q, t_sinks)
+        a0 = 1.0 + MAT.ALPHA_CU * (val[("heat", "T_amb_C")] - MAT.T_REF_C)
+        T, Qc, tcr = tcr_solve(th, Q, Qc0, a0, t_sinks)
         # A part with a second way out for its heat besides its pads: a heat sink on it (junction to air through
         # theta_JC + theta_CS + theta_SA), or a module's own board, cooling from both faces (h x 2 x its area).
         # That path (R) runs beside the one into the carrier (theta_JB, then the carrier's rise per watt under
@@ -451,7 +500,22 @@ def evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, tot, 
             for (l, j, i) in cells:
                 Q[l, j, i] -= (1 - f) * w / len(cells)
         if mods:
-            T = th.solve(Q, t_sinks)
+            T, Qc, tcr = tcr_solve(th, Q, Qc0, a0, t_sinks)
+        if tcr_out is not None:
+            q0 = float(Qc0.sum())
+            tcr_out.setdefault("factor", [1.0] * ncp)[c] = float(Qc.sum()) / q0 if q0 > 0 else a0
+            tcr_out.setdefault("a0", [1.0] * ncp)[c] = a0
+            tcr_out.setdefault("net_factor", [{} for _ in range(ncp)])[c] = _net_factors(m, Qc, Qc0)
+            tcr_out.setdefault("gain", [0.0] * ncp)[c] = tcr["gain"]
+            tcr_out.setdefault("iters", [0] * ncp)[c] = tcr["iters"]
+            tcr_out.setdefault("dT", [0.0] * ncp)[c] = tcr["dT"]
+            if not tcr["converged"]:
+                hot = _net_factors(m, Qc, Qc0)
+                tcr_out.setdefault("runaway", []).append(dict(
+                    corner=c, runaway=tcr["runaway"], gain=round(tcr["gain"], 3),
+                    T_max_C=round(float(T.max()) + val[("heat", "T_amb_C")], 1), T_amb_C=val[("heat", "T_amb_C")],
+                    copper_W_at_20C=round(float(Qc0.sum()), 4),
+                    nets=[n for n, _ in sorted(hot.items(), key=lambda kv: -kv[1])[:6]]))
         Tamb = val[("heat", "T_amb_C")]
         for ref, w in heat.items():
             cells = pads_of.get(ref)
@@ -487,5 +551,15 @@ def evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, tot, 
                                 scope=dict(kind="part_loss", observer=f"loss:{ref}", source="dc", part=ref, parts=[ref]),
                                 reference=dict(value=None, basis="none: a loss is priced, not bounded"),
                                 label=f"dissipation of {ref} (switching, conduction, rectification, linear drop)"))
+    if tcr_out is not None and tcr_out.get("factor"):
+        fs, gs = tcr_out["factor"], tcr_out["gain"]
+        notes.append(f"thermal: copper resistance at each cell's temperature (TCR 0.393 %/K from 20 C, fixed point): "
+                     f"copper loss x{fs[0]:.3f} at the typical corner, x{max(fs):.3f} at the worst; hot copper raised "
+                     f"temperatures by up to {max(tcr_out.get('dT', [0.0])):.2f} K over copper at ambient; loop gain up to "
+                     f"{max(gs):.3f} where measured (1 = thermal runaway)")
+        for r in tcr_out.get("runaway", []):
+            notes.append(f"thermal: {'RUNAWAY' if r['runaway'] else 'not converged'} at corner {r['corner']}: copper loop gain "
+                         f"{r['gain']} (no steady state at >= {TCR_RUNAWAY_GAIN}), {r['T_max_C']} C and rising; hottest copper "
+                         f"on {', '.join(r['nets'])}")
     log(f"thermal: {len(U)} dissipating parts, {ncp} corners in {time.time() - t0:.1f}s")
     return rows

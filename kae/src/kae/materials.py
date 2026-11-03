@@ -16,6 +16,11 @@ terms agree (docs/topics/rules/thermal.md, docs/topics/rules/power/high-current.
                      pi (d - t) t, 12 % less at 0.3 mm: within the class 2 vs 3 spread.
     K_CU             390 W/(m K)  copper (annealed: 385-401).
     RHO_CU_OHM_MM    1.72e-5      copper resistivity at 20 C.
+    SIGMA_CU         5.8e7 S/m    annealed copper's conductivity at T_REF_C (IEC 60028: 1/58 ohm mm^2/m),
+                                  the field solver's value.
+    ALPHA_CU         3.93e-3 1/K  copper resistance's temperature coefficient at T_REF_C (IEC 60028 via
+                                  IS 8130); kae.excite.heat's TCR fixed point.
+    T_REF_C          20 C         the temperature RHO_CU_OHM_MM and SIGMA_CU hold at.
     K_FR4_THROUGH    0.3  W/(m K) FR-4 through the laminate: measured 0.29 (Azar and Graebner,
                                   SEMI-THERM 1996), datasheets 0.3 (Shengyi S1141) to 0.4 (Isola
                                   370HR); TI SNVA419 lists 0.23 without a source.
@@ -37,6 +42,9 @@ import math
 VIA_PLATING_MM = 0.020
 K_CU = 390.0
 RHO_CU_OHM_MM = 1.72e-5
+SIGMA_CU = 5.8e7
+ALPHA_CU = 3.93e-3
+T_REF_C = 20.0
 K_FR4_THROUGH = 0.3
 K_FR4_IN = 0.8
 H_AIR = 10.0
