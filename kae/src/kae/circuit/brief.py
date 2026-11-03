@@ -331,6 +331,7 @@ def build(board, *, use_sheets: bool = True) -> dict:
         'grounds': roles.grounds, 'rails': {n: (roles.rails[n].attrs.get('volts') or {}).get('value') for n in roles.rails},
         'switch_nodes': sorted(roles.switch_nodes), 'sheets_used': use_sheets and any(p.sheet for p in nl.parts.values()),
         'power_pins_without_caps': [{'ic': nl.parts[u['ic']].refdes, 'rail': u['rail'], 'pins': u['pins']} for u in st['uncovered']],
+        'caps_over_rating': caps_over_rating(nl, roles, ids),
         'runtime_s': round(time.perf_counter() - t0, 3),
     }
     return {'schema': SCHEMA, 'board': {'path': str(getattr(board, 'path', '') or ''), 'footprints': len(nl.parts),
@@ -339,6 +340,46 @@ def build(board, *, use_sheets: bool = True) -> dict:
                                                              'fields, net classes, zones (net only), schematic sheet names; no positions'},
             'nets': nets, 'parts': parts, 'structures': structures, 'diff_pairs': pairs,
             'placement_order': placement_order, 'summary': summary}
+
+
+# the rail-voltage sources _rail_voltage reads that are an assumption, not a statement of the board
+_LOW_VOLTS = ('assumed', 'estimate', 'unknown')
+
+
+def caps_over_rating(nl, roles, ids) -> list:
+    """Capacitors between a rail and a ground whose stated voltage rating (the 'Voltage' field, else
+    the value: '10uF 25V') is below the rail's nominal voltage: the part fails in use (an MLCC
+    cracks or shorts, an electrolytic vents). One row per part with the rating, the rail voltage
+    and where that voltage comes from; `confident` is False when the voltage is only inferred
+    (an assumed cell, conflicting sources, a weakly classified rail), for kae.board_hazards'
+    capacitor_over_voltage (block, or warn when not confident). Parts without a stated rating
+    are not judged."""
+    from . import values as V
+    out = []
+    for net, caps in sorted(roles.caps_to.items()):
+        nr = roles.nets.get(net)
+        vb = (nr.attrs.get('volts') if nr is not None else None) or {}
+        v = vb.get('value')
+        if v is None:
+            continue
+        for cref, gnd in caps:
+            part = nl.parts[cref]
+            fld = part.fields.get('Voltage') or ''
+            rated = V.rated_voltage(fld) or V.rated_voltage(part.value)
+            if not rated or rated + 1e-9 >= abs(v):
+                continue
+            src = str(vb.get('relative_to') or '')
+            lineage = [str(x) for x in vb.get('lineage') or []]
+            doubts = [x for x in lineage if x.startswith('conflict')]
+            if any(w in src for w in _LOW_VOLTS):
+                doubts.append(f"rail voltage {src}")
+            if nr.confidence < 0.6:
+                doubts.append(f"rail role confidence {nr.confidence:.2f}")
+            out.append({'ref': part.refdes, 'part': ids(cref), 'value': part.value, 'rated_V': rated,
+                        'rated_source': "field 'Voltage'" if V.rated_voltage(fld) else 'value',
+                        'rail': net, 'ground': gnd, 'rail_V': v, 'rail_V_source': src,
+                        'rail_V_interval': vb.get('interval'), 'confident': not doubts, 'doubts': doubts})
+    return out
 
 
 def _refs_in(s: dict) -> list:

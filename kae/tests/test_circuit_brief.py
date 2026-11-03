@@ -163,3 +163,26 @@ def test_kicad_suffix_pairs_need_no_rename():
     assert _kicad_pair('TXP0', 'TXN0', 'TX', '0', 'P', 'N') == (True, None)      # digits after the suffix: KiCad pairs them
     ok, ren = _kicad_pair('/io/Lvds_a', '/io/Lvds_b', 'LVDS_', '', 'A', 'B')
     assert not ok and ren['p'] == '/io/Lvds_P' and ren['n'] == '/io/Lvds_N' and 'note' in ren
+
+
+def test_capacitor_below_its_rail_voltage_is_a_hazard():
+    """A capacitor rated below its rail's voltage fails in use: block when the board states the
+    rail voltage (a net name), warn when it is only inferred (a charger's one Li-ion cell assumed);
+    no rating, or a rating at or above the rail, is not judged."""
+    from kae.board_hazards import capacitor_voltage_hazards
+    ic = IC('U1', 'DRV8871', 'Package_SO:SOIC-8', [('1', 'VM', '+12V', 'power_in'), ('2', 'GND', 'GND', 'power_in')])
+    chg = IC('U2', 'TP4056', 'Package_SO:SOIC-8', [('5', 'BAT', 'VBAT', 'power_out'), ('4', 'VCC', '+5V', 'power_in'),
+                                                   ('3', 'GND', 'GND', 'power_in')])
+    b = build(board([ic, chg, C('C1', '10uF 6.3V', '+12V', 'GND'), C('C2', '10uF 25V', '+12V', 'GND'),
+                     C('C3', '100nF', '+12V', 'GND'), C('C4', '10uF 2.5V', 'VBAT', 'GND'),
+                     C('C5', '10uF 16V', '+5V', 'GND')]))
+    rows = {r['ref']: r for r in b['summary']['caps_over_rating']}
+    assert set(rows) == {'C1', 'C4'}
+    assert rows['C1']['confident'] and rows['C1']['rail_V'] == 12.0 and rows['C1']['rated_V'] == 6.3
+    assert not rows['C4']['confident'] and rows['C4']['doubts']
+    hz = {h['objects'][0]: h for h in capacitor_voltage_hazards(b)}
+    assert hz['C1']['code'] == 'capacitor_over_voltage' and hz['C1']['severity'] == 'block'
+    assert hz['C1']['category'] == 'electrical' and hz['C1']['objects'] == ['C1', '+12V']
+    ev = hz['C1']['evidence']
+    assert ev['rated_V'] == 6.3 and ev['rail_V'] == 12.0 and 'net name' in ev['rail_V_source']
+    assert hz['C4']['severity'] == 'warn'

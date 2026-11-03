@@ -38,7 +38,7 @@
 | `kae.route.critical_cli route` | static; recheck; `rail_max_cap`, `class_max_below_ipc`, `ipc_floor_unroutable` module flags |
 | `kae.route.critical_cli physics` | `physics_over_budget` (u > 1), `physics_unmeasured`; static |
 | `kae.joint.cli run` | static; recheck; everything nested in iterations; `check_not_run` and `physics_over_budget` of the final card; KiCad's writer checks of every pose write, once per code (`kicad_format_upgraded`, ...) |
-| `kae brief` | static project hazards with the brief's net voltages (route and joint reports have no brief at hand, so `hv_clearance_below_ipc` comes from `kae brief` and `kae place`) |
+| `kae brief` | static project hazards with the brief's net voltages (route and joint reports have no brief at hand, so `hv_clearance_below_ipc` and `capacitor_over_voltage` come from `kae brief` and `kae place`) |
 | `kae.excite.evaluate -o`, `kae.sim evaluate` | harms over their limit (`physics_over_budget`); failed or incomplete simulated requirements (`sim_fail`, `sim_incomplete`) |
 
 ### The recheck (`kae/src/kae/board_hazards.py`)
@@ -73,6 +73,7 @@
 | `dru_rejected` | warn | `kae.board.dru_check.rejection` (`kae dru-check`): KiCad drops the whole file on any error |
 | `below_fab_floor` | warn | board minimum, net-class or custom-rule clearance/width/drill/annular/edge/hole-to-hole below the smallest absolute limit of JLCPCB, PCBWay and OSH Park: 0.09 mm space and width, 0.15 mm drill, 0.10 mm annular, 0.2 mm edge, 0.127 mm hole-to-hole ([dfm-fab-limits.md](../rules/dfm-fab-limits.md)) |
 | `hv_clearance_below_ipc` | warn, safety | a net kae.circuit puts above 30 V whose class clearance is below IPC-2221B Table 6-1 B2 (external, uncoated) for its voltage to the lowest net; a custom clearance rule naming the net or class at that value clears it (register RC10) |
+| `capacitor_over_voltage` | block (warn when the rail voltage is only inferred), electrical | the brief's `summary.caps_over_rating`: a capacitor from a rail to ground whose stated rating (`Voltage` field, else the value) is below the rail's nominal voltage; evidence: rated V, rail V and its source. 64 such MLCCs in the corpus ([component-priors](../../research/physics/component-priors.md)) |
 
 - IPC-2221B B2: 0.1 mm to 30 V, 0.6 mm to 100 V, 1.25 mm to 300 V, 2.5 mm to 500 V, then 0.005 mm/V ([isolation-creepage.md](../rules/isolation-creepage.md); EMA reproduction of Table 6-1) [S]. It is functional spacing only; mains and touchable circuits need the safety standard's creepage and clearance, which the message says.
 - Net voltages are inferred (`kae.circuit` brief `volts`), so the hazard is a warning, never a block, and its evidence names the source.

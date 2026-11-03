@@ -193,6 +193,7 @@ def static_hazards(board_path, brief=None, board=None):
     dru = Path(board_path).with_suffix(".kicad_dru")
     if dru.exists():
         out += _dru_hazards(dru, board_path)
+    out += capacitor_voltage_hazards(brief)
     rules = getattr(board, "rules", None) if board is not None else None
     if rules is None:
         try:
@@ -293,6 +294,30 @@ def _fab_floor_hazards(rules):
             if key and v is not None and 0 < v < FAB_FLOORS[key] - 1e-9:
                 flag(f"rule {r.get('name')}", f"custom rule '{r.get('name')}' {c.get('type')} minimum", round(v, 4),
                      FAB_FLOORS[key], ".kicad_dru")
+    return out
+
+
+def capacitor_voltage_hazards(brief):
+    """capacitor_over_voltage: a capacitor whose stated voltage rating is below its rail's voltage
+    (the brief's summary.caps_over_rating, kae.circuit.brief) fails in use. Block when the rail
+    voltage is stated by the board (net name, regulator part number, USB VBUS, a connector's
+    value); warn when it is only inferred (an assumed cell, conflicting sources, a weakly
+    classified rail). components found 64 such MLCCs in the corpus."""
+    rows = (((brief or {}).get("summary") or {}).get("caps_over_rating")) or []
+    out = []
+    for r in rows:
+        sure = bool(r.get("confident"))
+        out.append(H.make(
+            "capacitor_over_voltage", "block" if sure else "warn", "electrical",
+            f"Capacitor {r['ref']} ({r.get('value')}) is rated {r['rated_V']:g} V but sits on {r['rail']} at "
+            f"{r['rail_V']:g} V; it will fail in use (a ceramic cracks or shorts, an electrolytic vents)"
+            + ("." if sure else ", if the inferred rail voltage is right."),
+            objects=[r["ref"], r["rail"]],
+            evidence=dict(rated_V=r["rated_V"], rated_source=r.get("rated_source"), rail_V=r["rail_V"],
+                          rail_V_source=r.get("rail_V_source"), rail_V_interval=r.get("rail_V_interval"),
+                          doubts=r.get("doubts") or None, source="kae.circuit brief"),
+            fix=f"Fit a part rated above {r['rail_V']:g} V (with margin: 1.5-2x for class-2 ceramics), or "
+                "correct the part's value / Voltage field or the rail's voltage."))
     return out
 
 
