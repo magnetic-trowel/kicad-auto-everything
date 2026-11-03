@@ -135,3 +135,31 @@ def test_diff_pair_budget_uses_the_sourced_window():
     b = build(board([soc, j, C('C1', '100nF', '+1V8', 'GND'), R('R1', '10k', '+1V8', 'GND')]))
     dp = next(d for d in b['diff_pairs'] if d['interface'] == 'hdmi')
     assert dp['budget']['Zdiff']['interval'] == [90.0, 110.0] and 'AM57xx' in dp['budget']['Zdiff']['basis']
+
+
+def test_diff_pairs_say_whether_kicad_pairs_them_and_propose_renames():
+    """net-role-classification.md: propose _P/_N renames for pairs KiCad's suffix rule will not pair."""
+    from circuit_fixtures import R
+    can = IC('U1', 'TCAN1042', 'Package_SO:SOIC-8', [('6', 'CANL', 'CAN_L', 'bidirectional'), ('7', 'CANH', 'CAN_H', 'bidirectional'),
+                                                    ('3', 'VCC', '+5V', 'power_in'), ('2', 'GND', 'GND', 'power_in')])
+    parts = mcu_parts() + [can, R('R1', '120', 'CAN_H', 'CAN_L'), C('C1', '100nF', '+5V', 'GND'),
+                           fp('J1', 'USB_C_Receptacle', 'Connector_USB:USB_C_Receptacle_HRO_TYPE-C-31-M-12',
+                              [('A6', 'USB_DP', 'D+', 'bidirectional'), ('A7', 'USB_DM', 'D-', 'bidirectional'),
+                               ('A1', 'GND', 'GND', 'passive')]),
+                           fp('J2', 'Conn_01x03', 'Connector_JST:JST_PH_B3B-PH-K', [('1', 'CAN_H', '', ''), ('2', 'CAN_L', '', ''),
+                                                                                     ('3', 'GND', '', '')])]
+    b = build(board(parts))
+    pairs = {(d['p'], d['n']): d for d in b['diff_pairs']}
+    can_ = pairs[('CAN_H', 'CAN_L')]
+    assert can_['kicad_pair'] is False and can_['rename_proposal']['p'] == 'CAN_P' and can_['rename_proposal']['n'] == 'CAN_N'
+    usb = pairs[('USB_DP', 'USB_DM')]
+    assert usb['kicad_pair'] is False and (usb['rename_proposal']['p'], usb['rename_proposal']['n']) == ('USB_D_P', 'USB_D_N')
+
+
+def test_kicad_suffix_pairs_need_no_rename():
+    from kae.circuit.roles import _kicad_pair
+    assert _kicad_pair('/hdmi/TMDS_D0_P', '/hdmi/TMDS_D0_N', 'TMDS_D0_', '', 'P', 'N') == (True, None)
+    assert _kicad_pair('/USB_D+', '/USB_D-', 'USB_D', '', '+', '-') == (True, None)
+    assert _kicad_pair('TXP0', 'TXN0', 'TX', '0', 'P', 'N') == (True, None)      # digits after the suffix: KiCad pairs them
+    ok, ren = _kicad_pair('/io/Lvds_a', '/io/Lvds_b', 'LVDS_', '', 'A', 'B')
+    assert not ok and ren['p'] == '/io/Lvds_P' and ren['n'] == '/io/Lvds_N' and 'note' in ren

@@ -23,7 +23,7 @@ brief = build(load('board.kicad_pcb'))   # JSON-ready dict, schema 'kae.brief/1'
 | `nets` | name → role (ground, rail, switch_node, clock, high_speed, analog, rf, reset, boot, signal, no_connect), subrole, `volts` plus `volts_belief`, `source` {kind, `part` uuid, `ref`, `path`}, evidence |
 | `parts` | footprint uuid → `ref`, kind, subtype, role, `external`, `P_W`, confidence, evidence |
 | `structures` | `id`, `kind`, `confidence`, `evidence`, `priority`; members by footprint uuid, `members_ref` maps them back |
-| `diff_pairs`, `placement_order`, `summary` | pairs with a Zdiff budget; structure ids by priority; counts and runtime |
+| `diff_pairs`, `placement_order`, `summary` | pairs with a Zdiff budget, `kicad_pair` (KiCad's suffix rule pairs them) and a `rename_proposal` to `_P`/`_N` when it does not; structure ids by priority; counts and runtime |
 
 Structure kinds and the fields a placer or router reads:
 

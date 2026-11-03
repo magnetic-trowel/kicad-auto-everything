@@ -20,7 +20,7 @@ Shape (keys beyond these are additions the consumers ignore):
   commutation_cell, decap, crystal, oscillator, connector_chain, victim, heat_source,
   thermal_victim, antenna. `budget` entries {quantity: {value, unit, class, basis}} appear only
   where the board states a budget-relevant fact; generic priors live in kae.physics.priors.
-- `diff_pairs`, `placement_order` (structure ids, physically decisive first), `summary`.
+- `diff_pairs` (with `kicad_pair` and a `rename_proposal` for names KiCad will not pair), `placement_order` (structure ids, physically decisive first), `summary`.
 
 Inputs are only what the .kicad_pcb states (names, values, footprints, lib ids, pin functions
 and types, fields, net classes, schematic sheet names); positions are never read.
@@ -307,7 +307,7 @@ def build(board, *, use_sheets: bool = True) -> dict:
     pairs = []
     for dp in roles.pairs:
         d = {'p': dp.p, 'n': dp.n, 'interface': dp.interface, 'speed': dp.speed, 'confidence': round(dp.confidence, 3),
-             'evidence': evidence_json(dp.evidence, 6)}
+             'evidence': evidence_json(dp.evidence, 6), 'kicad_pair': dp.kicad_pair, 'rename_proposal': dp.rename}
         if dp.interface in ZDIFF:
             z, lo, hi = ZDIFF[dp.interface]
             d['budget'] = {'Zdiff': {'value': z, 'unit': 'ohm', 'class': 'E5', 'basis': ZDIFF_SRC[dp.interface],

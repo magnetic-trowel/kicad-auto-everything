@@ -506,6 +506,8 @@ class DiffPair:
     confidence: float
     evidence: list
     channel: str = ''
+    kicad_pair: bool = True          # KiCad's own suffix rule pairs these names (DRC_ENGINE::MatchDpSuffix)
+    rename: dict | None = None       # {p: new name, n: new name} that KiCad would pair, when it does not
 
 
 @dataclass
@@ -1859,8 +1861,28 @@ def _pairs(nl: Netlist, roles: Roles):
             conf = confidence(evs, prior=-0.5)
             if conf < 0.5:
                 continue
-            pairs.append(DiffPair(p=n, n=m, interface=iface, speed=speed, confidence=conf, evidence=evs))
+            kp, ren = _kicad_pair(n, m, pre, post, c, o)
+            pairs.append(DiffPair(p=n, n=m, interface=iface, speed=speed, confidence=conf, evidence=evs, kicad_pair=kp, rename=ren))
     roles.pairs = pairs
+
+
+def _kicad_pair(net_p: str, net_n: str, pre: str, post: str, c: str, o: str) -> tuple[bool, dict | None]:
+    """Whether KiCad pairs the two net names itself (a +/- or P/N suffix followed only by digits or '_', upper case,
+    kae.route.rules.complement_net), and if not, names it would pair. net-role-classification.md: propose renames to
+    _P/_N when a detected pair uses A/B, H/L, T/C, P/M or a polarity mark inside the name; never rely on them silently."""
+    from kae.route.rules import complement_net
+    if complement_net(net_p) == net_n:
+        return True, None
+    tail = net_p.rsplit('/', 1)[-1]
+    path = net_p[:len(net_p) - len(tail)]
+    i = len(pre)
+    if tail.upper() == pre + c + post and len(tail) == len(pre) + 1 + len(post):     # keep the designer's case
+        pre, post = tail[:i], tail[i + 1:]
+    stem = '_'.join(x.strip('_-. ') for x in (pre, post) if x.strip('_-. ')) or 'DIFF'
+    ren = {'p': f"{path}{stem}_P", 'n': f"{path}{stem}_N", 'from': f"{c}/{o}"}
+    if c == 'A':
+        ren['note'] = "RS-485 A/B polarity differs between vendors: check which line is non-inverting before renaming"
+    return False, ren
 
 
 # ------------------------------------------------------------------------------- clocks, high speed, analog, rf, reset, signal
