@@ -744,8 +744,10 @@ def final_physics(res):
     if res.terms is not None:
         try:
             rep["scorecard"] = physics_summary(res.terms, {p.uuid: st.pose(p.i) for p in P.parts})
-            if rep["scorecard"].get("hazards"):
-                rep.setdefault("hazards", []).extend(rep["scorecard"]["hazards"])
+            # the scorecard's hazards at the top, once (source "scorecard"): a second call, after the
+            # KiCad rounds moved parts, replaces the first call's, which describe poses no longer written
+            sc_hz = [dict(h, source="scorecard") for h in rep["scorecard"].pop("hazards", None) or []]
+            rep["hazards"] = [h for h in rep.get("hazards", []) if h.get("source") != "scorecard"] + sc_hz
         except Exception as e:
             rep["physics_error"] = f"{type(e).__name__}: {e}"
 
