@@ -36,6 +36,26 @@ Smoke test, 10 boards, `kae-bridge-main-final` outputs, physics `tools/research/
 
 Worse: aifryz `supply.peak` S4 (+BATT pin's own core noise) 1.31 -> 1.54 V while its other supply terms fell 14-41%; redbot's D1 rail drop 22 -> 78 uV (met by a wide margin). The pass took 6-77 s per board, most of it KiCad DRC (planning 2-15 s).
 
+## Width cap sweep, vector growth and current sharing (2026-11-03)
+
+Same 10 boards, same physics. W*n* = track widening capped at *n* mm (`max_width` = `current_cap`); V*n* = vector mode (the free region around each power/ground net's copper on its layer, clipped to an *n* mm corridor, filled with overlapping 0.5 mm track strips; other nets' fills are obstacles). Median after/before ratio over the boards' terms:
+
+| Term (n) | W1 | W2 | W3 | W20 | V3 | V20 |
+|---|---|---|---|---|---|---|
+| loss.copper (7) | 0.562 | 0.525 | 0.519 | 0.515 | 0.882 | 0.888 |
+| drop.rail (20) | 0.693 | 0.678 | 0.668 | 0.667 | 0.918 | 0.916 |
+| heat.track (7) | 0.567 | 0.567 | 0.567 | 0.567 | 1.000 | 1.000 |
+| supply.peak (35) | 0.865 | 0.865 | 0.864 | 0.865 | 0.905 | 0.910 |
+| emission.cable_E (4, field ratio) | 0.902 | 0.908 | 0.906 | 0.907 | 0.934 | 0.988 |
+| cable_cm.v (3) | 0.900 | 0.908 | 0.912 | 0.908 | 0.904 | 0.885 |
+| pickup.peak (1) | 0.937 | 0.941 | 0.942 | 0.944 | 0.882 | 1.237 |
+
+- **Cap.** Free space, not the cap, limits widening: past 2-3 mm the gains stop. 20 mm is no better than 3 mm on any median and worse on aifryz's loop loss (0.85 vs 0.62) and ubertooth's S1 (x1.04). The default cap is now 3 mm.
+- **Vector.** Weaker than widening on 7 of 10 boards: rails may not cut ground pours, and on poured 2-layer boards almost all free space is pour. Better on metro-m7 (0.86 vs 0.90 total), cm4 (0.65-0.70 vs 0.80) and lenaschimmel (0.43 vs 0.49, and DRC errors 16 -> 8). V20 hurt ubertooth (supply.peak up to x4.6, pickup x1.24). Growing into pours (`into_pours`) starved ground thermals on pmod-tester and failed the gate. KiCad zones cannot be used at all: the route-task scorer counts any zone edit as invalid (`bench/src/kaebench/score.py`), so vector copper is written as tracks.
+- **Sharing.** Competing power/ground nets split contested room at w ~ I (least sum I^2 R): widening leaves a competing ungrown track its share, and vector mode grows all nets at speeds proportional to current (a weighted Voronoi split by repeated buffering). Examples (W3 shared vs first come): dream117er GND/+5V at equal current, 1.08 mm centre gap: 0.8/0.5 mm vs 1.2/0.4 mm; lenaschimmel +3.3V (354 mA) / +5V (3 mA), 1.5 mm gap: 0.5/0.2 vs 0.5/1.2 mm. Physics totals are the same on the 4 boards tried (few contested spots, small currents).
+- **Soldering.** Own SMD pads up to 0.6 mm short side (reflow, or process unknown, which is every compiled intent so far) or 1.6 mm (hand soldering) keep grown copper 0.3 mm away. Same-layer pads fed by copper wider than the pad: 0402 class 1/340 before and 2-3/350 after; 0603-1206 class 0/300 -> 41-54/330 (W1-W3); > 1 mm pads 0 -> 12-15.
+- **Gate.** When single-culprit attribution fails, changes are now added back batch by batch (ddmin), and the best no-worse board any check saw is kept. Without this, metro-m7 W2/W3/W20 and magtag V3/V20 fell back to the input.
+
 ## Verdict
 
 Not finished. Every board's physics total fell and DRC was never worse, but this is ten boards, one routed attempt each, model-measured physics (no lab measurement), and the router never saw the copper. Next: an A/B through the router's final stage (`power_copper=True`) on the 99-board set with cp1/cpk, and a look at the aifryz +BATT term.

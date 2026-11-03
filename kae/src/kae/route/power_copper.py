@@ -56,7 +56,8 @@ DEFAULTS = dict(
     widen=True,
     vias=True,
     stitch=True,
-    max_width=1.0,            # mm: widest power/ground track (the feed width of 0603-1206 passives;
+    max_width=3.0,            # mm: widest power/ground track (sweep 1/2/3/20 mm on 10 boards: 3 mm ties 20 mm
+                              # on every term and beats it on loop loss; was 1.0, the feed width of 0603-1206 passives;
                               # power-copper.md: area efficiency peaks at feed width)
     ladder=(20.0, 15.0, 12.0, 10.0, 8.0, 6.0, 5.0, 4.0, 3.0, 2.5, 2.0, 1.5, 1.2, 1.0, 0.8, 0.6, 0.5, 0.4, 0.3),
     mode="widen",             # "widen": constant-width runs centred on each track; "vector": the free region
@@ -69,6 +70,8 @@ DEFAULTS = dict(
                               # most this (mm); None: from the operating facts' requirements.assembly (reflow or
                               # unknown: 0.6, tombstoning 0402-and-smaller passives; hand soldering: 1.6)
     neck_gap=0.3,
+    share=True,               # competing power/ground nets share room at w ~ I (False: first come, first served,
+                              # highest current first)
     current_margin=3.0,       # a net's operating current x this sizes its IPC width (when above max_width)
     current_cap=3.0,          # mm: the widest any current asks for
     operating=None,           # operating facts JSON (kae.intent operating: parts.<ref>.I_A / I_sustained_A);
@@ -86,7 +89,7 @@ DEFAULTS = dict(
     stitch_want=3,
     stitch_pitch=2.0,
     stitch_min_area=0.3,
-    drc_budget=16,            # KiCad DRC runs the gate may spend (attribution and bisection)
+    drc_budget=40,            # KiCad DRC runs the gate may spend (attribution and bisection)
 )
 
 VICTIM_ROLES = ("clock", "high_speed", "analog", "rf")
@@ -387,7 +390,8 @@ class PowerCopper:
                 else:
                     req = ex
                 f = 1.0
-                if l == layer and it.kind == "track" and it.net != net and it.net in self.power | self.ground \
+                if self.o["share"] and l == layer and it.kind == "track" and it.net != net \
+                        and it.net in self.power | self.ground \
                         and not (isinstance(it.owner, tuple) and str(it.owner[0]).startswith("pc-")):
                     # a competing power/ground track that has not grown yet: this net takes its
                     # current-proportional share of the room between them (min sum I^2 R at w ~ I)
@@ -603,7 +607,7 @@ class PowerCopper:
                 g = g.difference(o)
             claim[n] = g
 
-        if len(nets) > 1:
+        if len(nets) > 1 and self.o["share"]:
             R = max(cand[n]["cap"] / 2 for n in nets)
             for s in range(1, steps + 1):
                 t = R * s / steps
@@ -932,6 +936,7 @@ def run(input_path, output_path, opts=None, workdir=None, timeout=1800, log=prin
     geoms = pc.group_geoms()
     final = None
     budget = [int(o["drc_budget"])]
+    best = {}                  # the no-worse board with the fewest changes left out, from any check
 
     def check(skip_set, tag):
         groups = pc.write(cand, skip=skip_set, kinds=tuple(kinds))
@@ -941,6 +946,9 @@ def run(input_path, output_path, opts=None, workdir=None, timeout=1800, log=prin
         rep, s = _drc(cand, wd / f"out.{tag}.json", timeout)
         worse = _worse(s, base)
         rounds.append(dict(tag=tag, skipped=len(skip_set), summary=s, worse=worse))
+        if not worse and (not best or len(skip_set) < best["skipped"]):
+            shutil.copy2(cand, wd / "best.kicad_pcb")
+            best.update(skipped=len(skip_set), skip=set(skip_set), summary=s)
         log(f"[power-copper] {tag}: {s['errors']} errors, {s['unconnected']} unconnected "
             f"(input {base['errors']}, {base['unconnected']}); skipped {len(skip_set)}; worse {worse or 'none'}")
         return rep, worse, groups
@@ -958,13 +966,28 @@ def run(input_path, output_path, opts=None, workdir=None, timeout=1800, log=prin
         if bad:
             skip |= bad
             continue
-        # not attributable: bisect the groups still written (one culprit at a time)
-        sus = sorted(set(groups.values()) - skip)
-        while len(sus) > 1 and budget[0] > 1:
-            half = sus[:len(sus) // 2]
-            _, w2, _ = check(skip | set(half), f"r{r}b{len(sus)}")
-            sus = half if not w2 else sus[len(sus) // 2:]
-        skip |= set(sus)
+        # not attributable (several changes together, e.g. two tracks that between them starve a
+        # pad's spokes): build up from the input, batch by batch, keeping each batch that leaves
+        # DRC no worse and splitting the ones that do not (ddmin-style; finds a maximal set)
+        allg = sorted(set(groups.values()) - skip)
+        accepted = set()
+        queue = [allg[i:i + max(1, len(allg) // 4)] for i in range(0, len(allg), max(1, len(allg) // 4))]
+        k = 0
+        while queue and budget[0] > 0:
+            batch = queue.pop(0)
+            _, w2, _ = check(skip | (set(allg) - accepted - set(batch)), f"r{r}a{k}")
+            k += 1
+            if w2 is None or not w2:
+                accepted |= set(batch)
+            elif len(batch) > 1:
+                queue[:0] = [batch[:len(batch) // 2], batch[len(batch) // 2:]]
+        skip |= set(allg) - accepted
+        break           # the best checked board below is the accepted set (or better)
+    if final is None and best:
+        # out of DRC budget: the best no-worse board any check saw (a bisection probe is a whole board)
+        shutil.copy2(wd / "best.kicad_pcb", cand)
+        skip, final = best["skip"], best["summary"]
+        log(f"[power-copper] budget spent: keeping the best checked board ({len(skip)} changes left out)")
     if final is None:
         kinds = []
     out = Path(output_path)
@@ -1017,6 +1040,7 @@ def main(argv=None):
     ap.add_argument("--current-cap", type=float, default=DEFAULTS["current_cap"])
     ap.add_argument("--mode", choices=("widen", "vector"), default=DEFAULTS["mode"])
     ap.add_argument("--into-pours", action="store_true")
+    ap.add_argument("--no-share", action="store_true", help="first come, first served between power/ground nets")
     ap.add_argument("--neck", type=float, default=None, help="own SMD pads up to this short side keep grown copper away")
     ap.add_argument("--operating", help="operating facts JSON (default: KAE_OPERATING of the .kicad_pro)")
     ap.add_argument("--workdir")
@@ -1025,7 +1049,7 @@ def main(argv=None):
     a = ap.parse_args(argv)
     rep = run(a.input, a.output, dict(widen=not a.no_widen, vias=not a.no_vias, stitch=not a.no_stitch,
                                       max_width=a.max_width, current_cap=a.current_cap, mode=a.mode,
-                                      into_pours=a.into_pours, neck=a.neck, operating=a.operating), workdir=a.workdir, timeout=a.timeout)
+                                      into_pours=a.into_pours, neck=a.neck, share=not a.no_share, operating=a.operating), workdir=a.workdir, timeout=a.timeout)
     txt = json.dumps(rep, indent=1)
     if a.report:
         Path(a.report).write_text(txt)

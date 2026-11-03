@@ -159,6 +159,7 @@ def test_share_room_splits_by_current():
 
     obj = pc.PowerCopper.__new__(pc.PowerCopper)
     obj.sp = Sp()
+    obj.o = dict(pc.DEFAULTS)
     obj.current = {"A": 3.0, "B": 1.0}
     free = box(-1, -10, 5, 10)
     cand = {"A": dict(seeds=LineString([(0, -10), (0, 10)]), free=free, cap=20.0),
@@ -171,3 +172,7 @@ def test_share_room_splits_by_current():
     obj.current = {}
     claim = obj._share_room(cand, "F.Cu", steps=60)
     assert claim["A"].intersection(box(0, -1, 5, 1)).bounds[2] == pytest.approx(2.0, abs=0.25)   # equal
+    obj.o = dict(pc.DEFAULTS, share=False)                          # first come: the larger current takes all
+    obj.current = {"A": 3.0, "B": 1.0}
+    claim = obj._share_room(cand, "F.Cu", steps=60)
+    assert claim["A"].intersection(box(0, -1, 5, 1)).bounds[2] > 3.5
