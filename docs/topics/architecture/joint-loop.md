@@ -99,6 +99,9 @@ All kaebench `joint` kind, score v7, KiCad 10.0.7; physics from `tools/research/
 - **Last mile, 6 split-B boards locally (900 s)** [[joint-last-mile-local](../../../bench/results/2026-10-24-joint-last-mile-local.md), earlier runs in [joint-loop-b6](../../../bench/results/2026-10-24-joint-loop-b6.md)]: the loop has 4 / 5 clean boards at 0.75 / 0.88× the human's module value, against 5 / 5 at 1.24 / 1.33× for staged with the bridge's last mile. The completion gap is PMW3610 (7 / 6 against 4 / 5 unconnected).
 - **`--route-parallel 2` locally on split C (2,400 s, seed 0)** [same file]: 3 of 6 clean. Iteration 0 alone took 1,214–1,471 s on four boards, so the check cannot show whether the 9,000 s runs still stop on time; that needs the joint-pf arm on the shared benchmark host. Window routers timed out 4 of 53 times with the doubling budget, restarts improved 7 of 21 windows, and the portfolio finish at P = 2 never beat the loop's own board.
 
+### What the report tells the commander
+The report closes with `hazards` and `hazard_summary` ([hazards.md](hazards.md)): the iterations' nested flags, the final card's unchecked steps and modules over their allocation, and a recheck of OUTPUT with the safety checks forced on (`--recheck auto|on|off`, within `--time`). `hazard_summary.blocked` means the board would not work or cannot be built as drawn.
+
 ## Recommendations for our system
 
 1. **Judge every iteration by KiCad, accept lexicographically.** The loop can then only help: its worst case is the staged pipeline.

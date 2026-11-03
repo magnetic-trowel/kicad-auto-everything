@@ -59,6 +59,7 @@ class Result:
     problem: object = None
     terms: object = None         # the place terms the scorecard uses (None: no structures)
     order: list = field(default_factory=list)    # the protection-order rules
+    brief: dict | None = None    # the circuit brief placement used (kae.hazards: net voltages)
 
 
 SA_U_SAT = 3.0   # see place(): utilization saturates beyond this in the annealer's terms
@@ -114,10 +115,14 @@ def _escalate(P, st, workers, seed, log, time_s):
             if P.margin <= 0:
                 continue
             P.set_margin(0.0)
-        elif not P.relax_bodies():
-            continue
+        else:
+            relaxed = P.relax_bodies()
+            if not relaxed:
+                continue
         r = legalize(P, st, time_s=time_s, workers=workers, seed=seed, log=log, window_share=0.5)
         steps.append(dict(step=step, end_violators=r.get("end_violators"), violations=r.get("violations")))
+        if step == "bodies relaxed":
+            steps[-1]["relaxed"] = relaxed          # kae.hazards: bodies_relaxed
         if log:
             log(f"escalation: {step}, {r.get('end_violators')} parts still illegal")
     return steps
@@ -565,7 +570,7 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     rep.update(grid_verdict(P, st, rep["exact"]))
     rep["hpwl"] = round(st.hpwl(), 2)
     rep["hpwl_signal"] = round(st.hpwl(signal_only=True), 2)
-    res = Result(poses={}, report=rep, state=st, problem=P, terms=report_terms, order=order)
+    res = Result(poses={}, report=rep, state=st, problem=P, terms=report_terms, order=order, brief=brief)
     final_physics(res)
     if report_terms is not None and "physics_error" not in rep:
         try:

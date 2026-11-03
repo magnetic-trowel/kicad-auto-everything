@@ -4,7 +4,7 @@
 
     kae place INPUT OUTPUT [--seed N] [--time S] [--no-physics] [--stages seed,anneal,legalize]
                            [--workers W] [--writer auto|pcbnew|sexpr] [--edge-mate] [--report FILE]
-                           [--drc auto|on|off] [--drc-rounds N]
+                           [--drc auto|on|off] [--drc-rounds N] [--recheck auto|on|off]
     kae brief INPUT [--out FILE]
 
 `kae place` reads INPUT (.kicad_pcb with its project files beside it), places every unlocked
@@ -20,7 +20,10 @@ Legality is closed-loop: the placer repairs against its exact check (kae.place.e
 then, when kicad-cli is found (KAE_KICAD_CLI / KAE_KICAD_WRAP / PATH; --drc auto|on|off),
 KiCad's DRC on the written board feeds every placement error back as a constraint and the
 board is repaired and written again (--drc-rounds, default 6) until KiCad has no placement
-error or the time is up. Exit status: 0 when the placement passed the exact check and KiCad
+error or the time is up. Every report ends with "hazards" and "hazard_summary" (kae.hazards):
+what would make the board not work, not buildable or risky, including a recheck of OUTPUT
+with the safety checks forced on whatever the project's severities say (--recheck;
+kae.board_hazards). `kae brief` ends with the project's static hazards. Exit status: 0 when the placement passed the exact check and KiCad
 (when it ran), 3 when an output was written but violations remain (listed in the report,
 with the closed loop's diagnosis per part), 2 on errors.
 
@@ -110,6 +113,7 @@ def cmd_place(a):
     res.report["total_s"] = round(time.monotonic() - t0, 2)
     legal = not res.report.get("exact") and not res.report.get("outline_incomplete") and kicad_clean is not False
     res.report["legal"] = bool(legal)
+    _hazards(res.report, a, "place", t0, brief=getattr(res, "brief", None), board=board)
     text = json.dumps(res.report, default=str)
     print(text, flush=True)          # last line of stdout: what kaebench keeps (adapter.log)
     side = Path(str(a.output) + ".kae.json")
@@ -320,6 +324,23 @@ def _refresh_physics(res):
     final_physics(res)
 
 
+def _hazards(report, a, kind, t0, brief=None, board=None):
+    """The report's closing hazards and hazard_summary (kae.hazards; kae.board_hazards.finish:
+    the project's own settings, and the output rechecked with the safety checks forced on)."""
+    from kae.board_hazards import finish
+    deadline = None if getattr(a, "time", None) is None else t0 + float(a.time)
+    if getattr(a, "drc", None) == "off" and getattr(a, "recheck", "auto") == "auto":
+        mode = "off"                 # --drc off: no KiCad for this run (ablations, unit tests)
+    else:
+        mode = getattr(a, "recheck", "auto")
+    t = time.monotonic()
+    finish(report, a.output, a.input, kind=kind, mode=mode, deadline=deadline, brief=brief, board=board, log=_log)
+    report.setdefault("recheck", {})["total_s"] = round(time.monotonic() - t, 2)
+    s = report["hazard_summary"]
+    _log(f"hazards: {s['block']} block, {s['warn']} warn, {s['info']} info"
+         + (f" (blocked: {', '.join(s.get('block_codes') or {})})" if s["blocked"] else ""))
+
+
 def cmd_brief(a):
     from kae.board.kicad_file import load
     board = load(a.input)
@@ -328,6 +349,9 @@ def cmd_brief(a):
     except ImportError:
         from kae.place.stubs import stub_brief as build
     b = build(board)
+    from kae.board_hazards import static_hazards
+    from kae.hazards import finalize
+    finalize(b, extra=static_hazards(a.input, brief=b, board=board))
     text = json.dumps(b, indent=1, default=str)
     if a.out:
         Path(a.out).write_text(text)
@@ -375,6 +399,8 @@ def main(argv=None):
                          "F x the board span (0: annealer seeds only)")
     sp.add_argument("--anneal-args", help="JSON of annealer weights for experiments, e.g. '{\"w_phys\": 2.0}' "
                                           "(w_phys, w_wl, w_cong, w_order, w_disp, cong_args, ...)")
+    from kae.board_hazards import add_arguments as recheck_args
+    recheck_args(sp)
     sp.set_defaults(fn=cmd_place)
     sb = sub.add_parser("brief", help="print the physics brief of a board")
     sb.add_argument("input")

@@ -25,11 +25,14 @@ is the last line of stdout. As a kaebench method:
 `--physics-fidelity` (kae.physics.exact): exact evaluates every routed loop of the module
 stage and the recheck by PEEC; multi searches with the closed forms and re-scores each
 decision's fast top `--physics-k` (4) by PEEC, the recheck by PEEC; fast (default) as before.
-Exit status: 0 when an output was written, 2 otherwise.
+Both reports end with "hazards" and "hazard_summary" (kae.hazards); `route` rechecks OUTPUT
+with the safety checks forced on (--recheck, kae.board_hazards), `physics` flags modules over
+their allocation (u > 1). Exit status: 0 when an output was written, 2 otherwise.
 """
 import argparse
 import json
 import sys
+import time
 
 
 def _bridge_opts(items):
@@ -94,6 +97,8 @@ def main(argv=None):
     r.add_argument("--workdir")
     r.add_argument("--keep", action="store_true")
     r.add_argument("--report")
+    from kae.board_hazards import add_arguments as recheck_args
+    recheck_args(r)
     p = sub.add_parser("physics", help="routed physics of a finished board's modules")
     p.add_argument("board")
     p.add_argument("--brief")
@@ -104,6 +109,8 @@ def main(argv=None):
     EX.configure(a.physics_fidelity, a.physics_k)
     from kae.cli import _numba_cache
     _numba_cache()
+    t0 = time.monotonic()
+    log = lambda m: print(f"[kae.crit] {m}", file=sys.stderr, flush=True)   # noqa: E731
     if a.cmd == "route":
         from kae.route import critical
         opts = dict(rails=a.rails, kinds=tuple(k for k in a.kinds.split(",") if k), keep=a.keep,
@@ -135,6 +142,8 @@ def main(argv=None):
                            bridge_opts=dict(_bridge_opts(a.bridge_opt), planes=a.planes, pad_shapes=a.pad_shapes))
         if a.physics_fidelity != "fast":
             rep["physics_fidelity"] = EX.summary()
+        from kae.board_hazards import finish
+        finish(rep, a.output, a.input, kind="route", mode=a.recheck, deadline=t0 + float(a.time), log=log)
         text = json.dumps(rep, default=str)
         if a.report:
             with open(a.report, "w") as f:
@@ -144,7 +153,11 @@ def main(argv=None):
     if a.cmd == "physics":
         from kae.route.critical_recheck import board_physics
         brief = json.load(open(a.brief)) if a.brief else None
-        print(json.dumps(board_physics(a.board, brief=brief), default=str), flush=True)
+        from kae.board_hazards import static_hazards
+        from kae.hazards import finalize, physics_hazards
+        ph = board_physics(a.board, brief=brief)
+        finalize(ph, extra=physics_hazards(ph) + static_hazards(a.board, brief=brief))
+        print(json.dumps(ph, default=str), flush=True)
         return 0
     return 2
 

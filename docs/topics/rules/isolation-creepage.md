@@ -106,6 +106,7 @@
 - **Classification workflow:** the LLM proposes voltage classes and grades from the schematic and product context, and **a human must confirm** (safety-critical). BMS stacks derive classes from cell index × cell voltage ([power/chargers-bms.md](power/chargers-bms.md)).
 - **Trap detector:** package CTI group vs PCB material group; suggest a slot.
 - **Escalation rule:** suggest hi-pot substitution only for functional isolation.
+- **What kae does today (register RC10, kept):** no voltage-dependent clearance of its own; the board's rules win and the router uses only them. Every report warns (`hv_clearance_below_ipc`, [hazards.md](../architecture/hazards.md)) when a net kae.circuit puts above 30 V sits in a class whose clearance is below the IPC-2221B B2 row for its voltage. Inferred voltages are not a safety classification (ISO-01 needs a human), so this stays a warning, not a rule kae applies [I].
 
 ## Conflicts and open questions
 - **Paywalled standards:** IEC 60664-1, 62368-1 and 61010-1 were not read. Other Table 17 voltages, Table G.13 coated values and ES1/ES2/ES3 boundaries need the standard.
