@@ -75,7 +75,8 @@ DEFAULTS = {
     "reserve_cpu": -1,       # threads kept free for other users (-1: reserve_frac of threads)
     "mem_total_gb": 0,       # 0 = MemTotal
     "reserve_mem_gb": -1,    # MemAvailable kept free for other users (-1: reserve_frac of MemTotal)
-    "emergency_frac": 0.75,  # free memory below this share of the reserve preempts the newest job
+    "emergency_frac": 0.75,  # free memory below this share of the reserve preempts the newest job...
+    "emergency_floor_gb": 28,  # ...or below this, if higher: above the host's earlyoom (SIGTERM at 10% of RAM)
     "warmup_s": 300,         # a new job keeps its declared --mem reserved this long; then its observed peak * peak_margin
     "peak_margin": 1.25,
     # memory for running jobs. "lease" (default where the cgroup memory controller is delegated): each job holds a
@@ -646,7 +647,8 @@ def cg_swap_mb(cg):
 
 
 def compress_room_mb(mode):
-    """Swap that compress_frozen may fill (MB, keeping 512 MB): zram devices only for "zram"."""
+    """Swap that compress_frozen may fill (MB): zram devices only for "zram", up to 80% of their size (the
+    host's systemd-oomd kills when swap is 90% used), less 512 MB."""
     if mode == "off":
         return 0.0
     free = 0.0
@@ -655,7 +657,7 @@ def compress_room_mb(mode):
             for line in list(f)[1:]:
                 name, _, size, used, *_ = line.split()
                 if mode == "any" or "/zram" in name:
-                    free += (int(size) - int(used)) / 1024
+                    free += (0.8 * int(size) - int(used)) / 1024
     except (OSError, ValueError):
         return 0.0
     return max(0.0, free - 512)
@@ -668,12 +670,34 @@ def compress(cg, mb):
         try:
             with open(os.path.join(cg, "memory.swap.max"), "w") as f:
                 f.write("max")
-            with open(os.path.join(cg, "memory.reclaim"), "w") as f:
-                f.write(f"{int(mb)}M")
         except OSError:
-            pass                                  # reclaimed less than asked (EAGAIN) or the job ended
+            return
+        left = int(mb)
+        while left > 0 and cg_frozen(cg):        # in steps, pausing while the user manager is under pressure
+            if user_pressure() > 10.0:           # (systemd-oomd kills it at 50% for 20 s)
+                time.sleep(2)
+                continue
+            step = min(512, left)
+            try:
+                with open(os.path.join(cg, "memory.reclaim"), "w") as f:
+                    f.write(f"{step}M")
+            except OSError:
+                break                             # nothing more to reclaim (EAGAIN) or the job ended
+            left -= step
     import threading
     threading.Thread(target=go, daemon=True).start()
+
+
+def user_pressure():
+    """full avg10 memory pressure (%) of this user's systemd manager, which the host's systemd-oomd watches."""
+    uid = os.getuid()
+    try:
+        for line in open(f"/sys/fs/cgroup/user.slice/user-{uid}.slice/user@{uid}.service/memory.pressure"):
+            if line.startswith("full"):
+                return float(line.split()[1].split("=")[1])
+    except (OSError, ValueError, IndexError):
+        pass
+    return 0.0
 
 
 def uncompress(cg):
@@ -1244,7 +1268,7 @@ class Daemon:
                         disk_unrealized=disk_unrealized,
                         lease={k: v for k, v in (lease or {}).items() if k != "room"} or None)
         # emergency: free memory below emergency_frac of the reserve -> preempt newest job
-        floor = reserve * cfg["emergency_frac"]
+        floor = max(reserve * cfg["emergency_frac"], cfg["emergency_floor_gb"] * 1024)
         if avail < floor and running:   # the newest batch job, else the newest
             v = max(running, key=lambda j: ((j["qos"] or "timed") != "timed", j["started"]))
             self.preempt(v, now, f"preempted: free memory {fgb(avail)} < {fgb(floor)}")
@@ -1298,11 +1322,13 @@ class Daemon:
             if st is None:     # new, or adopted from an earlier daemon: its freeze state is in the database (and
                                # in the scope itself, should an older daemon have left it frozen unrecorded)
                 fs = j["frozen_since"] or (now if cg_frozen(cg) else 0.0)
-                st = self.lease_st[j["id"]] = {"slack_since": 0.0, "stall_since": fs, "set": None, "frozen_since": fs,
+                st = self.lease_st[j["id"]] = {"slack_since": 0.0, "stall_since": fs, "set": "unknown", "frozen_since": fs,
                                                "last": (now, m[0]), "rate": 0.0}
                 if fs and not j["frozen_since"]:
                     c.execute("UPDATE jobs SET frozen_since=?, freezes=freezes+1 WHERE id=?", (fs, j["id"]))
-            swapped = cg_swap_mb(cg) if st.get("was_compressed") else 0.0   # comes back as the job touches it
+            swapped = cg_swap_mb(cg)       # (compressed, in zram) comes back as the job touches it; read from the
+            if swapped > 0 and st.get("frozen_since"):   # scope, so a restarted daemon knows a compressed job
+                st["compressed"] = st["was_compressed"] = True
             st["max_use"] = max(st.get("max_use", 0.0), m[0] + swapped)
             t0, u0 = st["last"]
             grew = max(0.0, m[0] - u0)
