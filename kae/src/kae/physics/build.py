@@ -38,6 +38,7 @@ from .structures import (
     CmComp,
     CouplingComp,
     CouplingEngine,
+    CrystalClearanceComp,
     CrystalComp,
     DecapLoop,
     EsdComp,
@@ -268,9 +269,7 @@ def build_structures(terms):
                 else:
                     S.extend(_decap(ctx, s, Struct, low))
             elif kind == 'crystal':
-                st = _crystal(ctx, s, Struct)
-                if st:
-                    S.append(st)
+                S.extend(_crystal(ctx, s, Struct))
             elif kind == 'connector_chain':
                 st = _esd(ctx, s, Struct)
                 if st:
@@ -660,11 +659,11 @@ def _crystal(ctx, s, Struct):
     ic = ctx.part(s.get('ic'))
     y = ctx.part(s.get('crystal'))
     if ic is None or y is None:
-        return None
+        return []
     ki = ctx.pads(ic, s.get('xin'))
     ko = ctx.pads(ic, s.get('xout'))
     if not ki or not ko:
-        return None
+        return []
     ni, no = bv.parts[ic].pad_net[ki[0]], bv.parts[ic].pad_net[ko[0]]
 
     def side_terms(net, kic):
@@ -680,8 +679,23 @@ def _crystal(ctx, s, Struct):
     alloc, sens = PR.crystal_budget(s.get('f_Hz'))
     alloc = ctx.budget(s, 'ppm') or alloc
     comp = CrystalComp(bv, ti, to, sens, detour=ctx.t.knobs.detour('crystal'))
-    return Struct(id=s.get('id') or f'xtal:{bv.parts[y].ref}', kind='crystal', conf=ctx.conf(s), alloc=alloc,
-                  comps=[comp], labels=['pulling'], info=dict(nets=[ni, no], S_ppm_per_pF=sens))
+    sid = s.get('id') or f'xtal:{bv.parts[y].ref}'
+    out = [Struct(id=sid, kind='crystal', conf=ctx.conf(s), alloc=alloc,
+                  comps=[comp], labels=['pulling'], info=dict(nets=[ni, no], S_ppm_per_pF=sens))]
+    dmin = ctx.budget(s, 'd_min')
+    if dmin is not None and dmin.value > 0:
+        # a vendor minimum distance (ESP32 XTAL-DMIN): the shortfall in mm, a tenth of d_min
+        # short spends the whole allocation and the barrier prices beyond it, so the pulling
+        # term (which falls with distance) stops at the annulus; util > 1 reports the violation
+        ky = [k for k, n in enumerate(bv.parts[y].pad_net) if n and n not in ctx.gnd]
+        ty = [ctx.term(y, [k]) for k in ky]
+        tic = [ctx.term(ic, ki[:1]), ctx.term(ic, ko[:1])]
+        out.append(Struct(id=f'{sid}#d_min', kind='crystal', conf=ctx.conf(s),
+                          alloc=PR.Belief(0.1 * dmin.value, 'mm', f'shortfall below d_min {dmin.value:g} mm '
+                                          f'({dmin.basis}); 10% of d_min spends the allocation', dmin.cls),
+                          comps=[CrystalClearanceComp(ty, tic, dmin.value)], labels=['below_d_min'],
+                          info=dict(d_min_mm=dmin.value)))
+    return out
 
 
 # ----------------------------------------------------------------------------- (c)

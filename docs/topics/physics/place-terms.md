@@ -15,7 +15,7 @@ Each structure s returns a spend v_s in physical units, with allocation a_s and 
 
 J = Σ_s c_s φ(u_s),  φ(u) = u (u ≤ 1);  u + β(u−1)² (1 < u ≤ u_sat);  φ(u_sat) + φ′(u_sat)·u_sat·ln(u/u_sat) (beyond),
 
-with β = 4, u_sat = 10 and c_s = confidence × calibrated ownership; φ is C¹. Over-budget structures dominate; beyond 10× a structure has failed (usually a misidentified one), and the log tail keeps a gradient without swamping other terms.
+with β = 4, u_sat = 10 and c_s = confidence × calibrated ownership; φ is C¹. Over-budget structures dominate; beyond 10× a structure has failed (usually misidentified); the log tail keeps a gradient.
 
 | Term | Spend | Default allocation (E5) |
 |---|---|---|
@@ -68,7 +68,7 @@ The detour grows with distance (decap hops 1.13 below 2 mm, 1.67 beyond 15 mm). 
 
 Like for like uses the reference's definitions: a cell loop through the brief loop's capacitor only (Terms: owned caps in parallel, 1.46), a protector via through the whole board (Terms: to the plane, 1.44), a crystal pulled by the whole trace capacitance (Terms: (ΔC1 + ΔC2)/4, 4.0).
 
-Outliers were estimator faults: an outer pour taken for the return plane (bldcm U2, 3.8 → 1.2) and a hop across an outline notch that found no plane (doorman D3, 0.15 → 0.52).
+Outliers were estimator faults: an outer pour taken for the return plane (bldcm U2) and a hop across an outline notch (doorman D3).
 
 ## 3. Decoupling (b)
 
@@ -90,7 +90,7 @@ Outliers were estimator faults: an outer pour taken for the return plane (bldcm 
 
 ## 5. Crystal (d)
 
-C′(w, h, εr) times the XIN and XOUT nets' half-perimeters, stretched by 1 + 0.05√ℓ, changes the Pierce load by (ΔC1 + ΔC2)/4 and pulls by S: 16 ppm/pF for an AT-cut MHz crystal, 8 ppm/pF at 32 kHz. Hammerstad–Jensen C′ reads 3.8% low (max 5.7%) against fe_field2d [C].
+C′(w, h, εr) times the XIN and XOUT nets' half-perimeters, stretched by 1 + 0.05√ℓ, changes the Pierce load by (ΔC1 + ΔC2)/4 and pulls by S: 16 ppm/pF for an AT-cut MHz crystal, 8 ppm/pF at 32 kHz. Hammerstad–Jensen C′ reads 3.8% low (max 5.7%) against fe_field2d [C]. A vendor minimum ([XTAL-DMIN](../rules/crystals-clocks.md): ESP32 `budget.d_min`) adds a `#d_min` row: the nearest pad's shortfall (mm) against 0.1·d_min.
 
 ## 6. Thermal (e)
 

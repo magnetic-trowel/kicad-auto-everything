@@ -136,6 +136,30 @@ def test_crystal_circuit():
     one(st['victims'], **{'class': 'crystal'})
 
 
+def test_crystal_load_caps_xin_first_and_by_side():
+    """crystals-clocks.md XTAL-CAP, "the XIN cap first and closest": load_caps lead with the XIN
+    side's cap whatever the net names sort to, and each side's caps are named."""
+    def ren(n):
+        return {'XIN': 'Z_OSC_I', 'XOUT': 'A_OSC_O'}.get(n, n)
+    parts = mcu_parts()
+    for f in parts:
+        for p in f.pads:
+            p.net = ren(p.net)
+    nl, r, st = structures(parts)
+    x = one(st['crystals'], crystal='Y1')
+    assert x['load_caps'] == ['C16', 'C17']
+    assert x['load_caps_xin'] == ['C16'] and x['load_caps_xout'] == ['C17']
+
+
+def test_esp32_crystal_carries_the_vendor_minimum_distance():
+    parts = mcu_parts()
+    parts[0].value = 'ESP32-S3'
+    parts[0].fields['Value'] = 'ESP32-S3'
+    nl, r, st = structures(parts)
+    x = one(st['crystals'], crystal='Y1')
+    assert x['budget']['d_min']['value'] == 2.0 and x['budget']['d_min']['unit'] == 'mm'
+
+
 def test_usb_connector_chain_with_esd_and_series_resistors():
     parts = mcu_parts() + [
         fp('J1', 'USB_C_Receptacle', 'Connector_USB:USB_C_Receptacle_HRO_TYPE-C-31-M-12',
