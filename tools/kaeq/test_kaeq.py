@@ -557,6 +557,17 @@ def test_the_timed_forecast_z_adapts_to_lost_work(kq):
     assert kq.adapt_z(2.0, [(0, 0.0, 0.0), (3600, 10.0, 5.0)], cfg, now=3600) == (2.0, None)
 
 
+def test_batch_jobs_get_whole_steps_or_wait_and_evict_for_timed_only_when_really_short(kq):
+    cfg = dict(LEASE, lease_hold_frac=0.25)
+    jobs = [dict(id=1, prio=0, started=10, grant=8192, use=8100),                 # batch at its grant: step 2 GB
+            dict(id=2, prio=0, started=20, grant=4096, use=4000, timed=True)]     # timed at its grant
+    p = kq.lease_plan(jobs, 1500.0, cfg, now=1000.0, buffer=1000.0, timed_held=0.0, credit=1000.0)
+    assert p["grants"][2] > 4096 and 1 in p["stalled"]         # crumbs to the timed job; the batch job waits frozen
+    assert p["timed_victim"] is None                            # real free (1.5 GB) is above the buffer: no eviction
+    p = kq.lease_plan(jobs, 500.0, cfg, now=1000.0, buffer=1000.0, timed_held=0.0)
+    assert p["timed_victim"] == 1                               # really short: the batch job makes room
+
+
 def test_lease_plan_freezes_growers_when_the_buffer_is_eaten(kq):
     cfg = dict(LEASE, lease_hold_frac=0.0)
     jobs = [dict(id=1, prio=0, started=10, grant=60000, use=50000, grew=3000),   # oldest grower
@@ -611,7 +622,7 @@ def test_each_attempt_leaves_a_trace(kq, tmp_path):
 def test_a_frozen_job_is_compressed_and_nothing_starts_until_it_is_back(kq, tmp_path):
     if kq.compress_room_mb("any") < 700:
         pytest.skip("needs about 1.2 GB of free swap")
-    d = _lease_daemon(kq, tmp_path, mem_budget_gb=0.8, compress_frozen="any")
+    d = _lease_daemon(kq, tmp_path, mem_budget_gb=1.6, compress_frozen="any")   # room for one 1 GB step
     submit(kq, HOG.format(n=4, after="", hold=3), name="hog", mem="300M", timeout="3m", qos="batch")
     drive(kq, d, lambda: d.cgroups.get(1) and kq.cg_frozen(d.cgroups[1]), secs=60)
     drive(kq, d, lambda: kq.cg_swap_mb(d.cgroups[1]) > 200, secs=60)        # its memory went to swap
@@ -653,6 +664,7 @@ def _lease_daemon(kq, tmp_path, **cfg):
     d = kq.Daemon()
     if not d.use_cgroup(kq.config()):
         pytest.skip("no delegated cgroup memory controller here")
+    kq.user_pressure = lambda: 0.0     # the live host's user manager pressure must not pause the tests' reclaims
     return d
 
 

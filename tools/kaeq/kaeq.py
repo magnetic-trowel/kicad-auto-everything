@@ -760,7 +760,7 @@ def cg_set_high(cg, mb):
         return False
 
 
-def lease_plan(jobs, real_mb, cfg, now, buffer=0.0, timed_held=None):
+def lease_plan(jobs, real_mb, cfg, now, buffer=0.0, timed_held=None, credit=0.0):
     """One pass of the memory leases. jobs: [{id, prio, started, grant, use, slack_since, stall_since, grew}] (MB, s;
     grew: MB the job grew since the last tick). real_mb: memory really free beyond the reserve (MemAvailable). A grant
     is a limit, not a reservation: what is free for grants and new jobs is real_mb minus `buffer` (room for the
@@ -807,7 +807,7 @@ def lease_plan(jobs, real_mb, cfg, now, buffer=0.0, timed_held=None):
                                 for j in jobs if young(j) or not j.get("timed"))
     held += sum(j.get("swapped", 0.0) for j in jobs if not j.get("compressed"))   # thawed: still coming back
     # (a squeezed running job's cold pages are passed as swapped=0: they stay out unless it touches them)
-    free_mb = real_mb - buffer - held
+    free_mb = real_mb - buffer - held + credit     # credit: squeezable memory of timed jobs (squeeze_credit)
     stalled = []
     if real_mb < buffer:     # the fleet grew into the buffer: freeze who grew, lowest priority and newest first
         grew = sorted((j for j in jobs if j.get("grew", 0.0) > 0 and not j.get("timed")),
@@ -839,8 +839,10 @@ def lease_plan(jobs, real_mb, cfg, now, buffer=0.0, timed_held=None):
         step = max(cfg["lease_step_gb"] * 1024, cfg["lease_step_frac"] * g, u + margin - g)
         if free_mb > 4 * step:           # plenty free: grow well ahead of a fast-growing job
             step = max(step, 0.5 * g)
-        back = j.get("swapped", 0.0) if j.get("compressed") else 0.0   # a compressed job thaws only with room for it
-        if free_mb - back >= min(step, 256.0):
+        back = 0.0   # (a compressed job's u includes what it has in swap: its step makes room for all of it)
+        # a batch job gets a whole step or waits frozen: fed in crumbs it would sit throttled at memory.high, which
+        # stalls it and builds the pressure systemd-oomd kills for (a timed job is never throttled: crumbs are fine)
+        if free_mb - back >= (min(step, 256.0) if j.get("timed") else step):
             take = min(step, free_mb - back)
             grants[j["id"]] = g + take
             free_mb -= take + back
@@ -875,7 +877,7 @@ def lease_plan(jobs, real_mb, cfg, now, buffer=0.0, timed_held=None):
             stall[s] = now          # the next victim only after another lease_stall_s
     timed_victim = None
     batch = [j for j in jobs if not j.get("timed") and j["id"] not in (victim, evict)]
-    if short and batch:                  # the newest batch job, a frozen one first (it is making no progress)
+    if short and batch and real_mb <= buffer:   # really short: the newest batch job, a frozen one first
         timed_victim = max(batch, key=lambda j: (bool(j.get("frozen")), j["started"] or 0))["id"]
     return dict(grants=grants, slack_since=slack, stall_since=stall, stalled=stalled, free=free_mb, held=held,
                 victim=victim, waiter=waiter if victim is not None else None, timed_victim=timed_victim, short=short,
@@ -1445,7 +1447,14 @@ class Daemon:
                      None if j.get("protected") else self.profiles.get(j["owner"]))
                     for j in jobs if j["timed"] and now - (j["started"] or now) >= warm]
             timed_held = pooled_headroom(grow, z, cfg["mem_pool_rho"], {o: r for o, (r, _) in self.rho.items()})[0]
-        plan = lease_plan(jobs, room - other, dict(cfg, timed_hold_frac=hold), now, buffer, timed_held)
+        credit = 0.0
+        if cfg["squeeze"] and cfg["squeeze_credit"] > 0:
+            gain = 1 - 1 / max(1.0, cfg["zram_ratio"])
+            steady = sum(j["use"] for j in jobs if j["timed"] and not j.get("frozen")
+                         and now - (j["started"] or now) >= cfg.get("lease_warm_s", 120)
+                         and not (self.lease_st.get(j["id"]) or {}).get("hot"))
+            credit = min(cfg["squeeze_credit"] * steady, compress_room_mb(cfg["compress_frozen"])) * gain
+        plan = lease_plan(jobs, room - other, dict(cfg, timed_hold_frac=hold), now, buffer, timed_held, credit)
         by = {j["id"]: j for j in running}
         for j in jobs:
             st, g = self.lease_st[j["id"]], int(plan["grants"][j["id"]])
@@ -1484,6 +1493,8 @@ class Daemon:
         self.mem_stalled = set(plan["stalled"])
         self.squeeze_one(cfg, now, jobs, room - other, buffer)
         ev = plan["evict"]
+        if ev is not None and self.squeezing is not None and room - other >= buffer / 4:
+            ev = None                    # a squeeze is under way: give it the time, unless free is under a quarter
         if ev is not None and now - self.evict_ts >= cfg["evict_every_s"]:
             self.evict_ts = now
             v = by[ev]
@@ -1505,14 +1516,7 @@ class Daemon:
             tv = None
         grants = {i: plan["grants"][i] for i in plan["grants"] if i not in (plan["victim"], tv, ev)}
         use = {j["id"]: j["use"] for j in jobs}
-        credit = 0.0
-        if cfg["squeeze"] and cfg["squeeze_credit"] > 0:
-            gain = 1 - 1 / max(1.0, cfg["zram_ratio"])
-            steady = sum(j["use"] for j in jobs if j["timed"] and not j.get("frozen")
-                         and now - (j["started"] or now) >= cfg.get("lease_warm_s", 120)
-                         and not (self.lease_st.get(j["id"]) or {}).get("hot"))
-            credit = min(cfg["squeeze_credit"] * steady, compress_room_mb(cfg["compress_frozen"])) * gain
-        return dict(room=plan["free"] + credit, credit=credit, held=other + plan["held"] + buffer, buffer=buffer,
+        return dict(room=plan["free"], credit=credit, held=other + plan["held"] + buffer, buffer=buffer,
                     unused=sum(max(0.0, g - use[i]) for i, g in grants.items()),
                     granted=sum(grants.values()), used=sum(use.values()), stalled=plan["stalled"],
                     victim=plan["victim"], short=plan["short"], jobs=len(jobs), hold=hold, z=z, loss=self.oc.get("loss"),
