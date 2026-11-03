@@ -89,6 +89,11 @@ def test_apply_tcr_scales_dc_rows_totals_and_adds_a_runaway_hazard():
     assert tot[1] == pytest.approx(10.0 + phi(0.78) - phi(0.6) + phi(1.32) - phi(1.2))
     assert len(hz) == 1 and hz[0]["code"] == "thermal_runaway_copper" and hz[0]["severity"] == "block"
     assert hz[0]["objects"] == ["+3V3"]
+    # a cold ambient (factor < 1) never lowers a DC value below its 20 C one
+    rows = [dict(observer="dc:copper_loss", u=0.3, u_lo=0.3, u_hi=0.3, P_mW=10.0,
+                 _tcr=dict(us=[0.3], vals=[0.01], nets=None, key="P_mW", scale=1e3))]
+    apply_tcr(rows, dict(factor=[0.92], a0=[0.92], net_factor=[{}]), [0.0], [], [])
+    assert rows[0]["u"] == pytest.approx(0.3) and rows[0]["P_mW"] == pytest.approx(10.0)
 
 
 def test_field_harm_within_the_mesh_error_band_gets_a_hazard():

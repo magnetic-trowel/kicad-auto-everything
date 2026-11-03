@@ -581,15 +581,15 @@ def bias_hazards(harms, pitch):
 MESH_BIAS = ("loop inductances at the 0.25 mm pitch differ from converged values by -3% to +16% (hot loops and plane pairs "
              "read high, first order in pitch; small decap loops whose pads and vias snap to the cells either way); "
              "comparisons of two layouts at one pitch cancel most of it (docs/research/physics/field-solver-accuracy.md)")
-SKIN_NOTE = ("copper loss through the thickness from nsub filaments (kae.em.mesh.Layer): at nsub = 2 copper R is within "
-             "5% to 10 MHz and 0.56x at 100 MHz; this evaluator's bands are at or below 10 MHz (the wideband one corrects it, "
-             "kae.em.skin)")
+SKIN_NOTE = ("copper crowding through the thickness from nsub filaments (kae.em.mesh.Layer): at nsub = 2, R is within 5% "
+             "to 10 MHz but 0.56x at 100 MHz, while L (which sets this evaluator's harms) is within 0.2% at 10 MHz and 1.6-3.6% "
+             "high at 100 MHz; the wideband evaluator corrects R (kae.em.skin)")
 
 
 def apply_tcr(rows, tcr, tot, notes, hazards):
     """The DC band's copper loss and rail drops at the copper's own temperature (kae.excite.heat.tcr_solve): each
     corner's value and u times the heat band's copper-loss factor at that corner (a drop: the largest factor of its
-    rail and the grounds; a net without sustained heat: the ambient's 1 + alpha (T_amb - 20 C)). The DC band ran at
+    rail and the grounds; a net without sustained heat: the ambient's 1 + alpha (T_amb - 20 C); never below 1). The DC band ran at
     the corners' peak currents, the heat band at their sustained draw: copper temperature follows the sustained
     heat (seconds), so a peak flows through copper at that temperature. Per-corner totals take the change. A
     corner without a steady state (thermal runaway) adds a block hazard. Removes the rows' working '_tcr' keys."""
@@ -609,6 +609,9 @@ def apply_tcr(rows, tcr, tot, notes, hazards):
                     f = fac[c]
             else:
                 f = 1.0
+            # never below the 20 C value: the corners pair the DC band's peak currents with the heat band's ambient at
+            # random, and a cold ambient must not lower the sampled worst drop (a cold board's copper is the better case)
+            f = max(f, 1.0)
             nu = us[c] * f
             tot[c] += HA.phi(nu) - HA.phi(us[c])
             new_u.append(nu)
