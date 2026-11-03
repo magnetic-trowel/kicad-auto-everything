@@ -19,8 +19,15 @@ from . import objective as OB
 from . import units as U
 
 RHO_CU_OHM_MM = 1.72e-5            # copper resistivity, ohm mm
-AREA_COST = 0.05                   # neutral/1: currency per mm^2 of copper when the intent says nothing
-AREA_COST_BASIS = "TBD"
+# neutral/1: currency per mm^2 of copper when the intent says nothing. w* = 3.1 mm/A on 35 um copper.
+# Basis (economic, always-on): a mm^2 of a 2-layer board at volume costs about $0.0003-0.0008, and 1 mW
+# for 5 years at $0.15/kWh about $0.0066, so 0.05-0.12 mW_eq/mm^2. Human layouts imply more: median 0.64
+# (IQR 0.18-3.4) over 147 rail nets >= 0.1 A on 59 suite boards, i.e. tracks about 3.5x narrower
+# (tools/research/physics/area_cost_widths.py). Kept until the A/B (tools/kaeres/experiments/area-cost-ab.sh)
+# decides; reported as a defaulted knob (hazard area_cost_defaulted).
+AREA_COST = 0.05
+AREA_COST_BASIS = ("economic, always-on board: $0.0003-0.0008/mm^2 of 2-layer board vs 1 mW for 5 y at $0.15/kWh "
+                   "($0.0066); human layouts imply about 0.6 (tracks ~3.5x narrower than this default)")
 
 
 def _net_matches(t, net, secs, kind=None):
