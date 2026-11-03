@@ -63,12 +63,12 @@ def main():
             onto = board_path(inp)
             if name in a.joint:
                 onto, tp = score._rebuild("transplant-placement", src, board_path(inp), ref, work / "placed" / name,
-                                          board_path(ref))
+                                          board_path(ref), flags=("--zones",))
                 if not tp.get("loadable"):
                     man["runs"][name] = dict(error="placement not loadable")
                     continue
             staged, tr = score._rebuild("transplant-routing", src, onto, ref, work / "scored" / name,
-                                        board_path(ref), flags=() if name in a.joint else ("--zones",))
+                                        board_path(ref), flags=("--zones",))
             man["runs"][name] = dict(board=str(staged)) if tr.get("loadable") else dict(error="output not loadable")
         except Exception as e:  # noqa: BLE001
             man["runs"][name] = dict(error=f"{type(e).__name__}: {e}"[:500], traceback=traceback.format_exc()[-2000:])

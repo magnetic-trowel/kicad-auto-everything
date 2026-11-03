@@ -263,11 +263,55 @@ def test_illegal_zones_are_invalid(rt, mode, broken, reason):
         assert any(reason in r for z in s["zone_problems"] for r in z["reasons"]), s["zone_problems"]
 
 
-def test_joint_tasks_may_not_add_zones(rt):
-    """Zones are a route-task allowance; in a joint task an added zone is a foreign change."""
+@pytest.mark.parametrize("kind", ["joint", "joint-fixed"])
+def test_joint_tasks_may_add_zones(rt, kind):
+    """Joint tasks take added zones and pads' zone connection under the route rules: the
+    placement half ignores them (legality judged on the placement alone), the routing half
+    transplants and checks them."""
     root, _ = rt
-    s = cheat(root, "joint_zone", kind="joint")[0]["score"]
-    assert not s["valid"] and s["integrity"]["place_untouched"] is False and "zones_added" not in s, s
+    s = cheat(root, "joint+n2_only", kind=kind)[0]["score"]
+    assert s["valid"] and s["legal"] and not s["clean"] and s["unconnected"] == 1, s
+    for mode in ("joint+zone_gnd", "joint+zone_solid_pad", "joint+zone_overlap_priority"):
+        s = cheat(root, mode, kind=kind)[0]["score"]
+        assert s["valid"] and s["legal"] and s["clean"] and s["unconnected"] == 0, (mode, s)
+        assert s["integrity"]["route_zones"] and s["place_foreign"]["count"] == 0 and s["zones_added"] == 1, (mode, s)
+    assert s["pad_zone_connections"] == 0
+    row, run_dir = cheat(root, "joint+zone_solid_pad", kind=kind)
+    assert row["score"]["pad_zone_connections"] == 1, row["score"]
+    sdir = next(run_dir.glob(f"*/{kind}/*/attempt-0/score"))
+    placed_text = (sdir / "placement" / "board.kicad_pcb").read_text()  # what placement legality judged
+    assert "abababab-abab-abab-abab-" not in placed_text and "(zone_connect 2)" not in placed_text
+    routed_text = (sdir / "routing" / "board.kicad_pcb").read_text()
+    assert routed_text.count("abababab-abab-abab-abab-") == 1 and routed_text.count("(zone_connect 2)") == 1
+    s = cheat(root, "joint+zone_copy", kind=kind)[0]["score"]
+    assert s["copy"]["zones"]["matched"] == 1 and s["suspect_copy"], s
+
+
+@pytest.mark.parametrize("kind", ["joint", "joint-fixed"])
+@pytest.mark.parametrize("mode,broken,reason", [
+    ("zone_edit", "untouched", None),
+    ("zone_delete", "untouched", None),
+    ("zone_dup_uuid", "zones", "duplicate uuid"),
+    ("zone_unknown_net", "zones", "not in the task"),
+    ("zone_no_net", "zones", "no net"),
+    ("zone_non_copper", "zones", "copper layers"),
+    ("zone_outside", "zones", "outside the board outline"),
+    ("zone_in_keepout", "zones", "keepout"),
+    ("zone_rule_area", "zones", "rule area"),
+    ("zone_overlap_tie", "zones", "equal priority"),
+])
+def test_illegal_zones_are_invalid_in_joint_tasks(rt, kind, mode, broken, reason):
+    root, _ = rt
+    row, _ = cheat(root, f"joint+{mode}", kind=kind)
+    s = row["score"]
+    assert row["status"] == "ok", row
+    assert not s["valid"] and not s["clean"] and s["integrity"][f"route_{broken}"] is False, s
+    if broken == "untouched":  # a task zone edited or deleted: the placement half sees it too
+        assert s["integrity"]["place_untouched"] is False, s
+    else:  # an added zone is the routing half's to judge; the placement stays legal
+        assert s["integrity"]["place_untouched"] is True, s
+    if reason:
+        assert any(reason in r for z in s["zone_problems"] for r in z["reasons"]), s["zone_problems"]
 
 
 @pytest.mark.parametrize("mode,broken", [

@@ -15,7 +15,7 @@ process from the harness. Every operation prints one JSON object on stdout.
     python pcbnew_ops.py import-ses IN SES OUT
     python pcbnew_ops.py unconnected BOARD
     python pcbnew_ops.py transplant-routing OUTPUT INPUT DEST [REFERENCE] [--zones]
-    python pcbnew_ops.py transplant-placement OUTPUT INPUT DEST [REFERENCE]
+    python pcbnew_ops.py transplant-placement OUTPUT INPUT DEST [REFERENCE] [--zones]
     python pcbnew_ops.py covered-micro-arcs BOARD [MAX_MM]
 """
 import hashlib
@@ -859,11 +859,16 @@ def _set_pose(fp, pos, orientation, flipped):
     fp.SetPosition(pos)
 
 
-def transplant_placement(out_path, inp_path, dst, ref_path=None):
+def transplant_placement(out_path, inp_path, dst, ref_path=None, zones=False):
     """DEST = INPUT with each footprint that is not anchored (_anchored) moved to its pose in
     OUTPUT (position, orientation, side). Report OUTPUT's other changes, moved anchored parts
     (as locked_moved), and footprints
-    missing from or added to OUTPUT. Place inputs carry no copper, so neither does DEST."""
+    missing from or added to OUTPUT. Place inputs carry no copper, so neither does DEST.
+
+    With zones (joint tasks, score v10): the zones OUTPUT adds and pads' own zone connection are
+    the routing half's to judge and transplant (transplant-routing --zones), so they are left out
+    of the foreign changes here, and never put into DEST: placement legality is judged on the
+    placement alone."""
     out, err = _try_load(out_path)
     if out is None:
         _out(dict(ok=True, loadable=False, error=err))
@@ -910,9 +915,15 @@ def transplant_placement(out_path, inp_path, dst, ref_path=None):
             _set_pose(f, o.GetPosition(), o.GetOrientation(), o.IsFlipped())
             _set_pose(f, *pose)
             _set_pose(o, *pose)
+    skip = []
+    if zones:
+        for p, q in _pad_zone_connections(out, fresh).values():
+            p.SetLocalZoneConnection(q.GetLocalZoneConnection())
+        in_ids = {z.m_Uuid.AsString() for z in _zones(fresh)}
+        skip = [("zone", u) for u in {z.m_Uuid.AsString() for z in _zones(out) if not z.IsTeardropArea()} - in_ids]
     _unfill(out)
     _unfill(fresh)
-    foreign = _foreign(_canonical(out), _canonical(fresh))
+    foreign = _foreign(_canonical(out), _canonical(fresh), skip=skip)
     _out(dict(ok=True, loadable=True, missing=missing[:50], n_missing=len(missing), extra=extra[:50],
               n_extra=len(extra), locked_moved=locked_moved[:50], n_locked_moved=len(locked_moved),
               routing_added=routing_added, output=ident, foreign=foreign, copy=copy))
@@ -989,7 +1000,7 @@ def main(argv):
         elif op == "transplant-routing":
             transplant_routing(*args[:4], zones="--zones" in argv)
         elif op == "transplant-placement":
-            transplant_placement(*args[:4])
+            transplant_placement(*args[:4], zones="--zones" in argv)
         elif op == "covered-micro-arcs":
             covered_micro_arcs(args[0], *(float(a) for a in args[1:2]))
         else:

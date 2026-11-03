@@ -5,7 +5,7 @@ reference rules.
 
 The scorer never judges the file a method wrote. It transplants only what the task lets
 a method change into a fresh copy of the task input: tracks, arcs and vias for routing,
-plus, in route tasks, the copper zones a method adds and pads' own zone connection;
+plus, in route and joint tasks, the copper zones a method adds and pads' own zone connection;
 footprint poses (position, rotation, side) for placement. Edits to anything else (rules,
 outline, keepouts, the task's zones, other pad properties, layers, nets) therefore cannot
 change a score. They are still detected, and make the result invalid:
@@ -13,11 +13,15 @@ change a score. They are still detected, and make the result invalid:
   route  placement, pad nets, every other board object untouched; routing only on the
          board's copper layers (copper on a new net is kept and counted: it cannot
          connect anything); added zones legal (below)
-  joint  as place, then as route but without added zones (an added zone is a foreign change)
+  joint  as place (added zones and pads' zone connection excepted: never in the placement that
+         is judged), then as route, added zones included (joint and joint-fixed tasks)
   place  pad nets and every non-pose property untouched; locked footprints unmoved; no
          footprints added or removed; no copper added
 
-Added zones (route tasks, score v10; pcbnew_ops._added_zones). A route method may add copper
+Added zones (route, joint and joint-fixed tasks, score v10; pcbnew_ops._added_zones). In joint
+tasks the placement half ignores them (and pads' zone connection) and judges legality on the
+placement alone; the routing half transplants and checks them onto that placement exactly as
+in a route task. A route method may add copper
 pours. A zone the task input does not have (by uuid; teardrops are routing and stay ignored)
 is transplanted with everything it carries (outline, layers, net, priority, clearance, pad
 connection and thermal settings, minimum width, island removal) but not its fill: DRC refills
@@ -60,7 +64,7 @@ from .boardfiles import board_path, install_rules, unconnected_ignored
 
 # 8: unconnected counted by pcbnew where the project ignores the check (_uncapped)
 # 9: route placement integrity with the place side's pose tolerance (transplant-routing)
-# 10: route tasks may add copper zones and set pads' zone connection (see the docstring)
+# 10: route and joint tasks may add copper zones and set pads' zone connection (see the docstring)
 SCORE_VERSION = 10
 # KiCad 10's DRC report stops listing unconnected items at 499 and other violations at 199
 # per type (drc_engine ERROR_LIMIT / EXTENDED_ERROR_LIMIT).
@@ -244,7 +248,7 @@ def score_joint_task(task_dir, output_board, scoring_dir, record, allow_copy=Fal
     ref_board = board_path(task_dir / "reference")
     placed_dir = scoring_dir / "placement"
     staged_p, tp = _rebuild("transplant-placement", output_board, board_path(task_dir / input_kind / "input"),
-                            task_dir / "reference", placed_dir, ref_board)
+                            task_dir / "reference", placed_dir, ref_board, flags=("--zones",))
     if not tp.get("loadable"):
         return _unloadable(tp, clean=False, legal=False, completion=0.0)
     pst, pdrc = _measure(staged_p, placed_dir)
@@ -257,7 +261,7 @@ def score_joint_task(task_dir, output_board, scoring_dir, record, allow_copy=Fal
         untouched=tp["foreign"]["count"] == 0,
     )
     s = score_routing(output_board, staged_p, pst, start, record["reference"]["stats"], task_dir / "reference",
-                      scoring_dir / "routing", reference_board=ref_board, allow_copy=allow_copy)
+                      scoring_dir / "routing", reference_board=ref_board, allow_copy=allow_copy, allow_zones=True)
     if not s.get("valid") and s.get("integrity", {}).get("loadable") is False:
         return s
     outside = outside_count(pst["placement"], record["reference"].get("pads_outside", {}))

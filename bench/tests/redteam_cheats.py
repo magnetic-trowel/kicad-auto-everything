@@ -200,7 +200,6 @@ PLACE = {
     "unlock_connector": lambda t: unlock(set_pose(placed(t), J1, 125, 108), J1),
     # joint: place and route in one output
     "joint_honest": lambda t: routed(placed(t)),
-    "joint_zone": lambda t: add_items(routed(placed(t)), [zone("N1", rect(101, 110, 106, 113), layer="B.Cu")]),
     "joint_move_locked": lambda t: routed(placed(set_pose(t, H1, 130, 112))),
     "delete_footprint": lambda t: set_pose(remove_block(t, "footprint", R2),
                                            "11111111-1111-1111-1111-111111111111", 110, 105),
@@ -228,6 +227,8 @@ def main(argv):
             '(version 1)\n(rule "anything" (constraint clearance (min 0)))\n')
         out.with_suffix(".kicad_pro").write_text(
             '{"board": {"design_settings": {"rule_severities": {"unconnected_items": "ignore"}}}}\n')
+    elif mode.startswith("joint+"):  # joint: the human placement, then a route mode on it
+        out.write_text(ROUTE[mode[6:]](placed(inp.read_text(encoding="utf-8"))), encoding="utf-8")
     else:
         fn = ROUTE.get(mode) or PLACE[mode]
         out.write_text(fn(inp.read_text(encoding="utf-8")), encoding="utf-8")
