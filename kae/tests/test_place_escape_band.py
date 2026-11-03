@@ -160,6 +160,38 @@ def test_a_hollow_ring_is_not_a_small_grid():
     assert EB._grid([(p.lx, p.ly) for p in fp.pads]) is None
 
 
+def _channel(nx, ny, empty, pitch=0.8):
+    """A ball grid with the columns `empty` depopulated (a DDR x16's centre channel)."""
+    ox, oy = (nx - 1) * pitch / 2, (ny - 1) * pitch / 2
+    return NS(pads=[_pad(i * pitch - ox, j * pitch - oy, f"S{i}_{j}") for i in range(nx) for j in range(ny)
+                    if i not in empty])
+
+
+def test_balls_beside_an_open_channel_escape_into_it_and_out_of_its_ends():
+    """nekoink U202: the balls beside the empty centre channel escape on F.Cu into it and leave
+    by the package's short ends, so the band they need is at the ends, not the long sides."""
+    fp = _channel(10, 10, (4, 5))
+    pk = EB.package(fp, _kinds(fp), w=0.1, c=0.1)        # one track between two balls: rings 0 and 1
+    c = pk["counts"]
+    assert sum(c.values()) == 80                          # every ball within a ring of an edge or the channel
+    # 28 balls leave through the channel's mouths: 14 per end, on top of the outer rows' own
+    assert c["T"] == c["B"] and c["T"] >= 14 + 2 and c["L"] == c["R"] and c["L"] + c["T"] == 40
+
+
+def test_a_dog_bone_site_of_a_ball_escaping_into_a_channel_points_into_it():
+    """16 x 12 at 0.8 mm with columns 6-9 empty, no track between two balls. In the middle rows
+    columns 3 and 4 reach the surface through the channel sooner than through the edge, so
+    their sites are on the channel's side (behind column 5's escapes into it); columns 1 and 2
+    keep theirs pointing away from the centre. None stands between columns 2 and 3 or 3 and 4
+    any more, where the centre rule put columns 3's and 4's (nekoink U202: they trapped the
+    next column)."""
+    fp = _channel(16, 12, (6, 7, 8, 9))
+    sites = EB.via_sites(fp, _kinds(fp), w=0.15, c=0.15, D=0.45)
+    x = [i * 0.8 - 15 * 0.8 / 2 for i in range(16)]
+    xs = {round((s_[0] + s_[2]) / 2, 3) for s_ in sites if (s_[0] + s_[2]) / 2 < 0 and abs(s_[1] + s_[3]) < 1.8}
+    assert xs == {round(v, 3) for v in (x[1] - 0.4, x[2] - 0.4, x[3] + 0.4, x[4] + 0.4)}
+
+
 def test_utilization_counts_each_parts_occupancy_once():
     from shapely.geometry import box
     from shapely.ops import unary_union

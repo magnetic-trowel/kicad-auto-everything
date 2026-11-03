@@ -7,11 +7,12 @@ impossible (docs/research/routing/kae-closing-open-connections.md, class c), typ
 dropped into the strip a BGA's or a fine-pitch QFN's escapes need. The placer saw no difference
 between that strip and any other free space.
 
-Per tricky package (a ball grid, down to a 3 x 3 wafer-level package; a pad ring at most `escape_ring_pitch` mm, 0.5 by default) this
+Per tricky package (a ball grid, kae.route.escape.ball_grid: down to a 3 x 3 wafer-level package; a pad ring at most `escape_ring_pitch` mm, 0.5 by default) this
 module counts the signal escapes that must leave each side of it on the parts' own copper layer,
 with the escape planner's own capacity rule (kae.route.escape.fit):
 
-- ball grid: a ball escapes on the surface when its ring (0 = outermost) is at most the number of
+- ball grid: a ball escapes on the surface when its ring (0 = outermost; counted from the package's
+  edge or an open void, ball_grid) is at most the number of
   tracks that fit between two outer balls, O = fit(pitch - ball, w, c); the inner rings go down
   through their dog-bones and need no surface room outside the package (the planner's LAYER_COST:
   outer rings stay on the surface, as on the human boards);
@@ -46,50 +47,25 @@ from __future__ import annotations
 import math
 
 from kae.route.constraints import setting
+from kae.route.escape import MIN_SMALL
 
-MIN_BALLS = 16          # as kae.route.escape: a ball grid has at least this many pads
 MIN_RING = 12           # a pad ring at least this many
 SIDES = ("L", "T", "R", "B")   # library frame: -x, -y, +x, +y (y down)
 
 
-MIN_SMALL = 9           # a small ball grid (wafer-level packages): at least 3 x 3 sites
-SMALL_FILL = 0.75       # of which at least this share carry a ball (a QFN ring is hollow)
+def _grid(pts, room=None, weight=None):
+    """The router's ball-grid test (kae.route.escape.ball_grid: down to a filled 3 x 3 lattice,
+    rings from the package's edge and its open voids), so the placer and the router agree on
+    which packages are grids and which balls escape on the surface."""
+    from kae.route.escape import ball_grid
+    return ball_grid(pts, room=room, weight=weight)
 
 
-def _grid(pts):
-    """(pitch, angle, local points, ring of each point) of a ball grid, else None: the escape
-    planner's test for 16 balls and more, and below that a filled lattice of at least 3 x 3 sites
-    (a 12-ball 3 x 4 wafer-level package has 2 interior balls, too few for the planner's test)."""
-    from kae.route.escape import _grid as grid
-    if len(pts) >= MIN_BALLS:
-        return grid(pts)
-    return _small_grid(pts) if len(pts) >= MIN_SMALL else None
-
-
-def _small_grid(pts):
-    nn = []
-    for i, a in enumerate(pts):
-        d, v = min((math.dist(a, b), (b[0] - a[0], b[1] - a[1])) for j, b in enumerate(pts) if j != i)
-        nn.append((d, v))
-    pitch, v = sorted(nn)[len(nn) // 2]
-    if pitch < 1e-3:
-        return None
-    ang = math.atan2(v[1], v[0]) % (math.pi / 2)
-    cx, cy = sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts)
-    c, s = math.cos(-ang), math.sin(-ang)
-    loc = [((x - cx) * c - (y - cy) * s, (x - cx) * s + (y - cy) * c) for x, y in pts]
-    u0, w0 = min(u for u, _ in loc), min(w for _, w in loc)
-    idx = [((u - u0) / pitch, (w - w0) / pitch) for u, w in loc]
-    if any(abs(a - round(a)) > 0.1 or abs(b - round(b)) > 0.1 for a, b in idx):
-        return None                                     # not on one lattice
-    cols = {round(a) for a, _ in idx}
-    rows = {round(b) for _, b in idx}
-    nc, nr = max(cols) + 1, max(rows) + 1
-    sites = {(round(a), round(b)) for a, b in idx}
-    if nc < 3 or nr < 3 or len(sites) < SMALL_FILL * nc * nr:
-        return None
-    rings = [min(round(a), round(b), nc - 1 - round(a), nr - 1 - round(b)) for a, b in idx]
-    return pitch, ang, loc, rings
+def _signal_grid(pads, pts, net_kind, med, w, c):
+    """_grid with the board's room in a void's mouth and the signal balls as its demand."""
+    from kae.route.escape import fit
+    weight = [1 if p.net and net_kind.get(p.net, "signal") == "signal" else 0 for p in pads]
+    return _grid(pts, room=lambda g: fit(g - med, w, c), weight=weight)
 
 
 def _track_and_clearance(board):
@@ -132,9 +108,10 @@ def package(fp, net_kind, w, c, ring_pitch=0.5):
     xs, ys = [x for x, _ in pts], [y for _, y in pts]
     cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
     hx, hy = max(max(xs) - cx, 1e-6), max(max(ys) - cy, 1e-6)
-    g = _grid(pts)
+    g = _signal_grid(pads, pts, net_kind, med, w, c)
+    exits = [None] * len(pads)
     if g is not None:
-        pitch, _ang, _loc, rings = g
+        pitch, rings, exits = g.pitch, g.rings, g.exits
         O = fit(pitch - med, w, c)
         surface = [r <= O for r in rings]
         kind = "grid"
@@ -153,11 +130,14 @@ def package(fp, net_kind, w, c, ring_pitch=0.5):
         kind = "ring"
     x0, y0, x1, y1 = _extent(fp, cx - hx, cy - hy, cx + hx, cy + hy)
     counts = dict.fromkeys(SIDES, 0)
-    for p, (x, y), s in zip(pads, pts, surface):
+    for p, (x, y), s, ex in zip(pads, pts, surface, exits):
         if not s or not p.net or net_kind.get(p.net, "signal") != "signal":
             continue
         # the courtyard edge nearest the pad: a ring's pads face their own side, a connector's single
-        # row faces away from its body (the body side needs no band)
+        # row faces away from its body (the body side needs no band); a ball that escapes into an
+        # open void leaves where the void opens (nekoink U202's channel balls: its short ends)
+        if ex is not None:
+            x, y = ex
         d = {"L": x - x0, "T": y - y0, "R": x1 - x, "B": y1 - y}
         counts[min(SIDES, key=d.__getitem__)] += 1
     if not any(counts.values()):
@@ -216,21 +196,24 @@ def via_sites(fp, net_kind, w, c, D):
     med = sizes[len(sizes) // 2]
     pads = [p for p in pads if min(p.size) <= 2.0 * med]
     pts = [(p.lx, p.ly) for p in pads]
-    g = _grid(pts)
+    g = _signal_grid(pads, pts, net_kind, med, w, c)
     if g is None:
         return []
-    pitch, _ang, _loc, rings = g
+    pitch, rings = g.pitch, g.rings
     O = fit(pitch - med, w, c)
     xs, ys = [x for x, _ in pts], [y for _, y in pts]
     cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
     h = (D + c) / 2
     out = []
-    for p, (x, y), ring in zip(pads, pts, rings):
+    for p, (x, y), ring, tw in zip(pads, pts, rings, g.toward):
         plane = net_kind.get(p.net, "signal") in ("ground", "power")
         if not plane and ring <= O:
             continue                     # escapes on the surface: no via
-        sx = pitch / 2 * (1 if x >= cx else -1)
-        sy = pitch / 2 * (1 if y >= cy else -1)
+        # as kae.route.escape.dog_bones: away from the centre, a signal ball that escapes into an
+        # open void towards the void
+        dx, dy = (x - cx, y - cy) if plane or tw is None else tw
+        sx = pitch / 2 * (1 if dx >= 0 else -1)
+        sy = pitch / 2 * (1 if dy >= 0 else -1)
         vx, vy = x + sx, y + sy
         out.append((vx - h, vy - h, vx + h, vy + h))
     return out

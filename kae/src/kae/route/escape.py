@@ -47,6 +47,10 @@ KiCad edit that writes it back. Approximation: a site without a via is credited 
 more room, not longer runs of empty sites. Pad rings (QFN/QFP rows, ring_certificate): the
 pads a track of the board's minimum width cannot leave between its neighbours.
 
+Packages (ball_grid, shared with the placer's escape bands): ball grids down to a filled 3 x 3
+lattice (wafer-level packages); a ball's ring is its depth from the nearest free side, the
+package's edge or an open void inside it (a DDR x16's centre channel), see _depths.
+
 Buses: `plan_grid(..., order=None)` takes no bus order yet; the interface for it is a list
 of net lists whose escapes should keep their order on one side.
 
@@ -57,13 +61,17 @@ from __future__ import annotations
 
 import math
 import time
+from typing import NamedTuple
 
 import numpy as np
 from shapely.geometry import LineString, Point, box
 
 from . import critical_write as W
 
-MIN_BALLS = 16          # a ball grid has at least this many pads
+MIN_BALLS = 16          # a ball grid has at least this many pads (or, filled on one lattice, MIN_SMALL)
+MIN_SMALL = 9           # a small ball grid (wafer-level packages): at least 3 x 3 lattice sites
+SMALL_FILL = 0.75       # of which at least this share carry a ball (a QFN's ring is hollow)
+LATTICE_TOL = 0.1       # pitches: a ball further than this off its lattice site puts the grid off the lattice
 MIN_RING = 12           # a pad ring (QFN, QFP) has at least this many pads
 RING_PITCH = 0.65       # mm: pad rings at most this fine are checked
 SIDES = ("W", "E", "S", "N")   # package-frame sides: -u, +u, -w, +w
@@ -84,22 +92,211 @@ BIG = 50                       # tracks: no limit, for an open gap
 DEBUG = False
 
 
-def _grid(pts):
-    """(pitch, angle, ring of each point) when `pts` form a square grid, else None."""
+class BallGrid(NamedTuple):
+    """A ball grid (ball_grid). Package frame: (u, w) about the balls' centroid, turned by -ang."""
+    pitch: float
+    ang: float
+    loc: list            # (u, w) of each ball
+    rings: list          # escape depth of each ball: lattice steps to the nearest free side - 1 (0: escapes
+                         # on the ball layer past no other ball), the package's edge or an open void (_depths)
+    idx: list | None     # lattice (i, j) of each ball, None when the balls are off one lattice
+    site_rings: dict     # {(i, j): ring} of every lattice site in the box, balls and empty sites
+    toward: list         # per ball: board-frame unit vector to the open void it escapes into, else None
+    exits: list          # per ball: board-frame point past the package edge where that void opens, else None
+    voids: list          # per void: dict(sites, open, counted, tracks, demand)
+
+
+def _frame(pts):
+    """(pitch, angle, package-frame points) from the median nearest-neighbour vector."""
     nn = []
     for i, a in enumerate(pts):
         d, v = min((math.dist(a, b), (b[0] - a[0], b[1] - a[1])) for j, b in enumerate(pts) if j != i)
         nn.append((d, v))
     pitch, v = sorted(nn)[len(nn) // 2]
-    tol = 0.03 * pitch + 0.005
-    if pitch < 1e-3 or sum(1 for a in pts if sum(abs(math.dist(a, b) - pitch) < tol for b in pts) >= 4) < 4:
-        return None
     ang = math.atan2(v[1], v[0]) % (math.pi / 2)
     cx, cy = sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts)
     c, s = math.cos(-ang), math.sin(-ang)
-    loc = [((x - cx) * c - (y - cy) * s, (x - cx) * s + (y - cy) * c) for x, y in pts]
-    hx, hy = max(abs(u) for u, _ in loc), max(abs(w) for _, w in loc)
-    return pitch, ang, loc, [round(min(hx - abs(u), hy - abs(w)) / pitch) for u, w in loc]
+    return pitch, ang, [((x - cx) * c - (y - cy) * s, (x - cx) * s + (y - cy) * c) for x, y in pts]
+
+
+def _lattice(loc, pitch):
+    """Lattice (i, j) of each package-frame point, or None when one is off it by more than
+    LATTICE_TOL pitches (a staggered array) or two share a site."""
+    u0, w0 = min(u for u, _ in loc), min(w for _, w in loc)
+    f = [((u - u0) / pitch, (w - w0) / pitch) for u, w in loc]
+    if any(abs(a - round(a)) > LATTICE_TOL or abs(b - round(b)) > LATTICE_TOL for a, b in f):
+        return None
+    idx = [(round(a), round(b)) for a, b in f]
+    return idx if len(set(idx)) == len(idx) else None
+
+
+def _interior(sites):
+    return sum(1 for i, j in sites if {(i + 1, j), (i - 1, j), (i, j + 1), (i, j - 1)} <= sites)
+
+
+def _depths(idx, nx, ny, pitch, room=None, weight=None):
+    """Each lattice site's escape depth, and the voids. A ball's ring is the Chebyshev lattice
+    distance to the nearest free site, less one: the sites outside the box (the package's
+    edge: exactly the old rings counted from the box) and the empty sites of an open void.
+
+    The void rule. A void is a 4-connected group of empty sites inside the box. Its sites
+    count as free when (1) it is open, i.e. reaches the box's edge: tracks on the ball layer
+    run along it and out past no other ball, as on nekoink U202 (a DDR3 x16: 2 x 3 columns at
+    0.8 mm with a 3.2 mm empty channel open at both short ends), whose human layout escapes 18
+    of the 22 channel-side signal balls on F.Cu into the channel; and (2) as far as its mouths
+    carry the tracks: a mouth, a run of L empty sites on the box's edge, holds room((L + 1)
+    pitch) tracks (`room(g)`: the tracks between two balls g mm apart, centre to centre; none
+    given: no limit), and the void's sites count from its mouths inward (breadth first) while
+    the `weight` (signal balls: 1, others 0) of the balls beside the counted sites (lattice
+    neighbours, diagonals too: the balls the void puts on the surface) that are not on the
+    package's edge already stays within the mouths' tracks. A long channel thus serves the
+    balls near its ends first. A closed void never counts: whatever enters it still has to
+    cross the rings of balls round it, which is what its balls' rings from the edge already
+    measure. Deeper balls' use of a void, and a channel's own cross-section, are left to the
+    escape plan's tile network (every empty site there is one pitch more room).
+    -> ({(i, j): ring}, [void dicts], {(i, j): counted void index})"""
+    occ = set(idx)
+    wt = dict(zip(idx, weight)) if weight is not None else dict.fromkeys(idx, 1)
+    empty = {(i, j) for i in range(nx) for j in range(ny)} - occ
+    voids, of = [], {}
+    for s0 in sorted(empty):
+        if s0 in of:
+            continue
+        comp, stack = [], [s0]
+        of[s0] = len(voids)
+        while stack:
+            i, j = stack.pop()
+            comp.append((i, j))
+            for q in ((i + 1, j), (i - 1, j), (i, j + 1), (i, j - 1)):
+                if q in empty and q not in of:
+                    of[q] = len(voids)
+                    stack.append(q)
+        voids.append(dict(sites=sorted(comp)))
+
+    def edge(i, j):
+        return min(i, j, nx - 1 - i, ny - 1 - j)
+
+    def beside(q):
+        i, j = q
+        return {b for b in ((i + a, j + c) for a in (-1, 0, 1) for c in (-1, 0, 1)) if b in occ and edge(*b) > 0}
+    free = set()
+    for v in voids:
+        S = set(v["sites"])
+        mouths = sorted(q for q in S if edge(*q) == 0)
+        v["open"] = bool(mouths)
+        v["demand"] = sum(wt.get(b, 0) for b in set().union(*(beside(q) for q in S)))
+        tracks = 0
+        # runs of empty sites along each edge of the box: one mouth each
+        for on, axis in ((lambda i, j: i == 0, 1), (lambda i, j: i == nx - 1, 1),
+                         (lambda i, j: j == 0, 0), (lambda i, j: j == ny - 1, 0)):
+            cs = sorted(q[axis] for q in mouths if on(*q))
+            run = 0
+            for n_, c_ in enumerate(cs):
+                run = run + 1 if n_ and c_ == cs[n_ - 1] + 1 else 1
+                if n_ == len(cs) - 1 or cs[n_ + 1] != c_ + 1:
+                    tracks += room((run + 1) * pitch) if room else BIG
+        v["tracks"] = tracks
+        # from the mouths inward, a whole step at a time (both ends of a channel alike), while
+        # the balls beside fit the mouths' tracks
+        got, seen, used, front = [], set(mouths), set(), list(mouths)
+        while front and tracks > 0:
+            more = set().union(*(beside(q) for q in front)) - used
+            if sum(wt.get(b, 0) for b in used | more) > tracks:
+                break
+            used |= more
+            got += front
+            nxt = []
+            for i, j in front:
+                for r in ((i + 1, j), (i - 1, j), (i, j + 1), (i, j - 1)):
+                    if r in S and r not in seen:
+                        seen.add(r)
+                        nxt.append(r)
+            front = sorted(nxt)
+        v["counted"] = len(got)
+        free |= set(got)
+    ring = {}
+    for i in range(nx):
+        for j in range(ny):
+            r = edge(i, j)
+            if free:
+                r = min(r, max(0, min(max(abs(i - a), abs(j - b)) for a, b in free) - 1))
+            ring[(i, j)] = r
+    return ring, voids, {s: of[s] for s in free}
+
+
+def ball_grid(pts, room=None, weight=None):
+    """The ball-grid test shared by the router (find_packages, has_grid, dog_bones, the escape
+    plan) and the placer (kae.place.escape_band): a BallGrid when the points `pts` (x, y) form
+    a ball grid, else None. Two ways in:
+
+    - MIN_BALLS or more balls with at least 4 that have four neighbours at the pitch (the
+      original test; it also takes staggered and slightly irregular arrays);
+    - MIN_SMALL or more balls on one square lattice of at least 3 x 3 sites, SMALL_FILL of
+      them filled, with at least one ball whose four lattice neighbours are all balls. A
+      12-ball 3 x 4 wafer-level package (circuitmonkey chips-0123's MAX98365) has 2 such
+      balls, too few for the first test, so the router gave it no escape plan and no
+      dog-bones; a 2-row connector (no 3 x 3) and a QFN's hollow ring (off the lattice of its
+      own pitch, or no interior ball) are not grids.
+
+    Rings (escape depth) come from _depths: the package's edge and the open voids that can
+    carry their tracks; `room(g)` gives the tracks between two balls g mm apart (centre
+    to centre) and `weight` each ball's demand (1 for a signal ball), see _depths. Off one
+    lattice the rings are counted from the box only."""
+    n = len(pts)
+    if n < MIN_SMALL:
+        return None
+    pitch, ang, loc = _frame(pts)
+    if pitch < 1e-3:
+        return None
+    idx = _lattice(loc, pitch)
+    ok = False
+    if n >= MIN_BALLS:
+        tol = 0.03 * pitch + 0.005
+        ok = sum(1 for a in pts if sum(abs(math.dist(a, b) - pitch) < tol for b in pts) >= 4) >= 4
+    if not ok and idx is not None:
+        nc, nr = max(i for i, _ in idx) + 1, max(j for _, j in idx) + 1
+        ok = nc >= 3 and nr >= 3 and n >= SMALL_FILL * nc * nr and _interior(set(idx)) >= 1
+    if not ok:
+        return None
+    none = [None] * n
+    if idx is None:
+        hx, hy = max(abs(u) for u, _ in loc), max(abs(w) for _, w in loc)
+        return BallGrid(pitch, ang, loc, [round(min(hx - abs(u), hy - abs(w)) / pitch) for u, w in loc],
+                        None, {}, none, none, [])
+    nx, ny = max(i for i, _ in idx) + 1, max(j for _, j in idx) + 1
+    site_rings, voids, free = _depths(idx, nx, ny, pitch, room=room, weight=weight)
+    rings = [site_rings[q] for q in idx]
+    # the board frame of lattice (a, b), and each void-escaping ball's direction and exit
+    cx, cy = sum(p[0] for p in pts) / n, sum(p[1] for p in pts) / n
+    ca, sa = math.cos(ang), math.sin(ang)
+    u0, w0 = min(u for u, _ in loc), min(w for _, w in loc)
+
+    def xy(a, b):
+        u, w = u0 + a * pitch, w0 + b * pitch
+        return (cx + u * ca - w * sa, cy + u * sa + w * ca)
+    toward, exits = list(none), list(none)
+    for k, (i, j) in enumerate(idx):
+        e = min(i, j, nx - 1 - i, ny - 1 - j)
+        if not free or rings[k] >= e:
+            continue
+        a, b = min(free, key=lambda q: (max(abs(q[0] - i), abs(q[1] - j)), math.hypot(q[0] - i, q[1] - j), q))
+        d = math.hypot(a - i, b - j)
+        toward[k] = ((a - i) / d * ca - (b - j) / d * sa, (a - i) / d * sa + (b - j) / d * ca)
+        # where its void opens: the void's edge site nearest the ball, one pitch past the box
+        mouth = [q for q in voids[free[(a, b)]]["sites"] if min(q[0], q[1], nx - 1 - q[0], ny - 1 - q[1]) == 0]
+        m = min(mouth, key=lambda q: (math.hypot(q[0] - i, q[1] - j), q))
+        out = ((-1 if m[0] == 0 else 1 if m[0] == nx - 1 else 0), (-1 if m[1] == 0 else 1 if m[1] == ny - 1 else 0))
+        if out[0] and out[1]:      # a corner site opens both ways: the one facing the ball's way out
+            out = (out[0], 0) if abs(m[0] - i) >= abs(m[1] - j) else (0, out[1])
+        exits[k] = xy(m[0] + out[0], m[1] + out[1])
+    return BallGrid(pitch, ang, loc, rings, idx, site_rings, toward, exits, voids)
+
+
+def _grid(pts):
+    """(pitch, angle, package-frame points, ring of each point) of a ball grid, else None
+    (ball_grid without room or weights)."""
+    g = ball_grid(pts)
+    return None if g is None else (g.pitch, g.ang, g.loc, g.rings)
 
 
 def has_grid(info):
@@ -111,7 +308,7 @@ def has_grid(info):
         if pd.get("attr") == "smd" and len(pd.get("layers") or ()) == 1:
             by.setdefault(pd.get("fp_index", pd.get("ref")), []).append(tuple(pd["pos"]))
     for pts in by.values():
-        if len(pts) >= MIN_BALLS and _grid(pts) is not None:
+        if ball_grid(pts) is not None:
             return True
         if len(pts) >= MIN_RING:
             nn = sorted(min(math.dist(a, b) for j, b in enumerate(pts) if j != i) for i, a in enumerate(pts))
@@ -156,25 +353,43 @@ def _counts(sp):
 
 
 # ----------------------------------------------------------------------------- packages
+def _sp_grid(sp, balls, count):
+    """ball_grid of a footprint's balls in Space `sp`, with the board's own room in a void's
+    mouth (_capacity: the routing width and clearance of the balls' nets) and its signal balls
+    (on a net with another pad, not a plane net) as the demand."""
+    if len(balls) < MIN_SMALL:
+        return None
+    layer = next(iter(balls[0].layers))
+    b = balls[0].geom.bounds
+    d = min(b[2] - b[0], b[3] - b[1])
+    net = next((p.net for p in balls if p.net), "")
+    planes = {z[0] for z in sp.zones if z[1] != layer}
+    weight = [1 if p.net and p.net not in planes and count.get(p.net, 0) >= 2 else 0 for p in balls]
+    return ball_grid([p.pos for p in balls], room=lambda g: _capacity(sp, net, layer, g, d), weight=weight)
+
+
 def find_packages(sp):
     """[{ref, kind: 'grid'|'ring', pads, ...}] of the board's ball grids and pad rings."""
     out = []
+    count = _counts(sp)
     for pads in sp.pads_by_fp.values():
         smd = [p for p in pads if p.kind == "pad" and p.smd and len(p.layers) == 1 and p.hole is None]
-        if len(smd) < MIN_RING:
+        if len(smd) < MIN_SMALL:
             continue
         med = sorted(p.geom.area for p in smd)[len(smd) // 2]
         balls = [p for p in smd if p.geom.area <= 4 * med]
         ref = (balls or smd)[0].owner[0]
-        g = _grid([p.pos for p in balls]) if len(balls) >= MIN_BALLS else None
+        g = _sp_grid(sp, balls, count)
         if g is not None:
-            pitch, ang, loc, rings = g
+            pitch, ang, loc, rings = g.pitch, g.ang, g.loc, g.rings
             umin, wmin = min(u for u, _ in loc), min(w for _, w in loc)
-            idx = [(round((u - umin) / pitch), round((w - wmin) / pitch)) for u, w in loc]
+            idx = g.idx or [(round((u - umin) / pitch), round((w - wmin) / pitch)) for u, w in loc]
             cx = sum(p.pos[0] for p in balls) / len(balls)
             cy = sum(p.pos[1] for p in balls) / len(balls)
             out.append(dict(ref=ref, kind="grid", pads=balls, pitch=pitch, ang=ang, idx=idx, rings=rings,
-                            layer=next(iter(balls[0].layers)), centre=(cx, cy), umin=umin, wmin=wmin))
+                            layer=next(iter(balls[0].layers)), centre=(cx, cy), umin=umin, wmin=wmin,
+                            site_rings=g.site_rings if g.idx else None,
+                            voids=sum(1 for v in g.voids if v["counted"])))
         elif len(balls) >= MIN_RING:
             out.append(dict(ref=ref, kind="ring", pads=balls, layer=next(iter(balls[0].layers))))
     return out
@@ -365,7 +580,8 @@ def _ring_at(ctx, X, Y):
     """Ring of the ball nearest to doubled point (X, Y)."""
     nx, ny = ctx["nx"], ctx["ny"]
     i, j = min(max(round(X / 2), 0), nx - 1), min(max(round(Y / 2), 0), ny - 1)
-    return min(i, j, nx - 1 - i, ny - 1 - j)
+    sr = ctx["pkg"].get("site_rings")       # from the edge and the open voids (ball_grid)
+    return sr[(i, j)] if sr and (i, j) in sr else min(i, j, nx - 1 - i, ny - 1 - j)
 
 
 def _neighbours(P):
@@ -1313,8 +1529,9 @@ def run(sp, info, opts=None, log=print, deadline=None):
             out["packages"].append(dict(ref=pkg["ref"], error=f"{type(e).__name__}: {e}"))
     return out
 def dog_bones(sp, info, log=print):
-    # the fixed pass (rules-bga), the default before routing: rings from the surface capacity + 1
-    # down, the diagonal pointing away from the centre
+    # the fixed pass (rules-bga), the default before routing: rings (from the edge and open
+    # voids, ball_grid) from the surface capacity + 1 down, the diagonal pointing away from the
+    # centre, or towards the void for a ball that escapes into one
     """Lay the ball grids' dog-bones in `sp` (critical_space.Space) -> (laid, wanted)."""
     count = {}
     for it in sp.pads:
@@ -1324,24 +1541,30 @@ def dog_bones(sp, info, log=print):
     laid = wanted = 0
     for pads in sp.pads_by_fp.values():
         smd = [p for p in pads if p.kind == "pad" and p.smd and len(p.layers) == 1 and p.hole is None]
-        if len(smd) < MIN_BALLS:
+        if len(smd) < MIN_SMALL:
             continue
         med = sorted(p.geom.area for p in smd)[len(smd) // 2]
         balls = [p for p in smd if p.geom.area <= 4 * med]
-        g = _grid([p.pos for p in balls]) if len(balls) >= MIN_BALLS else None
+        g = _sp_grid(sp, balls, count)
         if g is None:
             continue
-        pitch, ang, loc, rings = g
+        pitch, ang, loc, rings = g.pitch, g.ang, g.loc, g.rings
         layer = next(iter(balls[0].layers))
         b = balls[0].geom.bounds
         first = _capacity(sp, balls[0].net or "", layer, pitch, min(b[2] - b[0], b[3] - b[1])) + 1
         todo = []
-        for p, (u, w), r in zip(balls, loc, rings):
+        ca, sa = math.cos(ang), math.sin(ang)
+        for p, (u, w), r, tw in zip(balls, loc, rings, g.toward):
             plane = p.net and any(z[0] == p.net and z[1] != layer for z in sp.zones)
             if p.net and (plane or (r >= first and count[p.net] >= 2)):
+                if tw is not None and not plane:
+                    # a signal ball whose way out is an open void: its via on the void's side, so
+                    # it stays behind the shallower balls' surface escapes into the void, as the
+                    # vias of edge rings stay behind theirs (nekoink U202: vias pointed away from
+                    # the centre stood between the channel's columns and trapped the second one)
+                    u, w = tw[0] * ca + tw[1] * sa, -tw[0] * sa + tw[1] * ca
                 todo.append((-r, str(p.owner), p, u, w))
         n0 = laid
-        ca, sa = math.cos(ang), math.sin(ang)
         for _r, _o, p, u, w in sorted(todo, key=lambda t: t[:2]):
             mn, opt, _ = sp.width_limits(p.net, layer)
             diags = sorted(((a, c) for a in (1, -1) for c in (1, -1)), key=lambda d: -(d[0] * u + d[1] * w))
