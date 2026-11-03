@@ -58,6 +58,8 @@ DEFAULTS = dict(
     finish_share=0.20,     # time reserved for it up front: max(finish_min_s, finish_share x budget)
     finish_min_s=120.0,
     finish_release=True,   # a second finishing try releases the module copper on open corridors
+    last_mile_min_s=60.0,  # with finish: when no finishing try could run (<= 60 s left), the kept
+                           # board's open nets still get lastmile.close for at least this long
     diagnose_s=30.0,       # the final board's "blocked" diagnosis: at most this (and 5 % of the budget)
     recycle=True,          # when every window is exhausted and time is left, sample them all again
     min_cycle_s=5.0,       # ... unless the last cycle took less than this (nothing could be routed)
@@ -325,6 +327,7 @@ class JointLoop:
         # (a restart portfolio as the finishing stage has its own restarts: one try)
         release = o.get("finish_release", True) and not getattr(st, "finish_restarts", False)
         tries_fin = [None, "release"] if release else [None]
+        finished = False          # a finishing try ran on the kept board (it ends in the last mile)
         for mode in tries_fin if o["finish"] else []:
             if best_card.clean or left() <= 60.0:
                 break
@@ -354,11 +357,39 @@ class JointLoop:
             if card is not None:
                 row = self._row(it, card, finish=mode or True, released=released, accepted=keep, why=why,
                                 seconds=round(dt, 1), route=(cand.info or {}).get("route"))
+            finished = finished or card is not None
             rows.append(row)
             self.log(f"finish{' (release ' + ', '.join(released) + ')' if released else ''}: "
                      f"{getattr(card, 'unconnected', '?')} unconnected, {getattr(card, 'errors', '?')} errors, "
                      f"physics {getattr(card, 'physics', float('nan')):.3f} -> {'kept' if keep else 'reverted'} "
                      f"({why}, {dt:.0f}s)")
+            if keep:
+                best, best_card, best_fb, best_it = cand, card, fb, it
+                self._save(st, best, output, rep)
+        # ---- the kept board always gets a last mile: when no finishing try could run (time
+        # spent, e.g. an iteration 0 that overran), lastmile.close on its open nets for at least
+        # last_mile_min_s, however late (it may use the write reserve; OUTPUT already holds the
+        # incumbent). The first route skipped its last mile only because a finish follows.
+        nets = sorted({n for sp in unrouted_spots(best_fb.get("drc") or {}) for n in sp.nets})
+        if (o["finish"] and not finished and not best_card.clean and nets and best_card.checked.get("drc", True)
+                and hasattr(st, "close_open")):
+            it += 1
+            t = time.monotonic()
+            budget = max(float(o["last_mile_min_s"]), left())
+            try:
+                cand = st.close_open(best, it, nets, time_s=budget)
+                card, fb = st.evaluate(cand, it)
+                keep, why = accept(best_card, card, phys_slack=o["phys_slack"])
+            except Exception as e:  # noqa: BLE001 - the incumbent stands
+                cand, card, fb, keep, why = None, None, None, False, f"error: {type(e).__name__}: {e}"
+            dt = time.monotonic() - t
+            row = dict(iter=it, finish="last mile", accepted=keep, why=why, seconds=round(dt, 1), budget_s=round(budget, 1))
+            if card is not None:
+                row = self._row(it, card, finish="last mile", accepted=keep, why=why, seconds=round(dt, 1),
+                                budget_s=round(budget, 1), route=(cand.info or {}).get("route"))
+            rows.append(row)
+            self.log(f"last mile on the kept board ({len(nets)} nets, {budget:.0f}s): "
+                     f"{'kept' if keep else 'reverted'} ({why}, {dt:.0f}s)")
             if keep:
                 best, best_card, best_fb, best_it = cand, card, fb, it
                 self._save(st, best, output, rep)

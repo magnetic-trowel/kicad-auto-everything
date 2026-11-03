@@ -9,7 +9,7 @@ import re
 from pathlib import Path
 
 from kae.joint.feedback import PartGeom, Spot
-from kae.joint.loop import DEFAULTS, escalate
+from kae.joint.loop import DEFAULTS, JointLoop, escalate
 from kae.joint.scorecard import Scorecard
 
 from test_joint_loop import FakeStages, _run
@@ -229,6 +229,40 @@ def test_escalated_windows_respect_the_part_share_cap():
     assert [len(escalate(w6, a, big, (-5, -5, 130, 5), o6).parts) for a in range(4)] == [6, 8, 10, 10]
 
 
+# ---- 7: the kept board always gets a last mile
+class Closing(FakeStages):
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        self.closed = []
+
+    def close_open(self, lay, it, nets, time_s):
+        self.closed.append((tuple(nets), time_s))
+        new = copy.deepcopy(lay)
+        new.broken = set()
+        new.tag = "last mile"
+        return new
+
+
+def test_kept_board_gets_a_last_mile_when_no_finish_could_run():
+    st = Closing(broken=("R2",))
+    loop = JointLoop(st, opts=dict(min_iter_s=0.0, reserve=0.0, max_parts=2, margin=1.0, max_iters=0,
+                                   finish_min_s=0.0, finish_share=0.0))
+    rep = loop.run("out.kicad_pcb", time_s=30.0, seed=0)   # 30 s: no finishing try fits (<= 60 s left)
+    assert st.closed and st.closed[0][0] == ("NR2",) and st.closed[0][1] >= DEFAULTS["last_mile_min_s"]
+    last = rep["iterations"][-1]
+    assert last["finish"] == "last mile" and last["accepted"] and rep["final"]["unconnected"] == 0
+    assert st.final.tag == "last mile"
+
+
+def test_no_extra_last_mile_after_a_finishing_try():
+    st = Closing(broken=("R2",), bad=("R2",), finisher=True)
+    rep = _run(st, max_attempts=1, finish_min_s=0.0)
+    assert not st.closed and rep["iterations"][-1]["finish"] is True
+    st2 = Closing(broken=("R2",))                        # no finish planned (staged baseline): untouched
+    _run(st2, max_iters=0, finish=False)
+    assert not st2.closed
+
+
 # ---- 8: an exception after OUTPUT was written is a partial result
 def test_cli_reports_partial_with_rows_when_a_stage_raises_after_output(tmp_path, monkeypatch):
     def raises_after_save(loop, out):
@@ -245,3 +279,31 @@ def test_cli_reports_partial_with_rows_when_a_stage_raises_after_output(tmp_path
     (tmp_path / "out.kicad_pcb").unlink()
     seen = _cli(tmp_path, monkeypatch, [], run=raises_before)
     assert seen["rc"] == 2 and seen["rep"]["status"] == "error" and seen["rep"]["output_exists"] is False
+
+
+def test_close_open_bounds_the_last_mile_and_output_is_renamed_into_place(tmp_path, monkeypatch):
+    import time as _t
+    from types import SimpleNamespace
+
+    import kae.route.critical_write as W
+    from kae.joint.stages import KaeStages, Layout
+    st = KaeStages(tmp_path / "in.kicad_pcb", tmp_path / "wd", log=lambda m: None)
+    got = {}
+
+    def lm(board, it, nets, crit, deadline=None):
+        got.update(nets=nets, left=deadline - _t.monotonic())
+        return dict(joined=1, failed=0, ripped=0, seconds=0.1)
+    monkeypatch.setattr(st, "_last_mile", lm)
+    b = tmp_path / "kept.kicad_pcb"
+    b.write_text("kept")
+    new = st.close_open(Layout(board=str(b)), 5, ["N1"], time_s=60.0)
+    assert got["nets"] == ["N1"] and 55.0 < got["left"] <= 60.0
+    assert new.info["route"]["finish"] == "last mile" and Path(new.board).read_text() == "kept"
+    # OUTPUT is written beside and renamed: a kill mid-write leaves the previous incumbent
+    (tmp_path / "in.kicad_pcb").write_text("input")
+    monkeypatch.setattr(st, "_load", lambda p: SimpleNamespace(footprints=[]))
+    seen = []
+    monkeypatch.setattr(W, "transplant", lambda work, inp, dst: (seen.append(Path(dst)), Path(dst).write_text("out")))
+    out = tmp_path / "out" / "board.kicad_pcb"
+    st.finish(Layout(board=str(b)), out)
+    assert seen[0] != out and out.read_text() == "out" and not seen[0].exists()

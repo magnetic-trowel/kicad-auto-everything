@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import shutil
 import sys
 import time
@@ -293,11 +294,12 @@ class KaeStages:
                       guards={m: g for m, g in lay.guards.items() if m not in mods},
                       status=dict(lay.status), stage=dict(lay.stage), info=dict(lay.info))
 
-    def _last_mile(self, board, it, nets, crit):
+    def _last_mile(self, board, it, nets, crit, deadline=None):
         """kae.route.lastmile.close on a routed window's `nets` (those that are still split
         are joined by the grid router, ripping other nets' unlocked tracks in the way);
         `board` is replaced in place when anything was joined; the new copper is left
-        unlocked (ordinary wiring for later windows). Returns its report (None: nothing)."""
+        unlocked (ordinary wiring for later windows). `deadline` (time.monotonic()): no join
+        starts after it. Returns its report (None: nothing)."""
         from kae.board import pcbnew_io
         from kae.route import bridge as BR
         from kae.route import constraints, lastmile
@@ -312,7 +314,7 @@ class KaeStages:
             fills = pcbnew_io.zone_fills(board)["zones"]
             cand = d / "cand.kicad_pcb"
             r = lastmile.close(board, info, plan, fills, cand, nets=sorted(nets), sev=sev, fixed=set(crit),
-                               log=lambda m: None)
+                               log=lambda m: None, deadline=deadline)
         except Exception as e:  # noqa: BLE001 - the routed window stands
             return dict(error=f"{type(e).__name__}: {e}", seconds=round(time.monotonic() - t0, 1))
         if r.get("joined"):
@@ -320,6 +322,22 @@ class KaeStages:
             _project(self.input, board)
         return dict(joined=r.get("joined"), failed=r.get("failed"), ripped=len(r.get("ripped") or []),
                     seconds=round(time.monotonic() - t0, 1))
+
+    def close_open(self, lay, it, nets, time_s):
+        """The kept board's last mile when no finishing stage could run: lastmile.close on
+        `nets` (its open connections' nets) over the whole board, critical copper fixed, for
+        about `time_s`. Returns a new Layout (the board unchanged when nothing was joined)."""
+        t0 = time.monotonic()
+        out = self._path(it, "routed")
+        shutil.copy2(lay.board, out)
+        _project(self.input, out)
+        lm = self._last_mile(out, it, nets, lay.crit, deadline=t0 + float(time_s))
+        self.log(f"last mile on the kept board, {len(nets)} nets: {last_mile_line(lm)}")
+        new = Layout(board=str(out), poses=dict(lay.poses), crit=set(lay.crit), owners=dict(lay.owners),
+                     guards=dict(lay.guards), status=dict(lay.status), stage=dict(lay.stage), info=dict(lay.info))
+        new.info["route"] = dict(seconds=round(time.monotonic() - t0, 1), status="last mile", finish="last mile",
+                                 last_mile=lm, budget_s=round(float(time_s), 1))
+        return new
 
     @property
     def finish_restarts(self):
@@ -727,7 +745,11 @@ class KaeStages:
             self._write_poses(self.input, tmp, moved)
         else:
             shutil.copy2(self.input, tmp)
-        W.transplant(lay.board, tmp, output)
+        # written beside OUTPUT and renamed: a run stopped mid-write (the kept board's last mile
+        # may use the write reserve) leaves the previous incumbent, never a cut-off file
+        part = output.with_name(output.name + ".part")
+        W.transplant(lay.board, tmp, part)
+        os.replace(part, output)
         return dict(moved=len(moved), output=str(output))
 
 
