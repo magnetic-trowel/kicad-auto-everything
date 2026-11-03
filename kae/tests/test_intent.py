@@ -295,3 +295,26 @@ def test_router_scopes_must_all_hold():
     assert not IR._net_matches(t, "+5V", {})          # a part scope says nothing about a bare net
     assert IR._net_matches({"id": "Y", "where": {"rail": "+5*"}}, "+5V", {})
     assert IR._net_matches({"id": "Z"}, "ANY", {})
+
+
+def test_section_edits_reject_unresolved_members_and_id_collisions():
+    """§8: 'unresolved members come back as errors'. add accepted a typo'd part (its terms then matched
+    nothing, silently), and rename onto an existing id dropped that section."""
+    from kae.intent import sections as SE
+    brief = dict(BRIEF, nets={"SW": {}, "RF_IN": {}, "VIN": {}})
+    secs = SE.from_brief(brief)
+    with pytest.raises(SE.SectionError, match="U99_TYPO"):
+        SE.apply(secs, {"add": [{"id": "x", "parts": ["U7", "U99_TYPO"]}]}, brief)
+    with pytest.raises(SE.SectionError, match="NO_SUCH_NET"):
+        SE.apply(secs, {"add": [{"id": "x", "nets": ["NO_SUCH_NET"]}]}, brief)
+    with pytest.raises(SE.SectionError, match="already exists"):
+        SE.apply(secs, {"rename": {"cell:buck:U3": "victim:analog:U7"}}, brief)
+    with pytest.raises(SE.SectionError, match="already exists"):
+        SE.apply(secs, {"add": [{"id": "cell:buck:U3", "parts": ["U7"]}]}, brief)
+    ok = SE.apply(secs, {"rename": {"cell:buck:U3": "buck"}, "add": [{"id": "gnss", "parts": ["U7"], "nets": ["RF_IN"]}]},
+                  brief)
+    assert set(ok) == {"buck", "victim:analog:U7", "gnss"}
+    # the evaluator passes its brief, so a typo in an intent's sections is an error there too
+    it = {"sections": {"add": [{"id": "x", "parts": ["U99_TYPO"]}]}, "terms": []}
+    with pytest.raises(SE.SectionError):
+        OB.evaluate(WIDE, it, brief)

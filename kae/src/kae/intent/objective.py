@@ -258,7 +258,7 @@ def evaluate(ev, intent=None, brief=None):
         from kae.board.kicad_file import load as load_board
         from kae.circuit import brief as B
         brief = B.build(load_board(ev["board"]))
-    secs = SE.apply(SE.from_brief(brief), intent.get("sections"))
+    secs = SE.apply(SE.from_brief(brief), intent.get("sections"), brief)
     obs = observations(ev, intent)
     cur = intent["currency"]
     complete = (ev.get("total") or {}).get("complete", True)
