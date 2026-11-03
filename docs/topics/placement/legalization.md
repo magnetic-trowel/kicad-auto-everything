@@ -23,7 +23,7 @@
 | Zhao 2025 | Hanan-grid legalization | [S] |
 | MAGICAL (analog) | Constraint graphs by plane sweep + transitive reduction + LP compaction with exact symmetry | [P] |
 | ALIGN (analog) | ILP per sequence pair (symmetry, alignment, order) | [P] |
-| CP-SAT (ours) | Min-displacement model with hard decap/keep-out/edge/fixed constraints; hints from global placement; windowed LNS | Tested only on nearly legal SA outputs: full-board model legal in 3.8–6.9 s at N=30–300 (1 violation each), no solution at N=1000 in 134 s; per-violation-cluster windows (`legalize_clusters.py`) legalized N=1000 (18 violations) in 3.9 s ([benchmarks](../solvers/benchmarks.md) [M]). (Hierarchical CP-SAT + LNS, a placer, stayed feasible at 100–1000.) |
+| CP-SAT (ours) | Min-displacement model with hard decap/keep-out/edge/fixed constraints; hints from global placement; windowed LNS | Solver-bench numbers (synthetic instances, 0.5 mm), tested only on nearly legal SA outputs: full-board model legal in 3.8–6.9 s at N=30–300 (1 violation each), no solution at N=1000 in 134 s; per-violation-cluster windows (`legalize_clusters.py`) legalized N=1000 (18 violations) in 3.9 s ([benchmarks](../solvers/benchmarks.md) [M]). (Hierarchical CP-SAT + LNS, a placer, stayed feasible at 100–1000.) |
 | sparrow GLS (transplant) | Fixed container, allow overlaps, guided local search with adaptive pair weights, exploration then compression | SOTA open 2D nesting ([packing transplants](packing-and-graph-drawing-transplants.md)) |
 
 **Design patterns**
@@ -34,7 +34,7 @@
 - *Exact orientation/side cleanup*: dead-end elimination (DEE) + A*/ILP over discrete rotation × side states with pairwise wirelength/crossing/conflict energies ([packing transplants](packing-and-graph-drawing-transplants.md)) [I].
 
 ## Recommendations for our system
-- Primary: CP-SAT min-displacement legalizer on sliced footprint rectangles, 0.5 mm grid globally, finer only in windows; relative-position pruning from global placement and cardinal module relations to scale to a few hundred parts; beyond ~300 parts use per-violation-cluster windows, since the full-board model failed at N=1000 and has only been tested on nearly legal inputs [I].
+- Primary: CP-SAT min-displacement legalizer on sliced footprint rectangles. kae uses a grid ladder of 0.025–0.25 mm (finest with ≤ 1,000 cells across the board) and CP-SAT windows of ≤ 40 parts; its production model saturates near 40 items, far below the solver-bench sizes ([kae-placer](../../research/placement/kae-placer.md) §4, §6); relative-position pruning from global placement and cardinal module relations to scale to a few hundred parts; beyond ~300 parts use per-violation-cluster windows, since the full-board model failed at N=1000 and has only been tested on nearly legal inputs [I].
 - Alternative/secondary: sparrow-style GLS legalizer for irregular courtyards (MIT/MPL Rust core) with displacement-to-target + HPWL terms [I].
 - Always return the infeasible subset (or unsat core proxy) with admissible relaxations; never silently drop LLM constraints [I].
 - Follow with SA/LNS detailed placement ([metaheuristics](../solvers/metaheuristics-and-qd.md)) [I].
