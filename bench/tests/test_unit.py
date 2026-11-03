@@ -6,6 +6,7 @@ import io
 import json
 import lzma
 import os
+import shutil
 import struct
 import subprocess
 import sys
@@ -772,3 +773,18 @@ def test_mech_classifier_matches_the_research_rules(fp, cls):
     from kaebench.kicad_scripts import mech_rules
     got, evidence = mech_rules.classify(fp)
     assert got == cls, (got, evidence)
+
+
+@pytest.mark.skipif(not shutil.which("bwrap"), reason="bubblewrap not installed")
+def test_run_measured_counts_cpu_inside_the_bwrap_sandbox():
+    """bwrap --unshare-pid exits without reaping its pid 1, so wait4 on bwrap alone saw ~0 CPU for
+    every sandboxed --command method; the launcher is a subreaper and reports all it reaped."""
+    busy = [sys.executable, "-c", "import time\nt = time.process_time()\nwhile time.process_time() - t < 1.5: pass"]
+    bw = [shutil.which("bwrap"), "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc",
+          "--unshare-pid", "--unshare-ipc", "--die-with-parent", "--new-session"]
+    tools.usage_take()
+    r = tools.run_measured(bw + busy, timeout=60)
+    u = tools.usage_take()
+    if r.returncode != 0:
+        pytest.skip(f"bwrap cannot run here: {r.stderr[-200:]}")
+    assert u["cpu_s"] > 1.2, u
