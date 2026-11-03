@@ -2098,8 +2098,20 @@ def _signal_roles(nl: Netlist, roles: Roles):
 
 
 # ------------------------------------------------------------------------------- local part roles
-def cap_class(part: Part) -> tuple[str, float | None, list]:
-    """('hf' | 'mid' | 'bulk', farads, evidence) for a rail capacitor, from value and body."""
+# How a rail capacitor is classed for high-frequency decoupling (docs/topics/rules/decoupling-pdn.md, rule 1:
+# "lowest mounting inductance closest"). 'package': a small non-polarized chip (HF_CHIP_SIZES) is HF-capable at
+# any value, because an MLCC's ESL is set by its body and mounting, not its capacitance (Bogatin, Smith & Sandler
+# 2020: a 10 uF and a 0.1 uF MLCC in one body have "exactly the same high frequency impedance"; Archambeault 2009:
+# 0402 < 0603 < 0805 connection inductance at every via depth); larger bodies, through-hole and unknown packages
+# fall back to the value classes. 'value': the value classes alone (<= 1 uF HF, >= 4.7 uF bulk), as before.
+CAP_CLASS = 'package'
+HF_CHIP_SIZES = ('01005', '0201', '0402', '0603')
+
+
+def cap_class(part: Part, mode: str | None = None) -> tuple[str, float | None, list]:
+    """('hf' | 'mid' | 'bulk', farads, evidence) for a rail capacitor, from body and value (`mode`, default
+    CAP_CLASS). 'value' answers a different question: how much charge it holds (a converter's loop and a bias
+    pin take capacitors by value), not how fast it delivers it (a load's pins take low-inductance bodies)."""
     c = V.capacitance(part.value)
     if c is None:
         c = V.capacitance(str(part.fields.get('Capacitance') or part.fields.get('Val') or ''))
@@ -2108,6 +2120,10 @@ def cap_class(part: Part) -> tuple[str, float | None, list]:
     if pk.polarized:
         evs.append(ev('footprint', f"polarized body '{pk.text}'", STRONG))
         return 'bulk', c, evs
+    if (mode or CAP_CLASS) == 'package' and pk.size in HF_CHIP_SIZES and not pk.through_hole:
+        # the body, not the value, sets an MLCC's inductance: a 10 uF 0402 decouples as well as a 100 nF 0402
+        evs.append(ev('footprint', f"non-polarized {pk.size} chip ({V.si(c, 'F')}): low-inductance body", MODERATE))
+        return 'hf', c, evs
     if c is not None:
         if c <= 1.0e-6 + 1e-12:
             evs.append(ev('value', f"{V.si(c, 'F')} (<= 1 uF)", MODERATE))

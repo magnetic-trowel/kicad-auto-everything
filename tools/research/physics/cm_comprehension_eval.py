@@ -35,7 +35,7 @@ Weak labels:
                     dropped at random, as for cells.
 
 Usage:
-  python -I cm_comprehension_eval.py --tasks kae-work/tasks --out DIR [-j 2] [--only id,id] [--no-sheets] [--rank-w W] [--tie random]
+  python -I cm_comprehension_eval.py --tasks kae-work/tasks --out DIR [-j 2] [--only id,id] [--no-sheets] [--rank-w W] [--tie random] [--cap-class value]
 Writes DIR/eval.json (per-board rows and pooled numbers) and DIR/suite.md (tables).
 Needs kae (kae/src on sys.path is added here) and numpy. Deterministic (fixed seeds).
 """
@@ -520,6 +520,8 @@ def main(argv=None):
     ap.add_argument('--no-sheets', action='store_true')
     ap.add_argument('--rank-w', type=float, default=None, help='override kae.circuit.structures.RANK_W (ablation)')
     ap.add_argument('--tie', choices=('schematic', 'random'), default=None, help='capacitor tie-break order (ablation)')
+    ap.add_argument('--cap-class', choices=('package', 'value'), default=None,
+                    help='override kae.circuit.roles.CAP_CLASS: HF decaps by body or by value (ablation)')
     ap.add_argument('--kae-src', default=None, help='another copy of kae/src to evaluate (read at import time)')
     a = ap.parse_args(argv)
     import kae.circuit.structures as _st
@@ -527,6 +529,9 @@ def main(argv=None):
         _st.RANK_W = a.rank_w
     if a.tie:
         _st.TIE_ORDER = a.tie
+    if a.cap_class:
+        import kae.circuit.roles as _ro
+        _ro.CAP_CLASS = a.cap_class
     paths = sorted(glob.glob(os.path.join(a.tasks, '*', 'reference', 'board.kicad_pcb')))
     if a.only:
         keep = set(a.only.split(','))

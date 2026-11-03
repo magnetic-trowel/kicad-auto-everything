@@ -91,7 +91,7 @@ Allocation runs jointly per rail over every capacitor from the rail to ground:
 
 The score adds schematic affinity (same sheet +2, other −1, same 100-block of references +1.5) and the class preference. Assignment is greedy with quotas; ties fill owners in reference order. Leftovers go to the near-best owner with the fewest caps per pin. A converter left without a capacitor takes another converter's second one. Ownership probability `caps_p` is a softmax of the same scores.
 
-**Pairing is stated only where the netlist decides it.** `pin_caps` names a pin only for a single-pin group and only for small ceramics within quota at p ≥ 0.5 (`pairing: 'pin'`). A group with several pins on one net says `nearest_pin`: the placer pairs each cap with the nearest of those pins. Entry bulk says `nearest_load`. Three critical-router cases traced to rule errors: round-robin pin assignment, a module's `3V3` pin read as a regulator output, and leftovers piling on the first consumer. Fixing them cut pairings with a human distance over 10 mm from 33.2% to 11.6% [C].
+**Pairing is stated only where the netlist decides it.** `pin_caps` names a pin only for a single-pin group and only for HF bodies within quota at p ≥ 0.5 (`pairing: 'pin'`): non-polarized chips ≤ 0603 at any value, else ≤ 1 µF ([decoupling-pdn](../rules/decoupling-pdn.md)). Several pins on one net give `nearest_pin`: the placer pairs each cap with the nearest one. Entry bulk says `nearest_load`. Fixing three rule errors (round-robin pin assignment, a module's `3V3` pin read as a regulator output, leftovers piling on the first consumer) cut pairings with a human distance over 10 mm from 33.2% to 11.6% [C].
 
 ### 3.4 Power paths without switching
 
