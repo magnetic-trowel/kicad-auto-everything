@@ -554,6 +554,21 @@ def test_timed_jobs_waiting_for_cpus_freeze_the_newest_batch_job(kq, tmp_path):
         kq.kill_tree(d.c.execute("SELECT pid FROM jobs WHERE id=?", (i,)).fetchone()[0], d.cgroups.get(i))
 
 
+def test_each_attempt_leaves_a_trace(kq, tmp_path):
+    import gzip
+    d = _lease_daemon(kq, tmp_path)
+    submit(kq, "python3 -c 'import time\na = bytearray(200 << 20)\nt = time.time()\nwhile time.time() - t < 25: pass'",
+           name="tr", timeout="1m")
+    drive(kq, d, lambda: states(d)["tr"] == "ok", secs=60)
+    files = os.listdir(kq.TRACES)
+    assert files == ["1.1.0.tsv.gz"]
+    lines = gzip.open(os.path.join(kq.TRACES, files[0]), "rt").read().splitlines()
+    head = json.loads(lines[0])
+    assert head["owner"] == "t" and head["qos"] == "timed" and lines[-1].startswith("# end ok")
+    rows = [l.split("\t") for l in lines[1:-1]]
+    assert len(rows) >= 1 and float(rows[-1][2]) >= 150 and float(rows[-1][3]) > 0.5   # ~200 MB, ~1 core
+
+
 def _lease_daemon(kq, tmp_path, **cfg):
     conf = json.load(open(kq.CONF))
     conf.update(cgroup="auto", slice="kaeqtest.slice", mem_pool="lease", lease_buffer_gb=0.1, lease_buffer_ticks=0)

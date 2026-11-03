@@ -124,8 +124,8 @@ DEFAULTS = {
     # timed_hold_auto it adapts every overcommit_every_s so that work lost to such requeues stays near
     # overcommit_loss_target of the timed work done over overcommit_window_s (up by 0.1 above it, down by 0.05
     # below half of it). A job requeued evict_protect_after times keeps its whole grant set aside.
-    "timed_hold_frac": 0.5,
-    "timed_hold_auto": True,
+    "timed_hold_frac": 1.0,
+    "timed_hold_auto": False,
     "overcommit_loss_target": 0.02,
     "overcommit_window_s": 21600,
     "overcommit_every_s": 600,
@@ -824,6 +824,50 @@ def job_usage(j, sessions, per_pid, cgroups):
     return sessions.get(j["pid"], (0.0, 0))
 
 
+TRACES = os.path.join(os.path.dirname(DB), "traces")
+
+
+def trace_path(j):
+    return os.path.join(TRACES, f"{j['id']}.{j['attempt']}.{j['preempts']}.tsv")
+
+
+def write_trace(j, now, **v):
+    """Append one 10-s sample to a job attempt's trace (local disk, gzipped when the attempt ends): t, rss and
+    non-reclaimable use (MB), cores used, share of time some / all threads waited for a CPU, frozen, grant (MB).
+    The first line is a JSON header with what the queue knew at the start."""
+    path = trace_path(j)
+    try:
+        new = not os.path.exists(path)
+        if new:
+            os.makedirs(TRACES, exist_ok=True)
+        with open(path, "a") as f:
+            if new:
+                f.write(json.dumps(dict(id=j["id"], owner=j["owner"], name=j["name"], cpus=j["cpus"], mem_mb=j["mem_mb"],
+                                        qos=j["qos"], started=j["started"], timeout_s=j["timeout_s"],
+                                        prio=j["prio"])) + "\n")
+            f.write(f"{now:.0f}\t{v['rss']:.0f}\t{v['use']:.0f}\t{v['cores']:.2f}\t{v['wait']:.3f}\t{v['stall']:.3f}\t"
+                    f"{int(v['frozen'])}\t{v['grant']:.0f}\n")
+    except OSError:
+        pass
+
+
+def close_trace(j, state):
+    """An attempt ended: append how (`# end <state> <t>`) and gzip its trace."""
+    path = trace_path(j)
+    if not os.path.exists(path):
+        return
+    try:
+        import gzip
+        import shutil as sh
+        with open(path, "a") as f:
+            f.write(f"# end {state} {time.time():.0f}\n")
+        with open(path, "rb") as src, gzip.open(path + ".gz", "wb") as dst:
+            sh.copyfileobj(src, dst)
+        os.unlink(path)
+    except OSError:
+        pass
+
+
 def cg_pressure(cg):
     """(some_s, full_s): cumulative seconds in which some / all of a job's runnable threads waited for a CPU
     (its scope's cpu.pressure; needs no delegated cpu controller). None without a scope."""
@@ -1022,7 +1066,7 @@ class Daemon:
                 tr[0] = now
                 tr[1].append(rss)
             self.check(j, rss, now, cfg, self.disk.get(j["id"], 0.0), lease=lease_on and j["id"] in self.cgroups)
-        self.sample_cpu(cfg, now, running)
+        self.sample_cpu(cfg, now, running, usage)
         if now - self.cpu_ts >= 60:
             c.executemany("UPDATE jobs SET cpu_s=? WHERE id=? AND state='running'",
                           [(v, k) for k, v in self.cpu_s.items()])
@@ -1289,9 +1333,10 @@ class Daemon:
                     granted=sum(grants.values()), used=sum(use.values()), stalled=plan["stalled"],
                     victim=plan["victim"], short=plan["short"], jobs=len(jobs), hold=hold, loss=self.oc.get("loss"))
 
-    def sample_cpu(self, cfg, now, running):
+    def sample_cpu(self, cfg, now, running, usage=None):
         """Every 10 s per job: cores used (cpu.stat) and seconds some / all of its threads waited for a CPU
-        (cpu.pressure); the timed jobs' share of time spent waiting, smoothed."""
+        (cpu.pressure); the timed jobs' share of time spent waiting, smoothed. Each sample also goes to the job's
+        trace (write_trace), the data the simulator (tools/kaeq/sim.py) replays."""
         live = {j["id"] for j in running}
         for jid in set(self.cpuj) - live:
             del self.cpuj[jid]
@@ -1315,6 +1360,10 @@ class Daemon:
             st.update(t=now, cpu=cpu, some=pr[0], full=pr[1], peak=max(st["peak"], r))
             st["wait_s"] += dw
             st["stall_s"] += df
+            m = cg_mem(cg)
+            write_trace(j, now, rss=(usage or {}).get(j["id"], (0.0, 0))[0], use=m[0] if m else 0.0, cores=r,
+                        wait=dw / dt, stall=df / dt, frozen=bool((self.lease_st.get(j["id"]) or {}).get("frozen_since")),
+                        grant=j["grant_mb"] or 0)
             st["rates"].append((now, r))
             while st["rates"] and st["rates"][0][0] < now - cfg["cpu_window_s"]:
                 st["rates"].pop(0)
@@ -1411,7 +1460,7 @@ class Daemon:
             dlog(f"lease #{jid}: thawed after {fdur(now - since)}")
         st["frozen_since"] = 0.0
 
-    def account(self, j, now, lost=False):
+    def account(self, j, now, lost=False, end=None):
         """Close a job's attempt in its time accounting: an open freeze ends now, its CPU seconds are stored. lost:
         the attempt is thrown away (requeued), so its active and CPU time move to lost_run_s/lost_cpu_s and the
         per-attempt counters start again from zero."""
@@ -1421,6 +1470,7 @@ class Daemon:
             self.c.execute("UPDATE jobs SET cpu_s=? WHERE id=?", (cpu, j["id"]))
         self.flush_cpu(j["id"])
         self.cpuj.pop(j["id"], None)
+        close_trace(j, end or ("requeued" if lost else "ended"))
         if lost:
             r = self.c.execute("SELECT * FROM jobs WHERE id=?", (j["id"],)).fetchone()
             self.c.execute("UPDATE jobs SET lost_run_s=lost_run_s+?, lost_cpu_s=lost_cpu_s+cpu_s, cpu_s=0, frozen_s=0, "
@@ -1671,7 +1721,7 @@ class Daemon:
         dlog(f"finish #{j['id']} rc {rc}{' lost' if lost else ''} peak {fgb(peak)}")
         if rc == 0 and not lost:
             now = time.time()
-            self.account(j, now)
+            self.account(j, now, end="ok")
             _, tr, first = self.trace.pop(j["id"], [0, [], now])
             seen = (now - first) / max(1.0, now - (j["started"] or now))  # share of its run observed (< 1 after a restart)
             hist = json.dumps(mem_hist(tr, peak)) if seen >= 0.5 and len(tr) >= 6 and peak > 0 else None
@@ -1688,7 +1738,7 @@ class Daemon:
         peak = peak if peak is not None else j["peak_mb"]
         drop_scratch(config(), j["id"])
         retry = j["retries_left"] > 0 and state != "timeout"
-        self.account(j, time.time(), lost=retry)
+        self.account(j, time.time(), lost=retry, end=state)
         if retry:
             c.execute("UPDATE jobs SET state='queued',pid=NULL,attempt=attempt+1,retries_left=retries_left-1,note=? WHERE id=?",
                       (f"auto-retry after: {note}", j["id"]))
