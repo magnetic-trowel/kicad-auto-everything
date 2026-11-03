@@ -236,7 +236,7 @@ def frame(c, cfg, sampler, args, width):
     if args.jobs and running:
         L.append("")
         L.append(f"RUNNING JOBS (top {min(args.jobs, len(running))} of {len(running)} by CPU)")
-        L.append(f"  {'ID':>6} {'OWNER':<{ow}} {'CPU':>5} {'RAM':>6}/{'DECL':<6} {'ACTIVE':>7} {'LIMIT':>7} {'FROZEN':>9}  NAME")
+        L.append(f"  {'ID':>6} {'OWNER':<{ow}} {'CPU':>5} {'RAM':>6}/{'DECL':<6} {'ACTIVE':>7} {'LIMIT':>7} {'FROZEN':>9} C  NAME")
         order = sorted(running, key=lambda j: -(use.get(j["id"], (0, 0))[1] or 0))
         for j in order[:args.jobs]:
             rss, cores = use.get(j["id"], (0.0, None))
@@ -246,7 +246,8 @@ def frame(c, cfg, sampler, args, width):
             frz = (("*" if j["frozen_since"] else "") + f"{dur(fz)}/{nfz}x") if nfz else "-"
             cpu = "  -  " if cores is None else f"{cores:5.1f}"
             L.append(f"  {j['id']:>6} {j['owner'][:ow]:<{ow}} {cpu} {gb(rss):>6}/{gb(j['mem_mb']):<6} {dur(el):>7} "
-                     f"{dur(j['timeout_s']):>7} {frz:>9}  {j['name'] or j['cmd'][:60]}")
+                     f"{dur(j['timeout_s']):>7} {frz:>9} {'B' if (j['qos'] if 'qos' in j.keys() else '') == 'batch' else 'T'}"
+                     f"  {j['name'] or j['cmd'][:60]}")
     return [line[:width] for line in L]
 
 

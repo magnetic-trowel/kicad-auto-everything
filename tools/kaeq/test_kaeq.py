@@ -27,7 +27,7 @@ def kq(tmp_path, monkeypatch):
 
 
 def submit(kq, cmd, **kw):
-    ns = dict(batch=None, jobs=None, command=[cmd], env=None, owner=None, name=None, tag=None, cwd=None, cpus=1.0, mem="50M",
+    ns = dict(qos="timed", batch=None, jobs=None, command=[cmd], env=None, owner=None, name=None, tag=None, cwd=None, cpus=1.0, mem="50M",
               disk="10M", timeout="1m", prio=0, retries=0, live=False, link=None)
     ns.update(kw)
     import argparse
@@ -317,13 +317,17 @@ def test_no_start_while_threads_queue_for_a_cpu(kq):
         return 0, clock[0]
     kq.cpu_ticks = idle_cpus
     d = kq.Daemon()
-    submit(kq, "sleep 20", name="busy")
+    submit(kq, "sleep 20", name="busy", qos="batch")
     drive(kq, d, lambda: states(d)["busy"] == "running")  # (with nothing running, one job always starts)
     kq.runnable_threads = lambda: 50  # 4 threads, 1 reserved: 50 runnable threads is oversubscribed
-    submit(kq, "true", name="wait")
+    submit(kq, "true", name="wait", qos="batch")
     for _ in range(10):
         d.tick()
         time.sleep(0.1)
+    assert states(d)["wait"] == "queued"
+    # a timed job is not held back by batch jobs' threads: it takes their cycles (they are SCHED_IDLE)
+    submit(kq, "true", name="timed")
+    drive(kq, d, lambda: states(d)["timed"] in ("running", "ok"))
     assert states(d)["wait"] == "queued"
     kq.runnable_threads = lambda: 0
     drive(kq, d, lambda: states(d)["wait"] in ("running", "ok"))
@@ -331,13 +335,14 @@ def test_no_start_while_threads_queue_for_a_cpu(kq):
     d.c.commit()
 
 
-def test_jobs_run_at_nice_19_and_sched_idle(kq, tmp_path):
+def test_batch_jobs_run_at_sched_idle_timed_jobs_above_them(kq, tmp_path):
     d = kq.Daemon()
-    out = tmp_path / "prio"
-    submit(kq, f"ps -o ni=,cls= -p $$ > {out}", name="p")
-    drive(kq, d, lambda: states(d)["p"] == "ok")
-    ni, cls = out.read_text().split()
+    submit(kq, f"ps -o ni=,cls= -p $$ > {tmp_path / 'b'}", name="b", qos="batch")
+    submit(kq, f"ps -o ni=,cls= -p $$ > {tmp_path / 't'}", name="t")
+    drive(kq, d, lambda: all(v == "ok" for v in states(d).values()))
+    ni, cls = (tmp_path / "b").read_text().split()
     assert cls == "IDL" and ni in ("19", "-")  # ps prints "-" for the nice of SCHED_IDLE on some versions
+    assert (tmp_path / "t").read_text().split() == ["10", "TS"]   # normal scheduling, far above SCHED_IDLE
 
 
 LEASE = dict(lease_margin_frac=0.15, warmup_s=300, lease_release_frac=0.25, mem_overrun=1.5, lease_release_gb=2.0, lease_release_after_s=120, lease_margin_mb=512, lease_step_gb=1.0,
@@ -444,6 +449,49 @@ def test_lease_plan_counts_only_part_of_old_jobs_unused_grants(kq):
     assert p["free"] == pytest.approx(16384 - 4096 - 2560 - 3072) and p["stalled"] == []
 
 
+def test_lease_plan_never_stalls_a_timed_job_and_makes_room_with_a_batch_job(kq):
+    cfg = dict(LEASE, lease_hold_frac=0.25, timed_hold_frac=1.0)
+    jobs = [dict(id=1, prio=0, started=10, grant=4096, use=4000, timed=True),     # at its grant, nothing free
+            dict(id=2, prio=0, started=20, grant=4096, use=4000),                 # batch, at its grant
+            dict(id=3, prio=0, started=30, grant=8192, use=2048, frozen=True),    # batch, frozen
+            dict(id=4, prio=0, started=40, grant=8192, use=2048)]                 # batch, newest
+    p = kq.lease_plan(jobs, 0.0, cfg, now=1000.0)
+    assert 1 not in p["stalled"] and p["short"] == [1] and 2 in p["stalled"]
+    assert p["timed_victim"] == 3                  # the frozen batch job first, then the newest
+    # timed jobs get memory first, and their unused grant counts in full; never frozen as growers
+    jobs[0]["grew"] = jobs[1]["grew"] = 500.0
+    p = kq.lease_plan(jobs, 1100.0, cfg, now=1000.0, buffer=4096.0 + 0)
+    assert 1 not in p["stalled"]
+    p = kq.lease_plan(jobs[:2], 1100.0 + 96 + 96 * 0.25, cfg, now=1000.0)
+    assert p["grants"][1] > 4096 and p["stalled"] == [2]
+    assert kq.lease_plan(jobs[:1], 0.0, cfg, now=1000.0)["timed_victim"] is None   # no batch job: it runs on
+
+
+def test_timed_cpu_pools_bursts_and_waits_for_calm(kq):
+    # three jobs averaging 2 cores with bursts to 10: their means add up, their bursts rarely coincide
+    jobs = [(2.0, 10.0)] * 3
+    assert kq.burst_fits(jobs, (2.0, 10.0), cap=24.0)            # 8 + sqrt(4 * 64) = 24
+    assert not kq.burst_fits(jobs, (2.0, 10.0), cap=23.0)
+    assert not kq.burst_fits([(10.0, 10.0)] * 3, (2.0, 2.0), cap=31.0)   # steady jobs count in full
+    d = kq.Daemon()
+    submit(kq, "true", name="a", cpus=2)
+    j = d.c.execute("SELECT * FROM jobs").fetchone()
+    assert d.timed_cpu_fits(j, kq.config(), time.time(), [])          # 2 of 3 CPUs (test pool: 4 threads, 1 kept)
+    d.timed_wait = 0.03                                               # timed jobs already wait for CPUs: no start
+    assert not d.timed_cpu_fits(j, kq.config(), time.time(), [])
+
+
+def test_lease_plan_counts_a_thrashing_jobs_frozen_time_as_waiting(kq):
+    """Frozen and thawed over and over, a job's stall restarts each time; its time frozen still counts."""
+    jobs = [dict(id=1, prio=0, started=10, grant=4096, use=4090, declared=1024, stall_since=990.0,
+                 waited_frozen=1000.0),                                 # 4x its --mem: a runaway
+            dict(id=2, prio=0, started=50, grant=2048, use=1000, declared=2048)]
+    p = kq.lease_plan(jobs, 0.0, LEASE, now=1000.0)
+    assert p["stalled"] == [1] and p["victim"] == 1 and p["waiter"] == 1
+    jobs[0]["waited_frozen"] = 100.0
+    assert kq.lease_plan(jobs, 0.0, LEASE, now=1000.0)["victim"] is None
+
+
 def test_lease_plan_freezes_growers_when_the_buffer_is_eaten(kq):
     cfg = dict(LEASE, lease_hold_frac=0.0)
     jobs = [dict(id=1, prio=0, started=10, grant=60000, use=50000, grew=3000),   # oldest grower
@@ -456,6 +504,28 @@ def test_lease_plan_freezes_growers_when_the_buffer_is_eaten(kq):
     assert sorted(p["stalled"]) == [1, 2, 4] and p["grants"][3] == 8000
     p = kq.lease_plan(jobs, 9000.0, cfg, now=1000.0, buffer=4096.0)           # room again: nobody frozen
     assert p["stalled"] == []
+
+
+def test_timed_jobs_waiting_for_cpus_freeze_the_newest_batch_job(kq, tmp_path):
+    d = _lease_daemon(kq, tmp_path, cpu_freeze_every_s=0, threads=512, reserve_cpu=0)  # admits both on a busy host
+    submit(kq, "sleep 60", name="old", qos="batch")
+    submit(kq, "sleep 60", name="new", qos="batch")
+    drive(kq, d, lambda: list(states(d).values()) == ["running", "running"] and len(d.cgroups) == 2)
+    d.timed_wait = 0.5                       # as if timed jobs waited for CPUs half the time
+    running = d.c.execute("SELECT * FROM jobs WHERE state='running'").fetchall()
+    d.cpu_freeze(kq.config(), time.time(), running)
+    assert kq.cg_frozen(d.cgroups[2]) and not kq.cg_frozen(d.cgroups[1])
+    d.tick()                                 # the memory leases leave a CPU-frozen job frozen
+    assert kq.cg_frozen(d.cgroups[2])
+    d.timed_wait = 0.0
+    d.cpu_freeze(kq.config(), time.time(), running)     # calm: thawed
+    d.cpu_freeze(kq.config(), time.time(), running)
+    assert not kq.cg_frozen(d.cgroups[2])
+    j = d.c.execute("SELECT * FROM jobs WHERE id=2").fetchone()
+    assert j["freezes"] == 1 and j["frozen_s"] >= 0 and not j["frozen_since"]
+    d.c.execute("UPDATE jobs SET state='cancelled'")
+    for i in (1, 2):
+        kq.kill_tree(d.c.execute("SELECT pid FROM jobs WHERE id=?", (i,)).fetchone()[0], d.cgroups.get(i))
 
 
 def _lease_daemon(kq, tmp_path, **cfg):
@@ -477,7 +547,7 @@ def test_lease_stalls_a_job_at_its_grant_instead_of_killing_it(kq, tmp_path):
     """A job that outgrows what may be granted waits, frozen, near its grant; once the budget allows, it gets more,
     is thawed and finishes. It is never killed for using more than it declared."""
     d = _lease_daemon(kq, tmp_path, mem_budget_gb=1.5)
-    submit(kq, HOG.format(n=8, after="", hold=1), name="hog", mem="300M", timeout="2m")
+    submit(kq, HOG.format(n=8, after="", hold=1), name="hog", mem="300M", timeout="2m", qos="batch")
     log = tmp_path / "jobs" / "1" / "log"
     drive(kq, d, lambda: d.c.execute("SELECT grant_mb FROM jobs").fetchone()[0] >= 1200, secs=40)
     t = time.time()
@@ -505,7 +575,7 @@ def test_lease_stalls_a_job_at_its_grant_instead_of_killing_it(kq, tmp_path):
 
 def test_lease_gives_back_what_a_job_no_longer_uses(kq, tmp_path):
     d = _lease_daemon(kq, tmp_path, lease_release_gb=0.5, lease_release_after_s=2, warmup_s=0)
-    submit(kq, HOG.format(n=8, after="a.clear()\n", hold=30), name="hog", mem="300M", timeout="2m")
+    submit(kq, HOG.format(n=8, after="a.clear()\n", hold=30), name="hog", mem="300M", timeout="2m", qos="batch")
     drive(kq, d, lambda: d.c.execute("SELECT grant_mb FROM jobs").fetchone()[0] >= 2000, secs=40)
     drive(kq, d, lambda: d.c.execute("SELECT grant_mb FROM jobs").fetchone()[0] <= 1200, secs=30)
     d.c.execute("UPDATE jobs SET state='cancelled' WHERE 1")
