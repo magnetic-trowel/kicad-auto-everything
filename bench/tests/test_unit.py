@@ -776,7 +776,7 @@ def test_mech_classifier_matches_the_research_rules(fp, cls):
 
 
 def test_strict_drc_reruns_only_where_the_project_downgrades_a_strict_check(tmp_path, monkeypatch):
-    """Score v10: clean_strict needs no violation of STRICT_CHECKS whatever the project says. The
+    """Score v11: clean_strict needs no violation of STRICT_CHECKS whatever the project says. The
     second DRC runs on a copy whose project has them at error, only when the project downgrades
     one; the staged board's own project is untouched."""
     staged = tmp_path / "s" / "board.kicad_pcb"

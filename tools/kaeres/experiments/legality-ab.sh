@@ -4,7 +4,7 @@
 #
 # A/B of placement legality severities and body relaxation (branch decide-legality; decisions P2/P3 of
 # the 2026-11 divergence audit, docs/research/placement/kae-exact-legality.md "Severities", "Bodies").
-# kae place, task kind place (and place-fixed), Freerouting probe, score v10 (legal_strict). Arms differ
+# kae place, task kind place (and place-fixed), Freerouting probe, score v11 (legal_strict). Arms differ
 # only in two kae place flags, at one commit:
 #
 #   kae place legality old       --severity board  --relax-bodies auto      (the behaviour before the change)

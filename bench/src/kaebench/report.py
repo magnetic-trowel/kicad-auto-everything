@@ -21,7 +21,7 @@ def _mean(xs):
 
 def _strict_mean(scores, key):
     """Share of `key` (clean_strict, legal_strict) over the scores; None when any scored result
-    predates it (score v10), so a column never mixes the two definitions. A missing score
+    predates it (score v11), so a column never mixes the two definitions. A missing score
     (no output) counts as not clean."""
     if any(sc and key not in sc and sc.get("valid") is not False for sc in scores):
         return None
@@ -77,7 +77,7 @@ def summarize(rows):
             sck = [r.get("score") or {} for r in best]
             m.update(cp1=_mean([1.0 if s.get("clean") else 0.0 for s in sc1]),
                      cpk=_mean([1.0 if s.get("clean") else 0.0 for s in sck]),
-                     # fixed-severity profile (score v10); None for results scored before it
+                     # fixed-severity profile (score v11); None for results scored before it
                      cp1_strict=_strict_mean(sc1, "clean_strict"), cpk_strict=_strict_mean(sck, "clean_strict"),
                      completion=_mean([s.get("completion", 0.0) for s in sck]),
                      errors=_mean([s.get("errors") for s in sck]),

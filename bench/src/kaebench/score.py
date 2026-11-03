@@ -33,8 +33,9 @@ from .boardfiles import board_path, install_rules, unconnected_ignored
 
 # 8: unconnected counted by pcbnew where the project ignores the check (_uncapped)
 # 9: route placement integrity with the place side's pose tolerance (transplant-routing)
-# 10: clean_strict / legal_strict / errors_strict (fixed-severity profile, STRICT_CHECKS)
-SCORE_VERSION = 10
+# 10: taken by the unmerged route-zones branch (route and joint methods may add copper zones)
+# 11: clean_strict / legal_strict / errors_strict (fixed-severity profile, STRICT_CHECKS)
+SCORE_VERSION = 11
 # KiCad 10's DRC report stops listing unconnected items at 499 and other violations at 199
 # per type (drc_engine ERROR_LIMIT / EXTENDED_ERROR_LIMIT).
 DRC_UNCONNECTED_CAP = 499
