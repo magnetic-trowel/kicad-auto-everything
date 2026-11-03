@@ -141,6 +141,7 @@ DEFAULTS = {
     # timed_hold_auto it adapts every overcommit_every_s so that work lost to such requeues stays near
     # overcommit_loss_target of the timed work done over overcommit_window_s (up by 0.1 above it, down by 0.05
     # below half of it). A job requeued evict_protect_after times keeps its whole grant set aside.
+    "default_class": "batch",  # class of a job submitted without --class: batch (packs tighter, may be paused)
     "timed_hold_frac": 1.0,  # (used only with timed_forecast off)
     "timed_hold_auto": False,
     # timed_forecast: set aside for timed jobs what they are forecast to grow into, not their unused grants: each
@@ -2087,6 +2088,7 @@ def ensure_daemon():
 
 # ---------------------------------------------------------------- client commands
 def qos(name):
+    name = name or config()["default_class"]
     if name not in ("timed", "batch"):
         sys.exit(f"kaeq: --class is timed or batch, not {name!r}")
     return name
@@ -2435,10 +2437,10 @@ def main(argv=None):
     s.add_argument("--disk", default="1G", help="peak scratch ($KAEQ_SCRATCH) estimate; admission keeps the total under scratch_gb")
     s.add_argument("--timeout", default="1h")
     s.add_argument("--prio", type=int, default=0, help="higher runs first")
-    s.add_argument("--class", dest="qos", default="timed", choices=("timed", "batch"),
-                   help="timed (default): never paused, memory reserved, CPU priority over batch: for anything with time "
-                        "budgets or timeouts inside. batch: may be paused and packed tighter: only for work with no "
-                        "time limits inside")
+    s.add_argument("--class", dest="qos", default=None, choices=("timed", "batch"),
+                   help="batch (default, config default_class): packed tight, may be paused (frozen, compressed). "
+                        "timed: never paused, CPU priority: for timing, benchmark, optimization and speed work, "
+                        "whose results depend on the time it gets")
     s.add_argument("--retries", type=int, default=0, help="auto-retry on failure (not for deterministic test failures)")
     s.add_argument("--name"), s.add_argument("--tag"), s.add_argument("--cwd")
     s.add_argument("--env", action="append", metavar="K=V")

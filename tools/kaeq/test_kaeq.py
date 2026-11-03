@@ -709,3 +709,10 @@ def test_lease_gives_back_what_a_job_no_longer_uses(kq, tmp_path):
     drive(kq, d, lambda: d.c.execute("SELECT grant_mb FROM jobs").fetchone()[0] <= 1200, secs=30)
     d.c.execute("UPDATE jobs SET state='cancelled' WHERE 1")
     kq.kill_tree(d.c.execute("SELECT pid FROM jobs").fetchone()[0], d.cgroups.get(1))
+
+
+def test_jobs_go_in_as_batch_unless_marked_timed(kq):
+    submit(kq, "true", name="plain", qos=None)
+    submit(kq, "true", name="bench", qos="timed")
+    c = kq.db()
+    assert dict(c.execute("SELECT name, qos FROM jobs").fetchall()) == {"plain": "batch", "bench": "timed"}

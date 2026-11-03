@@ -589,8 +589,9 @@ def cmd_exp_submit(a):
     f.write_text("".join(json.dumps(j) + "\n" for j in jobs))
     print(f"{len(jobs)} board jobs -> {f}")
     if jobs and not a.dry_run:
+        # benchmark runs: methods' results depend on the time they get, so never paused (kaeq class timed)
         subprocess.run(["kaeq", "submit", "--jobs", str(f), "--owner", f"exp-{a.name}", "--tag", a.name, "--live",
-                        "--cwd", str(code_dir(e["harness"]["commit"])), "--retries", "1"], check=True)
+                        "--class", "timed", "--cwd", str(code_dir(e["harness"]["commit"])), "--retries", "1"], check=True)
 
 
 # ------------------------------------------------------------------ the per-board job
@@ -1123,7 +1124,8 @@ def cmd_rerun(a):
     if a.submit:
         py = code_dir(r["harness_commit"]).with_name(code_dir(r["harness_commit"]).name + ".venv") / "bin" / "python"
         script = code_dir(r["harness_commit"]) / "tools" / "kaeres" / "kaeres.py"
-        subprocess.run(["kaeq", "submit", "--owner", "kaeres-rerun", "--live", "--cwd", str(code_dir(r["harness_commit"])),
+        subprocess.run(["kaeq", "submit", "--owner", "kaeres-rerun", "--live", "--class", "timed",
+                        "--cwd", str(code_dir(r["harness_commit"])),
                         "--mem", "8G", "--disk", "4G", "--timeout", "6h", "--cpus", "2", "--name", f"rerun:{r['run']}", "--",
                         str(py), str(script), *cmd.split()[1:]], check=True)
 
@@ -1436,7 +1438,7 @@ def cmd_rephysics_submit(a):
     print(f"physics evaluator {pid} (harness {harness[:7]}, kae {kae[:7]}): {len(jobs)} board jobs -> {f}")
     if jobs and not a.dry_run:
         subprocess.run(["kaeq", "submit", "--jobs", str(f), "--owner", f"rephysics-{a.name}", "--tag", f"rephysics-{a.name}",
-                        "--live", "--cwd", str(cd), "--retries", "1"], check=True)
+                        "--live", "--class", "batch", "--cwd", str(cd), "--retries", "1"], check=True)
 
 
 def cmd_rephysics_job(a):
