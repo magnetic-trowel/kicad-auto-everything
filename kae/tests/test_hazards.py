@@ -81,3 +81,23 @@ def test_finalize_hoists_nested_and_derives_flags():
 def test_finalize_empty():
     rep = H.finalize(dict(status="ok"))
     assert rep["hazards"] == [] and rep["hazard_summary"]["blocked"] is False
+
+
+def test_derive_escape_checked_and_physics():
+    cert = dict(package="U1", constraint="escape", demand=40, escapable=31.5, short=9, layers=["F.Cu", "B.Cu"],
+                relaxations=[dict(rule="clearance", value=0.09, all=True), dict(rule="2 more signal layers", all=False)])
+    rep = dict(iterations=[dict(route=dict(blocked=dict(packages=[cert])))],
+               final=dict(checked=dict(drc=False, physics=True, brief=True), modules={"cell:U3": 1.8, "decap:U1": 0.4,
+                                                                                       "x": None}))
+    hz = {h["code"]: h for h in H.derive(rep)}
+    assert hz["escape_infeasible"]["severity"] == "block" and "clearance 0.09 mm" in hz["escape_infeasible"]["fix"]
+    assert hz["check_not_run"]["objects"] == ["drc"]
+    assert hz["physics_over_budget"]["objects"] == ["cell:U3"] and hz["physics_over_budget"]["evidence"]["u"] == 1.8
+
+
+def test_sim_hazards():
+    ev = dict(tests=[dict(id="t1", kind="rail_dc", nets=["+3V3"], status="fail",
+                          requirements=[dict(op=">=", bound=3.2, status="fail", routed=dict(typ=3.1))]),
+                     dict(id="t2", kind="rail_dc", nets=["+5V"], status="pass")])
+    hz = H.sim_hazards(ev)
+    assert [(h["code"], h["severity"], h["objects"]) for h in hz] == [("sim_fail", "warn", ["+3V3"])]

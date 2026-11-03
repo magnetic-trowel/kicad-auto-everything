@@ -552,6 +552,11 @@ def main(argv=None):
             print(f"  {q['subject']} {q['name']}: {q['lo']:.4g}..{q['hi']:.4g} {q['unit']} ({q['basis'][:80]})")
     for n in r["notes"]:
         print("note:", n)
+    from kae.hazards import finalize, physics_hazards
+    finalize(r, extra=physics_hazards({h["observer"]: dict(u=h["u"], kind=h["kind"], u_hi=h.get("u_hi"))
+                                       for h in r.get("harms") or [] if h.get("u") is not None}))
+    s = r["hazard_summary"]
+    print(f"hazards: {s['block']} block, {s['warn']} warn, {s['info']} info")
     if a.o:
         json.dump(r, open(a.o, "w"), indent=1, default=str)
 

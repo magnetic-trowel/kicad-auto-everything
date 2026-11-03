@@ -132,3 +132,29 @@ def test_ignored_short_is_a_block_hazard(tmp_path):
     assert rep["hazard_summary"]["blocked"]
     assert json.loads(pcb.with_suffix(".kicad_pro").read_text())["board"]["design_settings"]["rule_severities"][
         "shorting_items"] == "ignore"                 # the project itself is untouched
+
+
+def test_summary_hazards_and_finish_off(tmp_path):
+    rep = dict(status="repaired", repair=dict(final=dict(errors=3, unconnected=2,
+                                                          by_type=dict(clearance=3, starved_thermal=1, foo=2))))
+    hz = {h["code"]: h for h in B.summary_hazards(rep)}
+    assert set(hz) == {"drc_clearance", "drc_starved_thermal", "drc_unconnected_items"}
+    assert hz["drc_unconnected_items"]["evidence"]["count"] == 2
+    assert [h["code"] for h in B.summary_hazards(rep, skip=("unconnected_items",))] == ["drc_clearance",
+                                                                                         "drc_starved_thermal"]
+    pcb = _project(tmp_path, dict(shorting_items="ignore"))
+    pcb.write_text(TWO_PADS.read_text())
+    B.finish(rep, str(pcb), str(pcb), mode="off")
+    assert rep["recheck"] == dict(ran=False, skipped="off")
+    codes = [h["code"] for h in rep["hazards"]]
+    assert codes[:2] == ["drc_clearance", "drc_unconnected_items"] and "drc_check_downgraded" in codes
+    assert rep["hazard_summary"]["blocked"]
+
+
+def test_finish_skips_without_time(tmp_path):
+    import time
+    pcb = _project(tmp_path, dict(clearance="warning"))
+    pcb.write_text(TWO_PADS.read_text())
+    rep = B.finish(dict(), str(pcb), str(pcb), mode="auto", deadline=time.monotonic() + 1)
+    sk = next(h for h in rep["hazards"] if h["code"] == "recheck_skipped")
+    assert sk["severity"] == "warn" and sk["objects"] == ["clearance"]

@@ -475,3 +475,95 @@ def board_hazards(output, project_board=None, brief=None, board=None, drc=True, 
         hz, meta = recheck(output, project_board, timeout=timeout, log=log)
         out += hz
     return out, meta
+
+
+def final_summary(report):
+    """The last DRC summary a kae report carries for its output ({unconnected, by_type}), or None:
+    the joint loop's final card, the bridge's (repair) final, critical routing's bridge."""
+    for path in (("final",), ("repair", "final"), ("bridge", "repair", "final"), ("bridge", "final")):
+        d = report
+        for k in path:
+            d = d.get(k) if isinstance(d, dict) else None
+        if isinstance(d, dict) and ("by_type" in d or "errors_by_type" in d) and d.get("unconnected") is not None:
+            return dict(unconnected=d.get("unconnected"), by_type=d.get("by_type") or d.get("errors_by_type") or {},
+                        path=".".join(path))
+    return None
+
+
+def summary_hazards(report, skip=()):
+    """Hazards from the report's own final DRC summary (counts only, the project's severities):
+    the fallback when the recheck did not run."""
+    fs = final_summary(report)
+    if fs is None:
+        return []
+    by = dict(fs["by_type"])
+    if fs["unconnected"] and "unconnected_items" not in skip:
+        by["unconnected_items"] = fs["unconnected"]
+    out = []
+    for t, n in sorted(by.items()):
+        if t not in DRC_CHECKS or t in skip or not n:
+            continue
+        hs, cat, what, fix = DRC_CHECKS[t]
+        out.append(H.make(f"drc_{t}", hs, cat, f"{n} x {what}.", evidence=dict(count=n, source=f"report {fs['path']} "
+                                                                                "(kae's own DRC, project severities)"),
+                          fix=fix))
+    return out
+
+
+# kinds of output: what the recheck leaves out. A placement is not routed: its opens and the
+# stubs of moved parts are the router's job, not a hazard of the placement.
+SKIP_BY_KIND = dict(place=("unconnected_items", "track_dangling", "via_dangling"))
+MIN_RECHECK_S = 20.0      # less time than this left: the recheck is skipped (and says so)
+
+
+def add_arguments(ap):
+    """--recheck on|off|auto for a CLI that writes a board (auto: when kicad-cli is found)."""
+    ap.add_argument("--recheck", default="auto", choices=("auto", "on", "off"),
+                    help="independent KiCad DRC of the output with the safety checks forced on; findings go to "
+                         "the report's hazards (auto: when kicad-cli is found and time is left)")
+
+
+def finish(report, output=None, project_board=None, kind="route", mode="auto", deadline=None, brief=None,
+           board=None, log=None):
+    """Close `report` for the LLM: static project hazards, the forced-severity recheck of
+    `output` (mode on|auto|off; within `deadline`, a time.monotonic() value), then
+    kae.hazards.finalize (nested lists hoisted, flags derived, capped, summary). The
+    recheck's meta goes to report["recheck"]. Never raises: a report is always written."""
+    extra = []
+    project_board = project_board or output
+    try:
+        if project_board:
+            extra += static_hazards(project_board, brief=brief, board=board)
+    except Exception as e:      # noqa: BLE001
+        extra.append(H.make("static_hazards_failed", "info", "data", f"Static project checks failed: {e}"[:200]))
+    meta = dict(ran=False)
+    try:
+        if mode == "off" or not output:
+            meta["skipped"] = "off" if mode == "off" else "no output"
+        elif not Path(output).exists():
+            meta["skipped"] = "no output board"
+        else:
+            left = None if deadline is None else deadline - time.monotonic()
+            if left is not None and left < MIN_RECHECK_S and mode != "on":
+                meta["skipped"] = f"time ({left:.0f} s left)"
+                hidden = {k: v for k, v in downgraded(project_severities(project_board)).items()
+                          if DRC_CHECKS[k][0] != "info"}
+                extra.append(H.make("recheck_skipped", "warn" if hidden else "info", "data",
+                                    "No time was left to recheck the output board with the safety checks forced on"
+                                    + ("; the project downgrades " + ", ".join(sorted(hidden)) + ", so violations "
+                                       "of those are unverified." if hidden else
+                                       "; the project downgrades none of them, so kae's own DRC counts stand."),
+                                    objects=sorted(hidden), evidence=dict(seconds_left=round(left, 1)),
+                                    fix="Run again with --recheck on, or run kicad-cli pcb drc with the checks set "
+                                        "to error."))
+            else:
+                timeout = 900.0 if left is None else max(MIN_RECHECK_S, min(900.0, left - 5.0))
+                hz, meta = recheck(output, project_board, timeout=timeout, log=log)
+                skip = {f"drc_{t}" for t in SKIP_BY_KIND.get(kind, ())}
+                extra += [h for h in hz if h["code"] not in skip]
+    except Exception as e:      # noqa: BLE001
+        meta = dict(ran=False, error=f"{type(e).__name__}: {e}"[:200])
+    if not meta.get("ran"):
+        extra += summary_hazards(report, skip=SKIP_BY_KIND.get(kind, ()))
+    report["recheck"] = meta
+    return H.finalize(report, extra=extra)

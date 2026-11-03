@@ -21,7 +21,9 @@ goes to --report FILE; progress goes to stderr. As a kaebench method:
 `--physics-fidelity exact` makes the routed physics (recheck, board_physics, and so the
 accept rule's module values) PEEC (kae.physics.exact); `multi` uses closed forms to search
 and PEEC on each decision's top K and on finished boards; the default `fast` changes nothing.
-Exit status: 0 when an output was written, 2 otherwise. The report's status: "ok"; "partial"
+The report ends with "hazards" and "hazard_summary" (kae.hazards), including a recheck of
+OUTPUT with the safety checks forced on (--recheck, kae.board_hazards). Exit status: 0 when
+an output was written, 2 otherwise. The report's status: "ok"; "partial"
 when a stage raised after OUTPUT was written (the iterations so far, `output_exists`, `error`);
 "error" (nothing written, or an unknown --set key: every key must be one the loop, the stages
 or the placer reads); "no_output".
@@ -83,6 +85,7 @@ def run(a):
         # the bridge's "blocked" diagnosis is for the final board (loop: rep["final"]["blocked"])
         sopts.setdefault("first_blocked", False)
     rep = dict(status="error")
+    t0 = time.monotonic()
     pre = _mtime(out)
     loop = None
     try:
@@ -105,6 +108,8 @@ def run(a):
             shutil.rmtree(wd, ignore_errors=True)
         else:
             rep["workdir"] = str(wd)
+    from kae.board_hazards import finish
+    finish(rep, str(out), a.input, kind="joint", mode=a.recheck, deadline=t0 + float(a.time), log=_log)
     text = json.dumps(rep, default=str)
     if a.report:
         Path(a.report).write_text(text + "\n")
@@ -154,6 +159,8 @@ def main(argv=None):
     r.add_argument("--workdir")
     r.add_argument("--keep", action="store_true", help="keep the work directory")
     r.add_argument("--report")
+    from kae.board_hazards import add_arguments as recheck_args
+    recheck_args(r)
     r.add_argument("--set", action="append", metavar="KEY=VALUE",
                    help="loop or stage option, JSON values (loop.DEFAULTS, stages.STAGE_KEYS, "
                         "kae.route.constraints.DEFAULTS, bridge.KEY; unknown keys are an error). "

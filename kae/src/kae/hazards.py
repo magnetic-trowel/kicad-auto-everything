@@ -283,15 +283,88 @@ def derive(report):
                             objects=refs, evidence=dict(parts=len(refs), rule="place/problem.py relax_bodies"),
                             fix="Add courtyards to those footprints, enlarge the board, or check body "
                                 "clearance in 3D before ordering."))
+        if d.get("constraint") == "escape" and d.get("package") and (d.get("short") or 0) > 0:
+            fixes = [r.get("rule") + (f" {r['value']} mm" if "value" in r else "")
+                     for r in d.get("relaxations") or [] if r.get("all")]
+            out.append(make("escape_infeasible", "block", "electrical",
+                            f"{d.get('short')} of {d.get('demand')} signal balls of {d['package']} cannot escape under "
+                            "the board's rules on its layers; no router can connect them.",
+                            objects=[d["package"]], evidence={k: d[k] for k in ("demand", "escapable", "short", "layers",
+                                                                                "via_in_pad_considered") if k in d},
+                            fix=("Relax: " + " or ".join(fixes)) if fixes else "Add layers or relax the rules (none of "
+                                "the relaxations tried was enough)."))
+    fin = report.get("final") if isinstance(report, dict) else None
+    if isinstance(fin, dict) and isinstance(fin.get("checked"), dict):
+        missed = sorted(k for k, v in fin["checked"].items() if v is False)
+        if missed:
+            out.append(make("check_not_run", "warn", "data",
+                            f"The final board's {', '.join(missed)} check did not run, so its "
+                            f"{'DRC errors and opens' if 'drc' in missed else 'values'} are unknown (null in the report).",
+                            objects=missed, evidence=dict(note=str(fin.get("note") or "")[:160]),
+                            fix="Run kicad-cli pcb drc (and the physics evaluator) on the output."))
+        out += physics_hazards(fin.get("modules") or {}, source="final")
+    return out
+
+
+U_WARN = 1.0              # a module over its allocation (critical-net-routing.md: the recheck flags u crossing 1)
+_PHYS_CAT = dict(heat="thermal", dc_heat="thermal", chain="safety")
+
+
+def physics_hazards(modules, source=None, u_warn=U_WARN):
+    """Hazards for modules whose routed physics is over their allocation: {id: u} or
+    {id: {u | u_routed, kind, value, unit, alloc}}. A module without a value is info."""
+    out = []
+    for mid, v in sorted((modules or {}).items()):
+        if str(mid).startswith("_"):
+            continue
+        d = v if isinstance(v, dict) else dict(u=v)
+        u = d.get("u_routed", d.get("u"))
+        kind = d.get("kind") or str(mid).split(":")[0]
+        if u is None:
+            if d.get("error"):
+                out.append(make("physics_unmeasured", "info", "data",
+                                f"Module {mid}'s routed physics could not be measured.", objects=[mid],
+                                evidence=dict(error=str(d["error"])[:160]),
+                                fix="Check the module's copper; run the physics evaluator again."))
+            continue
+        if u > u_warn:
+            ev = dict(u=round(float(u), 3), threshold=u_warn)
+            ev.update({k: d[k] for k in ("value", "unit", "alloc", "u_hi") if d.get(k) is not None})
+            out.append(make("physics_over_budget", "warn", _PHYS_CAT.get(kind, "electrical"),
+                            f"Module {mid} uses {float(u):.2f}x its physics allocation on the routed board "
+                            "(a loop, decoupling path or trace worse than its budget).", objects=[mid],
+                            evidence=ev, fix="Tighten that module's placement or copper (kae joint, critical "
+                                             "routing), or confirm its budget.", **({"source": source} if source else {})))
+    return out
+
+
+def sim_hazards(evaluation):
+    """Hazards from a kae.sim evaluation (kae.sim.evaluation/1): a failed requirement warns, an
+    incomplete test (a pin on a separate copper island) warns, a marginal one is info."""
+    out = []
+    sev = dict(fail=("warn", "a simulated requirement fails on the routed board"),
+               incomplete=("warn", "a simulated test could not run: a pin sits on a separate copper island"),
+               marginal=("info", "a simulated requirement passes only marginally"))
+    for t in (evaluation or {}).get("tests") or []:
+        st = t.get("status")
+        if st not in sev:
+            continue
+        s, what = sev[st]
+        req = [dict(metric=q.get("metric") or q.get("name"), op=q.get("op"), bound=q.get("bound"),
+                    routed=q.get("routed"), status=q.get("status")) for q in t.get("requirements") or []
+               if q.get("status") == st][:3]
+        out.append(make(f"sim_{st}", s, "electrical", f"{what} ({t.get('kind')} test {t.get('id')}).",
+                        objects=list(t.get("nets") or [])[:12], evidence=dict(test=t.get("id"), requirements=req),
+                        fix="Tighten the copper of those nets, or check the requirement's bound."))
     return out
 
 
 def _flag_rail_max_cap(d):
     return make("rail_max_cap", "warn", "thermal",
-                f"Rail {d.get('net')} needs a {d.get('ipc_mm')} mm track for {d.get('I_A')} A (IPC-2221) but its "
-                "net class caps the width lower, so the track runs hotter than the rise target.",
-                objects=[d.get("net")], evidence={k: d[k] for k in ("hop", "I_A", "ipc_mm", "max_mm") if k in d},
-                fix="Raise the net class's maximum track width, add a pour, or accept the extra temperature rise.")
+                f"Rail {d.get('net')} needs a {d.get('ipc_mm')} mm track for {d.get('I_A')} A (IPC-2221); kae capped "
+                f"its critical track at {d.get('cap_mm')} mm, so without a pour it runs hotter than the rise target.",
+                objects=[d.get("net")], evidence={k: d[k] for k in ("hop", "I_A", "ipc_mm", "cap_mm") if k in d},
+                fix="Feed the rail with a copper pour (zone), or confirm the current is lower.")
 
 
 def _flag_class_max_below_ipc(d):
