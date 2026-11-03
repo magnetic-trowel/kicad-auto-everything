@@ -773,3 +773,44 @@ def test_zdiff_windows_match_the_interface_docs_they_cite():
         assert lo <= z <= hi and k in ZDIFF_SRC
     assert 'Qualcomm' in ZDIFF_SRC['mipi'] and 'TI' in ZDIFF_SRC['mipi']
     assert 'conflict' in ZDIFF_SRC['usb3'] and 'Microchip' in ZDIFF_SRC['usb3']
+
+
+def test_an_analog_name_decides_where_no_ic_pin_is_named():
+    """An unannotated board (KiCad 5, imports): its IC pins carry neither name nor type, so the pin layer is silent
+    and the designer's name decides; control suffixes and KiCad's generated names still do not count."""
+    mcu = IC('U1', 'AT91SAM3S', 'Package_QFP:LQFP-100', [('1', '', 'VREF', ''), ('2', '', 'STACK-CURRENT', ''),
+                                                          ('3', '', 'TEMP_ALERT', ''), ('4', '', '+3V3', ''), ('5', '', 'GND', ''),
+                                                          ('6', '', 'Net-(FB1-Pad2)', ''), ('7', '', 'ADC_CS', ''),
+                                                          ('8', '', 'UP5K_CSN', ''), ('9', '', 'PROG_B', ''), ('10', '', 'AUDIO_MUTE', ''),
+                                                          ('11', '', 'ADC_DRDY', '')])
+    hdr = fp('J1', 'Conn_01x02', 'Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical',
+             [('1', 'Net-(FB1-Pad1)', '', ''), ('2', 'GND', '', '')])
+    parts = [mcu, hdr, C('C1', '100nF', '+3V3', 'GND'), C('C2', '10uF', '+3V3', 'GND'), C('C3', '100nF', 'VREF', 'GND'),
+             R('R1', '10', 'STACK-CURRENT', 'GND'), R('R2', '10k', '+3V3', 'TEMP_ALERT'),
+             fp('J3', 'Conn_01x05', 'Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical',
+                [('1', 'ADC_CS', '', ''), ('2', 'UP5K_CSN', '', ''), ('3', 'PROG_B', '', ''), ('4', 'AUDIO_MUTE', '', ''), ('5', 'ADC_DRDY', '', '')]),
+             fp('FB1', 'FB', 'Inductor_SMD:L_0603_1608Metric', [('1', 'Net-(FB1-Pad1)', '', ''), ('2', 'Net-(FB1-Pad2)', '', '')]),
+             C('C10', '330nF', 'AUDIO_IN', 'Net-(C10-Pad2)', lib='Capacitor_THT:C_Rect_L7.2mm_W3.5mm_P5.00mm'),
+             fp('J2', 'AUDIO', 'Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical', [('1', 'AUDIO_IN', '', ''), ('2', 'GND', '', '')])]
+    nl, r = roles_of(parts)
+    for n in ('VREF', 'STACK-CURRENT', 'AUDIO_IN'):
+        assert r.nets[n].role == 'analog', (n, r.nets[n])
+        assert any('only layer' in e.fact for e in r.nets[n].evidence)
+    for n in ('TEMP_ALERT', 'Net-(FB1-Pad1)', 'Net-(FB1-Pad2)', 'ADC_CS', 'UP5K_CSN', 'PROG_B', 'AUDIO_MUTE', 'ADC_DRDY'):
+        assert r.nets[n].role != 'analog', (n, r.nets[n])
+
+
+def test_an_analog_name_on_a_named_logic_pin_still_needs_a_second_fact():
+    mcu = IC('U1', 'ESP32-S3', 'RF_Module:ESP32-S3-WROOM-1', [('1', 'IO18', 'ADC_BAT', 'bidirectional'),
+                                                              ('2', '3V3', '+3V3', 'power_in'), ('3', 'GND', 'GND', 'power_in')])
+    nl, r = roles_of([mcu, C('C1', '100nF', '+3V3', 'GND'), C('C2', '10uF', '+3V3', 'GND'),
+                      fp('J1', 'Conn', 'Connector_PinHeader_2.54mm:PinHeader_1x01_P2.54mm_Vertical', [('1', 'ADC_BAT', '', '')])])
+    assert r.nets['ADC_BAT'].role != 'analog'
+
+
+def test_a_chargers_current_setting_pin_is_analog():
+    chg = IC('U4', 'LTC4054ES5-4.2', 'Package_TO_SOT_SMD:TSOT-23-5', [('1', 'CHRG', 'Net-(D2-K)', 'open_collector'),
+                                                                      ('2', 'GND', 'GND', 'power_in'), ('3', 'BAT', 'VBAT', 'power_out'),
+                                                                      ('4', 'VCC', 'VBUS', 'power_in'), ('5', 'PROG', 'Net-(U4-PROG)', 'bidirectional')])
+    nl, r = roles_of([chg, R('R4', '2k', 'Net-(U4-PROG)', 'GND'), C('C1', '1uF', 'VBUS', 'GND'), C('C2', '1uF', 'VBAT', 'GND')])
+    assert r.nets['Net-(U4-PROG)'].role == 'analog', r.nets['Net-(U4-PROG)']

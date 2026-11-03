@@ -406,14 +406,18 @@ def name_iface(s: str, skip=()) -> tuple[str | None, str | None]:
 
 CLOCK_NET = rx(r'CLK|CLOCK|XTAL|^XIN|^XOUT|^XI$|^XO$|^X[12]$|OSC|^HSE|^LSE|REFCLK|MCLK|BCLK|SCK|SCLK|^CK_?[PN]?$|_CK$|^CK\d|32K|RTC_?X|'
               r'^EXTAL|^XTAL')
-ANALOG_NET = rx(r'(^|[^A-Z])(ADC|AIN|AN\d+|ANA|ANALOG|VREF|REF(IN|OUT|P|N)?|SENSE|SNS|KELVIN|ISENSE|ISNS|IMON|VSENSE|VMON|CSP|CSN|FB|VFB|COMP|'
+ANALOG_NET = rx(r'(^|[^A-Z])(ADC|AIN|AN\d+|ANA|ANALOG|VREF|REF(IN|OUT|P|N)?|SENSE|SNS|KELVIN|ISENSE|ISNS|IMON|VSENSE|VMON|FB|VFB|COMP|'
                r'AUDIO|MIC|LINE_?(IN|OUT)?|HP_?[LR]|HPL|HPR|HPCOM|IN[+-]|INP|INN|AINP|AINN|THERM|NTC|RTD|TC[+-]?|TEMP|BRIDGE|STRAIN|LOADCELL|'
                r'PIEZO|PHOTO|TIA|VCM|BIAS|ECG|EEG|EMG|XADC|CV|SIGNAL_?IN|PREAMP|GAIN|VOL|POT|DRY|WET|MIX|AUDIO|SPDIF|SENS|SENSOR|LDR|'
-               r'CURR|CURRENT|SHUNT|VBAT_?SENSE|VBAT_?ADC|VDIV|DIV|ISET|IREF|IPROG|PROG|RSET)([^A-Z]|$)')
+               r'CURR|CURRENT|SHUNT|VBAT_?SENSE|VBAT_?ADC|VDIV|DIV|ISET|IREF|IPROG|RSET)([^A-Z]|$)')
+# current-setting pins of converters and chargers (a resistor sets a current; LTC4054 PROG also monitors it)
+PROG_PIN = rx(r'^(R?PROG|ISET\d?|IREF|RSET|R?ILIM\w*|RISET|IMON|ICHG|ISET_?\w+)$')
+PROG_SUBS = ('charger', 'regulator_linear', 'regulator_switching', 'regulator_module', 'pmic', 'load_switch')
 # a control or bus suffix on an analog word names a digital line about the analog thing (TEMP_ALERT, MIC_EN, NTC_EN,
-# SENSE_ENABLE, TEMP_SCL), as CTRL_SUFFIX does for rails
+# SENSE_ENABLE, TEMP_SCL, an ADC's ADC_CS / ADC_DRDY / ADC_DAT, AUDIO_MUTE), as CTRL_SUFFIX does for rails
 ANALOG_CTRL_SUFFIX = rx(r'[_-](N?EN|ENABLE|ALERT|DET|SEL|N?INT|IRQ|N?PG|PGOOD|PWRGD|FAULT|FLT|STAT|STATUS|CTRL|CTL|BTN|SCL|SDA|N?RST|RESET|'
-                        r'TRIG)\d?(_?N|_?B)?$')
+                        r'TRIG|N?CS|DRDY|RDY|BUSY|SYNC|CONVST|DAT|DATA|DIN|DOUT|MISO|MOSI|MUTE|BYPASS|STBY|STANDBY|SHDN|SD|PWDN|PDN)'
+                        r'\d?(_?N|_?B)?$')
 RF_NET = rx(r'(^|[^A-Z])(RF|ANT|ANTENNA|RFIN|RFOUT|RF_?IN|RF_?OUT|LNA|PA_?OUT|2G4|GNSS|GPS|LORA|SUBGHZ|915|868|433|BLE_?ANT|WIFI_?ANT|'
             r'RFIO|U\.?FL|SMA|COAX|50R|50OHM)([^A-Z]|$)')
 RESET_NET = rx(r'(^|[^A-Z])(N?RST|RESET|N?RESET|MCLR|POR|CHIP_?EN|CHIP_?PU|SRST|TRST|RST_?N|RESETN|RESETB|XRES|RUN)([^A-Z0-9]|$)')
@@ -2017,8 +2021,14 @@ def _signal_roles(nl: Netlist, roles: Roles):
             add('high_speed', iface, evs, prior=-0.5, interface=iface, speed=speed)
         # analog-sensitive
         evs = []
-        if ANALOG_NET.search(s) and not re.search(r'REFCLK|SCK|CLK', s):
-            if ANALOG_CTRL_SUFFIX.search(s):
+        # KiCad's generated name ('Net-(FB1-Pad1)', 'Net-(U4-RSET)') is no designer's word: its reference is a part kind
+        # (FB1 is a ferrite, not feedback), so only its pin name is read, and a pad number says nothing
+        sa = s
+        if nv.nn.auto:
+            m = re.match(r'^NET-\((.+?)-(.+)\)$', s)
+            sa = '' if not m or re.fullmatch(r'(PAD|PIN)?_?\d+', m.group(2)) else m.group(2)
+        if sa and ANALOG_NET.search(sa) and not re.search(r'REFCLK|SCK|CLK', sa):
+            if ANALOG_CTRL_SUFFIX.search(sa):
                 evs.append(ev('name', f"analog word with a control suffix in '{s}' (an enable, alert, detect or select line)", -STRONG))
             else:
                 evs.append(ev('name', f"name '{s}'", MODERATE))
@@ -2027,8 +2037,13 @@ def _signal_roles(nl: Netlist, roles: Roles):
               and roles.parts[p.ref].subtype not in no_ana]
         alt = [p for p in pins if '/' in p.fn and any(ANALOG_PIN.match(x) for x in p.fn.split('/')) and roles.parts[p.ref].kind in ('ic', 'module')
                and roles.parts[p.ref].subtype not in no_ana]
+        # a converter's or charger's programming pin (LTC4054 PROG: its voltage reads the charge current; ISET, ILIM, RSET
+        # take a resistor that sets a current): an analog node, not the MCU boot pin of the same name
+        prog = [p for p in pins if PROG_PIN.match(p.fn) and roles.parts[p.ref].kind == 'ic' and roles.parts[p.ref].subtype in PROG_SUBS]
         if ap:
             evs.append(ev('pinfunction', f"analog pin {ap[0].label}", MODERATE))
+        elif prog:
+            evs.append(ev('pinfunction', f"current-setting pin {prog[0].label} of {roles.parts[prog[0].ref].subtype} {prog[0].ref}", MODERATE))
         elif alt:
             evs.append(ev('pinfunction', f"pin with an analog alternate function {alt[0].label}", WEAK))
         if net in opamp_in:
@@ -2046,8 +2061,16 @@ def _signal_roles(nl: Netlist, roles: Roles):
                 or (net in opamp_in and roles.parts[opamp_in[net][0]].subtype == 'current_sense')
                 else 'audio' if re.search(r'AUDIO|MIC|LINE|HP|SPDIF|DRY|WET|MIX|VOL|PREAMP', s)
                 else ('cell_sense' if roles.parts[opamp_in[net][0]].subtype == 'battery_monitor' else 'opamp_input') if net in opamp_in else 'analog')
-            # names are the lowest layer: a name alone stays below the 0.5 gate (prior -1.6 + MODERATE -> 0.48)
-            add('analog', sub, evs, prior=-1.5 if any(e.weight > 0 and e.kind != 'name' for e in evs) else -1.6)
+            # names are the lowest layer: a name alone stays below the 0.5 gate (prior -1.6 + MODERATE -> 0.48) where the
+            # pin layer could have spoken and did not. Where it cannot speak (no IC or module pin on the net, or only pins
+            # without a name or type: an unannotated KiCad 5 or imported board), silence is missing data, not evidence
+            # against, and the name decides at the old prior (0.5): Vref, AUDIO_IN, STACK-CURRENT on such boards
+            icp = [p for p in pins if roles.parts[p.ref].kind in ('ic', 'module')]
+            mute = all(not p.fn and not p.ptype for p in icp)
+            named = any(e.kind == 'name' and e.weight > 0 for e in evs)
+            if named and mute:
+                evs.append(ev('pinfunction', 'no named or typed IC pin on the net: the name is the only layer', 0.0))
+            add('analog', sub, evs, prior=-1.5 if any(e.weight > 0 and e.kind != 'name' for e in evs) or (named and mute) else -1.6)
         # reset / boot
         evs = []
         if RESET_NET.search(s):
