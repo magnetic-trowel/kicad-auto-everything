@@ -98,7 +98,7 @@ Electrically, the island protects the oscillator from foreign return currents in
 | shazmeenshz ESP32 flight controller (buck) | 174,188 → 106,765 (36,377 → 17,288) | ×0.88 (0.66–2.2) | ×1.03 (0.88–1.50) | ×1.06 (0.71–2.0) | ×1.64 | 1: U6 rings to 35.5 V over a prior 28 V rating (warn; no rating known) |
 | gos2022 mb02a1 (no cell; DC open, no total) | — | ×0.64 (0.19–3.5) | ×1.00 (0.12–1.04) | ×1.00 (0.34–9.7) | — | 0 |
 
-Reading: the cable-CM cap (PP2) lowers the dominant CM terms by 12–36% at the median, which is most of the totals' drop. The capacitor priors (PP3/PP4) change single pairs by up to 10× where a 100 nF part's ESR (10 → 32 mΩ) damps a resonance that set a supply or victim peak; medians stay within ±6%. The overshoot criterion tightens u by 1.3–1.6× (the 0.85 derating on the prior rating). The DC and heat bands do not move.
+Reading: the cable-CM cap (PP2) lowers the dominant CM terms by 12–36% at the median, which is most of the totals' drop. The capacitor priors (PP3/PP4) change single pairs by up to 10× where a 100 nF part's ESR (10 → 32 mΩ) damps a resonance that set a supply or victim peak; medians stay within ±6%. The overshoot criterion tightens u by 1.3–1.6× (the 0.85 derating on the prior rating). The DC and heat bands do not move. `kae.excite.wideband` was not measured: on these boards it needs 20–25 GB and more than 30 min per arm (moto:bit), past the cheap-job limit; it shares the changed models, criteria and CM line, so it should move the same way. A run of `wideband` on the same three boards, baseline bd67f8e vs this branch, belongs with the A/Bs.
 
 ## Sources
 
