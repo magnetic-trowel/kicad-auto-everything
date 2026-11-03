@@ -293,6 +293,32 @@ def derive(report):
                                                                                 "via_in_pad_considered") if k in d},
                             fix=("Relax: " + " or ".join(fixes)) if fixes else "Add layers or relax the rules (none of "
                                 "the relaxations tried was enough)."))
+        if d.get("unsupported_functions"):
+            fns = [str(x) for x in d["unsupported_functions"]]
+            out.append(make("rules_not_modelled", "warn", "data",
+                            "Some custom rules use functions kae's router does not model, so it routed without "
+                            "them; only KiCad's DRC (the recheck) checks those rules.", objects=fns[:12],
+                            fix="Check the recheck's DRC findings for those rules, or rewrite them with modelled "
+                                "conditions."))
+        if d.get("rule_errors"):
+            errs = [str(x)[:120] for x in d["rule_errors"]]
+            out.append(make("rule_errors", "warn", "data", "Some board rules could not be evaluated by kae; the "
+                            "router ignored them.", objects=errs[:6], evidence=dict(count=len(errs)),
+                            fix="Run kae dru-check on the rules file and fix the reported rules."))
+    if isinstance(report, dict) and report.get("outline_incomplete"):
+        out.append(make("outline_incomplete", "block", "manufacturing",
+                        "Footprints that carry board-edge (Edge.Cuts) pieces sit off the board, so the board "
+                        "outline is not closed and the board cannot be cut.",
+                        objects=list(report["outline_incomplete"]),
+                        fix="Place those footprints where their edge pieces close the outline (kae place "
+                            "--edge-mate), or draw the outline on the board."))
+    if isinstance(report, dict) and report.get("legal") is False:
+        ex = report.get("exact") or []
+        out.append(make("placement_illegal", "block", "assembly",
+                        "The placer could not make every part legal: overlaps or outline violations remain "
+                        "(listed in the report's exact and kicad_drc sections).",
+                        evidence=dict(exact_findings=len(ex) if isinstance(ex, list) else ex),
+                        fix="Give the placer more time, enlarge the board, fix parts in place, or remove parts."))
     fin = report.get("final") if isinstance(report, dict) else None
     if isinstance(fin, dict) and isinstance(fin.get("checked"), dict):
         missed = sorted(k for k, v in fin["checked"].items() if v is False)

@@ -38,7 +38,7 @@
 | `kae.route.critical_cli route` | static; recheck; `rail_max_cap`, `class_max_below_ipc`, `ipc_floor_unroutable` module flags |
 | `kae.route.critical_cli physics` | `physics_over_budget` (u > 1), `physics_unmeasured`; static |
 | `kae.joint.cli run` | static; recheck; everything nested in iterations; `check_not_run` and `physics_over_budget` of the final card |
-| `kae brief` | static project hazards with the brief's net voltages |
+| `kae brief` | static project hazards with the brief's net voltages (route and joint reports have no brief at hand, so `hv_clearance_below_ipc` comes from `kae brief` and `kae place`) |
 | `kae.excite.evaluate -o`, `kae.sim evaluate` | harms over their limit (`physics_over_budget`); failed or incomplete simulated requirements (`sim_fail`, `sim_incomplete`) |
 
 ### The recheck (`kae/src/kae/board_hazards.py`)
@@ -86,6 +86,9 @@
 | `bodies_relaxed` | warn, assembly | `Problem.relax_bodies` (utilization > 0.95, or the legality escalation): through-hole parts without courtyards placed by their pads only |
 | `check_not_run` | warn, data | the joint loop's final card `checked` has `false` (values reported `null`) |
 | `physics_over_budget` | warn | a module's routed u > 1 (the critical recheck flags u crossing 1, [critical-net-routing.md](../routing/critical-net-routing.md)) |
+| `outline_incomplete` | block, manufacturing | `kae place`: staged footprints carry Edge.Cuts, the outline is open |
+| `placement_illegal` | block, assembly | `kae place` `legal: false` (exit 3): overlaps or outline violations remain |
+| `rules_not_modelled`, `rule_errors` | warn, data | the bridge's plan: custom-rule functions the router does not model, rules it could not evaluate |
 
 ## Recommendations for our system
 - Treat `hazard_summary.blocked` as the gate: a blocked board is not a deliverable, whatever `status` says. The `fix` field is the next command or relaxation to try.

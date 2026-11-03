@@ -101,3 +101,12 @@ def test_sim_hazards():
                      dict(id="t2", kind="rail_dc", nets=["+5V"], status="pass")])
     hz = H.sim_hazards(ev)
     assert [(h["code"], h["severity"], h["objects"]) for h in hz] == [("sim_fail", "warn", ["+3V3"])]
+
+
+def test_derive_place_and_rules_flags():
+    rep = dict(legal=False, exact=[1, 2], outline_incomplete=["J9"],
+               plan=dict(notes=dict(unsupported_functions=["inDiffPair"], rule_errors=[])))
+    hz = {h["code"]: h for h in H.derive(rep)}
+    assert hz["outline_incomplete"]["severity"] == "block" and hz["outline_incomplete"]["objects"] == ["J9"]
+    assert hz["placement_illegal"]["evidence"]["exact_findings"] == 2
+    assert hz["rules_not_modelled"]["objects"] == ["inDiffPair"] and "rule_errors" not in hz
