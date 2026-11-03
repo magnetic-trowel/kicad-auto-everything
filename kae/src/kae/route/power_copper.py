@@ -62,14 +62,17 @@ DEFAULTS = dict(
     ladder=(20.0, 15.0, 12.0, 10.0, 8.0, 6.0, 5.0, 4.0, 3.0, 2.5, 2.0, 1.5, 1.2, 1.0, 0.8, 0.6, 0.5, 0.4, 0.3),
     mode="widen",             # "widen": constant-width runs centred on each track; "vector": the free region
                               # around the net's copper on each layer, filled with overlapping track strips
+    vector_out="strips",      # vector copper as "strips" (tracks: all a route task may add today) or "zones"
+                              # (one KiCad zone per piece, priority above the layer's zones, solid pad
+                              # connection; thermal reliefs when hand soldered; KiCad's refill sets the
+                              # exact clearance)
     vector_strip=0.5,         # mm: strip width of the vector fill (pitch 0.8 x that)
     vector_min_gain=0.5,      # mm^2: a vector piece adding less copper than this is dropped
     into_pours=False,         # vector: may grow into other nets' zone fills (False: those fills are obstacles,
                               # so a rail never cuts a ground pour)
-    neck=None,                # grown copper keeps neck_gap from the net's own SMD pads whose short side is at
-                              # most this (mm); None: from the operating facts' requirements.assembly (reflow or
-                              # unknown: 0.6, tombstoning 0402-and-smaller passives; hand soldering: 1.6)
-    neck_gap=0.3,
+    neck=True,                # necks at the pads of small two-terminal parts (tombstoning; see neck_rule):
+                              # within neck_len of such a pad, grown copper is at most the neck width
+    neck_len=0.5,             # mm from the pad edge
     share=True,               # competing power/ground nets share room at w ~ I (False: first come, first served,
                               # highest current first)
     current_margin=3.0,       # a net's operating current x this sizes its IPC width (when above max_width)
@@ -145,14 +148,56 @@ def share(i_own, i_other):
     return a / (a + b)
 
 
-def neck_pad(assembly):
-    """Short side (mm) up to which an SMD pad keeps grown copper away (only the routed track enters):
-    tombstoning of 0402-and-smaller passives under reflow (also when the process is unknown), and
-    every small SMD pad when the board is hand soldered (wide copper sinks the iron's heat)."""
+# Package classes of two-terminal SMD parts by land width (the pad's short side, IPC-7351 nominal
+# lands): 01005/0201, 0402, 0603/0805, 1206 and larger.
+PKG_CLASSES = ((0.35, "0201"), (0.65, "0402"), (1.05, "0603-0805"), (math.inf, "1206+"))
+# Neck width (mm) at the land per process and class; None: no neck. Reflow (and unknown process, the
+# common case): the tombstone-prone classes are 0201-0805 (torque ratio 49..4, hv-and-manufacturing-
+# physics); vapour phase wets faster and tombstones more, so 1206 is necked too; hand soldering: an
+# iron has to beat the copper's drain on every small land; wave: chips are glued, no tombstoning.
+NECK_TABLE = {
+    "reflow": {"0201": 0.15, "0402": 0.25, "0603-0805": 0.3, "1206+": None},
+    "vapour_phase": {"0201": 0.15, "0402": 0.25, "0603-0805": 0.3, "1206+": 0.5},
+    "hand": {"0201": 0.15, "0402": 0.25, "0603-0805": 0.3, "1206+": 0.5},
+    "wave": {"0201": None, "0402": None, "0603-0805": None, "1206+": None},
+}
+
+
+def pkg_class(land_w):
+    return next(name for lim, name in PKG_CLASSES if land_w <= lim)
+
+
+def process_of(assembly):
+    """Soldering process from the operating facts' requirements.assembly: 'reflow' (also when it is
+    unknown or missing), 'vapour_phase', 'hand' or 'wave'."""
     a = assembly or {}
-    if a.get("hand_solder_ok") or a.get("process") == "hand":
-        return 1.6
-    return 0.6
+    p = str(a.get("process") or "").lower().replace(" ", "_").replace("-", "_")
+    if a.get("hand_solder_ok") or p in ("hand", "hand_solder", "manual"):
+        return "hand"
+    if p in ("vapour_phase", "vapor_phase", "vps"):
+        return "vapour_phase"
+    if p in ("wave", "selective_wave"):
+        return "wave"
+    return "reflow"
+
+
+def neck_rule(land_w, process, series_current_a=0.0, margin=DEFAULTS["current_margin"]):
+    """Width (mm) grown copper may have within neck_len of a two-terminal part's land, or None (no
+    limit). The neck is the land class's NECK_TABLE width for the process, never below what the
+    part's own series current needs (IPC-2221 at margin x I): a fuse, ferrite or shunt in a rail
+    keeps its width. A part to ground (a decap) carries no DC and is necked."""
+    w = NECK_TABLE.get(process, NECK_TABLE["reflow"]).get(pkg_class(land_w))
+    if w is None:
+        return None
+    w = min(w, land_w)
+    need = ipc_width(margin * series_current_a) if series_current_a else 0.0
+    return None if need >= land_w else max(w, need)
+
+
+def neck_half(dist, neck_w, neck_len):
+    """Largest half-width (mm) copper centred `dist` mm from a necked land may have: the neck's half
+    width, or more only where the wider copper stays neck_len clear of the land."""
+    return np.maximum(neck_w / 2, np.asarray(dist) - neck_len)
 
 
 def strips(region, w, pitch=None, angle=0.0):
@@ -332,8 +377,10 @@ class PowerCopper:
         self.current = net_currents(op, nets_of, self.power, self.ground) if op else {}
         asm = ((op or {}).get("requirements") or {}).get("assembly") or {}
         self.hand_solder = bool(asm.get("hand_solder_ok")) or asm.get("process") == "hand"
-        self.neck_pad = self.o["neck"] if self.o.get("neck") is not None else neck_pad(asm)
+        self.process = process_of(asm)
+        self.necks = self._necks() if self.o.get("neck", True) else {}
         self.vector = []       # (net, layer, [(a, b, w, uuid)]) strips of the vector mode, one group each
+        self.zones = []        # (net, layer, polygon, uuid) pieces of the vector mode written as zones
         self.edits = {}        # orig track uuid -> [(a, b, w)]
         self.vias = []         # (net, x, y, size, drill, uuid, kind)
         self.tracks = []       # (net, layer, w, a, b, uuid, owner)
@@ -373,9 +420,9 @@ class PowerCopper:
                 if id(it) in seen or it in ignore:
                     continue
                 seen.add(id(it))
-                if l == layer and it.kind == "pad" and it.net == net and it.smd and self.neck_pad > 0 \
-                        and _short_side(it.geom) <= self.neck_pad + 1e-9:
-                    out.append((it.geom, 0.0, self.o["neck_gap"], 1.0))
+                if l == layer and it.kind == "pad" and it.net == net and id(it) in self.necks:
+                    # necked land: f < 0 carries the neck width (see _allowed_half, _legal)
+                    out.append((it.geom, 0.0, self.o["neck_len"], -self.necks[id(it)]))
                     continue
                 ex = self._extra(it, l, layer)
                 if l == layer:
@@ -406,6 +453,9 @@ class PowerCopper:
         if cons:
             P = shapely.points(pts)
             for g, r, req, f in cons:
+                if f < 0:
+                    a = np.minimum(a, neck_half(shapely.distance(g, P) - TOL, -f, req))
+                    continue
                 d = shapely.distance(g, P) - r - req - TOL
                 if f < 1.0:
                     d = np.where(d > h0, h0 + f * (d - h0), d)
@@ -421,7 +471,11 @@ class PowerCopper:
         if self.sp.track_violations(net, layer, w, a, b, ignore=ignore, first=True):
             return False
         seg = LineString([a, b])
-        for g, r, req, _ in self._constraints(net, layer, seg, w / 2 + self.o["victim_gap_max"] + self.o["antenna_gap"], ignore):
+        for g, r, req, f in self._constraints(net, layer, seg, w / 2 + self.o["victim_gap_max"] + self.o["antenna_gap"], ignore):
+            if f < 0:
+                if w > -f + 1e-9 and g.distance(seg) - w / 2 < req - TOL:
+                    return False
+                continue
             if g.distance(seg) - r - w / 2 < req + TOL:
                 return False
         return True
@@ -522,6 +576,8 @@ class PowerCopper:
                 # arcs) and the 0.01 mm simplification below
                 obs = [g.buffer(r + req + VTOL, quad_segs=8) for g, r, req, _ in
                        self._constraints(net, layer, corridor, reach, ())]
+                # (a necked land comes back as (land, 0, neck_len, -w): grown copper stays neck_len
+                # away and only the routed track, no wider than the neck, enters the land)
                 fills = []
                 for n2, byl in self.fills.items():
                     for g in byl.get(layer) or []:
@@ -552,6 +608,14 @@ class PowerCopper:
                     if gain.area < self.o["vector_min_gain"]:
                         continue
                     piece = piece.simplify(0.01)
+                    if self.o["vector_out"] == "zones":
+                        gid = W.new_uuid()
+                        self.zones.append((net, layer, piece, gid))
+                        sp.add_track(net, layer, 0.0, *_any_segment(piece), owner=("pc-vector", gid))
+                        n_strips += 1
+                        area += gain.area
+                        self.vector_share[net] = self.vector_share.get(net, 0.0) + gain.area
+                        continue
                     segs = strips(piece, w)
                     if not segs:
                         continue
@@ -678,7 +742,8 @@ class PowerCopper:
                 continue
             own = self._ground_fill(net, layer, rv)
             pos = pad.pos or (pad.geom.centroid.x, pad.geom.centroid.y)
-            wt = sp.clamp_width(net, layer, min(self.o["via_track_max"], _short_side(pad.geom)))
+            wt = sp.clamp_width(net, layer, min(self.o["via_track_max"], _short_side(pad.geom),
+                                                self.necks.get(id(pad), math.inf)))
             for dist, x, y in ring_candidates(pad.geom, rv, self.o["via_reach"]):
                 p = Point(x, y)
                 if not any(f.contains(p) for f in fills):
@@ -797,6 +862,17 @@ class PowerCopper:
                         continue
                     groups[u] = u           # one strip per group: a violation reverts only its strip
                     chunks.append(W.track_sexpr(net, layer, w, a, b, uid=u, locked=False))
+        if "vector" in kinds and self.zones:
+            prio = {}
+            for z in self.board_zone_priorities():
+                prio[z[0]] = max(prio.get(z[0], 0), z[1])
+            for net, layer, poly, u in self.zones:
+                if u in skip:
+                    continue
+                groups[u] = u
+                chunks.append(zone_sexpr(net, layer, poly, u, priority=prio.get(layer, 0) + 1,
+                                         solid=self.process != "hand",
+                                         min_thickness=max(0.1, self.sp.width_limits(net, layer)[0])))
         vias = [v for v in self.vias if v[6] in kinds and v[5] not in skip]
         keep = {v[5] for v in vias}
         for v in vias:
@@ -822,6 +898,8 @@ class PowerCopper:
         for net, layer, kept, gid in self.vector:
             for a, b, w, u in kept:
                 out[u] = LineString([a, b]).buffer(w / 2, quad_segs=4)
+        for net, layer, poly, u in self.zones:
+            out[u] = poly
         for v in self.vias:
             out[v[5]] = Point(v[1], v[2]).buffer(v[3] / 2)
         for net, layer, w, a, b, u, owner in self.tracks:
@@ -829,8 +907,35 @@ class PowerCopper:
                 out[owner] = out[owner].union(LineString([a, b]).buffer(w / 2))
         return out
 
+    def _necks(self):
+        """{id(pad Item): neck width} for the lands of two-terminal SMD parts the process necks."""
+        parts = self.brief.get("parts") or {}
+        out = {}
+        for fp, pads in self.sp.pads_by_fp.items():
+            cu = [p for p in pads if p.kind == "pad"]
+            if len(cu) != 2 or not all(p.smd for p in cu):
+                continue
+            nets = {p.net for p in cu}
+            series = 0.0
+            if not nets & self.ground and nets & self.power:
+                # in series with a rail (fuse, ferrite, shunt, jumper): its current flows through it
+                series = max(self.current.get(n, 0.0) for n in nets)
+            for p in cu:
+                w = neck_rule(_short_side(p.geom), self.process, series, self.o["current_margin"])
+                if w is not None:
+                    out[id(p)] = w
+        return out
+
     def vector_or_widen(self):
         return self.grow_vector() if self.o.get("mode") == "vector" else self.widen()
+
+    def board_zone_priorities(self):
+        """[(layer, priority)] of the input's zones."""
+        out = []
+        for z in self.sp.info.get("zones") or []:
+            for l in z.get("layers") or []:
+                out.append((l, int(z.get("priority") or 0)))
+        return out
 
     def group_kind(self, g):
         if g in self.edits:
@@ -861,6 +966,25 @@ def _operating(board_path, path=None):
         return json.loads(Path(path).read_text())
     except (OSError, ValueError):
         return None
+
+
+def _any_segment(poly):
+    c = list(poly.exterior.coords)
+    return c[0], c[1]
+
+
+def zone_sexpr(net, layer, poly, uid, priority=0, solid=True, min_thickness=0.2):
+    """A copper zone of `net` on `layer` over shapely `poly` (holes as further polygon blocks, which
+    KiCad reads as holes of the first), named kae-pc:<net>; solid pad connection, or thermal reliefs."""
+    def pts(ring):
+        c = list(ring.coords)[:-1]
+        return " ".join(f"(xy {W.fmt(x)} {W.fmt(y)})" for x, y in c)
+    conn = "(connect_pads yes\n\t\t\t(clearance 0)\n\t\t)" if solid else "(connect_pads\n\t\t\t(clearance 0)\n\t\t)"
+    polys = "".join(f"\t\t(polygon\n\t\t\t(pts {pts(r)})\n\t\t)\n" for r in [poly.exterior, *poly.interiors])
+    return (f"\t(zone\n\t\t(net {W.q(net)})\n\t\t(layer {W.q(layer)})\n\t\t(uuid {W.q(uid)})\n"
+            f"\t\t(name {W.q('kae-pc:' + net)})\n\t\t(hatch edge 0.5)\n\t\t(priority {int(priority)})\n"
+            f"\t\t{conn}\n\t\t(min_thickness {W.fmt(min_thickness)})\n\t\t(filled_areas_thickness no)\n"
+            f"\t\t(fill\n\t\t\t(thermal_gap 0.3)\n\t\t\t(thermal_bridge_width 0.3)\n\t\t)\n{polys}\t)\n")
 
 
 def _short_side(g):
@@ -1002,7 +1126,8 @@ def run(input_path, output_path, opts=None, workdir=None, timeout=1800, log=prin
     kept = dict(widened=sum(1 for u in pc.edits if u not in skip) if "widen" in kinds else 0,
                 ground_vias=sum(1 for v in pc.vias if v[6] == "pad" and v[5] not in skip) if "pad" in kinds else 0,
                 stitch_vias=sum(1 for v in pc.vias if v[6] == "stitch" and v[5] not in skip) if "stitch" in kinds else 0,
-                vector_strips=sum(1 for x in pc.vector for k in x[2] if k[3] not in skip) if "vector" in kinds else 0)
+                vector_strips=sum(1 for x in pc.vector for k in x[2] if k[3] not in skip) if "vector" in kinds else 0,
+                vector_zones=sum(1 for z in pc.zones if z[3] not in skip) if "vector" in kinds else 0)
     return dict(board=str(inp), planned=pc.stats, kept=kept, kinds=kinds, reverted=len(skip),
                 drc_in=base, drc_out=final or base, rounds=rounds,
                 nets=dict(power=sorted(pc.power), ground=sorted(pc.ground), switch=sorted(pc.switch),
@@ -1040,8 +1165,10 @@ def main(argv=None):
     ap.add_argument("--current-cap", type=float, default=DEFAULTS["current_cap"])
     ap.add_argument("--mode", choices=("widen", "vector"), default=DEFAULTS["mode"])
     ap.add_argument("--into-pours", action="store_true")
+    ap.add_argument("--vector-out", choices=("strips", "zones"), default=DEFAULTS["vector_out"],
+                    help="vector copper as track strips (route tasks today) or KiCad zones")
     ap.add_argument("--no-share", action="store_true", help="first come, first served between power/ground nets")
-    ap.add_argument("--neck", type=float, default=None, help="own SMD pads up to this short side keep grown copper away")
+    ap.add_argument("--no-neck", action="store_true", help="no necks at small two-terminal lands")
     ap.add_argument("--operating", help="operating facts JSON (default: KAE_OPERATING of the .kicad_pro)")
     ap.add_argument("--workdir")
     ap.add_argument("--report")
@@ -1049,7 +1176,7 @@ def main(argv=None):
     a = ap.parse_args(argv)
     rep = run(a.input, a.output, dict(widen=not a.no_widen, vias=not a.no_vias, stitch=not a.no_stitch,
                                       max_width=a.max_width, current_cap=a.current_cap, mode=a.mode,
-                                      into_pours=a.into_pours, neck=a.neck, share=not a.no_share, operating=a.operating), workdir=a.workdir, timeout=a.timeout)
+                                      into_pours=a.into_pours, neck=not a.no_neck, share=not a.no_share, vector_out=a.vector_out, operating=a.operating), workdir=a.workdir, timeout=a.timeout)
     txt = json.dumps(rep, indent=1)
     if a.report:
         Path(a.report).write_text(txt)

@@ -3,6 +3,8 @@
 """The pure rules of kae.route.power_copper: width choice, spacing, runs, via candidates, net classes."""
 import math
 
+import numpy as np
+
 import pytest
 from shapely.geometry import Point, box
 from shapely.ops import unary_union
@@ -132,10 +134,36 @@ def test_share_proportional_to_current():
     assert best / room == pytest.approx(pc.share(i1, i2), abs=2e-3)
 
 
-def test_neck_pad_by_assembly():
-    assert pc.neck_pad({"process": "unknown"}) == 0.6    # unknown: treated as reflow
-    assert pc.neck_pad(None) == 0.6
-    assert pc.neck_pad({"hand_solder_ok": True}) == 1.6
+def test_process_of_assembly():
+    assert pc.process_of({"process": "unknown"}) == "reflow"         # unknown: the common case
+    assert pc.process_of(None) == "reflow"
+    assert pc.process_of({"hand_solder_ok": True}) == "hand"
+    assert pc.process_of({"process": "vapour phase"}) == "vapour_phase"
+    assert pc.process_of({"process": "wave"}) == "wave"
+
+
+def test_neck_rule_by_class_process_and_current():
+    assert pc.pkg_class(0.3) == "0201" and pc.pkg_class(0.6) == "0402"
+    assert pc.pkg_class(0.95) == "0603-0805" and pc.pkg_class(1.6) == "1206+"
+    assert pc.neck_rule(0.6, "reflow") == pytest.approx(0.25)        # 0402 land
+    assert pc.neck_rule(0.3, "reflow") == pytest.approx(0.15)        # 0201
+    assert pc.neck_rule(1.6, "reflow") is None                       # 1206 and up: no neck in reflow
+    assert pc.neck_rule(1.6, "hand") == pytest.approx(0.5)
+    assert pc.neck_rule(1.6, "vapour_phase") == pytest.approx(0.5)
+    assert pc.neck_rule(0.6, "wave") is None
+    # a series part in a rail keeps the width its current needs
+    w = pc.neck_rule(0.95, "reflow", series_current_a=0.5)
+    assert w == pytest.approx(max(0.3, pc.ipc_width(1.5)))
+    assert pc.neck_rule(0.6, "reflow", series_current_a=5.0) is None  # needs more than the land: no neck
+
+
+def test_neck_half_keeps_wide_copper_off_the_land():
+    d = np.array([0.0, 0.3, 0.5, 1.0, 2.0])
+    h = pc.neck_half(d, 0.25, 0.5)
+    assert h[0] == pytest.approx(0.125) and h[2] == pytest.approx(0.125)
+    assert h[3] == pytest.approx(0.5) and h[4] == pytest.approx(1.5)
+    # copper of half-width h centred at d keeps d - h >= neck_len wherever it is wider than the neck
+    assert all(di - hi >= 0.5 - 1e-9 for di, hi in zip(d, h) if hi > 0.125 + 1e-9)
 
 
 def test_strips_cover_and_stay_inside():
