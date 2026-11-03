@@ -204,3 +204,17 @@ def test_share_room_splits_by_current():
     obj.current = {"A": 3.0, "B": 1.0}
     claim = obj._share_room(cand, "F.Cu", steps=60)
     assert claim["A"].intersection(box(0, -1, 5, 1)).bounds[2] > 3.5
+
+
+def test_via_on_tracks_keeps_neck_clear():
+    from shapely.geometry import LineString
+
+    class It:
+        geom = LineString([(0, 0), (3, 0)])
+        r = 0.1
+    land = box(-0.3, -0.25, 0.3, 0.25)
+    c = pc._via_on_tracks([It()], land, 0.3, 0.5, 1.0)
+    assert c and c == sorted(c)
+    for d, x, y in c:
+        assert y == pytest.approx(0.0)                        # on the routed track: no second entry
+        assert 0.8 - 1e-6 <= Point(x, y).distance(land) <= 1.3 + 1e-6

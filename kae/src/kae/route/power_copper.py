@@ -744,14 +744,25 @@ class PowerCopper:
             pos = pad.pos or (pad.geom.centroid.x, pad.geom.centroid.y)
             wt = sp.clamp_width(net, layer, min(self.o["via_track_max"], _short_side(pad.geom),
                                                 self.necks.get(id(pad), math.inf)))
-            for dist, x, y in ring_candidates(pad.geom, rv, self.o["via_reach"]):
+            entries = []
+            if id(pad) in self.necks:
+                # a necked land keeps one entry (balance with its sister land): the via sits on the
+                # land's own routed track, at least neck_len from the land, and no second track enters
+                entries = [it for it in sp.items[layer] if it.kind == "track" and it.net == net
+                           and it.geom.distance(pad.geom) <= it.r + 1e-6]
+                if not entries:
+                    continue
+                cands = _via_on_tracks(entries, pad.geom, rv, self.o["neck_len"], self.o["via_reach"])
+            else:
+                cands = ring_candidates(pad.geom, rv, self.o["via_reach"])
+            for dist, x, y in cands:
                 p = Point(x, y)
                 if not any(f.contains(p) for f in fills):
                     continue
                 if sp.via_violations(net, x, y, first=True):
                     continue
-                track_ok = not sp.track_violations(net, layer, wt, pos, (x, y), first=True)
-                if not track_ok and not (not own.is_empty and own.contains(p)):
+                track_ok = not entries and not sp.track_violations(net, layer, wt, pos, (x, y), first=True)
+                if not entries and not track_ok and not (not own.is_empty and own.contains(p)):
                     continue
                 v = sp.add_via(net, x, y, owner=("pc-via", pad.uuid))
                 self.vias.append((net, x, y, D, d, W.new_uuid(), "pad"))
@@ -767,6 +778,8 @@ class PowerCopper:
     def stitch(self):
         sp = self.sp
         added = 0
+        nk = [it.geom for it in sp.pads if id(it) in self.necks]
+        necked = unary_union(nk) if nk else None
         for net in sorted(self.ground):
             byl = self.fills.get(net) or {}
             unions = {l: unary_union(v) for l, v in byl.items() if v}
@@ -819,6 +832,8 @@ class PowerCopper:
                             break
                         if any(math.dist((x, y), q) < self.o["stitch_pitch"] for q in placed):
                             continue
+                        if necked is not None and necked.distance(Point(x, y)) < self.o["neck_len"] + D / 2:
+                            continue        # vias keep off small lands (thermal balance)
                         if sp.via_violations(net, x, y, first=True):
                             continue
                         sp.add_via(net, x, y, owner=("pc-stitch", l))
@@ -966,6 +981,21 @@ def _operating(board_path, path=None):
         return json.loads(Path(path).read_text())
     except (OSError, ValueError):
         return None
+
+
+def _via_on_tracks(tracks, land, rv, neck_len, reach, step=0.05):
+    """Via centres on the centrelines of `tracks` (Space items) whose via edge is at least neck_len
+    and its centre at most reach + rv from the land, nearest first: (distance, x, y)."""
+    out = []
+    for it in tracks:
+        g = it.geom
+        n = max(2, int(g.length / step) + 1)
+        for k in range(n):
+            q = g.interpolate(k * g.length / (n - 1))
+            d = q.distance(land)
+            if neck_len + rv - 1e-9 <= d <= reach + rv + 1e-9:
+                out.append((d, q.x, q.y))
+    return sorted(out)
 
 
 def _any_segment(poly):
