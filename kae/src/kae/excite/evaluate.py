@@ -296,6 +296,7 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
             ob["scope"]["C_sw_F"] = C
             observations.append(ob)
     part_power = {}
+    tcr, hazards = {}, []
     if dcp:
         # the DC band and the heat band solve the same network at f = 0: one factorization for both, handed to the
         # heat band in a holder it empties (freed before the heat band factors its own conduction network)
@@ -307,8 +308,9 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
             from . import heat as HT
             harms += HT.evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, [0.0] * ncp, notes,
                                  intent, log=log, ledger=ledger, obs_out=observations,   # not in the legacy total
-                                 power_out=part_power, system=sys_dc)
+                                 power_out=part_power, system=sys_dc, tcr_out=tcr)
         del sys_dc
+    apply_tcr(harms, tcr, tot, notes, hazards)
     harms.sort(key=lambda h: -(h["u_hi"] or 0))
     # each cell's parasitic ring: its copper loop with the switch node's capacitance
     rings = []
@@ -331,7 +333,7 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
                                                       basis=p.basis) for p in ledger.flagged()],
                 bands={k: v for k, v in bands.items()}, rings=rings,
                 observers=[dict(name=o.name, kind=o.kind, bound=o.bound, basis=o.basis) for o in obs],
-                harms=harms, observations=observations,
+                harms=harms, observations=observations, hazards=hazards,
                 part_power_W={k: round(v, 6) for k, v in sorted(part_power.items())},
                 solver_stats=solver_stats,
                 notes=notes + [f"pad {p}: not in the copper model" for p in missing][:20],
@@ -470,6 +472,7 @@ def _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes,
     us = [x[0] for x in loss]
     rows.append(dict(observer="dc:copper_loss", source="dc", kind="dc_loss", u=us[0], u_lo=min(us), u_hi=max(us),
                      P_mW=round(loss[0][1] * 1e3, 3), budget_mW=round(loss[0][2] * 1e3, 3),
+                     _tcr=dict(us=list(us), vals=[x[1] for x in loss], nets=None, key="P_mW", scale=1e3),
                      basis=f"copper dissipation{' (DC and switching harmonics)' if ac_copper is not None else ''} "
                            f"against {dcp.loss_share:.0%} of the delivered power"))
     for c in range(ncp):
@@ -479,6 +482,7 @@ def _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes,
                     scope=dict(kind="dc_loss", nets=sorted(set(dcp.feeds) | set(dcp.grounds))),
                     reference=dict(value=loss[0][2], basis=f"{dcp.loss_share:.0%} of the delivered power"),
                     label="copper dissipation" + (" (DC and switching harmonics)" if ac_copper is not None else " (DC)")))
+    rows[0]["_tcr"]["obs"] = obs[-1]
     for (ref, rail), vals in drops.items():
         u_ = [v[0] if v else 0.0 for v in vals]
         for c in range(ncp):
@@ -490,6 +494,8 @@ def _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes,
                         label=f"DC drop from {rail}'s source to {ref}"))
         rows.append(dict(observer=f"dc:drop:{ref}@{rail}", source="dc", kind="dc_drop", u=u_[0], u_lo=min(u_), u_hi=max(u_),
                          dV_mV=round(v0[1] * 1e3, 3), budget_mV=round(v0[2] * 1e3, 2),
+                         _tcr=dict(us=list(u_), vals=[v[1] if v else 0.0 for v in vals], nets=[rail] + sorted(dcp.grounds),
+                                   key="dV_mV", scale=1e3, obs=obs[-1]),
                          basis=f"rail + ground drop from the rail's source against {dcp.drop_share:.0%} of its voltage"))
     if any(heat):
         u_ = [h[1] if h else 0.0 for h in heat]
@@ -510,6 +516,55 @@ def _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes,
     log(f"DC band: {len(dcp.loads)} loads on {len(dcp.feeds)} rails, {len(cvs)} corners in {time.time() - t0:.1f}s")
     notes.extend(f"DC: {n}" for n in dcp.notes)
     return rows
+
+
+def apply_tcr(rows, tcr, tot, notes, hazards):
+    """The DC band's copper loss and rail drops at the copper's own temperature (kae.excite.heat.tcr_solve): each
+    corner's value and u times the heat band's copper-loss factor at that corner (a drop: the largest factor of its
+    rail and the grounds; a net without sustained heat: the ambient's 1 + alpha (T_amb - 20 C)). The DC band ran at
+    the corners' peak currents, the heat band at their sustained draw: copper temperature follows the sustained
+    heat (seconds), so a peak flows through copper at that temperature. Per-corner totals take the change. A
+    corner without a steady state (thermal runaway) adds a block hazard. Removes the rows' working '_tcr' keys."""
+    fac = (tcr or {}).get("factor")
+    for r in rows:
+        t = r.pop("_tcr", None)
+        if not t or not fac:
+            continue
+        us, vals = t["us"], t["vals"]
+        new_u, new_v = [], []
+        for c in range(len(us)):
+            if c < len(fac):
+                if t["nets"]:
+                    nf = tcr["net_factor"][c]
+                    f = max([nf[n] for n in t["nets"] if n in nf] or [tcr["a0"][c]])
+                else:
+                    f = fac[c]
+            else:
+                f = 1.0
+            nu = us[c] * f
+            tot[c] += HA.phi(nu) - HA.phi(us[c])
+            new_u.append(nu)
+            new_v.append(vals[c] * f)
+        r.update(u=new_u[0], u_lo=min(new_u), u_hi=max(new_u), copper_temp_factor=round(new_v[0] / vals[0], 4) if vals[0] else None)
+        r[t["key"]] = round(new_v[0] * t["scale"], 3)
+        ob = t.get("obs")
+        if ob is not None:
+            ob["values"], ob["u"] = new_v, new_u
+            ob["label"] += " (copper at its temperature)"
+    for rw in (tcr or {}).get("runaway", []):
+        if not rw["runaway"]:
+            continue
+        hazards.append(dict(
+            code="thermal_runaway_copper", severity="block", category="thermal",
+            message=f"Copper on {', '.join(rw['nets'][:3])} has no steady temperature at corner {rw['corner']}: its resistance "
+                    f"rises with temperature faster than the board sheds the heat, so it heats until it fuses.",
+            objects=list(rw["nets"]),
+            evidence=dict(loop_gain=rw["gain"], gain_limit=1.0, T_reached_C=rw["T_max_C"], T_amb_C=rw["T_amb_C"],
+                          copper_W_at_20C=rw["copper_W_at_20C"], corner=rw["corner"],
+                          source="kae.excite.heat.tcr_solve; docs/topics/physics/thermal-physics.md 'TCR feedback'"),
+            fix="Widen the named nets' copper (or pour it, or add parallel layers and vias) so its resistance and heat fall, "
+                "or lower the current through it."))
+        break
 
 
 def main(argv=None):

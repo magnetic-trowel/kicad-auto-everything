@@ -22,6 +22,8 @@ import numpy as np
 
 MM = 1e-3
 SIGMA_CU = 5.8e7          # S/m, annealed copper at 20 C
+ALPHA_CU = 3.93e-3        # 1/K, its resistance's temperature coefficient at 20 C (IEC 60028); T_REF_C below
+T_REF_C = 20.0            # C, the temperature SIGMA_CU holds at
 PLATING = 25e-6           # m, via barrel wall
 
 

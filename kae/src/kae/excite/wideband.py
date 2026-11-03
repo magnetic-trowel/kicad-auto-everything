@@ -271,9 +271,12 @@ def evaluate(path, pitch=0.25, nsub=2, intent=None, n_corners=16, seed=0, log=pr
     for nm, v in parts.items():
         ref = nm.split(":")[0].split(".")[0]
         ac_by_ref[ref] = ac_by_ref.get(ref, np.zeros(ncp)) + v
+    tcr, hazards = {}, []
     if dcp.loads:
         harms += HT.evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes, intent,
-                             ac_parts=ac_by_ref, log=log, ledger=ledger)
+                             ac_parts=ac_by_ref, log=log, ledger=ledger, tcr_out=tcr)
+    from .evaluate import apply_tcr
+    apply_tcr(harms, tcr, tot, notes, hazards)
     harms.sort(key=lambda h: -(h["u_hi"] or 0))
     from .evaluate import totals
     # the AC model carries the copper as it is (an open connection is physics here: a floating pad, or an
@@ -301,7 +304,7 @@ def evaluate(path, pitch=0.25, nsub=2, intent=None, n_corners=16, seed=0, log=pr
                 left_out=left, ledger=ledger.rows(),
                 questions=[dict(subject=p.subject, name=p.name, lo=p.lo, hi=p.hi, unit=p.unit, basis=p.basis)
                            for p in ledger.flagged()],
-                harms=harms, notes=notes + ([f"{len(skipped)} parts with a pad outside the copper model: {skipped[:8]}"]
+                harms=harms, hazards=hazards, notes=notes + ([f"{len(skipped)} parts with a pad outside the copper model: {skipped[:8]}"]
                                             if skipped else [])
                 + ([f"cable common mode computed to {f_max / 1e6:.0f} MHz of the CISPR band's {O.F_CM[1] / 1e6:.0f} MHz: "
                     f"above, the board is not electrically small and the quasi-static model does not hold"]
