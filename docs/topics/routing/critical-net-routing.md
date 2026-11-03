@@ -43,12 +43,7 @@ Locked copper walls Freerouting in, so the stage draws only what buys physics, w
 
 ### The router: grid search with exact verification
 
-`GridRouter.connect(net, sources, targets, width, layers)` ([critical_grid.py](../../../kae/src/kae/route/critical_grid.py)):
-
-1. **Raster.** One grid per layer at 0.05 mm (coarsened above 1.5 M cells). A cell is blocked when a track centred there would come closer to an obstacle than R = w/2 + KiCad's requirement, plus a margin m = √(R² + res²/2) − R. With that margin, every move between free neighbours is legal; m is 2 µm at R = 0.3 mm.
-2. **Costs.** Crossing a foreign pour costs 0.4 per cell, a ground pour 1.2. A 0.4 mm halo around other nets' pads costs 0.6. A via costs 1.5 cells, or 3–5 for rails and fallbacks.
-3. **Search.** A* over 8 neighbours with an octile heuristic, numba-compiled, through vias where one fits on every layer ([critical_kernels.py](../../../kae/src/kae/route/critical_kernels.py)).
-4. **Geometry.** The cell path becomes polylines. Their ends move onto pad centres where legal, and the lines are string-pulled. Every segment and via is checked again with exact distances, 2 µm above each requirement. A failing route is refused.
+`GridRouter.connect(net, sources, targets, width, layers)` ([critical_grid.py](../../../kae/src/kae/route/critical_grid.py), kernels in [critical_kernels.py](../../../kae/src/kae/route/critical_kernels.py)), shared with the last mile and described there ([kae-last-mile § Grid router](../../research/routing/kae-last-mile.md#idea-and-how-it-works)): a 0.05 mm raster per layer, blocked where a centred track would break R = w/2 + KiCad's requirement plus a margin that makes every move between free neighbours legal, numba A* through vias, then polylines string-pulled and re-checked exactly (2 µm above each requirement); a failing route is refused.
 
 **Rules** come from the bridge's rule engine and are never re-derived ([critical_space.py](../../../kae/src/kae/route/critical_space.py)):
 - track widths per net and layer;

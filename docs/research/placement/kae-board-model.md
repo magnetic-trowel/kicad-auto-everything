@@ -13,7 +13,7 @@ A pure-Python board model and KiCad reader, plus a bridge to KiCad's own Python 
 
 `(x, y) + R(rot) (lx, s*ly)`, with `R(a)(u, v) = (u cos a + v sin a, -u sin a + v cos a)` (KiCad's `RotatePoint`), `s = -1` on the back,
 
-a pad's angle is `rot + s*lrot`, and layers map F<->B and In k <-> In(n-1-k). The facts this relies on were measured against pcbnew: children of a placed footprint are stored in the placed frame (back-side ones already mirrored), pad angles are absolute, footprint zones are in board coordinates, KiCad 10 names nets in place. See [transform-math-pitfalls](https://github.com/magnetic-trowel/kicad-auto-everything/blob/5e730bdc92074d2dd0a7f6bcdf82ff456f805d47/docs/topics/kicad/transform-math-pitfalls.md) (the branch's version of the topic doc; main's copy predates these checks).
+a pad's angle is `rot + s*lrot`, and layers map F<->B and In k <-> In(n-1-k). The facts this relies on were measured against pcbnew: children of a placed footprint are stored in the placed frame (back-side ones already mirrored), pad angles are absolute, footprint zones are in board coordinates, KiCad 10 names nets in place. See [transform-math-pitfalls § Conventions verified](../../topics/kicad/transform-math-pitfalls.md#conventions-verified-against-pcbnew-1007).
 
 **Reader.** `kicad_file.load` parses `.kicad_pcb` (KiCad 10, tolerant of 5-9) with the sibling `.kicad_pro` and `.kicad_dru`. A fast S-expression tokenizer first strips zone fills and embedded files using the pretty-printer's indentation (checked by balanced-paren counts, with an exact scan as fallback). Median load 0.05 s per board, 1.1 s for a 17.7 MB file ([kae/README.md](../../../kae/README.md)).
 
@@ -35,7 +35,7 @@ a pad's angle is `rot + s*lrot`, and layers map F<->B and In k <-> In(n-1-k). Th
 
 | check | n | result | source |
 |---|---|---|---|
-| reader + transform vs pcbnew | 224 files (112 boards, reference + place input, task spec 4), 80,908 pads | max error 0.56 nm, angles exact | [transform-math-pitfalls at 5e730bd](https://github.com/magnetic-trowel/kicad-auto-everything/blob/5e730bdc92074d2dd0a7f6bcdf82ff456f805d47/docs/topics/kicad/transform-math-pitfalls.md) (branch version) |
+| reader + transform vs pcbnew | 224 files (112 boards, reference + place input, task spec 4), 80,908 pads | max error 0.56 nm, angles exact | [transform-math-pitfalls](../../topics/kicad/transform-math-pitfalls.md#conventions-verified-against-pcbnew-1007) |
 | pose round trip | 20 boards, 576 random poses (166 flips, 194 non-orthogonal) | max error 1.5 nm | same |
 | edge-mate | 6 outline-incomplete split-C tasks | not run with `--edge-mate`; all sweeps hold these 6 out (0/6 legal) | [place-split-c-e171267](../../../bench/results/2026-10-23-place-split-c-e171267.md) |
 

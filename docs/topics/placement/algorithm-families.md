@@ -4,7 +4,7 @@
 - Real PCB placers fall into four classes: greedy grid heuristics (KiCad), SA/metaheuristics (SA-PCB, B*-tree Fast-SA, GA/PSO, Trace), analytical/force-directed global placement + discrete legalizer (NS-Place, Cypress, NTU 2025, Zhao 2025, PA-ICM), and mathematical programming (HiePlace, MILP/QP legalizers).
 - Since 2025 the field converged on **VLSI-style analytical placement adapted to PCBs + MILP/QP/constraint-graph legalization**. Vanilla VLSI placers fail on PCBs without rotation, side-aware density, pad clearance, net-crossing terms and irregular geometry.
 - **SA remains the best cheap HPWL optimizer at small N** and the baseline every claim must beat (TILOS lesson).
-- **Monolithic exact models scale poorly**: vanilla MILP found no feasible placement in 4 h for most NS-Place boards above ~20 parts; our monolithic CP-SAT stays feasible to ~200 parts but has competitive HPWL only to ~100 (single instance, 4 workers). Exact solvers belong in legalization and local windows ([legalization](legalization.md), [CP-SAT](../solvers/cp-sat-milp-smt.md)).
+- **Monolithic exact models scale poorly**: vanilla MILP found no feasible placement in 4 h for most NS-Place boards above ~20 parts; our monolithic CP-SAT stays feasible to ~200 parts but has competitive HPWL only to ~100 (single synthetic solver-bench instance, 4 workers; kae's production model, with macros and sliced rectangles, is capped at 40 items, [kae-placer](../../research/placement/kae-placer.md)). Exact solvers belong in legalization and local windows ([legalization](legalization.md), [CP-SAT](../solvers/cp-sat-milp-smt.md)).
 - **KiCad's autoplacer is a greedy 1 mm grid scan with no rotation since 7.0** — usable only as a seed.
 
 ## Key facts
@@ -51,7 +51,7 @@ Mosaic floorplans are counted by Baxter numbers, slicing by Schröder numbers; t
 - UI: Place ▸ Auto-Place (off-board or selected); needs Edge.Cuts; skips locked parts; one undo step. A developer called it "terrible" in 2016 [S].
 
 ## Recommendations for our system
-- Global placement: Cypress-style analytical engine or SA; never a monolithic exact model above ~100 parts (competitive HPWL limit; feasibility lasts to ~200) [I].
+- Global placement: Cypress-style analytical engine or SA; never a monolithic exact model above ~100 parts (solver-bench HPWL limit; feasibility to ~200; kae caps it at 40) [I].
 - Keep SA (Rust, incremental cost) as baseline and detailed placer; compare against SA-PCB and tuned SA before claiming wins [I].
 - Use sequence pair as the bridge from LLM pairwise relations to non-overlapping packings (cyclic relation sets have no completion; outline, keep-out and fixed-part legality still needs the legalizer), and ALIGN-style constraint-preserving moves for small module floorplans ([transplants](packing-and-graph-drawing-transplants.md), [analog](analog-constraint-placement.md)) [I].
 - Use clustering (netlist "IC + satellites", schematic sheets) to create hierarchy; KiCad autoplacer only as fallback seed [I].

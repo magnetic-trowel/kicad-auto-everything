@@ -88,7 +88,7 @@ Two layouts A and B of one structure differ in J by W_ii·(Z_ii(A) − Z_ii(B)),
   - membership is simulated (the branches whose current steps at each edge), and name-based roles stay only as a cross-check;
   - a stand-in's interval is carried through, and its upper end sets the price;
   - every structure and its W are reported.
-- **The lesson of the budget sweep:** its threshold moved 7× with the stand-in's recovery data ([functional-evaluator](functional-evaluator.md) §5a). A price moves by that much or less and cannot reverse a ranking. Thresholds belong to sign-off (§5).
+- **The lesson of the budget sweep:** its threshold moved 7× with the stand-in's recovery data ([functional-evaluator-budgets](functional-evaluator-budgets.md)). A price moves by that much or less and cannot reverse a ranking. Thresholds belong to sign-off (§5).
 
 ## 4. The copper quantities and their operators
 
@@ -108,7 +108,7 @@ Two observations:
 - **Four operators cover everything the optimizer needs:** the sheet operator (R, thermal), partial inductance, potential, and the 2-D line cross-section.
 - **The return path is not an add-on.** A loop's L_p sum includes its return copper, so a plane slot is a change in Z like any other.
   - Today the critical router prices each loop over the nearest zone's outline, so a slot inside that zone is invisible while it searches.
-  - That slot is the whole of the router's error on the boost loop: 1.7 nH of 13 ([functional-evaluator](functional-evaluator.md) §5a).
+  - That slot is the whole of the router's error on the boost loop: 1.7 nH of 13 ([functional-evaluator-budgets](functional-evaluator-budgets.md)).
 
 ## 5. Three tiers of the same quantities
 

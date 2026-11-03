@@ -30,7 +30,7 @@
 | f_sw and harmonics, ~0.1–10 MHz | capacitor ESR/ESL and C split the current; PDN anti-resonance | input and output ripple, supply bounce | the fundamental, one point |
 | 10–300 MHz | loop inductance, switch-node ring with C_sw, capacitor self-resonance | overshoot, ringing, CM emissions (CISPR 30–230 MHz), victim pickup | one 10 MHz solve, extrapolated as a constant L |
 | any, dV/dt-driven | electric field (partial capacitance) | capacitive crosstalk into high-Z nodes, switch-node CM via capacitance | not modelled |
-| above the quasi-static limit | retardation: θ = ωℓ/v ≳ 0.3 | transmission-line nets (DDR, USB), radiation above ~300 MHz | not modelled |
+| above the quasi-static limit | retardation: θ = ωℓ/v ≳ 0.3 | transmission-line nets (DDR, USB), radiation (above ~150 MHz on a 5 cm board) | not modelled |
 
 Two bands per aggressor ([kae.excite.evaluate](../../../kae/src/kae/excite/evaluate.py)) sample this
 at two points. The peak formula then joins them with an assumed shape: |Z_f| c₁ I + |L_e| I/t_i.
@@ -163,8 +163,10 @@ plan.
   - With P the system is (L, P)-PEEC: still symmetric, still passive under congruence. The same
     reduction applies unchanged.
   - Reference for validation: FastCap, FastHenry's sibling.
-- **Electrically long nets.** Quasi-static PEEC holds while θ = ωℓ/v ≲ 0.3: to ~300 MHz on a 5 cm
-  board, ~100 MHz on 15 cm.
+- **Electrically long nets.** Quasi-static PEEC holds while θ = ωℓ/v ≲ 0.3, with v = c/√ε_eff
+  (ε_eff = 3.5, FR4 microstrip) and ℓ the board diagonal: f_qs = 0.3·c/(2π·ℓ·√3.5), 153 MHz at
+  5 cm, 51 MHz at 15 cm ([wideband.py](../../../kae/src/kae/excite/wideband.py) `THETA`, `EPS_EFF`).
+  Free-space v would give 286 and 95 MHz.
   - Nets whose knee frequency exceeds that are screened by θ and treated as quasi-TEM lines.
   - Their per-length L and C come from the same operators on the cross-section. They become
     routing constraints (impedance by layer, length match, spacing for crosstalk), not field prices.

@@ -9,7 +9,7 @@
 - **Intent is local.** Terms attach to sections (the brief's structures, which the LLM accepts, renames, merges or adds) and to *boundaries* between them ("buck cell → GNSS LNA input, L1 band"). One board holds a converter, a radio and DDR, each with its own priorities.
 - **Biggest gap:** the reduced model stops at 300 MHz or the quasi-static limit (`wideband.F_TOP`, `THETA`), so GNSS, Wi-Fi and cellular bands are not computable; the status must say so, not extrapolate silently.
 
-Tags: [P] primary source read, [S] secondary or search summary, [M] measured here, [I] our inference. Related: [intent-interchange](intent-interchange.md) (operating conditions as a SPICE testbench), [constraint-ir](constraint-ir.md) (geometric constraints, specificity), [physics-driven-design](physics-driven-design.md) (W × Z decomposition), [physics-frequency-coverage](physics-frequency-coverage.md) (the reduced model).
+Tags: [P] primary source read, [S] secondary or search summary, [M] measured here, [I] our inference. Related: [intent-driven-objectives-build](intent-driven-objectives-build.md) (router changes, build order, tests), [intent-interchange](intent-interchange.md) (operating conditions as a SPICE testbench), [constraint-ir](constraint-ir.md) (geometric constraints, specificity), [physics-driven-design](physics-driven-design.md) (W × Z decomposition), [physics-frequency-coverage](physics-frequency-coverage.md) (the reduced model).
 
 ## Key facts
 
@@ -187,31 +187,9 @@ Limit sources for those lines:
 - **Copper and heat:** IPC-2221/2152 ([high-current](../rules/power/high-current.md)); via arrays at 1.0–1.2 mm pitch ([thermal](../rules/thermal.md)).
 - **Switcher spurs** penetrate planes; distance, filters and ferrites are the remedies [P] ([TI SLVAF16A](https://ti.com/document-viewer/lit/html/SLVAF16A/GUID-A58B5D95-DA4C-4AF1-B04F-78255512C2E2)). **PA ripple:** the limit comes from the PA datasheet via `facts` ([US 7132891](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/7132891)).
 
-### 9. How the router consumes intent
+### 9. How the router consumes intent, build order, acceptance tests
 
-`pnr.PhysRouter` already separates the field solve (`solve_fields`, cached by `_sig`) from the weights (`_weights`). The prices are W × Z ([physics-driven-design](physics-driven-design.md) §2). Intent changes only W:
-
-| Requirement | With intent (before: `phi_prime(u)` capped at 5, harm/Ω widths) |
-|---|---|
-| any term | ∂C/∂x_t = `rate_t` (cost) or `rate_t·[x_t > max_t]` (limit); hard terms: §6 |
-| loss, drop | closed-form widths in mW_eq/Ω (`kae.intent.route`); `knobs.route.width.*` clamp the ladder |
-| heating | IPC-2221 floor from the intent's limit, or none if heating is a cost |
-| band coupling | spectral weights only from harmonics inside each term's band, times the rate |
-| cable CM | declared cables only |
-| thermal to heatsink | new knob `route.via_array[region]`, priced by ∂θ/∂via (`kae.em.thermal`) |
-| return continuity, decap priority | `_cut_costs` and the placer, weighted by the terms' rates |
-
-**Incremental follow:** a new generation recomputes `_weights` without new solves and re-routes nets whose price moved over 20 %.
-
-## Code changes, in order
-
-**Built** (`kae/src/kae/intent/`, `python -m kae.intent catalog|evaluate`, `kae.em.pnr --intent`; measured in [field-solver-routing-and-intent](../../research/physics/field-solver-routing-and-intent.md)): schema, units, specificity, `neutral/1` and `legacy/u`, errors as fixes; observations with references instead of u; tiers, per-term corners and contribution rows; the router's closed-form copper policy, intent-scoped pair prices and lexicographic hard tier. **Not built:** derived-observable AST, `buys`, band-selective spectral weights, knob-driven incremental re-route, the MCP surface ([mcp-tool-surface-spec](../kicad/mcp-tool-surface-spec.md)).
-
-**Acceptance tests:**
-- **Ranking flips with intent:** the boost board's human and 0.2 mm router layouts under intent A (plastic case, no cables, loss cost) and B (1.5 m unshielded cables on J1, J2 with a CISPR 32 B rate). A must prefer the human layout; B may prefer the router's; both name the dominant term.
-- **No intent → `neutral/1`;** copper loss decides.
-- **Traceability:** rows sum to the objective; each cites a term id. **Incremental:** one rate change re-routes only nets whose price moved.
-- **`score.py` and cp1/cpk untouched;** this is kae's internal objective.
+Intent changes only W in the router's W × Z prices, and hard terms stay a lexicographic tier (§6); a new generation re-routes only nets whose price moved. The router table, what is built and what is not, and the acceptance tests (ranking flips on the boost board under two intents, `neutral/1`, traceable rows, `score.py` untouched) are in [intent-driven-objectives-build](intent-driven-objectives-build.md).
 
 ## Conflicts and open questions
 

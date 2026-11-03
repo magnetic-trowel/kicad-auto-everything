@@ -8,6 +8,11 @@ windows of 1 and 3 mm around the open part and its nearest other part): it close
 open connections on fm4dd i2c24io, kata0510 rp2040, noggin, paicorea, atlantis can485 or
 bancouver40, and skipped siderakb ergo-snm (more than REGION_NETS nets). The rounds did not
 converge: fm4dd kept 8-15 conflicts between 16-21 nets after 20 rounds, paicorea's USB-C 2-5.
+The schedule is not standard PathFinder (McMurchie-Ebeling / VPR): the present price starts at
+2.0 per cell (VPR: 0, then 0.5) and grows x1.5 (VPR x1.3) for at most 20 rounds (VPR 50), history
+is per net and multiplies that net's crossing price (not per cell, added to the base cost), and
+every net is re-routed each round (not only offenders). The result says nothing about the
+standard schedule, which is untested here.
 Kept for the record; the repair loop's "region" level (repair.region_rip, the same region
 re-routed by Freerouting, opts region_level) was no better.
 """

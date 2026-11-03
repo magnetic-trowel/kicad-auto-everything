@@ -66,7 +66,7 @@ Ranking basis: expected effect on a KiCad board under its own DRC rules, with Fr
    - Route every window net with conflicts allowed.
    - Then repeatedly re-plan 4–16 conflicting nets, picked adaptively from collision-graph components, the nets blocking a boxed-in pad, and random nets. Use lexicographic A* on (conflicts, cost).
    - Accept only moves that do not raise the number of conflicting pairs.
-   - This gives the monotone progress our generic PathFinder lacked. On MAPF instances where prioritized planning with restarts failed, it solved 300 agents in seconds.
+   - This gives the monotone progress our region negotiation lacked (a non-standard PathFinder variant: per-net history, every net re-routed each round, 20 rounds; see [pathfinder-negotiated-congestion](pathfinder-negotiated-congestion.md#conflicts-and-open-questions)). On MAPF instances where prioritized planning with restarts failed, it solved 300 agents in seconds.
 4. **Convergence kit, if PathFinder is kept.** Effort 2–4 days on top of item 3 or the planned window router.
    - History-centric costs: nextpnr's constant present weight 5 and history 0.5, or the HUS switch from present ×2 to ×1.1 and history 1 to 2.
    - Connection-based reroute, seeded shuffles, dynamic boxes, best-so-far state.
@@ -107,7 +107,7 @@ Ranking basis: expected effect on a KiCad board under its own DRC rules, with Fr
 Reasons:
 - Item 1 is days of work and answers the controlling LLM's first question with a proof. The human layouts give a free check that the capacity model is sound.
 - Item 2 attacks the measured cause, too few balls escaped and the bottom layer unused, at the stage commercial tools also treat separately. Its min cut is the certificate for work item (1).
-- Item 3 replaces the PathFinder that did not converge with a loop whose progress is monotone, and floating terminals remove a likely source of false infeasibility.
+- Item 3 replaces the PathFinder variant that did not converge with a loop whose progress is monotone, and floating terminals remove a likely source of false infeasibility.
 
 ## Related
 

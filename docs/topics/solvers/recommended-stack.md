@@ -10,7 +10,7 @@
 ## Key facts
 
 **Evidence behind the stack** [P/M]
-- Decomposition is mandatory: NS-Place's vanilla MILP found no feasible placement in 4 h on 9–10 of 14 boards; HiePlace's ILP baseline gave no result at 308–404 parts; our monolithic CP-SAT (feasible to ~200 parts) found nothing at 300/1000 parts in 300 s; hierarchical CP-SAT + LNS stays feasible at 100–1000 ([benchmarks](benchmarks.md)).
+- Decomposition is mandatory: NS-Place's vanilla MILP found no feasible placement in 4 h on 9–10 of 14 boards; HiePlace's ILP baseline gave no result at 308–404 parts; our monolithic CP-SAT (feasible to ~200 parts on synthetic solver-bench instances; kae's production model is capped at 40 items) found nothing at 300/1000 parts in 300 s; hierarchical CP-SAT + LNS stays feasible at 100–1000 ([benchmarks](benchmarks.md)).
 - Cypress's differentiable recipe ran on boards of up to 6,628 parts, of which at most 2,152 were movable, with MOTPE + Freerouting evaluation ([analytical](analytical-differentiable.md)).
 - Freerouting has the best clean-pass on medium real boards in PCBWorld (D3-B, 10 boards); KRT is fastest; LLM agents are not routers ([PCBWorld](../routing/pcbworld.md)).
 - Relations beat coordinates (RAC 90.9% vs 23.2%) ([LLM routing evidence](../routing/llm-routing-evidence.md)); hierarchy matters most (ModuPlace) ([LLM-guided placement](../placement/llm-guided-placement.md)).
@@ -21,9 +21,9 @@
 |---|---|---|---|---|
 | Board I/O, writing placements/tracks | kicad-python IPC (`create_items`/commit, `get_pad_shapes_as_polygons`); KiCad 11 DSN/SES RPCs | pcbnew SWIG; `.kicad_pcb` parsing | MIT (KiCad GPL-3+) | OK |
 | Clustering, sides, constraints | LLM + netlist graph (rustworkx / NetworkX) + rules | Cypress assumes pre-assigned sides | Apache-2.0 / BSD-3 | OK |
-| Cluster placement (≤50 parts, hard decap/keep-out/alignment) | CP-SAT formulation A, 0.5 mm grid, "opt2", ≥2 aspect variants ([CP-SAT](cp-sat-milp-smt.md)) | HiePlace-style MP with HiGHS/SCIP (not Gurobi) | Apache-2.0 | OK |
+| Cluster placement (≤50 parts, hard decap/keep-out/alignment) | CP-SAT formulation A, 0.5 mm grid in the solver bench (kae: 0.025–0.25 mm ladder, [kae-placer](../../research/placement/kae-placer.md)), "opt2", ≥2 aspect variants ([CP-SAT](cp-sat-milp-smt.md)) | HiePlace-style MP with HiGHS/SCIP (not Gurobi) | Apache-2.0 | OK |
 | Global placement 100–1000 parts | Cypress-style JAX/PyTorch loss (Gumbel orientation, two-sided density, net crossing, decap/keep-out/thermal/loop penalties) or CP-SAT soft-macro floorplan | Cypress itself (GPU); DREAMPlace (BSD-3, old toolchain); SA | Apache-2.0 | OK |
-| Legalization | CP-SAT min-displacement with hard constraints: full board (`hier_place.py::legalize`) up to ~300 parts, per violation cluster (`legalize_clusters.py`) beyond, since the full-board model found no solution at N=1000 ([benchmarks](benchmarks.md), [legalization](../placement/legalization.md)) | Tetris + Abacus; sparrow GLS on jagua-rs; greedy (Rust) | Apache / MIT / MPL-2.0 | OK |
+| Legalization | CP-SAT min-displacement with hard constraints: full board (`hier_place.py::legalize`) up to ~300 parts (solver bench; kae windows ≤ 40 parts), per violation cluster (`legalize_clusters.py`) beyond, since the full-board model found no solution at N=1000 ([benchmarks](benchmarks.md), [legalization](../placement/legalization.md)) | Tetris + Abacus; sparrow GLS on jagua-rs; greedy (Rust) | Apache / MIT / MPL-2.0 | OK |
 | Orientation/side cleanup | DEE + A*/ILP (transplant) | CP-SAT | own | OK |
 | Detailed placement | SA (Rust, incremental HPWL/RUDY) + windowed CP-SAT LNS | tabu | own | OK |
 | Weight tuning / Pareto | Optuna MOTPE / NSGA-II (+ OptunaHub LLAMBO first ~10 trials) ([tuning](bayesian-tuning.md)) | SMAC, BoTorch, pymoo | MIT / BSD / Apache | OK |
