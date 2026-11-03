@@ -149,7 +149,7 @@ class Reduced:
         R = net.R.copy()
         R[self.lo:] = 0.0                       # lumped parts enter through z_l(w)
         self.G_R = VI.T @ (R[:, None] * VI)
-        self.G_Lc = VI.T @ (net.Lc[:, None] * VI)
+        self.G_Lc = VI.T @ net.Lc_apply(VI)
         # L V_I only for the columns new since the last projection (the basis only grows)
         old = getattr(self, "LV", None)
         k0 = 0 if old is None else old.shape[1]
@@ -283,7 +283,10 @@ class Reduced:
         I, phi = X[:self.nb], X[self.nb:] * sy.kap
         # the residual without an FFT: L X_I = (L V_I) Y, kept from the projection
         w = 2 * np.pi * f
-        top = sy.kap * (sy.zdiag[:, None] * I + 1j * w * (self.LV @ Y)) - sy.D @ phi
+        LI = self.LV @ Y
+        if self.net.Lc_off is not None:
+            LI = LI + self.net.Lc_off @ I
+        top = sy.kap * (sy.zdiag[:, None] * I + 1j * w * LI) - sy.D @ phi
         rhs = np.concatenate([sy.kap * self.E[:, need].astype(complex), -self.P[:, need]])
         r = rhs - np.concatenate([top, -(sy.DT @ I)])
         # Z_kj - Z_r,kj = -u_k^T r_j / kap exactly (the scaled system is complex symmetric, A u_k = b_k), and

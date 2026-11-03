@@ -244,6 +244,12 @@ class System:
                 di = ii[:, None, :] - ii[:, :, None] + b - 1
                 B = 1j * w * C0[o][ss[:, :, None], ss[:, None, :], dj, di]
                 B[:, np.arange(size), np.arange(size)] += self.zdiag[a0 + idx]
+                if net.Lc_off is not None:          # a narrow bar's correction between its stack's filaments
+                    ll = net.layer_of_sub[ss]
+                    stack = ((ll[:, :, None] == ll[:, None, :]) & (jj[:, :, None] == jj[:, None, :])
+                             & (ii[:, :, None] == ii[:, None, :]))
+                    stack[:, np.arange(size), np.arange(size)] = False
+                    B += 1j * w * stack * f["Lc"][idx][:, :, None]
                 Bi = np.linalg.inv(B * self.kap)
                 gi = a0 + idx
                 rows.append(np.repeat(gi, size, axis=1).ravel())
@@ -276,7 +282,10 @@ class System:
         nb = self.net.n_br
         I, phi = u[:nb], u[nb:]
         zd = self.zdiag if u.ndim == 1 else self.zdiag[:, None]
-        top = self.kap * (zd * I + 1j * self.w * self.op.L_apply(I)) - self.D @ phi
+        LI = self.op.L_apply(I)
+        if self.net.Lc_off is not None:
+            LI = LI + self.net.Lc_off @ I
+        top = self.kap * (zd * I + 1j * self.w * LI) - self.D @ phi
         bot = -(self.DT @ I)
         return np.concatenate([top, bot])
 

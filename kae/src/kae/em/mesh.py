@@ -425,6 +425,9 @@ class Network:
             subs += lay.subs()
         self.subs = subs
         self.sub_of = sub_of
+        self.layer_of_sub = np.zeros(len(subs), np.int64)
+        for l, ss in enumerate(sub_of):
+            self.layer_of_sub[ss] = l
 
         # bars -> filaments, per orientation: arrays (s, j, i, a, b, R)
         self.fil = {}
@@ -454,12 +457,16 @@ class Network:
                         if th:
                             thin_w[q], lscale[q] = th
                             wfac[q] = m.pitch / th[0]
+                # a narrow bar's self-inductance correction belongs to the whole bar (its stack of nsub filaments):
+                # the same value c couples every pair of the stack (Network.Lc_off), so a uniform current sees
+                # c I^2 at any nsub (a per-filament self correction alone gave the stack c / nsub)
+                dL = _thin_dL(m.pitch * MM, thin_w * MM, lscale, lay.t * MM)
                 for s in sub_of[l]:
                     zb, ts = subs[s]
                     S.append(np.full(len(jj), s))
                     J.append(jj), I.append(ii), A.append(na), B.append(nb)
                     R.append(wfac * lscale / (m.sigma * ts))     # p / (sigma w t), times the path's length scale
-                    LC.append(_thin_dL(m.pitch * MM, thin_w * MM, lscale, ts))
+                    LC.append(dL)
             cat = (lambda xs, dt: np.concatenate(xs).astype(dt) if xs else np.zeros(0, dt))
             self.fil[o] = dict(s=cat(S, np.int64), j=cat(J, np.int64), i=cat(I, np.int64),
                                a=cat(A, np.int64), b=cat(B, np.int64), R=cat(R, float), Lc=cat(LC, float))
@@ -492,7 +499,45 @@ class Network:
                                  np.zeros(len(self.lump))])
         # self-inductance correction of sub-cell tracks (the FFT operator sees p-wide bars)
         self.Lc = np.concatenate([self.fil["x"]["Lc"], self.fil["y"]["Lc"], np.zeros(len(self.vseg) + len(self.lump))])
+        self.Lc_off = self._stack_coupling()
         self._components()
+
+    def _stack_coupling(self):
+        """(n_br, n_br) sparse: the narrow bars' correction c between the different filaments of one stack (same
+        orientation, layer and cell); None when every layer has one filament or no bar is narrow."""
+        import scipy.sparse as sp
+        rows, cols, vals = [], [], []
+        layer_of = self.layer_of_sub
+        for o in ("x", "y"):
+            f = self.fil[o]
+            k = np.nonzero(f["Lc"] != 0)[0]
+            if not len(k):
+                continue
+            key = (layer_of[f["s"][k]] * (self.m.ny + 1) + f["j"][k]) * (self.m.nx + 1) + f["i"][k]
+            order = np.argsort(key, kind="stable")
+            ks = key[order]
+            starts = np.r_[0, np.nonzero(np.diff(ks))[0] + 1]
+            sizes = np.diff(np.r_[starts, len(k)])
+            for size in np.unique(sizes):
+                if size < 2:
+                    continue
+                grp = k[order[starts[sizes == size][:, None] + np.arange(size)[None]]]     # (n stacks, size)
+                a = np.repeat(grp, size, axis=1).ravel()
+                b = np.tile(grp, (1, size)).ravel()
+                off = a != b
+                rows.append(self.off[o] + a[off]), cols.append(self.off[o] + b[off])
+                vals.append(f["Lc"][a[off]])
+        if not rows:
+            return None
+        return sp.csr_matrix((np.concatenate(vals), (np.concatenate(rows), np.concatenate(cols))),
+                             shape=(self.n_br, self.n_br))
+
+    def Lc_apply(self, I):
+        """The narrow bars' inductance correction times branch currents I ((n_br,) or (n_br, P))."""
+        out = (self.Lc * I.T).T
+        if self.Lc_off is not None:
+            out = out + self.Lc_off @ I
+        return out
 
     def _components(self):
         from scipy.sparse import coo_matrix
