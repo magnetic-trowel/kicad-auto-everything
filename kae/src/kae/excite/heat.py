@@ -9,7 +9,8 @@ Heat, per corner of the ledger (the DC band's operating point, kae.excite.dc):
     linear feed  (V_in - V_out) I at the regulator's pads (LDO, charger, load switch, series diode)
     switching    (1/eta - 1) P_out at the regulator's pads (no cell model)
     cell         switch conduction I_L^2 R_on D, switching V I_L (t_i + t_v) f_sw at the controller's
-                 pads; the rectifier's V_f I_out at its pads
+                 pads; the rectifier's V_f I_out at its pads, or, synchronous (no rectifier part), its
+                 conduction I_L^2 R_on (1 - D) at the controller's pads too (one R_on for both switches)
     load         V I of every load at its pads (an export through a connector leaves the board)
     ac           each part's loss from the switching harmonics (kae.excite.spectrum), when given
 
@@ -163,7 +164,10 @@ def part_heat(bd, dcp, cv, val, inj, ac_parts=None, losses=None):
             IL, D, V = v.get("I_A", 1.0), min(max(v.get("D", 0.5), 0.02), 0.98), v.get("V_V", dcp.volts.get(r) or 5.0)
             I_out = IL * (1 - D) if c["cls"] == "boost" else IL
             ron = val.get((f"heat:{c['ctrl']}", "R_on_ohm"), R_ON[1])
-            add(c["ctrl"], IL ** 2 * ron * D + V * IL * (v.get("t_i_s", 3e-9) + v.get("t_v_s", 1e-9)) * v.get("f_sw_Hz", 1e6))
+            # the switch conducts I_L for D; with no rectifier part the synchronous one inside the
+            # controller conducts it for the rest (1 - D), as the DC flow injects it (kae.excite.dc)
+            cond = IL ** 2 * ron * (D if c["rect"] else 1.0)
+            add(c["ctrl"], cond + V * IL * (v.get("t_i_s", 3e-9) + v.get("t_v_s", 1e-9)) * v.get("f_sw_Hz", 1e6))
             if c["rect"]:
                 add(c["rect"], val.get((f"heat:{c['rect']}", "V_f_V"), V_F[1]) * (I_out if c["cls"] == "boost" else IL * (1 - D)))
             continue
