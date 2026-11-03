@@ -38,8 +38,8 @@ Status 2026-10-21. Synthesized from three research passes over the docs, the har
 | H5 | KiCad 10 DRC stops counting at 499 clearance/unconnected items and 199 for other types [P, unverified here] | `tools.summarize_drc`, `prepare.py` | `completion` is wrong on big C boards |
 | H6 | Integrity covers only placement, pad nets and `(setup)` | `score.py`, `pcbnew_ops stats` | Layers, Edge.Cuts, zones, rule areas, pad geometry and local clearances can be changed without detection. Adapters can also read `tasks/<id>/reference/`. **Fixed in score v2:** rebuild-then-score, foreign-change detection, bwrap sandbox, red-team tests |
 | H7 | The placement probe inherits the attempt index and the placer's timeout | `runner._probe` | Placement variance is mixed with router effort |
-| H8 | Report bias | `report.py` | `_mean` skips boards with no output, so methods that time out look cleaner. `wl_ratio` and `via_delta` include incomplete boards. Place reports have no @1 |
-| H9 | Scoring DRC timeouts and OOMs count as method failures and are cached | `runner.py` | Shared-host load turns into method noise |
+| H8 | Report bias | `report.py` | `_mean` skips boards with no output, so methods that time out look cleaner. `wl_ratio` and `via_delta` include incomplete boards. Place reports have no @1. **Paired report fixes it for A/Bs:** failures count, guardrails only on boards both arms routed clean, vias per connection |
+| H9 | Scoring DRC timeouts and OOMs count as method failures and are cached | `runner.py` | Shared-host load turns into method noise. **Paired report** sets `score_error` boards aside and lists them for `kaebench rescore`; no `--retry-infra` yet |
 | H10 | Provenance gaps: git dirty state, Freerouting version, image digest, task-set hash, filters, `-j`, cgroup | `runner.py` | Runs can't be checked for comparability |
 | H11 | `hpwl_ratio` sums GND and power nets over pad centres | `pcbnew_ops stats` | Rewards over-packing. autolayout cut HPWL 21% and got about 2× the unconnected items [P] |
 | H12 | Severities come from each board's `.kicad_pro`; `courtyards_overlap` is downgraded on 12 boards, `missing_courtyard` ignored on 90 | `score.py` | "Legal" means different things on different boards |
@@ -61,7 +61,7 @@ Doc correction: Freerouting's "92.4% of 979 boards" (2.6.0-RC4) covers tiers A+B
 | 0.5 | H3: use `--router.job_timeout` with a margin, keep the last SES, add `--router.result_json` | `adapters.py` | S |
 | 0.6 | H7: `--probe-passes` and `--probe-timeout`, always also probing the human placement | `runner.py`, `cli.py` | S |
 | 0.7 | H8–H10: infra vs method status, `--retry-infra`, CPU-seconds and peak RSS per attempt, full provenance in `run.json`; `report` refuses to mix incomparable runs | `runner.py`, `report.py`, `tools.py` | M |
-| 0.8 | Stats: `cp1_mean`, unbiased cp@k, per-type error diff, flipped-board list, exact McNemar, paired sign-flip and repo-clustered bootstrap (stdlib); new `kaebench compare` | new `stats.py`, `report.py` | M |
+| 0.8 | Stats: `cp1_mean`, unbiased cp@k, per-type error diff, flipped-board list, exact McNemar, paired sign-flip and repo-clustered bootstrap (stdlib); new `kaebench compare`. **Built** in `stats.py` and as the paired section of `kaebench report` / `kaeres exp report` (on the boards both arms ran; `score_error` rows set aside; guardrails on boards both arms routed clean). Not yet: the A/A run (0.12), so the minimum claimable effect is unknown | new `stats.py`, `report.py` | M |
 | 0.9 | **Done (22 cases).** V2 red-team suite: move part, delete keepout, grow outline, edit setup, shrink pad, zero pad clearance, swap net, add layer, bogus net, move locked part, delete footprint, shrink courtyard, add copper, own rules, read/write reference, network. Each is invalid, blocked or ineffective. Add a case per new cheat | `bench/tests/test_redteam.py` | M |
 | 0.10 | Resource control (see Compute) | `adapters.py`, `tools.py`, `runner.py`, `CLAUDE.local.md` | M |
 | 0.11 | Suites v1 from the 2,412 drc-clean boards: group by repo; seeded split stratified by split×layers×tier into `smoke` (12), `dev` (≈ 600, with a stratified `dev-200` for fast iteration), `val` (≈ 600) and `test` (≈ 1,200, sealed, reads logged in `bench/results/test-ledger.jsonl`). Commit ids only | `bench/scripts/make_splits.py`, `bench/suites/` | S |
@@ -227,6 +227,7 @@ Levers under +5 pp of oracle headroom are dropped. Under +10 pp, they are not wo
   | LLM arms | 8–16, rate-limited |
 
 - **Wall-clock is noisy here.** Budget in deterministic units (passes, iterations, tokens), with `prlimit --cpu`. Keep wall timeouts as a 3× safety net. Run baseline and candidate interleaved in the same window.
+  - *Divergence, kept:* every method is budgeted in wall seconds (`--timeout`, `--time`), because that is how an LLM commanding kae spends time, and kae's routers, Freerouting and restart portfolios have no common deterministic unit. In exchange each attempt records its CPU-seconds (`method_usage.cpu_s`; kaeres also records the job step's cgroup CPU), so a parallel arm is read against its CPU: the restart portfolio at P = 4 used 6,199 CPU s in a 1,186 s run on gamaphy-freedom-rp2040, about 5× a single-process arm. A CPU-matched control is a best-of-N of the baseline at the same CPU total. Until the launcher became a subreaper, rusage lost every sandboxed (`--command`) method's CPU, because bwrap exits without reaping its pid 1; those older rows read ~0.
 - **Cost scale:**
 
   | Run | Core-hours | Wall time |

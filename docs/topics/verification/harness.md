@@ -31,7 +31,7 @@
 | Run | Private copy per attempt, timeout, resumable, parallel `-j` | `runner.py` |
 | Score (route) | Rebuild from input + routing (`transplant-routing`); `clean`, `completion`, error counts by type, `wl_ratio`, `via_delta`; integrity (placement, pad nets, layers, nets, no foreign changes); copy check against the human copper | `score.py`, `pcbnew_ops.py` |
 | Score (place) | Rebuild from input + poses (`transplant-placement`); `legal` (no courtyard, clearance, edge, hole or keepout errors; pads inside outline), `hpwl_ratio`, plus a probe route of the rebuilt board by a fixed router | `score.py`, `pcbnew_ops.py` |
-| Report | @1 and best-of-k (clean, completion, errors, length) per adapter × split | `report.py` |
+| Report | @1 and best-of-k (clean, completion, errors, length) per adapter × split, CPU-seconds per attempt; with two adapters, a paired A/B (McNemar, sign-flip, repo bootstrap, Holm, flipped boards, guardrails on boards both arms routed clean, scorer failures set aside) | `report.py`, `stats.py` |
 
 - **KiCad-side operations** run in KiCad's own Python as a separate process, with JSON on a private stdout. Two pcbnew quirks were found while building it:
   - SWIG prints leak warnings on stdout at exit.
