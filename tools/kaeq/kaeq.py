@@ -119,7 +119,18 @@ DEFAULTS = {
     # on time: never frozen or throttled, its memory reserved (timed_hold_frac of its unused grant counts as taken),
     # at timed_nice, far above batch jobs (SCHED_IDLE), which only get the cycles timed jobs leave.
     # "batch" for throughput work with no time limits inside: elastic leases, may be frozen and overcommitted.
-    "timed_hold_frac": 1.0,
+    # timed jobs are overcommitted too, but never paused: if memory runs short anyway, a job is requeued (it restarts
+    # from scratch, its results unaffected). timed_hold_frac is the share of their unused grants set aside; with
+    # timed_hold_auto it adapts every overcommit_every_s so that work lost to such requeues stays near
+    # overcommit_loss_target of the timed work done over overcommit_window_s (up by 0.1 above it, down by 0.05
+    # below half of it). A job requeued evict_protect_after times keeps its whole grant set aside.
+    "timed_hold_frac": 0.5,
+    "timed_hold_auto": True,
+    "overcommit_loss_target": 0.02,
+    "overcommit_window_s": 21600,
+    "overcommit_every_s": 600,
+    "evict_every_s": 10,
+    "evict_protect_after": 2,
     "timed_nice": 10,        # timed jobs' nice: above SCHED_IDLE batch jobs by far, still below other users' work
     # CPU for timed jobs, measured, not reserved: a timed job starts only while the timed jobs' mean use plus their
     # bursts pooled as independent (sqrt of the summed squares of max-minus-mean over cpu_window_s), plus its own
@@ -664,7 +675,8 @@ def lease_plan(jobs, real_mb, cfg, now, buffer=0.0):
     hold = cfg.get("lease_hold_frac", 1.0)
     thold = cfg.get("timed_hold_frac", 1.0)
     held = sum(max(0.0, grants[j["id"]] - j["use"])
-               * (thold if j.get("timed") else 1.0 if now - (j["started"] or now) < warm else hold) for j in jobs)
+               * (1.0 if now - (j["started"] or now) < warm or j.get("protected")
+                  else thold if j.get("timed") else hold) for j in jobs)
     free_mb = real_mb - buffer - held
     stalled = []
     if real_mb < buffer:     # the fleet grew into the buffer: freeze who grew, lowest priority and newest first
@@ -676,6 +688,14 @@ def lease_plan(jobs, real_mb, cfg, now, buffer=0.0):
             grants[j["id"]] = min(grants[j["id"]], j["use"])
             stalled.append(j["id"])
             stall[j["id"]] = stall[j["id"]] or now
+    # below half the buffer, freezing growers is not enough (a frozen job keeps its memory, and a timed job is
+    # never frozen): requeue the job whose restart loses the least work per MB it frees (it starts again from
+    # scratch, so its results are unaffected); a job requeued evict_protect_after times is spared
+    evict = None
+    if real_mb < buffer / 2:
+        cand = [j for j in jobs if not j.get("protected") and j["use"] > 256]
+        if cand:
+            evict = min(cand, key=lambda j: j.get("invest", 0.0) / j["use"])["id"]
     short = []                           # timed jobs that need memory nobody can give
     for j in sorted(jobs, key=lambda j: (not j.get("timed"), -j["prio"], j["started"] or 0)):
         if j["id"] in stalled:
@@ -722,14 +742,38 @@ def lease_plan(jobs, real_mb, cfg, now, buffer=0.0):
         if victim is not None:
             stall[s] = now          # the next victim only after another lease_stall_s
     timed_victim = None
-    batch = [j for j in jobs if not j.get("timed") and j["id"] != victim]
+    batch = [j for j in jobs if not j.get("timed") and j["id"] not in (victim, evict)]
     if short and batch:                  # the newest batch job, a frozen one first (it is making no progress)
         timed_victim = max(batch, key=lambda j: (bool(j.get("frozen")), j["started"] or 0))["id"]
     return dict(grants=grants, slack_since=slack, stall_since=stall, stalled=stalled, free=free_mb, held=held,
-                victim=victim, waiter=waiter if victim is not None else None, timed_victim=timed_victim, short=short)
+                victim=victim, waiter=waiter if victim is not None else None, timed_victim=timed_victim, short=short,
+                evict=evict if evict != victim else None)
 
 
 RISE_HIST = os.path.join(HOME, f"memrise.{HOST}.json")
+OVERCOMMIT = os.path.join(HOME, f"overcommit.{HOST}.json")
+
+
+def load_overcommit():
+    try:
+        with open(OVERCOMMIT) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def adapt_hold(hold, hist, cfg, now):
+    """The next timed_hold_frac: work lost to requeues over overcommit_window_s, as a share of the timed work done,
+    against overcommit_loss_target. hist: [(t, cumulative core-s done, cumulative core-s lost)]."""
+    old = [h for h in hist if h[0] >= now - cfg["overcommit_window_s"]]
+    if len(old) < 2 or old[-1][1] - old[0][1] < 3600:      # under a core-hour of work: no evidence yet
+        return hold, None
+    loss = (old[-1][2] - old[0][2]) / (old[-1][1] - old[0][1])
+    if loss > cfg["overcommit_loss_target"]:
+        return min(1.0, hold + 0.1), loss
+    if loss < cfg["overcommit_loss_target"] / 2:
+        return max(0.0, hold - 0.05), loss
+    return hold, loss
 
 
 def load_rise_hist():
@@ -916,7 +960,11 @@ class Daemon:
         self.cpu_learn, self.cpu_learn_ts = {}, 0.0
         self.growth = []
         self.timed_preempt_ts = 0.0
-        self.mem_stalled = set()     # jobs the last lease pass left waiting (frozen) for memory         # [(t, MB)]: how much running jobs together grew in each tick (last 10 minutes)  # job id -> CPU seconds of its current attempt (stored every minute)
+        self.mem_stalled = set()     # jobs the last lease pass left waiting (frozen) for memory
+        self.oc = load_overcommit()  # {hold, hist: [(t, done core-s, lost core-s)]}: the adaptive overcommit
+        self.oc_t, self.oc_done, self.oc_lost, self.evict_ts = 0.0, 0.0, 0.0, 0.0
+        if self.oc.get("hist"):
+            _, self.oc_done, self.oc_lost = self.oc["hist"][-1]         # [(t, MB)]: how much running jobs together grew in each tick (last 10 minutes)  # job id -> CPU seconds of its current attempt (stored every minute)
         import threading
         threading.Thread(target=self.disk_loop, daemon=True).start()
 
@@ -1144,7 +1192,9 @@ class Daemon:
             jobs.append(dict(id=j["id"], prio=j["prio"], started=j["started"], grant=float(g), use=m[0], declared=j["mem_mb"],
                              slack_since=st["slack_since"], stall_since=st["stall_since"], rate=st["rate"],
                              frozen=bool(st.get("frozen_since")), grew=grew, timed=(j["qos"] or "timed") == "timed",
-                             waited_frozen=frozen_for(j, now) - st.get("wait_base", 0.0)))
+                             waited_frozen=frozen_for(j, now) - st.get("wait_base", 0.0),
+                             protected=j["preempts"] >= cfg["evict_protect_after"],
+                             invest=active_for(j, now) * max(1.0, j["cpus"])))
         for jid in set(self.lease_st) - set(cgs):
             del self.lease_st[jid]
         room = avail - reserve
@@ -1155,7 +1205,30 @@ class Daemon:
         while self.growth and self.growth[0][0] < now - 600:
             self.growth.pop(0)
         buffer = max(cfg["lease_buffer_gb"] * 1024, cfg["lease_buffer_ticks"] * max(g for _, g in self.growth))
-        plan = lease_plan(jobs, room - other, cfg, now, buffer)
+        # timed work done (core-s while running) and the adaptive share of timed grants set aside
+        if self.oc_t:
+            self.oc_done += sum(max(1.0, j["cpus"]) for j in running if (j["qos"] or "timed") == "timed") * (now - self.oc_t)
+        self.oc_t = now
+        hold = self.oc.get("hold", cfg["timed_hold_frac"]) if cfg["timed_hold_auto"] else cfg["timed_hold_frac"]
+        hist = self.oc.setdefault("hist", [])
+        if not hist or now - hist[-1][0] >= cfg["overcommit_every_s"]:
+            hist.append((now, self.oc_done, self.oc_lost))
+            while hist and hist[0][0] < now - 2 * cfg["overcommit_window_s"]:
+                hist.pop(0)
+            if cfg["timed_hold_auto"]:
+                new, loss = adapt_hold(hold, hist, cfg, now)
+                if new != hold:
+                    dlog(f"overcommit: timed grants set aside {hold:.0%} -> {new:.0%} (work lost to requeues "
+                         f"{loss:.1%} of timed work, target {cfg['overcommit_loss_target']:.0%})")
+                hold = self.oc["hold"] = new
+                self.oc["loss"] = loss
+            try:
+                with open(OVERCOMMIT + ".tmp", "w") as f:
+                    json.dump(self.oc, f)
+                os.replace(OVERCOMMIT + ".tmp", OVERCOMMIT)
+            except OSError:
+                pass
+        plan = lease_plan(jobs, room - other, dict(cfg, timed_hold_frac=hold), now, buffer)
         by = {j["id"]: j for j in running}
         for j in jobs:
             st, g = self.lease_st[j["id"]], int(plan["grants"][j["id"]])
@@ -1189,6 +1262,17 @@ class Daemon:
                                  f"(restarts with --mem {fgb(need)})")
             c.execute("UPDATE jobs SET mem_mb=?, grant_mb=0 WHERE id=?", (need, v["id"]))
         self.mem_stalled = set(plan["stalled"])
+        ev = plan["evict"]
+        if ev is not None and now - self.evict_ts >= cfg["evict_every_s"]:
+            self.evict_ts = now
+            v = by[ev]
+            self.oc_lost += active_for(v, now) * max(1.0, v["cpus"])
+            self.preempt(v, now, f"requeued: memory ran short (free {fgb(room)} beyond the reserve, under half the "
+                                 f"{fgb(buffer)} buffer); it lost the least work per GB freed and restarts from "
+                                 f"scratch, so its results are unaffected")
+            c.execute("UPDATE jobs SET grant_mb=0 WHERE id=?", (v["id"],))
+        else:
+            ev = None
         tv = plan["timed_victim"]
         if tv is not None and now - self.timed_preempt_ts >= cfg["timed_preempt_s"]:
             self.timed_preempt_ts = now
@@ -1198,12 +1282,12 @@ class Daemon:
             c.execute("UPDATE jobs SET grant_mb=0 WHERE id=?", (v["id"],))
         else:
             tv = None
-        grants = {i: plan["grants"][i] for i in plan["grants"] if i not in (plan["victim"], tv)}
+        grants = {i: plan["grants"][i] for i in plan["grants"] if i not in (plan["victim"], tv, ev)}
         use = {j["id"]: j["use"] for j in jobs}
         return dict(room=plan["free"], held=other + plan["held"] + buffer, buffer=buffer,
                     unused=sum(max(0.0, g - use[i]) for i, g in grants.items()),
                     granted=sum(grants.values()), used=sum(use.values()), stalled=plan["stalled"],
-                    victim=plan["victim"], short=plan["short"], jobs=len(jobs))
+                    victim=plan["victim"], short=plan["short"], jobs=len(jobs), hold=hold, loss=self.oc.get("loss"))
 
     def sample_cpu(self, cfg, now, running):
         """Every 10 s per job: cores used (cpu.stat) and seconds some / all of its threads waited for a CPU

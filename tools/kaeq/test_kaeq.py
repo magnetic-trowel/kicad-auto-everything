@@ -492,6 +492,32 @@ def test_lease_plan_counts_a_thrashing_jobs_frozen_time_as_waiting(kq):
     assert kq.lease_plan(jobs, 0.0, LEASE, now=1000.0)["victim"] is None
 
 
+def test_lease_plan_requeues_the_cheapest_job_when_memory_runs_short(kq):
+    """Below half the buffer, the job that loses the least work per MB freed is requeued (it restarts from
+    scratch, results unaffected); a job requeued evict_protect_after times is spared."""
+    cfg = dict(LEASE, lease_hold_frac=0.25, timed_hold_frac=0.5)
+    jobs = [dict(id=1, prio=0, started=10, grant=30000, use=20000, timed=True, invest=4 * 3600.0),   # 0.72 s/MB
+            dict(id=2, prio=0, started=900, grant=8000, use=6000, timed=True, invest=4 * 100.0),     # 0.07 s/MB
+            dict(id=3, prio=0, started=950, grant=4000, use=3000, timed=True, invest=4 * 50.0, protected=True)]
+    assert kq.lease_plan(jobs, 3000.0, cfg, now=1000.0, buffer=4096.0)["evict"] is None   # above half: no
+    p = kq.lease_plan(jobs, 1000.0, cfg, now=1000.0, buffer=4096.0)
+    assert p["evict"] == 2 and p["stalled"] == []          # timed jobs are never frozen
+    # timed grants are only partly set aside (old jobs: timed_hold_frac), young or protected ones in full
+    q = kq.lease_plan(jobs, 100000.0, dict(cfg, lease_warm_s=0), now=1000.0)
+    assert q["held"] == pytest.approx(0.5 * 10000 + 0.5 * 2000 + 1000)
+
+
+def test_overcommit_adapts_to_the_work_lost_to_requeues(kq):
+    cfg = dict(overcommit_window_s=21600, overcommit_loss_target=0.02)
+    hist = [(0, 0.0, 0.0), (3600, 100000.0, 5000.0)]       # 5% of the work lost: set more aside
+    assert kq.adapt_hold(0.5, hist, cfg, now=3600)[0] == pytest.approx(0.6)
+    hist = [(0, 0.0, 0.0), (3600, 100000.0, 500.0)]        # 0.5%: set less aside
+    assert kq.adapt_hold(0.5, hist, cfg, now=3600)[0] == pytest.approx(0.45)
+    hist = [(0, 0.0, 0.0), (3600, 1000.0, 500.0)]          # under a core-hour of work: no evidence, no change
+    assert kq.adapt_hold(0.5, hist, cfg, now=3600) == (0.5, None)
+    assert kq.adapt_hold(1.0, [(0, 0.0, 0.0), (1, 1e6, 1e6)], cfg, now=1)[0] == 1.0     # capped
+
+
 def test_lease_plan_freezes_growers_when_the_buffer_is_eaten(kq):
     cfg = dict(LEASE, lease_hold_frac=0.0)
     jobs = [dict(id=1, prio=0, started=10, grant=60000, use=50000, grew=3000),   # oldest grower
