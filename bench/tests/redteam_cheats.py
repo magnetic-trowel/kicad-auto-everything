@@ -121,6 +121,76 @@ ROUTE = {
                                                  segment((101, 101), (105, 101), "BOGUS2")]),
 }
 
+N2_ZONE = "99999999-9999-9999-9999-999999999991"  # the task's own copper zone (B.Cu, N2)
+
+
+def zone(net, pts, layer="F.Cu", priority=0, n=[0], uid=None, extra=""):
+    """A copper zone as a KiCad 10 file writes it, with explicit pad connection settings."""
+    n[0] += 1
+    uid = uid or f"abababab-abab-abab-abab-{n[0]:012d}"
+    net_s = f'(net "{net}") ' if net is not None else ""
+    return (f'\t(zone {net_s}(layer "{layer}") (uuid "{uid}") (hatch edge 0.5) (priority {priority}) '
+            f'(connect_pads (clearance 0.2)) (min_thickness 0.2) (filled_areas_thickness no) {extra}'
+            f'(fill yes (thermal_gap 0.3) (thermal_bridge_width 0.3)) '
+            f'(polygon (pts {" ".join(f"(xy {x} {y})" for x, y in pts)})))\n')
+
+
+def rect(x0, y0, x1, y1):
+    return [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+
+
+# N1 joined by a pour on F.Cu around both N1 pads (the keepout there allows pours); N2 routed
+N1_POUR = rect(107.5, 103.6, 121, 108.5)
+
+
+def n2_routed(text):
+    return add_items(text, [segment(a, b, net) for a, b, net in HONEST_ROUTES if net == "N2"])
+
+
+def poured(text, *extra_zones):
+    return add_items(n2_routed(text), [zone("N1", N1_POUR), *extra_zones])
+
+
+def solid_pad(text):
+    """R1's N1 pad set to a solid zone connection: a pad property a route method may set."""
+    anchor = '(net "N1")\n\t\t\t(uuid "11111111-1111-1111-1111-111111111115")'
+    return first(text, anchor, '(net "N1")\n\t\t\t(zone_connect 2)\n\t\t\t(uuid "11111111-1111-1111-1111-111111111115")')
+
+
+def edit_block(text, head, containing, old, new):
+    for m in re.finditer(r"\n\t\(" + head + r"\b", text):
+        end = block_end(text, m.start() + 1)
+        blk = text[m.start():end]
+        if containing in blk:
+            if old not in blk:
+                raise SystemExit(f"{old!r} not in the {head} block")
+            return text[:m.start()] + blk.replace(old, new, 1) + text[end:]
+    raise SystemExit(f"no {head} block containing {containing!r}")
+
+
+ROUTE.update({
+    "n2_only": n2_routed,
+    "zone_gnd": poured,
+    "zone_solid_pad": lambda t: solid_pad(poured(t)),
+    "zone_edit": lambda t: routed(edit_block(t, "zone", N2_ZONE, "(xy 138 118)", "(xy 139 119)")),
+    "zone_delete": lambda t: routed(remove_block(t, "zone", N2_ZONE)),
+    "zone_dup_uuid": lambda t: add_items(routed(t), [zone("N2", rect(131, 110, 138, 112), layer="B.Cu", uid=N2_ZONE)]),
+    "zone_unknown_net": lambda t: add_items(routed(t), [zone("GND", rect(101, 110, 106, 113), layer="B.Cu")]),
+    "zone_no_net": lambda t: add_items(routed(t), [zone(None, rect(101, 110, 106, 113), layer="B.Cu")]),
+    "zone_non_copper": lambda t: add_items(routed(t), [zone("N1", rect(101, 110, 106, 113), layer="F.CrtYd")]),
+    "zone_outside": lambda t: add_items(routed(t), [zone("N1", rect(131, 110, 145, 113), layer="B.Cu")]),
+    "zone_in_keepout": lambda t: add_items(routed(t), [zone("N1", rect(123, 107.5, 129, 111))]),
+    "zone_rule_area": lambda t: add_items(routed(t), [zone("N1", rect(101, 110, 106, 113), layer="B.Cu",
+                                                            extra="(keepout (tracks not_allowed) (vias allowed) (pads allowed) "
+                                                                  "(copperpour allowed) (footprints allowed)) ")]),
+    # another net over the task's N2 zone: equal priority is refused, a higher one is fine
+    "zone_overlap_tie": lambda t: add_items(routed(t), [zone("N1", rect(133, 112, 136, 119), layer="B.Cu")]),
+    "zone_overlap_priority": lambda t: add_items(routed(t), [zone("N1", rect(133, 112, 136, 119), layer="B.Cu",
+                                                                  priority=1)]),
+    # the human's N2 pour drawn again under a new uuid
+    "zone_copy": lambda t: add_items(routed(t), [zone("N2", rect(131, 114, 138, 118), layer="B.Cu", priority=1)]),
+})
+
 PLACE = {
     "place_honest": placed,
     "move_locked": lambda t: placed(set_pose(t, H1, 130, 112)),
@@ -130,6 +200,7 @@ PLACE = {
     "unlock_connector": lambda t: unlock(set_pose(placed(t), J1, 125, 108), J1),
     # joint: place and route in one output
     "joint_honest": lambda t: routed(placed(t)),
+    "joint_zone": lambda t: add_items(routed(placed(t)), [zone("N1", rect(101, 110, 106, 113), layer="B.Cu")]),
     "joint_move_locked": lambda t: routed(placed(set_pose(t, H1, 130, 112))),
     "delete_footprint": lambda t: set_pose(remove_block(t, "footprint", R2),
                                            "11111111-1111-1111-1111-111111111111", 110, 105),
