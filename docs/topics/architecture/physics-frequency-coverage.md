@@ -117,7 +117,9 @@ observer's reduced adjoint z. The two-sided basis carries z already.
 2. Greedy snapshots of every pattern where the estimated error of the harm is largest. The error
    is weighted by each source's spectrum and each observer's limit curve. Frequencies are chosen
    because a harm depends on them, not from a fixed list.
-3. Stop when the estimated harm error is below its tolerance (1e-3 of the bound).
+3. Stop when the estimated harm error is below its tolerance (1e-3 of the bound). A model stopped by the
+   snapshot limit above it, or with a snapshot solve at its iteration limit, reports `converged: false`
+   and marks the totals `uncertain`.
 
 **Harms from the reduced model.**
 - Peak quantities (overshoot, supply bounce, victim pickup): synthesize the waveform from the

@@ -410,6 +410,8 @@ def print_total(t):
         return
     print(f"total harm: robust {t['robust']} (mean of the worst {HA.WORST_SHARE:.0%} of corners), typical {t['typical']}, "
           f"90% of corners below {t['p90']}, worst {t['worst']}, best {t['best']}")
+    if t.get("uncertain"):
+        print("total harm: UNCERTAIN: the reduced model did not converge to its tolerance (see the notes)")
 
 
 # the DC band's notes that void the score: an open flow, or load/source currents left out of the copper

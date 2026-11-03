@@ -335,10 +335,12 @@ class System:
         pot[occ] = vals
         return dict(fil=fil, pot=pot)
 
-    def solve_many(self, S_, tol=1e-8, maxiter=1000, X0=None, E=None):
+    def solve_many(self, S_, tol=1e-8, maxiter=1000, X0=None, E=None, with_converged=False):
         """COCG on P right-hand sides in lockstep (columns of S_, (nfree, P)): every iteration shares one
         batched FFT pass and one factor solve. E (n_br, P): series EMFs (V) in the branches as well, the
-        branch equation reading Z I - D phi = E. Returns (X (n, P), iterations per column)."""
+        branch equation reading Z I - D phi = E. Returns (X (n, P), iterations per column), and with
+        with_converged also a bool mask per column: False where the residual was still above tol after
+        maxiter iterations (such a column's iteration count reads maxiter, like one that just made it)."""
         nb = self.net.n_br
         P = S_.shape[1]
         top = np.zeros((nb, P), complex) if E is None else self.kap * np.asarray(E, complex)
@@ -354,7 +356,7 @@ class System:
         act = np.linalg.norm(r, axis=0) > tol * bn
         its = np.zeros(P, int)
         if not act.any():
-            return x, its
+            return (x, its, ~act) if with_converged else (x, its)
         z = self.psolve(r)
         p = z.copy()
         rz = np.einsum("ij,ij->j", r, z)
@@ -374,7 +376,7 @@ class System:
             beta = np.where(act, rzn / np.where(act, rz, 1.0), 0.0)
             p = z + beta * p
             rz = np.where(act, rzn, rz)
-        return x, its
+        return (x, its, ~act) if with_converged else (x, its)
 
     def solve(self, s, tol=1e-8, maxiter=1000):
         """Preconditioned COCG (conjugate orthogonal CG) for the complex-symmetric saddle system
@@ -476,7 +478,7 @@ def potentials(mesh, injections, f, read=None, tol=TOL, net=None, op=None):
     out = {}
     for t in (read or mesh.terminals):
         out[t] = sysm.potential(x, t)
-    return out, dict(iters=it, info=info, net=net, op=op, unbalanced=len(open_), I=x[:net.n_br], x=x, sys=sysm,
+    return out, dict(iters=it, info=info, converged=info == 0, net=net, op=op, unbalanced=len(open_), I=x[:net.n_br], x=x, sys=sysm,
                      open_terms=[t for t in injections if net.comp[net.term_node[t]] in open_],
                      open_islands=open_islands(net, injections, open_))
 
@@ -499,7 +501,8 @@ def potentials_many(mesh, inj_list, f, read=None, tol=TOL, net=None, op=None, wa
     state: a caller that keeps many results (kae.excite.evaluate) would otherwise hold every frequency's
     factorization (about 1 GB each on a mid-size board) to the end. system: a System(op, f) built already
     (two callers solving the same frequency on the same network share one factorization). x0: per injection set,
-    a starting solution on this same network (or None), e.g. the same source solved at another frequency."""
+    a starting solution on this same network (or None), e.g. the same source solved at another frequency.
+    Each info's `converged` is False where the solve stopped at its iteration limit above tol."""
     net = net or Network(mesh)
     op = op or Operator(net)
     sysm = system if system is not None else System(op, f)
@@ -526,7 +529,7 @@ def potentials_many(mesh, inj_list, f, read=None, tol=TOL, net=None, op=None, wa
                           open_islands=open_islands(net, injections, open_)))
     # batches of BATCH right-hand sides share the factorization; memory grows with the batch (FFT arrays
     # of 2 x batch x sublayers grids)
-    Xs, itss = [], []
+    Xs, itss, convs = [], [], []
     for k in range(0, len(cols), BATCH):
         X0 = None
         if warm is not None and any(w is not None for w in warm[k:k + BATCH]):
@@ -535,14 +538,16 @@ def potentials_many(mesh, inj_list, f, read=None, tol=TOL, net=None, op=None, wa
             # a zero column starts where a cold one does (X0 + psolve(rhs - A X0) = psolve(rhs))
             n = net.n_br + sysm.nfree
             X0 = np.stack([np.zeros(n, complex) if v is None else np.asarray(v, complex) for v in x0[k:k + BATCH]], axis=1)
-        Xk, ik = sysm.solve_many(np.stack(cols[k:k + BATCH], axis=1), tol=tol, X0=X0)
+        Xk, ik, ck = sysm.solve_many(np.stack(cols[k:k + BATCH], axis=1), tol=tol, X0=X0, with_converged=True)
         Xs.append(Xk)
         itss.append(ik)
-    X, its = np.concatenate(Xs, axis=1), np.concatenate(itss)
+        convs.append(ck)
+    X, its, conv = np.concatenate(Xs, axis=1), np.concatenate(itss), np.concatenate(convs)
     out = []
     for q, info in enumerate(infos):
         x = X[:, q]
         info["t_factor"] = sysm.t_factor
+        info["converged"] = bool(conv[q])
         if light:
             info.update(iters=int(its[q]), net=net, op=op, sys=SimpleNamespace(zdiag=sysm.zdiag), x=x, I=x[:net.n_br])
         else:

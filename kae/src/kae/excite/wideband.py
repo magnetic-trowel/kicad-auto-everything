@@ -280,6 +280,11 @@ def evaluate(path, pitch=0.25, nsub=2, intent=None, n_corners=16, seed=0, log=pr
     # open loop that rings without bound), so only the DC band, which skips an open flow, voids the score
     from .evaluate import DC_VOID
     unc = (["dc"] if any(n.startswith(DC_VOID) for n in notes) else []) + sorted(above)
+    # a reduced model that did not converge (snapshot limit with the error above tol, or a snapshot solve at
+    # its iteration limit): the harms rest on it, so the totals are marked uncertain (not voided: the model is
+    # still the best estimate, its error unknown to the stated tolerance)
+    uncertain = _model_doubts(model, est, tol)
+    notes += uncertain
     if above:
         notes.append(f"switching above the model's f_max {f_max / 1e6:.0f} MHz: {sorted(above)}: their harms are not computed")
     if unrouted:
@@ -287,8 +292,9 @@ def evaluate(path, pitch=0.25, nsub=2, intent=None, n_corners=16, seed=0, log=pr
                         f"their harms are of the board as it stands, so compare only boards with the same open connections")
     return dict(board=path, pitch=pitch, seconds=round(time.time() - t0, 1), seed=seed, f_max=f_max,
                 model=dict(order=int(model.V.shape[1]), snapshots=model.freqs, estimated_error=est,
+                           converged=bool(model.converged) and not uncertain, unconverged_snapshots=model.unconverged,
                            history=model.history),
-                total=dict(totals(tot, unc), unrouted=sorted(unrouted)),
+                total=dict(totals(tot, unc), unrouted=sorted(unrouted), uncertain=bool(uncertain)),
                 ac_loss=dict(copper_W=dict(typical=float(ac_cu[0]), hi=float(ac_cu.max())),
                              parts_W={k: dict(typical=float(v[0]), hi=float(v.max())) for k, v in
                                       sorted(parts.items(), key=lambda kv: -kv[1].max()) if v.max() > 0}),
@@ -300,6 +306,18 @@ def evaluate(path, pitch=0.25, nsub=2, intent=None, n_corners=16, seed=0, log=pr
                 + ([f"cable common mode computed to {f_max / 1e6:.0f} MHz of the CISPR band's {O.F_CM[1] / 1e6:.0f} MHz: "
                     f"above, the board is not electrically small and the quasi-static model does not hold"]
                    if f_max < O.F_CM[1] else []))
+
+
+def _model_doubts(model, est, tol):
+    """Notes on why the reduced model's harms are uncertain (empty when it converged to tol)."""
+    out = []
+    if model.unconverged:
+        out.append(f"model uncertain: solves at {[round(f / 1e6, 4) for f in model.unconverged]} MHz stopped at their "
+                   f"iteration limit; their snapshots are in the basis and calibrate its error estimate")
+    if est is None or est > tol or model.converged is False and not model.unconverged:
+        out.append(f"model uncertain: estimated error {'unknown' if est is None else f'{est:.1e}'} against tol "
+                   f"{tol:.0e} at the snapshot limit; the totals carry that error")
+    return out
 
 
 def main(argv=None):
