@@ -36,6 +36,8 @@ import math
 import time
 from dataclasses import dataclass, field
 
+from kae.place.zones import annealer_args as zones_args
+
 from .penalty import history_hook
 
 ROLE_KIND = {"ground": "ground", "rail": "power", "power": "power"}
@@ -147,7 +149,8 @@ def replace_window(board, window, brief, history=None, seed=0, time_s=20.0, term
     hist_rep = dict(applied=False)
     hook = history_hook(P, history, scale=history_scale, window=window.rect, report=hist_rep)
     ann = make_annealer(P, st.copy(), terms=terms, seed=seed, w_phys=float(phys_mult) if terms is not None else 0.0,
-                        w_cong=30.0 * cong_mult, order=order, subset=sub, window=gwin, log=None, cong_history=hook)
+                        w_cong=30.0 * cong_mult, order=order, subset=sub, window=gwin, log=None, cong_history=hook,
+                        **zones_args(P))
     rep["history"] = hist_rep
     rep["cost_before"] = round(float(ann.cost(ann.lam1)), 5)
     # a fixed move count (not the engine's adaptive one): the same seed gives the same window

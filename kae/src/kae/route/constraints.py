@@ -173,6 +173,10 @@ DEFAULTS = dict(
     escape_ring_pitch=0.5,         # mm: pad rings (QFN, QFP) at most this fine get bands
     escape_fanout=0,               # placement: 1 also reserves the dog-bone via sites of each ball grid on the
                                    # other side (no part there covers them); 0: off
+    zone_pull=1.0,                 # placement (kae.place.zones): weight of pads off their own net's fixed copper
+                                   # zone (all of them off = zone_pull x the seed HPWL); 0: off
+    zone_keepout=1.0,              # placement: weight of pads whose mask opening would bridge another net's
+                                   # fixed outer-layer zone (each 0.1 x this; gecko5: all staged DRC errors); 0: off
 )
 
 

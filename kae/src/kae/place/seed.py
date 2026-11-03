@@ -204,7 +204,7 @@ def _free_raster(P, side, extra=()):
     return free
 
 
-def partition_spread(P, objs, pos, target=0.8):
+def partition_spread(P, objs, pos, target=0.8, pinned=None):
     """Density-feasible spreading by recursive bisection (quadratic placement followed by
     recursive partitioning, after Gordian): per side, the board's free cells (inside the
     outline, not under a fixed obstacle) are cut in proportion to the area of the objects on
@@ -212,7 +212,9 @@ def partition_spread(P, objs, pos, target=0.8):
     until each region holds one object, which goes to the centroid of its region's free
     cells. The quadratic order and neighbourhoods survive, density follows the board's shape,
     and objects of the other side do not compete for space. Front objects go first; the cells
-    their drilled (through) parts take are then closed on the back. Returns positions (n, 2)."""
+    their drilled (through) parts take are then closed on the back. `pinned` {object: (x, y,
+    grid rect)}: objects that stay at (x, y), their rect closed to the rest (kae.place.zones
+    pin_packages). Returns positions (n, 2)."""
     from .problem import sat
     g = P.g
     n = len(objs)
@@ -224,11 +226,15 @@ def partition_spread(P, objs, pos, target=0.8):
     sides = [_object_side(P, members) for (members, _, _, _) in objs]
     through = [any(P.parts[i].tht for i in members) for (members, _, _, _) in objs]
     extra_back = []
+    pinned = pinned or {}
+    for o, (x, y, rect) in pinned.items():
+        out[o] = (x, y)
     for side in (0, 1):
-        ids = [o for o in range(n) if sides[o] == side]
+        ids = [o for o in range(n) if sides[o] == side and o not in pinned]
+        pin_rects = [rect for o, (x, y, rect) in pinned.items() if sides[o] == side or through[o]]
         if not ids:
             continue
-        free = _free_raster(P, side, extra_back if side == 1 else ())
+        free = _free_raster(P, side, (extra_back if side == 1 else []) + pin_rects)
         if not free.any():
             continue
         F = sat(free)
