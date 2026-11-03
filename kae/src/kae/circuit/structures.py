@@ -923,6 +923,10 @@ CELL_CLASS = 'count'   # 'count': cells prefer small ceramics (<= 1 uF) only whe
 CONVERTER_OUT = True   # a buck's output (a boost's input) bulk capacitors (>= 10 uF) belong at its inductor
 CELL_HF_SCARCE = -3.0  # a cell's score offset for a small ceramic when the loads need them all ('count' mode)
 ENTRY_BULK = True      # polarized bulk capacitors (>= 10 uF) on a rail fed by a connector stay at the entry
+LOAD_BIG_HF = 0.3      # a load's score for a > 1 uF capacitor in an HF body (roles.CAP_CLASS 'package') is cut back to
+                       # the value classes': the body decides what a pin may be paired with, not who owns it. At 0.1 a
+                       # 4.7 uF 0603 shifted the reference-order fill of a rail's small caps by one (ownership eval,
+                       # 1,378 caps: 74.60% at 0.1, 74.67% at 0.3, as with the value classes)
 CELL_DONATE = True     # a cell left without a capacitor takes the second capacitor of another cell on its rail
 
 
@@ -1018,7 +1022,8 @@ def allocate_caps(b: _B, cells, groups):
         if not caps:
             continue
         ncap, ng = len(caps), len(lst)
-        cls = {c: cap_class(b.nl.parts[c])[0] for c in caps}
+        cls = {c: cap_class(b.nl.parts[c])[0] for c in caps}            # HF capability: body (loads' pins)
+        vcls = {c: cap_class(b.nl.parts[c], 'value')[0] for c in caps}  # charge: value (cells, bias pins)
         far = {c: cap_class(b.nl.parts[c])[1] for c in caps}
         known = sorted(f for f in far.values() if f)
         med = known[len(known) // 2] if known else None
@@ -1027,7 +1032,7 @@ def allocate_caps(b: _B, cells, groups):
         ranked = [j for j, (typ, x, _) in enumerate(lst) if typ == 'cell' or x['function'] == 'load']
         rank_of = {j: (k / (len(ranked) - 1) if len(ranked) > 1 else 0.5) for k, j in enumerate(ranked)}
         S = {}
-        n_hf = sum(cls[c] in ('hf', 'mid') for c in caps)
+        n_hf = sum(vcls[c] in ('hf', 'mid') for c in caps)
         n_load = sum(len(x['pins']) for t, x, _ in lst if t == 'decap' and x['function'] == 'load')
         hf_spare = CELL_CLASS == 'hf' or n_hf > n_load
         for i, c in enumerate(caps):
@@ -1036,11 +1041,11 @@ def allocate_caps(b: _B, cells, groups):
             for j, (typ, x, anchor) in enumerate(lst):
                 if typ == 'cell':
                     if hf_spare:
-                        v = CELL_BASE + (0.5 if cls[c] in ('hf', 'mid') else 0.3)
+                        v = CELL_BASE + (0.5 if vcls[c] in ('hf', 'mid') else 0.3)
                     else:
                         # the loads' pins need every small ceramic: the converter takes the bulk ones, largest first,
                         # and a small one only if the loads leave it over
-                        v = CELL_BASE + (CELL_HF_SCARCE if cls[c] in ('hf', 'mid') else 0.5 + 0.1 * max(0.0, big))
+                        v = CELL_BASE + (CELL_HF_SCARCE if vcls[c] in ('hf', 'mid') else 0.5 + 0.1 * max(0.0, big))
                 else:
                     v = 0.0               # pin counts enter through the quotas, not the score (layout check)
                     f = x['function']
@@ -1052,9 +1057,11 @@ def allocate_caps(b: _B, cells, groups):
                             continue
                         v += 0.5 + 0.5 * big
                     elif f == 'bypass':
-                        v += 0.5 if cls[c] in ('mid', 'bulk') else 0.0
+                        v += 0.5 if vcls[c] in ('mid', 'bulk') else 0.0
                     elif f in ('load', 'split_supply'):
                         v += 0.3 if cls[c] == 'hf' else 0.0
+                        if cls[c] == 'hf' and vcls[c] != 'hf':
+                            v -= LOAD_BIG_HF   # a large value in a small body is HF-capable; loads take the small ones first
                     elif f == 'entry':
                         if not _entry_cap(b, c):
                             S[(c, j)] = None

@@ -110,6 +110,8 @@
 ## Recommendations for our system
 - **Build the open-source lumped-RLC PDN screener** (step list above). It is cheap enough to run per placement.
 - **Rank decoupling placement by estimated mounting L** (package, pad-to-via distance, via length to the plane pair) using the [loop-inductance estimator](checkers-power.md). Alternate orientation in clusters.
+  - Built so far (`kae.circuit.roles.cap_class`, `CAP_CLASS = 'package'`): a non-polarized chip of 0603 or smaller counts as HF at any value, so a load's pin may be paired with it ([comprehension](../physics/comprehension.md) §3.3). Larger and through-hole bodies fall back to value (≤ 1 µF), and polarized bodies are never HF. Who owns a capacitor, and what a converter loop or bias pin takes, still goes by value, because there the charge it holds matters and humans lay out that way: the ownership eval holds at 74.67% (1,378 caps), and pin pairings rise from 289 to 295: the 6 new ones (4.7–10 µF 0402) sit 1.3–3.7 mm from their pin in the human layouts. `CAP_CLASS = 'value'` restores the old classes.
+  - Basis [P]: Archambeault's connection-inductance table ([IEEE EMC Society Newsletter, 2009](https://forum.hsbne.org/uploads/default/original/2X/9/946bf58f4e03f86ead589fbf62e3db9c2a1a6ec0.pdf)) rises 0402 < 0603 < 0805 at every via depth (0.9 / 1.1 / 1.2 nH at 10 mil). It puts body ESL at 0.2–0.5 nH "depending on the size". Bogatin, Smith and Sandler (above) give a 10 µF and a 0.1 µF MLCC in one body "exactly the same high frequency impedance".
 - **Pre-layout BOM checks:** DC-bias derating, bead current ratio, bead resonance vs f_sw.
 - **Add beads only on explicit requirement,** and always run the resonance check.
 

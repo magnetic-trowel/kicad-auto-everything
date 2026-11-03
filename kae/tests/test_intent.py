@@ -352,3 +352,100 @@ def test_the_unit_modules_own_examples_parse():
     assert U.quantity("27 mV") == pytest.approx((0.027, "V"))
     assert U.rate("2 mW_eq/mV", "mW_eq") == pytest.approx((2000.0, "V"))
     assert U.rate("20 mW_eq/dB", "mW_eq") == (20.0, "dB")
+
+
+# ---------------------------------------------------------------- hard terms are a tier, never bought (CI7)
+def test_a_hard_term_takes_no_rate():
+    with pytest.raises(OB.IntentError, match="never traded"):
+        OB.load({"terms": [{"id": "H", "tier": "hard", "obs": "pickup.peak", "max": "50 mV", "rate": "1 mW_eq/mV",
+                            "why": "w"}]})
+
+
+def test_the_router_keeps_hard_terms_out_of_the_cost_and_reports_them():
+    """A hard term was priced at 1e6 per V inside the router's cost sum: a large enough cost elsewhere could
+    buy it. Now it steers the search only, is judged on its own, and a violation is a block hazard."""
+    import numpy as np
+    from kae.intent import route as IR
+    hard = {"id": "H", "tier": "hard", "obs": "pickup.peak", "max": "50 mV", "why": "ADC LSB", "source": "U7 ds"}
+    lim = {"id": "L", "tier": "limit", "obs": "pickup.peak", "max": "10 mV", "rate": "1 mW_eq/mV", "why": "w"}
+    p = IR.Policy({"terms": [hard, lim]})
+    terms = [(hard, None, 0.05, "hard"), (lim, 1000.0, 0.01, "limit")]
+    V = np.array([0.02, 0.08])
+    assert p.pair_cost(terms, V) == pytest.approx([1000 * 0.01, 1000 * 0.07])      # the limit only
+    assert list(p.dC_dV(terms, V)) == pytest.approx([1000.0, 1000.0 + IR.Policy.HARD_SLOPE])
+    rows = p.pair_hard(terms, V)
+    assert len(rows) == 1 and rows[0][3] == pytest.approx((0.08 - 0.05) / 0.05)
+    hz = p.hazards([(t, "U7.3 <- cell:buck:U3", w, l, v) for t, w, l, v in rows])
+    blocks = [h for h in hz if h["severity"] == "block"]
+    assert [h["code"] for h in blocks] == ["hard_term_violated"] and "U7.3" in blocks[0]["message"]
+    assert {"code", "severity", "category", "message", "objects", "evidence", "fix"} <= set(blocks[0])
+    # met: no block
+    assert not [h for h in p.hazards([(t, "x", 0.04, l, 0.0) for t, _, l, _ in rows]) if h["severity"] == "block"]
+
+
+def test_hard_terms_the_router_cannot_compute_are_flagged_unchecked():
+    from kae.intent import route as IR
+    tj = {"id": "TJ", "tier": "hard", "obs": "temp.junction", "max": "125 °C", "why": "rating"}
+    pk = {"id": "PK", "tier": "hard", "obs": "overshoot.peak", "max": "30 V", "why": "V_ds rating"}
+    dr = {"id": "DR", "tier": "hard", "obs": "drop.rail", "max": "50 mV", "why": "w"}
+    p = IR.Policy({"terms": [tj, pk, dr]})
+    codes = lambda hz: sorted(h["objects"][0] for h in hz if h["code"] == "hard_term_unchecked")  # noqa: E731
+    assert codes(p.hazards([])) == ["TJ"]
+    assert codes(p.hazards([], checked_pairs=False, checked_dc=False)) == ["DR", "PK", "TJ"]
+
+
+def test_a_hard_drop_term_is_judged_at_its_worst_corner():
+    from kae.intent import route as IR
+    dr = {"id": "DR", "tier": "hard", "obs": "drop.rail", "where": {"load": "U5"}, "max": "30 mV", "why": "w"}
+    p = IR.Policy({"terms": [dr]})
+    obs = [dict(loss=(0, 0, 0), drops=[("U5", "+5V", 0, dv, 0), ("U6", "+5V", 0, 0.1, 0)]) for dv in (0.02, 0.04)]
+    rows = p.dc_hard(obs)
+    assert [(r[0]["id"], r[1]) for r in rows] == [("DR", "U5@+5V")] and rows[0][4] == pytest.approx(1 / 3)
+    assert p.dc_cost(obs[1]) == 0.0                     # never in the cost
+
+
+def test_a_capped_heating_width_is_a_hazard():
+    from kae.intent import route as IR
+    ladder = (0.2, 0.5, 1.0, 2.0)
+    for tier, sev in (("hard", "block"), ("limit", "warn")):
+        t = {"id": "H", "tier": tier, "obs": "heat.track", "max": "10 K", "why": "w"}
+        if tier == "limit":
+            t["rate"] = "1 mW_eq/K"
+        p = IR.Policy({"terms": [t]})
+        w, _ = p.width("+12V", [5.0] * 3, 0.035, 0.2, ladder, 0.2, 0.5)
+        p.width("+12V", [2.0] * 3, 0.035, 0.2, ladder, 0.2, 0.5)          # a second hop: one hazard per net
+        assert w == 0.5
+        hz = [h for h in p.hazards() if h["code"] == "heating_width_capped"]
+        assert len(hz) == 1 and hz[0]["severity"] == sev and hz[0]["evidence"]["hops"] == 2
+        assert hz[0]["evidence"]["I_A"] == 5.0
+
+
+def test_a_defaulted_area_price_is_reported():
+    from kae.intent import route as IR
+    assert [h["code"] for h in IR.Policy({}).hazards()] == ["area_cost_defaulted"]
+    assert IR.Policy({"knobs": {"route.area_cost": 0.2}}).hazards() == []
+
+
+# ---------------------------------------------------------------- the term contract (CI11), temperatures (CI15)
+def test_an_unsourced_bound_is_marked_assumed():
+    st = OB.evaluate(WIDE, {"terms": [
+        {"id": "A", "tier": "limit", "obs": "pickup.peak", "max": "1 mV", "rate": "1 mW_eq/mV", "why": "guess"},
+        {"id": "S", "tier": "hard", "obs": "loss.copper", "max": "1 W", "why": "w", "source": "fuse rating"}]}, BRIEF)
+    rows = {r["id"]: r for r in st["terms"]}
+    assert rows["A"].get("assumed") is True and "assumed" not in rows["S"]
+    assert st["assumed_limits"] == ["A"]
+
+
+def test_celsius_is_absolute_for_junctions_and_a_rise_for_tracks():
+    ev = {"board": "synthetic", "total": {"complete": True}, "questions": [], "observations": [
+        _ob("temp.junction", "C", [80.0, 130.0], kind="heat", observer="heat:U3", source="dc", parts=["U3"]),
+        _ob("heat.track", "K", [4.0, 12.0], kind="dc_heat", nets=["VIN"])]}
+    assert U.quantity("125 °C") == (125.0, "C") and U.quantity("10 K") == (10.0, "K")
+    st = OB.evaluate(ev, {"terms": [{"id": "R", "tier": "hard", "obs": "heat.track", "max": "10 °C", "why": "w"}]},
+                     BRIEF)
+    r = st["terms"][0]
+    assert r["met"] is False and r["value"] == "12 K"           # a rise in °C is a rise
+    # kelvin against an absolute temperature is refused, not read as 398 C
+    with pytest.raises(OB.IntentError, match="absolute temperature"):
+        OB.evaluate(ev, {"terms": [{"id": "J", "tier": "hard", "obs": "temp.junction", "max": "398 K", "why": "w"}]},
+                    BRIEF)

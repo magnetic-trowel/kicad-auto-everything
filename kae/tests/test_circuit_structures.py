@@ -674,3 +674,32 @@ def test_divider_output_above_the_input_rail_is_dropped():
                 pad.net = 'VOUT'
     nl, r, st = structures(parts)
     assert abs(r.rails['VOUT'].attrs['volts']['value'] - 3.296) < 0.01
+
+
+def test_decap_hf_by_body_not_value():
+    """An MLCC's inductance is set by its body: a 10 uF 0402 at a load's single power pin is its HF decap
+    (decoupling-pdn.md rule 1), while a polarized body never is. CAP_CLASS='value' keeps the old value classes."""
+    import kae.circuit.roles as RO
+    from kae.circuit.roles import cap_class
+
+    flash = IC('U3', 'W25Q128JVS', 'Package_SO:SOIC-8_5.23x5.23mm', [('8', 'VCC', '+3V3', 'power_in'), ('4', 'GND', 'GND', 'power_in'),
+                                                                     ('1', 'CS', 'CS', 'input')])
+    parts = [flash, C('C1', '10uF', '+3V3', 'GND')]
+    nl, r, st = structures(parts)
+    d = one(st['decaps'], ic='U3', rail='+3V3')
+    assert d['hf_caps'] == ['C1'] and d['pin_caps'] == {'8': ['C1']}
+    assert cap_class(nl.parts['C1'])[0] == 'hf'
+    assert cap_class(nl.parts['C1'], 'value')[0] == 'bulk'
+    big = C('C2', '100nF', '+3V3', 'GND', lib='Capacitor_SMD:C_1206_3216Metric')
+    tant = C('C3', '100nF', '+3V3', 'GND', lib='Capacitor_Tantalum_SMD:CP_EIA-3216-18_Kemet-A')
+    nl2, _, _ = structures([flash, big, tant])
+    assert cap_class(nl2.parts['C2'])[0] == 'hf'          # a large body falls back to its value
+    assert cap_class(nl2.parts['C3'])[0] == 'bulk'        # polarized: never HF
+    old = RO.CAP_CLASS
+    try:
+        RO.CAP_CLASS = 'value'
+        nl, r, st = structures(parts)
+        d = one(st['decaps'], ic='U3', rail='+3V3')
+        assert d['hf_caps'] == [] and d['pin_caps'] == {}
+    finally:
+        RO.CAP_CLASS = old

@@ -13,7 +13,12 @@ operating corner, each with its scope) are matched by the intent's terms:
   key = (hard violations, limit + cost).
 - tier "limit": met costs nothing; beyond it, rate x the excess (in the limit's own unit).
 - tier "cost": rate x the value, summed.
-- tier "report": listed, unpriced; "ignore": dropped from the report.
+- tier "report": listed, unpriced (a bound on it is still judged met or not); "ignore": dropped from the report.
+- contract: every term says why (a 'why' or a 'source'); a limit needs a rate (a bound nobody prices is a
+  report term: rejected, not silently downgraded); a hard term takes no rate. A bound without a 'source' is
+  marked `assumed` in its row and listed in status["assumed_limits"].
+- temperatures: °C (C, degC) is absolute against temp.junction and a rise against heat.track (IPC-2221's
+  "10 °C rise"); K is a rise only, rejected against an absolute temperature.
 - an observation the evaluator flags `implausible` (noise beyond half its rail) is priced at that cap (its
   values clipped to it), the same for every layout: left unpriced, it let the worse of two layouts escape
   its term whenever only that one crossed the cap. The status lists them under "implausible", with the reason.
@@ -156,6 +161,9 @@ def load(path_or_dict):
             raise IntentError(f"term {tid}: agg '{t['agg']}' unknown; use {AGGS}")
         if t["tier"] in ("hard", "limit") and not ("max" in t or "min" in t):
             raise IntentError(f"term {tid}: a {t['tier']} term needs 'max' or 'min' (a quantity with its unit)")
+        if t["tier"] == "hard" and "rate" in t:
+            raise IntentError(f"term {tid}: a hard term is never traded, so it takes no 'rate'; drop the rate, or "
+                              f"make it a 'limit' if exceeding it may be bought at that rate")
         if t["tier"] == "limit" and "rate" not in t:
             raise IntentError(f"term {tid}: a limit term needs a 'rate' (what exceeding it by one unit costs, e.g. "
                               f"'2 mW_eq/mV'); without one, make it 'hard' or 'report'")
@@ -236,7 +244,12 @@ def _in(ob, dim):
     if dim in U.LOG and ob["unit"] != dim:
         return [U.to_log(v, dim) for v in ob["values"]]
     if ob["unit"] == "C" and dim == "K":
-        return ob["values"]                     # temperatures in C against limits in C (or K steps)
+        # an absolute temperature against a bound in K: kelvin is a rise here, and '398 K' would be read as
+        # 398 C; nothing is guessed
+        raise IntentError(f"{ob['id']} is an absolute temperature in °C; write its bound in °C (e.g. '125 °C'), "
+                          f"not in K (K is a temperature rise)")
+    if ob["unit"] == "K" and dim == "C":
+        return ob["values"]                     # a rise against a bound written in °C ('10 °C' rise): same steps
     if dim not in ("", ob["unit"]) and not (dim == "dB" and ob["unit"] in U.LOG):
         raise IntentError(f"{ob['id']} is in {ob['unit']}; a limit in {dim} cannot be compared with it")
     return ob["values"]
@@ -320,6 +333,10 @@ def evaluate(ev, intent=None, brief=None):
             inst.append((_agg(vals, agg, side_), ob))
         row = dict(id=t["id"], tier=tier, obs=t["obs"], where=t.get("where"), matched=len(hit), agg=agg,
                    why=t.get("why"), source=t.get("source"))
+        if bound is not None and not t.get("source"):
+            # a bound nobody sourced (a datasheet, a standard, a measurement): priced as the intent says, but
+            # marked, so the commander can see which limits are its own guesses
+            row["assumed"] = True
         if t["id"] in lost:
             row["overridden_by"] = sorted(lost[t["id"]])          # more specific terms price those observations
         gap = _gap(t, missing)
@@ -334,7 +351,10 @@ def evaluate(ev, intent=None, brief=None):
             rows.append(row)
             continue
         unit_ = dim or inst[0][1]["unit"]
-        if r is not None and rdim != unit_ and not (rdim == "dB" and unit_ in U.LOG):
+        if unit_ == "C" and inst[0][1]["unit"] == "K":
+            unit_ = "K"                                           # a bound in °C on a rise: shown as a rise
+        if r is not None and rdim != unit_ and not (rdim == "dB" and unit_ in U.LOG) \
+                and not (rdim == "K" and unit_ == "C"):          # per K = per °C
             raise IntentError(f"term {t['id']}: rate '{t['rate']}' is per {rdim}, the quantity is in {unit_}")
         if combine == "sum":
             val = sum(v for v, _ in inst)
@@ -377,6 +397,7 @@ def evaluate(ev, intent=None, brief=None):
     status["tiers"] = dict(hard=round(hard, 6), limit=round(limit, 4), cost=round(cost, 4))
     status["terms"] = rows
     status["incomplete_terms"] = [r["id"] for r in rows if r.get("incomplete")]
+    status["assumed_limits"] = [r["id"] for r in rows if r.get("assumed")]
     if missing:
         status["why_incomplete"] = (f"copper open for {missing}: the tiers count only the terms none of those "
                                     f"sources could feed; {status['incomplete_terms']} are reported, not priced")
