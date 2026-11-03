@@ -171,6 +171,8 @@ DEFAULTS = dict(
     escape_band_scale=1.0,         # band depth per side = scale x escapes on that side x (track + clearance)
     escape_band_max_mm=2.5,        # mm: the deepest band on one side
     escape_ring_pitch=0.5,         # mm: pad rings (QFN, QFP) at most this fine get bands
+    fab="jlcpcb",                  # the fab whose classes clip and label suggested relaxations (escape
+                                   # certificates, kae.route.blocked): kae.route.fab.PROFILES
     escape_fanout=0,               # placement: 1 also reserves the dog-bone via sites of each ball grid on the
                                    # other side (no part there covers them); 0: off
 )
