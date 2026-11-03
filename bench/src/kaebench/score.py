@@ -16,7 +16,10 @@ still detected, and make the result invalid:
          footprints added or removed; no copper added
 
 Clean pass = valid, fully connected, and no error-level DRC violations (board's own
-severities; library-environment checks excluded). Each score also reports how much of the
+severities; library-environment checks excluded). `clean_strict` / `legal_strict` also need
+no violation of STRICT_CHECKS whatever the board's project says (a second DRC with those
+checks promoted to error, run only when the project downgrades one of them; otherwise they
+equal clean / legal). Each score also reports how much of the
 output matches the human layout exactly (`copy`), a check for leaked reference answers.
 """
 import json
@@ -30,7 +33,8 @@ from .boardfiles import board_path, install_rules, unconnected_ignored
 
 # 8: unconnected counted by pcbnew where the project ignores the check (_uncapped)
 # 9: route placement integrity with the place side's pose tolerance (transplant-routing)
-SCORE_VERSION = 9
+# 10: clean_strict / legal_strict / errors_strict (fixed-severity profile, STRICT_CHECKS)
+SCORE_VERSION = 10
 # KiCad 10's DRC report stops listing unconnected items at 499 and other violations at 199
 # per type (drc_engine ERROR_LIMIT / EXTENDED_ERROR_LIMIT).
 DRC_UNCONNECTED_CAP = 499
@@ -40,6 +44,47 @@ DRC_TYPE_CAPS = (199, 499)
 PLACEMENT_ERROR_TYPES = ("courtyards_overlap", "copper_edge_clearance", "clearance", "hole_clearance",
                          "hole_to_hole", "holes_co_located", "items_not_allowed", "malformed_courtyard",
                          "npth_inside_courtyard", "pth_inside_courtyard", "shorting_items")
+
+
+# Checks scored as errors whatever the board's project says (clean_strict, legal_strict): a
+# short, a clearance or hole-clearance breach, copper too close to the edge, overlapping
+# courtyards and parts in a rule area make a board that does not work or cannot be built as
+# drawn. Of 2,454 qualified boards with project files, 184 downgrade courtyards_overlap, 96
+# copper_edge_clearance, 69 hole_clearance, 49 clearance and 7 shorting_items, so `clean` means
+# different things on different boards (dev-eval-plan H12). Unconnected items are counted by
+# pcbnew where the project ignores them (_uncapped), so both columns count them. Custom
+# .kicad_dru rules keep their own severities (a designer's per-object waiver).
+STRICT_CHECKS = ("shorting_items", "clearance", "hole_clearance", "copper_edge_clearance", "courtyards_overlap",
+                 "items_not_allowed")
+
+
+def _strict_drc(staged, scoring_dir, drc):
+    """DRC summary under the fixed-severity profile: `drc` itself when the staged board's project
+    downgrades none of STRICT_CHECKS, else a second DRC of a copy whose project has them all at
+    error (the board is not re-saved; only the copy's .kicad_pro changes)."""
+    pro = Path(staged).with_suffix(".kicad_pro")
+    try:
+        d = json.loads(pro.read_text(encoding="utf-8", errors="replace")) if pro.exists() else {}
+    except ValueError:
+        d = {}
+    rs = ((d.get("board") or {}).get("design_settings") or {}).get("rule_severities") or {}
+    down = [c for c in STRICT_CHECKS if rs.get(c, "error") != "error"]
+    if not down:
+        return drc, []
+    sdir = _fresh_dir(Path(scoring_dir) / "strict")
+    sb = board_path(sdir)
+    shutil.copy2(staged, sb)
+    install_rules(Path(staged).parent, sdir)
+    for c in down:
+        rs[c] = "error"
+    sb.with_suffix(".kicad_pro").write_text(json.dumps(d, indent=2))
+    return tools.summarize_drc(tools.run_drc(sb, sdir / "drc.json")), down
+
+
+def _strict_fields(staged, scoring_dir, drc):
+    sdrc, down = _strict_drc(staged, scoring_dir, drc)
+    return sdrc, dict(errors_strict=sdrc["errors"], errors_by_type_strict=sdrc["errors_by_type"],
+                      strict_promoted=down)
 
 
 def _fresh_dir(d):
@@ -135,10 +180,12 @@ def score_routing(output_board, input_board, input_stats, start_unconnected, ref
     valid = all(integrity.values())
     completion = max(0.0, min(1.0, 1.0 - unconnected / max(1, start)))
     ref_wl = ref_stats.get("track_length_mm") or 0
+    sdrc, strict = _strict_fields(staged, scoring_dir, drc)
     return dict(
         valid=valid, integrity=integrity, foreign=foreign, **_copy_fields(tr, allow_copy),
         new_net_items=tr["new_net_items"],
         clean=valid and unconnected == 0 and drc["errors"] == 0,
+        clean_strict=valid and unconnected == 0 and drc["errors"] == 0 and sdrc["errors"] == 0, **strict,
         completion=round(completion, 4) if valid else 0.0,
         start_unconnected=start, unconnected=unconnected,
         drc_unconnected=drc["unconnected"], start_unconnected_drc=start_unconnected,
@@ -184,10 +231,14 @@ def score_place_task(task_dir, placed_board, scoring_dir, record, allow_copy=Fal
     valid = all(integrity.values())
     outside = outside_count(st["placement"], record["reference"].get("pads_outside", {}))
     place_errors = {k: v for k, v in drc["errors_by_type"].items() if k in PLACEMENT_ERROR_TYPES}
+    sdrc, strict = _strict_fields(staged, scoring_dir, drc)
+    place_errors_strict = {k: v for k, v in sdrc["errors_by_type"].items() if k in PLACEMENT_ERROR_TYPES}
     ref = record["reference"]["stats"]
     score = dict(
         valid=valid, integrity=integrity, foreign=foreign, **_copy_fields(tr, allow_copy),
         locked_moved=tr["locked_moved"], legal=valid and outside == 0 and not place_errors,
+        legal_strict=valid and outside == 0 and not place_errors and not place_errors_strict,
+        placement_errors_strict=place_errors_strict, strict_promoted=strict["strict_promoted"],
         outside=outside, placement_errors=place_errors, hpwl_mm=st["hpwl_mm"],
         hpwl_ratio=round(st["hpwl_mm"] / ref["hpwl_mm"], 4) if ref["hpwl_mm"] else None,
         unconnected=_uncapped(staged, drc["unconnected"])[0], drc_unconnected=drc["unconnected"],
@@ -224,8 +275,11 @@ def score_joint_task(task_dir, output_board, scoring_dir, record, allow_copy=Fal
         return s
     outside = outside_count(pst["placement"], record["reference"].get("pads_outside", {}))
     place_errors = {k: v for k, v in pdrc["errors_by_type"].items() if k in PLACEMENT_ERROR_TYPES}
+    psdrc, _ = _strict_drc(staged_p, placed_dir, pdrc)
+    place_errors_strict = {k: v for k, v in psdrc["errors_by_type"].items() if k in PLACEMENT_ERROR_TYPES}
     valid = all(place_integrity.values()) and s["valid"]
     legal = valid and outside == 0 and not place_errors
+    legal_strict = legal and not place_errors_strict
     ref = record["reference"]["stats"]
     s.update(
         integrity={**{f"place_{k}": v for k, v in place_integrity.items()},
@@ -236,6 +290,8 @@ def score_joint_task(task_dir, output_board, scoring_dir, record, allow_copy=Fal
         placement_errors=place_errors, hpwl_mm=pst["hpwl_mm"],
         hpwl_ratio=round(pst["hpwl_mm"] / ref["hpwl_mm"], 4) if ref["hpwl_mm"] else None,
         clean=legal and s["unconnected"] == 0 and s["errors"] == 0,
+        legal_strict=legal_strict, placement_errors_strict=place_errors_strict,
+        clean_strict=legal_strict and s.get("clean_strict", False),
         completion=s["completion"] if valid else 0.0,
     )
     return s

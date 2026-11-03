@@ -42,7 +42,7 @@ Status 2026-10-21. Synthesized from three research passes over the docs, the har
 | H9 | Scoring DRC timeouts and OOMs count as method failures and are cached | `runner.py` | Shared-host load turns into method noise |
 | H10 | Provenance gaps: git dirty state, Freerouting version, image digest, task-set hash, filters, `-j`, cgroup | `runner.py` | Runs can't be checked for comparability |
 | H11 | `hpwl_ratio` sums GND and power nets over pad centres | `pcbnew_ops stats` | Rewards over-packing. autolayout cut HPWL 21% and got about 2× the unconnected items [P] |
-| H12 | Severities come from each board's `.kicad_pro`; `courtyards_overlap` is downgraded on 12 boards, `missing_courtyard` ignored on 90 | `score.py` | "Legal" means different things on different boards |
+| H12 | Severities come from each board's `.kicad_pro`; `courtyards_overlap` is downgraded on 12 boards, `missing_courtyard` ignored on 90 | `score.py` | "Legal" means different things on different boards. **Score v10:** `clean_strict`/`legal_strict` beside `clean`/`legal` ([harness](harness.md)); the body-overlap check is still open |
 
 Doc correction: Freerouting's "92.4% of 979 boards" (2.6.0-RC4) covers tiers A+B only. RC3 reached 69.5% on tier C with 360-minute budgets [P]. Applied in [freerouting](../routing/freerouting.md).
 

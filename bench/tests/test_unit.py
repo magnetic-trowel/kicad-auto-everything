@@ -772,3 +772,45 @@ def test_mech_classifier_matches_the_research_rules(fp, cls):
     from kaebench.kicad_scripts import mech_rules
     got, evidence = mech_rules.classify(fp)
     assert got == cls, (got, evidence)
+
+
+def test_strict_drc_reruns_only_where_the_project_downgrades_a_strict_check(tmp_path, monkeypatch):
+    """Score v10: clean_strict needs no violation of STRICT_CHECKS whatever the project says. The
+    second DRC runs on a copy whose project has them at error, only when the project downgrades
+    one; the staged board's own project is untouched."""
+    staged = tmp_path / "s" / "board.kicad_pcb"
+    staged.parent.mkdir()
+    staged.write_text("(kicad_pcb)")
+    pro = staged.with_suffix(".kicad_pro")
+    base = dict(errors=0, errors_by_type={}, unconnected=0, warnings=1)
+    pro.write_text(json.dumps(dict(board=dict(design_settings=dict(rule_severities=dict(clearance="error"))))))
+    calls = []
+    monkeypatch.setattr(tools, "run_drc", lambda b, out, **k: calls.append(Path(b)) or {"violations": []})
+    assert score._strict_drc(staged, tmp_path / "sc", base) == (base, [])
+    assert not calls
+    pro.write_text(json.dumps(dict(board=dict(design_settings=dict(rule_severities=dict(
+        courtyards_overlap="ignore", shorting_items="warning", silk_overlap="ignore"))))))
+
+    def drc(b, out, **k):
+        calls.append(Path(b))
+        rs = json.loads(Path(b).with_suffix(".kicad_pro").read_text())["board"]["design_settings"]["rule_severities"]
+        assert rs["courtyards_overlap"] == rs["shorting_items"] == "error" and rs["silk_overlap"] == "ignore"
+        return {"violations": [dict(type="courtyards_overlap", severity="error")]}
+    monkeypatch.setattr(tools, "run_drc", drc)
+    sdrc, down = score._strict_drc(staged, tmp_path / "sc", base)
+    assert sorted(down) == ["courtyards_overlap", "shorting_items"]
+    assert sdrc["errors"] == 1 and sdrc["errors_by_type"] == {"courtyards_overlap": 1}
+    assert calls[-1].parent == tmp_path / "sc" / "strict"
+    assert json.loads(pro.read_text())["board"]["design_settings"]["rule_severities"]["courtyards_overlap"] == "ignore"
+
+
+def test_report_strict_columns_never_mix_score_versions():
+    def row(bid, a, sc):
+        return dict(adapter="x", kind="route", id=bid, split="A", attempt=a, status="ok", runtime_s=1.0, score=sc)
+    new = [row("b1", 0, dict(valid=True, clean=True, clean_strict=False, completion=1.0, errors=0)),
+           row("b2", 0, dict(valid=True, clean=True, clean_strict=True, completion=1.0, errors=0))]
+    m = report.summarize(new)[("x", "route", "all")]
+    assert (m["cp1"], m["cp1_strict"], m["cpk_strict"]) == (1.0, 0.5, 0.5)
+    old = new[:1] + [row("b2", 0, dict(valid=True, clean=True, completion=1.0, errors=0))]
+    m = report.summarize(old)[("x", "route", "all")]
+    assert m["cp1"] == 1.0 and m["cp1_strict"] is None
