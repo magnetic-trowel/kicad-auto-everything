@@ -707,7 +707,9 @@ def read_dru(path):
                 d["args"] = extra
             cons.append(d)
         out.append(dict(name=r[1] if len(r) > 1 and type(r[1]) is str else "",
-                        condition=value(r, "condition", ""), layer=value(r, "layer", ""), constraints=cons))
+                        # a second (condition) overwrites the first in KiCad
+                        condition=sexpr.last_value(r, "condition", ""), layer=value(r, "layer", ""),
+                        constraints=cons))
     return out
 
 

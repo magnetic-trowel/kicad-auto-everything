@@ -194,3 +194,17 @@ def test_unitless_numbers_in_conditions_are_nm():
     assert t("A.Width > 200000") and not t("A.Width > 300000") and t("A.Width == 250000")
     assert t("A.Width > 0.2mm") and t("A.Width == 0.25mm") and t("A.Width < 10mil")
     assert t("A.Width > 0.1mm + 100000") and t("A.Width * 2 == 0.5mm")
+
+
+def test_a_second_condition_overwrites_the_first(tmp_path):
+    """drc-rule-language-reference.md: a second (condition) silently overwrites the first
+    (beaglebone-ai's EMMC rule, azonenberg's switch engine); both readers keep the last."""
+    from kae.board import kicad_file
+    dru = """(version 1)
+(rule two (condition "A.Type == 'Zone'") (condition "B.Type == 'Via'")
+  (constraint clearance (min 0.7mm)))
+"""
+    b = board(dru, tmp_path)
+    assert b.rules[-1].text == "B.Type == 'Via'"
+    assert R.evaluate(b, "clearance", track("A"), via("B"), "F.Cu").min == 0.7
+    assert kicad_file.read_dru(tmp_path / "board.kicad_dru")[0]["condition"] == "B.Type == 'Via'"

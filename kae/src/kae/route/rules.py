@@ -485,7 +485,7 @@ def read_dru(path):
                 if v is not None:
                     setattr(d, k, parse_length(v))
             cons.append(d)
-        cond = sexpr.value(r, "condition", "") or ""
+        cond = sexpr.last_value(r, "condition", "") or ""   # KiCad keeps the last condition
         out.append(dict(name=r[1] if len(r) > 1 and isinstance(r[1], str) else "", condition=cond,
                         layer=sexpr.value(r, "layer", "") or "", constraints=cons,
                         severity=sexpr.value(r, "severity", None)))
