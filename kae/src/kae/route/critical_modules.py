@@ -53,7 +53,7 @@ class Module:
     status: str = "pending"
     notes: list = field(default_factory=list)
     flags: list = field(default_factory=list)       # dicts for the report: copper the current asks more of
-    hazards: list = field(default_factory=list)     # hazard dicts (critical_physics.heat_hazard) for the report
+    hazards: list = field(default_factory=list)     # kae.hazards schema (heat_hazard, crystal_ground_no_plane, ...)
 
 
 DT_MAX_K = 10.0           # IPC-2221 temperature rise (K) of critical copper (high-current.md), opts dT_max_K
@@ -790,7 +790,7 @@ def allocation(ctx, m):
     if m.kind == "cell":
         ex = s.get("excite") or {}
         vin = ex.get("V") or ctx.volts(s.get("rail")) or PR.V_IN_UNKNOWN.value
-        return PR.hot_loop_budget(s.get("class") or "unknown", vin, t_sw_ns=ex.get("t_sw_ns"))
+        return PR.hot_loop_budget(s.get("class") or "unknown", vin, t_sw_ns=ex.get("t_sw_ns"), v_abs=PR.budget_v_abs(ex))
     if m.kind == "path":
         ex = s.get("excite") or {}
         v = ex.get("V") or ctx.volts(s.get("rail_in")) or ctx.volts(s.get("rail_out")) or 5.0
@@ -800,7 +800,7 @@ def allocation(ctx, m):
         pins = s.get("power_pins") or []
         return PR.decap_budget(v, ctx.npins(s.get("ic")), max(1, len(pins)), function=s.get("function"))
     if m.kind == "crystal":
-        return PR.crystal_budget(s.get("f_Hz"))[0]
+        return PR.crystal_budget(s.get("f_Hz"), c_load_pf=PR.crystal_cl(s))[0]
     if m.kind == "chain":
         return PR.esd_budget()
     return PR.Belief(1.0, "", "none")
@@ -1227,7 +1227,13 @@ def route_crystal(ctx, m):
             a, b = _tree(ctx, m, net, terms, f"xt:{net}:1")
             ok += a
             tot += b
-    # load capacitors' ground pads into the plane
+    # load capacitors' ground pads into the plane: one via each, beside the pad, toward the IC's XIN.
+    # Stitched, not a single-tie island: over a solid plane the oscillator's return runs under its own
+    # traces and every via lowers its impedance (TI AM335x errata advisory 1.0.30 reversed TI's single-tie
+    # advice for this reason; TI AM67, Espressif, Microchip AN3588 stitch). The single tie of ST AN2867 /
+    # TI SLAA322D keeps foreign return currents out of the oscillator's ground where the board has no plane
+    # under it: kae then adds no via and flags it (docs/topics/rules/crystals-clocks.md, XTAL-GUARD).
+    no_plane = []
     for c in s.get("load_caps") or []:
         f = ctx.fp.get(c)
         if f is None:
@@ -1238,12 +1244,26 @@ def route_crystal(ctx, m):
                 lay = ctx.side_layer(c)
                 lay = lay if lay in t.layers else t.layers[0]
                 h, pl, pn = ctx.plane(lay, t.x, t.y, gnd=True)
+                if pl is None or pn != p.net:
+                    no_plane.append(ctx.fp[c].ref if c in ctx.fp else str(c))
                 if pl is not None and pn == p.net and not _has_plane_link(ctx, t, p.net):
                     cands = via_candidates(ctx, t, lay, p.net, pl, toward=(ctx.sp.terminal(ic, [s.get('xin')]).x,
                                                                           ctx.sp.terminal(ic, [s.get('xin')]).y)
                                            if s.get("xin") else None)
                     if cands:
                         _commit_vias(ctx, m, p.net, lay, t, [cands[0]], f"via:{c}:{p.number}")
+    if no_plane:
+        y_ref = ctx.fp[y].ref if y in ctx.fp else str(y)
+        m.hazards.append(dict(
+            code="crystal_ground_no_plane", severity="warn", category="electrical",
+            message=(f"{y_ref}: load capacitor grounds ({', '.join(no_plane)}) have no ground plane under them; "
+                     f"kae left their ground to the general router, so other return currents may share it"),
+            objects=[y_ref] + no_plane,
+            evidence=dict(caps=no_plane, source="TI SLAA322D sec. 3, ST AN2867 sec. 7.1, AVR186: without a plane, "
+                                                 "a clean local ground tied once to the MCU's oscillator ground"),
+            fix=("route the load-cap grounds together, short, to the MCU's oscillator ground pin (VSS/AVSS) with "
+                 "a guard ring tied there once, and keep other return currents off it; or pour a ground plane "
+                 "under the crystal circuit")))
     m.spec["_nets"] = nets
     m.status = "routed" if ok == tot and tot else ("partial" if ok else "failed")
     quote(ctx, m)
@@ -1307,7 +1327,7 @@ def _tree(ctx, m, net, terms, tag, widths=None):
 def _crystal_value(ctx, m):
     nets = m.spec.get("_nets") or []
     s = m.spec
-    _, S = PR.crystal_budget(s.get("f_Hz"))
+    _, S = PR.crystal_budget(s.get("f_Hz"), c_load_pf=PR.crystal_cl(s))
     C = 0.0
     for net in nets:
         for it in ctx.sp.routed:

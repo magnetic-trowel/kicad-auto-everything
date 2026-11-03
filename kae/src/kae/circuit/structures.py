@@ -495,7 +495,16 @@ def _excite(b: _B, ctrl, L, V_, kind):
         basis.append(f"t_sw = {t_sw:g} ns, class default for an integrated converter at {V_ or '?'} V")
     if V_ is None:
         basis.append('V unknown: the rail has no voltage in its name or part numbers')
-    return {'V': V_, 'I': I_, 't_sw_ns': t_sw, 'f_sw_Hz': f_sw, 'basis': basis}
+    # the switch's absolute maximum from the curated part table (each entry cites its datasheet): the
+    # overshoot criterion's V_abs (kae.physics.criteria); the lowest stated value when it is a range
+    V_abs = None
+    if ctrl:
+        from kae.excite.beliefs import lookup
+        vm = lookup(text).get('v_sw_max_V')
+        if vm:
+            V_abs = vm[1]
+            basis.append(f"V_abs = {V_abs:g} V, the switch's rating ({vm[3][:80]})")
+    return {'V': V_, 'I': I_, 't_sw_ns': t_sw, 'f_sw_Hz': f_sw, 'V_abs': V_abs, 'basis': basis}
 
 
 def _caps_with_p(b: _B, rail, gnd, owner, competitors=()):
@@ -1310,6 +1319,30 @@ XIN_FN = re.compile(r'(XIN|X_?IN|^XI$|^X1$|OSC_?IN|OSC\d?_?IN|OSCI$|XTAL_?IN|XTA
 XOUT_FN = re.compile(r'(XOUT|X_?OUT|^XO$|^X2$|OSC_?OUT|OSC\d?_?OUT|OSCO$|XTAL_?OUT|XTAL2|XTALO|XTAL_?N|HSE_?OUT|LSE_?OUT|OSC32_?OUT|XTAL$|XC2|XT2|XB|PH1|PC15)')
 
 
+CL_STATED = re.compile(r'(?:C_?L|load)\s*[=:]?\s*(\d+(?:\.\d+)?)\s*p', re.I)
+CL_ANY = re.compile(r'(?<![\d.])(\d{1,2}(?:\.\d)?)\s*pF', re.I)
+
+
+def crystal_load(part, c_xin, c_xout):
+    """(C_L pF, basis) of a crystal: stated in its value or fields ('16MHz 12pF', 'CL=9pF'), else from
+    its load capacitors, C_L = C1 C2 / (C1 + C2) + C_stray (kae.physics.priors.CRYSTAL_C_STRAY_PF);
+    (None, why) when neither is known."""
+    from kae.physics.priors import CRYSTAL_C_STRAY_PF
+    txt = ' '.join([part.value or ''] + [str(v) for k, v in part.fields.items() if k not in ('Datasheet', 'Footprint')])
+    m = CL_STATED.search(txt) or CL_ANY.search(txt)
+    if m and 3.0 <= float(m.group(1)) <= 40.0:
+        return float(m.group(1)), f"stated in the crystal's text ('{m.group(0)}')"
+    c1 = [c for c in c_xin if c] or None
+    c2 = [c for c in c_xout if c] or None
+    if c1 and c2:
+        a, b = sum(c1) * 1e12, sum(c2) * 1e12
+        if 1.0 <= a <= 100.0 and 1.0 <= b <= 100.0:
+            cl = a * b / (a + b) + CRYSTAL_C_STRAY_PF
+            return round(cl, 2), (f"load caps {a:g} and {b:g} pF in series plus {CRYSTAL_C_STRAY_PF:g} pF stray "
+                                  f"(ST AN2867: C_L = C1 C2 / (C1 + C2) + C_s)")
+    return None, "no C_L stated and no load capacitor on both crystal nets"
+
+
 def crystals(b: _B) -> list:
     out = []
     for ref, pr in sorted(b.r.parts.items(), key=lambda t: _refkey(t[0])):
@@ -1388,11 +1421,14 @@ def crystals(b: _B) -> list:
             evs.append(ev('topology', f"load capacitors {', '.join(loads)} ({', '.join(V.si(v, 'F') for v in vals)})", MODERATE))
         fb = [p.ref for p in b.nl.pins(xn[0]) if b.k(p.ref) == 'resistor' and set(b.nl.parts[p.ref].nets) == set(xn[:2])]
         f = V.frequency(part.value) or V.frequency(' '.join(str(v) for v in part.fields.values()))
+        cl_pf, cl_basis = crystal_load(part, [cap_class(b.nl.parts[c])[1] for c in per_side.get(xin[0], [])] if xin else [],
+                                       [cap_class(b.nl.parts[c])[1] for c in per_side.get(xout[0], [])] if xout else [])
         st = _struct('crystal', f"xtal:{ref}", evs, conf_cap=pr.kind_confidence, prior=0.0,
                      ic=common, xin=(xin[1].number if xin else None), xout=(xout[1].number if xout else None), crystal=ref,
                      load_caps=loads, load_caps_xin=(per_side.get(xin[0], []) if xin else []),
                      load_caps_xout=(per_side.get(xout[0], []) if xout else []), f_Hz=f, nets=xn, series_r=[series[n] for n in series], feedback_r=fb,
-                     xin_fn=(xin[1].function if xin else None), xout_fn=(xout[1].function if xout else None))
+                     xin_fn=(xin[1].function if xin else None), xout_fn=(xout[1].function if xout else None),
+                     C_L_pF=cl_pf, C_L_basis=cl_basis)
         if common and re.search(r'ESP32', b.nl.parts[common].text(), re.I):
             dmin = 2.0 if re.search(r'S3', b.nl.parts[common].text()) else 2.7
             st['budget'] = {'d_min': {'value': dmin, 'unit': 'mm', 'class': 'E5',

@@ -190,6 +190,7 @@ def evaluate(path, pitch=0.25, nsub=2, intent=None, n_corners=16, seed=0, log=pr
     left = {}
     t1 = time.time()
     cm_amp = {}                                     # cm observer -> {harmonic frequency: summed amplitude} per corner
+    ring = {}                                       # cell -> per corner (parameters, switch-node ring peak V)
     rad_amp = [dict() for _ in range(ncp)]          # the board's loop radiation, the same way
     for j, s in enumerate(srcs):
         for c in range(ncp):
@@ -217,18 +218,18 @@ def evaluate(path, pitch=0.25, nsub=2, intent=None, n_corners=16, seed=0, log=pr
                         key = round(f / 1e3)                     # harmonics of different sources: by kHz
                         d[key] = d.get(key, 0.0) + v             # unknown phases: amplitudes add
                     continue
-                bound = o.bound
-                if o.kind == "overshoot" and "V_max_V" in val:
-                    bound = max(val["V_max_V"] - val.get("V_V", 0.0), 1e-3)
+                bound = HA.overshoot_bound(val, o.bound) if o.kind == "overshoot" else o.bound
                 u = float(r["peak"][k]) / bound if bound else 0.0
                 U.setdefault((o.name, s.name), [0.0] * ncp)[c] = u
+                if o.kind == "overshoot":
+                    ring.setdefault(s.name, [None] * ncp)[c] = (val, float(r["peak"][k]))
     for oname, per in cm_amp.items():
         us = []
         for c, d in enumerate(per):
             best, fb = 0.0, None
             for key, v in d.items():
                 f = key * 1e3
-                rr = v / (O.CM_V_LIM_HZ / f)
+                rr = v / O.cm_v_lim(f)
                 if rr > best:
                     best, fb = rr, f
             us.append(best)
@@ -309,6 +310,15 @@ def evaluate(path, pitch=0.25, nsub=2, intent=None, n_corners=16, seed=0, log=pr
     if unrouted:
         notes.insert(0, f"unrouted: {len(unrouted)} nets have pads on separate copper islands ({', '.join(sorted(unrouted)[:8])}); "
                         f"their harms are of the board as it stands, so compare only boards with the same open connections")
+    # overshoot hazards join the TCR and mesh-error ones above
+    for sname, per in ring.items():
+        s = next(x for x in srcs if x.name == sname)
+        got = [x for x in per if x is not None]
+        h = HA.overshoot_hazard(sname, sorted({r for r in (O._ref(s.pa), O._ref(s.pb)) if r})
+                                + [s.meta.get("sw") or s.a], [v for v, _ in got], [p for _, p in got],
+                                where=" (switch-node waveform peak over every harmonic to f_max)")
+        if h:
+            hazards.append(h)
     return dict(board=path, pitch=pitch, seconds=round(time.time() - t0, 1), seed=seed, f_max=f_max,
                 model=dict(order=int(model.V.shape[1]), snapshots=model.freqs, estimated_error=est,
                            converged=bool(model.converged) and not uncertain, unconverged_snapshots=model.unconverged,

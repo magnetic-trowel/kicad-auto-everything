@@ -182,6 +182,33 @@ def _seed_state(P, macros, net_w, seed, log, partition=False, jitter=0.0):
     return st, objs
 
 
+def hot_loop_hazards(rows):
+    """Hazards (the shared report schema) for commutation loops whose estimated inductance lets the switch
+    node ring past the switch's absolute maximum (kae.physics.criteria): block when the rating is the
+    part's, warn when it is the prior's. Over the derated line but under V_abs is the term's own
+    over-budget price, not a hazard here (the routed evaluator reports it)."""
+    out = []
+    for r in rows:
+        info = r.get("info") or {}
+        if r.get("kind") != "commutation" or not info.get("L_abs_nH"):
+            continue
+        L, la = float(r.get("value", 0.0)), float(info["L_abs_nH"])
+        if L <= la:
+            continue
+        known = bool(info.get("V_abs_known"))
+        out.append(dict(code="hot_loop_over_abs_max", severity="block" if known else "warn", category="electrical",
+                        message=(f"{r.get('id')}: the hot loop's estimated {L:.2g} nH lets the switch node ring past "
+                                 f"its {info.get('V_abs'):g} V absolute maximum (at most {la:.2g} nH)"
+                                 + ("" if known else "; the rating is a prior, the part may be rated higher")),
+                        objects=list(r.get("members") or [])[:8],
+                        evidence=dict(L_nH=round(L, 3), L_abs_nH=round(la, 3), V_in=info.get("V_in"),
+                                      V_abs=info.get("V_abs"), V_abs_source="part" if known else "prior",
+                                      limit_source="kae.physics.criteria: peak <= V_abs (derate 1)"),
+                        fix="place the input capacitor beside the switch and its ground pin, same side, with the "
+                            "return on the adjacent plane" + ("" if known else "; or state the switch's V_max")))
+    return out
+
+
 def physics_summary(terms, poses, breakdown=True):
     """Physics scorecard: the annealer's linear total, the official total with the
     over-budget barrier (priors.phi), and per-structure utilization."""
@@ -198,6 +225,9 @@ def physics_summary(terms, poses, breakdown=True):
               for r in rows)
     out = dict(total_linear=round(lin, 4), total=round(off, 4), structures=len(rows),
                over_budget=sum(1 for r in rows if float(r.get("util", r.get("utilization", 0.0))) > 1.0))
+    hz = hot_loop_hazards(rows)
+    if hz:
+        out["hazards"] = hz
     if breakdown:
         out["breakdown"] = [dict(id=r.get("id"), kind=r.get("kind"), util=round(float(r.get("util", r.get("utilization", 0.0))), 4),
                                  value=round(float(r.get("value", 0.0)), 4), unit=r.get("unit"),
@@ -624,6 +654,8 @@ def final_physics(res):
     if res.terms is not None:
         try:
             rep["scorecard"] = physics_summary(res.terms, {p.uuid: st.pose(p.i) for p in P.parts})
+            if rep["scorecard"].get("hazards"):
+                rep.setdefault("hazards", []).extend(rep["scorecard"]["hazards"])
         except Exception as e:
             rep["physics_error"] = f"{type(e).__name__}: {e}"
 

@@ -20,7 +20,7 @@
 - **Bogatin, Smith & Sandler**, "The Myth of Three Capacitor Values" ([SIJ 2020](https://www.signalintegrityjournal.com/articles/1589-the-myth-of-three-capacitor-values)) [P]:
   - MLCC ESL "will be independent of its capacitance value".
   - Three values with equal ESL create "two parallel resonance peaks".
-  - A 47 µF electrolytic can have ~30 nH of ESL; a 0.1 µF disc ~7 nH.
+  - A 47 µF electrolytic can have ~30 nH of ESL ("as much as": an upper bound; TDK B41858 gives 20 nH for 8–12.5 mm cans, Chemi-Con 4 nH for miniature radials, [component-priors](../../research/physics/component-priors.md)); a 0.1 µF disc ~7 nH.
   - The series-RLC model holds "when the mounting inductance is larger than about 1 nH".
   - Place MLCCs early so they get low mounting inductance.
 - **Conventional rule, still taught:** ADI MT-101 ([PDF](https://www.analog.com/media/en/training-seminars/tutorials/MT-101.pdf)) [P]: a 10–100 µF electrolytic "no more than 2 in." away, plus 0.01–0.1 µF as close as possible. VR: CONTESTED against Bogatin/Archambeault.
@@ -99,7 +99,7 @@
 | PDN-02 | Order by mounting L; bulk anywhere local | Bulk within ~10–20 mm | Lowest estimated mounting L closest (package, pad-to-via distance, via depth) | S3 |
 | PDN-03 | Tight power/ground plane pair | ~38 pF/cm² at 0.1 mm | Stack-up adjacency and thickness | S3 |
 | PDN-04 | Cap count/values from the Z_t profile, not "0.1 µF per pin" | Z_t = ΔV/ΔI | Derated admittance sum vs Z_t | S3 |
-| PDN-05 | Derate MLCCs at DC bias | Vendor bias curve; 50% voltage derating as a start | BOM: derated C from the part's bias curve (fallback V_rail/V_rated + package) | S2 |
+| PDN-05 | Derate MLCCs at DC bias | Vendor bias curve; 50% voltage derating as a start | BOM: derated C from the part's bias curve (fallback: `kae.excite.models.mlcc_bias_factor`, field proxy V·√(C/body volume), fitted to vendor points; [component-priors](../../research/physics/component-priors.md)) | S2 |
 | PDN-06 | Bead only where needed; I_DC ≤20% rated; f_res = 1/(2π√(L·C)) well below f_sw. An undamped LC has gain ≥1 at every f_sw < √2·f_res, so RPA's "not within ±50%" window passes amplifying filters (f_res = 1.6·f_sw gives +4 dB) [I] | — | BOM + datasheet L; computed attenuation at f_sw and its harmonics; Q or damping | S2 |
 | PDN-08 | No plane cuts under referenced signals; stitch at layer changes | ≥1–2 GND vias near each reference-changing via | Nearest-GND-via distance; zone-void crossings | S2 |
 | PDN-09 | Peak ≤1.57 × Z_t (robust) / ≤3 × (risk) | — | RLC sweep | S2 |

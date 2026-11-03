@@ -23,11 +23,11 @@ with β = 4, u_sat = 10 and c_s = confidence × calibrated ownership; φ is C¹.
 | (a′) power path | loop L (nH) C_in → pass elements → C_out | load step: L ≤ 5%·V·100 ns/I, ≤ 50 nH |
 | (b) decap | loop L (nH) per power-pin cluster or capacitor | n_IC·Z_t/(2π·100 MHz) per pin, held to [L_c, 2L_c]; stability and module caps max(10 nH, L_c) |
 | (c) coupling | noise (mV) = 1e3·M·dI/dt + ΔV·C_m/(C_m + C_v + t_sw/Z_v) | feedback 10, sense 1, analog 1 mV |
-| (d) crystal | pulling (ppm) = S·C′·ℓ/4, S = C1/(2(C0 + C_L)²) | 5 ppm |
+| (d) crystal | pulling (ppm) = S·C′·ℓ/4, S = C1/(2(C0 + C_L)²); C_L 12.5 pF (32 kHz) / 12 pF (MHz), or the board's own with `KAE_CRYSTAL_CL=board` (A/B, [component-priors](../../research/physics/component-priors.md#crystal-load-capacitance)) | 5 ppm |
 | (e) thermal | rise above the board mean (K) | sources 20 K; victims by class |
-| (f) world | cable CM (µA); ESD surge path (nH); feed loss (dB) | 5 µA (Ott); 5.3 nH; 0.5 dB |
+| (f) world | cable CM (µA); ESD surge path (nH); feed loss (dB) | 2.6 µA (the evaluator's line at 100 MHz); 5.3 nH; 0.5 dB |
 
-A cell without an input voltage takes 24 V, above 90% of the corpus's named inputs. A power path (load switch, eFuse, ideal diode) is priced like a cell, each stage's elements in parallel; it does not commutate, so its budget comes from a full-load step, L·I/t ≤ 5% of V at t = 100 ns. Ownership is recalibrated, logit q = 0.67 + 0.515·logit p, to kae.circuit's measured reliability.
+The (a) allocation's V_abs is a prior: the smallest standard rating ≥ 1.25 × V_in, with V_in the bus's nominal voltage (no +10% input tolerance: the ladder already sits one or two steps above it). This halves the budget against the research case's 20 V part at 13.2 V ([schematic-to-physics](schematic-to-physics.md), 1.36 vs 0.78 nH at 12 V). With `KAE_SHARED_OVERSHOOT=1` a known switch rating (parts.json, via the brief's `excite.V_abs`) replaces the prior (an A/B arm, [component-priors](../../research/physics/component-priors.md#overshoot)); the place report always raises a hazard when the loop estimate lets the ring pass V_abs. A cell without an input voltage takes 24 V, above 90% of the corpus's named inputs. A power path (load switch, eFuse, ideal diode) is priced like a cell, each stage's elements in parallel; it does not commutate, so its budget comes from a full-load step, L·I/t ≤ 5% of V at t = 100 ns. Ownership is recalibrated, logit q = 0.67 + 0.515·logit p, to kae.circuit's measured reliability.
 
 ## 2. Loop inductance (a, b)
 
@@ -102,7 +102,7 @@ C′(w, h, εr) times the XIN and XOUT nets' half-perimeters, stretched by 1 + 0
 
 ## 7. World node (f)
 
-- *Cable CM.* ωMI/Z_cm + ωC_mV at 100 MHz (Z_cm 150 Ω), against 5 µA (Ott [S]), windowed by the copper gap between aggressor and connector: 1 to 15 mm, 0 beyond 30 mm, a cubic step between (beyond 15 mm it is below 10⁻³ of the budget). Human boards run 3–4 orders below the budget.
+- *Cable CM.* ωMI/Z_cm + ωC_mV at 100 MHz (Z_cm 150 Ω), against 2.6 µA: the evaluator's own line (`kae.physics.criteria.cable_i_lim`, CISPR 32 class B at 10 m from 1 m of cable, Ott 12-7 capped at the resonant cable's 2·60·I/r). Ott's 5 µA rule is 6 dB over class B at 100 MHz by the same chain ([fields-emi-budget](fields-emi-budget.md#4-consistency-checks)); it was the budget until 2026-11. Windowed by the copper gap between aggressor and connector: 1 to 15 mm, 0 beyond 30 mm, a cubic step between (beyond 15 mm it is below 10⁻³ of the budget). Human boards run 3–4 orders below the budget.
 - *ESD surge path.* L′·ℓ·(1 + 0.11√ℓ) (connector → protector) + L_via; distance past the protected pin counts twice, a lateral offset is free. An adjacent trace picks up k·L·dI/dt (k ≈ 0.2); ≤ 40 V at 37.5 A/ns (IEC 61000-4-2 level 4) gives 5.3 nH.
 - *Antenna feed.* 0.015 dB/mm × the feed terminals' minimum spanning tree.
 

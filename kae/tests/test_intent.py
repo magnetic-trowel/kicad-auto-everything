@@ -100,7 +100,9 @@ def test_declared_cables_turn_common_mode_into_a_field_at_10_m():
                      "source": "CISPR 32 class B"}]}
     st = OB.evaluate(WIDE, it, BRIEF)
     e1 = next(r for r in st["terms"] if r["id"] == "E1")
-    E = U.to_log(1.26e-6 * 1e8 * 1.5 * (1e-3 / 150) / 10, "dBuV/m")
+    # 1.5 m at 100 MHz is past the cable's resonance (knee 120 / (1.257e-6 x 1.5) = 64 MHz): the half-wave
+    # dipole's 2 x 60 I / r, not Ott's short-cable 1.26e-6 f l I / r (which would read 42.0 dBuV/m)
+    E = U.to_log(2 * 60 * (1e-3 / 150) / 10, "dBuV/m")
     assert e1["value"].startswith(f"{E:.4g}") and e1["met"] == (E <= 30)
     assert not any(q["id"] == "Q-cables" for q in st["questions"])
 

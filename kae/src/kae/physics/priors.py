@@ -16,6 +16,8 @@ import math
 import re
 from dataclasses import dataclass
 
+from . import criteria as CR
+
 
 @dataclass(frozen=True)
 class Belief:
@@ -91,8 +93,7 @@ def phi(u, barrier=4.0, u_sat=10.0):
 
 
 # ----------------------------------------------------------------------------- (a) hot loops
-V_ABS_LADDER = (5.5, 6.0, 7.0, 10.0, 12.0, 16.0, 18.0, 20.0, 24.0, 28.0, 30.0, 36.0, 40.0, 42.0, 50.0,
-                60.0, 65.0, 80.0, 100.0, 150.0, 200.0, 250.0, 400.0, 600.0)
+V_ABS_LADDER = CR.V_ABS_LADDER       # the overshoot criterion is shared with the evaluators (kae.physics.criteria)
 
 # class -> (C_oss pF, t_sw ns, I A, rating margin, ring Q)
 CELL_CLASS = {
@@ -109,23 +110,34 @@ CELL_CLASS = {
 GAN_C_OSS_PF = 100.0
 
 
-def v_abs_rating(v_in, margin=1.25):
+def budget_v_abs(excite):
+    """The V_abs the placer's and the critical router's hot-loop allocation uses: the switch's own rating
+    (structure excite V_abs, from parts.json) under CR.shared_overshoot() (KAE_SHARED_OVERSHOOT=1), else
+    None (the 1.25 V_in ladder prior, the behaviour before the ratings reached the placer). An A/B arm: a
+    known rating can loosen a budget several-fold (a 5 V boost on a 30 V switch) or tighten it. Hazards
+    always use the known rating."""
+    return (excite or {}).get('V_abs') if CR.shared_overshoot() else None
+
+
+def v_abs_rating(v_in, margin=CR.RATING_MARGIN):
     """Smallest standard rating >= margin * V_in (E5: parts are rated one step above)."""
-    for v in V_ABS_LADDER:
-        if v >= margin * v_in:
-            return v
-    return margin * v_in
+    return CR.v_abs_prior(v_in, margin)
 
 
-def hot_loop_budget(cell_class='buck', v_in=12.0, c_oss_pf=None, t_sw_ns=None, derate=0.85, q=None):
+def hot_loop_budget(cell_class='buck', v_in=12.0, c_oss_pf=None, t_sw_ns=None, derate=CR.OVERSHOOT_DERATE, q=None,
+                    v_abs=None):
     """Commutation-loop inductance budget from the allowed switch-node overshoot.
 
     An erf edge of 10-90 % time t_sw driving the LC of the loop L and the switch C_oss
     overshoots by a = exp(-(2 pi sigma/T)^2 / 2) exp(-pi/(2Q)), sigma = t_sw/2.563,
     T = 2 pi sqrt(L C) (dr_switch_cell_budget.py; schematic-to-physics.md), so
         L_max = sigma^2 / (2 C ln(1/a')),  a' = a exp(pi/(2Q)),
-    with a = (derate V_abs - V_in) / V_in and V_abs the next standard rating above
-    1.25 V_in. Example: 12 V (a 16 V rating), 120 pF, 1.5 ns -> 0.78 nH. The research case
+    with a = (derate V_abs - V_in) / V_in: the switch node's peak at most 0.85 of the switch's
+    absolute maximum (kae.physics.criteria, the evaluators' criterion too). V_abs is the switch's
+    rating when the brief has it (structure excite V_abs, from kae/src/kae/excite/parts.json), else
+    the next standard rating at or above 1.25 V_in; V_in is the bus's nominal voltage (a +10 %
+    input tolerance is not added: the rating prior already sits one or two ladder steps above it).
+    Example: 12 V (a 16 V rating), 120 pF, 1.5 ns -> 0.78 nH. The research case
     (dr_switch_cell_budget.py buck_12V: 13.2 V on a 20 V part, a = 0.29) gives 1.36 nH by this
     closed form, 1.05 nH by the ODE."""
     c0, t0, _, margin, q0 = CELL_CLASS.get(cell_class, CELL_CLASS['unknown'])
@@ -135,7 +147,7 @@ def hot_loop_budget(cell_class='buck', v_in=12.0, c_oss_pf=None, t_sw_ns=None, d
     t = t_sw_ns or t0
     q = q or q0
     v_in = max(v_in, 1.0)
-    vabs = v_abs_rating(v_in, margin)
+    vabs = v_abs if v_abs else v_abs_rating(v_in, margin)
     a = max(1e-3, (derate * vabs - v_in) / v_in)
     ap = a * math.exp(math.pi / (2.0 * q))
     sigma = t / 2.563
@@ -145,7 +157,7 @@ def hot_loop_budget(cell_class='buck', v_in=12.0, c_oss_pf=None, t_sw_ns=None, d
     else:
         lmax = sigma * sigma / (2.0 * c * 1e-3 * math.log(1.0 / ap))     # ns^2 / nF = nH
         basis = (f'overshoot: L_max = sigma^2/(2 C ln(1/a\')), {cell_class}, V_in {v_in:g} V, V_abs {vabs:g} V, '
-                 f'C_oss {c:g} pF, t_sw {t:g} ns, a = {a:.2f}')
+                 f'C_oss {c:g} pF, t_sw {t:g} ns, a = {a:.2f}' + (' (V_abs: the part\'s rating)' if v_abs else ''))
     return Belief(min(lmax, 50.0), 'nH', basis)
 
 
@@ -291,20 +303,49 @@ def victim_budget(cls):
 
 
 # ----------------------------------------------------------------------------- (d) crystals
-def crystal_budget(f_hz=None, ppm_layout=5.0):
+# Crystal load capacitance C_L (pF). The board states it through its load capacitors: C_L = C1 C2 /
+# (C1 + C2) + C_stray, C_stray 3.5 pF (pins and copper: 2-5 pF, AN826; AN-1469 implies ~3.5 pF;
+# crystals-clocks.md XTAL-PAR), or in the crystal's value ("12.5pF"). kae.circuit.structures puts it in
+# the crystal structure as C_L_pF. Without either, the corpus prior CRYSTAL_CL_PRIOR (the median of
+# what the corpus's boards use, tools/research/physics/corpus_parts_scan.py,
+# docs/research/physics/component-priors.md). The old fixed values (12.5 pF at 32 kHz, 12 pF for MHz
+# parts) stay the default until the A/B decides: KAE_CRYSTAL_CL=board uses the board's C_L.
+CRYSTAL_C_STRAY_PF = 3.5
+# corpus (14,597 boards, 3,177 crystals): C_L from load caps, median 9.5 pF at 32 kHz (n 249, p10-p90
+# 6.9-14.5) and 13.5 pF for MHz parts (n 1,494, 8.5-18.5); C_L stated in the part text: 12.5 and 18 pF
+CRYSTAL_CL_PRIOR = {'32k': 9.5, 'MHz': 13.5}
+CRYSTAL_CL_LEGACY = {'32k': 12.5, 'MHz': 12.0}
+
+
+def crystal_cl(structure):
+    """C_L (pF) the crystal term uses for this crystal structure, or None for the legacy fixed value
+    (KAE_CRYSTAL_CL unset or 'legacy'): the structure's own C_L_pF, else the corpus prior."""
+    import os
+    if os.environ.get('KAE_CRYSTAL_CL', 'legacy') != 'board':
+        return None
+    cl = (structure or {}).get('C_L_pF')
+    if cl:
+        return float(cl)
+    f = (structure or {}).get('f_Hz')
+    return CRYSTAL_CL_PRIOR['32k' if f is not None and f < 2e5 else 'MHz']
+
+
+def crystal_budget(f_hz=None, ppm_layout=5.0, c_load_pf=None):
     """Pulling budget of the layout's stray capacitance on a Pierce oscillator.
 
-    Pulling sensitivity S = C1 / (2 (C0 + C_L)^2) per pF of load change; motional C1 and
-    shunt C0 by class: 32.768 kHz tuning fork (C1 3 fF, C0 1.2 pF, C_L 12.5 pF) gives
-    ~8 ppm/pF; an AT-cut MHz crystal (C1 7 fF, C0 3 pF, C_L 12 pF) ~16 ppm/pF.
+    Pulling sensitivity S = C1 / (2 (C0 + C_L)^2) per pF of load change (ST AN2867 sec. 3.7: the
+    higher C_L, the lower the pullability); motional C1 and shunt C0 by class: 32.768 kHz tuning
+    fork (C1 3 fF, C0 1.2 pF), AT-cut MHz crystal (C1 7 fF, C0 3 pF). C_L: c_load_pf (crystal_cl:
+    the board's own), else 12.5 pF at 32 kHz (S ~8 ppm/pF) and 12 pF for MHz parts (~16 ppm/pF). An
+    LSE at ST's recommended C_L 7 pF has S ~22 ppm/pF; AN2867's 45 ppm/pF example is a higher-C1 part.
     Budget: 5 ppm of layout-induced shift (a quarter of a +-20 ppm part's tolerance).
     Returns (Belief in ppm, S in ppm/pF)."""
-    if f_hz is not None and f_hz < 2e5:
-        c1, c0, cl = 3e-3, 1.2, 12.5
-    else:
-        c1, c0, cl = 7e-3, 3.0, 12.0
+    k = '32k' if f_hz is not None and f_hz < 2e5 else 'MHz'
+    c1, c0 = (3e-3, 1.2) if k == '32k' else (7e-3, 3.0)
+    cl = c_load_pf or CRYSTAL_CL_LEGACY[k]
     s = c1 / (2.0 * (c0 + cl) ** 2) * 1e6
-    return Belief(ppm_layout, 'ppm', f'layout pulling budget; S = C1/(2(C0+C_L)^2) = {s:.1f} ppm/pF'), s
+    return Belief(ppm_layout, 'ppm', f'layout pulling budget; S = C1/(2(C0+C_L)^2) = {s:.1f} ppm/pF '
+                                     f'(C_L {cl:g} pF{"" if c_load_pf else ", class default"})'), s
 
 
 # ----------------------------------------------------------------------------- (e) thermal
@@ -392,7 +433,10 @@ def source_power_prior(kind, v_in=None, v_out=None, n_pins=8, pkg=''):
 # ----------------------------------------------------------------------------- (f) world node
 WORLD = dict(f_ref_ghz=0.1,          # 100 MHz: cables of ~1 m radiate efficiently 30-300 MHz
              z_cm=150.0,             # typical common-mode impedance of a cable (fields-emi-budget.md)
-             i_cm_budget_uA=5.0,     # Ott: < 5 uA on a >= 1 m cable for CISPR 32 / FCC class B
+             # the evaluator's own line (kae.physics.criteria.cable_i_lim): CISPR 32 class B at 10 m from
+             # 1 m of cable, Ott 12-7 capped at the resonant cable's 2 x 60 I / r: 2.64 uA at 100 MHz.
+             # Ott's "5 uA" already exceeds class B by about 6 dB (fields-emi-budget.md section 4)
+             i_cm_budget_uA=round(CR.cable_i_lim(1e8) * 1e6, 3),
              period_ns=1000.0,       # 1 MHz switching
              esd_didt=37.5,          # A/ns: IEC 61000-4-2 level 4 contact, 30 A in 0.8 ns
              esd_dv=40.0,            # V a neighbouring (protected) pin's clamp absorbs on top of V_clamp
@@ -400,7 +444,7 @@ WORLD = dict(f_ref_ghz=0.1,          # 100 MHz: cables of ~1 m radiate efficient
              feed_alpha_db_mm=0.015, # 2.4 GHz FR-4 50-ohm microstrip, conductor + dielectric loss
              feed_budget_db=0.5,
              # cable pickup decays as the cube of distance: beyond 15 mm of gap between the
-             # aggressor's and the connector's copper it is < 1e-3 of the 5 uA budget on the
+             # aggressor's and the connector's copper it is < 2e-3 of the 2.6 uA budget on the
              # corpus; a smooth window to zero at 30 mm keeps the term local (E5)
              cm_r0_mm=15.0,
              cm_r1_mm=30.0)
@@ -420,7 +464,8 @@ def esd_budget():
 
 
 def cm_budget():
-    return Belief(WORLD['i_cm_budget_uA'], 'uA', 'cable common-mode current, Ott class B (>= 1 m cable)')
+    return Belief(WORLD['i_cm_budget_uA'], 'uA', 'cable common-mode current at 100 MHz: CISPR 32 class B at 10 m '
+                                                  'from 1 m of cable (kae.physics.criteria.cable_i_lim)')
 
 
 def feed_budget():

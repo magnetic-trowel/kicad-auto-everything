@@ -57,7 +57,7 @@ Full rule-pack contract: [datasheet-to-constraints.md](datasheet-to-constraints.
   - SNVA803: 20 mm² >1 nH, 2 mm² <0.5 nH;
   - EPC: 0.4–2.9 nH.
 - **Budgets to judge against:** SLAA896 per-pin pH totals (750–1150 pH; pin-to-pin 250–650 pH) ([power/class-d-audio.md](power/class-d-audio.md)); EPC overshoot/efficiency data.
-- **Outputs:** nH; overshoot = L·di/dt (warn >0.2 × V_DS,max); efficiency impact.
+- **Outputs:** nH; overshoot = L·di/dt against peak ≤ 0.85 × V_abs (block above V_abs; [hot-loops](power/hot-loops.md#recommendations-for-our-system)); efficiency impact.
 
 **Safety-spacing engine** [I] ([isolation-creepage.md](isolation-creepage.md)):
 - Lookup: (V_RMS, V_impulse from OVC, PD, MG/CTI, altitude, grade) → (creepage, clearance).

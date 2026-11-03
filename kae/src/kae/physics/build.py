@@ -351,11 +351,15 @@ def _commutation(ctx, s, Struct):
     cls = s.get('class') or 'unknown'
     ex = s.get('excite') or {}
     vin = ex.get('V') or ctx.net_volts(s.get('rail')) or PR.V_IN_UNKNOWN.value
-    alloc = ctx.budget(s, 'L_nH') or PR.hot_loop_budget(cls, vin, t_sw_ns=ex.get('t_sw_ns'))
+    alloc = ctx.budget(s, 'L_nH') or PR.hot_loop_budget(cls, vin, t_sw_ns=ex.get('t_sw_ns'), v_abs=PR.budget_v_abs(ex))
+    # the loop inductance at which the ring reaches the switch's absolute maximum itself (derate 1): beyond
+    # it the part is outside its rating (kae.physics.criteria; a hazard in the place report)
+    l_abs = PR.hot_loop_budget(cls, vin, t_sw_ns=ex.get('t_sw_ns'), derate=1.0, v_abs=ex.get('V_abs')).value
     excite = PR.hot_loop_excite(cls, vin, ex.get('I'), ex.get('t_sw_ns'))
     return Struct(id=s.get('id') or f'cell:{bv.parts[T[1].i].ref}', kind='commutation', conf=ctx.conf(s) * pmax,
                   alloc=alloc, comps=comps, reduce='parallel', labels=labels,
-                  info=dict(cls=cls, V_in=vin, excite=excite, ownership=pmax, sw=s.get('sw'),
+                  info=dict(cls=cls, V_in=vin, excite=excite, ownership=pmax, sw=s.get('sw'), L_abs_nH=l_abs,
+                            V_abs=ex.get('V_abs') or PR.v_abs_rating(vin), V_abs_known=bool(ex.get('V_abs')),
                             sw_nets=s.get('sw_nets') or ([s.get('sw')] if s.get('sw') else [])))
 
 
@@ -676,7 +680,7 @@ def _crystal(ctx, s, Struct):
                 ts.append(ctx.term(i, ks[:1]))
         return ts
     ti, to = side_terms(ni, ki), side_terms(no, ko)
-    alloc, sens = PR.crystal_budget(s.get('f_Hz'))
+    alloc, sens = PR.crystal_budget(s.get('f_Hz'), c_load_pf=PR.crystal_cl(s))
     alloc = ctx.budget(s, 'ppm') or alloc
     comp = CrystalComp(bv, ti, to, sens, detour=ctx.t.knobs.detour('crystal'))
     sid = s.get('id') or f'xtal:{bv.parts[y].ref}'

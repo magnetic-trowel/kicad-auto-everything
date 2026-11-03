@@ -220,6 +220,7 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
     ncp = n_corners + 3
     harms = []
     observations = []
+    hazards = []
     tot = [0.0] * ncp
     for pr in pairs:
         o, s = pr["o"], pr["s"]
@@ -232,12 +233,18 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
                           dict(volts=d["volts"], bound=d["bound"], edge_share=round(d["ve"] / d["volts"], 3) if d["volts"] else None))
             if o.kind == "cm":
                 fs.append(d["f_worst"])
-                vals.append(u * O.CM_V_LIM_HZ / d["f_worst"] if d["f_worst"] else 0.0)
+                vals.append(u * O.cm_v_lim(d["f_worst"]) if d["f_worst"] else 0.0)
             else:
                 vals.append(d["volts"])
             us.append(u)
             tot[c] += HA.phi(u)
         observations.append(O.observation(bd, o, s, vals, us, fs))
+        if o.kind == "overshoot":
+            h = HA.overshoot_hazard(s.name, sorted({r for r in (O._ref(s.pa), O._ref(s.pb)) if r}) + [s.meta.get("sw") or s.a],
+                                    [{k[1]: v for k, v in cps[s.name][c].items()} for c in range(ncp)], vals,
+                                    where=" (copper ring at the edge and fundamental bands)")
+            if h:
+                hazards.append(h)
         harms.append(dict(observer=o.name, source=s.name, kind=o.kind, u=us[0], u_lo=min(us), u_hi=max(us),
                           L_nH=round(pr["Le"] * 1e9, 4), Zf_mohm=round(abs(pr["Zf"]) * 1e3, 3),
                           basis=o.basis, src_class=o.src_class, **(parts_ or {})))
@@ -299,7 +306,7 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
             ob["scope"]["C_sw_F"] = C
             observations.append(ob)
     part_power = {}
-    tcr, hazards = {}, []
+    tcr = {}                 # hazards: the list above (overshoot); TCR and mesh hazards append to it
     if dcp:
         # the DC band and the heat band solve the same network at f = 0: one factorization for both, handed to the
         # heat band in a holder it empties (freed before the heat band factors its own conduction network)

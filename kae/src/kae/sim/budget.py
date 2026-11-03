@@ -172,7 +172,7 @@ def prior_of(brief, sid):
         return None
     ex = s.get("excite") or {}
     v = ex.get("V") or ((brief.get("nets") or {}).get(s.get("rail")) or {}).get("volts") or PR.V_IN_UNKNOWN.value
-    return PR.hot_loop_budget(s.get("class") or "unknown", v, t_sw_ns=ex.get("t_sw_ns")).value
+    return PR.hot_loop_budget(s.get("class") or "unknown", v, t_sw_ns=ex.get("t_sw_ns"), v_abs=PR.budget_v_abs(ex)).value
 
 
 def write(budgets, path, board_sha="", testbench_sha=""):
