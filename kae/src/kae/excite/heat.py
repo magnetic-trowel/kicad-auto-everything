@@ -236,7 +236,8 @@ def copper_heat(net, x, shape):
     return Q
 
 
-TCR_TOL_K = 0.01        # the fixed point's stop: no cell's temperature moves by more than this
+TCR_TOL_K = 0.1         # the fixed point's stop: the last step moved no cell by more than this (the error left is about the
+                        # loop gain times it: on the 14 thermal problem boards g <= 0.002, so one step usually suffices)
 TCR_MAX_IT = 40
 TCR_RUNAWAY_GAIN = 0.98  # a loop gain this close to 1 that has not converged: no steady state (thermal runaway)
 
@@ -251,9 +252,9 @@ def tcr_solve(th, Qp, Qc0, a0, t_sinks=None, tol=TCR_TOL_K, max_it=TCR_MAX_IT):
     'TCR feedback': dT = dT0 / (1 - alpha dT0) for one conductor).
     Returns (T, Qc, dict(iters, gain, converged, runaway))."""
     from kae.em.mesh import ALPHA_CU
-    T = th.solve(Qp + a0 * Qc0, t_sinks)
+    T = T0 = th.solve(Qp + a0 * Qc0, t_sinks)
     if not np.any(Qc0):
-        return T, a0 * Qc0, dict(iters=0, gain=0.0, converged=True, runaway=False)
+        return T, a0 * Qc0, dict(iters=0, gain=0.0, converged=True, runaway=False, dT=0.0)
     prev, g, it = None, 0.0, 0
     for it in range(1, max_it + 1):
         Tn = th.solve(Qp + Qc0 * (a0 + ALPHA_CU * T), t_sinks)
@@ -262,11 +263,12 @@ def tcr_solve(th, Qp, Qc0, a0, t_sinks=None, tol=TCR_TOL_K, max_it=TCR_MAX_IT):
             g = d / prev
         T = Tn
         if d < tol:
-            return T, Qc0 * (a0 + ALPHA_CU * T), dict(iters=it, gain=g, converged=True, runaway=False)
+            return T, Qc0 * (a0 + ALPHA_CU * T), dict(iters=it, gain=g, converged=True, runaway=False,
+                                                      dT=float(np.max(T - T0)))
         if not np.isfinite(d) or (it >= 3 and g >= 1.0):
             break
         prev = d
-    return T, Qc0 * (a0 + ALPHA_CU * T), dict(iters=it, gain=g, converged=False,
+    return T, Qc0 * (a0 + ALPHA_CU * T), dict(iters=it, gain=g, converged=False, dT=float(np.max(T - T0)),
                                               runaway=bool(not np.isfinite(g) or g >= TCR_RUNAWAY_GAIN))
 
 
@@ -505,6 +507,7 @@ def evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, tot, 
             tcr_out.setdefault("net_factor", [{} for _ in range(ncp)])[c] = _net_factors(m, Qc, Qc0)
             tcr_out.setdefault("gain", [0.0] * ncp)[c] = tcr["gain"]
             tcr_out.setdefault("iters", [0] * ncp)[c] = tcr["iters"]
+            tcr_out.setdefault("dT", [0.0] * ncp)[c] = tcr["dT"]
             if not tcr["converged"]:
                 hot = _net_factors(m, Qc, Qc0)
                 tcr_out.setdefault("runaway", []).append(dict(
@@ -550,8 +553,9 @@ def evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, tot, 
     if tcr_out is not None and tcr_out.get("factor"):
         fs, gs = tcr_out["factor"], tcr_out["gain"]
         notes.append(f"thermal: copper resistance at each cell's temperature (TCR 0.393 %/K from 20 C, fixed point): "
-                     f"copper loss x{fs[0]:.3f} at the typical corner, x{max(fs):.3f} at the worst; loop gain up to "
-                     f"{max(gs):.3f} (1 = thermal runaway)")
+                     f"copper loss x{fs[0]:.3f} at the typical corner, x{max(fs):.3f} at the worst; hot copper raised "
+                     f"temperatures by up to {max(tcr_out.get('dT', [0.0])):.2f} K over copper at ambient; loop gain up to "
+                     f"{max(gs):.3f} where measured (1 = thermal runaway)")
         for r in tcr_out.get("runaway", []):
             notes.append(f"thermal: {'RUNAWAY' if r['runaway'] else 'not converged'} at corner {r['corner']}: copper loop gain "
                          f"{r['gain']} (no steady state at >= {TCR_RUNAWAY_GAIN}), {r['T_max_C']} C and rising; hottest copper "
