@@ -184,3 +184,13 @@ def test_condition_precedence_is_kicads_not_cs():
     zone = dict(type="Zone", net="G", netclass="Default", copper=True, connected=True, name="", layers=["F.Cu"])
     assert not t(e, dict(zone, name="Z1"), dict(zone))
     assert not t(e, zone, via("A"))
+
+
+def test_unitless_numbers_in_conditions_are_nm():
+    """drc-rule-language-reference.md: a unitless value inside a condition is nm."""
+    ctx = R.Ctx(track("A", width=0.25), None, "F.Cu", "track_width")
+    def t(expr):
+        return R.truth(R.ev(R.compile_condition(expr), ctx))
+    assert t("A.Width > 200000") and not t("A.Width > 300000") and t("A.Width == 250000")
+    assert t("A.Width > 0.2mm") and t("A.Width == 0.25mm") and t("A.Width < 10mil")
+    assert t("A.Width > 0.1mm + 100000") and t("A.Width * 2 == 0.5mm")

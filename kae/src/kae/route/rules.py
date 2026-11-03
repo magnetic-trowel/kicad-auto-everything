@@ -20,7 +20,8 @@ resolution itself, which this module ports:
 
 Conditions are KiCad's expression language (pcbnew/pcbexpr_*.cpp): A./B. properties,
 functions, ==, != (string compares are case-insensitive and honour * and ? wildcards; an
-undefined value compares false both ways), <, >, &&, ||, !, numbers with units.
+undefined value compares false both ways), <, >, &&, ||, !, numbers with units (conditions
+compute in nm, as KiCad's do, so a bare number is nm).
 Geometry-dependent functions (intersectsArea, intersectsCourtyard, enclosedByArea, ...)
 cannot be known before routing; `evaluate(..., geometric=True|False)` decides them, and
 `strictest()` takes the tighter result of both, so a relaxation inside an area is ignored
@@ -38,6 +39,10 @@ from dataclasses import dataclass, field
 from kae.board import sexpr
 
 UNITS = {"mm": 1.0, "mil": 0.0254, "in": 25.4, "um": 0.001, "nm": 1e-6, "deg": 1.0}
+# Conditions compute as KiCad does, in its internal units: lengths in nm, angles in degrees, so a
+# bare number is nm (A.Width > 200000 is 0.2 mm) (drc-rule-language-reference.md: unitless = nm)
+COND_UNITS = {u: (1.0 if u == "deg" else f * 1e6) for u, f in UNITS.items()}
+LENGTH_KEYS = {"width", "hole_x", "hole_y"}   # item values in mm that conditions see in nm
 CLEARANCE_TYPES = ("clearance", "hole_clearance", "edge_clearance", "physical_clearance",
                    "physical_hole_clearance", "courtyard_clearance", "silk_clearance")
 GEOMETRIC = {"intersectsarea", "insidearea", "enclosedbyarea", "intersectscourtyard",
@@ -74,8 +79,7 @@ def tokenize(text):
             raise ValueError(f"cannot parse rule condition at {text[i:i + 20]!r}")
         i = m.end()
         if m.group("num") is not None:
-            out.append(("num", float(m.group("num")) * UNITS.get(m.group("unit") or "mm", 1.0)
-                        if m.group("unit") else float(m.group("num")), m.group("unit")))
+            out.append(("num", float(m.group("num")) * COND_UNITS.get(m.group("unit"), 1.0), m.group("unit")))
         elif m.group("str") is not None:
             out.append(("str", re.sub(r"\\(.)", r"\1", m.group("str")), None))
         elif m.group("id") is not None:
@@ -253,6 +257,8 @@ def _prop(ctx, which, attr):
     v = item[key]
     if key == "netclass":
         return ("netclass", v, item.get("constituents") or v.split(","))
+    if key in LENGTH_KEYS and isinstance(v, (int, float)) and not isinstance(v, bool):
+        return v * 1e6
     return v
 
 
@@ -273,7 +279,7 @@ def _eq(a, b):
     if isinstance(a, bool) or isinstance(b, bool):
         return float(a) == float(b)
     if isinstance(a, (int, float)) and isinstance(b, (int, float)):
-        return abs(a - b) < 1e-9
+        return abs(a - b) < 1e-6   # lengths are nm here
     if isinstance(a, str) and isinstance(b, str):
         return _str_eq(a, b)
     return False
