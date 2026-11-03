@@ -135,7 +135,7 @@ def frame(c, cfg, sampler, args, width):
         L.append(f"     pooled: set aside {gb(unreal)} instead of {gb(upeak)} (every job at its peak at once), saving "
                  f"{gb(max(0, upeak - unreal))}; owners marked *, measured correlation: "
                  + (", ".join(f"{o} {r:.2f} ({n} pairs)" for o, (r, n) in sorted(rho.items())) or "not yet"))
-    L.append(f"     room for new jobs: {gb(max(0, room))}  (free - {'unused grants' if ls else 'set aside'} - kept free)"
+    L.append(f"     room for new jobs: {gb(max(0, room))}  (free - {'set aside - growth buffer' if ls else 'set aside'} - kept free)"
              + ("   << memory is the limit" if room < 4096 else ""))
     if bsys.get("disk_cap"):
         L.append(f"Disk scratch {gb(bsys.get('disk', 0))}/{gb(bsys['disk_cap'])}"

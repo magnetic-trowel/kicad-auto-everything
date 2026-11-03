@@ -1062,7 +1062,8 @@ class Daemon:
                     c.execute("UPDATE jobs SET frozen_since=?, freezes=freezes+1 WHERE id=?", (fs, j["id"]))
             t0, u0 = st["last"]
             grew = max(0.0, m[0] - u0)
-            fleet += grew
+            if now - (j["started"] or now) >= cfg.get("lease_warm_s", 120):
+                fleet += grew   # a young job's growth is set aside already (its whole unused grant counts)
             if now > t0:       # growth rate (MB/s), rises at once and decays slowly; a frozen job does not grow
                 r = max(0.0, (m[0] - u0) / (now - t0))
                 st["rate"] = r if r > st["rate"] else 0.9 * st["rate"] + 0.1 * r
