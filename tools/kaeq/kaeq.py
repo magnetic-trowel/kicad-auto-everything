@@ -703,22 +703,28 @@ def compress(cg, mb, running=False, done=None):
                 f.write("max")
         except OSError:
             return
-        left, t0 = int(mb), time.time()
-        while left > 0 and (running or cg_frozen(cg)) and time.time() - t0 < 120:
+        # memory.reclaim takes page cache first (already counted as free, so no gain), and kernel 6.8 ignores
+        # its swappiness= argument: reclaim in steps until mb has actually gone to swap (memory.swap.current),
+        # or three steps in a row moved nothing (what is left is hot, or it ended)
+        base, t0, idle = cg_swap_mb(cg), time.time(), 0
+        while cg_swap_mb(cg) - base < mb and idle < 3 and (running or cg_frozen(cg)) and time.time() - t0 < 120:
             if user_pressure() > 10.0:           # in steps, pausing while the user manager is under pressure
                 time.sleep(2)                    # (systemd-oomd kills it at 50% for 20 s)
                 continue
-            step = min(512, left)
+            before = cg_swap_mb(cg)
             try:
                 with open(os.path.join(cg, "memory.reclaim"), "w") as f:
-                    f.write(f"{step}M")
+                    f.write("512M")
             except OSError:
-                break                             # nothing more to reclaim (EAGAIN) or the job ended
-            left -= step
+                pass                              # EAGAIN: reclaimed less than asked
+            idle = idle + 1 if cg_swap_mb(cg) - before < 16 else 0
+            if not os.path.exists(os.path.join(cg, "memory.reclaim")):
+                break                             # the job ended
+        got = max(0.0, cg_swap_mb(cg) - base)
         if running:
             uncompress(cg)
         if done:
-            done(int(mb) - max(0, left))
+            done(got)
     import threading
     threading.Thread(target=go, daemon=True).start()
 

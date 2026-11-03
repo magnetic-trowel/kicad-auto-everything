@@ -228,10 +228,10 @@ def test_reservation_drops_to_observed_peak_after_warmup(kq):
         f.write('{"threads": 4, "reserve_cpu": 1, "reserve_mem_gb": 0, "cgroup": "off", "warmup_s": 1, "scratch_dir": "%s"}'
                 % os.path.join(kq.HOME, "scratch"))
     d = kq.Daemon()
-    submit(kq, "sleep 20", name="w", mem="100G")
+    submit(kq, "sleep 20", name="w", mem="10G")
     drive(kq, d, lambda: states(d)["w"] == "running")
     d.tick()
-    assert d.sys["unrealized"] > 90 * 1024  # declared 100G held while it warms up
+    assert d.sys["unrealized"] > 9 * 1024  # declared 10G held while it warms up (10G: the test host may be busy)
     time.sleep(1.5)
     d.tick()
     assert d.sys["unrealized"] < 1024  # then only its (tiny) observed peak with a margin
@@ -629,7 +629,9 @@ def test_a_running_timed_job_has_its_cold_memory_squeezed_into_zram(kq, tmp_path
     if kq.compress_room_mb("zram") < 2048:
         pytest.skip("needs a zram swap device")
     d = _lease_daemon(kq, tmp_path, mem_budget_gb=4, lease_buffer_gb=0.9, squeeze_min_gb=0.2, squeeze_every_s=0)
-    prog = ("import time\ncold = bytearray(600 << 20)\nfor i in range(0, len(cold), 4096): cold[i] = 1\n"
+    prog = ("import time, os\ncold = bytearray(600 << 20)\nfor i in range(0, len(cold), 4096): cold[i] = 1\n"
+            "f = os.path.join(os.environ['KAEQ_SCRATCH'], 'cache')\nopen(f, 'wb').write(bytes(200 << 20))\n"
+            "open(f, 'rb').read()\n"   # page cache, which reclaim takes first: it must not count as squeezed
             "hot = bytearray(32 << 20)\nt = time.time()\n"
             "while time.time() - t < 25:\n    hot[int(time.time() * 1000) % len(hot)] = 1\nprint('ok', sum(cold[::4096]))")
     submit(kq, "python3 -c " + repr(prog).replace("\\n", "\n"), name="sq", mem="800M", timeout="2m")
