@@ -11,9 +11,10 @@ continues from the best board so far: @BEST@ is a copy of it (with the input's p
 KAE_RESUME=1 is set; otherwise @BEST@ is the input and KAE_RESUME=0. A command decides what
 continuing means (a router routes what is still open; a placer may keep the placement and route). `parallel` attempts run at once; attempt k gets seed S*1000+k and a
 budget of F * G**(k // P) seconds (a doubling schedule: a board that needs one long attempt
-still gets one). Each finished attempt is checked with kicad-cli DRC (errors, then unconnected
-items, zones refilled, the input's project rules). The first clean one ends the run; otherwise
-the best is kept when time runs out. Only stdlib; KiCad comes from KAE_KICAD_WRAP.
+still gets one). Each finished attempt is checked with kicad-cli DRC (zones refilled, the input's
+project rules) and ranked by judge in the harness's order: legal first (--check-placement), then
+fewer unconnected items, then fewer DRC errors beyond the input's own. The first clean one (none
+open, no error beyond the input's) ends the run; otherwise the best is kept when time runs out. Only stdlib; KiCad comes from KAE_KICAD_WRAP.
 
 With --final COMMAND, the board kept gets one more pass at the end (final_pass), however late its
 attempt ended: COMMAND runs with @IN@ (the input), @BEST@ (a copy of the kept board with the
