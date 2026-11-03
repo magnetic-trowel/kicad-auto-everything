@@ -54,7 +54,7 @@ testbench.tb.cir ┴─ tests ─▶ per test × corner ────────
 | Via | barrel R and partial self-L between the layers it joins |
 | Pour of a non-ground net | the copper graph's pour links (2 mm strips) for R and L; plate capacitance εA/h over its contacts (coarse) |
 | Ground net | its pours are the reference node; tracks and vias between pads and pours are extracted |
-| Neighbours (signal profile) | same-layer pieces of different nets within 1 mm: mutual L with plane images (K, clamped at ±0.9) and coupling C from patch potential coefficients |
+| Neighbours (signal profile) | same-layer pieces of different nets within 1 mm: mutual L with plane images (K, clamped at ±0.9) and coupling C from patch potential coefficients over the dielectric slab (within 6 % of the layered field solver `kae.em.static` at gaps of 3 h and more, up to 25 % low near h) |
 
 **Profiles:**
 

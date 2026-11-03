@@ -129,6 +129,47 @@ def test_parallel_tracks_couple(tmp_path):
     assert extract(rb, ["Net-(U2-XTAL1)", "Net-(U2-XTAL2)"], profile="power").stats["elements"].get("K", 0) == 0
 
 
+def _bem_cm(h, w, L, gap, er, pitch=0.05):
+    """Mutual capacitance (F) of two parallel strips over a plane by the layered BEM (kae.em.static)."""
+    from kae.em import static as ST
+    from kae.em.mesh import Layer, Mesh
+    W = 2 * w + gap + 4.0
+    m = Mesh.over(0, 0, L + 2, W, pitch, [Layer("T", h, 0.035, 1), Layer("B", 0, 0.035, 1)])
+    m.rect(1, "G", 0, 0, L + 2, W)
+    m.rect(0, "A", 1, W / 2 - gap / 2 - w, 1 + L, W / 2 - gap / 2)
+    m.rect(0, "V", 1, W / 2 + gap / 2, 1 + L, W / 2 + gap / 2 + w)
+    C, _ = ST.Electrostatic(m, ST.Stack([0.0, h * 1e-3], [er]), [h * 1e-3, 0.0]).capacitance(["A"])
+    return -C["A"]["V"]
+
+
+@pytest.mark.parametrize("er", [1.0, 4.5])
+@pytest.mark.parametrize("gap", [0.3, 1.0])
+def test_coupling_capacitance_matches_the_layered_field_solver(er, gap):
+    """The extracted coupling C grew as eps_r^2 (eps0 eps_r in both patches' C and 1/(4 pi eps0) in the
+    potential coefficient) and took plate C for 0.2 mm strips: 0.13x the BEM at eps_r 1, 1.8x at 4.5
+    (0.3 mm gap, h 0.2 mm). Now within 10 % at edge gaps of 1.5 h and more (kernels.patch_coupling)."""
+    from types import SimpleNamespace as NS
+
+    from kae.sim.extract import _Builder
+    h, w, L = 0.2, 0.2, 5.0
+    bld = object.__new__(_Builder)
+    bld.rb = NS(er=er)
+    y = gap + w
+    s = ("A", "F.Cu", (0.0, 0.0, h), (L, 0.0, h), w, h)
+    t = ("V", "F.Cu", (0.0, y, h), (L, y, h), w, h)
+    assert bld._cm(s, t) * 1e15 == pytest.approx(_bem_cm(h, w, L, gap, er) * 1e15, rel=0.10)      # fF
+
+
+def test_patch_coupling_far_field_does_not_depend_on_the_dielectric():
+    """With plate self capacitances the far field is eps0 A_a A_v / (2 pi r^3) at any eps_r (lens SY D1)."""
+    from kae.physics.kernels import EPS0, patch_coupling, slab_g
+    A, r = 0.04, 20.0
+    far = EPS0 * A * A / (2 * math.pi * r ** 3)
+    for er in (1.0, 4.5, 10.0):
+        assert patch_coupling(A, A, r, 0.2, 0.2, eps_r=er) / far == pytest.approx(1.0, rel=1e-3)
+    assert slab_g(1e-3, 0.2, 4.5) * 1e-3 == pytest.approx(2 / 5.5, rel=0.01)      # near: eps_eff (eps_r + 1)/2
+
+
 # ----------------------------------------------------------------------------- end to end
 def _have_ngspice():
     return shutil.which("ngspice") or os.environ.get("KAE_KICAD_WRAP")
