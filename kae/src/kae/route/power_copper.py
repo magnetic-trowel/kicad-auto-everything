@@ -73,6 +73,11 @@ DEFAULTS = dict(
     neck=True,                # necks at the pads of small two-terminal parts (tombstoning; see neck_rule):
                               # within neck_len of such a pad, grown copper is at most the neck width
     neck_len=0.5,             # mm from the pad edge
+    neck_via="own",           # ground via at a necked land: "own" (its own pad-to-via track, no wider than the
+                              # neck, via edge >= neck_via_gap from the land: IPC-7351's "narrow conductor between
+                              # the land area and the via") or "track" (on the land's routed track, neck_len away,
+                              # no second entry; 10 boards: copper loss 0.505 -> 0.748 of the input, not default)
+    neck_via_gap=0.25,        # mm, via edge to a necked land (Eurocircuits)
     share=True,               # competing power/ground nets share room at w ~ I (False: first come, first served,
                               # highest current first)
     current_margin=3.0,       # a net's operating current x this sizes its IPC width (when above max_width)
@@ -92,7 +97,7 @@ DEFAULTS = dict(
     stitch_want=3,
     stitch_pitch=2.0,
     stitch_min_area=0.3,
-    drc_budget=40,            # KiCad DRC runs the gate may spend (attribution and bisection)
+    drc_budget=80,            # KiCad DRC runs the gate may spend (attribution and bisection)
 )
 
 VICTIM_ROLES = ("clock", "high_speed", "analog", "rf")
@@ -745,7 +750,7 @@ class PowerCopper:
             wt = sp.clamp_width(net, layer, min(self.o["via_track_max"], _short_side(pad.geom),
                                                 self.necks.get(id(pad), math.inf)))
             entries = []
-            if id(pad) in self.necks:
+            if id(pad) in self.necks and self.o["neck_via"] == "track":
                 # a necked land keeps one entry (balance with its sister land): the via sits on the
                 # land's own routed track, at least neck_len from the land, and no second track enters
                 entries = [it for it in sp.items[layer] if it.kind == "track" and it.net == net
@@ -753,6 +758,9 @@ class PowerCopper:
                 if not entries:
                     continue
                 cands = _via_on_tracks(entries, pad.geom, rv, self.o["neck_len"], self.o["via_reach"])
+            elif id(pad) in self.necks:
+                cands = [c for c in ring_candidates(pad.geom, rv, self.o["via_reach"])
+                         if c[0] >= rv + self.o["neck_via_gap"] - 1e-9]
             else:
                 cands = ring_candidates(pad.geom, rv, self.o["via_reach"])
             for dist, x, y in cands:
@@ -1108,6 +1116,7 @@ def run(input_path, output_path, opts=None, workdir=None, timeout=1800, log=prin
         return rep, worse, groups
 
     r = 0
+    near = 1.0
     while budget[0] > 0:
         rep, worse, groups = check(skip, f"r{r}")
         r += 1
@@ -1119,7 +1128,16 @@ def run(input_path, output_path, opts=None, workdir=None, timeout=1800, log=prin
         bad = _culprits(rep, base_rep, groups, geoms) - skip
         if bad:
             skip |= bad
+            near = 1.0
             continue
+        # nothing within 1 mm: widen the search once (a mask bridge or starved spoke is reported
+        # against neighbouring items, not the copper that caused it)
+        if near < 2.5:
+            near = 2.5
+            bad = _culprits(rep, base_rep, groups, geoms, near=near) - skip
+            if bad:
+                skip |= bad
+                continue
         # not attributable (several changes together, e.g. two tracks that between them starve a
         # pad's spokes): build up from the input, batch by batch, keeping each batch that leaves
         # DRC no worse and splitting the ones that do not (ddmin-style; finds a maximal set)
