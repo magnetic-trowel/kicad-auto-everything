@@ -6,7 +6,7 @@
 - **Every JSON report the LLM reads ends with `hazards` and `hazard_summary`** (`kae place`, `kae.route.cli`, `kae.route.critical_cli`, `kae.joint.cli`, `kae brief`, `kae.excite.evaluate`, `kae.sim`). `hazard_summary.blocked` is true when the board would not work or cannot be built as drawn [M].
 - **The project's own DRC severities can hide a short.** KiCad does not run a check set to `ignore` at all (nothing in `violations`, even with `--severity-all`; only a line in `ignored_checks`) [M]. kae therefore rechecks every board it writes with the safety checks forced on, on a scratch copy; the board, its project and the benchmark's scoring are untouched [M].
 - **Static project hazards need no KiCad:** checks the project downgrades, custom rules that waive their own severity, a `.kicad_dru` KiCad drops, design minimums below every mainstream fab, and net classes whose clearance is below IPC-2221B for the net's inferred voltage [I].
-- **Risk signals kae already wrote are gathered** (current-capped rails, BGA escape certificates, bodies relaxed to pads, unchecked final cards, modules over their physics allocation) instead of staying buried in sub-reports [M].
+- **Risk signals kae already wrote are gathered** (current-capped rails, BGA escape certificates, unchecked final cards, modules over their physics allocation) instead of staying buried in sub-reports [M].
 - **Compact by contract:** at most 40 entries and 8 per code, objects capped at 12 per entry, with counts of what was cut; a block entry is never dropped for space ([agent-tooling-reliability-patterns.md](../ux/agent-tooling-reliability-patterns.md) item 8) [I].
 
 ## Key facts
@@ -33,7 +33,7 @@
 
 | Command | Hazards from |
 |---|---|
-| `kae place` | static project hazards; recheck of OUTPUT (opens and dangling copper left out: a placement is not routed); `bodies_relaxed`; `dru_rejected` |
+| `kae place` | static project hazards; recheck of OUTPUT (opens and dangling copper left out: a placement is not routed); `body_overlap`/`body_relaxed`; `connector_off_edge`; writer checks; `dru_rejected` |
 | `kae.route.cli route`, `lastmile` | static; recheck of OUTPUT; BGA `escape_infeasible`; else the bridge's final DRC counts |
 | `kae.route.critical_cli route` | static; recheck; `rail_max_cap`, `class_max_below_ipc`, `ipc_floor_unroutable` module flags |
 | `kae.route.critical_cli physics` | `physics_over_budget` (u > 1), `physics_unmeasured`; static |
@@ -85,7 +85,7 @@
 | `class_max_below_ipc` | warn, thermal | net class maximum below the IPC-2221 width for the current |
 | `ipc_floor_unroutable` | warn, thermal | no room for the rail at its IPC-2221 width; left to the bridge |
 | `escape_infeasible` | block, electrical | `escape.certificate`: balls no routing can escape under the rules, with the relaxations that suffice ([bga-routing-ranked-ideas.md](../routing/bga-routing-ranked-ideas.md)) |
-| `bodies_relaxed` | warn, assembly | `Problem.relax_bodies` (utilization > 0.95, or the legality escalation): through-hole parts without courtyards placed by their pads only |
+| `body_overlap` / `body_relaxed` | block / info, assembly | `Problem.relaxed_body_hazards`, per part `relax_bodies` freed (off by default; `escalate`, `auto`), on the final poses: block when its body overlaps another part ([kae-exact-legality](../../research/placement/kae-exact-legality.md)) |
 | `check_not_run` | warn, data | the joint loop's final card `checked` has `false` (values reported `null`) |
 | `physics_over_budget` | warn | a module's routed u > 1 (the critical recheck flags u crossing 1, [critical-net-routing.md](../routing/critical-net-routing.md)) |
 | `outline_incomplete` | block, manufacturing | `kae place`: staged footprints carry Edge.Cuts, the outline is open |

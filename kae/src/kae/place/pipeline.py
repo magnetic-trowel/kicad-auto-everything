@@ -139,7 +139,7 @@ def _escalate(P, st, workers, seed, log, time_s, relax_ok=False):
         r = legalize(P, st, time_s=time_s, workers=workers, seed=seed, log=log, window_share=0.5)
         steps.append(dict(step=step, end_violators=r.get("end_violators"), violations=r.get("violations")))
         if step == "bodies relaxed":
-            steps[-1]["relaxed"] = relaxed          # kae.hazards: bodies_relaxed
+            steps[-1]["relaxed"] = relaxed          # data; hazards: Problem.relaxed_body_hazards
         if log:
             log(f"escalation: {step}, {r.get('end_violators')} parts still illegal")
     return steps

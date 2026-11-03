@@ -259,7 +259,9 @@ def _walk_dicts(node, depth=0):
 
 def derive(report):
     """Hazards from the risk signals kae's stages already put in their reports (module flags,
-    dru_rejected, relaxed bodies, BGA escape certificates, unchecked joint steps). Deduped by
+    dru_rejected, BGA escape certificates, unchecked joint steps). Parts whose bodies the placer
+    relaxed are not derived here: Problem.relaxed_body_hazards reports each one (body_overlap /
+    body_relaxed) at its final poses, the only path for them. Deduped by
     finalize, so the same flag seen in several iterations is one entry."""
     out = []
     for d in _walk_dicts(report):
@@ -272,17 +274,6 @@ def derive(report):
                             "were applied or checked.", objects=[".kicad_dru"],
                             evidence=dict(reason=str(d["dru_rejected"])[:200]),
                             fix="Fix the rules file (kae dru-check names the error) and run again."))
-        relaxed = d.get("bodies_relaxed")
-        if d.get("step") == "bodies relaxed":
-            relaxed = d.get("relaxed") or ["(escalation)"]
-        if relaxed:
-            refs = relaxed if isinstance(relaxed, list) else []
-            out.append(make("bodies_relaxed", "warn", "assembly",
-                            "The board was too full to keep part bodies apart: through-hole parts without a "
-                            "courtyard were placed by their pads only, so their bodies may overlap other parts.",
-                            objects=refs, evidence=dict(parts=len(refs), rule="place/problem.py relax_bodies"),
-                            fix="Add courtyards to those footprints, enlarge the board, or check body "
-                                "clearance in 3D before ordering."))
         if d.get("constraint") == "escape" and d.get("package") and (d.get("short") or 0) > 0:
             fixes = [r.get("rule") + (f" {r['value']} mm" if "value" in r else "")
                      for r in d.get("relaxations") or [] if r.get("all")]

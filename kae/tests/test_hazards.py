@@ -60,22 +60,25 @@ def test_finalize_hoists_nested_and_derives_flags():
                                                        ipc_mm=4.1, cap_mm=3.0)])]),
                iterations=[dict(hazards=[H.make("a", "warn", "data", "m")]),
                            dict(hazards=[H.make("s", "block", "electrical", "short", objects=["GND", "+5V"])])],
-               place=dict(dru_rejected="unknown token", bodies_relaxed=["J1", "J2"]),
+               place=dict(dru_rejected="unknown token", bodies_relaxed=["J1", "J2"],
+                         steps=[dict(step="bodies relaxed", relaxed=["J1"])]),
                hazards=[H.make("top", "info", "data", "m")])
     H.finalize(rep)
     assert list(rep)[-2:] == ["hazards", "hazard_summary"]
     codes = [h["code"] for h in rep["hazards"]]
     assert codes[0] == "s"
-    assert sorted(codes) == sorted(["s", "a", "rail_max_cap", "dru_rejected", "bodies_relaxed", "top"])
+    assert sorted(codes) == sorted(["s", "a", "rail_max_cap", "dru_rejected", "top"])
+    # relaxed bodies are reported only by Problem.relaxed_body_hazards (body_overlap / body_relaxed)
+    assert "bodies_relaxed" not in codes
     assert "hazards" not in rep["critical"] and "hazards" not in rep["iterations"][0]
     s = rep["hazard_summary"]
-    assert s["blocked"] and s["block"] == 1 and s["warn"] == 4 and s["info"] == 1 and s["total"] == 6
+    assert s["blocked"] and s["block"] == 1 and s["warn"] == 3 and s["info"] == 1 and s["total"] == 5
     assert s["block_codes"] == dict(s=1)
     a = next(h for h in rep["hazards"] if h["code"] == "a")
     assert a["sources"] == ["critical", "iterations[0]"]
     json.dumps(rep)
     H.finalize(rep)                       # idempotent
-    assert rep["hazard_summary"]["total"] == 6
+    assert rep["hazard_summary"]["total"] == 5
 
 
 def test_finalize_empty():
