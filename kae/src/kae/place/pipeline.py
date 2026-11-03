@@ -245,6 +245,12 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     def stage(name, t):
         rep["stages"][name] = round(time.monotonic() - t, 3)
 
+    def trace(name, state):
+        # physics after each stage that can move parts (anneal, legalize, the exact repairs),
+        # so a physics-blind stage's cost shows in the report (audit P6)
+        if report_terms is not None:
+            physics_trace(rep, name, report_terms, {p.uuid: state.pose(p.i) for p in P.parts})
+
     # ---- brief (net roles for both arms; structures only with physics)
     t = time.monotonic()
     src = "given"
@@ -286,6 +292,15 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         if staged_fixed:
             rep["fixed"]["staged"] = staged_fixed
             log(f"fixed parts off the board (they stay there): {', '.join(staged_fixed[:8])}")
+    # user-facing connectors (USB, barrel, audio, RJ, video: on an edge on every human board,
+    # kae.place.edge_check) the caller left free: pinned to the board edge, facing out, at the
+    # free edge spot nearest their seed position, then held like fixed parts (audit P4)
+    from kae.route.constraints import setting
+    edge_mode = int(setting("connector_edge", board_path, opts))
+    pinned = {}
+    if edge_mode >= 2:
+        board, pinned = _pin_edge_connectors(board, brief, held, fixed, angle_step, seed, rep, log)
+        fixed = fixed | set(pinned)
     P = Problem.build(board, net_kinds=_net_kinds(brief), held={fp.uuid for fp in held} | fixed,
                       angle_step=angle_step, severity=_severity_mode(board, board_path, opts))
     rep["severity"] = dict(mode=P.severity_mode, project_downgrades=dict(P.downgraded))
@@ -307,12 +322,16 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     rep["relax_bodies"] = relax_mode
     if relax_mode == "auto" and max(P.utilization()) > 0.95:
         rep["bodies_relaxed"] = P.relax_bodies()       # too full to treat bodies as obstacles
-    margin = P.auto_margin()
+    from kae.route.constraints import setting
+    margin = float(setting("place_margin", board_path, opts))
+    if margin < 0:
+        margin = P.auto_margin()
+    else:
+        rep["margin_set"] = margin
     P.set_margin(margin)
     # escape bands (kae.place.escape_band): 1 a soft annealer term against parts unrelated to the
     # package, 2 hard occupancy against every part, 0 off
     from . import escape_band as EB
-    from kae.route.constraints import setting
     band_mode = int(setting("escape_band", board_path, opts))
     eb, rep["escape_bands"] = EB.bands(P, board_path, opts, log)
     ef = EB.fanout(P, board_path, opts, log)
@@ -489,10 +508,12 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     final = seed_state
     if anneal:
         t = time.monotonic()
-        kw = dict(w_phys=1.0 if terms is not None else 0.0, order=order)
+        kw = dict(w_phys=1.0 if terms is not None else 0.0, order=order,
+                  w_cong=float(setting("place_w_cong", board_path, opts)))
         kw.update(anneal_args or {})
         if terms is None:
             kw["w_phys"] = 0.0
+        rep["w_cong"] = float(kw.get("w_cong", 0.0) or 0.0)
         # parts named by board silk labels beside their label: by default the kinds validated on
         # the human placements (numbered rows) at a modest weight; anneal_args w_label and
         # label_kinds widen or switch it off (w_label 0)
@@ -540,9 +561,12 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         stage("anneal", t)
         t = time.monotonic()
         cand = ann.st
+        trace("seed", seed_state)
+        trace("anneal", cand)
         if grid_violations(cand):
             rep["legalize"] = legalize(P, cand, time_s=max(3.0, deadline - time.monotonic()), workers=workers,
                                        seed=seed, log=log)
+            trace("legalize", cand)
         stage("legalize", t)
         if not grid_violations(cand):
             # cost of the legal candidate, same weights and normalization as the seed's
@@ -572,6 +596,8 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     if viol and time.monotonic() < deadline + 0.1 * budget:
         rep["legalize_final"] = legalize(P, st, time_s=max(3.0, 0.1 * budget), workers=workers, seed=seed, log=log)
         viol = grid_violations(st)
+    if rep.get("legalize_escalation") or rep.get("legalize_final"):
+        trace("legalize_escalation", st)
     rep["legal_grid"] = not viol
     rep["margin_mm"] = P.margin
     t = time.monotonic()
@@ -587,6 +613,7 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         rep["closed_loop"] = exactmod.close_loop(P, st, time_s=left, log=log)
         rep["exact"] = exact_check(P, st)
         stage("closed_loop", t)
+        trace("closed_loop", st)
     if order:
         # protection-order rules an annealer cut short left broken: the protection part to the
         # nearest clean spot that keeps them, the physics total bounded (kae.place.exact)
@@ -605,6 +632,7 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
             rep["order_fix"] = dict(error=f"{type(e).__name__}: {e}")
         if rep["order_fix"].get("moved"):
             rep["exact"] = exact_check(P, st)
+            trace("order_fix", st)
         stage("order_fix", t)
     if exactmod.silk_on(P):
         # silkscreen where the project makes it an error: a soft pass, legality kept
@@ -624,6 +652,7 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
             rep["silk_fix"] = dict(error=f"{type(e).__name__}: {e}")
         if rep["silk_fix"].get("moved"):
             rep["exact"] = exact_check(P, st)
+            trace("silk_fix", st)
         stage("silk_fix", t)
     rep.update(grid_verdict(P, st, rep["exact"]))
     body_hazards(rep, P, st)
@@ -640,8 +669,69 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     rep["seconds"] = round(time.monotonic() - t0, 2)
     poses = st.poses()
     poses.update(mated)          # held fixed here, but movable in the file: write them too
+    poses.update(pinned)
     res.poses = poses
+    if edge_mode >= 1:
+        edge_hazards(rep, board, poses)
     return res
+
+
+def _pin_edge_connectors(board, brief, held, fixed, angle_step, seed, rep, log):
+    """The edge connectors' poses from a quick seed (quadratic with connector anchors, spread)
+    on a throwaway Problem; returns (board with them moved there, {uuid: pose})."""
+    from . import edge_check
+    want = {u for u in edge_check.edge_parts(board, edge_check.PIN_KINDS)
+            if u not in fixed and not any(fp.uuid == u and fp.locked for fp in board.footprints)}
+    if not want:
+        return board, {}
+    try:
+        P0 = Problem.build(board, net_kinds=_net_kinds(brief), held={fp.uuid for fp in held} | set(fixed),
+                           angle_step=angle_step)
+        idx = [p.i for p in P0.parts if p.movable and p.uuid in want]
+        if not idx:
+            return board, {}
+        net_w = {net.i: net.weight for net in P0.nets}
+        st0, _ = _seed_state(P0, [], net_w, seed, log, partition=len(P0.mov) > FLOORPLAN_MAX_ITEMS)
+        poses, failed = edge_check.pin_poses(P0, st0, idx, log=log)
+    except Exception as e:      # noqa: BLE001 - placing without the pin beats not placing
+        rep["edge_pinned"] = dict(error=f"{type(e).__name__}: {e}")
+        return board, {}
+    by = {fp.uuid: fp.ref for fp in board.footprints}
+    rep["edge_pinned"] = dict(pinned=sorted(by[u] for u in poses), failed=failed, uuids=sorted(poses))
+    return (edge_check.with_poses(board, poses) if poses else board), poses
+
+
+def edge_hazards(rep, board, poses):
+    """rep['hazards'] gets a connector_off_edge entry for each user-facing connector kae placed
+    (`poses`: {uuid: pose} of the parts kae moved) away from the board edge
+    (kae.place.edge_check; audit P4). Earlier entries of that code are replaced, so a caller that
+    moved parts again (the KiCad loop) calls it again."""
+    from . import edge_check
+    hz = [h for h in rep.get("hazards", []) if h.get("code") != "connector_off_edge"]
+    try:
+        hz += edge_check.hazards(board, moved=set(poses), poses=poses)
+    except Exception as e:      # noqa: BLE001 - a check must not cost the placement
+        hz.append(dict(code="edge_check_failed", severity="info", category="data",
+                       message=f"the connector edge check failed ({type(e).__name__}: {e})", objects=[]))
+    if hz:
+        rep["hazards"] = hz
+
+
+def physics_trace(rep, name, terms, poses):
+    """Append the physics after stage `name` to rep['physics_trace']: the linear total and the
+    utilization summed per structure kind (decap loops, crystals, ...). Never raises: a
+    diagnostic must not cost the placement."""
+    try:
+        rows = terms.breakdown(poses)
+        kinds = {}
+        for r in rows:
+            u = float(r.get("confidence", 1.0)) * float(r.get("util", r.get("utilization", 0.0)))
+            k = str(r.get("kind"))
+            kinds[k] = round(kinds.get(k, 0.0) + u, 4)
+        rep.setdefault("physics_trace", []).append(
+            dict(stage=name, total_linear=round(sum(kinds.values()), 4), by_kind=kinds))
+    except Exception as e:      # noqa: BLE001
+        rep.setdefault("physics_trace", []).append(dict(stage=name, error=f"{type(e).__name__}: {e}"))
 
 
 def final_physics(res):

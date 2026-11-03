@@ -117,6 +117,10 @@ def cmd_place(a):
     # what the writer's post-write check found in the file it wrote (format upgrade, changed items),
     # moved to the top level once (popped so the nested copy is not listed again)
     res.report.setdefault("hazards", []).extend((res.report.get("writer") or {}).pop("hazards", None) or [])
+    from kae.route.constraints import setting
+    if res.poses and int(setting("connector_edge", a.input)) >= 1:
+        from kae.place.pipeline import edge_hazards
+        edge_hazards(res.report, board, res.poses)
     res.report["total_s"] = round(time.monotonic() - t0, 2)
     legal = not res.report.get("exact") and not res.report.get("outline_incomplete") and kicad_clean is not False
     res.report["legal"] = bool(legal)
@@ -330,11 +334,14 @@ def _probe_select(a, board, kw, t0, write):
 def _refresh_physics(res):
     """A KiCad round moved parts: protection order and the physics scorecard again, for the
     board as written; the values place() reported stay as *_pre_drc."""
-    from kae.place.pipeline import final_physics
+    from kae.place.pipeline import final_physics, physics_trace
     for k in ("protection_order", "scorecard"):
         if k in res.report:
             res.report[f"{k}_pre_drc"] = res.report[k]
     final_physics(res)
+    if res.terms is not None:
+        physics_trace(res.report, "kicad_repair", res.terms,
+                      {p.uuid: res.state.pose(p.i) for p in res.problem.parts})
 
 
 def _hazards(report, a, kind, t0, brief=None, board=None):

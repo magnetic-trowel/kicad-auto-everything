@@ -54,6 +54,16 @@ Split-C placement sweeps across versions (`csweep.py`, 600 s, seed 0), the human
 | label precision (human part within 3 mm) | row 100% (14 labels, 2 boards), pin 68%, keyword 49%, ref 17%; only `row` on by default | [kae-place](../../topics/placement/kae-place.md) |
 | noisecard with labels | 7/12 LEDs at their labels (vs 0), physics +1.7%, HPWL +52%, routing unaffected | same |
 
+**Physics cost of the physics-blind stages** (2026-11, decide-placement 15d29fd). The legalizer, the exact repair and the KiCad repair choose spots by displacement only: no physics term, no decap distance. Only the order and silk passes carry the +3% physics bound. `physics_trace` in the place report now records the linear physics after each stage. On 14 merit boards (25-141 footprints; human routing stripped; `kae place --time 150`, seed 0; of 16 boards, one has no physics structures and one failed in the pcbnew writer on legacy footprint ids), 11 kept their annealed physics. Three lost it:
+
+| board | anneal -> final (Σu) | decap Σu | stage | final legal |
+|---|---|---|---|---|
+| ubertooth | 17.9 -> 23.0 (+28%) | 14.1 -> 19.2 | grid legalizer, one window | no |
+| can48 | 1.63 -> 3.74 (+130%) | 1.43 -> 3.54 | exact repair (81 -> 30 findings, one reseed) | no |
+| 1.3in TFT bonnet | 0.41 -> 1.52 (+274%) | 0.41 -> 1.52 | exact repair (87 -> 30 findings) | no |
+
+Summed over the 14 boards: 59.5 -> 67.8 (+14%), all of it decap loops. The "kept only if not costlier than the seed" guard runs before the exact repair, and in ubertooth's case the legalized candidate still beat the seed (36.1). It concentrates where repair already struggles: all three ended with KiCad errors left. Proposed fix, not built: a physics tie-break in `exact.move_clean`, which takes the cheapest of the first few exactly clean candidates within ~2 mm of the nearest, using the `phys` callable `fix_order` already takes. A matching term for members of physics macros would go in `legalize._window_solve` (rigid offsets to the macro anchor, as `legalization.md` recommends with "decap distance"). Measure either with `physics_trace` before an A/B.
+
 Residuals: one paw3222 copper_edge_clearance on one attempt (fixed in [644b268](https://github.com/magnetic-trowel/kicad-auto-everything/commit/644b26865698f2be6d2e252cfc5d896dcb6fc7f3)); a pcbnew zone-fill assert on pingdevkit is pcbnew's.
 
 ## Verdict

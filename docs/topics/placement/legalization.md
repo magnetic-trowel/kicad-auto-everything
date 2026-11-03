@@ -3,7 +3,7 @@
 **TL;DR**
 - Every 2025–26 PCB placer ends with a **discrete legalizer**: MILP (NS-Place), cardinal-relation MP (HiePlace), constraint-graph MILP on sliced rectangles (NTU DAC'25), QP (Chen DAC'25), Tetris + Abacus (Cypress), scanline/window (NTU), LP compaction with symmetry (MAGICAL).
 - Exact legalizers scale only with **pruning from global placement** (relative positions, cardinal relations) or windows; vanilla MILP found no feasible placement in 4 h on 9–10 of 14 boards (the note's count and per-board list disagree).
-- **CP-SAT min-displacement legalization** with NoOverlap2D, keep-outs, decap distance and rotation literals is our measured, Apache-2.0 option ([CP-SAT](../solvers/cp-sat-milp-smt.md)).
+- **CP-SAT min-displacement legalization** with NoOverlap2D, keep-outs, decap distance and rotation literals is our measured, Apache-2.0 option ([CP-SAT](../solvers/cp-sat-milp-smt.md)). kae's legalizer and repair do not carry the decap distance yet; what that costs is measured in [kae-exact-legality](../../research/placement/kae-exact-legality.md).
 - A **sparrow-style overlap-elimination legalizer** (guided local search on jagua-rs hazards) handles irregular courtyards and preserves LLM intent via a displacement term.
 - Legalizers must report the **infeasible constraint subset** back to the LLM.
 
