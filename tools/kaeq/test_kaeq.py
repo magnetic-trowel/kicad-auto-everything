@@ -376,6 +376,60 @@ def test_lease_plan_requeues_the_newest_job_only_after_a_long_stall(kq):
     assert kq.lease_plan(jobs[:1] and [dict(jobs[0], declared=8192)], 0.0, LEASE, now=1100.0)["victim"] is None
 
 
+def test_lease_plan_freezes_only_a_job_at_its_grant(kq):
+    """A job that wants more but still has room of its own runs on; it is frozen only at its grant, or when it grows
+    fast enough to reach it within two ticks."""
+    room = [dict(id=1, prio=0, started=10, grant=4096, use=3500)]               # within 15%: wants more
+    p = kq.lease_plan(room, 0.0, LEASE, now=400.0)
+    assert p["grants"][1] == 4096 and p["stalled"] == [] and p["stall_since"][1] == 0.0
+    at = [dict(id=1, prio=0, started=10, grant=4096, use=3900)]                 # within lease_freeze_mb
+    assert kq.lease_plan(at, 0.0, LEASE, now=400.0)["stalled"] == [1]
+    fast = [dict(room[0], rate=200.0)]                                           # 200 MB/s: 800 MB in two ticks
+    assert kq.lease_plan(fast, 0.0, LEASE, now=400.0)["stalled"] == [1]
+    frozen = [dict(room[0], frozen=True)]                                        # frozen: shows no growth; stays
+    assert kq.lease_plan(frozen, 0.0, LEASE, now=400.0)["stalled"] == [1]
+    assert kq.lease_plan(frozen, 8192.0, LEASE, now=400.0)["grants"][1] > 4096   # until it gets more
+
+
+def test_frozen_time_does_not_count_towards_the_timeout(kq):
+    d = kq.Daemon()
+    submit(kq, "sleep 30", name="slow", timeout="2s")
+    drive(kq, d, lambda: states(d)["slow"] == "running")
+    d.c.execute("UPDATE jobs SET frozen_s=100")     # as if it had waited 100 s for memory
+    t = time.time()
+    while time.time() - t < 3:
+        d.tick()
+        time.sleep(0.2)
+    assert states(d)["slow"] == "running"
+    d.c.execute("UPDATE jobs SET frozen_s=0, frozen_since=?", (time.time() - 50,))   # frozen right now: on hold
+    d.tick()
+    assert states(d)["slow"] == "running"
+    j = d.c.execute("SELECT * FROM jobs").fetchone()
+    assert kq.frozen_for(j, time.time()) >= 50 and kq.active_for(j, time.time()) < 5
+    d.c.execute("UPDATE jobs SET frozen_since=0")
+    drive(kq, d, lambda: states(d)["slow"] == "timeout")
+
+
+def test_a_requeued_attempt_is_counted_as_lost(kq):
+    d = kq.Daemon()
+    submit(kq, "python3 -c 'while 1: pass'", name="spin", timeout="1m")
+    drive(kq, d, lambda: states(d)["spin"] == "running")
+    t = time.time()
+    while time.time() - t < 2.5:
+        d.tick()
+        time.sleep(0.2)
+    j = d.c.execute("SELECT * FROM jobs").fetchone()
+    d.preempt(j, time.time(), "test")
+    j = d.c.execute("SELECT * FROM jobs").fetchone()
+    assert j["state"] == "queued" and j["lost_run_s"] >= 2 and j["lost_cpu_s"] >= 1 and j["cpu_s"] == 0
+    assert kq.active_for(j, time.time()) == 0
+    d.c.execute("UPDATE jobs SET not_before=0")
+    drive(kq, d, lambda: states(d)["spin"] == "running")
+    assert "earlier attempts" in kq.times(d.c.execute("SELECT * FROM jobs").fetchone())
+    d.c.execute("UPDATE jobs SET state='cancelled'")
+    kq.kill_tree(j["pid"] or d.c.execute("SELECT pid FROM jobs").fetchone()[0])
+
+
 def _lease_daemon(kq, tmp_path, **cfg):
     conf = json.load(open(kq.CONF))
     conf.update(cgroup="auto", slice="kaeqtest.slice", mem_pool="lease", **cfg)
@@ -408,8 +462,16 @@ def test_lease_stalls_a_job_at_its_grant_instead_of_killing_it(kq, tmp_path):
     assert "frozen 1" in ev                                      # it waits frozen: no memory pressure to be killed for
     g = d.c.execute("SELECT grant_mb FROM jobs").fetchone()[0]
     assert g <= 1.5 * 1024 + 1
+    j = d.c.execute("SELECT * FROM jobs").fetchone()
+    assert j["frozen_since"] > 0 and j["freezes"] >= 1          # the freeze is in the database, not only in memory
+    # a daemon restart while the job is frozen: the new daemon adopts it, still frozen, and thaws it once it can
+    d = kq.Daemon()
+    d.tick()
+    assert "frozen 1" in open(d.cgroups[1] + "/cgroup.events").read()
     conf = json.load(open(kq.CONF)); conf["mem_budget_gb"] = 4; json.dump(conf, open(kq.CONF, "w"))
     drive(kq, d, lambda: states(d)["hog"] == "ok", secs=60)
+    j = d.c.execute("SELECT * FROM jobs").fetchone()
+    assert j["frozen_s"] > 0 and j["frozen_since"] == 0 and j["cpu_s"] > 0
 
 
 def test_lease_gives_back_what_a_job_no_longer_uses(kq, tmp_path):

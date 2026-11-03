@@ -32,6 +32,7 @@ reports, `kaeq retry`, and start `kaeq wait` again. Estimate `--cpus`/`--mem` ho
 `--mem` is a job's starting memory grant. A job that needs more is not killed: it pauses at its
 grant, frozen, until the queue can give it more (1 GB or 25%, more when much is free) and gets it back when it
 frees memory, so
-declare the typical need, not the worst case. (Without the cgroup memory controller, the old rule applies:
+declare the typical need, not the worst case. Time frozen does not count towards `--timeout`;
+`kaeq usage` shows per owner the time active, frozen, CPU used and work lost to requeues. (Without the cgroup memory controller, the old rule applies:
 RSS over 1.5x `--mem` is killed and requeued with a corrected value.)
 Do not use `--retries` for deterministic test failures. Details: `tools/kaeq/README.md`.

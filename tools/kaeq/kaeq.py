@@ -112,6 +112,8 @@ DEFAULTS = {
     "lease_release_gb": 2.0, # lease: a grant more than max(this, lease_release_frac of use) above use for
     "lease_release_frac": 0.25,  # lease_release_after_s
     "lease_release_after_s": 120,  # is trimmed to use x 1.25 (at least use + 1 GB)
+    "lease_freeze_mb": 256,  # lease: a job that gets no more is frozen only once within max(this, 2 ticks of its
+                             # measured growth) of its grant; until then it runs on in the room it already has
     "lease_stall_s": 900,    # lease: a job stalled this long for memory that nothing frees requeues the newest other job
     "mem_budget_gb": 0,      # cap on what all jobs together may use and hold (0: none beyond the reserve)
     "starts_per_tick": 1,    # ramp: at most this many job starts every 2 s, so new jobs show their memory before more start
@@ -135,7 +137,9 @@ CREATE TABLE IF NOT EXISTS jobs(
  submitted REAL, started REAL, finished REAL, not_before REAL DEFAULT 0, deadline REAL,
  pid INTEGER, rc INTEGER, peak_mb INTEGER DEFAULT 0, note TEXT,
  root TEXT, branch TEXT, sha TEXT, rel TEXT, links TEXT, disk_mb INTEGER DEFAULT 1024, disk_peak_mb INTEGER DEFAULT 0,
- mem_hist TEXT, grant_mb INTEGER DEFAULT 0);
+ mem_hist TEXT, grant_mb INTEGER DEFAULT 0,
+ frozen_s REAL DEFAULT 0, frozen_since REAL DEFAULT 0, freezes INTEGER DEFAULT 0, cpu_s REAL DEFAULT 0,
+ lost_run_s REAL DEFAULT 0, lost_cpu_s REAL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS jobs_state ON jobs(state);
 CREATE TABLE IF NOT EXISTS events(
  id INTEGER PRIMARY KEY, ts REAL, owner TEXT, job INTEGER, kind TEXT, msg TEXT,
@@ -178,9 +182,12 @@ def db(restore=False):
     for col in ("root", "branch", "sha", "rel", "links", "mem_hist"):  # upgrade an older database
         if col not in have:
             c.execute(f"ALTER TABLE jobs ADD COLUMN {col} TEXT")
-    for col, dflt in (("disk_mb", 1024), ("disk_peak_mb", 0), ("grant_mb", 0)):  # upgrade an older database
+    for col, dflt in (("disk_mb", 1024), ("disk_peak_mb", 0), ("grant_mb", 0), ("freezes", 0)):  # upgrade an older database
         if col not in have:
             c.execute(f"ALTER TABLE jobs ADD COLUMN {col} INTEGER DEFAULT {dflt}")
+    for col in ("frozen_s", "frozen_since", "cpu_s", "lost_run_s", "lost_cpu_s"):
+        if col not in have:
+            c.execute(f"ALTER TABLE jobs ADD COLUMN {col} REAL DEFAULT 0")
     return c
 
 
@@ -210,6 +217,23 @@ def config():
         cfg["reserve_mem_gb"] = round(total * cfg["reserve_frac"], 1)
     cfg["scratch_dir"] = cfg["scratch_dir"] or os.path.join("/var/tmp", USER, "kaeq-scratch")
     return cfg
+
+
+def frozen_for(j, now):
+    """Seconds this attempt of a job has spent frozen (waiting for memory), the current freeze included."""
+    fs = j["frozen_since"] if "frozen_since" in j.keys() else 0
+    return (j["frozen_s"] if "frozen_s" in j.keys() else 0) + (max(0.0, now - fs) if fs else 0.0)
+
+
+def active_for(j, now):
+    """Seconds this attempt of a job has been allowed to run: wall time since its start minus time frozen.
+    --timeout counts this, so a job the queue pauses often is not penalized for it."""
+    if not j["started"]:
+        return 0.0
+    if j["state"] == "queued":     # requeued: its last attempt's times were moved to lost_*
+        return 0.0
+    end = j["finished"] if j["state"] != "running" and j["finished"] else now
+    return max(0.0, end - j["started"] - frozen_for(j, end))
 
 
 def parse_cpus(spec):
@@ -256,6 +280,21 @@ def fgb(mb):
 def fdur(s):
     s = int(s)
     return f"{s}s" if s < 120 else f"{s // 60}m" if s < 7200 else f"{s // 3600}h"
+
+
+def times(j, now=None):
+    """A job's time accounting in one phrase: active time (what --timeout counts), time frozen waiting for memory
+    and how often, CPU time, and what earlier attempts that were thrown away (requeued) had used."""
+    now = now or time.time()
+    out = f"ran {fdur(active_for(j, now))}"
+    fz = frozen_for(j, now)
+    if fz or j["freezes"]:
+        out += f" (+{fdur(fz)} frozen, {j['freezes']}x{', now' if j['frozen_since'] else ''})"
+    if j["cpu_s"]:
+        out += f" cpu {fdur(j['cpu_s'])}"
+    if j["lost_run_s"]:
+        out += f" | earlier attempts {fdur(j['lost_run_s'])}, cpu {fdur(j['lost_cpu_s'])}"
+    return out
 
 
 def git(root, *args, env=None):
@@ -540,6 +579,15 @@ def cg_freeze(cg, on):
         return False
 
 
+def cg_frozen(cg):
+    """Whether a job's scope is set to be frozen (cgroup.freeze)."""
+    try:
+        with open(os.path.join(cg, "cgroup.freeze")) as f:
+            return f.read().strip() == "1"
+    except OSError:
+        return False
+
+
 def cg_set_high(cg, mb):
     """Set a job's grant: its scope's memory.high (the kernel throttles, never kills, above it)."""
     try:
@@ -554,7 +602,8 @@ def lease_plan(jobs, free_mb, cfg, now):
     """One pass of the memory leases. jobs: [{id, prio, started, grant, use, slack_since, stall_since}] (MB, s);
     free_mb: memory nobody holds (free minus the reserve, minus every grant's unused part). Grants far above use
     for a while (and past the job's first warmup_s) are trimmed (that memory is free again); jobs near their grant get one more step each, by
-    priority then age, while memory is free; the rest are stalled (the kernel holds them at their grant). A job
+    priority then age, while memory is free; of the rest, those at their grant (within lease_freeze_mb, or two
+    ticks of their growth "rate", MB/s) are stalled and wait frozen, the others run on in the room they have. A job
     stalled lease_stall_s with nothing freeing names a victim among jobs of no higher priority: the one furthest
     past mem_overrun x its declared --mem ("declared", MB; a runaway), else the newest other job (a job within its declaration that only
     waits for other users' memory keeps waiting).
@@ -591,9 +640,12 @@ def lease_plan(jobs, free_mb, cfg, now):
             grants[j["id"]] = g + take
             free_mb -= take
             stall[j["id"]] = 0.0
-        else:
-            stalled.append(j["id"])
+        elif j.get("frozen") or u >= g - max(cfg.get("lease_freeze_mb", 256), 2 * TICK * j.get("rate", 0.0)):
+            stalled.append(j["id"])      # at its grant with nothing to give: it waits, frozen (a frozen job stays
+                                         # frozen until it gets more: frozen, it shows no growth to judge by)
             stall[j["id"]] = stall[j["id"]] or now
+        else:
+            stall[j["id"]] = 0.0         # wants more but still has room of its own: it runs on
     victim = None
     long_ = [i for i in stalled if now - stall[i] >= cfg["lease_stall_s"]]
     if long_:
@@ -769,7 +821,8 @@ class Daemon:
         if self.rise_hist:
             self.organic = self.rise_hist[-1][1]
         self.rise, self.rise_ts = None, 0.0
-        self.lease_st = {}       # job id -> {slack_since, stall_since, set}: memory lease bookkeeping
+        self.lease_st = {}       # job id -> {slack_since, stall_since, set, frozen_since, last, rate}: memory leases
+        self.cpu_s, self.cpu_ts = {}, 0.0  # job id -> CPU seconds of its current attempt (stored every minute)
         import threading
         threading.Thread(target=self.disk_loop, daemon=True).start()
 
@@ -818,6 +871,7 @@ class Daemon:
         usage = {j["id"]: job_usage(j, sessions, per_pid, self.cgroups) for j in running}
         for j in running:
             rss, ticks = usage[j["id"]]
+            self.cpu_s[j["id"]] = max(self.cpu_s.get(j["id"], 0.0), ticks / TICK_HZ)
             ours_rss += rss
             ours_ticks += max(0, ticks - self.prev_ours.get(j["id"], ticks))
             self.prev_ours[j["id"]] = ticks
@@ -826,6 +880,10 @@ class Daemon:
                 tr[0] = now
                 tr[1].append(rss)
             self.check(j, rss, now, cfg, self.disk.get(j["id"], 0.0), lease=lease_on and j["id"] in self.cgroups)
+        if now - self.cpu_ts >= 60:
+            c.executemany("UPDATE jobs SET cpu_s=? WHERE id=? AND state='running'",
+                          [(v, k) for k, v in self.cpu_s.items()])
+            self.cpu_ts = now
         # system sample
         busy, total = cpu_ticks()
         dt = max(1, total - self.prev[1])
@@ -967,10 +1025,23 @@ class Daemon:
                 other += max(0.0, self.need_mb(j, cfg) - usage.get(j["id"], (0.0, 0))[0])
                 continue
             self.cgroups[j["id"]] = cgs[j["id"]] = cg
-            st = self.lease_st.setdefault(j["id"], {"slack_since": 0.0, "stall_since": 0.0, "set": None})
+            st = self.lease_st.get(j["id"])
+            if st is None:     # new, or adopted from an earlier daemon: its freeze state is in the database (and
+                               # in the scope itself, should an older daemon have left it frozen unrecorded)
+                fs = j["frozen_since"] or (now if cg_frozen(cg) else 0.0)
+                st = self.lease_st[j["id"]] = {"slack_since": 0.0, "stall_since": fs, "set": None, "frozen_since": fs,
+                                               "last": (now, m[0]), "rate": 0.0}
+                if fs and not j["frozen_since"]:
+                    c.execute("UPDATE jobs SET frozen_since=?, freezes=freezes+1 WHERE id=?", (fs, j["id"]))
+            t0, u0 = st["last"]
+            if now > t0:       # growth rate (MB/s), rises at once and decays slowly; a frozen job does not grow
+                r = max(0.0, (m[0] - u0) / (now - t0))
+                st["rate"] = r if r > st["rate"] else 0.9 * st["rate"] + 0.1 * r
+            st["last"] = (now, m[0])
             g = j["grant_mb"] or max(self.need_mb(j, cfg), m[0] + 2 * cfg["lease_margin_mb"])  # adopted job: a first grant
             jobs.append(dict(id=j["id"], prio=j["prio"], started=j["started"], grant=float(g), use=m[0], declared=j["mem_mb"],
-                             slack_since=st["slack_since"], stall_since=st["stall_since"]))
+                             slack_since=st["slack_since"], stall_since=st["stall_since"], rate=st["rate"],
+                             frozen=bool(st.get("frozen_since"))))
         for jid in set(self.lease_st) - set(cgs):
             del self.lease_st[jid]
         room = avail - reserve
@@ -991,17 +1062,16 @@ class Daemon:
             if st["set"] != high and cg_set_high(cgs[j["id"]], high):
                 st["set"] = high
             # a job that needs memory nobody can give waits frozen (no pressure for systemd-oomd to kill it for);
-            # its time frozen is added to its deadline
+            # its time frozen does not count towards its --timeout (active_for) and is recorded (frozen_s, freezes)
             wait = j["id"] in plan["stalled"]
             if wait and not st.get("frozen_since"):
                 if cg_freeze(cgs[j["id"]], True):
                     st["frozen_since"] = now
+                    c.execute("UPDATE jobs SET frozen_since=?, freezes=freezes+1 WHERE id=?", (now, j["id"]))
                     dlog(f"lease #{j['id']}: frozen at {fgb(j['use'])} (grant {fgb(g)}): no memory free")
             elif not wait and st.get("frozen_since"):
                 if cg_freeze(cgs[j["id"]], False):
-                    c.execute("UPDATE jobs SET deadline=deadline+? WHERE id=?", (now - st["frozen_since"], j["id"]))
-                    dlog(f"lease #{j['id']}: thawed after {fdur(now - st['frozen_since'])}")
-                    st["frozen_since"] = 0.0
+                    self.thawed(j["id"], now)
         if plan["victim"] is not None:
             v = by[plan["victim"]]
             need = max(v["mem_mb"], int(max(v["peak_mb"] or 0, v["grant_mb"] or 0) * 1.2))
@@ -1015,9 +1085,33 @@ class Daemon:
                     granted=sum(grants.values()), used=sum(use.values()), stalled=plan["stalled"],
                     victim=plan["victim"], jobs=len(jobs))
 
+    def thawed(self, jid, now):
+        """Record the end of a job's freeze: its length goes into frozen_s."""
+        st = self.lease_st.get(jid) or {}
+        since = st.get("frozen_since") or (self.c.execute("SELECT frozen_since FROM jobs WHERE id=?", (jid,)).fetchone() or [0])[0]
+        if since:
+            self.c.execute("UPDATE jobs SET frozen_s=frozen_s+?, frozen_since=0 WHERE id=?", (max(0.0, now - since), jid))
+            dlog(f"lease #{jid}: thawed after {fdur(now - since)}")
+        st["frozen_since"] = 0.0
+
+    def account(self, j, now, lost=False):
+        """Close a job's attempt in its time accounting: an open freeze ends now, its CPU seconds are stored. lost:
+        the attempt is thrown away (requeued), so its active and CPU time move to lost_run_s/lost_cpu_s and the
+        per-attempt counters start again from zero."""
+        self.thawed(j["id"], now)
+        cpu = self.cpu_s.pop(j["id"], None)
+        if cpu is not None:
+            self.c.execute("UPDATE jobs SET cpu_s=? WHERE id=?", (cpu, j["id"]))
+        if lost:
+            r = self.c.execute("SELECT * FROM jobs WHERE id=?", (j["id"],)).fetchone()
+            self.c.execute("UPDATE jobs SET lost_run_s=lost_run_s+?, lost_cpu_s=lost_cpu_s+cpu_s, cpu_s=0, frozen_s=0, "
+                           "freezes=0 WHERE id=?", (active_for(r, now), j["id"]))
+        self.lease_st.pop(j["id"], None)
+
     def preempt(self, v, now, note, disk_mb=None):
         dlog(f"preempt #{v['id']}: {note}")
         self.kill(v)
+        self.account(v, now, lost=True)
         drop_scratch(config(), v["id"])
         self.c.execute("UPDATE jobs SET state='queued',pid=NULL,preempts=preempts+1,not_before=?,note=?,disk_mb=?,grant_mb=0 WHERE id=?",
                        (now + 60, note, disk_mb or v["disk_mb"], v["id"]))
@@ -1062,7 +1156,7 @@ class Daemon:
             return out
         for (owner,) in self.c.execute("SELECT DISTINCT owner FROM jobs WHERE state='queued'").fetchall():
             d = sorted(r[0] for r in self.c.execute(
-                "SELECT finished-started FROM jobs WHERE owner=? AND state='ok' AND started IS NOT NULL "
+                "SELECT finished-started-frozen_s FROM jobs WHERE owner=? AND state='ok' AND started IS NOT NULL "
                 "ORDER BY finished DESC LIMIT 50", (owner,)))
             if len(d) >= 5 and d[int(0.9 * (len(d) - 1))] <= cfg["backfill_short_s"]:
                 out.add(owner)
@@ -1147,14 +1241,16 @@ class Daemon:
             self.finish_fail(j, "failed", f"spawn error: {e}")
             return False
         self.popen[j["id"]] = p
-        self.c.execute("UPDATE jobs SET state='running',pid=?,started=?,deadline=?,peak_mb=0,note=NULL,grant_mb=? WHERE id=?",
+        self.cpu_s.pop(j["id"], None)
+        self.c.execute("UPDATE jobs SET state='running',pid=?,started=?,deadline=?,peak_mb=0,note=NULL,grant_mb=?,"
+                       "frozen_s=0,frozen_since=0,freezes=0,cpu_s=0 WHERE id=?",
                        (p.pid, time.time(), time.time() + j["timeout_s"], grant, j["id"]))
         dlog(f"start #{j['id']} attempt {j['attempt']} pid {p.pid} mem {fgb(j['mem_mb'])} {j['name'] or j['cmd'][:60]}")
         return True
 
     def kill(self, j, sig=signal.SIGTERM):
         cg = self.cgroups.get(j["id"]) or (job_cgroup(j["pid"]) if j["pid"] and pid_alive(j["pid"]) else None)
-        if cg and (self.lease_st.get(j["id"]) or {}).get("frozen_since"):
+        if cg and cg_frozen(cg):
             cg_freeze(cg, False)                     # a frozen job handles no signal but SIGKILL
         kill_tree(j["pid"], cg, sig)
         if sig == signal.SIGTERM:  # a hard kill after a short grace
@@ -1186,7 +1282,7 @@ class Daemon:
         if not pid_alive(j["pid"]):
             self.popen.pop(j["id"], None)
             return self.finish(j, 137, peak, lost=True)
-        if now > j["deadline"] and not (self.lease_st.get(j["id"]) or {}).get("frozen_since"):   # frozen: on hold
+        if active_for(j, now) > j["timeout_s"]:     # time frozen waiting for memory does not count
             self.kill(j)
             return self.finish_fail(j, "timeout", f"exceeded --timeout {fdur(j['timeout_s'])}; raise --timeout or split the job", peak)
         if disk > j["disk_mb"] * cfg["disk_overrun"] + 5 * 1024:
@@ -1194,6 +1290,7 @@ class Daemon:
             drop_scratch(cfg, j["id"])
             new = int(disk * 1.3) + 1024
             if j["preempts"] < 2:
+                self.account(j, now, lost=True)
                 c.execute("UPDATE jobs SET state='queued',pid=NULL,disk_mb=?,preempts=preempts+1,note=? WHERE id=?",
                           (new, f"killed at scratch {fgb(disk)} > declared {fgb(j['disk_mb'])}; auto-requeued with --disk {fgb(new)}", j["id"]))
             else:
@@ -1204,6 +1301,7 @@ class Daemon:
             new = int(rss * 1.3) + 1024
             drop_scratch(cfg, j["id"])
             if j["preempts"] < 2:  # one automatic re-queue with a corrected estimate
+                self.account(j, now, lost=True)
                 c.execute("UPDATE jobs SET state='queued',pid=NULL,mem_mb=?,preempts=preempts+1,note=? WHERE id=?",
                           (new, f"killed at {fgb(rss)} > declared {fgb(j['mem_mb'])}; auto-requeued with --mem {fgb(new)}", j["id"]))
             else:
@@ -1248,6 +1346,7 @@ class Daemon:
         dlog(f"finish #{j['id']} rc {rc}{' lost' if lost else ''} peak {fgb(peak)}")
         if rc == 0 and not lost:
             now = time.time()
+            self.account(j, now)
             _, tr, first = self.trace.pop(j["id"], [0, [], now])
             seen = (now - first) / max(1.0, now - (j["started"] or now))  # share of its run observed (< 1 after a restart)
             hist = json.dumps(mem_hist(tr, peak)) if seen >= 0.5 and len(tr) >= 6 and peak > 0 else None
@@ -1263,15 +1362,17 @@ class Daemon:
         c = self.c
         peak = peak if peak is not None else j["peak_mb"]
         drop_scratch(config(), j["id"])
-        if j["retries_left"] > 0 and state != "timeout":
+        retry = j["retries_left"] > 0 and state != "timeout"
+        self.account(j, time.time(), lost=retry)
+        if retry:
             c.execute("UPDATE jobs SET state='queued',pid=NULL,attempt=attempt+1,retries_left=retries_left-1,note=? WHERE id=?",
                       (f"auto-retry after: {note}", j["id"]))
             return
         c.execute("UPDATE jobs SET state=?,rc=?,finished=?,pid=NULL,peak_mb=?,note=? WHERE id=?",
                   (state, rc if rc is not None else -1, time.time(), peak, note, j["id"]))
         drop_worktree(j)
-        run = (time.time() - (j["started"] or time.time()))
-        head = f"#{j['id']} {state.upper()} {note} | {j['name'] or j['cmd'][:60]} | {ref(j)} | {fdur(run)} peak {fgb(peak)}/{fgb(j['mem_mb'])} attempt {j['attempt']}"
+        r = c.execute("SELECT * FROM jobs WHERE id=?", (j["id"],)).fetchone()
+        head = f"#{j['id']} {state.upper()} {note} | {j['name'] or j['cmd'][:60]} | {ref(j)} | {times(r)} peak {fgb(peak)}/{fgb(j['mem_mb'])} attempt {j['attempt']}"
         event(c, j, state, "\n".join([head] + digest(j["id"]) + [f"  log: {os.path.join(jobdir(j['id']), 'log')}  retry: kaeq retry {j['id']}"]))
 
     def idle_events(self, now):
@@ -1450,7 +1551,8 @@ def cmd_status(a):
     run = sel_jobs(c, a, ["running"])
     for j in run[: a.limit]:
         lease = f" grant {fgb(j['grant_mb'])}" if j["grant_mb"] else ""
-        print(f"RUN  #{j['id']} {j['owner']} {fdur(now - j['started'])} {fgb(j['peak_mb'])}/{fgb(j['mem_mb'])}{lease} {j['cpus']:g}c {j['name'] or j['cmd'][:50]}")
+        print(f"{'FRZN' if j['frozen_since'] else 'RUN '} #{j['id']} {j['owner']} {times(j, now)} {fgb(j['peak_mb'])}/{fgb(j['mem_mb'])}"
+              f"{lease} {j['cpus']:g}c {j['name'] or j['cmd'][:50]}")
     if len(run) > a.limit:
         print(f"  (+{len(run) - a.limit} more running)")
     bad = sel_jobs(c, a, PROBLEM)
@@ -1514,10 +1616,45 @@ def cmd_wait(a):
 def cmd_result(a):
     c = db()
     for j in sel_jobs(c, a):
-        run = ((j["finished"] or time.time()) - j["started"]) if j["started"] else 0
-        print(f"#{j['id']} {j['state'].upper()} rc={j['rc']} {fdur(run)} peak {fgb(j['peak_mb'])}/{fgb(j['mem_mb'])} {j['cpus']:g}c attempt {j['attempt']} owner={j['owner']} code={ref(j)}")
+        print(f"#{j['id']} {j['state'].upper()} rc={j['rc']} {times(j)} peak {fgb(j['peak_mb'])}/{fgb(j['mem_mb'])} {j['cpus']:g}c attempt {j['attempt']} owner={j['owner']} code={ref(j)}")
         print(f"  cmd: {j['cmd'][:300]}\n  cwd: {j['cwd']}" + (f"\n  note: {j['note']}" if j["note"] else ""))
         print("\n".join(digest(j["id"], tail=a.tail)) + f"\n  log: {os.path.join(jobdir(j['id']), 'log')}")
+
+
+def cmd_usage(a):
+    """Per owner, over jobs running or finished within --since: how long they ran (active: what --timeout counts),
+    how long they waited frozen for memory and how often, the CPU they used (and as a share of the CPUs they
+    declared while active), and what thrown-away attempts (preempted, requeued, retried) had used."""
+    c = db()
+    now = time.time()
+    since = now - parse_dur(a.since)
+    q = "SELECT * FROM jobs WHERE started IS NOT NULL AND (state='running' OR finished>=?)"
+    args = [since]
+    if a.owner:
+        q, args = q + " AND owner=?", args + [a.owner]
+    if a.tag:
+        q, args = q + " AND tag=?", args + [a.tag]
+    rows = {}
+    for j in c.execute(q, args):
+        r = rows.setdefault(j["owner"], [0, 0.0, 0.0, 0, 0.0, 0.0, 0.0, 0.0])
+        act = active_for(j, now)
+        for k, v in enumerate((1, act, frozen_for(j, now), j["freezes"], j["cpu_s"], act * j["cpus"],
+                               j["lost_run_s"], j["lost_cpu_s"])):
+            r[k] += v
+    if not rows:
+        print(f"no jobs ran within {a.since}")
+        return
+    rows["TOTAL"] = [sum(r[k] for r in rows.values()) for k in range(8)] if len(rows) > 1 else None
+    w = max(len(o) for o in rows)
+    h = lambda s: f"{s / 3600:.1f}"
+    print(f"{'OWNER':<{w}} {'JOBS':>5} {'ACTIVE_H':>8} {'FROZEN_H':>8} {'FROZEN%':>7} {'FREEZES':>7} {'CPU_H':>7} "
+          f"{'CPU/DECL':>8} {'LOST_H':>6} {'LOST_CPU_H':>10}")
+    for o, r in sorted(rows.items(), key=lambda kv: (kv[0] == "TOTAL", kv[0])):
+        if r is None:
+            continue
+        n, act, fz, nf, cpu, decl, lr, lc = r
+        print(f"{o:<{w}} {n:>5} {h(act):>8} {h(fz):>8} {100 * fz / max(1.0, act + fz):>6.1f}% {nf:>7} {h(cpu):>7} "
+              f"{100 * cpu / max(1.0, decl):>7.0f}% {h(lr):>6} {h(lc):>10}")
 
 
 def cmd_retry(a):
@@ -1534,8 +1671,9 @@ def cmd_retry(a):
             c.execute("UPDATE jobs SET root=?,branch=?,sha=?,rel=? WHERE id=?", (snap["root"], snap["branch"], snap["sha"], snap["rel"], j["id"]))
         disk = int(parse_size(a.disk) / (1 << 20)) if getattr(a, "disk", None) else j["disk_mb"]
         c.execute("UPDATE jobs SET state='queued',attempt=attempt+1,preempts=0,mem_mb=?,timeout_s=?,cpus=?,pid=NULL,rc=NULL,"
+                  "lost_run_s=lost_run_s+?,lost_cpu_s=lost_cpu_s+cpu_s,cpu_s=0,frozen_s=0,frozen_since=0,freezes=0,"
                   "started=NULL,finished=NULL,note=NULL,submitted=?,retries_left=?,disk_mb=? WHERE id=?",
-                  (mem, parse_dur(a.timeout) if a.timeout else j["timeout_s"], a.cpus or j["cpus"], time.time(), a.retries,
+                  (mem, active_for(j, time.time()), parse_dur(a.timeout) if a.timeout else j["timeout_s"], a.cpus or j["cpus"], time.time(), a.retries,
                    disk, j["id"]))
         if os.path.isdir(jobdir(j["id"])):
             with open(os.path.join(jobdir(j["id"]), "log"), "ab") as f:
@@ -1697,6 +1835,10 @@ def main(argv=None):
     s = sub.add_parser("prio", help="change the priority of queued jobs by id, --owner or --tag")
     s.add_argument("prio", type=int), s.add_argument("ids", nargs="*"), owner_opt(s), s.add_argument("--tag")
     s.set_defaults(f=cmd_prio)
+
+    s = sub.add_parser("usage", help="per owner: time active, frozen waiting for memory, CPU used, lost to requeues")
+    owner_opt(s), s.add_argument("--tag"), s.add_argument("--since", default="24h", help="jobs running or finished within this (default 24h)")
+    s.set_defaults(f=cmd_usage)
 
     s = sub.add_parser("config", help="show / set limits: --set reserve_cpu=24 --set reserve_mem_gb=48")
     s.add_argument("--set", action="append")
