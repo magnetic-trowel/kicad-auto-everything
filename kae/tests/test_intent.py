@@ -268,3 +268,30 @@ def test_equal_specificity_overlap_is_an_error_naming_both_terms():
                      "why": "w"}]}
     with pytest.raises(OB.IntentError, match=r"\['A', 'B'\]"):
         OB.evaluate(DROP, it, BRIEF)
+
+
+def test_a_drop_limit_costs_the_router_nothing_until_it_is_exceeded():
+    """'Limits have epsilon-constraint semantics: once met they cost nothing' (§6). k_R charged a drop limit's
+    rate on every net, whatever its bound or its where.load (2000 per V.A on an unrelated signal net)."""
+    from kae.intent import route as IR
+    lim = {"id": "T2", "tier": "limit", "obs": "drop.rail", "where": {"load": "U5"}, "max": "27 mV",
+           "rate": "2 mW_eq/mV", "why": "w"}
+    p, base = IR.Policy({"terms": [lim]}), IR.Policy({})
+    for net in ("+5V", "SOME_SIGNAL"):
+        assert p.k_R(net, [1.0] * 3) == base.k_R(net, [1.0] * 3)
+    # a cost on +5V's drop prices +5V's copper, not other nets'
+    c = IR.Policy({"terms": [{k: v for k, v in dict(lim, id="C", tier="cost", where={"rail": "+5V"}).items() if k != "max"}]})
+    assert c.k_R("+5V", [1.0] * 3)[0] > base.k_R("+5V", [1.0] * 3)[0]
+    assert c.k_R("SOME_SIGNAL", [1.0] * 3) == base.k_R("SOME_SIGNAL", [1.0] * 3)
+    # in physics routing the limit is priced by its excess at the load it names only
+    ob = dict(loss=(0.0, 0.0, 1.0), drops=[("U5", "+5V", 0.0, 0.030, 0.0), ("U6", "+5V", 0.0, 0.040, 0.0)])
+    assert p.dc_cost(ob) == pytest.approx(2000 * 0.003)
+    assert p.dc_cost(dict(ob, drops=[("U5", "+5V", 0.0, 0.020, 0.0)])) == 0.0
+
+
+def test_router_scopes_must_all_hold():
+    from kae.intent import route as IR
+    t = {"id": "X", "where": {"rail": "+5V", "part": "U5"}}
+    assert not IR._net_matches(t, "+5V", {})          # a part scope says nothing about a bare net
+    assert IR._net_matches({"id": "Y", "where": {"rail": "+5*"}}, "+5V", {})
+    assert IR._net_matches({"id": "Z"}, "ANY", {})
