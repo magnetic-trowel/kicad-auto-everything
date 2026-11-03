@@ -216,8 +216,9 @@ def rule_board(info, board_path, opts=None):
     mins = {"clearance": s.get("min_clearance", 0.0), "hole_clearance": s.get("hole_clearance", 0.0),
             "edge_clearance": s.get("edge_clearance", 0.0)}
     floor = setting("ignored_clearance_floor", board_path, opts)
-    rb.ignored = {ct: max(floor, mins.get(ct) or 0.0) for key, ct in IGNORABLE.items()
-                  if _severity_ignored(sev, key)}
+    # the same floor holds where a custom rule with severity ignore/warning wins (rules._soften)
+    rb.soft_floor = {ct: max(floor, mins.get(ct) or 0.0) for ct in IGNORABLE.values()}
+    rb.ignored = {ct: rb.soft_floor[ct] for key, ct in IGNORABLE.items() if _severity_ignored(sev, key)}
     return rb
 
 

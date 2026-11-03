@@ -208,3 +208,24 @@ def test_a_second_condition_overwrites_the_first(tmp_path):
     assert b.rules[-1].text == "B.Type == 'Via'"
     assert R.evaluate(b, "clearance", track("A"), via("B"), "F.Cu").min == 0.7
     assert kicad_file.read_dru(tmp_path / "board.kicad_dru")[0]["condition"] == "B.Type == 'Via'"
+
+
+def test_a_custom_rule_that_is_not_an_error_does_not_bind(tmp_path):
+    """drc-rule-language-reference.md: an ignore rule still overrides earlier rules but KiCad
+    reports nothing for it (a warning is not a scored error), so strictest() keeps only the
+    floor of an ignored clearance check, and the net-class limits for anything else."""
+    from kae.route import constraints as C
+    dru = """(version 1)
+(rule wall (severity ignore) (condition "A.NetClass == 'Power'") (constraint clearance (min 0.8mm)))
+(rule wide (severity warning) (condition "A.NetName == 'B'") (constraint track_width (min 0.6mm) (max 0.7mm)))
+(rule hard (condition "A.NetName == 'D_P'") (constraint track_width (min 0.6mm)))
+"""
+    (tmp_path / "board.kicad_dru").write_text(dru)
+    info = dict(copper=COPPER, settings=SETTINGS, netclasses=CLASSES, nets={"A": {}, "B": {}, "D_P": {}, "PWR": {}})
+    rb = C.rule_board(info, tmp_path / "board.kicad_pcb")
+    a, p = track("A"), track("PWR", nc="Power")
+    assert R.evaluate(rb, "clearance", a, p, "F.Cu").min == 0.8           # KiCad's resolution is unchanged
+    assert R.strictest(rb, "clearance", a, p, "F.Cu").min == 0.15         # board minimum (>= 0.1 floor)
+    w = R.strictest(rb, "track_width", track("B"), None, "F.Cu")
+    assert (w.min, w.max) == (0.13, None)                                 # net class and board setup
+    assert R.strictest(rb, "track_width", track("D_P"), None, "F.Cu").min == 0.6   # error severity binds

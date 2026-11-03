@@ -511,6 +511,9 @@ class Board:
     rules: list = field(default_factory=list)       # implicit + custom, in KiCad's order
     errors: list = field(default_factory=list)      # conditions that failed to compile
     unsupported: set = field(default_factory=set)   # functions met but not modelled
+    ignored: dict = field(default_factory=dict)     # ctype -> floor: clearance checks the project turns off
+    soft_floor: dict = field(default_factory=dict)  # ctype -> floor for a clearance whose winning custom
+                                                    # rule is not error severity (constraints.rule_board)
 
 
 def build(copper, settings, netclasses, nets, dru_path=None):
@@ -594,8 +597,12 @@ def _matches_layer(rule, layer):
     return bool(rule.layers(layer))
 
 
-def evaluate(board, ctype, a, b=None, layer=None, geometric=False):
-    """EvalRules(ctype, a, b, layer): the winning Constraint (min/opt/max in mm)."""
+NON_ERROR = ("ignore", "warning", "info", "exclusion")   # severities kaebench does not count as errors
+
+
+def evaluate(board, ctype, a, b=None, layer=None, geometric=False, custom=True):
+    """EvalRules(ctype, a, b, layer): the winning Constraint (min/opt/max in mm).
+    custom=False: as if the board had no .kicad_dru rules."""
     s = board.settings
     a_nc, b_nc = _non_copper(a), _non_copper(b)
     out = Constraint(ctype)
@@ -610,6 +617,8 @@ def evaluate(board, ctype, a, b=None, layer=None, geometric=False):
                 return out
     winner = None
     for rule in board.rules:
+        if not custom and rule.source == "custom":
+            continue
         for c in rule.constraints:
             if c.type != ctype:
                 continue
@@ -666,9 +675,10 @@ def _cond(board, rule, ctype, a, b, layer, geometric):
 
 def strictest(board, ctype, a, b=None, layer=None):
     """The tighter of evaluate(geometric=False) and evaluate(geometric=True): the larger
-    minimum and the smaller maximum."""
-    c0 = evaluate(board, ctype, a, b, layer, geometric=False)
-    c1 = evaluate(board, ctype, a, b, layer, geometric=True)
+    minimum and the smaller maximum. A custom rule that is not error severity does not bind
+    (_soften)."""
+    c0 = _soften(board, evaluate(board, ctype, a, b, layer, geometric=False), ctype, a, b, layer, False)
+    c1 = _soften(board, evaluate(board, ctype, a, b, layer, geometric=True), ctype, a, b, layer, True)
     out = c0.copy()
     if c1.min is not None and (out.min is None or c1.min > out.min):
         out.min, out.rule = c1.min, c1.rule + " (inside its area)"
@@ -680,3 +690,24 @@ def strictest(board, ctype, a, b=None, layer=None):
     if floor is not None and out.min is not None and out.min > floor:
         out.min, out.rule = floor, f"{ctype} not checked on this board (floor {floor} mm)"
     return out
+
+
+def _soften(board, c, ctype, a, b, layer, geometric):
+    """A winning custom rule with (severity ignore|warning|exclusion): KiCad still lets it
+    override earlier rules but reports no error for it, so its limit must not bind the router
+    (drc-rule-language-reference.md, Severity). A clearance keeps only the floor kept for a
+    clearance check the project turns off (Board.soft_floor, as Board.ignored); any other
+    constraint falls back to the net-class and board-setup limits."""
+    if c.implicit or c.severity is None or str(c.severity).lower() not in NON_ERROR:
+        return c
+    why = f"{c.rule} (severity {c.severity}"
+    floor = (getattr(board, "soft_floor", None) or {}).get(ctype)
+    if floor is not None:
+        if c.min is not None and c.min > floor:
+            c.min, c.rule = floor, why + f": floor {floor} mm)"
+        return c
+    base = evaluate(board, ctype, a, b, layer, geometric, custom=False)
+    c.min = None if c.min is None or base.min is None else min(c.min, base.min)
+    c.max = None if c.max is None or base.max is None else max(c.max, base.max)
+    c.rule = why + ": board and net-class limits)"
+    return c
