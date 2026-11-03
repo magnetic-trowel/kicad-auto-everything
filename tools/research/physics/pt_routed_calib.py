@@ -217,6 +217,7 @@ VARIANTS = {
     'base': dict(knobs=dict(hop_detour=0.0)),                       # straight hops
     'cal': dict(knobs=dict()),                                       # priors.HOP_DETOUR, pour-aware decaps
     'nopour': dict(knobs=dict(pour_decaps=False)),                   # calibrated, decaps by straight hops only
+    'r015': dict(knobs=dict(pour_r_eff=0.15)),                       # pour-mode spreading from the via radius (PP7)
 }
 
 

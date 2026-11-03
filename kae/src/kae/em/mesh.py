@@ -20,9 +20,11 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from kae import materials as MAT
+
 MM = 1e-3
 SIGMA_CU = 5.8e7          # S/m, annealed copper at 20 C
-PLATING = 25e-6           # m, via barrel wall
+PLATING = MAT.VIA_PLATING_MM * 1e-3   # m, via barrel wall (IPC-6012 class 2 average, kae.materials)
 
 
 @dataclass
@@ -472,7 +474,7 @@ class Network:
                     continue
                 h = abs(za - zb)
                 r = v.drill / 2 * MM
-                R = h / (m.sigma * np.pi * 2 * r * v.plating)
+                R = h / (m.sigma * MAT.barrel_area_mm2(v.drill, v.plating / MM) * MM * MM)   # pi (d + t) t
                 vs.append((na, nb, v.x * MM, v.y * MM, min(za, zb), max(za, zb), r, R))
         self.vseg = np.array(vs, float).reshape(-1, 8)
         self.lump = [(self.term_node[q.a], self.term_node[q.b], q) for q in m.lumped

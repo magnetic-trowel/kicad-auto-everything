@@ -46,7 +46,7 @@ from kae.physics.boardview import body_z
 from kae.physics.kernels import lprime_hj
 
 from .copper import NetGraph
-from .critical_physics import INF, Loop, dielectric_er, r_track, r_via, trace_capacitance_pf
+from .critical_physics import ER_DEFAULT, INF, Loop, dielectric_er, r_track, r_via, trace_capacitance_pf
 
 GND_HINT = ("GND", "VSS", "GROUND", "EARTH")
 
@@ -86,7 +86,7 @@ class RoutedBoard:
         self._pads = {}
         self._planes = None
         self.thickness = self.z[self.cu[-1]] if self.cu else 1.6
-        self.er = (self.board.stackup.er or [4.3])[0] if self.board.stackup else 4.3
+        self.er = (self.board.stackup.er or [ER_DEFAULT])[0] if self.board.stackup else ER_DEFAULT
 
     # ---- pads
     def pads(self, net):

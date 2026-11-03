@@ -70,6 +70,11 @@ DEFAULTS = dict(
                            # physics rule (soft_critical)
     dT_max_K=10.0,         # IPC-2221 temperature rise critical copper is sized for (intent_opts)
     drop_share=0.02,       # rail + ground DC drop budget, fraction of the rail voltage (intent_opts)
+    rail_max_mm=3.0,       # widest rail / cell track; above ~5.3 A on 1 oz a pour is due: copper capped below its
+                           # IPC width is a hazard with its rise (high-current.md "How kae applies these")
+    rail_over_cap=False,   # A/B arm (decide C2): ladders start at the IPC width above the cap, the cap only a floor
+    via_A=0.0,             # current per rail via (0: from its drill and plating, critical_physics.via_current)
+    via_plating_mm=0.0,    # via plating (0: IPC-6012 class 2's 20 um, kae.materials)
 )
 
 
@@ -531,7 +536,15 @@ class Session:
             modules=[dict(id=m.id, kind=m.kind, status=m.status, items=len(m.copper), physics=m.physics,
                           notes=m.notes[:6], flags=m.flags) for m in self.modules],
             rails=self.rails,
+            hazards=self.hazards(),
         )
+
+    def hazards(self):
+        """Every module's and rail's hazards (docs: the shared hazard schema), blocks first."""
+        out = [h for m in self.modules for h in getattr(m, "hazards", [])]
+        out += [h for r in self.rails or [] for h in r.get("hazards", [])]
+        order = {"block": 0, "warn": 1, "info": 2}
+        return sorted(out, key=lambda h: order.get(h.get("severity"), 3))
 
 
 # ----------------------------------------------------------------------------- API
@@ -585,6 +598,8 @@ def run(input_path, output_path, seed=0, time_s=900.0, opts=None, bridge_opts=No
                 except Exception as e:  # noqa: BLE001 - stitching is a refinement
                     log(f"stitching: {type(e).__name__}: {e}")
             rep["critical"] = s.report()
+            if rep["critical"].get("hazards"):          # the shared schema: top level of the report
+                rep.setdefault("hazards", []).extend(rep["critical"]["hazards"])
             guards = s.guards() if bridge else []
             rep["critical"]["guards"] = len(guards)
             s.write(w0, guards=guards)

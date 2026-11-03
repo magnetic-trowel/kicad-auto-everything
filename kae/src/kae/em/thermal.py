@@ -4,9 +4,9 @@
 every copper layer above ambient, for heat injected anywhere.
 
     in plane     each layer's sheet conductance k t: copper where the cell has copper, plus an equal
-                 share of the laminate's own (k_fr4 times the board's dielectric thickness)
+                 share of the laminate's own (k_fr4_in times the board's dielectric thickness)
     between      layer l and l + 1 through their dielectric gap: k_fr4 p^2 / gap per cell, plus every
-                 via's plated barrel, k_cu pi d t_plating / gap
+                 via's plated barrel, k_cu pi (d + t) t / gap (kae.materials.barrel_area_mm2)
     to the air   both outer layers: h p^2 per cell (natural convection and radiation)
     reliefs      optional (cut, links): a thermal relief's gap cells carry no copper in plane (their raster
                  labels the pad's or pour's copper), and each spoke is a lumped link k_cu t w / gap between
@@ -23,10 +23,13 @@ import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as sla
 
-K_CU = 390.0            # W/(m K)
-K_FR4 = 0.3             # W/(m K), through and along the laminate (along it is nearer 0.8; conservative)
-H_AIR = 12.0            # W/(m^2 K): natural convection plus radiation from a board in still air (prior)
-T_PLATING = 25e-6       # m, via barrel plating
+from kae import materials as MAT
+
+K_CU = MAT.K_CU                 # W/(m K)
+K_FR4 = MAT.K_FR4_THROUGH       # W/(m K) through the laminate (kae.materials: measured 0.29-0.4)
+K_FR4_IN = MAT.K_FR4_IN         # W/(m K) along it (measured 0.81-1.06: the glass weave)
+H_AIR = MAT.H_AIR               # W/(m^2 K): still-air convection plus radiation per face (TI SNVA419: 10)
+T_PLATING = MAT.VIA_PLATING_MM * 1e-3   # m, via barrel plating (IPC-6012 class 2 average)
 
 
 SPOKE_SPREAD = 1.25     # a spoke's resistance over its bar's, w / (k t gap): the spreading where it meets pad and
@@ -54,9 +57,10 @@ def spoke_links(m, layer, w, a, z, gap, k_cu=K_CU):
 class Thermal:
     """The conduction network of a mesh. gaps: dielectric thickness (mm) between consecutive layers.
     sinks: [(layer index, G)] with G an (ny, nx) array of W/K per cell from that layer's cells to a sink
-    (solve() takes each sink's temperature rise above ambient; 0 = at ambient)."""
+    (solve() takes each sink's temperature rise above ambient; 0 = at ambient). k_fr4 is the laminate
+    through its thickness, k_fr4_in along it (None: K_FR4_IN, or k_fr4 when that is given)."""
 
-    def __init__(self, m, gaps, h=H_AIR, k_fr4=K_FR4, k_cu=K_CU, sinks=(), cut=(), links=()):
+    def __init__(self, m, gaps, h=H_AIR, k_fr4=K_FR4, k_cu=K_CU, sinks=(), cut=(), links=(), k_fr4_in=None):
         self.m = m
         self.sinks = [(int(l), np.asarray(G, float)) for l, G in sinks]
         L, ny, nx = m.lab.shape
@@ -64,7 +68,9 @@ class Thermal:
         p = m.pitch * 1e-3
         n = L * ny * nx
         idx = np.arange(n).reshape(L, ny, nx)
-        lam = k_fr4 * sum(gaps) * 1e-3 / L                         # each layer's share of the laminate
+        if k_fr4_in is None:
+            k_fr4_in = K_FR4_IN if k_fr4 == K_FR4 else k_fr4
+        lam = k_fr4_in * sum(gaps) * 1e-3 / L                      # each layer's share of the laminate
         g = np.where(m.lab >= 0, k_cu * np.array([l.t for l in m.layers])[:, None, None] * 1e-3, 0.0) + lam
         for l, mask in cut:                                        # relief gaps: laminate only
             g[l] = np.where(mask, lam, g[l])
@@ -91,7 +97,7 @@ class Thermal:
                 if dz <= 0:                                   # not two meshed layers apart: no barrel to model
                     continue
                 link(np.array([idx[la, j, i]]), np.array([idx[lb, j, i]]),
-                     np.array([k_cu * np.pi * v.drill * 1e-3 * T_PLATING / dz]))
+                     np.array([k_cu * MAT.barrel_area_mm2(v.drill, getattr(v, "plating", T_PLATING) * 1e3) * 1e-6 / dz]))
         for (la, ja, ia), (lb, jb, ib), G in links:                # relief spokes and other lumped paths
             if 0 <= ja < ny and 0 <= ia < nx and 0 <= jb < ny and 0 <= ib < nx:
                 link(np.array([idx[la, ja, ia]]), np.array([idx[lb, jb, ib]]), np.array([float(G)]))
