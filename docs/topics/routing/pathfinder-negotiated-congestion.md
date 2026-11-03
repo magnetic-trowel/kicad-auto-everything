@@ -70,6 +70,7 @@ Measured results of this prototype: see [solver benchmarks](../solvers/benchmark
 
 ## Conflicts and open questions
 - No PCB-specific study of negotiation schedules; transfer of CQL/LSTM results from VLSI is unproven.
+- **kae's one test was a non-standard variant.** `lastmile_region.py` (experimental, off) left 8-15 conflicts on fm4dd after 20 rounds, but with present price 2.0 from round 1 ×1.5, per-net history multiplied into the price, every net re-routed each round and a 20-round cap ([kae-closing-open-connections](../../research/routing/kae-closing-open-connections.md)) [C]. The VPR schedule, per-cell history and offender-only reroute above are untested on PCBs here.
 
 ## Sources
 - research notes: [routing_algorithms.md § Q1](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/routing_algorithms.md); [routing_classics_supplement.md § Q1, Q7, Implications](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/routing_classics_supplement.md); [solver_toolbox.md § 5](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/solver_toolbox.md); [verification_papers.md § 1 row 6](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_papers.md)
