@@ -22,7 +22,8 @@
 #
 # Decide on paired per-board differences against the control of the same family: cp1, cpk (k=3),
 # completion, unconnected items, DRC errors by type, physics sum u (rephysics evaluator), placer move
-# rate (P5: the RUDY term's cost). Expected effects are small (|delta cp1| <= 0.02); a treatment that
+# rate (P5: the RUDY term's cost). P5 and P10 split out the dense boards (split C, or the place report's
+# seed RUDY overflow > 0): elsewhere RUDY's overflow is ~0 and the margin is ~1 mm. Expected effects are small (|delta cp1| <= 0.02); a treatment that
 # is not worse beyond the seed noise of the control (its spread over seeds 0-2) wins when it is the
 # simpler arm (P5 cong0, J10 bump0 / rmargin0); margin0 must be at least as good to replace auto.
 set -euo pipefail
