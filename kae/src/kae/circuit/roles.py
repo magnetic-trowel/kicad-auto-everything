@@ -1462,9 +1462,11 @@ def _rail_sources(nl: Netlist, roles: Roles):
                 if ub.get('value') is not None:
                     n_d = (src.get('path_via') or [src.get('via')]).count('diode')
                     v = ub['value'] - 0.4 * n_d * (1 if ub['value'] >= 0 else -1)
+                    # from 10 % under v up to the upstream rail's far end (signed: a negative rail's is its lowest)
+                    far = max(ub['interval'], key=abs) if ub.get('interval') else v * 1.05
+                    lo, hi = sorted((round(v * 0.9, 3), round(far, 3)))
                     nr.attrs['volts'] = belief(round(v, 3), 'V', f"inherited from '{nl.nets[up].short}' through {src['ref']} ({src['via']})",
-                                               round(v * 0.9, 3), round(ub['interval'][1] if ub.get('interval') else v * 1.05, 3),
-                                               lineage=[ub.get('relative_to', '')])
+                                               lo, hi, lineage=[ub.get('relative_to', '')])
 
 
 DEVBOARD = rx(r'breakout|\bPico|XIAO|Arduino|DevKit|\bnano\b|_nano|nano_|WeMos|ProMicro|Pro_?Micro|RP2040.?Zero|SUPERMINI|nice_nano|'
@@ -1565,12 +1567,18 @@ def battery_volts(nl, roles, net):
     return None
 
 
+def _band(v, rel):
+    """(lo, hi) of v +/- rel, ordered: a negative rail's interval holds its signed value (abs(v) gave -5 V
+    the interval [4.75, 5.25])."""
+    return tuple(sorted((v * (1 - rel), v * (1 + rel))))
+
+
 def _rail_voltage(nl, roles, net, vname, pd_ctrl):
     s = nl.nets[net].short
     srcs = []
     if vname:
         v = vname[0]
-        srcs.append(('name', v, f"net name '{s}' ({vname[1]})", abs(v) * 0.95, abs(v) * 1.05))
+        srcs.append(('name', v, f"net name '{s}' ({vname[1]})", *_band(v, 0.05)))
     for p in nl.nets[net].pins:
         if roles.parts[p.ref].kind in ('ic', 'module') and not vname:
             for prx, pin_rx, v in INT_VOUT_TABLE:
@@ -1584,7 +1592,7 @@ def _rail_voltage(nl, roles, net, vname, pd_ctrl):
         if pr and pr.subtype in ('regulator_linear', 'regulator_switching', 'regulator_module') and (OUT_PIN.match(p.fn) or roles.sem(p) == 'supply_out'):
             rv = regulator_vout(part_number_text(nl.parts[p.ref]))
             if rv:
-                srcs.append(('regulator', rv[0], f"{p.ref} part number '{rv[1]}'", abs(rv[0]) * 0.97, abs(rv[0]) * 1.03))
+                srcs.append(('regulator', rv[0], f"{p.ref} part number '{rv[1]}'", *_band(rv[0], 0.03)))
     if re.search(r'VBUS|USB_?5V|VUSB', s) and not vname:
         if pd_ctrl:
             srcs.append(('usb', 5.0, 'USB VBUS with a power-delivery controller on the board', 4.4, 20.0))
@@ -1603,7 +1611,7 @@ def _rail_voltage(nl, roles, net, vname, pd_ctrl):
                 part = nl.parts[p.ref]
                 cv = V.net_voltage(part.value) or V.net_voltage(part.refdes)
                 if cv and abs(cv[0]) <= 60:
-                    srcs.append(('connector', cv[0], f"connector {part.refdes} value '{part.value}'", abs(cv[0]) * 0.9, abs(cv[0]) * 1.1))
+                    srcs.append(('connector', cv[0], f"connector {part.refdes} value '{part.value}'", *_band(cv[0], 0.1)))
                     break
     ratings = []
     for cref, _ in roles.caps_to.get(net, []):
