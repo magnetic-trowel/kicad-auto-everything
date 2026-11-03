@@ -58,7 +58,17 @@ DEFAULTS = dict(
     stitch=True,
     max_width=1.0,            # mm: widest power/ground track (the feed width of 0603-1206 passives;
                               # power-copper.md: area efficiency peaks at feed width)
-    ladder=(3.0, 2.5, 2.0, 1.5, 1.2, 1.0, 0.8, 0.6, 0.5, 0.4, 0.3),
+    ladder=(20.0, 15.0, 12.0, 10.0, 8.0, 6.0, 5.0, 4.0, 3.0, 2.5, 2.0, 1.5, 1.2, 1.0, 0.8, 0.6, 0.5, 0.4, 0.3),
+    mode="widen",             # "widen": constant-width runs centred on each track; "vector": the free region
+                              # around the net's copper on each layer, filled with overlapping track strips
+    vector_strip=0.5,         # mm: strip width of the vector fill (pitch 0.8 x that)
+    vector_min_gain=0.5,      # mm^2: a vector piece adding less copper than this is dropped
+    into_pours=False,         # vector: may grow into other nets' zone fills (False: those fills are obstacles,
+                              # so a rail never cuts a ground pour)
+    neck=None,                # grown copper keeps neck_gap from the net's own SMD pads whose short side is at
+                              # most this (mm); None: from the operating facts' requirements.assembly (reflow or
+                              # unknown: 0.6, tombstoning 0402-and-smaller passives; hand soldering: 1.6)
+    neck_gap=0.3,
     current_margin=3.0,       # a net's operating current x this sizes its IPC width (when above max_width)
     current_cap=3.0,          # mm: the widest any current asks for
     operating=None,           # operating facts JSON (kae.intent operating: parts.<ref>.I_A / I_sustained_A);
@@ -81,6 +91,7 @@ DEFAULTS = dict(
 
 VICTIM_ROLES = ("clock", "high_speed", "analog", "rf")
 TOL = 0.002
+VTOL = 0.03          # mm: vector mode's margin over each requirement (polygonal shapes, simplification)
 
 
 # ----------------------------------------------------------------------------- pure rules
@@ -120,6 +131,55 @@ def width_cap(max_width, current_a, margin=DEFAULTS["current_margin"], cap=DEFAU
     """Widest width (mm) to grow a net to: max_width, or the IPC width of margin x its current
     when that is wider, at most `cap`."""
     return max(max_width, min(cap, ipc_width(margin * (current_a or 0.0))))
+
+
+def share(i_own, i_other):
+    """This net's share of the room it contests with another power/ground net: total copper loss
+    sum(I^2 R), R ~ 1/w, under sum(w) fixed is least at w ~ |I|. Without both currents: equal."""
+    a, b = abs(i_own or 0.0), abs(i_other or 0.0)
+    if a <= 0 or b <= 0:
+        return 0.5
+    return a / (a + b)
+
+
+def neck_pad(assembly):
+    """Short side (mm) up to which an SMD pad keeps grown copper away (only the routed track enters):
+    tombstoning of 0402-and-smaller passives under reflow (also when the process is unknown), and
+    every small SMD pad when the board is hand soldered (wide copper sinks the iron's heat)."""
+    a = assembly or {}
+    if a.get("hand_solder_ok") or a.get("process") == "hand":
+        return 1.6
+    return 0.6
+
+
+def strips(region, w, pitch=None, angle=0.0):
+    """Track centrelines [(a, b)] that cover `region` (a shapely polygon) with strips w wide: the
+    contour of region shrunk by w/2, and parallel lines `pitch` apart (default 0.8 w) clipped to it.
+    Every strip of width w lies inside `region`."""
+    from shapely import affinity
+    inner = region.buffer(-w / 2, join_style=2)
+    if inner.is_empty:
+        return []
+    out = []
+    polys = getattr(inner, "geoms", [inner])
+    for pg in polys:
+        for ring in [pg.exterior, *pg.interiors]:
+            c = list(ring.coords)
+            out += [(c[i], c[i + 1]) for i in range(len(c) - 1) if math.dist(c[i], c[i + 1]) > 1e-4]
+    pitch = pitch or 0.8 * w
+    rot = affinity.rotate(inner, -angle, origin=(0, 0)) if angle else inner
+    x0, y0, x1, y1 = rot.bounds
+    y = y0 + pitch / 2
+    while y < y1:
+        ln = LineString([(x0 - 1, y), (x1 + 1, y)]).intersection(rot)
+        for g in getattr(ln, "geoms", [ln]):
+            if g.geom_type == "LineString" and g.length > 1e-4:
+                if angle:
+                    g = affinity.rotate(g, angle, origin=(0, 0))
+                c = list(g.coords)
+                out.append((c[0], c[-1]))
+        y += pitch
+    return out
 
 
 def width_ladder(orig, cap, ladder=DEFAULTS["ladder"]):
@@ -267,6 +327,10 @@ class PowerCopper:
         for f in self.board.footprints:
             nets_of.setdefault(f.ref, set()).update(p.net for p in f.pads if p.net)
         self.current = net_currents(op, nets_of, self.power, self.ground) if op else {}
+        asm = ((op or {}).get("requirements") or {}).get("assembly") or {}
+        self.hand_solder = bool(asm.get("hand_solder_ok")) or asm.get("process") == "hand"
+        self.neck_pad = self.o["neck"] if self.o.get("neck") is not None else neck_pad(asm)
+        self.vector = []       # (net, layer, [(a, b, w, uuid)]) strips of the vector mode, one group each
         self.edits = {}        # orig track uuid -> [(a, b, w)]
         self.vias = []         # (net, x, y, size, drill, uuid, kind)
         self.tracks = []       # (net, layer, w, a, b, uuid, owner)
@@ -287,6 +351,8 @@ class PowerCopper:
             return self.o["antenna_gap"]
         if not net or net in self.power or net in self.ground:
             return None
+        if net in self.switch:
+            return self.o["victim_gap_max"]
         if net in self.victims:
             return victim_gap(self.h[own_layer], self.o["victim_k"], self.o["victim_gap_min"], self.o["victim_gap_max"])
         if layer != own_layer:
@@ -304,6 +370,10 @@ class PowerCopper:
                 if id(it) in seen or it in ignore:
                     continue
                 seen.add(id(it))
+                if l == layer and it.kind == "pad" and it.net == net and it.smd and self.neck_pad > 0 \
+                        and _short_side(it.geom) <= self.neck_pad + 1e-9:
+                    out.append((it.geom, 0.0, self.o["neck_gap"], 1.0))
+                    continue
                 ex = self._extra(it, l, layer)
                 if l == layer:
                     nd = self.sp.need(it, net, "track", layer)
@@ -316,16 +386,25 @@ class PowerCopper:
                     continue
                 else:
                     req = ex
-                out.append((it.geom, it.r, req))
+                f = 1.0
+                if l == layer and it.kind == "track" and it.net != net and it.net in self.power | self.ground \
+                        and not (isinstance(it.owner, tuple) and str(it.owner[0]).startswith("pc-")):
+                    # a competing power/ground track that has not grown yet: this net takes its
+                    # current-proportional share of the room between them (min sum I^2 R at w ~ I)
+                    f = share(self.current.get(net), self.current.get(it.net))
+                out.append((it.geom, it.r, req, f))
         return out
 
-    def _allowed_half(self, pts, cons, net, layer):
-        """Per sample point: the largest half-width the copper may have there."""
+    def _allowed_half(self, pts, cons, net, layer, h0=0.0):
+        """Per sample point: the largest half-width the copper may have there (h0: the track's own
+        half-width; a competing net's ungrown track leaves this net only its share of the gap)."""
         a = np.full(len(pts), np.inf)
         if cons:
             P = shapely.points(pts)
-            for g, r, req in cons:
+            for g, r, req, f in cons:
                 d = shapely.distance(g, P) - r - req - TOL
+                if f < 1.0:
+                    d = np.where(d > h0, h0 + f * (d - h0), d)
                 a = np.minimum(a, d)
         if self.sp.outline is not None:
             e = self.sp.edge_need(net, "track", layer)
@@ -338,7 +417,7 @@ class PowerCopper:
         if self.sp.track_violations(net, layer, w, a, b, ignore=ignore, first=True):
             return False
         seg = LineString([a, b])
-        for g, r, req in self._constraints(net, layer, seg, w / 2 + self.o["victim_gap_max"] + self.o["antenna_gap"], ignore):
+        for g, r, req, _ in self._constraints(net, layer, seg, w / 2 + self.o["victim_gap_max"] + self.o["antenna_gap"], ignore):
             if g.distance(seg) - r - w / 2 < req + TOL:
                 return False
         return True
@@ -371,7 +450,7 @@ class PowerCopper:
             seg = LineString([t.start, t.end])
             cons = self._constraints(t.net, t.layer, seg, steps[0] / 2 + self.o["victim_gap_max"] + self.o["antenna_gap"]
                                      + sp.max_need, {it})
-            half = self._allowed_half(pts, cons, t.net, t.layer)
+            half = self._allowed_half(pts, cons, t.net, t.layer, t.width / 2)
             ws = [next((w for w in steps if w / 2 <= h), t.width) for h in half]
             rs = runs(ws, xs, t.width, self.o["min_run"])
             if all(w <= t.width + 1e-9 for _, _, w in rs):
@@ -405,6 +484,134 @@ class PowerCopper:
             self.stats["widened_mm"] += sum(math.dist(a, b) for a, b, w in merged if w > t.width + 1e-9)
         self.stats["widened_mm"] = round(self.stats["widened_mm"], 2)
         return self.stats["widened"]
+
+    # ---------------------------------------------------------------- 1b. vector growth
+    def grow_vector(self):
+        """Vector mode: per power/ground net and layer, the free region around the net's copper
+        (the layer minus every foreign item grown by its required gap, the board edge, and other
+        nets' fills unless into_pours), clipped to a corridor max_width/2 around the net's tracks
+        and pads. Nets competing for the same room share it by current: all grow together, each
+        at a speed proportional to its current (a multiplicatively weighted Voronoi split, by
+        repeated buffering), keeping the board clearance between them; the boundary sits where
+        d_i/I_i = d_j/I_j, so widths come out proportional to current (least sum I^2 R). Each
+        connected piece that touches the net's copper and adds at least vector_min_gain mm2 is
+        filled with overlapping track strips."""
+        sp = self.sp
+        reach = self.o["victim_gap_max"] + self.o["antenna_gap"] + sp.max_need + 0.1
+        n_strips = 0
+        area = 0.0
+        self.vector_share = {}
+        for layer in sp.cu:
+            cand = {}
+            for net in sorted(self.power | self.ground):
+                own = [it for it in sp.items[layer] if it.net == net and it.kind in ("track", "pad")]
+                if not any(it.kind == "track" for it in own):
+                    continue
+                cap = width_cap(self.o["max_width"], self.current.get(net), self.o["current_margin"], self.o["current_cap"])
+                seeds = unary_union([it.geom.buffer(it.r) if it.r else it.geom for it in own])
+                corridor = seeds.buffer(cap / 2)
+                if sp.outline is not None:
+                    corridor = corridor.intersection(sp.outline.buffer(-(sp.edge_need(net, "track", layer) + VTOL)))
+                if corridor.is_empty:
+                    continue
+                # polygon margin: chord sag of round shapes (pads are already polygons inscribed in their
+                # arcs) and the 0.01 mm simplification below
+                obs = [g.buffer(r + req + VTOL, quad_segs=8) for g, r, req, _ in
+                       self._constraints(net, layer, corridor, reach, ())]
+                fills = []
+                for n2, byl in self.fills.items():
+                    for g in byl.get(layer) or []:
+                        if n2 == net:
+                            fills.append(g)
+                        elif not self.o["into_pours"] and g.intersects(corridor):
+                            obs.append(g.buffer(sp._generic_need(net, "track", layer) + VTOL))
+                free = corridor.difference(unary_union(obs)) if obs else corridor
+                own_fill = unary_union(fills) if fills else None
+                if own_fill is not None and not own_fill.is_empty:
+                    free = free.difference(own_fill.buffer(-0.3))
+                cand[net] = dict(seeds=seeds, free=free, cap=cap, fill=own_fill, claim=None)
+            if not cand:
+                continue
+            claims = self._share_room(cand, layer)
+            for net, c in cand.items():
+                claim = claims.get(net)
+                if claim is None or claim.is_empty:
+                    continue
+                w = sp.clamp_width(net, layer, self.o["vector_strip"])
+                seeds, own_fill = c["seeds"], c["fill"]
+                for piece in getattr(claim, "geoms", [claim]):
+                    if piece.is_empty or piece.geom_type != "Polygon" or not piece.intersects(seeds):
+                        continue
+                    gain = piece.difference(seeds)
+                    if own_fill is not None and not own_fill.is_empty:
+                        gain = gain.difference(own_fill)
+                    if gain.area < self.o["vector_min_gain"]:
+                        continue
+                    piece = piece.simplify(0.01)
+                    segs = strips(piece, w)
+                    if not segs:
+                        continue
+                    caps = [LineString([a, b]).buffer(w / 2, quad_segs=4) for a, b in segs]
+                    U = unary_union(caps + [seeds.intersection(piece.buffer(0.01))])
+                    keep_comp = [k for k in getattr(U, "geoms", [U]) if k.intersects(seeds)]
+                    if not keep_comp:
+                        continue
+                    K = unary_union(keep_comp)
+                    gid = W.new_uuid()
+                    kept = [(a, b, w, W.new_uuid()) for (a, b), cp in zip(segs, caps) if cp.intersects(K)]
+                    if not kept:
+                        continue
+                    for a, b, ww, u in kept:
+                        sp.add_track(net, layer, ww, a, b, owner=("pc-vector", gid))
+                    self.vector.append((net, layer, kept, gid))
+                    n_strips += len(kept)
+                    area += gain.area
+                    self.vector_share.setdefault(net, 0.0)
+                    self.vector_share[net] += gain.area
+        self.stats["vector_pieces"] = len(self.vector)
+        self.stats["vector_strips"] = n_strips
+        self.stats["vector_mm2"] = round(area, 1)
+        self.stats["vector_mm2_by_net"] = {k: round(v, 1) for k, v in sorted(self.vector_share.items())}
+        return len(self.vector)
+
+    def _gap(self, a, b, layer):
+        c = self.sp._pair(a, b, layer)
+        return (c.track_track if c is not None else self.sp.max_need) + VTOL
+
+    def _share_room(self, cand, layer, steps=30):
+        """{net: claimed region}: every net grows from its copper inside its own free region, at a
+        speed proportional to its current (equal without currents; weights floored at 1/10 of the
+        largest), never within the pair clearance of another net's claim; after `steps` rounds each
+        net takes what is left of its corridor."""
+        nets = list(cand)
+        cur = {n: abs(self.current.get(n) or 0.0) for n in nets}
+        top = max(cur.values()) if cur else 0.0
+        wt = {n: (max(cur[n] / top, 0.1) if top > 0 and cur[n] > 0 else (1.0 if top <= 0 else 0.1)) for n in nets}
+        order = sorted(nets, key=lambda n: -wt[n])
+        claim = {n: None for n in nets}
+
+        def others(n):
+            gs = [claim[m].buffer(self._gap(n, m, layer), quad_segs=4) for m in nets
+                  if m != n and claim[m] is not None and not claim[m].is_empty]
+            return unary_union(gs) if gs else None
+
+        def grow(n, radius):
+            c = cand[n]
+            g = c["seeds"].buffer(radius, quad_segs=4).intersection(c["free"])
+            o = others(n)
+            if o is not None:
+                g = g.difference(o)
+            claim[n] = g
+
+        if len(nets) > 1:
+            R = max(cand[n]["cap"] / 2 for n in nets)
+            for s in range(1, steps + 1):
+                t = R * s / steps
+                for n in order:
+                    grow(n, min(cand[n]["cap"] / 2, t * wt[n]))
+        for n in order:
+            grow(n, cand[n]["cap"] / 2)
+        return claim
 
     # ---------------------------------------------------------------- 2. ground vias at pads
     def _ground_fill(self, net, layer, r):
@@ -553,7 +760,7 @@ class PowerCopper:
         return added
 
     # ---------------------------------------------------------------- writing
-    def write(self, dst, skip=frozenset(), kinds=("widen", "pad", "stitch")):
+    def write(self, dst, skip=frozenset(), kinds=("widen", "vector", "pad", "stitch")):
         """dst = the input with the planned copper; `skip`: uuids (original track or added item)
         left out; `kinds`: the stages written. Returns {uuid of a written item: its group}."""
         text = self.path.read_text(encoding="utf-8")
@@ -579,6 +786,13 @@ class PowerCopper:
         out.append(text[pos:])
         text = "".join(out)
         chunks = []
+        if "vector" in kinds:
+            for net, layer, kept, gid in self.vector:
+                for a, b, w, u in kept:
+                    if u in skip:
+                        continue
+                    groups[u] = u           # one strip per group: a violation reverts only its strip
+                    chunks.append(W.track_sexpr(net, layer, w, a, b, uid=u, locked=False))
         vias = [v for v in self.vias if v[6] in kinds and v[5] not in skip]
         keep = {v[5] for v in vias}
         for v in vias:
@@ -601,12 +815,18 @@ class PowerCopper:
         out = {}
         for u, pieces in self.edits.items():
             out[u] = unary_union([LineString([a, b]).buffer(w / 2) for a, b, w, _ in pieces])
+        for net, layer, kept, gid in self.vector:
+            for a, b, w, u in kept:
+                out[u] = LineString([a, b]).buffer(w / 2, quad_segs=4)
         for v in self.vias:
             out[v[5]] = Point(v[1], v[2]).buffer(v[3] / 2)
         for net, layer, w, a, b, u, owner in self.tracks:
             if owner in out:
                 out[owner] = out[owner].union(LineString([a, b]).buffer(w / 2))
         return out
+
+    def vector_or_widen(self):
+        return self.grow_vector() if self.o.get("mode") == "vector" else self.widen()
 
     def group_kind(self, g):
         if g in self.edits:
@@ -695,7 +915,8 @@ def run(input_path, output_path, opts=None, workdir=None, timeout=1800, log=prin
     wd.mkdir(parents=True, exist_ok=True)
     staged = W.stage(inp, wd / "in", "board")
     pc = PowerCopper(staged, o, log=log)
-    for k, f in (("widen", pc.widen), ("vias", pc.ground_vias), ("stitch", pc.stitch)):
+    vec = o.get("mode") == "vector"
+    for k, f in (("widen", pc.vector_or_widen), ("vias", pc.ground_vias), ("stitch", pc.stitch)):
         if o[k]:
             t1 = time.monotonic()
             f()
@@ -704,7 +925,7 @@ def run(input_path, output_path, opts=None, workdir=None, timeout=1800, log=prin
     log(f"[power-copper] planned {pc.stats} in {t_plan:.1f}s")
     base_rep, base = _drc(staged, wd / "in.drc.json", timeout)
     skip = set()
-    kinds = ["widen", "pad", "stitch"]
+    kinds = ["vector" if vec else "widen", "pad", "stitch"]
     rounds = []
     cand = wd / "out" / "board.kicad_pcb"
     cand.parent.mkdir(parents=True, exist_ok=True)
@@ -757,7 +978,8 @@ def run(input_path, output_path, opts=None, workdir=None, timeout=1800, log=prin
             shutil.copy2(s_, out.with_suffix(ext))
     kept = dict(widened=sum(1 for u in pc.edits if u not in skip) if "widen" in kinds else 0,
                 ground_vias=sum(1 for v in pc.vias if v[6] == "pad" and v[5] not in skip) if "pad" in kinds else 0,
-                stitch_vias=sum(1 for v in pc.vias if v[6] == "stitch" and v[5] not in skip) if "stitch" in kinds else 0)
+                stitch_vias=sum(1 for v in pc.vias if v[6] == "stitch" and v[5] not in skip) if "stitch" in kinds else 0,
+                vector_strips=sum(1 for x in pc.vector for k in x[2] if k[3] not in skip) if "vector" in kinds else 0)
     return dict(board=str(inp), planned=pc.stats, kept=kept, kinds=kinds, reverted=len(skip),
                 drc_in=base, drc_out=final or base, rounds=rounds,
                 nets=dict(power=sorted(pc.power), ground=sorted(pc.ground), switch=sorted(pc.switch),
@@ -792,13 +1014,18 @@ def main(argv=None):
     ap.add_argument("--no-vias", action="store_true")
     ap.add_argument("--no-stitch", action="store_true")
     ap.add_argument("--max-width", type=float, default=DEFAULTS["max_width"])
+    ap.add_argument("--current-cap", type=float, default=DEFAULTS["current_cap"])
+    ap.add_argument("--mode", choices=("widen", "vector"), default=DEFAULTS["mode"])
+    ap.add_argument("--into-pours", action="store_true")
+    ap.add_argument("--neck", type=float, default=None, help="own SMD pads up to this short side keep grown copper away")
     ap.add_argument("--operating", help="operating facts JSON (default: KAE_OPERATING of the .kicad_pro)")
     ap.add_argument("--workdir")
     ap.add_argument("--report")
     ap.add_argument("--timeout", type=int, default=1800)
     a = ap.parse_args(argv)
     rep = run(a.input, a.output, dict(widen=not a.no_widen, vias=not a.no_vias, stitch=not a.no_stitch,
-                                      max_width=a.max_width, operating=a.operating), workdir=a.workdir, timeout=a.timeout)
+                                      max_width=a.max_width, current_cap=a.current_cap, mode=a.mode,
+                                      into_pours=a.into_pours, neck=a.neck, operating=a.operating), workdir=a.workdir, timeout=a.timeout)
     txt = json.dumps(rep, indent=1)
     if a.report:
         Path(a.report).write_text(txt)

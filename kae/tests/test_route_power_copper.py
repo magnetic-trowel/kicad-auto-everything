@@ -5,6 +5,7 @@ import math
 
 import pytest
 from shapely.geometry import Point, box
+from shapely.ops import unary_union
 
 from kae.route import power_copper as pc
 
@@ -119,3 +120,54 @@ def test_runs_short_pinch_between_wider_terminates():
     w = [1.0] * 14 + [0.6] * 3 + [1.0] * 14             # a short 0.6 pinch, wider than the original
     r = pc.runs(w, xs, 0.25, 1.0)
     assert [x[2] for x in r] == [1.0, 0.6, 1.0]
+
+
+def test_share_proportional_to_current():
+    assert pc.share(1.0, 1.0) == pytest.approx(0.5)      # a supply and its return: equal
+    assert pc.share(3.0, 1.0) == pytest.approx(0.75)     # the larger current takes more
+    assert pc.share(None, 2.0) == pytest.approx(0.5)     # without both currents: equal
+    # the share minimises I1^2/w1 + I2^2/w2 at w1 + w2 fixed
+    i1, i2, room = 3.0, 1.0, 2.0
+    best = min((i1 ** 2 / w + i2 ** 2 / (room - w), w) for w in [k * room / 1000 for k in range(1, 1000)])[1]
+    assert best / room == pytest.approx(pc.share(i1, i2), abs=2e-3)
+
+
+def test_neck_pad_by_assembly():
+    assert pc.neck_pad({"process": "unknown"}) == 0.6    # unknown: treated as reflow
+    assert pc.neck_pad(None) == 0.6
+    assert pc.neck_pad({"hand_solder_ok": True}) == 1.6
+
+
+def test_strips_cover_and_stay_inside():
+    from shapely.geometry import LineString
+    region = box(0, 0, 5, 2).union(box(0, 0, 1, 6))
+    w = 0.5
+    segs = pc.strips(region, w)
+    cov = unary_union([LineString([a, b]).buffer(w / 2) for a, b in segs])
+    assert cov.difference(region).area < 1e-3             # nothing outside the region
+    assert cov.area > 0.95 * region.area                   # and it is (almost) covered
+
+
+def test_share_room_splits_by_current():
+    from shapely.geometry import LineString
+
+    class Sp:
+        max_need = 0.2
+
+        def _pair(self, a, b, layer):
+            return None
+
+    obj = pc.PowerCopper.__new__(pc.PowerCopper)
+    obj.sp = Sp()
+    obj.current = {"A": 3.0, "B": 1.0}
+    free = box(-1, -10, 5, 10)
+    cand = {"A": dict(seeds=LineString([(0, -10), (0, 10)]), free=free, cap=20.0),
+            "B": dict(seeds=LineString([(4, -10), (4, 10)]), free=free, cap=20.0)}
+    claim = obj._share_room(cand, "F.Cu", steps=60)
+    xa = claim["A"].intersection(box(0, -1, 5, 1)).bounds[2]       # A's reach toward B
+    xb = claim["B"].intersection(box(-1, -1, 4, 1)).bounds[0]
+    assert xa == pytest.approx(0.75 * 4.0, abs=0.25)                # w ~ I: A takes 3/4 of the room
+    assert xb - xa == pytest.approx(0.2 + pc.VTOL, abs=0.02)        # the clearance between them
+    obj.current = {}
+    claim = obj._share_room(cand, "F.Cu", steps=60)
+    assert claim["A"].intersection(box(0, -1, 5, 1)).bounds[2] == pytest.approx(2.0, abs=0.25)   # equal
