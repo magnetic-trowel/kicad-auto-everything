@@ -9,6 +9,7 @@
                                      [--soft complete,pad|none] [--skip ID,ID] [--planes cost|keep|strict|allow]
                                      [--pad-shapes kicad|outside] [--last-mile-soft] [--bridge-opt KEY=VALUE]
                                      [--rounds N] [--physics-fidelity fast|exact|multi] [--physics-k K]
+                                     [--intent FILE]
                                      [--workdir DIR] [--keep] [--report FILE]
     python -m kae.route.critical_cli physics BOARD [--brief FILE] [--physics-fidelity fast|exact|multi]
 
@@ -88,6 +89,8 @@ def main(argv=None):
     r.add_argument("--bridge-opt", action="append", default=[], metavar="KEY=VALUE",
                    help="another kae.route.bridge DEFAULT_OPTS entry, e.g. rounds=auto, router_share=auto")
     r.add_argument("--budgets", help="board.budgets.json from `kae.sim.cli budgets`: simulated allocations")
+    r.add_argument("--intent", help="intent file (JSON, as kae.em.pnr --intent): its requirements dT_max_K and "
+                                    "drop_share size the critical copper (default 10 K, 2 %%)")
     r.add_argument("--workdir")
     r.add_argument("--keep", action="store_true")
     r.add_argument("--report")
@@ -124,6 +127,9 @@ def main(argv=None):
             opts["trim_tol"] = a.trim_tol
         if a.budgets:
             opts["budgets"] = a.budgets
+        if a.intent:
+            from kae.excite.beliefs import load_intent
+            opts.update(critical.intent_opts(load_intent(a.intent)))
         rep = critical.run(a.input, a.output, seed=a.seed, time_s=a.time, opts=opts, rounds=a.rounds,
                            workdir=a.workdir, bridge=not a.no_bridge,
                            bridge_opts=dict(_bridge_opts(a.bridge_opt), planes=a.planes, pad_shapes=a.pad_shapes))

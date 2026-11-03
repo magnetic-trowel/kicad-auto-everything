@@ -14,8 +14,11 @@ For every rail of the brief (net role 'rail') with a source and at least one loa
    branch of length l then needs w >= rho l I / (t dV) (`drop_width`), never less than
    IPC-2221 at 10 K or the net class width. A branch carrying 0.25 A or more is drawn at
    least as wide as its narrower terminal pad (feed width: the most resistance per area of
-   copper, docs/topics/physics/power-copper.md section 3), up to 3 mm, narrower where the
-   board has no room.
+   copper, docs/topics/physics/power-copper.md section 3), narrower where the board has no
+   room, but never below IPC-2221: a branch that fits only narrower is left to the general
+   router. Every width is capped at `rail_max_mm` (3 mm; pours, not tracks, above ~5 A),
+   noted when the cap binds. opts dT_max_K and drop_share (an intent's, via
+   critical.intent_opts) replace 10 K and 2 %.
 3. **Zones first.** A terminal whose pad lies in a zone of the rail on its own layer is
    connected by the fill; one under a zone on another layer gets a via beside the pad;
    only the rest get tracks. A rail without zones is routed as a trunk to its farthest
@@ -36,10 +39,10 @@ import math
 import re
 
 from .critical_grid import Anchor
-from .critical_modules import Module, _commit_vias, anchor, hop_layers, route_hop, via_candidates, width_ladder
+from .critical_modules import Module, _commit_vias, anchor, dT_max, hop_layers, route_hop, via_candidates, width_ladder
 from .critical_physics import drop_width, ipc2221_width, r_track, r_via
 
-DROP_SHARE = 0.02          # rail + ground drop budget, fraction of the rail voltage (E5)
+DROP_SHARE = 0.02          # rail + ground drop budget, fraction of the rail voltage (E5); opts drop_share
 
 CONNECTOR_A = (            # (lib_id/value pattern, rating A) for connectors (E5, by family)
     (r"BarrelJack|DC_?Jack|Jack_DC|PJ-0\d\d", 5.0),
@@ -312,10 +315,33 @@ def _class_only(ctx, m, tag, rt, opt):
     return True
 
 
+def drop_share(ctx):
+    """The rail + ground drop budget as a fraction of the rail voltage: opts drop_share (an
+    intent's requirements.drop_share, critical.intent_opts), else DROP_SHARE."""
+    return float(ctx.opts.get("drop_share") or DROP_SHARE)
+
+
+def _branch_widths(ctx, m, tag, b, cur, w_ipc, w_drop, w_feed, opt, n=4):
+    """The width ladder of a rail or return branch: from max(IPC, drop, feed, class) down to
+    the IPC-2221 width (or the class width when that is wider), never below it
+    (critical-net-routing.md). The rail_max_mm cap (pours, not tracks, above ~5 A) limits the
+    top and, when the current asks more, the floor: noted in the module and flagged in the
+    branch report `b`. Returns (widths widest first, floor)."""
+    cap = float(ctx.opts.get("rail_max_mm", 3.0))
+    w_t = min(max(w_ipc, w_drop, w_feed, opt), cap)
+    if max(w_ipc, w_drop) > cap + 1e-9:
+        what = "IPC-2221" if w_ipc >= w_drop else "the drop budget"
+        m.notes.append(f"{tag}: {what} needs {max(w_ipc, w_drop):.2f} mm for {cur:.2f} A; capped at {cap:g} mm "
+                       f"(rail_max_mm): a pour, not a track")
+        b["capped"] = dict(ipc_mm=round(w_ipc, 3), drop_mm=round(w_drop, 3), cap_mm=cap)
+    floor = max(opt, min(w_ipc, cap))
+    return sorted({round(w, 4) for w in width_ladder(max(w_t, floor), floor, n)}, reverse=True), floor
+
+
 def _route_rail(ctx, rl, mode, gnd_pour):
     net, src = rl["net"], rl["src"]
     v = ctx.volts(net) or 3.3
-    dv_rail = DROP_SHARE * v * (0.8 if gnd_pour else 0.5)
+    dv_rail = drop_share(ctx) * v * (0.8 if gnd_pour else 0.5)
     design = rl["design"]
     m = Module(id=f"rail:{net}", kind="rail", spec=dict(net=net), parts=[src] + list(rl["loads"]))
     rep = dict(net=net, volts=v, source=ctx.fp[src].ref, design_A=round(design, 3),
@@ -330,7 +356,7 @@ def _route_rail(ctx, rl, mode, gnd_pour):
     lmax = _dist_part(ctx, far, rl["parts"][far], (st.x, st.y)) * 1.3
     layer = ctx.side_layer(src)
     t_cu = ctx.sp.tcu.get(layer, 0.035)
-    w_need = max(ipc2221_width(design, t_mm=t_cu), drop_width(design, lmax, dv_rail, t_cu))
+    w_need = max(ipc2221_width(design, dT=dT_max(ctx), t_mm=t_cu), drop_width(design, lmax, dv_rail, t_cu))
     mn, opt, mx = ctx.sp.width_limits(net, layer)
     rep["width_needed_mm"] = round(w_need, 3)
     if mode == "auto" and w_need <= 1.2 * opt:
@@ -372,17 +398,16 @@ def _route_rail(ctx, rl, mode, gnd_pour):
         dist = math.hypot(lt.x - st.x, lt.y - st.y)
         lay = ctx.side_layer(u)
         t_cu = ctx.sp.tcu.get(lay, 0.035)
-        w_t = max(ipc2221_width(cur, t_mm=t_cu), drop_width(cur, 1.3 * dist, dv_rail, t_cu), opt)
-        if cur >= 0.25:
-            w_t = max(w_t, min(st.width, lt.width))
-        w_t = min(w_t, float(ctx.opts.get("rail_max_mm", 3.0)))
-        if w_t <= 1.05 * opt and not first and not ctx.opts.get("rail_light", False):
+        w_ipc = ipc2221_width(cur, dT=dT_max(ctx), t_mm=t_cu)
+        w_drop = drop_width(cur, 1.3 * dist, dv_rail, t_cu)
+        w_feed = min(st.width, lt.width) if cur >= 0.25 else 0.0
+        widths, floor = _branch_widths(ctx, m, f"br:{u}", b, cur, w_ipc, w_drop, w_feed, opt)
+        if widths[0] <= 1.05 * opt and not first and not ctx.opts.get("rail_light", False):
             # the class width carries this branch: no drop physics in drawing it, and locked
             # copper the bridge must route around; its pads near the rail are joined later
             b["note"] = "class width: left to the general router"
             rep["branches"].append(b)
             continue
-        widths = sorted({round(w, 4) for w in width_ladder(w_t, opt, 4)}, reverse=True)
         srcs = [anchor(st)] + ctx.net_copper_anchors(net, connected_to=st)
         layers = [l for l in (lay, ctx.sp.cu[0], ctx.sp.cu[-1]) if l in ctx.sp.cu]
         layers = list(dict.fromkeys(layers))
@@ -391,7 +416,7 @@ def _route_rail(ctx, rl, mode, gnd_pour):
         if rt is not None and _class_only(ctx, m, f"br:{u}", rt, opt):
             b["note"] = "only the class width fits: left to the general router"
         elif rt is None:
-            b["note"] = "not routed"
+            b["note"] = f"no room at its IPC-2221 width {floor:.2f} mm: left to the general router"
         else:
             R = sum(r_track(math.dist(a_, b_), rt.width, ctx.sp.tcu.get(l_, 0.035)) for l_, a_, b_ in rt.segs)
             R += len(rt.vias) * r_via(ctx.sp.thickness, ctx.sp.via_size(net)[1])
@@ -576,16 +601,14 @@ def _ground_return(ctx, m, rl, dv):
         t_cu = ctx.sp.tcu.get(lay, 0.035)
         mn, opt, mx = ctx.sp.width_limits(g, lay)
         dist = math.hypot(lt.x - st.x, lt.y - st.y)
-        w_t = max(ipc2221_width(cur, t_mm=t_cu), drop_width(cur, 1.3 * dist, dv, t_cu), opt)
-        if cur >= 0.25:
-            w_t = max(w_t, min(st.width, lt.width))
-        w_t = min(w_t, float(ctx.opts.get("rail_max_mm", 3.0)))
-        widths = sorted({round(w, 4) for w in width_ladder(w_t, opt, 4)}, reverse=True)
+        b = dict(load=f.ref, current_A=round(cur, 3))
+        widths, floor = _branch_widths(ctx, m, f"gr:{u}", b, cur, ipc2221_width(cur, dT=dT_max(ctx), t_mm=t_cu),
+                                       drop_width(cur, 1.3 * dist, dv, t_cu),
+                                       min(st.width, lt.width) if cur >= 0.25 else 0.0, opt)
         srcs = [anchor(st)] + ctx.net_copper_anchors(g, connected_to=st)
         layers = list(dict.fromkeys([lay, ctx.sp.cu[0], ctx.sp.cu[-1]]))
         rt = route_hop(ctx, m, f"gr:{u}", g, [anchor(lt)], srcs, widths, layers, via=len(layers) > 1,
                        via_cost=5.0, layer_factor={l: (1.0 if l == lay else 1.6) for l in layers})
-        b = dict(load=f.ref, current_A=round(cur, 3))
         if rt is not None and _class_only(ctx, m, f"gr:{u}", rt, opt):
             b["note"] = "only the class width fits: left to the general router"
             rt = None
@@ -593,7 +616,7 @@ def _ground_return(ctx, m, rl, dv):
             R = sum(r_track(math.dist(a_, b_), rt.width, ctx.sp.tcu.get(l_, 0.035)) for l_, a_, b_ in rt.segs)
             b.update(width_mm=rt.width, length_mm=round(rt.length, 2), r_mohm=round(1e3 * R, 3))
         else:
-            b["note"] = "not routed"
+            b["note"] = f"no room at its IPC-2221 width {floor:.2f} mm: left to the general router"
         out.append(b)
     return dict(net=g, branches=out)
 
@@ -671,11 +694,15 @@ def _route_ground(ctx, g, ground_load, rails, mode):
             lt = _best_term(ctx, u, nu, (st.x, st.y))
             lay = ctx.side_layer(u)
             mn, opt, mx = ctx.sp.width_limits(g, lay)
-            w_t = max(ipc2221_width(a), opt)
+            # never below IPC-2221 for its current (the class width only when that is wider)
+            w_t = max(ipc2221_width(a, dT=dT_max(ctx), t_mm=ctx.sp.tcu.get(lay, 0.035)), opt)
             srcs = [anchor(st)] + ctx.net_copper_anchors(g)
-            rt = route_hop(ctx, m, f"gr:{u}", g, [anchor(lt)], srcs, sorted({w_t, opt}, reverse=True),
+            rt = route_hop(ctx, m, f"gr:{u}", g, [anchor(lt)], srcs, [w_t],
                            [ctx.sp.cu[0], ctx.sp.cu[-1]], via=True, via_cost=5.0)
-            rep["branches"].append(dict(load=fu.ref, routed=rt is not None))
+            b = dict(load=fu.ref, routed=rt is not None)
+            if rt is None:
+                b["note"] = f"no room at its IPC-2221 width {w_t:.2f} mm: left to the general router"
+            rep["branches"].append(b)
     rep["items"] = len(m.copper)
     ctx.rail_modules = getattr(ctx, "rail_modules", []) + [m]
     return rep

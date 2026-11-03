@@ -190,7 +190,8 @@ class PhysRouter:
         log(f"pnr: {len(self.srcs)} aggressors, {len(self.obs)} observers; priced nets {self.nets}; "
             f"ripped {len(rip)} items" + (f"; kept as the input has them: {self.kept}" if self.kept else ""))
         from kae.route.critical import Session
-        self.sess = Session(self.base, opts=dict(place_allocs=False), log=lambda m: None)
+        self.sess = Session(self.base, opts=dict(place_allocs=False, dT_max_K=self.dcp.dT_max,
+                                                 drop_share=self.dcp.drop_share), log=lambda m: None)
         self.sp, self.router = self.sess.space, self.sess.router
         self.tracks, self.vias = [], []
         self.window = None
@@ -717,7 +718,8 @@ class PhysRouter:
             s = float(self.sp._generic_need(n, "track", layer) or 0.2)
         except Exception:                     # noqa: BLE001 - a clearance only weighs the area
             s = 0.2
-        w, why = self.policy.width(n, I, t, s, self.WIDTHS, max(w0, mn), mx)
+        inner = layer in names[1:-1]          # as _dc_width: IPC-2221's internal k on inner layers
+        w, why = self.policy.width(n, I, t, s, self.WIDTHS, max(w0, mn), mx, internal=inner)
         return self.sp.clamp_width(n, layer, w), why
 
     def _gnd_gap(self, L):

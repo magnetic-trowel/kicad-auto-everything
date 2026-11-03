@@ -15,7 +15,7 @@ Modules come from the physics brief (`kae.circuit.brief`) in priority order; rai
 
 | Module | Copper drawn | Objective and rule |
 |---|---|---|
-| Commutation cell | Every board hop of the hot loop (input cap → switch → return); return vias | Loop L. Each hop is as wide as its terminals allow, never below IPC-2221 for the cell current, on the layer next to the reference plane; the switch node stays at class width. A ground hop longer than 1.5× the straight distance + 1 mm is left to the plane. |
+| Commutation cell | Every board hop of the hot loop (input cap → switch → return); return vias | Loop L. Each hop is as wide as its terminals allow, never below IPC-2221 for the cell current (what fits only narrower goes to the bridge), on the layer next to the reference plane; the switch node stays as narrow as that allows. A ground hop longer than 1.5× the straight distance + 1 mm is left to the plane. |
 | Power path | The loop C_in → pass elements → C_out (load switch, eFuse, ideal diode) | As a cell. Widths come from the upper bound of the brief's current interval. |
 | Return vias | Up to 4 (more for ≥ 2 A) at the ground pads | 24 directions × 4 gaps; vias are added while each lowers the routed L by ≥ 2 %. |
 | Decoupling | Cap rail pad → IC power pin; cap and IC ground into the plane | Loop L, against the place terms' structure. Pairing comes from the brief: `pin`, or `nearest_pin`. A cap the IC owns with p < 0.5 is not its own and is not paired. A cap more than 10 mm from its pin is left to the bridge. |
@@ -69,9 +69,11 @@ The task's `.kicad_dru` must sit beside the board for DRC, or custom drill and e
 - **Without Terms.** The E5 priors apply, per pin.
 
 **DC.** A track has R = ρl/(wt) and a via barrel R = ρh/(π(d + t_p)t_p). Widths come from three rules ([power-copper § 3](../physics/power-copper.md)):
-- IPC-2221: 1 A needs 0.30 mm and 5 A 2.77 mm on 35 µm copper;
+- IPC-2221, a floor (what fits only narrower goes to the bridge): 1 A needs 0.30 mm and 5 A 2.77 mm on 35 µm copper;
 - the drop budget, w ≥ ρlI/(tΔV);
 - the feed width: a ≥ 0.25 A branch is as wide as its narrower pad, up to 3 mm.
+
+`rail_max_mm` (3 mm) caps all widths (above ~5 A on 1 oz: a pour, not a track); a binding cap is noted and flagged. An intent's `dT_max_K` and `drop_share` (`--intent`) replace 10 K and 2 %.
 
 ### Currents: the E5 priors
 

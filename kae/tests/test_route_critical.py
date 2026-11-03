@@ -1114,3 +1114,87 @@ def test_board_physics_names_a_module_kind_without_a_routed_value(monkeypatch):
     monkeypatch.setattr(CM, "modules_from_brief", lambda brief, kinds: [NS(id="g1", kind="rgroup", spec={})])
     out = CR.board_physics(b, brief={"nets": {}, "parts": {}}, fills=None, terms={}, rails=False)
     assert out["g1"]["error"] == "no routed value for kind 'rgroup'"
+
+
+# ----------------------------------------------------------------------------- IPC floor (audit)
+def _cell(s, I):
+    from kae.route.critical_modules import modules_from_brief, route_module
+    m = next(x for x in modules_from_brief(s.brief, ("cell",)) if x.kind == "cell")
+    m.spec["excite"] = dict(I=I)
+    return route_module(s.ctx, m)
+
+
+def test_cell_hops_never_go_below_their_ipc_width(tmp_path):
+    """The hop ladder ended at the class minimum: at 3 A the cell's GND hop was committed at
+    0.97 mm against an IPC-2221 width of 1.37 mm, with nothing reported
+    (critical-net-routing.md: never below IPC-2221 for the cell current)."""
+    from kae.route.critical_physics import ipc2221_width
+    s = F.session(tmp_path, kinds=("cell",), rails="none")
+    m = _cell(s, 3.0)
+    w_ipc = ipc2221_width(3.0, t_mm=0.035)
+    routed = {k: rt for k, rt in m.hops.items() if rt is not None}
+    assert routed
+    for k, rt in routed.items():
+        assert rt.width >= w_ipc - 1e-3, (k, rt.net, rt.width)
+    for k, rt in m.hops.items():                # a hop that does not fit is left out and says why
+        if rt is None:
+            assert any(k.replace("hop", "hop ") in n for n in m.notes), m.notes
+
+
+def test_cell_hop_capped_by_rail_max_is_noted_and_flagged(tmp_path):
+    s = F.session(tmp_path, kinds=("cell",), rails="none")
+    m = _cell(s, 6.0)                                      # IPC 3.56 mm on 35 um, over the 3 mm cap
+    assert any(f["flag"] == "rail_max_cap" and f["cap_mm"] >= 3.0 for f in m.flags)
+    assert any("rail_max_mm" in n for n in m.notes)
+    assert all(rt.width >= 3.0 - 1e-3 for rt in m.hops.values() if rt is not None)
+
+
+def test_critical_copper_follows_the_intents_dT_and_drop_share(tmp_path):
+    """The router sized copper at 10 K and 2 % whatever the intent said; the evaluator
+    (kae.excite.dc) scores against the intent's dT_max_K and drop_share."""
+    from kae.route import critical
+    from kae.route.critical_physics import ipc2221_width
+    from kae.route.critical_rails import drop_share
+    o = critical.intent_opts({"schema": "kae.intent/1",
+                              "facts": {"requirements": {"dT_max_K": 30, "drop_share": 0.01}}})
+    assert o == {"dT_max_K": 30.0, "drop_share": 0.01}
+    assert critical.intent_opts({"requirements": {"dT_max_K": 20}}) == {"dT_max_K": 20.0}
+    assert critical.intent_opts(None) == {}
+    s = F.session(tmp_path, kinds=("cell",), rails="none", **o)
+    assert drop_share(s.ctx) == 0.01
+    m = _cell(s, 3.0)
+    w30 = ipc2221_width(3.0, dT=30.0, t_mm=0.035)
+    assert m.spec["_floor"] and all(abs(f - max(w30, 0.2)) < 0.25 for f in m.spec["_floor"].values())
+    assert max(m.spec["_floor"].values()) < ipc2221_width(3.0, t_mm=0.035)
+
+
+def test_rail_branches_never_go_below_their_ipc_width(tmp_path, monkeypatch):
+    """Rail branches stepped down to the class width when the IPC width did not fit; now the
+    ladder stops at IPC-2221 and a branch that cannot fit there is left to the general router
+    with a note. A board with no room anywhere: route_hop routes nothing and records what it was
+    offered."""
+    from kae.route import critical_rails as CR
+    from kae.route.critical_physics import ipc2221_width
+    monkeypatch.setattr(CR, "load_current", lambda ctx, u, net, cells, draws=None: 2.0)
+    offered = []
+    monkeypatch.setattr(CR, "route_hop", lambda ctx, m, tag, net, s, t, widths, *a, **k: offered.append(widths))
+    s = F.session(tmp_path, kinds=(), rails="all")
+    s.route()
+    br = [b for r in s.rails for b in (r.get("branches") or []) if "current_A" in b and "via" not in b]
+    assert br and offered
+    lo = min(ipc2221_width(b["current_A"], t_mm=0.035) for b in br)
+    assert min(min(w) for w in offered) >= lo - 1e-3
+    assert all("IPC-2221 width" in b["note"] for b in br)
+
+
+def test_rail_ladder_floor_and_cap_flag():
+    from types import SimpleNamespace
+
+    from kae.route.critical_modules import Module
+    from kae.route.critical_rails import _branch_widths
+    ctx = SimpleNamespace(opts={"rail_max_mm": 3.0})
+    m, b = Module(id="r", kind="rail", spec={}, parts=[]), {}
+    ws, floor = _branch_widths(ctx, m, "br:x", b, 1.0, 0.30, 0.9, 0.0, 0.2)
+    assert floor == 0.30 and min(ws) >= 0.30 and max(ws) >= 0.9 and "capped" not in b
+    ws, floor = _branch_widths(ctx, m, "br:y", b, 10.0, 7.19, 1.0, 0.0, 0.2)
+    assert ws == [3.0] and floor == 3.0 and b["capped"]["cap_mm"] == 3.0 and "rail_max_mm" in m.notes[-1]

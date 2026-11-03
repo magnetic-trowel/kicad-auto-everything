@@ -233,3 +233,28 @@ def test_an_implausible_observation_is_priced_at_its_cap_for_every_layout():
     ev["observations"].append(old)
     s1 = next(r for r in OB.evaluate(ev, it, BRIEF)["terms"] if r["id"] == "S1")
     assert s1["contribution"] == pytest.approx(costs[0])
+
+
+def test_the_copper_policy_floors_inner_layers_at_the_internal_ipc_width():
+    """The policy's IPC-2221 floor used the external k on every layer: an inner hop came out at
+    the outer width (0.30 mm for 1 A at 10 K, where the inner layer needs 0.78 mm)."""
+    from types import SimpleNamespace
+
+    from kae.em.pnr import PhysRouter
+    from kae.intent import route as IR
+    from kae.route.critical_physics import ipc2221_width
+    ladder = (0.2, 0.3, 0.5, 0.8, 1.0, 1.5)
+    h = IR.Policy({"terms": [{"id": "H", "tier": "hard", "obs": "heat.track", "max": "10 K", "why": "w"}],
+                   "knobs": {"route.area_cost": 100}})
+    out = h.width("VIN", [1.0] * 5, 0.035, 0.2, ladder, 0.2, None)[0]
+    inn = h.width("VIN", [1.0] * 5, 0.035, 0.2, ladder, 0.2, None, internal=True)[0]
+    assert out < ipc2221_width(1.0, 10, 0.035, internal=True) <= inn
+    # the router passes the hop's layer: inner layers get the internal k
+    r = object.__new__(PhysRouter)
+    r.policy, r.WIDTHS = h, ladder
+    r.layer_names = ["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"]
+    r.mesh = SimpleNamespace(layers=[SimpleNamespace(t=0.035)] * 4)
+    r.sp = SimpleNamespace(width_limits=lambda n, l: (0.2, 0.25, None), clamp_width=lambda n, l, w: w,
+                           _generic_need=lambda *a: 0.2)
+    assert r._intent_width("VIN", "F.Cu", 0.2, [1.0] * 5)[0] == out
+    assert r._intent_width("VIN", "In1.Cu", 0.2, [1.0] * 5)[0] == inn
