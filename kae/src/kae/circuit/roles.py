@@ -354,23 +354,24 @@ CTRL_NET = rx(r'(^|[^A-Z])(FB|VFB|BOOT|BST|BS|EN|ENABLE|COMP|SS|PG|PGOOD|ILIM|RT
 
 # net-name interfaces: (interface, speed, regex on the short name)
 IFACE = [
-    ('usb3', 'gbps', rx(r'SSTX|SSRX|USB3|SS_?TX|SS_?RX|^TX[12][+-PN]|^RX[12][+-PN]|USB_?SS')),
+    ('usb3', 'gbps', rx(r'USB3|(^|[^A-Z])SS_?(TX|RX)|^TX[12][+-PN]|^RX[12][+-PN]|USB_?SS')),
     ('usb2', 'hs', rx(r'USB.*(D[PMN+-]|DP|DM|DN|_P$|_N$|D\+|D-)|^D[+-]$|^USB_?D?[PMN+-]$|^(USB)?D[PMN]\d?$|^U?D[PM]$|^USB\d?_?[PN]$|^D_?[PN]$|'
                       r'HSIC|ULPI|^USB_?DATA[+-]')),
-    ('pcie', 'gbps', rx(r'PCIE|PCI_?E|PE[TR][PN]\d|PE_?[TR]X|PERST|CLKREQ|PCIE_?CLK')),
+    ('pcie', 'gbps', rx(r'PCIE|PCI_?E|(^|[^A-Z])(PE[TR][PN]\d|PE_?[TR]X|PERST|CLKREQ)')),
     ('sata', 'gbps', rx(r'SATA')),
-    ('hdmi', 'gbps', rx(r'HDMI|TMDS|^DDC|_DDC|CEC|HPD')),
-    ('displayport', 'gbps', rx(r'^DP_?(AUX|ML|LANE)|DISPLAYPORT|EDP')),
-    ('mipi', 'gbps', rx(r'MIPI|CSI|DSI')),
+    ('hdmi', 'gbps', rx(r'HDMI|TMDS|(^|[^A-Z])(DDC|CEC|HPD)')),
+    ('displayport', 'gbps', rx(r'^DP_?(AUX|ML|LANE)|DISPLAYPORT|(^|[^A-Z])EDP([^A-Z]|$)')),
+    ('mipi', 'gbps', rx(r'MIPI|(^|[^A-Z])(CSI|DSI)\d*([^A-Z]|$)')),
     ('lvds', 'gbps', rx(r'LVDS|^LV_')),
-    ('serdes', 'gbps', rx(r'SFP|QSFP|MGT|^GT[PXHY]|SERDES|_?TX_?[PN]\d?$|_?RX_?[PN]\d?$|^TX[PN]\d?$|^RX[PN]\d?$|SGMII|XAUI|XFI|GTREF')),
+    ('serdes', 'gbps', rx(r'SFP|(^|[^A-Z])MGT|^GT[PXHY]|SERDES|(^|[^A-Z])[TR]X_?[PN]\d?$|SGMII|XAUI|(^|[^A-Z])XFI|GTREF')),
     ('ethernet_mdi', 'hs', rx(r'MDI|TRD\d?_?[PN+-]|TRX\d?_?[PN+-]|ETH.*(TX|RX|TD|RD)\w*[PN+-]$|^TD_?[PN+-]$|^RD_?[PN+-]$|ETH_?(TX|RX)[+-]|'
                               r'^(TX|RX)[+-]$|MDI\.|^TPI|^TPO')),
     ('rgmii', 'hs', rx(r'RGMII|RMII|^MII|GMII|^E?TXD\d|^E?RXD\d|TX_?EN$|RX_?DV|CRS_?DV|TX_?CLK|RX_?CLK|ETH_?REF_?CLK|RX_?ER|TX_?ER|'
                        r'^ETH_?(TXD|RXD)|ETH_?(TX|RX)_?(EN|DV|CLK)')),
     ('mdio', 'ls', rx(r'MDIO|^MDC$|_MDC$')),
-    ('ddr', 'gbps', rx(r'DDR|DQS|^DQ\d|_DQ\d|DQM|^DM\d|_DM\d$|SDRAM|^MA\d|^BA\d|_BA\d|_A\d{1,2}$|RAS|CAS|ODT|CKE|^CK_?[PN]|DRAM|^WE$|_WE$|'
-                     r'HYPERBUS|HYPERRAM|^HB_')),
+    # tokens anchored at a word edge: unanchored, CAS/CKE/ODT/RAS/_A1/DDR matched CASE_TEMP, PLL_LOCKED, PODT, PHRASE, LED_A1, ADDR0
+    ('ddr', 'gbps', rx(r'(^|[^A-Z])(LP)?DDR|DQS|(^|_)DQ\d|DQM|^DM\d|_DM\d$|SDRAM|^MA\d{1,2}$|(^|_)BA\d$|(^|_)N?(RAS|CAS)(_?N|_?B|#)?$|'
+                     r'(^|_)(ODT|CKE)\d?(_|$)|^CK_?[PN]|DRAM|HYPERBUS|HYPERRAM|^HB_')),
     ('emmc_sd', 'medium', rx(r'SDIO|SDMMC|EMMC|MMC|SD_?(CMD|CLK|DAT|D\d)|SDC\d?_?(CMD|CLK|D\d)|^SD_|_SD_?(CMD|CLK|D\d)|^DAT[0-7]$|^CMD$')),
     ('qspi', 'medium', rx(r'QSPI|OSPI|OCTOSPI|QIO\d|QSPI_?SD|FLASH_?(IO|D)\d|^IO[0-3]$|_SIO\d|QSPI_?S?CLK|QSPI_?SS|OSPI_?')),
     ('spi', 'medium', rx(r'SPI|MOSI|MISO|^SCK|_SCK|SCLK|^SDO$|^SDI$|COPI|CIPO|^SDA$(?!)')),
@@ -383,16 +384,23 @@ IFACE = [
     ('video', 'medium', rx(r'VGA|HSYNC|VSYNC|CVBS|LUMA|CHROMA|^PAL$|^NTSC$|COMPOSITE|^Y_?IN|^C_?IN|VIDEO')),
 ]
 I2C_NAME = rx(r'I2C|IIC|TWI|SMBUS|PMBUS|I3C')
+# the slow sideband of a fast interface: hot-plug, CEC, DDC, PCIe reset and clock request, enables, resets,
+# power-downs, SFP status, Type-C CC/SBU. 'HDMI_HPD' is HDMI, but it is not a gigabit line
+# (docs/topics/llm/net-role-classification.md: "is this net fast?" is not a keyword question)
+SIDEBAND = rx(r'(^|[^A-Z])(HPD|CEC|DDC\w*|PERST\w*|CLKREQ\w*|WAKE\w*|PRSNT\w*|LOS|MOD_?ABS|MOD_?DEF\d?|TX_?FAULT|TX_?DIS(ABLE)?|RS[01]|'
+              r'N?EN|ENABLE|N?RST|RESET\w*|N?RESET|PWDN|PDN|PWR_?DN|SHDN|STBY|N?INT|IRQ|ALERT|SMB\w*|CC\d?|SBU\d?|ID|DET|LED\w*|'
+              r'PG|PGOOD|VREF\w*|VTT\w*|ZQ\d?|W_?DISABLE\w*)(_?N|_?B|#)?\d*([^A-Z0-9]|$)')
 
 
 def name_iface(s: str, skip=()) -> tuple[str | None, str | None]:
     """(interface, speed) from a net name: the first IFACE row that matches, except that an I2C word wins
-    (an 'I2C1_SCLK' is a two-wire bus, not SPI)."""
+    (an 'I2C1_SCLK' is a two-wire bus, not SPI), and a sideband word makes a fast interface's net low speed
+    ('HDMI_HPD', 'PCIE_PERST', 'CSI_EN' -> speed 'ls')."""
     if 'i2c' not in skip and I2C_NAME.search(s):
         return 'i2c', 'ls'
     for name_, sp, r in IFACE:
         if name_ not in skip and r.search(s):
-            return name_, sp
+            return name_, ('ls' if sp != 'ls' and SIDEBAND.search(s) else sp)
     return None, None
 
 
@@ -402,24 +410,61 @@ ANALOG_NET = rx(r'(^|[^A-Z])(ADC|AIN|AN\d+|ANA|ANALOG|VREF|REF(IN|OUT|P|N)?|SENS
                r'AUDIO|MIC|LINE_?(IN|OUT)?|HP_?[LR]|HPL|HPR|HPCOM|IN[+-]|INP|INN|AINP|AINN|THERM|NTC|RTD|TC[+-]?|TEMP|BRIDGE|STRAIN|LOADCELL|'
                r'PIEZO|PHOTO|TIA|VCM|BIAS|ECG|EEG|EMG|XADC|CV|SIGNAL_?IN|PREAMP|GAIN|VOL|POT|DRY|WET|MIX|AUDIO|SPDIF|SENS|SENSOR|LDR|'
                r'CURR|CURRENT|SHUNT|VBAT_?SENSE|VBAT_?ADC|VDIV|DIV|ISET|IREF|IPROG|PROG|RSET)([^A-Z]|$)')
+# a control or bus suffix on an analog word names a digital line about the analog thing (TEMP_ALERT, MIC_EN, NTC_EN,
+# SENSE_ENABLE, TEMP_SCL), as CTRL_SUFFIX does for rails
+ANALOG_CTRL_SUFFIX = rx(r'[_-](N?EN|ENABLE|ALERT|DET|SEL|N?INT|IRQ|N?PG|PGOOD|PWRGD|FAULT|FLT|STAT|STATUS|CTRL|CTL|BTN|SCL|SDA|N?RST|RESET|'
+                        r'TRIG)\d?(_?N|_?B)?$')
 RF_NET = rx(r'(^|[^A-Z])(RF|ANT|ANTENNA|RFIN|RFOUT|RF_?IN|RF_?OUT|LNA|PA_?OUT|2G4|GNSS|GPS|LORA|SUBGHZ|915|868|433|BLE_?ANT|WIFI_?ANT|'
             r'RFIO|U\.?FL|SMA|COAX|50R|50OHM)([^A-Z]|$)')
 RESET_NET = rx(r'(^|[^A-Z])(N?RST|RESET|N?RESET|MCLR|POR|CHIP_?EN|CHIP_?PU|SRST|TRST|RST_?N|RESETN|RESETB|XRES|RUN)([^A-Z0-9]|$)')
 BOOT_NET = rx(r'(^|[^A-Z])(BOOT\d?|BOOTSEL|BOOT_?MODE|BOOT_?\d|USB_?BOOT|FLASH_?MODE|PROG_?MODE|STRAP)([^A-Z]|$)')
 
+# designer net classes are explicit intent, the first evidence layer (docs/topics/llm/net-role-classification.md): a class
+# that names a role is STRONG and can establish it alone; classes that name only a width, a level or a medium-speed bus
+# ('BOLD', '8.4V', 'QSPI') stay MODERATE corroboration
+RAIL_CLASS = rx(r'POWER|PWR|VCC|VDD|\dV|BIGPOWER|HIPOWER|SUPPLY|VBUS|VIN|VOUT|BOLD|RAIL|HV\b|\bV\d|POWER_\d|AMP')
+RAIL_CLASS_EXPLICIT = rx(r'POWER|PWR|VCC|VDD|SUPPLY|VBUS|VIN|VOUT|RAIL')
+GND_CLASS = rx(r'GND|GROUND|VSS|EARTH')
+HS_CLASS = rx(r'DIFF|(^|[^0-9])(85|90|100)_?(R|OHMS?)([^A-Z]|$)|HIGH_?SPEED|(^|[^A-Z])HS([^A-Z]|$)|IMPEDANCE|USB|LVDS|PCIE|HDMI|TMDS|'
+              r'(^|[^A])DDR|DRAM|MGT|SERDES|MIPI')
+HS_CLASS_ANY = rx(r'DIFF|ZDIFF|USB|LVDS|PCIE|MDI|HDMI|DDR|DRAM|SDRAM|RGMII|MGT|OCTOSPI|QSPI|SDIO|HS')
+
+
+def _class_overrides(evs: list) -> list:
+    """Name-layer and pin-count evidence against a role that the designer's net class states: kept for the record at
+    weight 0, since names rank below explicit intent (docs/topics/llm/net-role-classification.md)."""
+    return [ev(e.kind, e.fact + ' (outranked by the net class)', 0.0) if e.weight < 0 and e.kind in ('name', 'count') else e
+            for e in evs]
+
+
 POLARITY = {'P': 'N', 'N': 'P', '+': '-', '-': '+', 'M': 'P', 'H': 'L', 'L': 'H', 'T': 'C', 'C': 'T', 'A': 'B', 'B': 'A'}
 COMPLEMENTS = (('P', 'N'), ('P', 'M'), ('+', '-'), ('H', 'L'), ('T', 'C'), ('A', 'B'))   # (positive, negative)
 
-ZDIFF = {'usb2': (90.0, 0.15), 'usb3': (90.0, 0.10), 'ethernet_mdi': (100.0, 0.10), 'hdmi': (100.0, 0.10), 'lvds': (100.0, 0.10),
-         'mipi': (100.0, 0.10), 'pcie': (85.0, 0.15), 'sata': (100.0, 0.15), 'serdes': (100.0, 0.10), 'ddr': (100.0, 0.10),
-         'displayport': (100.0, 0.10), 'can': (120.0, 0.10), 'rs485': (120.0, 0.10), 'clock': (100.0, 0.10)}
+# interface -> (Zdiff ohm, window low, window high). Where the cited doc gives vendor windows that conflict, the window is
+# their intersection, or the doc's default when they do not intersect; the alternatives and any conflict are listed in
+# ZDIFF_SRC, which is the brief's `basis` (docs/topics/rules/rule-pack-format.md: conflicts recorded, not silently resolved)
+def _pct(z, tol):
+    return (z, round(z * (1 - tol), 2), round(z * (1 + tol), 2))
+
+
+ZDIFF = {'usb2': _pct(90.0, 0.15), 'usb3': _pct(90.0, 0.15), 'ethernet_mdi': _pct(100.0, 0.10), 'hdmi': (100.0, 90.0, 110.0),
+         'lvds': _pct(100.0, 0.10), 'mipi': (92.5, 85.0, 100.0), 'pcie': _pct(85.0, 0.15), 'sata': _pct(100.0, 0.15),
+         'serdes': _pct(100.0, 0.10), 'ddr': _pct(100.0, 0.05), 'displayport': _pct(100.0, 0.10), 'can': _pct(120.0, 0.10),
+         'rs485': _pct(120.0, 0.10), 'clock': _pct(100.0, 0.10)}
 ZDIFF_SRC = {'usb2': 'docs/topics/rules/interfaces/usb2.md (TI SLLA414A: 90 ohm +-15%)',
-             'usb3': 'docs/topics/rules/interfaces/usb3-usb4-typec.md',
-             'ethernet_mdi': 'docs/topics/rules/interfaces/ethernet.md (TI SNLA387: 100 ohm +-10%)',
-             'hdmi': 'docs/topics/rules/interfaces/hdmi-dp.md', 'displayport': 'docs/topics/rules/interfaces/hdmi-dp.md',
-             'lvds': 'TIA/EIA-644 100 ohm termination [I]', 'mipi': 'docs/topics/rules/interfaces/mipi.md',
+             'usb3': 'docs/topics/rules/interfaces/usb3-usb4-typec.md: default 90 ohm +-15% (SLLA414A, TUSB9261, TUSB1046, SLLU149E). '
+                     'Vendor windows conflict (AM65xx 95 +-5% vs Microchip AN26.2 85 +-5 do not intersect), so the default is '
+                     'kept; alternatives: AM57xx 83.7-96.3, AM65xx 95 +-5%, Microchip 85 +-5, Qualcomm 70-100 ohm. Pick by PHY vendor',
+             'ethernet_mdi': 'docs/topics/rules/interfaces/ethernet.md (TI SNLA387: 100 ohm +-10%; Pulse +-15% is looser)',
+             'hdmi': 'docs/topics/rules/interfaces/hdmi-dp.md: intersection of SLLA414A 100 ohm +-15% and TI AM57xx 90-110 ohm; '
+                     'Intel 100 +-10% [S] agrees',
+             'displayport': 'docs/topics/rules/interfaces/hdmi-dp.md (SLLA414A: 100 ohm +-10%)',
+             'lvds': 'TIA/EIA-644 100 ohm termination [I]',
+             'mipi': 'docs/topics/rules/interfaces/mipi.md: intersection of Qualcomm 70-100 ohm and TI AM62x 85-115 ohm; '
+                     'value is its centre',
              'pcie': 'docs/topics/rules/interfaces/pcie.md (85 ohm CEM add-in)', 'sata': 'docs/topics/rules/interfaces/sata-ufs-sd.md',
-             'serdes': 'generic 100 ohm differential [I]', 'ddr': 'docs/topics/rules/interfaces/ddr.md',
+             'serdes': 'generic 100 ohm differential [I]',
+             'ddr': 'docs/topics/rules/interfaces/ddr.md (TI SPRABI1D: 100 ohm +-5% on DQS and CK pairs)',
              'can': 'docs/topics/rules/interfaces/can-rs485.md (120 ohm cable)', 'rs485': 'docs/topics/rules/interfaces/can-rs485.md (120 ohm cable)',
              'clock': 'differential clock, 100 ohm [I]'}
 
@@ -461,6 +506,8 @@ class DiffPair:
     confidence: float
     evidence: list
     channel: str = ''
+    kicad_pair: bool = True          # KiCad's own suffix rule pairs these names (DRC_ENGINE::MatchDpSuffix)
+    rename: dict | None = None       # {p: new name, n: new name} that KiCad would pair, when it does not
 
 
 @dataclass
@@ -796,7 +843,11 @@ def _grounds(nl: Netlist, roles: Roles):
             evs.append(ev('pintype', f"{len(pin_in)} ground-named pins typed power_in", 0.5))
         if two_pin_other[net] >= 3:
             evs.append(ev('topology', f"{two_pin_other[net]} two-pin capacitors touch it", min(2.0, 0.2 * two_pin_other[net])))
-        if 'GND' in nv.netclass.upper():
+        cls = nv.netclass.upper()
+        gnd_cls = bool(GND_CLASS.search(cls)) and not RAIL_CLASS_EXPLICIT.search(cls)    # 'PWR_GND' holds rails too
+        if gnd_cls:
+            evs.append(ev('netclass', f"net class '{nv.netclass}' names ground", STRONG))
+        elif 'GND' in cls:
             evs.append(ev('netclass', f"net class '{nv.netclass}'", MODERATE))
         if nl.zone_layers.get(net):
             evs.append(ev('zone', f"pour on {nl.zone_layers[net]} layer(s)", 0.5))
@@ -804,7 +855,7 @@ def _grounds(nl: Netlist, roles: Roles):
             evs.append(ev('name', f"name '{s}' matches a rail pattern", -STRONG))
         if not evs:
             continue
-        name_ev = any(e.kind == 'name' and e.weight > 0 for e in evs)
+        name_ev = any(e.kind == 'name' and e.weight > 0 for e in evs) or gnd_cls
         conf = confidence(evs, prior=-2.5 if name_ev else -4.0)
         if conf >= 0.5:
             cands[net] = (conf, evs)
@@ -1193,7 +1244,10 @@ def _rails(nl: Netlist, roles: Roles):
         if vname and not name and not sigw:
             evs.append(ev('name', f"name '{s}' states a voltage ({vname[1]})", WEAK))
         cls = nv.netclass.upper()
-        if re.search(r'POWER|PWR|VCC|VDD|\dV|BIGPOWER|HIPOWER|SUPPLY|VBUS|VIN|VOUT|BOLD|RAIL|HV\b|\bV\d|POWER_\d|AMP', cls) and 'DEFAULT' != cls:
+        rail_cls = bool(RAIL_CLASS_EXPLICIT.search(cls))
+        if rail_cls:
+            evs.append(ev('netclass', f"net class '{nv.netclass}' names power", STRONG))
+        elif RAIL_CLASS.search(cls) and 'DEFAULT' != cls:
             evs.append(ev('netclass', f"net class '{nv.netclass}'", MODERATE))
         pins = nv.pins
         # a power_out pin makes a source only on an IC or module: library symbols of connectors, fuses
@@ -1281,6 +1335,9 @@ def _rails(nl: Netlist, roles: Roles):
         strong = name or powered or len(caps) >= 2 or bool(nl.zone_layers.get(net)) or (vname is not None and len(caps) >= 1)
         if SENSE_NAME.search(s) and not (p_out or reg_out or ind_out):
             strong = False
+        if rail_cls:
+            strong = True
+            evs = _class_overrides(evs)
         if not strong:
             continue
         conf = confidence(evs, prior=-2.5)
@@ -1744,6 +1801,7 @@ def _pairs(nl: Netlist, roles: Roles):
             base = (pre + '*' + post)
             evs = []
             ok_pol = True
+            # these gates hold under a diff class too: in a class 'DIFF_90', USB-DPA/USB-DPB are the A and B ports' D+ lines
             if c in 'HL' and not re.search(r'CAN', base):
                 ok_pol = False
             if c in 'AB' and not re.search(r'485|RS_?$|MODBUS|DMX', base):
@@ -1774,7 +1832,9 @@ def _pairs(nl: Netlist, roles: Roles):
             else:
                 evs.append(ev('topology', 'no common IC or connector', -1.0))
             cl = (pa.netclass + ' ' + pb.netclass).upper()
-            if re.search(r'DIFF|ZDIFF|90R|100R|85R|USB|LVDS|PCIE|MDI|HDMI|TMDS|CLK DIFF|DDR DIFF|MGT|SERDES', cl):
+            if HS_CLASS.search(pa.netclass.upper()) and HS_CLASS.search(pb.netclass.upper()):
+                evs.append(ev('netclass', f"both nets in net class '{pa.netclass}'", STRONG))
+            elif re.search(r'DIFF|ZDIFF|90R|100R|85R|USB|LVDS|PCIE|MDI|HDMI|TMDS|CLK DIFF|DDR DIFF|MGT|SERDES', cl):
                 evs.append(ev('netclass', f"net class '{pa.netclass}'", MODERATE))
             pfa = {p.fn for p in pa.pins}
             pfb = {p.fn for p in pb.pins}
@@ -1808,11 +1868,47 @@ def _pairs(nl: Netlist, roles: Roles):
             conf = confidence(evs, prior=-0.5)
             if conf < 0.5:
                 continue
-            pairs.append(DiffPair(p=n, n=m, interface=iface, speed=speed, confidence=conf, evidence=evs))
+            kp, ren = _kicad_pair(n, m, pre, post, c, o)
+            pairs.append(DiffPair(p=n, n=m, interface=iface, speed=speed, confidence=conf, evidence=evs, kicad_pair=kp, rename=ren))
     roles.pairs = pairs
 
 
+def _kicad_pair(net_p: str, net_n: str, pre: str, post: str, c: str, o: str) -> tuple[bool, dict | None]:
+    """Whether KiCad pairs the two net names itself (a +/- or P/N suffix followed only by digits or '_', upper case,
+    kae.route.rules.complement_net), and if not, names it would pair. net-role-classification.md: propose renames to
+    _P/_N when a detected pair uses A/B, H/L, T/C, P/M or a polarity mark inside the name; never rely on them silently."""
+    from kae.route.rules import complement_net
+    if complement_net(net_p) == net_n:
+        return True, None
+    tail = net_p.rsplit('/', 1)[-1]
+    path = net_p[:len(net_p) - len(tail)]
+    i = len(pre)
+    if tail.upper() == pre + c + post and len(tail) == len(pre) + 1 + len(post):     # keep the designer's case
+        pre, post = tail[:i], tail[i + 1:]
+    stem = '_'.join(x.strip('_-. ') for x in (pre, post) if x.strip('_-. ')) or 'DIFF'
+    ren = {'p': f"{path}{stem}_P", 'n': f"{path}{stem}_N", 'from': f"{c}/{o}"}
+    if c == 'A':
+        ren['note'] = "RS-485 A/B polarity differs between vendors: check which line is non-inverting before renaming"
+    return False, ren
+
+
 # ------------------------------------------------------------------------------- clocks, high speed, analog, rf, reset, signal
+IFACE_CONN = {'usb3': ('usb',), 'hdmi': ('hdmi',), 'displayport': ('hdmi',), 'serdes': ('sfp', 'ethernet'), 'mipi': ('ffc_fpc',),
+              'lvds': ('ffc_fpc',), 'pcie': ('card', 'board_to_board'), 'sata': (), 'ddr': ()}
+
+
+def _iface_second_fact(roles: Roles, nv, iface: str):
+    """Evidence beyond the net name that a net belongs to a gigabit interface, or None: an IC or module pin whose own
+    function names the interface, or a connector of that interface."""
+    for p in nv.pins:
+        pr = roles.parts[p.ref]
+        if pr.kind in ('ic', 'module') and p.fn and name_iface(p.fn) == (iface, 'gbps'):
+            return ev('pinfunction', f"{iface} pin function {p.label}", MODERATE)
+        if pr.kind == 'connector' and pr.subtype in IFACE_CONN.get(iface, ()):
+            return ev('topology', f"{pr.subtype} connector {p.ref}", MODERATE)
+    return None
+
+
 def _signal_roles(nl: Netlist, roles: Roles):
     g = set(roles.grounds)
     pair_of = {}
@@ -1892,22 +1988,40 @@ def _signal_roles(nl: Netlist, roles: Roles):
         # high-speed interfaces and pairs
         evs = []
         iface, speed = name_iface(s)
+        named = bool(iface and speed in ('gbps', 'hs', 'medium'))
         dp = pair_of.get(net)
         if dp and dp.interface not in ('analog',):
             iface, speed = dp.interface if dp.interface != 'unknown' else iface, dp.speed if dp.speed != 'unknown' else speed
             evs.append(ev('topology', f"member of differential pair {dp.p}/{dp.n}", MODERATE))
+        cl = nv.netclass.upper()
+        # a high-speed or diff class makes a net fast by itself, except a sideband line the class sweeps in (HDMI_HPD in 'HDMI')
+        hs_cls = bool(HS_CLASS.search(cl)) and speed != 'ls' and not SIDEBAND.search(s)
+        if hs_cls and not (iface and speed in ('gbps', 'hs', 'medium')):
+            ci, cs = name_iface(cl, skip=('i2c', 'uart', 'debug', 'spi', 'mdio'))
+            iface, speed = (ci, cs) if ci and cs in ('gbps', 'hs', 'medium') else ('unknown', 'hs')
         if iface and speed in ('gbps', 'hs', 'medium'):
-            evs.append(ev('name', f"interface keyword in '{s}' ({iface})", MODERATE))
-            cl = nv.netclass.upper()
-            if re.search(r'DIFF|ZDIFF|USB|LVDS|PCIE|MDI|HDMI|DDR|DRAM|SDRAM|RGMII|MGT|OCTOSPI|QSPI|SDIO|HS', cl):
+            if named:
+                evs.append(ev('name', f"interface keyword in '{s}' ({iface})", MODERATE))
+            if hs_cls:
+                evs.append(ev('netclass', f"net class '{nv.netclass}' names a high-speed or diff-pair class", STRONG))
+            elif HS_CLASS_ANY.search(cl):
                 evs.append(ev('netclass', f"net class '{nv.netclass}'", MODERATE))
+            if speed == 'gbps' and not dp and not any(e.kind == 'netclass' for e in evs):
+                # a gigabit name needs a second fact: a pair (above), a net class (above), or a pin function or a
+                # connector of that interface; a name alone ('PCIE_3V3', 'ROM_A13') is not a fast net
+                second = _iface_second_fact(roles, nv, iface)
+                evs.append(second or ev('name', f"only the name says {iface}: no pair, net class, {iface} pin function "
+                                                f"or {iface} connector", -1.5))
             if iface == 'usb2' and not any(roles.parts[p.ref].subtype == 'usb' or re.search(r'USB|D[+-PMN]$|DP|DM', p.fn) for p in pins):
                 evs.append(ev('topology', 'no USB connector or USB-named pin on the net', -1.0))
             add('high_speed', iface, evs, prior=-0.5, interface=iface, speed=speed)
         # analog-sensitive
         evs = []
         if ANALOG_NET.search(s) and not re.search(r'REFCLK|SCK|CLK', s):
-            evs.append(ev('name', f"name '{s}'", MODERATE))
+            if ANALOG_CTRL_SUFFIX.search(s):
+                evs.append(ev('name', f"analog word with a control suffix in '{s}' (an enable, alert, detect or select line)", -STRONG))
+            else:
+                evs.append(ev('name', f"name '{s}'", MODERATE))
         no_ana = ('logic', 'memory', 'motor_driver', 'gate_driver', 'load_switch')    # AIN1/BIN2 on a bridge driver are logic inputs
         ap = [p for p in pins if ANALOG_PIN.match(p.fn) and roles.parts[p.ref].kind in ('ic', 'module') and p.fn not in ('-', '+')
               and roles.parts[p.ref].subtype not in no_ana]
@@ -1922,13 +2036,18 @@ def _signal_roles(nl: Netlist, roles: Roles):
             evs.append(ev('topology', f"input of {roles.parts[ref].subtype} {ref} ({p.label})", STRONG))
         if net in xtal_nets:
             evs.append(ev('topology', 'crystal terminal (high impedance)', MODERATE))
+        if evs and roles.caps_to.get(net) and any(roles.parts[p.ref].kind == 'resistor' for p in pins):
+            # a series resistor and a capacitor to ground: an RC filter, the usual front end of an ADC or sense input;
+            # the topology layer that lifts an analog name above the gate (ADC_IN0 with its anti-alias RC)
+            evs.append(ev('topology', f"RC filter: resistor and capacitor {roles.caps_to[net][0][0]} to ground", WEAK))
         if evs:
             sub = 'adc_input' if re.search(r'ADC|AIN|AN\d', s + ' '.join(fns)) else 'reference' if re.search(r'REF', s + ' '.join(fns)) else (
                 'feedback' if re.search(r'(^|[^A-Z])V?FB|COMP', s + ' ' + ' '.join(fns)) else 'sense' if re.search(r'SENSE|SNS|CS[PN+-]|ISNS|IMON|SHUNT|CURR|SR[PN]\b', s + ' ' + ' '.join(fns))
                 or (net in opamp_in and roles.parts[opamp_in[net][0]].subtype == 'current_sense')
                 else 'audio' if re.search(r'AUDIO|MIC|LINE|HP|SPDIF|DRY|WET|MIX|VOL|PREAMP', s)
                 else ('cell_sense' if roles.parts[opamp_in[net][0]].subtype == 'battery_monitor' else 'opamp_input') if net in opamp_in else 'analog')
-            add('analog', sub, evs, prior=-1.5)
+            # names are the lowest layer: a name alone stays below the 0.5 gate (prior -1.6 + MODERATE -> 0.48)
+            add('analog', sub, evs, prior=-1.5 if any(e.weight > 0 and e.kind != 'name' for e in evs) else -1.6)
         # reset / boot
         evs = []
         if RESET_NET.search(s):
