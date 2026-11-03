@@ -80,8 +80,9 @@ class Policy:
         lims = [U.quantity(t["max"])[0] for t in self.heat if "max" in t and _net_matches(t, net, self.secs)]
         return min(lims) if lims else None
 
-    def width(self, net, I, t_mm, clearance, ladder, w_lo, w_hi):
-        """(width mm, reason) for a hop of `net` on copper t_mm thick carrying corner currents I."""
+    def width(self, net, I, t_mm, clearance, ladder, w_lo, w_hi, internal=False):
+        """(width mm, reason) for a hop of `net` on copper t_mm thick carrying corner currents I; `internal`:
+        the hop is on an inner layer (IPC-2221 k = 0.024 there, 0.048 outside; high-current.md)."""
         k, why = self.k_R(net, I)
         lo = max(w_lo, float(self.wmin.get(net, 0.0)))
         hi = min(w_hi if w_hi is not None else math.inf, float(self.wmax.get(net, math.inf)))
@@ -89,7 +90,7 @@ class Policy:
         Imax = max((abs(x) for x in I), default=0.0)
         if dT is not None and Imax > 0:
             from kae.route.critical_physics import ipc2221_width
-            w_ipc = ipc2221_width(Imax, dT, t_mm, internal=False)
+            w_ipc = ipc2221_width(Imax, dT, t_mm, internal=internal)
             if w_ipc > lo:
                 lo, why = w_ipc, why + [f"IPC-2221 {Imax:.2f} A at {dT:g} K"]
         if k <= 0:
