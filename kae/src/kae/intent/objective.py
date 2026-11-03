@@ -22,6 +22,9 @@ operating corner, each with its scope) are matched by the intent's terms:
 - agg over corners: worst (default for hard and limit), cvar20 (mean of the worst fifth; default for cost), typ.
 - combine over matched instances: each (default for hard and limit: each instance against the limit),
   sum (default for cost), max.
+- specificity: an observation two terms of one tier (and one bound side) both match is priced by the more
+  specific one only: part-scoped (part, load, net, rail, connector) > section-scoped (section, from, to,
+  source, observer) > board-scoped (no where, or only kind). Equal specificity is an IntentError naming both.
 
 Contracts between sections are limit or hard terms with from/to. Defaults when the intent is silent
 ("defaults": "neutral/1"): copper dissipation is a cost at 1 mW_eq/mW; nothing else is priced, everything
@@ -77,6 +80,43 @@ SCOPE_KEYS = ("section", "from", "to", "observer", "source", "kind", "rail", "lo
 
 class IntentError(ValueError):
     pass
+
+
+PART_KEYS = ("part", "load", "net", "rail", "connector")       # name board members
+SECTION_KEYS = ("section", "from", "to", "source", "observer")  # name structures (sections)
+PRICED = ("hard", "limit", "cost")
+
+
+def specificity(t):
+    """2 for a part-scoped term, 1 for a section-scoped one, 0 for a board-scoped one (its most specific key)."""
+    w = t.get("where") or {}
+    return 2 if any(k in w for k in PART_KEYS) else 1 if any(k in w for k in SECTION_KEYS) else 0
+
+
+def _group(t):
+    """Terms compete for an observation within one tier and one bound side (a max and a min term make a window)."""
+    return t["tier"], ("max" if "max" in t else "min" if "min" in t else None)
+
+
+def resolve(terms, what="an observation"):
+    """The terms that price one observation out of `terms` (all matching it): per tier and bound side, the most
+    specific; a tie at the top is an IntentError naming the tied ids. report and ignore terms all stay."""
+    out, groups = [], {}
+    for t in terms:
+        if t["tier"] in PRICED:
+            groups.setdefault(_group(t), []).append(t)
+        else:
+            out.append(t)
+    for (tier, side), ts in groups.items():
+        top = max(specificity(t) for t in ts)
+        best = [t for t in ts if specificity(t) == top]
+        if len(best) > 1:
+            lvl = ("part", "section", "board")[2 - top]
+            raise IntentError(f"terms {[t['id'] for t in best]} are {tier} terms{' (' + side + ')' if side else ''} "
+                              f"of equal ({lvl}) specificity that both match {what}: scope one more narrowly, "
+                              f"or merge them")
+        out += best
+    return out
 
 
 def load(path_or_dict):
@@ -218,7 +258,7 @@ def evaluate(ev, intent=None, brief=None):
         from kae.board.kicad_file import load as load_board
         from kae.circuit import brief as B
         brief = B.build(load_board(ev["board"]))
-    secs = SE.apply(SE.from_brief(brief), intent.get("sections"))
+    secs = SE.apply(SE.from_brief(brief), intent.get("sections"), brief)
     obs = observations(ev, intent)
     cur = intent["currency"]
     complete = (ev.get("total") or {}).get("complete", True)
@@ -244,8 +284,19 @@ def evaluate(ev, intent=None, brief=None):
     claimed = set()
     hard = limit = cost = 0.0
     rows = []
+    hits = {t["id"]: [i for i, ob in enumerate(obs) if _match(t, ob, secs)] for t in terms}
+    # each observation priced once per tier and side, by its most specific term (the others lose it)
+    lost = {}
+    for i, ob in enumerate(obs):
+        both = [t for t in terms if i in hits[t["id"]]]
+        if len(both) > 1:
+            won = resolve(both, ob.get("label") or ob["id"])
+            for t in both:
+                if t not in won:
+                    hits[t["id"]].remove(i)
+                    lost.setdefault(t["id"], set()).update(w["id"] for w in won if _group(w) == _group(t))
     for t in terms:
-        hit = [i for i, ob in enumerate(obs) if _match(t, ob, secs)]
+        hit = hits[t["id"]]
         tier = t["tier"]
         claimed |= set(hit) if tier != "report" else set()
         if tier == "ignore":
@@ -269,14 +320,17 @@ def evaluate(ev, intent=None, brief=None):
             inst.append((_agg(vals, agg, side_), ob))
         row = dict(id=t["id"], tier=tier, obs=t["obs"], where=t.get("where"), matched=len(hit), agg=agg,
                    why=t.get("why"), source=t.get("source"))
+        if t["id"] in lost:
+            row["overridden_by"] = sorted(lost[t["id"]])          # more specific terms price those observations
         gap = _gap(t, missing)
         if gap:
             # a source this term could see was not computed (open copper): the value below covers only the
             # sources that were; it is reported, never priced, and never read as zero
             row.update(incomplete=True, not_computed=gap)
         if not inst:
-            row.update(note="matched no observation on this board" + ("" if not gap else
-                                                                      " (its sources were not computed)"))
+            row.update(note=("every observation it matched is priced by a more specific term" if t["id"] in lost
+                             else "matched no observation on this board")
+                       + ("" if not gap else " (its sources were not computed)"))
             rows.append(row)
             continue
         unit_ = dim or inst[0][1]["unit"]

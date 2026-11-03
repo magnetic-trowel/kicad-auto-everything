@@ -118,7 +118,7 @@ class PhysRouter:
         if goal is not None:
             from kae.intent import route as IR
             from kae.intent import sections as SE
-            self.policy = IR.Policy(goal, SE.apply(SE.from_brief(self.brief), goal.get("sections")))
+            self.policy = IR.Policy(goal, SE.apply(SE.from_brief(self.brief), goal.get("sections"), self.brief))
             self.pair_terms = {(o.name, s.name): ts for o in self.obs for s in self.srcs
                                if (ts := self.policy.pair_terms(bd, o, s))}
             on = {k[0] for k in self.pair_terms}

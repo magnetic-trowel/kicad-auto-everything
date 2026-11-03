@@ -13,7 +13,7 @@ BASE = {"V": "V", "A": "A", "W": "W", "K": "K", "Ohm": "Ohm", "Ω": "Ohm", "H": 
         "m": "m"}
 # logarithmic units: dimension name -> (linear dimension, reference in SI, 10 or 20 log)
 LOG = {"dBuV": ("V", 1e-6, 20), "dBµV": ("V", 1e-6, 20), "dBV": ("V", 1.0, 20), "dBm": ("W", 1e-3, 10),
-       "dBuV/m": ("V/m", 1e-6, 20), "dBµV/m": ("V/m", 1e-6, 20), "dB": ("ratio", 1.0, 20)}
+       "dBm/Hz": ("W/Hz", 1e-3, 10), "dBuV/m": ("V/m", 1e-6, 20), "dBµV/m": ("V/m", 1e-6, 20), "dB": ("ratio", 1.0, 20)}
 CURRENCY = {"W_eq": 1.0, "mW_eq": 1e-3, "uW_eq": 1e-6, "µW_eq": 1e-6}
 _NUM = r"([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)"
 

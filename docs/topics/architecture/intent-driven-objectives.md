@@ -115,7 +115,7 @@ The top-level keys are `schema`, `generation`, `currency`, `defaults`, `environm
 
 Rules:
 - **Every term needs a `why`.** A limit needs a `source`, or it is marked `assumed`. An assumed limit is reported against but not priced unless the intent gives it a `rate`.
-- **Specificity:** a part-scoped term beats a section-scoped one, which beats a board-scoped one, as in [constraint-ir](constraint-ir.md). Ties are errors, returned with both term ids.
+- **Specificity:** a part-scoped term beats a section-scoped one, which beats a board-scoped one, as in [constraint-ir](constraint-ir.md). Ties are errors, returned with both term ids. Terms compete only within one tier and bound side, so a `min` and a `max` term make a window (`objective.resolve` lists which `where` keys are part or section scope).
 - **Exchange rates are explicit and local.** "20 mW_eq/dB" means paying 20 mW of loss for 1 dB of GNSS margin is acceptable. kae checks only units and sign. Lacking a rate, the LLM can read each term's marginal cost along the knobs from `evaluate` and answer pairwise ("is 1 dB worth more than 20 mW?"), Keeney–Raiffa style [I].
 
 **Defaults when silent (`neutral/1`), each emitted as a synthetic term with id `D*`, so it shows up in the status like any other term:**

@@ -646,3 +646,29 @@ def test_a_block_supply_named_after_its_block_stays_a_rail():
              C('C1', '100nF', 'VCC_CLK', 'GND'), C('C2', '10uF', 'VCC_CLK', 'GND')]
     nl, r = roles_of(parts)
     assert 'VCC_CLK' in r.rails
+
+
+def test_negative_rail_voltage_intervals_contain_their_value():
+    """A Belief's interval holds its value (physics-core-v2-api Belief): intervals built from abs(v) gave
+    -12 V the interval [11.4, 12.6]."""
+    parts = [fp('J1', 'EuroPower', 'Connector_IDC:IDC-Header_2x05', [('1', '-12V_IN', '-12V', 'passive'), ('3', 'GND', 'GND', 'passive'),
+                                                                    ('9', '+12V_IN', '+12V', 'passive')]),
+             D('D1', '1N4001', '+12V', '+12V_IN'), D('D2', '1N4001', '-12V_IN', '-12V'),
+             C('C1', '22uF', '+12V', 'GND', lib='Capacitor_THT:CP_Radial_D5.0mm_P2.50mm'),
+             C('C2', '22uF', 'GND', '-12V', lib='Capacitor_THT:CP_Radial_D5.0mm_P2.50mm'),
+             IC('U1', 'LM2664', 'Package_TO_SOT_SMD:SOT-23-6', [('1', 'OUT', '-5V', 'power_out'), ('2', 'GND', 'GND', 'power_in')]),
+             C('C3', '10uF', '-5V', 'GND'),
+             IC('U2', 'LM7905', 'Package_TO_SOT_THT:TO-220-3_Vertical', [('1', 'GND', 'GND', 'power_in'), ('2', 'VI', '-12V', 'power_in'),
+                                                                        ('3', 'VO', 'VEE', 'power_out')]),
+             C('C4', '10uF', 'VEE', 'GND')]
+    nl, r = roles_of(parts)
+    assert r.nets['VEE'].attrs['volts']['value'] == -5.0        # from the regulator's part number
+    seen = 0
+    for n in ('-12V', '-12V_IN', '-5V', '+12V', 'VEE'):
+        vb = r.nets[n].attrs.get('volts') or {}
+        if vb.get('value') is None or not vb.get('interval'):
+            continue
+        lo, hi = vb['interval']
+        assert lo <= vb['value'] <= hi, (n, vb)
+        seen += vb['value'] < 0
+    assert seen >= 4

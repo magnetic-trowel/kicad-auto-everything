@@ -258,3 +258,97 @@ def test_the_copper_policy_floors_inner_layers_at_the_internal_ipc_width():
                            _generic_need=lambda *a: 0.2)
     assert r._intent_width("VIN", "F.Cu", 0.2, [1.0] * 5)[0] == out
     assert r._intent_width("VIN", "In1.Cu", 0.2, [1.0] * 5)[0] == inn
+
+
+DROP = {"board": "synthetic", "total": {"complete": True}, "questions": [],
+        "observations": [_ob("drop.rail", "V", [0.050] * 3, kind="dc_drop", rail="+3V3", load="U5", parts=["U5"],
+                             nets=["+3V3"])]}
+
+
+def test_an_observation_is_priced_by_its_most_specific_term_only():
+    """Specificity (intent-driven-objectives.md §5): a board-wide drop cost and a +3V3 one at the same rate
+    priced the drop twice (100 instead of 50)."""
+    it = {"terms": [{"id": "B", "tier": "cost", "obs": "drop.rail", "rate": "1 mW_eq/mV", "why": "w"},
+                    {"id": "R", "tier": "cost", "obs": "drop.rail", "where": {"rail": "+3V3"}, "rate": "1 mW_eq/mV",
+                     "why": "w"}]}
+    st = OB.evaluate(DROP, it, BRIEF)
+    assert st["tiers"]["cost"] == pytest.approx(50.0)
+    b = next(r for r in st["terms"] if r["id"] == "B")
+    assert b["matched"] == 0 and b["overridden_by"] == ["R"]
+
+
+def test_terms_of_other_tiers_or_sides_do_not_compete():
+    it = {"terms": [{"id": "Lo", "tier": "limit", "obs": "drop.rail", "min": "10 mV", "rate": "1 mW_eq/mV", "why": "w"},
+                    {"id": "Hi", "tier": "limit", "obs": "drop.rail", "max": "40 mV", "rate": "1 mW_eq/mV", "why": "w"},
+                    {"id": "H", "tier": "hard", "obs": "drop.rail", "max": "60 mV", "why": "w"}]}
+    st = OB.evaluate(DROP, it, BRIEF)
+    assert all(r["matched"] == 1 for r in st["terms"] if r["id"] in ("Lo", "Hi", "H"))
+    assert st["tiers"]["limit"] == pytest.approx(10.0)
+
+
+def test_equal_specificity_overlap_is_an_error_naming_both_terms():
+    it = {"terms": [{"id": "A", "tier": "cost", "obs": "drop.rail", "where": {"rail": "+3V3"}, "rate": "1 mW_eq/mV",
+                     "why": "w"},
+                    {"id": "B", "tier": "cost", "obs": "drop.*", "where": {"load": "U5"}, "rate": "2 mW_eq/mV",
+                     "why": "w"}]}
+    with pytest.raises(OB.IntentError, match=r"\['A', 'B'\]"):
+        OB.evaluate(DROP, it, BRIEF)
+
+
+def test_a_drop_limit_costs_the_router_nothing_until_it_is_exceeded():
+    """'Limits have epsilon-constraint semantics: once met they cost nothing' (§6). k_R charged a drop limit's
+    rate on every net, whatever its bound or its where.load (2000 per V.A on an unrelated signal net)."""
+    from kae.intent import route as IR
+    lim = {"id": "T2", "tier": "limit", "obs": "drop.rail", "where": {"load": "U5"}, "max": "27 mV",
+           "rate": "2 mW_eq/mV", "why": "w"}
+    p, base = IR.Policy({"terms": [lim]}), IR.Policy({})
+    for net in ("+5V", "SOME_SIGNAL"):
+        assert p.k_R(net, [1.0] * 3) == base.k_R(net, [1.0] * 3)
+    # a cost on +5V's drop prices +5V's copper, not other nets'
+    c = IR.Policy({"terms": [{k: v for k, v in dict(lim, id="C", tier="cost", where={"rail": "+5V"}).items() if k != "max"}]})
+    assert c.k_R("+5V", [1.0] * 3)[0] > base.k_R("+5V", [1.0] * 3)[0]
+    assert c.k_R("SOME_SIGNAL", [1.0] * 3) == base.k_R("SOME_SIGNAL", [1.0] * 3)
+    # in physics routing the limit is priced by its excess at the load it names only
+    ob = dict(loss=(0.0, 0.0, 1.0), drops=[("U5", "+5V", 0.0, 0.030, 0.0), ("U6", "+5V", 0.0, 0.040, 0.0)])
+    assert p.dc_cost(ob) == pytest.approx(2000 * 0.003)
+    assert p.dc_cost(dict(ob, drops=[("U5", "+5V", 0.0, 0.020, 0.0)])) == 0.0
+
+
+def test_router_scopes_must_all_hold():
+    from kae.intent import route as IR
+    t = {"id": "X", "where": {"rail": "+5V", "part": "U5"}}
+    assert not IR._net_matches(t, "+5V", {})          # a part scope says nothing about a bare net
+    assert IR._net_matches({"id": "Y", "where": {"rail": "+5*"}}, "+5V", {})
+    assert IR._net_matches({"id": "Z"}, "ANY", {})
+
+
+def test_section_edits_reject_unresolved_members_and_id_collisions():
+    """§8: 'unresolved members come back as errors'. add accepted a typo'd part (its terms then matched
+    nothing, silently), and rename onto an existing id dropped that section."""
+    from kae.intent import sections as SE
+    brief = dict(BRIEF, nets={"SW": {}, "RF_IN": {}, "VIN": {}})
+    secs = SE.from_brief(brief)
+    with pytest.raises(SE.SectionError, match="U99_TYPO"):
+        SE.apply(secs, {"add": [{"id": "x", "parts": ["U7", "U99_TYPO"]}]}, brief)
+    with pytest.raises(SE.SectionError, match="NO_SUCH_NET"):
+        SE.apply(secs, {"add": [{"id": "x", "nets": ["NO_SUCH_NET"]}]}, brief)
+    with pytest.raises(SE.SectionError, match="already exists"):
+        SE.apply(secs, {"rename": {"cell:buck:U3": "victim:analog:U7"}}, brief)
+    with pytest.raises(SE.SectionError, match="already exists"):
+        SE.apply(secs, {"add": [{"id": "cell:buck:U3", "parts": ["U7"]}]}, brief)
+    ok = SE.apply(secs, {"rename": {"cell:buck:U3": "buck"}, "add": [{"id": "gnss", "parts": ["U7"], "nets": ["RF_IN"]}]},
+                  brief)
+    assert set(ok) == {"buck", "victim:analog:U7", "gnss"}
+    # the evaluator passes its brief, so a typo in an intent's sections is an error there too
+    it = {"sections": {"add": [{"id": "x", "parts": ["U99_TYPO"]}]}, "terms": []}
+    with pytest.raises(SE.SectionError):
+        OB.evaluate(WIDE, it, brief)
+
+
+def test_the_unit_modules_own_examples_parse():
+    """units.py's docstring and the design doc's T4 use '-180 dBm/Hz'; it raised UnitError."""
+    assert U.quantity("-180 dBm/Hz") == (-180.0, "dBm/Hz")
+    assert U.to_log(1e-21, "dBm/Hz") == pytest.approx(-180.0)
+    assert U.quantity("27 mV") == pytest.approx((0.027, "V"))
+    assert U.rate("2 mW_eq/mV", "mW_eq") == pytest.approx((2000.0, "V"))
+    assert U.rate("20 mW_eq/dB", "mW_eq") == (20.0, "dB")
