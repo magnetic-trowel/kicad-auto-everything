@@ -113,11 +113,9 @@ class Policy:
         from kae.excite import observe as O
         ob = O.observation(bd, o, s, [0.0], [0.0])
         out = []
-        for t in self.intent.get("terms", []):
-            if t["tier"] in ("report", "ignore") or not any(fnmatch.fnmatch(k, t["obs"]) for k in self.PHYS):
-                continue
-            if not OB._match(t, ob, self.secs):
-                continue
+        hit = [t for t in self.intent.get("terms", []) if t["tier"] not in ("report", "ignore")
+               and any(fnmatch.fnmatch(k, t["obs"]) for k in self.PHYS) and OB._match(t, ob, self.secs)]
+        for t in OB.resolve(hit, f"{o.name} <- {s.name}"):     # the most specific term, as the evaluator prices it
             lim = U.quantity(t["max"])[0] if "max" in t else None
             r = U.rate(t["rate"], self.cur)[0] if "rate" in t else self.HARD_RATE
             out.append((t, r, lim, t["tier"]))

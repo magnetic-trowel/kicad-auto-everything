@@ -233,3 +233,38 @@ def test_an_implausible_observation_is_priced_at_its_cap_for_every_layout():
     ev["observations"].append(old)
     s1 = next(r for r in OB.evaluate(ev, it, BRIEF)["terms"] if r["id"] == "S1")
     assert s1["contribution"] == pytest.approx(costs[0])
+
+
+DROP = {"board": "synthetic", "total": {"complete": True}, "questions": [],
+        "observations": [_ob("drop.rail", "V", [0.050] * 3, kind="dc_drop", rail="+3V3", load="U5", parts=["U5"],
+                             nets=["+3V3"])]}
+
+
+def test_an_observation_is_priced_by_its_most_specific_term_only():
+    """Specificity (intent-driven-objectives.md §5): a board-wide drop cost and a +3V3 one at the same rate
+    priced the drop twice (100 instead of 50)."""
+    it = {"terms": [{"id": "B", "tier": "cost", "obs": "drop.rail", "rate": "1 mW_eq/mV", "why": "w"},
+                    {"id": "R", "tier": "cost", "obs": "drop.rail", "where": {"rail": "+3V3"}, "rate": "1 mW_eq/mV",
+                     "why": "w"}]}
+    st = OB.evaluate(DROP, it, BRIEF)
+    assert st["tiers"]["cost"] == pytest.approx(50.0)
+    b = next(r for r in st["terms"] if r["id"] == "B")
+    assert b["matched"] == 0 and b["overridden_by"] == ["R"]
+
+
+def test_terms_of_other_tiers_or_sides_do_not_compete():
+    it = {"terms": [{"id": "Lo", "tier": "limit", "obs": "drop.rail", "min": "10 mV", "rate": "1 mW_eq/mV", "why": "w"},
+                    {"id": "Hi", "tier": "limit", "obs": "drop.rail", "max": "40 mV", "rate": "1 mW_eq/mV", "why": "w"},
+                    {"id": "H", "tier": "hard", "obs": "drop.rail", "max": "60 mV", "why": "w"}]}
+    st = OB.evaluate(DROP, it, BRIEF)
+    assert all(r["matched"] == 1 for r in st["terms"] if r["id"] in ("Lo", "Hi", "H"))
+    assert st["tiers"]["limit"] == pytest.approx(10.0)
+
+
+def test_equal_specificity_overlap_is_an_error_naming_both_terms():
+    it = {"terms": [{"id": "A", "tier": "cost", "obs": "drop.rail", "where": {"rail": "+3V3"}, "rate": "1 mW_eq/mV",
+                     "why": "w"},
+                    {"id": "B", "tier": "cost", "obs": "drop.*", "where": {"load": "U5"}, "rate": "2 mW_eq/mV",
+                     "why": "w"}]}
+    with pytest.raises(OB.IntentError, match=r"\['A', 'B'\]"):
+        OB.evaluate(DROP, it, BRIEF)
