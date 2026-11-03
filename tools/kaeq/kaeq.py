@@ -105,7 +105,10 @@ DEFAULTS = {
     "mem_learn_margin": 1.2,
     "lease_step_gb": 1.0,    # lease: a grant grows by max(this, lease_step_frac of the grant) at a time
     "lease_step_frac": 0.25,
-    "lease_margin_mb": 512,  # lease: a job within this of its grant asks for more
+    "lease_margin_mb": 512,  # lease: a job within max(this, lease_margin_frac of its grant) of its grant gets more
+    "lease_margin_frac": 0.15,
+    "lease_backstop_frac": 0.1,  # memory.high sits max(1 GB, this x grant) above the grant: the kernel throttles only
+                                 # a burst the daemon (every 2 s) has not seen yet; a job that must wait is frozen
     "lease_release_gb": 2.0, # lease: a grant more than max(this, lease_release_frac of use) above use for
     "lease_release_frac": 0.25,  # lease_release_after_s
     "lease_release_after_s": 120,  # is trimmed to use x 1.25 (at least use + 1 GB)
@@ -526,6 +529,17 @@ def cg_mem(cg):
         return None
 
 
+def cg_freeze(cg, on):
+    """Freeze (or thaw) a job's scope (cgroup.freeze). A frozen job neither runs nor allocates, so it builds no
+    memory pressure: systemd-oomd kills a scope under sustained pressure, which a job held at memory.high is."""
+    try:
+        with open(os.path.join(cg, "cgroup.freeze"), "w") as f:
+            f.write("1" if on else "0")
+        return True
+    except OSError:
+        return False
+
+
 def cg_set_high(cg, mb):
     """Set a job's grant: its scope's memory.high (the kernel throttles, never kills, above it)."""
     try:
@@ -565,10 +579,13 @@ def lease_plan(jobs, free_mb, cfg, now):
     stalled = []
     for j in sorted(jobs, key=lambda j: (-j["prio"], j["started"] or 0)):
         g, u = grants[j["id"]], j["use"]
-        if u < g - cfg["lease_margin_mb"]:
+        margin = max(cfg["lease_margin_mb"], cfg.get("lease_margin_frac", 0.0) * g)
+        if u < g - margin:
             stall[j["id"]] = 0.0
             continue
-        step = max(cfg["lease_step_gb"] * 1024, cfg["lease_step_frac"] * g, u + cfg["lease_margin_mb"] - g)
+        step = max(cfg["lease_step_gb"] * 1024, cfg["lease_step_frac"] * g, u + margin - g)
+        if free_mb > 4 * step:           # plenty free: grow well ahead of a fast-growing job
+            step = max(step, 0.5 * g)
         if free_mb >= min(step, 256.0):
             take = min(step, free_mb)
             grants[j["id"]] = g + take
@@ -970,8 +987,21 @@ class Daemon:
                 c.execute("UPDATE jobs SET grant_mb=? WHERE id=?", (g, j["id"]))
                 if by[j["id"]]["grant_mb"]:
                     dlog(f"lease #{j['id']}: {fgb(by[j['id']]['grant_mb'])} -> {fgb(g)} (uses {fgb(j['use'])})")
-            if st["set"] != g and cg_set_high(cgs[j["id"]], g):
-                st["set"] = g
+            high = int(g + max(1024, cfg.get("lease_backstop_frac", 0.1) * g))
+            if st["set"] != high and cg_set_high(cgs[j["id"]], high):
+                st["set"] = high
+            # a job that needs memory nobody can give waits frozen (no pressure for systemd-oomd to kill it for);
+            # its time frozen is added to its deadline
+            wait = j["id"] in plan["stalled"]
+            if wait and not st.get("frozen_since"):
+                if cg_freeze(cgs[j["id"]], True):
+                    st["frozen_since"] = now
+                    dlog(f"lease #{j['id']}: frozen at {fgb(j['use'])} (grant {fgb(g)}): no memory free")
+            elif not wait and st.get("frozen_since"):
+                if cg_freeze(cgs[j["id"]], False):
+                    c.execute("UPDATE jobs SET deadline=deadline+? WHERE id=?", (now - st["frozen_since"], j["id"]))
+                    dlog(f"lease #{j['id']}: thawed after {fdur(now - st['frozen_since'])}")
+                    st["frozen_since"] = 0.0
         if plan["victim"] is not None:
             v = by[plan["victim"]]
             need = max(v["mem_mb"], int(max(v["peak_mb"] or 0, v["grant_mb"] or 0) * 1.2))
@@ -1124,6 +1154,8 @@ class Daemon:
 
     def kill(self, j, sig=signal.SIGTERM):
         cg = self.cgroups.get(j["id"]) or (job_cgroup(j["pid"]) if j["pid"] and pid_alive(j["pid"]) else None)
+        if cg and (self.lease_st.get(j["id"]) or {}).get("frozen_since"):
+            cg_freeze(cg, False)                     # a frozen job handles no signal but SIGKILL
         kill_tree(j["pid"], cg, sig)
         if sig == signal.SIGTERM:  # a hard kill after a short grace
             time.sleep(0.2)
@@ -1154,7 +1186,7 @@ class Daemon:
         if not pid_alive(j["pid"]):
             self.popen.pop(j["id"], None)
             return self.finish(j, 137, peak, lost=True)
-        if now > j["deadline"]:
+        if now > j["deadline"] and not (self.lease_st.get(j["id"]) or {}).get("frozen_since"):   # frozen: on hold
             self.kill(j)
             return self.finish_fail(j, "timeout", f"exceeded --timeout {fdur(j['timeout_s'])}; raise --timeout or split the job", peak)
         if disk > j["disk_mb"] * cfg["disk_overrun"] + 5 * 1024:

@@ -340,7 +340,7 @@ def test_jobs_run_at_nice_19_and_sched_idle(kq, tmp_path):
     assert cls == "IDL" and ni in ("19", "-")  # ps prints "-" for the nice of SCHED_IDLE on some versions
 
 
-LEASE = dict(warmup_s=300, lease_release_frac=0.25, mem_overrun=1.5, lease_release_gb=2.0, lease_release_after_s=120, lease_margin_mb=512, lease_step_gb=1.0,
+LEASE = dict(lease_margin_frac=0.15, warmup_s=300, lease_release_frac=0.25, mem_overrun=1.5, lease_release_gb=2.0, lease_release_after_s=120, lease_margin_mb=512, lease_step_gb=1.0,
              lease_step_frac=0.25, lease_stall_s=900)
 
 
@@ -351,8 +351,12 @@ def test_lease_plan_grows_by_priority_trims_idle_grants_and_stalls_the_rest(kq):
     assert kq.lease_plan(jobs, 500.0, LEASE, now=200.0)["grants"][3] == 20480   # under 5 min old: kept
     p = kq.lease_plan(jobs, 500.0, LEASE, now=400.0)
     assert p["grants"][3] == pytest.approx(2048)            # trimmed to use + 1 GB: 18 GB freed
-    assert p["grants"][1] == pytest.approx(4096 + 1024)     # the older job first, one step of max(1 GB, 25%)
-    assert p["grants"][2] == pytest.approx(4096 + 1024)
+    # plenty free (the 18 GB trimmed): each grows by half its grant, well ahead of a fast-growing job
+    assert p["grants"][1] == pytest.approx(4096 + 2048)
+    assert p["grants"][2] == pytest.approx(4096 + 2048)
+    # a job within 15% of its grant already gets more (here 3500 of 4096: within 614 MB)
+    q = kq.lease_plan([dict(id=9, prio=0, started=10, grant=4096, use=3500)], 100000.0, LEASE, now=400.0)
+    assert q["grants"][9] > 4096
     assert p["stalled"] == [] and p["victim"] is None
     p = kq.lease_plan(jobs[:2], 1200.0, LEASE, now=400.0)   # room for one step: the older job gets it
     assert p["grants"][1] > 4096 and p["grants"][2] == 4096 and p["stalled"] == [2]
@@ -387,8 +391,8 @@ HOG = ("python3 -c \"import time\na=[]\nfor i in range({n}):\n    a.append(bytea
 
 
 def test_lease_stalls_a_job_at_its_grant_instead_of_killing_it(kq, tmp_path):
-    """A job that outgrows what may be granted waits in the kernel at its grant; once the budget allows,
-    it gets more and finishes. It is never killed for using more than it declared."""
+    """A job that outgrows what may be granted waits, frozen, near its grant; once the budget allows, it gets more,
+    is thawed and finishes. It is never killed for using more than it declared."""
     d = _lease_daemon(kq, tmp_path, mem_budget_gb=1.5)
     submit(kq, HOG.format(n=8, after="", hold=1), name="hog", mem="300M", timeout="2m")
     log = tmp_path / "jobs" / "1" / "log"
@@ -400,6 +404,8 @@ def test_lease_stalls_a_job_at_its_grant_instead_of_killing_it(kq, tmp_path):
     n = len(joblog(log).split())
     print(f"held: {n} of 8 chunks, cgroup at {int(open(d.cgroups[1] + '/memory.current').read()) >> 20} MB")
     assert states(d)["hog"] == "running" and n < 8               # held at ~1.5 GB, not killed
+    ev = open(d.cgroups[1] + "/cgroup.events").read()
+    assert "frozen 1" in ev                                      # it waits frozen: no memory pressure to be killed for
     g = d.c.execute("SELECT grant_mb FROM jobs").fetchone()[0]
     assert g <= 1.5 * 1024 + 1
     conf = json.load(open(kq.CONF)); conf["mem_budget_gb"] = 4; json.dump(conf, open(kq.CONF, "w"))

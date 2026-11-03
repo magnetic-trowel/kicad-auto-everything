@@ -30,7 +30,8 @@ Workflow: submit -> start `kaeq wait` in the background -> keep working. When it
 (1 = problems printed, 0 = all done, 2 = timeout: just call it again), fix what it
 reports, `kaeq retry`, and start `kaeq wait` again. Estimate `--cpus`/`--mem` honestly:
 `--mem` is a job's starting memory grant. A job that needs more is not killed: it pauses at its
-grant until the queue can give it more (1 GB or 25% at a time) and gets it back when it frees memory, so
+grant, frozen, until the queue can give it more (1 GB or 25%, more when much is free) and gets it back when it
+frees memory, so
 declare the typical need, not the worst case. (Without the cgroup memory controller, the old rule applies:
 RSS over 1.5x `--mem` is killed and requeued with a corrected value.)
 Do not use `--retries` for deterministic test failures. Details: `tools/kaeq/README.md`.
