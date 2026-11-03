@@ -163,3 +163,24 @@ def test_zero_length_edge_shapes_are_skipped():
                        dict(kind="segment", layer="Edge.Cuts", pts=[(2, 2), (3, 3)])])
     cut, stray, board = C._edge_geoms(info)   # raised GEOSException on the zero-length segment
     assert board is not None and len(stray) == 1
+
+
+def test_condition_precedence_is_kicads_not_cs():
+    """&& binds looser than ||, and ! binds tighter than comparisons
+    (docs/topics/kicad/drc-rule-language-reference.md, Precedence)."""
+    A, B = ("prop", "A", "NetClass"), ("prop", "B", "NetClass")
+    c = R.compile_condition("A.NetClass == 'PUSB' || A.NetClass == 'PA' && B.NetClass == 'PGND'")
+    assert c == ("and", ("or", ("cmp", "==", A, ("str", "PUSB")), ("cmp", "==", A, ("str", "PA"))),
+                 ("cmp", "==", B, ("str", "PGND")))
+    assert R.compile_condition("!A.Name == ''") == ("cmp", "==", ("not", ("prop", "A", "Name")), ("str", ""))
+    # rustaphor lightrelay: a PUSB track is held off PGND only, not off every other net
+    def t(expr, a, b):
+        return R.truth(R.ev(R.compile_condition(expr), R.Ctx(a, b, "F.Cu", "clearance")))
+    e = "A.NetClass == 'PUSB' || A.NetClass == 'PA' && B.NetClass == 'PGND'"
+    assert t(e, track("V", "PUSB"), track("G", "PGND"))
+    assert not t(e, track("V", "PUSB"), track("S", "Default"))
+    # trident pcbleakage: '!A.Name' is a number, never equal to '', so the zone part never holds
+    e = "A.Type == 'Zone' && !A.Name == '' && B.Type == 'Zone' && B.Name == '' || B.Type == 'Via'"
+    zone = dict(type="Zone", net="G", netclass="Default", copper=True, connected=True, name="", layers=["F.Cu"])
+    assert not t(e, dict(zone, name="Z1"), dict(zone))
+    assert not t(e, zone, via("A"))

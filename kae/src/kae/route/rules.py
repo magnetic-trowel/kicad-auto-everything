@@ -86,7 +86,10 @@ def tokenize(text):
 
 
 class _Parser:
-    """Recursive descent: or > and > not > comparison > additive > term > unary > primary."""
+    """Recursive descent in KiCad's precedence (common/libeval_compiler/grammar.lemon), lowest
+    first: && < || < comparison (non-associative) < ! < + - < * / < unary minus < primary.
+    Not C's: `a && b || c` is `a && (b || c)` and `!x == y` is `(!x) == y`
+    (docs/topics/kicad/drc-rule-language-reference.md)."""
 
     def __init__(self, toks):
         self.t, self.i = toks, 0
@@ -107,38 +110,38 @@ class _Parser:
         return tok
 
     def parse(self):
-        e = self.orexpr()
+        e = self.andexpr()
         if self.i != len(self.t):
             raise ValueError(f"trailing tokens {self.t[self.i:]}")
         return e
 
-    def orexpr(self):
-        e = self.andexpr()
-        while self.peek("op", "||"):
-            self.take()
-            e = ("or", e, self.andexpr())
-        return e
-
     def andexpr(self):
-        e = self.notexpr()
+        e = self.orexpr()
         while self.peek("op", "&&"):
             self.take()
-            e = ("and", e, self.notexpr())
+            e = ("and", e, self.orexpr())
+        return e
+
+    def orexpr(self):
+        e = self.cmp()
+        while self.peek("op", "||"):
+            self.take()
+            e = ("or", e, self.cmp())
+        return e
+
+    def cmp(self):
+        e = self.notexpr()
+        for op in ("==", "!=", "<=", ">=", "<", ">"):
+            if self.peek("op", op):
+                self.take()
+                return ("cmp", op, e, self.notexpr())
         return e
 
     def notexpr(self):
         if self.peek("op", "!"):
             self.take()
             return ("not", self.notexpr())
-        return self.cmp()
-
-    def cmp(self):
-        e = self.add()
-        for op in ("==", "!=", "<=", ">=", "<", ">"):
-            if self.peek("op", op):
-                self.take()
-                return ("cmp", op, e, self.add())
-        return e
+        return self.add()
 
     def add(self):
         e = self.term()
@@ -163,7 +166,7 @@ class _Parser:
     def primary(self):
         if self.peek("op", "("):
             self.take()
-            e = self.orexpr()
+            e = self.andexpr()
             self.take("op", ")")
             return e
         tok = self.take()
@@ -180,7 +183,7 @@ class _Parser:
                     self.take()
                     args = []
                     while not self.peek("op", ")"):
-                        args.append(self.orexpr())
+                        args.append(self.andexpr())
                         if self.peek("op", ","):
                             self.take()
                     self.take("op", ")")
