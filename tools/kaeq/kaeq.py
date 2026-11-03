@@ -115,6 +115,11 @@ DEFAULTS = {
     "squeeze": True,
     "squeeze_min_gb": 1.0,
     "squeeze_every_s": 5,
+    # squeeze_credit: admission counts this share of steady timed jobs' memory (past warm-up, not growing, not hot)
+    # as squeezable, x (1 - 1/zram_ratio) freed by compressing it, capped by zram room: the queue runs into
+    # shortages on purpose and squeezes to cover them (requeues at half the buffer stay the backstop). 0 = off
+    "squeeze_credit": 0.25,
+    "zram_ratio": 1.4,
     "lease_step_gb": 1.0,    # lease: a grant grows by max(this, lease_step_frac of the grant) at a time
     "lease_step_frac": 0.25,
     "lease_margin_mb": 512,  # lease: a job within max(this, lease_margin_frac of its grant) of its grant gets more
@@ -1494,7 +1499,14 @@ class Daemon:
             tv = None
         grants = {i: plan["grants"][i] for i in plan["grants"] if i not in (plan["victim"], tv, ev)}
         use = {j["id"]: j["use"] for j in jobs}
-        return dict(room=plan["free"], held=other + plan["held"] + buffer, buffer=buffer,
+        credit = 0.0
+        if cfg["squeeze"] and cfg["squeeze_credit"] > 0:
+            gain = 1 - 1 / max(1.0, cfg["zram_ratio"])
+            steady = sum(j["use"] for j in jobs if j["timed"] and not j.get("frozen") and j.get("rate", 0.0) < 1.0
+                         and now - (j["started"] or now) >= cfg.get("lease_warm_s", 120)
+                         and not (self.lease_st.get(j["id"]) or {}).get("hot"))
+            credit = min(cfg["squeeze_credit"] * steady, compress_room_mb(cfg["compress_frozen"])) * gain
+        return dict(room=plan["free"] + credit, credit=credit, held=other + plan["held"] + buffer, buffer=buffer,
                     unused=sum(max(0.0, g - use[i]) for i, g in grants.items()),
                     granted=sum(grants.values()), used=sum(use.values()), stalled=plan["stalled"],
                     victim=plan["victim"], short=plan["short"], jobs=len(jobs), hold=hold, z=z, loss=self.oc.get("loss"),

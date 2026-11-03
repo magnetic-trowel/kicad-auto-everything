@@ -123,6 +123,7 @@ def frame(c, cfg, sampler, args, width):
                  f" + {gb(ls.get('buffer', 0))} growth buffer"
                  + (f"; timed jobs' forecast growth {gb(ls['timed_held'])} (z {ls.get('z', 0):.2f})"
                     if ls.get("timed_held") is not None else "")
+                 + (f"; squeezable credit {gb(ls['credit'])}" if ls.get("credit") else "")
                  + (f"; compressed, waiting: {', '.join('#%d' % i for i in ls['compressed'])} (no starts)"
                     if ls.get("compressed") else "")
                  + (f"  << {len(st)} job(s) waiting at their grant for memory: no new starts ({', '.join('#%d' % i for i in st[:6])})"
