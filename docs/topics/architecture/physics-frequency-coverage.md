@@ -6,6 +6,9 @@
 - **The board is one linear system across frequency.** Its copper and passive parts have
   matrices R, L (and, once added, P) that do not depend on frequency. The response at every
   frequency, and in time, lies in a small subspace spanned by solutions at a few frequencies.
+  Skin effect does not break this: it emerges from the filaments through the thickness, and what
+  `nsub` filaments cannot hold is a per-layer surface-impedance factor applied at evaluation
+  ([field-solver-accuracy](../../research/physics/field-solver-accuracy.md)).
 - **Recommendation:** build a passive reduced-order model by projecting the full field system onto
   the solutions of every source *and* every observer pattern at a few adaptively chosen
   frequencies. Evaluate every harm on it at any frequency, at every harmonic, and as a waveform.
