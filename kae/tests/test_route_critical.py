@@ -1252,3 +1252,28 @@ def test_rail_ladder_floor_and_cap_flag():
     assert floor == 0.30 and min(ws) >= 0.30 and max(ws) >= 0.9 and "capped" not in b
     ws, floor = _branch_widths(ctx, m, "br:y", b, 10.0, 7.19, 1.0, 0.0, 0.2)
     assert ws == [3.0] and floor == 3.0 and b["capped"]["cap_mm"] == 3.0 and "rail_max_mm" in m.notes[-1]
+
+
+def test_text_writers_refuse_pre_kicad10_boards(tmp_path):
+    """KiCad 9 rejects named nets and KiCad 6/7 a `(locked yes)` on a track: the writers that
+    emit them refuse older boards; removing items stays allowed; both lock spellings read."""
+    k9 = tmp_path / "k9.kicad_pcb"
+    k9.write_text('(kicad_pcb (version 20241229) (generator "pcbnew") (generator_version "9.0")\n'
+                  '\t(net 0 "")\n\t(net 1 "A")\n'
+                  '\t(segment\n\t\t(start 0 0)\n\t\t(end 1 0)\n\t\t(width 0.2)\n\t\t(layer "F.Cu")\n\t\t(net 1)\n'
+                  '\t\t(uuid "11111111-1111-1111-1111-111111111111")\n\t)\n)\n')
+    k6 = tmp_path / "k6.kicad_pcb"
+    k6.write_text('(kicad_pcb (version 20211014) (generator pcbnew)\n  (net 0 "")\n  (net 1 "A")\n'
+                  '  (segment locked (start 0 0) (end 1 0) (width 0.2) (layer "F.Cu") (net 1) '
+                  '(tstamp 22222222-2222-2222-2222-222222222222))\n)\n')
+    out = tmp_path / "o.kicad_pcb"
+    with pytest.raises(W.KiCadVersionError, match="KiCad 9 or older"):
+        W.append_items(k9, out, tracks=[("A", "F.Cu", 0.2, (0, 0), (1, 1), None)])
+    with pytest.raises(W.KiCadVersionError):
+        W.transplant(k9, k9, out)
+    with pytest.raises(W.KiCadVersionError):
+        W.edit(k6, out, unlock="all")
+    assert not out.exists()
+    W.edit(k9, out, remove=["11111111-1111-1111-1111-111111111111"])
+    assert "1111" not in out.read_text()
+    assert [i["locked"] for i in W.routing(k6)] == [True] and [i["locked"] for i in W.routing(k9)] == [False]
