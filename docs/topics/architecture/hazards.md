@@ -37,7 +37,7 @@
 | `kae.route.cli route`, `lastmile` | static; recheck of OUTPUT; BGA `escape_infeasible`; else the bridge's final DRC counts |
 | `kae.route.critical_cli route` | static; recheck; `rail_max_cap`, `class_max_below_ipc`, `ipc_floor_unroutable` module flags |
 | `kae.route.critical_cli physics` | `physics_over_budget` (u > 1), `physics_unmeasured`; static |
-| `kae.joint.cli run` | static; recheck; everything nested in iterations; `check_not_run` and `physics_over_budget` of the final card |
+| `kae.joint.cli run` | static; recheck; everything nested in iterations; `check_not_run` and `physics_over_budget` of the final card; KiCad's writer checks of every pose write, once per code (`kicad_format_upgraded`, ...) |
 | `kae brief` | static project hazards with the brief's net voltages (route and joint reports have no brief at hand, so `hv_clearance_below_ipc` comes from `kae brief` and `kae place`) |
 | `kae.excite.evaluate -o`, `kae.sim evaluate` | harms over their limit (`physics_over_budget`); failed or incomplete simulated requirements (`sim_fail`, `sim_incomplete`) |
 

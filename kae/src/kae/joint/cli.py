@@ -87,7 +87,7 @@ def run(a):
     rep = dict(status="error")
     t0 = time.monotonic()
     pre = _mtime(out)
-    loop = None
+    loop = stages = None
     try:
         stages = KaeStages(a.input, wd, opts=sopts, log=_log)
         loop = JointLoop(stages, opts={k: v for k, v in lopts.items() if k in _loop_keys()}, log=_log)
@@ -107,6 +107,9 @@ def run(a):
                    output_exists=written)
     finally:
         rep["physics_fidelity"] = dict(mode=a.physics_fidelity, k=a.physics_k)
+        if hasattr(stages, "writer_hazards"):
+            # KiCad's writer checks of every pose write (kae.board.pcbnew_io.write_hazards)
+            rep.setdefault("hazards", []).extend(stages.writer_hazards())
         if own and not a.keep:
             shutil.rmtree(wd, ignore_errors=True)
         else:

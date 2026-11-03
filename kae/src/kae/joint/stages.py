@@ -98,6 +98,7 @@ class KaeStages:
         self.terms = None
         self.locked = set()
         self.module_parts = {}
+        self.writer_hz = []              # hazards of KiCad's writer, one list over every pose write
         self.edge_parts = set()
 
     # ------------------------------------------------------------------ helpers
@@ -115,9 +116,25 @@ class KaeStages:
 
     def _write_poses(self, src, dst, poses):
         from kae.place.writer import write
-        write(str(src), str(dst), poses, mode=self.opts.get("writer", "auto"), log=None)
+        wrep = write(str(src), str(dst), poses, mode=self.opts.get("writer", "auto"), log=None)
+        self.writer_hz += (wrep or {}).get("hazards") or []
         _project(self.input, dst)
         return dst
+
+    def writer_hazards(self):
+        """The writer's post-write hazards (kae.board.pcbnew_io.write_hazards) over the run, one per
+        code: every pose write of a run re-reads the same input, so a format upgrade or merged
+        duplicate drawings repeat on each intermediate file; the entry names the input and counts
+        the writes."""
+        out = {}
+        for h in self.writer_hz:
+            code = h.get("code")
+            if code not in out:
+                out[code] = dict(h, objects=[str(self.input.name)],
+                                 evidence=dict(h.get("evidence") or {}, writes=0))
+                out[code]["evidence"].pop("op", None)
+            out[code]["evidence"]["writes"] += 1
+        return list(out.values())
 
     # ------------------------------------------------------------------ place
     def place(self, seed, time_s):
@@ -225,7 +242,7 @@ class KaeStages:
                     guards[m.id] = g
         finally:
             sess.modules = mods
-        write_joint(lay.board, out, moved, copper)
+        write_joint(lay.board, out, moved, copper, hazards=self.writer_hz)
         _project(self.input, out)
         new.poses.update({u: tuple(p) for u, p in moved.items()})
         new.crit |= {c.uuid for c in copper}

@@ -672,14 +672,17 @@ def soft_critical(s, slack=0.10):
     return dict(soft_fixed=uuids, physics_guard=guard)
 
 
-def write_joint(src, dst, poses, copper):
+def write_joint(src, dst, poses, copper, hazards=None):
     """dst = src with parts moved to `poses` (pcbnew_io.write_poses: KiCad's own writer, any
     angle) and the critical copper added (locked but for soft joins). Project files are
-    copied beside dst."""
+    copied beside dst. The writer's post-write hazards (format upgrade, merged or lost
+    drawings) are appended to `hazards` when a list is given."""
     import shutil
     src, dst = Path(src), Path(dst)
     if poses:
-        pcbnew_io.write_poses(src, dst, {u: tuple(p) for u, p in poses.items()})
+        wrep = pcbnew_io.write_poses(src, dst, {u: tuple(p) for u, p in poses.items()})
+        if hazards is not None:
+            hazards.extend((wrep or {}).get("hazards") or [])
     elif src.resolve() != dst.resolve():
         shutil.copy2(src, dst)
     tracks = [c for c in copper if isinstance(c, Track)]

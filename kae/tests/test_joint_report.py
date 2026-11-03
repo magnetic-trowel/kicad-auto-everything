@@ -307,3 +307,28 @@ def test_close_open_bounds_the_last_mile_and_output_is_renamed_into_place(tmp_pa
     out = tmp_path / "out" / "board.kicad_pcb"
     st.finish(Layout(board=str(b)), out)
     assert seen[0] != out and out.read_text() == "out" and not seen[0].exists()
+
+
+# ---- the writer's post-write hazards reach the joint report once per code
+def test_pose_writes_pass_the_writers_hazards_up_once_per_code(tmp_path, monkeypatch):
+    """kicad-io: the joint loop's pose writes (place.writer.write) and critical.write_joint
+    (pcbnew_io.write_poses) dropped the writer's hazards. They are now collected over the run and
+    reported once per code, naming the input and counting the writes."""
+    from kae.joint.stages import KaeStages
+    from kae.place import writer
+    from kae.route import critical
+    up = dict(code="kicad_format_upgraded", severity="warn", category="data", message="m",
+              objects=["/tmp/x/it01/placed.kicad_pcb"], evidence=dict(stamp_in=20240108, stamp_out=20260206, op="write-poses"))
+    monkeypatch.setattr(writer, "write", lambda s, d, p, mode="auto", log=None: dict(writer="pcbnew", hazards=[dict(up)]))
+    monkeypatch.setattr("kae.joint.stages._project", lambda *a, **k: None)
+    inp = tmp_path / "in.kicad_pcb"
+    inp.write_text("(kicad_pcb)")
+    st = KaeStages(inp, tmp_path / "wd", opts={})
+    st._write_poses(inp, tmp_path / "a.kicad_pcb", {"u": (0, 0, 0, "F")})
+    st._write_poses(inp, tmp_path / "b.kicad_pcb", {"u": (1, 0, 0, "F")})
+    monkeypatch.setattr(critical.pcbnew_io, "write_poses", lambda s, d, p: dict(moved=1, hazards=[dict(up)]))
+    monkeypatch.setattr(critical.W, "append_items", lambda *a, **k: None)
+    critical.write_joint(inp, tmp_path / "c.kicad_pcb", {"u": (2, 0, 0, "F")}, [], hazards=st.writer_hz)
+    hz = st.writer_hazards()
+    assert len(hz) == 1 and hz[0]["code"] == "kicad_format_upgraded" and hz[0]["objects"] == ["in.kicad_pcb"]
+    assert hz[0]["evidence"]["writes"] == 3 and "op" not in hz[0]["evidence"]
