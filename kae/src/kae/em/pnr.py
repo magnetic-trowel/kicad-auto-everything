@@ -190,7 +190,8 @@ class PhysRouter:
         log(f"pnr: {len(self.srcs)} aggressors, {len(self.obs)} observers; priced nets {self.nets}; "
             f"ripped {len(rip)} items" + (f"; kept as the input has them: {self.kept}" if self.kept else ""))
         from kae.route.critical import Session
-        self.sess = Session(self.base, opts=dict(place_allocs=False), log=lambda m: None)
+        self.sess = Session(self.base, opts=dict(place_allocs=False, dT_max_K=self.dcp.dT_max,
+                                                 drop_share=self.dcp.drop_share), log=lambda m: None)
         self.sp, self.router = self.sess.space, self.sess.router
         self.tracks, self.vias = [], []
         self.window = None

@@ -68,7 +68,21 @@ DEFAULTS = dict(
     thermal_spokes=True,   # manual spokes first for pads the placement starves (Session.thermal_spokes)
     lm_soft=False,         # the bridge's last mile may re-lay critical copper, kept by the joint loop's
                            # physics rule (soft_critical)
+    dT_max_K=10.0,         # IPC-2221 temperature rise critical copper is sized for (intent_opts)
+    drop_share=0.02,       # rail + ground DC drop budget, fraction of the rail voltage (intent_opts)
 )
+
+
+def intent_opts(intent):
+    """Session opts from an intent's requirements (as kae.excite.dc.plan reads them), so the
+    critical router sizes copper against the limits the evaluator scores: dT_max_K and
+    drop_share. Takes the facts dict or a kae.intent/1 document (its facts); {} without one."""
+    if not intent:
+        return {}
+    if intent.get("schema") == "kae.intent/1":
+        intent = intent.get("facts") or {}
+    req = intent.get("requirements") or {}
+    return {k: float(req[k]) for k in ("dT_max_K", "drop_share") if req.get(k) is not None}
 
 
 def _log(msg):
@@ -515,7 +529,7 @@ class Session:
             stitched=int(getattr(self, "n_stitched", 0) or 0),
             space_notes=list(self.space.notes),
             modules=[dict(id=m.id, kind=m.kind, status=m.status, items=len(m.copper), physics=m.physics,
-                          notes=m.notes[:6]) for m in self.modules],
+                          notes=m.notes[:6], flags=m.flags) for m in self.modules],
             rails=self.rails,
         )
 

@@ -52,6 +52,16 @@ class Module:
     physics: dict = field(default_factory=dict)     # value, unit, alloc, u, ...
     status: str = "pending"
     notes: list = field(default_factory=list)
+    flags: list = field(default_factory=list)       # dicts for the report: copper the current asks more of
+
+
+DT_MAX_K = 10.0           # IPC-2221 temperature rise (K) of critical copper (high-current.md), opts dT_max_K
+
+
+def dT_max(ctx):
+    """The temperature rise (K) critical copper is sized for: opts dT_max_K (an intent's
+    requirements.dT_max_K, critical.intent_opts), else 10 K."""
+    return float(ctx.opts.get("dT_max_K") or DT_MAX_K)
 
 
 def modules_from_brief(brief, kinds=("cell", "path", "decap", "rgroup", "crystal", "chain")):
@@ -447,16 +457,25 @@ def route_cell(ctx, m):
         d = math.hypot(ux, uy) or 1.0
         ux, uy = ux / d, uy / d
         a = min(extent_across(ta.geom, ux, uy), extent_across(tb.geom, ux, uy))
-        w_cur = ipc2221_width(I, t_mm=ctx.sp.tcu.get(L0, 0.035))
+        w_ipc = ipc2221_width(I, dT=dT_max(ctx), t_mm=ctx.sp.tcu.get(L0, 0.035))
         mn, opt, mx = ctx.sp.width_limits(net, L0)
-        floor = max(mn, min(w_cur, a), 0.0)
-        w_cur = min(w_cur, max(a, float(ctx.opts.get("rail_max_mm", 3.0))))   # 100 A of FETs: pours, not tracks
+        cap = max(a, float(ctx.opts.get("rail_max_mm", 3.0)))
+        w_cur = min(w_ipc, cap)             # 100 A of FETs: pours, not tracks
+        if w_ipc > cap + 1e-9:
+            m.notes.append(f"hop {k} ({net}): IPC-2221 needs {w_ipc:.2f} mm for {I:.2f} A; capped at {cap:g} mm "
+                           f"(rail_max_mm): a pour, not a track")
+            m.flags.append(dict(flag="rail_max_cap", hop=k, net=net, I_A=round(I, 3), ipc_mm=round(w_ipc, 3),
+                                cap_mm=cap))
+        # the floor: never below IPC-2221 for the cell current (critical-net-routing.md), nor the class
+        floor = max(mn, w_cur)
+        if mx is not None and floor > mx + 1e-9:
+            m.notes.append(f"hop {k} ({net}): IPC width {floor:.2f} mm exceeds the class maximum {mx:g} mm")
+            m.flags.append(dict(flag="class_max_below_ipc", hop=k, net=net, ipc_mm=round(floor, 3), max_mm=mx))
         if net == sw:
             hi = max(w_cur, opt)            # the switch node: as narrow as the current allows
         else:
             hi = max(a, w_cur, opt)         # terminal width (wider gains nothing)
-        widths = width_ladder(hi, max(floor, mn), 5) + ([opt] if opt < floor else []) + [mn]
-        widths = sorted(set(round(w, 4) for w in widths), reverse=True)
+        widths = sorted(set(round(w, 4) for w in width_ladder(hi, floor, 5)), reverse=True)
         # a ground hop over its own plane has the vias as its return: a detour on the surface
         # buys nothing, so it is routed only when it stays short
         max_len = None
@@ -477,7 +496,10 @@ def route_cell(ctx, m):
         if rt is not None:
             ok += 1
         else:
-            m.notes.append(f"hop {k} ({net}) not routed")
+            m.notes.append(f"hop {k} ({net}): no room at its IPC-2221 width {floor:.2f} mm for {I:.2f} A; "
+                           f"left to the bridge")
+            m.flags.append(dict(flag="ipc_floor_unroutable", hop=k, net=net, I_A=round(I, 3),
+                                floor_mm=round(floor, 3)))
     # return vias at the ground terminals of the loop
     _return_vias(ctx, m, T, side)
     m.status = "routed" if ok == len(hops) else ("partial" if ok else "failed")
@@ -1316,7 +1338,7 @@ def route_chain(ctx, m):
         ws = [opt, mn]
         if power:
             I = float((getattr(ctx, "rail_I", None) or {}).get(ta.net) or ctx.opts.get("chain_power_a", 1.0))
-            w = max(ipc2221_width(I, t_mm=ctx.sp.tcu.get(l0, 0.035)), opt)
+            w = max(ipc2221_width(I, dT=dT_max(ctx), t_mm=ctx.sp.tcu.get(l0, 0.035)), opt)
             ws = sorted({w, max(opt, min(w, min(ta.width, tb.width))), opt, mn}, reverse=True)
         tgt = [anchor(tb)] + (ctx.net_copper_anchors(ta.net, connected_to=tb) if k == len(T) - 2 else [])
         rt = None
