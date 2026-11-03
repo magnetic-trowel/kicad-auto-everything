@@ -5,7 +5,7 @@ only), in a separate process from kae. Every operation writes its JSON result to
 and prints one status line ({"ok": ...}) on stdout.
 
     python pcbnew_bridge.py extract BOARD OUT [--no-courtyards] [--no-outline]
-    python pcbnew_bridge.py write-poses BOARD POSES OUT_JSON DEST [--allow-locked]
+    python pcbnew_bridge.py write-poses BOARD POSES OUT_JSON DEST [--allow-locked] [--keep-upright]
     python pcbnew_bridge.py resave BOARD OUT_JSON DEST
     python pcbnew_bridge.py export-dsn BOARD DSN OUT_JSON [--no-probes]
     python pcbnew_bridge.py import-ses BOARD SES OUT_JSON DEST
@@ -23,12 +23,25 @@ and vias of every net on every copper layer (width, via diameter and drill as mi
 own clearance, annular ring).
 
 import-ses: KiCad's Specctra session import into BOARD (unlocked routing is replaced,
-locked routing kept), written to DEST with the plain writer.
+locked routing kept), written to DEST with the plain writer. BOARD is read with the plain
+reader. KiCad's import rebuilds connectivity, which can move copper that overlaps a pad
+onto that pad's net. Every routing item that was on the board before the import gets its
+own net back, and the result lists those items (`renetted`). Items the import created
+keep whatever net the import gave them; kae.board.pcbnew_io checks them against the session.
+
+Every write (write-poses, resave, import-ses, edit-routing) re-reads DEST with the plain
+reader and compares it with the board in memory: format stamp, footprints, pads, tracks,
+vias, drawings, zones and nets, and the net of every pad and routing item. The result
+carries this as `write_check`. pcbnew.LoadBoard/SaveBoard are never used as fallbacks
+for the plain reader and writer: when those are missing, the operation fails.
 
 edit-routing: EDITS is JSON {delete: [uuid], width: {uuid: mm}, add: [{net, layer, a, b,
 width}], lock_all: bool, unlock_all: bool, keep_locked: [uuid]}; applied to BOARD's tracks
 and vias (added tracks are locked with lock_all; unlock_all leaves keep_locked locked),
-written to DEST with the plain writer.
+written to DEST with the plain writer. An added track whose net is not on the board (or is
+empty) or whose layer is not an enabled copper layer fails the whole call before
+anything is written, listing `unknown_nets` and `unknown_layers`: the alternative is
+copper on net 0 or on no layer.
 
 zone-fills: every zone of BOARD (loaded with its project) refilled as kicad-cli's DRC does
 with --refill-zones, and its filled copper per copper layer as polygons with holes.
@@ -45,7 +58,9 @@ write-poses: POSES is a JSON list of {uuid or ref, x, y, rot, side}; a reference
 name exactly one footprint, and unknown, ambiguous or locked footprints fail the whole
 call (unless --allow-locked) before anything is written. A side change uses
 FOOTPRINT::Flip (left-right, about the footprint's own position); then SetOrientation
-and SetPosition. Nothing else is touched: the board is read and written with KiCad's
+(or, with --keep-upright, FOOTPRINT::Rotate by the change, which is SetOrientation plus
+KiCad's KeepUpright on footprint texts, as KiCad's own rotate command and footprint
+properties dialog do) and SetPosition. Nothing else is touched: the board is read and written with KiCad's
 plain S-expression reader and writer (PCB_IO_MGR.Load/Save). pcbnew.LoadBoard and
 SaveBoard build connectivity, which gives copper overlapping a pad that pad's net. The
 file is written to a temporary directory and moved to DEST, so no project file is written.
@@ -143,16 +158,128 @@ def _warm_up():
     _WARM.append(True)
 
 
+def _plain_io():
+    if not (hasattr(pcbnew, "PCB_IO_MGR") and hasattr(pcbnew.PCB_IO_MGR, "KICAD_SEXP")):
+        raise RuntimeError("this pcbnew has no plain S-expression reader/writer (PCB_IO_MGR.KICAD_SEXP); "
+                           "kae does not fall back to LoadBoard/SaveBoard, which move copper onto "
+                           "the nets of pads it overlaps")
+    return pcbnew.PCB_IO_MGR
+
+
 def _load_plain(path):
     """The board as KiCad's S-expression reader returns it, with no project and no
     connectivity. pcbnew.LoadBoard builds connectivity, which gives copper overlapping a
-    pad that pad's net, and a writer must not carry that into its output."""
-    if hasattr(pcbnew, "PCB_IO_MGR") and hasattr(pcbnew.PCB_IO_MGR, "KICAD_SEXP"):
-        _warm_up()
-        board = pcbnew.PCB_IO_MGR.Load(pcbnew.PCB_IO_MGR.KICAD_SEXP, path)
-        if board is not None:
-            return board
-    return _load(path)
+    pad that pad's net, and a writer must not carry that into its output. Fails when the
+    plain reader is missing or returns nothing; it never falls back to LoadBoard."""
+    io = _plain_io()
+    _warm_up()
+    board = io.Load(io.KICAD_SEXP, path)
+    if board is None:
+        raise RuntimeError(f"could not load {path} with the plain reader")
+    return board
+
+
+def _stamp(path):
+    """The (version N) format stamp at the head of a board file, or None."""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(512).decode("utf-8", "replace")
+    except OSError:
+        return None
+    i = head.find("(version")
+    if i < 0:
+        return None
+    digits = "".join(ch for ch in head[i + 8:i + 30].strip().split(")")[0] if ch.isdigit())
+    return int(digits) if digits else None
+
+
+def _inventory(board):
+    """Counts, and the nets of pads, routing items and zones, for the post-write check.
+    Pads are compared per footprint as a multiset (pcbnew re-sorts them on save, and pads of
+    one footprint may share a uuid); zones as a multiset too (teardrops have no uuid and get
+    a new one on every load); routing items by uuid."""
+    pads = {}
+    n_pads = n_fp_zones = 0
+    for fp in board.GetFootprints():
+        ref = fp.GetReference()
+        # keyed by footprint uuid; footprints that share one (seen in the corpus) pool their pads
+        lst = pads.setdefault(fp.m_Uuid.AsString(), [])
+        for p in fp.Pads():
+            # no position: a pad of a turned part is placed again from its footprint-frame
+            # offset on load, which can land 1 nm away from the position in memory
+            lst.append((ref, p.GetNumber(), p.GetNetname()))
+            n_pads += 1
+        n_fp_zones += len(fp.Zones())
+    kinds = {"PCB_TRACK": 0, "PCB_ARC": 0, "PCB_VIA": 0}
+    tracks = {}
+    for t in board.GetTracks():
+        c = t.GetClass()
+        kinds[c] = kinds.get(c, 0) + 1
+        tracks[t.m_Uuid.AsString()] = t.GetNetname()
+    zones = sorted((z.GetNetname(), bool(z.GetIsRuleArea()), z.GetAssignedPriority(), z.Outline().FullPointCount())
+                   for z in board.Zones())
+
+    def dkey(owner, d):
+        bb = d.GetBoundingBox()
+        return (owner, d.GetClass(), int(d.GetLayer()), bb.GetX(), bb.GetY(), bb.GetWidth(), bb.GetHeight())
+    # board and footprint drawings, by geometry: KiCad's writer keeps them in std::sets whose
+    # order ignores the uuid, so coincident duplicates are written once
+    drawings = [dkey("", d) for d in board.GetDrawings()]
+    for fp in board.GetFootprints():
+        drawings += [dkey(fp.m_Uuid.AsString(), g) for g in fp.GraphicalItems()]
+    counts = dict(footprints=len(board.GetFootprints()), pads=n_pads, tracks=kinds["PCB_TRACK"],
+                  arcs=kinds["PCB_ARC"], vias=kinds["PCB_VIA"], drawings=len(board.GetDrawings()),
+                  zones=len(zones), footprint_zones=n_fp_zones,
+                  nets=sum(1 for n in board.GetNetsByName().keys() if str(n)))
+    return counts, pads, tracks, zones, drawings
+
+
+def _multiset_diff(a, b):
+    """Entries of list a not matched in list b."""
+    left = {}
+    for x in b:
+        left[x] = left.get(x, 0) + 1
+    out = []
+    for x in a:
+        if left.get(x):
+            left[x] -= 1
+        else:
+            out.append(x)
+    return out
+
+
+def _check_written(board, stamp_in, dest):
+    """Re-read DEST plainly and compare it with the board in memory that was saved there:
+    stamps, counts, and every pad's, routing item's and zone's net."""
+    c0, p0, t0, z0, d0 = _inventory(board)
+    c1, p1, t1, z1, d1 = _inventory(_load_plain(dest))
+    out = dict(stamp_in=stamp_in, stamp_out=_stamp(dest), counts=c0,
+               counts_changed={k: [c0[k], c1.get(k)] for k in c0 if c0[k] != c1.get(k)})
+    ex = []
+    pads_changed = 0
+    for u, lst in p0.items():
+        d = _multiset_diff(lst, p1.get(u, []))
+        pads_changed += len(d)
+        ex += [["pad", f"{x[0]}.{x[1]}", x[2]] for x in d[:3]]
+    tracks_changed = sum(1 for u in t0 if t1.get(u) != t0[u])
+    ex += [["track", u, t0[u], t1.get(u)] for u in t0 if t1.get(u) != t0[u]][:10]
+    zd = _multiset_diff(z0, z1)
+    ex += [["zone", z[0]] for z in zd[:5]]
+    out.update(pads_changed=pads_changed, routing_changed=tracks_changed, zones_changed=len(zd))
+    # drawings the writer did not write: merged duplicates (an identical one is still there)
+    # or lost; copper ones separately (a lost copper drawing is lost copper)
+    have = set(d1)
+    dl = _multiset_diff(d0, d1)
+    dup = [x for x in dl if x in have]
+    gone = [x for x in dl if x not in have]
+    out.update(drawings_merged=len(dup), drawings_lost=len(gone),
+               copper_drawings_merged=sum(1 for x in dup if pcbnew.IsCopperLayer(x[2])),
+               copper_drawings_lost=sum(1 for x in gone if pcbnew.IsCopperLayer(x[2])))
+    if gone:
+        ex += [["drawing", x[0], x[1], x[2]] for x in gone[:5]]
+    if ex:
+        out["examples"] = ex[:20]
+    return out
 
 
 def _chain(lc):
@@ -231,24 +358,49 @@ def extract(path, out, courtyards=True, outline=True):
     _status(dict(ok=True, footprints=len(fps)))
 
 
-def _save(board, dest):
+_COPPER = ("footprints", "pads", "tracks", "arcs", "vias", "zones", "footprint_zones", "nets")
+
+
+def _save(board, dest, src=None):
     """Write the board with KiCad's plain S-expression writer. pcbnew.SaveBoard first
     rebuilds connectivity, which gives copper under a moved pad that pad's net (a GND
     track became Net-(U1B-K) in a test); PCB_IO_MGR.Save writes the board as it is.
-    The file goes to a temporary directory first, so no project file is written."""
+    The file goes to a temporary directory first, so no project file is written. With
+    SRC (the file the board was read from), the written file is re-read and checked
+    against the board in memory before it replaces DEST: a file whose copper items or nets
+    differ is never moved into place (RuntimeError). Returns the check, or None."""
+    io = _plain_io()
+    stamp_in = _stamp(src) if src else None    # before DEST is written: they may be one file
     d = tempfile.mkdtemp(prefix="kae-save-")
     try:
         tmp = os.path.join(d, os.path.basename(dest))
-        if hasattr(pcbnew, "PCB_IO_MGR") and hasattr(pcbnew.PCB_IO_MGR, "KICAD_SEXP"):
-            pcbnew.PCB_IO_MGR.Save(pcbnew.PCB_IO_MGR.KICAD_SEXP, tmp, board)
-        elif not pcbnew.SaveBoard(tmp, board, True):
-            raise RuntimeError(f"could not save {dest}")
+        io.Save(io.KICAD_SEXP, tmp, board)
+        if not os.path.exists(tmp) or os.path.getsize(tmp) == 0:
+            raise RuntimeError(f"the plain writer wrote nothing for {dest}")
+        check = None
+        if src:
+            check = _check_written(board, stamp_in, tmp)
+            copper = {k: v for k, v in check["counts_changed"].items() if k in _COPPER}
+            if (copper or check["pads_changed"] or check["routing_changed"] or check["zones_changed"]
+                    or check["copper_drawings_lost"]):
+                raise RuntimeError(f"KiCad's writer changed copper or nets (nothing written to {dest}): "
+                                   + json.dumps(dict(counts=copper, pads=check["pads_changed"],
+                                                     routing=check["routing_changed"],
+                                                     zones=check["zones_changed"],
+                                                     copper_drawings=check["copper_drawings_lost"],
+                                                     examples=check.get("examples", [])[:5])))
         shutil.move(tmp, dest)
+        return check
     finally:
         shutil.rmtree(d, ignore_errors=True)
 
 
-def write_poses(path, poses_path, out, dest, allow_locked=False):
+def _save_checked(board, src, dest):
+    """_save with the post-write check (see the module docstring)."""
+    return _save(board, dest, src)
+
+
+def write_poses(path, poses_path, out, dest, allow_locked=False, keep_upright=False):
     with open(poses_path) as f:
         poses = json.load(f)
     board = _load_plain(path)
@@ -292,17 +444,22 @@ def write_poses(path, poses_path, out, dest, allow_locked=False):
         if bool(fp.IsFlipped()) != back:
             fp.Flip(fp.GetPosition(), pcbnew.FLIP_DIRECTION_LEFT_RIGHT)
             flipped += 1
-        fp.SetOrientation(pcbnew.EDA_ANGLE(float(p["rot"]), pcbnew.DEGREES_T))
+        if keep_upright:
+            turn = float(p["rot"]) - fp.GetOrientationDegrees()
+            if abs(turn) > 1e-9:
+                fp.Rotate(fp.GetPosition(), pcbnew.EDA_ANGLE(turn, pcbnew.DEGREES_T))
+        else:
+            fp.SetOrientation(pcbnew.EDA_ANGLE(float(p["rot"]), pcbnew.DEGREES_T))
         fp.SetPosition(pcbnew.VECTOR2I(int(round(float(p["x"]) * NM)), int(round(float(p["y"]) * NM))))
         moved += 1
-    _save(board, dest)
-    _write(out, dict(ok=True, moved=moved, flipped=flipped, path=dest))
+    check = _save_checked(board, path, dest)
+    _write(out, dict(ok=True, moved=moved, flipped=flipped, path=dest, write_check=check))
     _status(dict(ok=True, moved=moved, flipped=flipped))
 
 
 def resave(path, out, dest):
-    _save(_load_plain(path), dest)
-    _write(out, dict(ok=True, path=dest))
+    check = _save_checked(_load_plain(path), path, dest)
+    _write(out, dict(ok=True, path=dest, write_check=check))
     _status(dict(ok=True))
 
 
@@ -728,14 +885,31 @@ def _routing(board):
 
 
 def import_ses(path, ses, out, dest):
-    board = _load(path)
+    board = _load_plain(path)
+    before = {t.m_Uuid.AsString(): t.GetNetname() for t in board.GetTracks()}
     ok = pcbnew.ImportSpecctraSES(board, ses)
     if ok is not True:
         raise RuntimeError("ImportSpecctraSES failed")
+    # ImportSpecctraSession ends with BOARD::BuildConnectivity, which moves copper that
+    # overlaps a pad onto the pad's net; the items that were there before (the locked ones
+    # the import keeps) get their own nets back
+    renetted = []
+    for t in board.GetTracks():
+        u = t.m_Uuid.AsString()
+        if u in before and t.GetNetname() != before[u]:
+            renetted.append(dict(uuid=u, net=before[u], import_net=t.GetNetname()))
+            if not before[u]:
+                t.SetNetCode(0)
+                continue
+            net = board.FindNet(before[u])
+            if net is None:
+                raise RuntimeError(f"net {before[u]!r} of item {u} vanished in the import")
+            t.SetNet(net)
     routing = _routing(board)
-    _save(board, dest)
-    _write(out, dict(ok=True, path=dest, routing=routing))
-    _status(dict(ok=True, routing=len(routing)))
+    kept = [r["uuid"] for r in routing if r["uuid"] in before]
+    check = _save_checked(board, path, dest)
+    _write(out, dict(ok=True, path=dest, routing=routing, kept=kept, renetted=renetted, write_check=check))
+    _status(dict(ok=True, routing=len(routing), renetted=len(renetted)))
 
 
 def edit_routing(path, edits_path, out, dest):
@@ -762,23 +936,36 @@ def edit_routing(path, edits_path, out, dest):
     for t in keep:  # remove after iterating: Remove() untypes SWIG objects
         board.Remove(t)
         removed += 1
+    adds = edits.get("add") or []
+    unknown_nets = sorted({str(a.get("net")) for a in adds if not a.get("net") or board.FindNet(a["net"]) is None})
+    unknown_layers = []
+    for a in adds:
+        lid = board.GetLayerID(str(a.get("layer") or ""))
+        if lid < 0 or lid == pcbnew.UNDEFINED_LAYER or not pcbnew.IsCopperLayer(lid) or not board.IsLayerEnabled(lid):
+            unknown_layers.append(str(a.get("layer")))
+    if unknown_nets or unknown_layers:
+        err = (f"{len(unknown_nets)} unknown nets, {len(sorted(set(unknown_layers)))} unknown or non-copper "
+               f"layers in added tracks: nothing written")
+        _write(out, dict(ok=False, error=err, unknown_nets=unknown_nets[:50],
+                         unknown_layers=sorted(set(unknown_layers))[:50]))
+        _status(dict(ok=False, error=err))
+        return
     added = 0
-    for a in edits.get("add") or []:
+    for a in adds:
         t = pcbnew.PCB_TRACK(board)
         t.SetStart(pcbnew.VECTOR2I(int(round(a["a"][0] * NM)), int(round(a["a"][1] * NM))))
         t.SetEnd(pcbnew.VECTOR2I(int(round(a["b"][0] * NM)), int(round(a["b"][1] * NM))))
         t.SetWidth(int(round(float(a["width"]) * NM)))
         t.SetLayer(board.GetLayerID(a["layer"]))
-        net = board.FindNet(a["net"])
-        if net is not None:
-            t.SetNet(net)
+        t.SetNet(board.FindNet(a["net"]))
         if edits.get("lock_all"):
             t.SetLocked(True)
         board.Add(t)
         added += 1
     routing = _routing(board)
-    _save(board, dest)
-    _write(out, dict(ok=True, path=dest, removed=removed, widened=widened, added=added, routing=routing))
+    check = _save_checked(board, path, dest)
+    _write(out, dict(ok=True, path=dest, removed=removed, widened=widened, added=added, routing=routing,
+                     write_check=check))
     _status(dict(ok=True, removed=removed, widened=widened, added=added))
 
 
@@ -911,7 +1098,8 @@ def main(argv):
             extract(args[0], args[1], courtyards="--no-courtyards" not in flags,
                     outline="--no-outline" not in flags)
         elif op == "write-poses":
-            write_poses(args[0], args[1], args[2], args[3], allow_locked="--allow-locked" in flags)
+            write_poses(args[0], args[1], args[2], args[3], allow_locked="--allow-locked" in flags,
+                        keep_upright="--keep-upright" in flags)
         elif op == "resave":
             resave(args[0], args[1], args[2])
         elif op == "export-dsn":

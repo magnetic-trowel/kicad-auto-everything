@@ -581,6 +581,7 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
     wd = Path(wd)
     output_path = Path(output_path)
     rounds = []
+    hazards = []    # from the rounds whose board was kept (each kept board builds on the last)
     t_start = time.monotonic()
     thermal = set(opts.get("thermal_pads") or []) if opts.get("thermal_pads") != "all" else set()
     sev = opts.get("severities") or {}
@@ -676,8 +677,30 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
         else:
             rip = {u for u, r in routed.items() if r["net"] in a["nets"]}
         fixed_board = drc.stage_board(output_path, input_path, rdir / "fixed")
-        pcbnew_io.edit_routing(fixed_board, fixed_board, delete=sorted(rip), widths=a["widen"], add=a["spokes"],
-                               lock_all=mode != "free")
+        try:
+            pcbnew_io.edit_routing(fixed_board, fixed_board, delete=sorted(rip), widths=a["widen"], add=a["spokes"],
+                                   lock_all=mode != "free")
+        except pcbnew_io.PcbnewRefused as e:
+            # a spoke on a net or layer the board does not have: KiCad would have made it
+            # net-0 copper; the round is dropped, the best board stays
+            d = e.detail or {}
+            rec.update(kept=False, edit_refused=dict(unknown_nets=d.get("unknown_nets"),
+                                                     unknown_layers=d.get("unknown_layers")))
+            hazards.append(dict(
+                code="repair_edit_unknown_net_or_layer", severity="warn", category="data",
+                message=(f"Repair round {k} wanted to add copper on nets or layers the board does not have "
+                         f"({d.get('unknown_nets')}, {d.get('unknown_layers')}); the round was dropped and "
+                         f"nothing was written."),
+                objects=list(d.get("unknown_nets") or []) + list(d.get("unknown_layers") or []),
+                evidence=dict(round=k, **{x: d.get(x) for x in ("unknown_nets", "unknown_layers")}),
+                fix="Report the board: a net or layer name was translated wrongly inside kae."))
+            log(f"repair round {k}: edit refused ({e})")
+            fails += 1
+            level = min(level + 1, len(levels) - 1)
+            if fails >= FAILS:
+                rec["stopped"] = "no improvement"
+                break
+            continue
         cand = rdir / "cand.kicad_pcb"
         if rip or a["open"]:
             dsn_k = rdir / "kicad.dsn"
@@ -727,7 +750,20 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
             translate.fix_session(ses, plan)
             ses_k = rdir / "board_kicad.ses"
             specctra.write(ses, ses_k)
-            pcbnew_io.import_ses(fixed_board, ses_k, cand)
+            from .bridge import import_session
+            imp = import_session(fixed_board, ses_k, cand)
+            rec["import_check"] = imp["import_check"]
+            rec["hazards"] = imp["hazards"]
+            if any(h["severity"] == "block" for h in imp["hazards"]):
+                # copper on nets the session did not route: never kept
+                rec["kept"] = False
+                log(f"repair round {k} ({mode}): the import put copper on the wrong nets; discarded")
+                fails += 1
+                level = min(level + 1, len(levels) - 1)
+                if fails >= FAILS:
+                    rec["stopped"] = "no improvement"
+                    break
+                continue
             pcbnew_io.edit_routing(cand, cand, unlock_all=True, keep_locked=fixed)
         else:
             pcbnew_io.edit_routing(fixed_board, cand, unlock_all=True, keep_locked=fixed)
@@ -750,6 +786,7 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
             f"{s_['errors']} errors {s_['by_type']}, {s_['unconnected']} unconnected "
             f"({'kept' if rec['kept'] else 'discarded'})")
         if rec["kept"]:
+            hazards += rec.get("hazards") or []
             shutil.copy2(cand, output_path)
             best, best_rep, best_dir = s_, rep, rdir / "drc"
             level, fails, region_tries = 0, 0, 0
@@ -776,6 +813,7 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
                               log, base=base) or best_rep
         best = next((r for r in reversed(rounds) if r.get("final")), {}).get("final") or best
     return dict(rounds=rounds, final=best, thermal_pads=len(thermal), seconds=round(time.monotonic() - t_start, 1),
+                hazards=hazards,
                 drc_dir=None if opts.get("last_mile") else str(best_dir),   # the DRC of the board kept
                 _report=best_rep)   # its DRC report (for kae.route.blocked; the bridge takes it out)
 

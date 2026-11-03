@@ -92,7 +92,7 @@ Reproduced on corpus boards; `bench/src/kaebench/adapters.py` (`Freerouting`) ha
 - **Expose one tool**, `route_with_freerouting(board, nets_subset?, timeout)` [I, from VK]:
   1. Export DSN: SWIG helper on 10.x; `kicad-cli pcb export specctra` or IPC on 11.
   2. Call `POST /v1/autoroute` on a **local** server (auth disabled, `Freerouting-Environment-Host: KiCad/10.0`), or the CLI with `-da`.
-  3. Import SES into a candidate board, then check item counts and connectivity (10.0.7 skips unresolved items silently).
+  3. Import SES into a candidate board, then check item counts and connectivity (10.0.7 skips unresolved items silently). `ImportSpecctraSession` ends with `BOARD::BuildConnectivity`, which moves copper that touches a single pad onto that pad's net, kept pre-routes included. kae restores those nets and compares the session's wires and vias per net with what landed (`kae.route.bridge.import_session`; [kae-board-model.md](../../research/placement/kae-board-model.md#writing-boards)) [C].
   4. Return only `normalized_score`, `optimizer_score`, the unrouted count and the compact DRC summary.
 - **Lock before import:** lock every track and via to keep (critical nets, earlier routes) before export. Strip or match the SES placement block. Refill zones afterwards (async on 10.0, so poll), then run `kicad-cli pcb drc` [I].
 - **Compare KiCad's DRC JSON with Freerouting's drc.v1** to expose DSN translation losses, such as the edge-clearance gap [I].

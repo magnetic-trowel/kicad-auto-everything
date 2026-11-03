@@ -114,6 +114,9 @@ def cmd_place(a):
             res.report["writer"] = wrep2
         from kae.place.pipeline import body_hazards
         body_hazards(res.report, res.problem, res.state)
+    # what the writer's post-write check found in the file it wrote (format upgrade, changed items),
+    # moved to the top level once (popped so the nested copy is not listed again)
+    res.report.setdefault("hazards", []).extend((res.report.get("writer") or {}).pop("hazards", None) or [])
     res.report["total_s"] = round(time.monotonic() - t0, 2)
     legal = not res.report.get("exact") and not res.report.get("outline_incomplete") and kicad_clean is not False
     res.report["legal"] = bool(legal)

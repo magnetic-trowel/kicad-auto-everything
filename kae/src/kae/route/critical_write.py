@@ -12,6 +12,13 @@ KiCad 10 files reference nets by name, and pcbnew writes a track as
 written by `transplant` differs from its input only in routing, which is what a route
 task allows (kaebench's transplant check). Guard zones (`kae-crit:` names, hard obstacles
 for the bridge) live only on work boards.
+
+The writers (`append_items`, `transplant`, and `edit` when it locks or unlocks; removing
+items is safe in any format) refuse a board stamped 20241229 or lower (KiCad 9 and older)
+with KiCadVersionError: they emit KiCad 10 syntax, and KiCad 9
+rejects a named `(net "GND")` while its own boards say `(net 3)`
+(file-format-and-version-hazards.md). `routing` reads both lock spellings, `(locked yes)`
+(KiCad 8+) and the bare `(segment locked ...)` of KiCad 6/7.
 """
 from __future__ import annotations
 
@@ -22,8 +29,36 @@ import uuid as _uuid
 from pathlib import Path
 
 from kae.board import sexpr
+from kae.board.kicad_file import NAMED_NETS_AFTER
 
 ROUTING = ("segment", "arc", "via")
+
+
+class KiCadVersionError(ValueError):
+    """A text writer was asked to edit a board older than KiCad 10."""
+
+
+def stamp(text):
+    """The (version N) format stamp of a board's text, or None."""
+    m = re.search(r"\(version\s+(\d+)\)", text[:512])
+    return int(m.group(1)) if m else None
+
+
+def require_kicad10(text, path=""):
+    """Raise KiCadVersionError unless the board text is stamped above 20241229 (KiCad 10)."""
+    s = stamp(text)
+    if s is None or s <= NAMED_NETS_AFTER:
+        raise KiCadVersionError(
+            f"{path or 'board'}: format stamp {s} is KiCad 9 or older; kae's text writers emit KiCad 10 "
+            f"syntax (named nets, '(locked yes)'), which KiCad 9 refuses to load. Open and save the "
+            f"board in KiCad 10 first.")
+
+
+def _locked(blk):
+    """`(locked yes)` (KiCad 8+) or a bare `locked` after the head (KiCad 6/7)."""
+    return "(locked yes)" in blk or re.match(r"\s*\((?:segment|arc|via)\s+locked\b", blk) is not None
+
+
 GUARD_PREFIX = "kae-crit:"
 
 
@@ -99,7 +134,7 @@ def routing(path_or_text):
     out = []
     for head, a, b in _blocks(text, ROUTING):
         blk = text[a:b]
-        out.append(dict(kind=head, uuid=_uuid_of(blk), locked="(locked yes)" in blk, start=a, end=b))
+        out.append(dict(kind=head, uuid=_uuid_of(blk), locked=_locked(blk), start=a, end=b))
     return out
 
 
@@ -114,6 +149,7 @@ def append_items(src, dst, tracks=(), vias=(), zones=()):
     size, drill, uuid[, locked])] (locked unless the 7th field says otherwise) and zones
     [(net, layer, rings, name[, priority])]."""
     text = Path(src).read_text(encoding="utf-8")
+    require_kicad10(text, src)
     chunks = [track_sexpr(*t[:6], locked=t[6] if len(t) > 6 else True) for t in tracks]
     chunks += [via_sexpr(*v[:5], uid=v[5], locked=v[6] if len(v) > 6 else True) for v in vias]
     chunks += [zone_sexpr(z[0], z[1], z[2], z[3], priority=z[4] if len(z) > 4 else 0) for z in zones]
@@ -124,6 +160,8 @@ def edit(src, dst, remove=(), lock=None, unlock=None, drop_guards=False):
     """dst = src with routing items `remove` (uuids) dropped, items `lock` / `unlock`
     (uuids, or 'all') locked / unlocked, and guard zones dropped."""
     text = Path(src).read_text(encoding="utf-8")
+    if lock is not None or unlock is not None:   # removing text is safe in any format; writing a lock is not
+        require_kicad10(text, src)
     remove = set(remove or ())
     out, pos = [], 0
     heads = ROUTING + (("zone",) if drop_guards else ())
@@ -171,6 +209,8 @@ def transplant(work, inp, dst):
     """dst = inp plus every routing item of `work` (the route task's allowed change)."""
     wt = Path(work).read_text(encoding="utf-8")
     it = Path(inp).read_text(encoding="utf-8")
+    require_kicad10(it, inp)
+    require_kicad10(wt, work)
     have = {_uuid_of(it[a:b]) for _, a, b in _blocks(it, ROUTING)}
     chunks = []
     for head, a, b in _blocks(wt, ROUTING):
