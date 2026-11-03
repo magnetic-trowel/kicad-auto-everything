@@ -691,24 +691,27 @@ def test_gigabit_names_need_a_second_fact_and_sidebands_are_not_high_speed():
 
 def test_designer_net_classes_establish_roles_on_their_own():
     """Explicit intent is the first layer: a Power, ground, high-speed or diff class sets the role without a name match."""
-    mcu = IC('U1', 'MCU', 'Package_QFP:LQFP-48', [('1', 'PA1', 'SIG_X', 'bidirectional'), ('2', 'PA2', 'SIG_A', 'output'),
-                                                 ('3', 'PA3', 'SIG_B', 'output'), ('4', 'VDD', '+3V3', 'power_in'),
+    mcu = IC('U1', 'MCU', 'Package_QFP:LQFP-48', [('1', 'PA1', 'SIG_X', 'bidirectional'), ('4', 'VDD', '+3V3', 'power_in'),
                                                  ('5', 'VSS', 'GND', 'power_in'), ('6', 'VSSA', 'RET', 'power_in')])
     ldo = IC('U2', 'LT3045', 'Package_SON:DFN-10', [('1', 'IN', 'LINEAR_HS', 'power_in'), ('2', 'GND', 'GND', 'power_in'),
                                                    ('3', 'OUT', '+3V3', 'power_out')])
-    conn = fp('J1', 'Conn_01x04', 'Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical',
-              [('1', 'LINEAR_HS', '', 'passive'), ('2', 'SIG_A', '', 'passive'), ('3', 'SIG_B', '', 'passive'), ('4', 'RET', '', 'passive')])
-    parts = [mcu, ldo, conn, C('C1', '10uF', '+3V3', 'GND'), C('C2', '100nF', '+3V3', 'GND')]
-    classes = {'SIG_X': 'HighSpeed_90R', 'LINEAR_HS': 'Power', 'RET': 'GND', 'SIG_A': 'DIFF_100R', 'SIG_B': 'DIFF_100R'}
+    conn = fp('J1', 'Conn_01x03', 'Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical',
+              [('1', 'LINEAR_HS', '', 'passive'), ('2', 'SIG_P', '', 'passive'), ('4', 'RET', '', 'passive')])
+    conn2 = fp('J2', 'Conn_01x01', 'Connector_PinHeader_2.54mm:PinHeader_1x01_P2.54mm_Vertical', [('1', 'SIG_N', '', 'passive')])
+    # the pair's members share no IC or connector and carry no interface word: the names alone do not make a pair,
+    # the class does
+    parts = [mcu, ldo, conn, conn2, C('C1', '10uF', '+3V3', 'GND'), C('C2', '100nF', '+3V3', 'GND'),
+             R('R1', '0', 'SIG_P', 'X1'), R('R2', '0', 'SIG_N', 'X2')]
+    classes = {'SIG_X': 'HighSpeed_90R', 'LINEAR_HS': 'Power', 'RET': 'GND', 'SIG_P': 'DIFF_100R', 'SIG_N': 'DIFF_100R'}
     nl, r = roles_of(parts, netclasses=classes)
     assert r.nets['SIG_X'].role == 'high_speed', r.nets['SIG_X']
     assert r.nets['LINEAR_HS'].role == 'rail', r.nets['LINEAR_HS']
     assert r.nets['RET'].role == 'ground', r.nets.get('RET')
-    assert any({p.p, p.n} == {'SIG_A', 'SIG_B'} for p in r.pairs)
+    assert any({p.p, p.n} == {'SIG_P', 'SIG_N'} and p.confidence > 0.9 for p in r.pairs)     # MODERATE class: 0.73
     # without the classes the names alone decide, and none of these names makes those roles
     nl, r = roles_of(parts)
     assert r.nets['SIG_X'].role != 'high_speed' and r.nets['LINEAR_HS'].role != 'rail'
-    assert not any({p.p, p.n} == {'SIG_A', 'SIG_B'} for p in r.pairs)
+    assert not any({p.p, p.n} == {'SIG_P', 'SIG_N'} for p in r.pairs)
 
 
 def test_a_mixed_power_and_ground_class_does_not_make_a_rail_a_ground():

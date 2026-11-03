@@ -1793,15 +1793,14 @@ def _pairs(nl: Netlist, roles: Roles):
             base = (pre + '*' + post)
             evs = []
             ok_pol = True
-            # the interface-keyword gates on H/L, A/B, T/C and P/M names give way to a designer's diff-pair class
-            diff_cls = bool(HS_CLASS.search(nl.nets[n].netclass.upper()) and HS_CLASS.search(nl.nets[m].netclass.upper()))
-            if c in 'HL' and not re.search(r'CAN', base) and not diff_cls:
+            # these gates hold under a diff class too: in a class 'DIFF_90', USB-DPA/USB-DPB are the A and B ports' D+ lines
+            if c in 'HL' and not re.search(r'CAN', base):
                 ok_pol = False
-            if c in 'AB' and not re.search(r'485|RS_?$|MODBUS|DMX', base) and not diff_cls:
+            if c in 'AB' and not re.search(r'485|RS_?$|MODBUS|DMX', base):
                 ok_pol = False
-            if c in 'TC' and not re.search(r'CLK|CK', base) and not diff_cls:
+            if c in 'TC' and not re.search(r'CLK|CK', base):
                 ok_pol = False
-            if o == 'M' and not re.search(r'D\*|USB', base) and not diff_cls:
+            if o == 'M' and not re.search(r'D\*|USB', base):
                 ok_pol = False
             if re.search(r'XTAL|XIN|XOUT|OSC_?(IN|OUT)|^X[12]?\*', base):
                 ok_pol = False          # a crystal's two terminals (XTALP/XTALN) are a resonator loop, not a pair
