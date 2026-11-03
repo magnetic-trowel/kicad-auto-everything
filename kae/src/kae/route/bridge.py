@@ -65,6 +65,14 @@ DEFAULT_OPTS = dict(
     escape_min_s=45.0,       # but the escape plans get this much at least (cached for a restart's later attempts)
     escape_lay="dog_bones",  # laid before routing: the fixed dog-bones, or "plan" (the plan's vias and escapes;
                              # 2x the opens under Freerouting on gecko5education and nekoink)
+    region=True,             # before the last mile, the dense windows holding open connections (ball grids,
+                             # fine-pitch packages) are re-routed whole by negotiated congestion (kae.route.region,
+                             # repair._region), kept only when KiCad's DRC ranks the board better
+    region_share=0.5,        # with region: the share of the time left after the repair rounds it may take
+    region_final=False,      # region rounds in the post-route stage alone too (last_mile_only, the restart
+                             # wrapper's --final): off, since the kept board's attempt already ran them and the
+                             # window repair was measured (916 -> 729 open, 6 boards x 3 seeds) without --final,
+                             # whose reserved time is the last mile's (near-miss set 116 -> 83 open)
     blocked=True,            # at the end, diagnose the connections still open (kae.route.blocked): the report's
                              # "blocked" names the board rule (or kae default) that makes each impossible
     blocked_s=30.0,          # with blocked: seconds kept for it at most (taken from the repair rounds)
@@ -223,8 +231,10 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
                                            deadline=t0 + time_s - 10 - diag_s, log=log)
             final_rep = report["repair"].pop("_report", None)
             if diag_s and final_rep and (report["repair"].get("final") or {}).get("unconnected"):
+                regions = [r["region"] for r in report["repair"].get("rounds") or [] if r.get("region")]
                 report["blocked"] = diagnose(output_path, input_path, original_input, info, p, final_rep, sev, wd,
-                                             deadline=time.monotonic() + max(5.0, left() - 8), log=log)
+                                             deadline=time.monotonic() + max(5.0, left() - 8), log=log,
+                                             regions=regions)
         elif opts.get("drc", True) and left() > 20:
             staged = drc.stage_board(output_path, input_path, wd / "drc")
             rep = drc.run(staged, wd / "drc" / "drc.json", timeout=max(10, left() - 5))
@@ -246,7 +256,7 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             report["workdir"] = str(wd)
 
 
-def diagnose(output_path, input_path, original_input, info, plan, drc_report, sev, wd, deadline, log=_log):
+def diagnose(output_path, input_path, original_input, info, plan, drc_report, sev, wd, deadline, log=_log, regions=()):
     """kae.route.blocked on the final board: what makes each open connection impossible."""
     from kae.board.kicad_file import load
     from . import blocked
@@ -256,7 +266,7 @@ def diagnose(output_path, input_path, original_input, info, plan, drc_report, se
         inb = load(original_input)
         ids = {t.uuid for t in inb.tracks} | {v.uuid for v in inb.vias}
         out = blocked.diagnose(staged, info, plan, fills, drc_report, sev=sev, input_ids=ids, deadline=deadline,
-                               log=log)
+                               log=log, regions=regions)
         log(f"blocked: {len(out['blocked'])} connections the rules block, {len(out['congestion'])} congestion, "
             f"{out['undiagnosed']} not diagnosed ({out['seconds']} s)")
         return out
@@ -289,6 +299,7 @@ def last_mile_only(input_path, board_path, output_path, time_s=120.0, seed=0, wo
         info = pcbnew_io.export_dsn(input_path, wd / "kicad.dsn")
         opts["severities"] = severities(input_path)
         opts["seed"] = seed
+        opts["region"] = bool(opts.get("region") and opts.get("region_final"))
         p = constraints.plan(info, input_path, opts)
         p.plane_policy = plane_policy(opts)
         p.plane_cost = opts.get("plane_cost")
