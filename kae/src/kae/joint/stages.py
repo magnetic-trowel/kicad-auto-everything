@@ -136,6 +136,8 @@ class KaeStages:
             shutil.copy2(self.input, out)
             _project(self.input, out)
         rep = res.report
+        # connectors the placer pinned to the edge stay there: the windows must not pull them in
+        self.locked |= set((rep.get("edge_pinned") or {}).get("uuids") or ())
         legal = bool(rep.get("legal_grid") and not rep.get("exact") and not rep.get("outline_incomplete"))
         b = self._load(out)
         info = dict(place=dict(seconds=round(time.monotonic() - t0, 1), legal=legal, hpwl=rep.get("hpwl"),

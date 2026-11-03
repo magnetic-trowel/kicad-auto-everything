@@ -90,6 +90,9 @@ def run(a):
         loop = JointLoop(stages, opts={k: v for k, v in lopts.items() if k in _loop_keys()}, log=_log)
         rep = loop.run(out, time_s=a.time, seed=a.seed, start=a.start)
         rep["status"] = "ok" if out.exists() else "no_output"
+        from kae.route.constraints import setting
+        if out.exists() and int(setting("connector_edge", a.input, opts)) >= 1:
+            _edge_hazards(rep, a.input, out)
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -117,6 +120,21 @@ def _mtime(p):
         return Path(p).stat().st_mtime_ns
     except OSError:
         return None
+
+
+def _edge_hazards(rep, input_path, out):
+    """connector_off_edge for each user-facing connector the run moved off the board edge
+    (kae.place.edge_check; parts locked in the input are the user's and not judged)."""
+    try:
+        from kae.board.kicad_file import load
+        from kae.place import edge_check
+        moved = {fp.uuid for fp in load(input_path).footprints if not fp.locked}
+        hz = edge_check.hazards(load(out), moved=moved)
+    except Exception as e:      # noqa: BLE001 - a check must not cost the result
+        hz = [dict(code="edge_check_failed", severity="info", category="data",
+                   message=f"the connector edge check failed ({type(e).__name__}: {e})", objects=[])]
+    if hz:
+        rep.setdefault("hazards", []).extend(hz)
 
 
 def _known_key(k):

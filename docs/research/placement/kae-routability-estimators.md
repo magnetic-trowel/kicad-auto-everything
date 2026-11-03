@@ -36,7 +36,7 @@ All from [kae-place](../../topics/placement/kae-place.md), section "Negative res
 | pour fragmentation, pads only | human baseline 334/412 pours need nothing; every paw3395 and siderakb placement (ours and human) is one piece: islands appear only once tracks exist |
 | pour fragmentation + MST tracks | human 54/76 small two-layer pours need nothing; the most split paw3395 placement (w_chan 3, 6 pads stranded) routes among the best; on siderakb the estimate points the wrong way; the routed human paw3395 is as fragmented as ours |
 | probe-select, paw3395 (mean unconnected, 900 s finals) | probe 3: 4.7; w_chan 3 + probe 3: 11.0; + jitter 0.15: 7.7; probe 5 + jitter: 3.7; vs w_chan 3 alone 3.3, human 0 |
-| edge pull (human edge rates) | USB, barrel, audio 100%; headers 69%; mounting holes 84%; term dropped |
+| edge pull (human edge rates) | USB, barrel, audio 100%; headers 69%; mounting holes 84%; term dropped (rates not reproducible: re-measured on 11,668 boards in [kae-fixed-interface](kae-fixed-interface.md): USB 93%, barrel 80%, audio 61% within 2 mm) |
 | free angles | no recorded paired result |
 
 ## Verdict
@@ -45,7 +45,7 @@ Did not work. Reasons we found:
 - On PCBs, RUDY-style demand ranks routability near chance. Our reading (not tested separately): failures come from local escape geometry (caps in the strip between sensor pins and the board edge, a locked sensor taking half the board) that box-spread demand does not see.
 - Fragmentation of pours only shows once tracks exist, so a pre-route estimate has nothing to count.
 - A 90-140 s probe route reports 7-20 open connections and its ranking does not carry over to a 900 s route; each candidate gets only 46-76 s of placement; the physics slack excluded the best-probing candidate; and jitter barely diversifies candidates because the CP-SAT floorplan pulls seeds back together.
-- Edge pull became moot when the mechanical interface was fixed ([kae-fixed-interface](kae-fixed-interface.md)).
+- Edge pull became moot when the mechanical interface was fixed ([kae-fixed-interface](kae-fixed-interface.md)), but only on `*-fixed` tasks. In plain `place` mode kae left half its USB jacks inside the board, so panel connectors are now pinned to the edge after the seed ([kae-fixed-interface](kae-fixed-interface.md#edge-connectors-in-plain-place-mode-2026-11)).
 
 What replaced them: let the router judge. The [joint loop](../joint/kae-joint-loop.md) feeds KiCad's unrouted report back into the placer as congestion history and local windows. Free angles remain an untested idea: run `anglepolish.py` before relying on `--angles`.
 

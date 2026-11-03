@@ -107,6 +107,10 @@ def cmd_place(a):
         kicad_clean, wrep2 = _kicad_loop(a, res, t0, write)
         if wrep2 is not None:
             res.report["writer"] = wrep2
+    from kae.route.constraints import setting
+    if res.poses and int(setting("connector_edge", a.input)) >= 1:
+        from kae.place.pipeline import edge_hazards
+        edge_hazards(res.report, board, res.poses)
     res.report["total_s"] = round(time.monotonic() - t0, 2)
     legal = not res.report.get("exact") and not res.report.get("outline_incomplete") and kicad_clean is not False
     res.report["legal"] = bool(legal)

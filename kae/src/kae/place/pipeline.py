@@ -240,6 +240,15 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         if staged_fixed:
             rep["fixed"]["staged"] = staged_fixed
             log(f"fixed parts off the board (they stay there): {', '.join(staged_fixed[:8])}")
+    # user-facing connectors (USB, barrel, audio, RJ, video: on an edge on every human board,
+    # kae.place.edge_check) the caller left free: pinned to the board edge, facing out, at the
+    # free edge spot nearest their seed position, then held like fixed parts (audit P4)
+    from kae.route.constraints import setting
+    edge_mode = int(setting("connector_edge", board_path, opts))
+    pinned = {}
+    if edge_mode >= 2:
+        board, pinned = _pin_edge_connectors(board, brief, held, fixed, angle_step, seed, rep, log)
+        fixed = fixed | set(pinned)
     P = Problem.build(board, net_kinds=_net_kinds(brief), held={fp.uuid for fp in held} | fixed,
                       angle_step=angle_step)
     if fixed_text(board):
@@ -596,8 +605,52 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     rep["seconds"] = round(time.monotonic() - t0, 2)
     poses = st.poses()
     poses.update(mated)          # held fixed here, but movable in the file: write them too
+    poses.update(pinned)
     res.poses = poses
+    if edge_mode >= 1:
+        edge_hazards(rep, board, poses)
     return res
+
+
+def _pin_edge_connectors(board, brief, held, fixed, angle_step, seed, rep, log):
+    """The edge connectors' poses from a quick seed (quadratic with connector anchors, spread)
+    on a throwaway Problem; returns (board with them moved there, {uuid: pose})."""
+    from . import edge_check
+    want = {u for u in edge_check.edge_parts(board, edge_check.PIN_KINDS)
+            if u not in fixed and not any(fp.uuid == u and fp.locked for fp in board.footprints)}
+    if not want:
+        return board, {}
+    try:
+        P0 = Problem.build(board, net_kinds=_net_kinds(brief), held={fp.uuid for fp in held} | set(fixed),
+                           angle_step=angle_step)
+        idx = [p.i for p in P0.parts if p.movable and p.uuid in want]
+        if not idx:
+            return board, {}
+        net_w = {net.i: net.weight for net in P0.nets}
+        st0, _ = _seed_state(P0, [], net_w, seed, log, partition=len(P0.mov) > FLOORPLAN_MAX_ITEMS)
+        poses, failed = edge_check.pin_poses(P0, st0, idx, log=log)
+    except Exception as e:      # noqa: BLE001 - placing without the pin beats not placing
+        rep["edge_pinned"] = dict(error=f"{type(e).__name__}: {e}")
+        return board, {}
+    by = {fp.uuid: fp.ref for fp in board.footprints}
+    rep["edge_pinned"] = dict(pinned=sorted(by[u] for u in poses), failed=failed, uuids=sorted(poses))
+    return (edge_check.with_poses(board, poses) if poses else board), poses
+
+
+def edge_hazards(rep, board, poses):
+    """rep['hazards'] gets a connector_off_edge entry for each user-facing connector kae placed
+    (`poses`: {uuid: pose} of the parts kae moved) away from the board edge
+    (kae.place.edge_check; audit P4). Earlier entries of that code are replaced, so a caller that
+    moved parts again (the KiCad loop) calls it again."""
+    from . import edge_check
+    hz = [h for h in rep.get("hazards", []) if h.get("code") != "connector_off_edge"]
+    try:
+        hz += edge_check.hazards(board, moved=set(poses), poses=poses)
+    except Exception as e:      # noqa: BLE001 - a check must not cost the placement
+        hz.append(dict(code="edge_check_failed", severity="info", category="data",
+                       message=f"the connector edge check failed ({type(e).__name__}: {e})", objects=[]))
+    if hz:
+        rep["hazards"] = hz
 
 
 def physics_trace(rep, name, terms, poses):

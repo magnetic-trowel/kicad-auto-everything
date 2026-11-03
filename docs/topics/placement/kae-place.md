@@ -232,7 +232,9 @@ Why it is off by default:
 
 **Connector edge pull:** human boards put USB (100%), barrel (100%) and audio (100%) at the
 edge, but headers only 69% and mounting holes 84%. The term was dropped when the user
-decided the interface stays fixed. [C]
+decided the interface stays fixed. [C] That holds only on `*-fixed` tasks. Re-measured rates
+and the hard edge pin that plain `place` now uses are in
+[kae-fixed-interface](../../research/placement/kae-fixed-interface.md#edge-connectors-in-plain-place-mode-2026-11).
 
 **Free angles** (`--angles STEP`, parts at any multiple of STEP; CP-SAT stays on right
 angles): the paired test tool is

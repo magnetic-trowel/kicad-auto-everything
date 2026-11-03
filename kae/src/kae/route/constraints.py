@@ -178,6 +178,10 @@ DEFAULTS = dict(
     place_margin=-1.0,             # placement: routing room between movable parts, mm (Problem.set_margin);
                                    # negative = auto (Problem.auto_margin: 2 x (0.7 - utilization), 0..1 mm).
                                    # A/B arms -1 / 0 (audit P10)
+    connector_edge=2,              # placement: user-facing connectors kae places (kae.place.edge_check:
+                                   # USB, barrel, audio, RJ/modular, video/D-sub; at or near 100 % on an
+                                   # edge on human boards) 2: pinned to the edge facing out after the seed,
+                                   # 1: only the connector_off_edge hazard, 0: neither (audit P4)
     escape_fanout=0,               # placement: 1 also reserves the dog-bone via sites of each ball grid on the
                                    # other side (no part there covers them); 0: off
 )
