@@ -167,7 +167,33 @@ def drc(board, inp, timeout):
     for v in r.get("violations", []):
         if v.get("severity", "error") == "error" and v.get("type") not in ENV_DEPENDENT_CHECKS:
             types[v.get("type")] = types.get(v.get("type"), 0) + 1
-    return dict(types=types, unconnected=len(r.get("unconnected_items", [])), overlaps=overlaps(r))
+    n = len(r.get("unconnected_items", []))
+    if n >= DRC_UNCONNECTED_CAP:
+        # kicad-cli lists at most 499: past it, pcbnew's count after a zone fill (as the scorer,
+        # kaebench score._uncapped). polarfire-som: ~150 attempts all read 499, so screening,
+        # resume and the final pass chose blind (a 206 s attempt kept: 1306 open; 1500 s: 429)
+        m = uncapped_unconnected(board, timeout)
+        n = m if m is not None else n
+    return dict(types=types, unconnected=n, overlaps=overlaps(r))
+
+
+DRC_UNCONNECTED_CAP = 499
+UNCONNECTED_PY = ("import json, sys, pcbnew\n"
+                  "b = pcbnew.LoadBoard(sys.argv[1]); zs = pcbnew.ZONES()\n"
+                  "for i in range(b.GetAreaCount()): zs.append(pcbnew.Cast_to_ZONE(b.GetArea(i)))\n"
+                  "len(zs) and pcbnew.ZONE_FILLER(b).Fill(zs)\n"
+                  "b.BuildConnectivity()\n"
+                  "print(json.dumps(dict(unconnected=b.GetConnectivity().GetUnconnectedCount(False))))\n")
+
+
+def uncapped_unconnected(board, timeout):
+    """pcbnew's unconnected count after a zone fill, None when KiCad's Python cannot run it."""
+    cmd = [*shlex.split(os.environ.get("KAE_KICAD_WRAP", "")), "python3", "-c", UNCONNECTED_PY, str(board)]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=max(60, timeout), errors="replace")
+        return int(json.loads(r.stdout.strip().splitlines()[-1])["unconnected"])
+    except (subprocess.TimeoutExpired, OSError, ValueError, IndexError, KeyError):
+        return None
 
 
 OF_REF = re.compile(r"^(?:Footprint (\S+)$|.*\bpad\b.* of (\S+?)(?: on \S+)?$)", re.I)
