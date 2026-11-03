@@ -17,8 +17,9 @@ from pathlib import Path
 
 # Violation types that depend on the local library setup, not on the board (as kaebench).
 ENV_DEPENDENT = ("lib_footprint_issues", "lib_footprint_mismatch")
-# kicad-cli lists at most this many unconnected items; past it the count comes from pcbnew's
-# connectivity after a zone fill, as kaebench's scorer counts (score._uncapped): on polarfire-som
+# kicad-cli lists at most this many unconnected items; past it (or when the project ignores the
+# check: unconnected_ignored) the count comes from pcbnew's connectivity after a zone fill, as
+# kaebench's scorer counts (score._uncapped): on polarfire-som
 # every repair round read 499 and last-mile rounds that joined 26-41 connections were discarded
 DRC_UNCONNECTED_CAP = 499
 UNCONNECTED_PY = ("import json, sys, pcbnew\n"
@@ -62,11 +63,23 @@ def run(board, out_json, timeout=900):
         raise DrcError(f"DRC failed (rc={r.returncode}): {(r.stdout + r.stderr)[-600:]}")
     with open(out_json) as f:
         rep = json.load(f)
-    if len(rep.get("unconnected_items") or []) >= DRC_UNCONNECTED_CAP:
+    if len(rep.get("unconnected_items") or []) >= DRC_UNCONNECTED_CAP or unconnected_ignored(board):
         n = uncapped_unconnected(board, timeout)
         if n is not None:
             rep["unconnected_count"] = n
     return rep
+
+
+def unconnected_ignored(board):
+    """True when the project beside `board` sets the unconnected_items check to "ignore": KiCad's
+    DRC then lists no unconnected items at all, even with --severity-all, so its count says nothing
+    about connectivity (as kaebench's boardfiles.unconnected_ignored; the scorer then counts with
+    pcbnew, and so does run). gamaphy-freedom-rp2040 is one such board."""
+    try:
+        pro = json.loads(Path(board).with_suffix(".kicad_pro").read_text(encoding="utf-8"))
+        return pro["board"]["design_settings"]["rule_severities"]["unconnected_items"] == "ignore"
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
 
 
 def uncapped_unconnected(board, timeout=900):
