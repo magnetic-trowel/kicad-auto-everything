@@ -557,6 +557,20 @@ def test_chain_tail_is_left_to_the_bridge(tmp_path):
     assert any("after the protector" in n for n in ch.notes)
 
 
+def test_bare_ctx_options_fall_back_to_the_session_defaults():
+    """critical-net-routing.md: decap_max_mm 10 mm, chain_tail off; a Ctx built without the
+    Session's merge (excite.dc) must route the same."""
+    from types import SimpleNamespace
+
+    from kae.board.model import Board
+    from kae.route.critical import DEFAULTS
+    from kae.route.critical_modules import Ctx, _opt
+    ctx = Ctx(None, None, {}, Board(path="x.kicad_pcb", version=20250114, footprints=[], nets={}))
+    assert _opt(ctx, "decap_max_mm") == DEFAULTS["decap_max_mm"] == 10.0
+    assert _opt(ctx, "chain_tail") is DEFAULTS["chain_tail"] is False
+    assert _opt(SimpleNamespace(opts={"decap_max_mm": 4.0}), "decap_max_mm") == 4.0
+
+
 def _rail_islands(tmp_path, reach):
     from shapely.ops import unary_union
     s = F.session(tmp_path, rails="all", rail_complete_mm=reach)
@@ -1088,7 +1102,7 @@ def test_crystal_trace_capacitance_uses_the_dielectric_under_the_trace():
     assert dielectric_er(cu, z, er, "B.Cu", "In2.Cu") == 4.0
     assert dielectric_er(cu, z, er, "B.Cu", None) == 4.0
     assert dielectric_er(cu, z, er, "F.Cu", "In2.Cu") == pytest.approx((3.7 * 0.2 + 4.6 * 1.2) / 1.4)
-    assert dielectric_er(cu, z, [], "B.Cu", None) == 4.3
+    assert dielectric_er(cu, z, [], "B.Cu", None) == 4.5   # Space's and KiCad's default, not 4.3
 
 
 def test_rail_design_current_keeps_its_margin_without_a_source_rating(tmp_path, monkeypatch):

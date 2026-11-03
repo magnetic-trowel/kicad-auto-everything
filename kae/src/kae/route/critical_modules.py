@@ -54,6 +54,15 @@ class Module:
     notes: list = field(default_factory=list)
 
 
+def _opt(ctx, key):
+    """An option, falling back to kae.route.critical.DEFAULTS (Session merges them; a bare
+    Ctx does not)."""
+    if key in ctx.opts:
+        return ctx.opts[key]
+    from .critical import DEFAULTS
+    return DEFAULTS[key]
+
+
 def modules_from_brief(brief, kinds=("cell", "path", "decap", "rgroup", "crystal", "chain")):
     """Modules in the brief's placement order (physically decisive first). A decap of a rail
     group is the group's (its capacitors pair with the nearest group load)."""
@@ -898,7 +907,7 @@ def route_decap(ctx, m):
         m.status = "skipped"
         m.notes.append("no capacitor-pin pairs")
         return m
-    max_d = float(ctx.opts.get("decap_max_mm", 15.0))
+    max_d = float(_opt(ctx, "decap_max_mm"))
     loops = []
     done = tried = 0
     for pin, cap in pairs:
@@ -1303,7 +1312,7 @@ def route_chain(ctx, m):
         ta, tb = T[k], T[k + 1]
         if ta.fp == tb.fp or ta.net != tb.net:
             continue
-        if k >= first_prot and not ctx.opts.get("chain_tail", True):
+        if k >= first_prot and not _opt(ctx, "chain_tail"):
             m.notes.append(f"hop {k} after the protector left to the general router")
             continue
         need += 1
@@ -1391,7 +1400,7 @@ def route_rail_group(ctx, m):
     s = m.spec
     rail = s.get("rail")
     loads = s.get("loads") or []
-    max_d = float(ctx.opts.get("decap_max_mm", 10.0))
+    max_d = float(_opt(ctx, "decap_max_mm"))
     lt = []
     for u in loads:
         f = ctx.fp.get(u)

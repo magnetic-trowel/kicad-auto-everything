@@ -35,6 +35,9 @@ from kae.physics import fastloop as FL
 from kae.physics.kernels import cprime_hj, gmd_rect
 
 INF = math.inf
+# FR-4 Dk when the board gives no stackup: KiCad's default stackup and critical_space.Space use
+# 4.5 (docs/topics/rules/stackup.md: "typically 4.5")
+ER_DEFAULT = 4.5
 RHO_CU = 1.72e-5          # ohm mm at 20 C
 T_PLATE = 0.020           # mm via plating (as the DC passports)
 
@@ -238,7 +241,7 @@ def dielectric_er(cu, z, er, layer, plane=None):
     a plane, the gap on its inner side (an inner layer: both). er[0] for every layer priced a
     bottom-side crystal with the top prepreg."""
     if not er:
-        return 4.3
+        return ER_DEFAULT
     if len(er) != len(cu) - 1 or layer not in cu:
         return er[0]
     i = cu.index(layer)
