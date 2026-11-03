@@ -557,6 +557,46 @@ def test_chain_tail_is_left_to_the_bridge(tmp_path):
     assert any("after the protector" in n for n in ch.notes)
 
 
+def _blocked_session(tmp_path, monkeypatch, kind, prefix):
+    """A session whose same-layer routes for `kind` modules' hops tagged `prefix` all fail (no room
+    on the shared layer), recording those modules' route_hop calls as (tag, via)."""
+    from kae.route import critical_modules as CM
+    calls = []
+    real = CM.route_hop
+
+    def fake(ctx, m, tag, *a, **kw):
+        if m.kind != kind:
+            return real(ctx, m, tag, *a, **kw)
+        calls.append((tag, bool(kw.get("via"))))
+        if tag.startswith(prefix) and not kw.get("via"):
+            return None
+        return real(ctx, m, tag, *a, **kw)
+    monkeypatch.setattr(CM, "route_hop", fake)
+    s = F.session(tmp_path)
+    s.route()
+    return s, calls
+
+
+def test_crystal_traces_never_fall_back_to_a_via(tmp_path, monkeypatch):
+    """crystals-clocks.md XTAL-DMIN (Espressif): no vias on the clock input/output traces. A
+    crystal hop with no same-layer route is left to the bridge, not routed through a via."""
+    s, calls = _blocked_session(tmp_path, monkeypatch, "crystal", "xt:")
+    assert any(t.startswith("xt:") for t, _ in calls)
+    assert not [t for t, v in calls if t.startswith("xt:") and v]
+    m = next(m for m in s.modules if m.kind == "crystal")
+    assert m.status in ("partial", "failed")
+    assert any("no vias on crystal traces" in n for n in m.notes)
+
+
+def test_connector_to_tvs_hop_never_takes_a_via(tmp_path, monkeypatch):
+    """interfaces/usb2.md "ESD path order, 0 vias"; emc-placement.md: no via or stub before the
+    TVS. Hop 0 (connector -> TVS) with no same-layer route asks for same-side placement."""
+    s, calls = _blocked_session(tmp_path, monkeypatch, "chain", "hop0")
+    assert ("hop0", False) in calls and ("hop0", True) not in calls
+    ch = next(m for m in s.modules if m.kind == "chain")
+    assert any("connector->TVS needs same-side placement" in n for n in ch.notes)
+
+
 def test_bare_ctx_options_fall_back_to_the_session_defaults():
     """critical-net-routing.md: decap_max_mm 10 mm, chain_tail off; a Ctx built without the
     Session's merge (excite.dc) must route the same."""
