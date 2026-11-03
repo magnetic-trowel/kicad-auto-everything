@@ -189,3 +189,20 @@ def test_pad_ring_relaxations_are_labelled_and_never_feasible(tmp_path):
     by = {r["rule"]: r for r in c["relaxations"]}
     assert by["track width"]["fab_class"] is None and by["clearance"]["fab_class"] == "standard"
     assert not c["hazards"] and "no obstruction found with clearance" in c["summary"]
+
+
+def test_the_bound_credits_the_smallest_via_the_rules_allow(tmp_path):
+    """A net class's via is only the default size of new vias; DRC checks the board setup's
+    minimums. The bound credits the smallest via those allow, never finer than the fab's
+    finest via."""
+    sp, info = _space(tmp_path)
+    s = sp.settings
+    old = {k: s.get(k) for k in ("min_drill", "min_via", "min_annular")}
+    try:
+        s.update(min_drill=0.0, min_via=0.0, min_annular=0.0)
+        assert escape.legal_via(sp) is None
+        assert escape.legal_via(sp, dict(D=(0.2, 0.1))) == (0.2, 0.1)
+        s.update(min_drill=0.2, min_via=0.3, min_annular=0.1)
+        assert escape.legal_via(sp, dict(D=(0.2, 0.1))) == (0.4, 0.2)
+    finally:
+        s.update(old)

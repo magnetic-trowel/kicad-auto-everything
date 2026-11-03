@@ -241,7 +241,7 @@ def rules_of(sp, nets, layers, minimum=False, override=None, floors=None):
             D, drill = min(vs)
             r = dict(w=max(min(ws) if ws else 0.0, fl.get("w") or 0.0, 0.01), c=max(c, fl.get("c") or 0.0),
                      c_via=max(c_via, fl.get("c") or 0.0), D=D, drill=drill, c_pad=None)
-            sv = small_via(sp)
+            sv = legal_via(sp, fl)
             if sv and sv[0] < r["D"]:
                 r["D"], r["drill"] = sv          # the bound credits the smallest legal via
             if fl.get("D") and r["D"] < fl["D"][0]:
@@ -591,20 +591,36 @@ def _network(M, ctx, l, yvar, kinds, sources, tags=True, yfix=()):
     return dict(flows=flows, adj=adj)
 
 
-def _site_ok(sp, ctx, override=None, check=True):
+def legal_via(sp, floors=None):
+    """(diameter, drill) of the smallest through via the rules allow: the board setup's
+    minimum drill, annular ring and via diameter (a net class's via is only the default size
+    of new vias, not a DRC constraint), raised to the fab's finest via (`floors` D); None
+    when neither sets one."""
+    s = sp.settings
+    fD, fd = (floors or {}).get("D") or (0.0, 0.0)
+    d = max(s.get("min_drill") or 0.0, fd)
+    D = max(s.get("min_via") or 0.0, d + 2 * (s.get("min_annular") or 0.0), fD)
+    return (round(D, 4), round(d, 4)) if d > 0 and D > d else None
+
+
+def _site_ok(sp, ctx, override=None, check=True, small=None):
     """{(ball, site): legal} for every signal and plane ball and its four sites: the via
-    (diameter override D) and its stub pass Space's exact checks."""
+    (diameter override D) and its stub pass Space's exact checks. `small` (the bound):
+    dict(w, via): the stub's width and a via also tried, the smallest the rules allow."""
     out = {}
+    small = small or {}
     B, xy, balls = ctx["B"], ctx["xy"], ctx["balls"]
     sites = set(_sites(ctx))
     dv = (override or {}).get("D")
     for k in ctx["sig"] + ctx["pln"]:
         pd = balls[k][0]
         if check:
-            vkw = dict(size=dv, drill=min(sp.via_size(pd.net)[1], dv - 0.1)) if dv else {}
+            pk = [dict(size=dv, drill=min(sp.via_size(pd.net)[1], dv - 0.1))] if dv else [{}]
+            if small.get("via") and not dv:
+                pk.append(dict(size=small["via"][0], drill=small["via"][1]))
             sp.via_in_pad = True      # a via in its own pad: Space otherwise keeps vias out of pads
             try:
-                out[(k, "pad")] = not sp.via_violations(pd.net, *pd.pos, first=True, **vkw)
+                out[(k, "pad")] = any(not sp.via_violations(pd.net, *pd.pos, first=True, **kw) for kw in pk)
             finally:
                 sp.via_in_pad = False
         else:
@@ -617,11 +633,11 @@ def _site_ok(sp, ctx, override=None, check=True):
                 continue
             v = xy(t[0] / 2, t[1] / 2)
             mn, opt, _ = sp.width_limits(pd.net, B)
-            if sp.track_violations(pd.net, B, mn or opt or 0.1, pd.pos, v, first=True):
+            if sp.track_violations(pd.net, B, small.get("w") or mn or opt or 0.1, pd.pos, v, first=True):
                 out[(k, t)] = False
                 continue
             sizes = [dict(size=dv, drill=min(sp.via_size(pd.net)[1], dv - 0.1))] if dv else [{}]
-            sv = small_via(sp)
+            sv = small.get("via") or small_via(sp)
             if sv and not dv:
                 sizes.append(dict(size=sv[0], drill=sv[1]))
             out[(k, t)] = any(not sp.via_violations(pd.net, *v, first=True, **kw) for kw in sizes)
@@ -854,7 +870,10 @@ def bound(sp, pkg, info, opts=None, **kw):
     pads = kw.pop("pads", False) or bool((opts or {}).get("escape_via_in_pad"))
     kw["pads"] = pads
     ctx = _setup(sp, pkg, info, opts, minimum=True, **{k: v for k, v in kw.items() if k != "pads"})
-    ok = _site_ok(sp, ctx, override=kw.get("override"))
+    lv = legal_via(sp, kw.get("floors"))
+    small = dict(w=ctx["R"][ctx["B"]]["w"], via=lv if lv and lv[0] <= ctx["R"][ctx["B"]]["D"] + 1e-9 else
+                 (ctx["R"][ctx["B"]]["D"], ctx["R"][ctx["B"]]["drill"]))
+    ok = _site_ok(sp, ctx, override=kw.get("override"), small=small)
     # plane balls' vias left out: the bound only credits the signal balls more room
     M, opt, plane, _ = _stage1(sp, ctx, ok, planes=False, pads=kw.get("pads", False))
     obj, x, duals = M.solve(integer=False)
