@@ -23,7 +23,7 @@ brief = build(load('board.kicad_pcb'))   # JSON-ready dict, schema 'kae.brief/1'
 | `nets` | name → role (ground, rail, switch_node, clock, high_speed, analog, rf, reset, boot, signal, no_connect), subrole, `volts` plus `volts_belief`, `source` {kind, `part` uuid, `ref`, `path`}, evidence |
 | `parts` | footprint uuid → `ref`, kind, subtype, role, `external`, `P_W`, confidence, evidence |
 | `structures` | `id`, `kind`, `confidence`, `evidence`, `priority`; members by footprint uuid, `members_ref` maps them back |
-| `diff_pairs`, `placement_order`, `summary` | pairs with a Zdiff budget, `kicad_pair` (KiCad's suffix rule pairs them) and a `rename_proposal` to `_P`/`_N` when it does not; structure ids by priority; counts and runtime |
+| `diff_pairs`, `placement_order`, `summary` | pairs with a Zdiff budget, `kicad_pair` and a `_P`/`_N` `rename_proposal`; structure ids by priority; counts and runtime |
 
 Structure kinds and the fields a placer or router reads:
 
@@ -39,7 +39,7 @@ Positions never enter: a test moves every footprint and pad at random and checks
 
 ## 2. The evidence model
 
-Every conclusion is a sum of natural-log-odds weights over facts a reviewer can check: STRONG 3.0, MODERATE 1.5, WEAK 0.7, negative where a fact argues against. Confidence = logistic(prior + Σw), clipped to [0.02, 0.98]. The facts are kept as text ("power_in pins on 2 parts (U3.VDD)"). They come from eight sources: refdes prefix, lib id, value and fields, pin function, pin type, topology, net class and sheet. No source decides alone, and each rule names its counter-evidence. Part kinds are a softmax with an *unknown* score of 1.0: 4 of the suite's 9,227 parts end unknown. Budgets are E5 Beliefs with a basis (`f_sw = 1.1 MHz for AP63203`).
+Every conclusion is a sum of natural-log-odds weights over facts a reviewer can check: STRONG 3.0, MODERATE 1.5, WEAK 0.7, negative where a fact argues against. Confidence = logistic(prior + Σw), clipped to [0.02, 0.98]. The facts are kept as text ("power_in pins on 2 parts (U3.VDD)"). They come from eight sources: refdes prefix, lib id, value and fields, pin function, pin type, topology, net class and sheet. Only a role-naming net class decides alone ([intent](../llm/net-role-classification.md)); each rule names its counter-evidence. Part kinds are a softmax with an *unknown* score of 1.0: 4 of the suite's 9,227 parts end unknown. Budgets are E5 Beliefs with a basis (`f_sw = 1.1 MHz for AP63203`).
 
 **Pin semantics put the name first.** Each pin is read as ground, supply, supply output, analog, signal or nothing, in this order:
 1. Ground names, except V−/VSS on a negative rail.
@@ -60,12 +60,12 @@ Part kinds come from lib ids (`R_Shunt_*_Kelvin`, `Crystal`), part-number famili
 
 | Role | For | Against |
 |---|---|---|
-| Ground | names, ground pins, many 2-pin caps; a battery's negative pole net-tied to ground | splits stay distinct (analog, power, isolated, chassis); Kelvin lines tied to ground keep their role |
-| Rail | supply pins, regulator and inductor outputs, caps to ground, pours, rail names; a module supply pin wired straight to a connector pin | a control suffix (`12V0_OUT_EN`); a sense input with no supply pin; logic-only IC pins |
+| Ground | net class, names, ground pins, many 2-pin caps; a battery's negative pole net-tied to ground | splits stay distinct (analog, power, isolated, chassis); Kelvin lines tied to ground keep their role |
+| Rail | net class, supply pins, regulator and inductor outputs, caps to ground, pours, rail names; a module supply pin wired straight to a connector pin | a control suffix (`12V0_OUT_EN`); a sense input with no supply pin; logic-only IC pins |
 | Switch node | an inductor between an IC switch pin or FET pair and a decoupled rail | a FET pair without power-stage evidence is a logic gate |
 | Clock | crystal or oscillator terminals | a pin name alone (PC14, XTAL_32K on an ESP32-C3 GPIO) |
 | Diff pair | complementary names on a common IC or connector; MIPI on a camera FPC | an LED across the pair; a crystal's XTALP/XTALN |
-| Analog, reset, boot | ADC, sense and reference names; amplifier and AFE inputs; RST and BOOT pins | logic and bridge-driver pins; a converter's BST net |
+| Analog, reset, boot | ADC, sense and reference names; amplifier and AFE inputs; RST and BOOT pins | a bare name; a control suffix (`TEMP_ALERT`); logic and bridge-driver pins; a converter's BST net |
 
 **Rail sources**, first match wins: battery, a dev module's 3V3 pin, an input jack's supply pin, an IC's internal output, a bridge rectifier, a regulator or load-switch output, an inductor, a series path (fuse, bead, ≤ 1 Ω, closed jumper, diode, four-terminal shunt) through middle nets, any connector, unknown. A diode from a low-side switch's drain is a flyback clamp, not a source. When two rails joined by a fuse name each other, the connector side wins. **Voltages** come from the name, a regulator part number, USB or battery defaults, a core-regulator table, inheritance through series parts (−0.4 V per diode), and last the lowest capacitor rating ÷ 1.6.
 
