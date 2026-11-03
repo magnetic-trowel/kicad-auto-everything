@@ -295,7 +295,7 @@ def evaluate(path, pitch=0.25, nsub=2, intent=None, n_corners=16, seed=0, log=pr
     for sname, per in ring.items():
         s = next(x for x in srcs if x.name == sname)
         got = [x for x in per if x is not None]
-        h = HA.overshoot_hazard(sname, sorted({r for r in (s.pa, s.pb) if r for r in [r.rsplit(".", 1)[0]]})
+        h = HA.overshoot_hazard(sname, sorted({r for r in (O._ref(s.pa), O._ref(s.pb)) if r})
                                 + [s.meta.get("sw") or s.a], [v for v, _ in got], [p for _, p in got],
                                 where=" (switch-node waveform peak over every harmonic to f_max)")
         if h:
