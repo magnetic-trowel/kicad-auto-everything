@@ -44,6 +44,20 @@ def test_strip_blocks_pretty_and_single_line():
     assert t == ["kicad_pcb", ["zone", ["polygon", ["pts", ["xy", "1", "1"]]]]]
 
 
+def test_strip_blocks_one_line_block_in_a_pretty_file():
+    """A filled_polygon written on one line (other writers than KiCad): the next line equal to
+    "<indent>)" belonged to the next zone's filled_polygon, the span to it balanced, and
+    everything between was cut, zone B with it."""
+    text = ('(kicad_pcb\n\t(zone\n\t\t(name "A")\n\t\t(filled_polygon (layer "F.Cu") (pts (xy 0 0)))\n\t)\n'
+            '\t(zone\n\t\t(name "B")\n\t\t(filled_polygon\n\t\t\t(layer "F.Cu")\n\t\t\t(pts (xy 0 0))\n\t\t)\n'
+            '\t\t(polygon (pts (xy 1 1)))\n\t)\n)\n')
+    t = sexpr.parse(sexpr.strip_blocks(text))
+    zones = [sexpr.value(z, "name") for z in sexpr.kids(t, "zone")]
+    assert zones == ["A", "B"]
+    assert all(sexpr.first(z, "filled_polygon") is None for z in sexpr.kids(t, "zone"))
+    assert sexpr.first(sexpr.kids(t, "zone")[1], "polygon") is not None
+
+
 def test_board_json_round_trip():
     b = kicad_file.load(FIXTURE)
     d = json.loads(json.dumps(b.to_dict()))

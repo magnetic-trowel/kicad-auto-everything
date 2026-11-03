@@ -251,6 +251,19 @@ def _leg(E, S, ns, stamp_s):
 
 
 @_jit
+def _total_leg(E, S, ns):
+    """Legality total of the parts S[:ns] from scratch, each pair once (anneal.total_leg)."""
+    E.ip[I_NSTAMP] += 1
+    ss = E.ip[I_NSTAMP]
+    tot = 0
+    for a in range(ns):
+        i = S[a]
+        E.in_s[i] = ss
+        tot += _overlap_part(E, i, ss) + _outside(E, i)
+    return tot
+
+
+@_jit
 def _update_pins(E, i):
     g = E.fp[F_G]
     x0 = E.fp[F_OX] + E.X[i] * g
@@ -1197,8 +1210,10 @@ class FastAnnealer:
         self.seed = seed
         self.log = a.log
         self.E = build(a)
-        if self.E.ip[I_OVERFLOW]:
-            self.E = build(a, hash_cap=1024)
+        cap = 1024
+        while self.E.ip[I_OVERFLOW]:
+            self.E = build(a, hash_cap=cap)
+            cap *= 4
         seed_rng(int(seed) & 0x7fffffff)
         # who may move: all movable parts, or a subset (a window re-placement)
         self.mov = list(a.active)
@@ -1412,6 +1427,10 @@ class FastAnnealer:
         nK = np.array([q[2] for q in newpos], np.int64)
         acc, d = try_move(self.E, Sa, nX, nY, nK, len(S), T, lam, self.w["phys"] * d_phys / self.nstruct,
                           self.rng.random(), False)
+        if self.E.ip[I_OVERFLOW]:
+            # a full bucket dropped a rectangle: rebuild here too, as after a compiled batch (a
+            # run with no fast parts never runs one, and its overlaps stayed undercounted)
+            self._rebuild()
         st = self.stats
         st["moves"] += 1
         bm = st["by_move"].setdefault(kind, [0, 0])
@@ -1535,11 +1554,18 @@ class FastAnnealer:
         cap = int(self.E.ip[I_CAP]) * 4
         old = self.E
         self.E = build(a, hash_cap=cap)
+        while self.E.ip[I_OVERFLOW]:
+            cap *= 4
+            self.E = build(a, hash_cap=cap)
         # build() takes the congestion demand, the nets' RUDY boxes and the wirelength total
         # from the Python annealer, which still holds the state the run started from; the old
         # engine's running state is the current one: carry it over (only the hash is new)
         for name in ("Xs", "Ys", "tot", "Dn", "Dp", "net_box", "net_dens", "has_box", "nb", "nc", "open"):
             getattr(self.E, name)[...] = getattr(old, name)
+        # except legality: the old total missed the overlaps of every rectangle the full bucket
+        # dropped (and priced the moves since on that), so count it again on the new hash
+        mv = np.array(a.mov, np.int64)
+        self.E.tot[T_LEG] = _total_leg(self.E, mv, len(mv))
 
     def report(self, cpu, planned=0, done=0):
         return dict(cpu_s=round(cpu, 2), planned_moves=planned, moves=done,

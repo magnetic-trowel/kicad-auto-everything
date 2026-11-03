@@ -284,8 +284,10 @@ def evaluate(tests, ctx, jobs=8, timeout=300, only=None):
                     rec["problems"].append(f"{mode} {cname}: failed {r.failed} " + "; ".join(r.problems[:3]))
 
         def vals(mode, m):
+            # a corner whose deck could not be built stays as None: a routed run that never simulated
+            # is an error, not the ideal circuit's verdict
             byc = res.get(mode, {})
-            v = {c: r.meas.get(m.lower()) for c, (r, err, _) in byc.items() if r is not None}
+            v = {c: (r.meas.get(m.lower()) if r is not None else None) for c, (r, err, _) in byc.items()}
             return v
 
         worst = []

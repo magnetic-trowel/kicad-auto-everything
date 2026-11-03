@@ -186,6 +186,44 @@ def test_uuid_synthesis(tmp_path):
     assert "uuid_duplicate" in b3.footprints[1].flags
 
 
+DUP_ZONES = """(kicad_pcb (version 20240108) (generator "pcbnew") (generator_version "8.0")
+	(general (thickness 1.6))
+	(layers (0 "F.Cu" signal) (31 "B.Cu" signal) (44 "Edge.Cuts" user) (47 "F.CrtYd" user))
+	(net 0 "")
+	(footprint "t:A" (layer "F.Cu") (uuid "11111111-0000-0000-0000-000000000001") (at 10 10)
+		(property "Reference" "U1" (at 0 0) (layer "F.SilkS"))
+		(pad "1" smd rect (at 0 0) (size 1 1) (layers "F.Cu")))
+	(footprint "t:A" (layer "F.Cu") (uuid "11111111-0000-0000-0000-000000000001") (at 20 10)
+		(property "Reference" "U2" (at 0 0) (layer "F.SilkS"))
+		(pad "1" smd rect (at 0 0) (size 1 1) (layers "F.Cu"))
+		(zone (net 0) (net_name "") (layers "F.Cu") (uuid "22222222-0000-0000-0000-000000000001") (hatch edge 0.5)
+			(connect_pads (clearance 0)) (min_thickness 0.25)
+			(keepout (tracks not_allowed) (vias not_allowed) (pads not_allowed) (copperpour not_allowed) (footprints not_allowed))
+			(fill (thermal_gap 0.5) (thermal_bridge_width 0.5))
+			(polygon (pts (xy 19 9) (xy 21 9) (xy 21 11) (xy 19 11)))))
+	(footprint "t:B" (layer "F.Cu") (at 30 10)
+		(fp_text reference "U3" (at 0 0) (layer "F.SilkS"))
+		(pad "1" smd rect (at 0 0) (size 1 1) (layers "F.Cu"))
+		(zone (net 0) (net_name "") (layers "F.Cu") (hatch edge 0.5)
+			(keepout (tracks not_allowed) (vias not_allowed) (pads not_allowed) (copperpour not_allowed) (footprints not_allowed))
+			(polygon (pts (xy 29 9) (xy 31 9) (xy 31 11) (xy 29 11)))))
+	(gr_rect (start 0 0) (end 40 40) (stroke (width 0.05) (type solid)) (fill none) (layer "Edge.Cuts"))
+)
+"""
+
+
+def test_footprint_rule_areas_take_the_final_uuid(tmp_path):
+    """A footprint's own keepout took fp.uuid before load() made uuids unique: with no uuid
+    (U3) it became a board-level keepout, with a repeated one (U2) it followed U1."""
+    p = tmp_path / "dupz.kicad_pcb"
+    p.write_text(DUP_ZONES)
+    b = kicad_file.load(p, rules=False)
+    by = {f.ref: f for f in b.footprints}
+    assert {"uuid_duplicate"} <= set(by["U2"].flags) and {"uuid_synthesized"} <= set(by["U3"].flags)
+    owner = {round(k.outline.bounds[0]): k.footprint for k in b.keepouts}
+    assert owner == {19: by["U2"].uuid, 29: by["U3"].uuid}
+
+
 def test_staging_detection_uses_outline(board):
     # U7 sits right of the board, like kaebench's place-task staging area
     u7 = next(f for f in board.footprints if f.ref == "U7")
@@ -305,3 +343,32 @@ def test_footprint_edges_close_an_open_outline(tmp_path):
     assert len(b.outline) == 1
     assert abs(b.outline[0].area - (40 * 30 - 10 * 5 - 4)) < 1e-6
     assert b.footprints[0].on_board
+
+
+def test_zero_width_shapes_follow_pcbnew():
+    """pcbnew 10 fills a circle or rect drawn with width 0 and no fill token (the legacy way to
+    fill them: a custom pad's 0-width gr_circle lost 0.28 mm2 of copper here, area 0.6032 vs
+    pcbnew's 0.8717 mm2), and gives any other unfilled 0-width shape a 0.1 mm stroke (checked
+    with pcbnew.LoadBoard: IsSolidFill True / width 0.1)."""
+    from kae.board import sexpr
+
+    def area(s):
+        g = sexpr.parse(s)
+        o, r = kicad_file.shape_pieces(g)
+        return sum(p.area for p in kicad_file._stroked(g, o, r))
+    assert abs(area('(gr_circle (center -0.5 0) (end -0.2 0) (width 0))') - math.pi * 0.09) < 2e-3
+    assert abs(area('(fp_circle (center 0 0) (end 0.5 0) (stroke (width 0) (type solid)) (layer "F.Cu"))')
+               - math.pi * 0.25) < 3e-3
+    assert abs(area('(gr_rect (start 25 25) (end 27 27) (stroke (width 0) (type solid)) (layer "F.Cu"))') - 4.0) < 1e-9
+    ring = area('(fp_circle (center 0 3) (end 0.5 3) (stroke (width 0) (type solid)) (fill none) (layer "F.Cu"))')
+    assert abs(ring - math.pi * (0.55 ** 2 - 0.45 ** 2)) < 3e-3
+    assert abs(area('(gr_line (start 1 30) (end 5 30) (stroke (width 0) (type solid)) (layer "F.Cu"))')
+               - (0.4 + math.pi * 0.05 ** 2)) < 1e-3
+
+
+def test_chamfered_roundrect_is_polygons_only():
+    """A chamfered roundrect (1.4 x 0.9, rratio 0.2, chamfer 0.3, top_left + bottom_right)
+    came out as a GeometryCollection with stray LineStrings inside the chamfer cut: buffered
+    for clearance they grew copper 0.064 mm into it, and Board.to_dict crashed on them."""
+    g = kicad_file.round_chamfer_rect(1.4, 0.9, 0.2 * 0.9, 0.3 * 0.9, ["top_left", "bottom_right"])
+    assert g.geom_type in ("Polygon", "MultiPolygon") and abs(g.area - 1.1731) < 1e-3

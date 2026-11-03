@@ -26,9 +26,11 @@ import threading
 from pathlib import Path
 
 from . import tools
-from .boardfiles import board_path, install_rules
+from .boardfiles import board_path, install_rules, unconnected_ignored
 
-SCORE_VERSION = 7
+# 8: unconnected counted by pcbnew where the project ignores the check (_uncapped)
+# 9: route placement integrity with the place side's pose tolerance (transplant-routing)
+SCORE_VERSION = 9
 # KiCad 10's DRC report stops listing unconnected items at 499 and other violations at 199
 # per type (drc_engine ERROR_LIMIT / EXTENDED_ERROR_LIMIT).
 DRC_UNCONNECTED_CAP = 499
@@ -73,17 +75,21 @@ def _rebuild(op, output_board, input_board, rules_dir, scoring_dir, reference_bo
 def _uncapped(board, drc_unconnected, cache=None):
     """Unconnected count without DRC's cap: DRC's own count below the cap, else pcbnew's
     connectivity count after a zone fill (identical to DRC's where both are below the cap).
-    Returns (count, was_capped)."""
-    if drc_unconnected < DRC_UNCONNECTED_CAP:
+    Also pcbnew's count when the board's project ignores unconnected items, which DRC then does
+    not report (3 qualified boards, e.g. gamaphy-freedom-rp2040, read 0 unconnected for every
+    output, an empty one included). The start and the output of a task share the reference
+    project, so both are counted the same way. Returns (count, was_capped)."""
+    capped = drc_unconnected >= DRC_UNCONNECTED_CAP
+    if not capped and not unconnected_ignored(board):
         return drc_unconnected, False
     if cache is not None and Path(cache).exists():
-        return json.loads(Path(cache).read_text())["unconnected"], True
+        return json.loads(Path(cache).read_text())["unconnected"], capped
     n = tools.run_ops("unconnected", board)["unconnected"]
     if cache is not None:
         tmp = Path(f"{cache}.{os.getpid()}.{threading.get_ident()}")
         tmp.write_text(json.dumps(dict(unconnected=n)))
         os.replace(tmp, cache)  # atomic: arms scoring the same board at once
-    return n, True
+    return n, capped
 
 
 def _capped_types(drc):
@@ -121,7 +127,7 @@ def score_routing(output_board, input_board, input_stats, start_unconnected, ref
                                     cache=Path(input_board).parent / "unconnected.json")
     out, foreign = tr["output"], tr["foreign"]
     integrity = dict(
-        placement=out["placement_hash"] == input_stats["placement_hash"],
+        placement=tr["n_placement_moved"] == 0,
         pad_nets=out["padnet_hash"] == input_stats["padnet_hash"],
         layers=tr["bad_layer"] == 0,
         untouched=foreign["count"] == 0,
@@ -204,7 +210,7 @@ def score_joint_task(task_dir, output_board, scoring_dir, record, allow_copy=Fal
     if not tp.get("loadable"):
         return _unloadable(tp, clean=False, legal=False, completion=0.0)
     pst, pdrc = _measure(staged_p, placed_dir)
-    start, _ = _uncapped(staged_p, pdrc["unconnected"])
+    start, _ = _uncapped(staged_p, pdrc["unconnected"], cache=placed_dir / "unconnected.json")
     tin = record["tasks"][input_kind]["input_stats"]
     place_integrity = dict(
         pad_nets=tp["output"]["padnet_hash"] == tin["padnet_hash"],

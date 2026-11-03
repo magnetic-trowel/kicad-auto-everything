@@ -25,7 +25,9 @@ A pad none of whose cells is free (a 0.4 mm-pitch QFN pin 0.2 mm wide, 0.2 mm fr
 neighbours at 0.2 mm clearance: the one legal track is exactly as wide as the pad, centred on
 it, and the margins above leave it no cell) is left through an escape (`_escapes`): a straight
 piece from its centre along one of its axes, legal with no margin at all (EXACT_TOL), to the
-nearest free cell past the tight spot; a route through an escape is verified the same way.
+nearest free cell past the tight spot; where no piece from the centre is legal, one that starts
+on the axis just past the pad, its copper overlapping the pad by `pad_entry_overlap` (KiCad
+connects any overlap). A route through an escape is verified the same way.
 
 The result is a list of segments and vias, every one checked exactly against KiCad's
 requirements; nothing is committed until the caller does so.
@@ -473,7 +475,8 @@ class GridRouter:
                 same = it.net is not None and it.net == net and it.kind in ("pad", "track", "via", "corridor", "shape")
                 if same:
                     if it.kind == "via":
-                        grid.within(it.geom, pitch + m, out)
+                        # hole to hole through both drills, as Space.via_violations
+                        grid.within(it.geom, pitch + ((it.drill or d) - d) / 2.0 + m + TOL, out)
                     elif it.kind == "pad":
                         if it.hole is not None:
                             hg, hr = it.hole
@@ -656,8 +659,25 @@ class GridRouter:
             return self.connect(net, sources, targets, width, layers, layer_factor=layer_factor, via=via, window=g2,
                                 via_cost=via_cost, skip=skip, max_len=max_len, avoid=avoid, phys=phys,
                                 _aligned=True)
-        if dst[src].any():
-            return Route(net=net, width=width, res=grid.res)     # already touching
+        hit = src[dst[src]]
+        if hit.size:
+            # a shared cell touches both ends only when it is a real anchor cell of both: an
+            # escape cell is free board reached by a piece _geometry has yet to emit (two
+            # same-net balls 0.15 mm apart whose escapes meet in the cell between them were
+            # counted routed with no copper)
+            if any(k not in esc_src and k not in esc_dst for k in hit.tolist()):
+                return Route(net=net, width=width, res=grid.res)     # already touching
+            for k in hit.tolist():
+                rt = self._geometry(grid, net, width, layers, np.array([k], np.int64), sources, targets,
+                                    esc_src, esc_dst)
+                if rt is not None and (max_len is None or rt.length <= max_len):
+                    rt.res = grid.res
+                    self.stats["found"] += 1
+                    return rt
+            dst = dst.copy()
+            dst[hit] = False          # those meetings do not verify: search for another way
+            if not dst.any():
+                return None
         xs, ys = tb[0::4] + tb[1::4], tb[2::4] + tb[3::4]
         tx0, tx1, ty0, ty1 = min(xs), max(xs), min(ys), max(ys)
         vc = self.via_cost if via_cost is None else via_cost
@@ -667,7 +687,7 @@ class GridRouter:
             ph = phys(grid, layers)
             path = search_flat(cost, ph["self"], ph["px"], ph["py"], ph["pot"], ph["void"], vmask, src, dst, grid.res,
                                via_cost=float(vc), lam=1.0, floor=ph.get("floor", 0.2),
-                               target=((ty0 + ty1) // 2, (tx0 + tx1) // 2), pot2=ph.get("pot2"), void2=ph.get("void2"),
+                               pot2=ph.get("pot2"), void2=ph.get("void2"),
                                theta=ph.get("theta"), th_src=ph.get("th_src"), th_dst=ph.get("th_dst"),
                                vself=ph.get("vself"), cx=ph.get("cx"), cy=ph.get("cy"))
             nexp = 0
@@ -713,35 +733,57 @@ class GridRouter:
             n = math.hypot(dx, dy)
             if n > 1e-9:
                 axes.append((dx / n, dy / n))
+        # a round pad's (polygonized circle's) smallest rectangle turns by whatever angle its
+        # vertices give (28 degrees for a 0.24 mm ball): the board's axes too, where they differ
+        for ax in ((1.0, 0.0), (0.0, 1.0)):
+            if all(abs(ax[0] * v - ax[1] * u) > 1e-3 for u, v in axes):
+                axes.append(ax)
         reach = max(math.dist(c, p) for p in pts) + sp.max_need + width + 2 * grid.res
         step = grid.res / 2
         flat = cost.reshape(-1)
+        ovl = float(getattr(sp, "pad_overlap", 0.05))
+
+        def walk(s0, dx, dy):
+            """The first free cell reached by a legal straight piece from s0 along (dx, dy)."""
+            k = 1
+            while k * step <= reach:
+                p = (s0[0] + k * step * dx, s0[1] + k * step * dy)
+                k += 1
+                if sp.track_violations(net, layer, width, s0, p, first=True, tol=EXACT_TOL):
+                    return None
+                i0 = int(math.floor((p[0] - grid.x0) / grid.res))
+                j0 = int(math.floor((p[1] - grid.y0) / grid.res))
+                cells = [(i, j) for i in (i0, i0 + 1) for j in (j0, j0 + 1) if grid.inside(i, j)]
+                cells.sort(key=lambda ij: math.dist(grid.xy(*ij), p))
+                for i, j in cells:
+                    kk = li * plane + j * grid.nx + i
+                    if not np.isfinite(flat[kk]):
+                        continue
+                    q = grid.xy(i, j)
+                    if not sp.track_violations(net, layer, width, p, q, first=True, tol=EXACT_TOL):
+                        return (kk, [tuple(s0), p])
+            return None
+
         out = []
         for ux, uy in axes:
             for sx in (1.0, -1.0):
                 dx, dy = sx * ux, sx * uy
-                k = 1
-                while k * step <= reach:
-                    p = (c[0] + k * step * dx, c[1] + k * step * dy)
-                    k += 1
-                    if sp.track_violations(net, layer, width, c, p, first=True, tol=EXACT_TOL):
-                        break
-                    i0 = int(math.floor((p[0] - grid.x0) / grid.res))
-                    j0 = int(math.floor((p[1] - grid.y0) / grid.res))
-                    cells = [(i, j) for i in (i0, i0 + 1) for j in (j0, j0 + 1) if grid.inside(i, j)]
-                    cells.sort(key=lambda ij: math.dist(grid.xy(*ij), p))
-                    hit = None
-                    for i, j in cells:
-                        kk = li * plane + j * grid.nx + i
-                        if not np.isfinite(flat[kk]):
-                            continue
-                        q = grid.xy(i, j)
-                        if not sp.track_violations(net, layer, width, p, q, first=True, tol=EXACT_TOL):
-                            hit = (kk, [tuple(c), p])
+                hit = walk(tuple(c), dx, dy)
+                if hit is None and ovl > 0:
+                    # the track's end outside the pad, its copper still overlapping the pad by
+                    # `ovl` (KiCad connects any overlap): beside a 0.4 mm-pitch ball the centre is
+                    # 0.18 mm from the neighbours for a 0.2 mm track at 0.2 mm clearance, while
+                    # just past the rim the gap opens (circuitmonkey chips-0123's U1, 4 balls)
+                    h = max((p[0] - c[0]) * dx + (p[1] - c[1]) * dy for p in pts)
+                    d = step / 2
+                    while hit is None and d <= h + width / 2 - ovl + 1e-9:
+                        s0 = (c[0] + d * dx, c[1] + d * dy)
+                        d += step / 2
+                        if g.distance(Point(s0)) > width / 2 - ovl + 1e-9:
                             break
-                    if hit is not None:
-                        out.append(hit)
-                        break
+                        hit = walk(s0, dx, dy)
+                if hit is not None:
+                    out.append(hit)
         return out
 
     # ------------------------------------------------------------------ path -> geometry

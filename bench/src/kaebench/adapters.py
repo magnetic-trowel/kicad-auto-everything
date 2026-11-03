@@ -301,8 +301,14 @@ class Command(Adapter):
         try:
             r = tools.run_measured(argv, timeout=timeout, cwd=w)
             log = r.stdout + r.stderr
-        except subprocess.TimeoutExpired:
-            return AdapterResult(None, f"timed out after {timeout}s", dict(timed_out=True))
+        except subprocess.TimeoutExpired as e:
+            # Like Freerouting's partial session: what the method wrote by the deadline is its output
+            # (restart.py and other anytime methods keep their best board in {output} as they go). A
+            # file cut off mid-write does not load and scores invalid.
+            ok = board_path(out).exists()
+            return AdapterResult(board_path(out) if ok else None,
+                                 f"timed out after {timeout}s\n{e.stdout or ''}{e.stderr or ''}",
+                                 dict(timed_out=True, partial=ok, sandboxed=self.sandbox.enabled))
         ok = board_path(out).exists()
         return AdapterResult(board_path(out) if ok else None, log,
                              dict(rc=r.returncode, sandboxed=self.sandbox.enabled))

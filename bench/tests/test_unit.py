@@ -174,6 +174,14 @@ def test_art_zones_to_polys():
     assert new.count("(zone") == 3  # copper zone, keepout and the string are untouched
 
 
+def test_unbalanced_board_text_is_a_clear_error():
+    cut = '(kicad_pcb (version 1)\n (zone (net 0) (uuid "a") (layer "F.SilkS")'
+    with pytest.raises(ValueError, match="unbalanced"):
+        boardfiles.remove_top_level(cut, "zone", ["a"])
+    with pytest.raises(ValueError, match="unbalanced"):
+        boardfiles.art_zones_to_polys(cut)
+
+
 def test_micro_arc_pile_and_remove_top_level():
     def arc(x, uid, layer="F.Cu", d=0.0000005):
         return (f'\t(arc\n\t\t(start {x} 5) (mid {x + d} 5.0000004) (end {x + 2 * d} 5)\n'
@@ -274,6 +282,23 @@ def test_freerouting_hung_after_writing_ses_keeps_it(tmp_path, monkeypatch):
     assert len(imported) == 1
 
 
+def test_command_killed_at_the_deadline_keeps_its_output(tmp_path, monkeypatch):
+    """An anytime method (restart.py) keeps its best board in {output}: killed at the harness
+    deadline it is scored on it, as Freerouting is on its partial session; no file is no output."""
+    inp = tmp_path / "in"
+    inp.mkdir()
+    (inp / "board.kicad_pcb").write_text("(kicad_pcb)")
+    for wrote in (True, False):
+        def run(cmd, timeout=None, **kw):
+            if wrote:
+                (kw["cwd"] / "output" / "board.kicad_pcb").write_text("(kicad_pcb)")
+            raise subprocess.TimeoutExpired(cmd, timeout, output="best so far")
+        monkeypatch.setattr(tools, "run_measured", run)
+        res = adapters.Command("true").run("route", inp, tmp_path / f"w{wrote}", 0, 10)
+        assert res.meta["timed_out"] and res.meta["partial"] == wrote and "best so far" in res.log
+        assert (res.output == tmp_path / f"w{wrote}" / "output" / "board.kicad_pcb") if wrote else res.output is None
+
+
 def test_dsn_unset_netclass_sizes(tmp_path):
     dsn = tmp_path / "b.dsn"
     dsn.write_text('(pcb b (resolution um 10) (unit um)\n (structure (via "Via[0-1]_-0.001:-0.001_um")\n'
@@ -319,6 +344,29 @@ def test_report_best_of_k(tmp_path):
     assert m["cp1"] == 0.0 and m["cpk"] == 0.5
     assert m["completion"] == pytest.approx(0.95)
     assert "| x | all |" in report.to_markdown(report.summarize(rows))
+
+
+def test_cp1_is_attempt_0_and_a_missing_one_is_reported():
+    def row(bid, a, clean):
+        return dict(adapter="x", kind="route", id=bid, split="A", attempt=a, status="ok", runtime_s=1.0,
+                    score=dict(valid=True, clean=clean, completion=1.0, errors=0))
+    m = report.summarize([row("b1", 0, True), row("b2", 1, True), row("b2", 2, True)])[("x", "route", "all")]
+    assert m["cp1"] == 0.5 and m["cpk"] == 1.0 and m["missing_a0"] == 1
+
+
+def test_report_means_over_the_boards_every_adapter_scored():
+    """A board without output drops out of an adapter's error mean; that favours a method that fails
+    on hard boards, so the means are also over the boards both scored (and the counts are shown)."""
+    def row(adapter, bid, errors):
+        sc = dict(valid=True, clean=errors == 0, completion=1.0, errors=errors, wl_ratio=1.0, via_delta=0)
+        return dict(adapter=adapter, kind="route", id=bid, split="A", attempt=0, runtime_s=1.0,
+                    status="ok" if errors is not None else "no_output", score=sc if errors is not None else None)
+    rows = [row("a", "b1", 0), row("a", "hard", 10), row("b", "b1", 2), row("b", "hard", None)]
+    s = report.summarize(rows)
+    a, b = s[("a", "route", "all")], s[("b", "route", "all")]
+    assert (a["errors"], a["scored"], b["errors"], b["scored"]) == (5.0, 2, 2.0, 1)
+    assert (a["errors_common"], b["errors_common"], a["common"], b["common"]) == (0.0, 2.0, 1, 1)
+    assert "errors_common" in report.to_markdown(s)
 
 
 def test_report_keeps_runs_of_one_adapter_apart(tmp_path):
@@ -490,6 +538,36 @@ def test_capped_drc_types_are_flagged():
     assert score._uncapped("unused.kicad_pcb", 12) == (12, False)  # below the cap: DRC's own count
 
 
+def _project(d, severity):
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "board.kicad_pro").write_text(json.dumps(
+        {"board": {"design_settings": {"rule_severities": {"unconnected_items": severity}}}}))
+    return d / "board.kicad_pcb"
+
+
+def test_unconnected_is_counted_where_the_project_ignores_it(tmp_path, monkeypatch):
+    """A project with "unconnected_items": "ignore" makes DRC report none: the start and every
+    output read 0 and an empty output scored complete (gamaphy-freedom-rp2040). Both are then
+    counted by pcbnew's connectivity, the same way."""
+    counts = {}
+    monkeypatch.setattr(tools, "run_ops", lambda op, board, *a: dict(unconnected=counts[Path(board).parent.name]))
+    ign, warn = _project(tmp_path / "ign", "ignore"), _project(tmp_path / "warn", "warning")
+    counts.update(ign=40, warn=99)
+    assert boardfiles.unconnected_ignored(ign) and not boardfiles.unconnected_ignored(warn)
+    assert not boardfiles.unconnected_ignored(tmp_path / "none" / "board.kicad_pcb")
+    assert score._uncapped(ign, 0) == (40, False)
+    assert score._uncapped(warn, 0) == (0, False)  # a warning is still reported by DRC (--severity-all)
+    cache = tmp_path / "ign" / "unconnected.json"
+    assert score._uncapped(ign, 0, cache=cache) == (40, False) and json.loads(cache.read_text()) == {"unconnected": 40}
+    counts["ign"] = 1
+    assert score._uncapped(ign, 0, cache=cache) == (40, False)  # the start's cache
+    # prepare: the human layout and the task start are counted the same way
+    from kaebench import prepare
+    monkeypatch.setattr(tools, "run_drc", lambda b, o: dict(violations=[], unconnected_items=[]))
+    assert prepare._drc(ign, None)["unconnected"] == 1
+    assert prepare._drc(warn, None)["unconnected"] == 0
+
+
 def test_tools_get_absolute_paths_under_a_relative_workdir(tmp_path, monkeypatch):
     """Methods and Freerouting run with cwd=<attempt dir>, so relative paths would miss."""
     monkeypatch.chdir(tmp_path)
@@ -584,6 +662,10 @@ def _fp(ref, fpid, value="", pads=2, pth=0, npth=0):
     (_fp("J4", "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical", "UART", pads=4, pth=4),
      "connector", "lib"),
     (_fp("JST1", "battery_connector_jst_ph_2", pads=2, pth=2), "connector", "name"),
+    # castellated edge pads (circuitmonkey chips-0123: +12, GND, DAI0-2, EN) and 4UCONN micro-USB
+    (_fp("DAI1", "CAST01-2.00MM:CAST-01X12.00MM", pads=3, pth=3), "connector", "name"),
+    (_fp("+5", "x:Castellated_Pad_2mm", pads=1, pth=1), "connector", "name"),
+    (_fp("X2", "x:4UCONN_20329", "MicroB", pads=13, pth=6), "connector", "name"),
 ])
 def test_mech_classifier_fixes(fp, cls, rule):
     from kaebench.kicad_scripts import mech_rules

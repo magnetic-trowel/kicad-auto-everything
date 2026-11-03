@@ -186,7 +186,9 @@ def net_voltage(name: str | None) -> tuple[float, str] | None:
     """Nominal volts from a rail name and the text that said so, or None.
 
     '+3V3' 3.3; '3.3V' 3.3; '1V8' 1.8; 'VCC_12V' 12; '12V0' 12.0; 'P3V3' 3.3; '-12V' -12;
-    '+5VA' 5. Names without a digit-V pattern ('VCC', 'VBUS') return None."""
+    '+5VA' 5; a bare signed number '+12', '-5', '+3.3' (Altium and Eagle imports name rails so);
+    'Net3V3_1' 3.3 (an imported net named after a 3V3 port). Names without a digit-V pattern ('VCC',
+    'VBUS') return None."""
     n = clean_net(name).short
     if not n:
         return None
@@ -197,7 +199,11 @@ def net_voltage(name: str | None) -> tuple[float, str] | None:
         if i == 0 or not n[i - 1].isalnum():
             return True
         pre = n[:i]
-        return re.search(r'(^[PNM]|VCC|VDD|VIN|VOUT|VBAT|VSYS|VBUS|VCCIO|VDDIO|PWR|AVDD|DVDD|VREG|V)$', pre) is not None
+        return re.search(r'(^[PNM]|^NET|VCC|VDD|VIN|VOUT|VBAT|VSYS|VBUS|VCCIO|VDDIO|PWR|AVDD|DVDD|VREG|V)$', pre) is not None
+    m = re.match(r'^([+-])(\d{1,3}(?:\.\d{1,2})?)(?:_[A-Z0-9_]*)?$', n)                    # +12, -5, +3.3, +12_ISO
+    if m and 1.2 <= float(m.group(2)) <= 1000:          # '+1', '-2' are more often pin or pair names than rails
+        v = float(m.group(2))
+        return (-v if m.group(1) == '-' else v), m.group(1) + m.group(2)
     m = re.search(r'(?<![0-9.])(\d{1,3})P(\d{1,3})V(?![0-9A-Z])', n)                  # 12P0V, 3P3V
     if m and prefix_ok(m.start()):
         v = float(f"{m.group(1)}.{m.group(2)}")

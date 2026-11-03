@@ -71,7 +71,11 @@ def block_end(text, a):
     """End (exclusive) of the block whose '(' is at text[a]."""
     ls = text.rfind("\n", 0, a) + 1
     indent = text[ls:a]
-    if indent and not indent.strip():
+    le = text.find("\n", a)
+    le = len(text) if le < 0 else le
+    # a block that closes on its own line (a one-line filled_polygon): the next "<indent>)"
+    # belongs to a later sibling, and the balanced span to it cut the next zone too
+    if indent and not indent.strip() and text.count("(", a, le) > text.count(")", a, le):
         e = text.find("\n" + indent + ")", a)
         if e >= 0:
             e += len(indent) + 2
