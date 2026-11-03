@@ -323,3 +323,25 @@ def test_crystal_without_d_min_has_no_clearance_term():
     del brief['structures'][0]['budget']
     T = _terms(b, brief)
     assert not any(r['id'].endswith('#d_min') for r in T.breakdown(T.bv.pose0()))
+
+
+def test_pour_decap_spreading_radius_is_a_knob():
+    """PP7: the pour-mode decap's spreading term (mu0 d / pi) ln(D / r) takes its r from
+    Knobs.pour_r_eff (0.3 by default; 0.15 is the via radius the sheet solve validates)."""
+    import math
+    from types import SimpleNamespace as NS
+
+    from kae.physics.priors import Knobs
+    from kae.physics.structures import DecapLoop
+    assert Knobs().pour_r_eff == 0.3
+    T = [NS(i=k, lx=0.0, ly=0.0) for k in range(4)]
+    loop = NS(T=T, parts=[0, 1], kern=None, value=lambda st: -1.0)
+    bv = NS(zcu={"F": 0.0, "In1": 0.1, "In2": 0.2, "B": 1.6}, copper=["F", "In1", "In2", "B"],
+            zone_piece=lambda ly, x, y: 0, zone_labels=lambda ly: (None, {0: "+3V3" if ly == "In2" else "GND"}))
+    st = NS(X=[0.0, 5.0, 5.0, 0.0], Y=[0.0] * 4, C=[1.0] * 4, S=[0.0] * 4, G=[1, 1, 1, 1])
+    vals = {}
+    for r in (0.3, 0.15):
+        dl = DecapLoop(bv, loop, [("In2", "In1", 0.1)], "+3V3", ["GND"], lambda h: 0.0, lambda h: 0.0, r_eff=r)
+        vals[r] = dl.value(st)
+        assert dl.mode == "pour"
+    assert vals[0.15] - vals[0.3] == pytest.approx(0.2 * 0.1 * 2 * math.log(2), rel=1e-9)

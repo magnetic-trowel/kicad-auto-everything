@@ -650,7 +650,7 @@ def _decap_loop(ctx, tp, tr, tc, tg, rail, pairs):
     mc = _mount(ctx, max(math.hypot(tr.lx - tc.lx, tr.ly - tc.ly), 0.3), max(min(tr.a, tc.a), 0.2), cp.zbody, {})
     pitch_ic = math.hypot(tp.lx - tg.lx, tp.ly - tg.ly) if tp.i == tg.i else 0.0
     mi = _mount(ctx, max(pitch_ic, 0.3), 0.3 if _is_ic(ip) else max(tp.a, 0.2), ip.zbody, {})
-    return DecapLoop(bv, loop, pairs, rail, ctx.gnd, mc, mi)
+    return DecapLoop(bv, loop, pairs, rail, ctx.gnd, mc, mi, r_eff=ctx.t.knobs.pour_r_eff)
 
 
 # ----------------------------------------------------------------------------- (d)
