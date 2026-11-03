@@ -544,33 +544,46 @@ def mesh_report(m, priced, nsub):
 
 
 FIELD_KINDS = ("overshoot", "supply", "victim", "cm", "radiated")   # harms that rest on the copper's inductance
-L_BIAS_AT_025 = 0.15     # the largest measured excess of a loop inductance at 0.25 mm pitch (first order in pitch)
+# loop inductance at 0.25 mm pitch against the finest solve (tools/research/physics/em_skin_nsub_check.py --pitch;
+# docs/research/physics/field-solver-accuracy.md): hot loops and plane pairs +5..+11% over the 0.0625 mm solve (+16%
+# over its extrapolation; the boost hot loop +15%), small decap loops -3..+2% (pad, via and trace edges snap to the
+# cells, so convergence is not monotone); scaled with the pitch
+L_BIAS_HI = 0.16
+L_BIAS_LO = 0.05
 
 
 def bias_hazards(harms, pitch):
-    """An info hazard per field harm that fails by less than the raster's known inductance excess at this pitch
-    (u in (1, 1 + bias]): it may pass on a finer mesh. The excess is upward (a raster restricts the current, so its
-    inductance is an upper bound), so a harm below 1 does not hide a failure from this cause."""
-    bias = L_BIAS_AT_025 * pitch / 0.25
+    """Hazards for field harms whose margin to their bound is inside the raster's inductance error at this pitch:
+    a pass by less than L_BIAS_LO (scaled) may be a fail on a finer mesh (warn); a fail by less than L_BIAS_HI may be
+    a pass (info)."""
+    hi, lo = L_BIAS_HI * pitch / 0.25, L_BIAS_LO * pitch / 0.25
     out = []
     for h in harms:
-        if h.get("kind") in FIELD_KINDS and 1.0 < (h.get("u_hi") or 0.0) <= 1.0 + bias:
-            out.append(dict(code="field_harm_within_mesh_bias", severity="info", category="data",
-                            message=f"{h['observer']} from {h['source']} exceeds its bound by less than the field solver's "
-                                    f"inductance excess at {pitch:g} mm pitch, so it may pass on a finer mesh.",
-                            objects=[h["observer"], h["source"]],
-                            evidence=dict(u_hi=round(h["u_hi"], 4), bias=round(bias, 3), pitch_mm=pitch,
-                                          source="physics-driven-build.md 'Checks of the field solver'; "
-                                                 "docs/research/physics/field-solver-accuracy.md"),
-                            fix="Re-evaluate at --pitch 0.125 (about 4x the cells) before changing the layout for this harm."))
+        u = h.get("u_hi") or 0.0
+        if h.get("kind") not in FIELD_KINDS or not (1.0 - lo < u <= 1.0 + hi):
+            continue
+        near_pass = u <= 1.0
+        out.append(dict(
+            code="field_harm_within_mesh_error", severity="warn" if near_pass else "info",
+            category="electrical" if near_pass else "data",
+            message=(f"{h['observer']} from {h['source']} passes its bound by less than the field solver's possible "
+                     f"inductance underestimate at {pitch:g} mm pitch, so it may fail." if near_pass else
+                     f"{h['observer']} from {h['source']} exceeds its bound by less than the field solver's inductance "
+                     f"excess at {pitch:g} mm pitch, so it may pass on a finer mesh."),
+            objects=[h["observer"], h["source"]],
+            evidence=dict(u_hi=round(u, 4), error_band=[-round(lo, 3), round(hi, 3)], pitch_mm=pitch,
+                          source="docs/research/physics/field-solver-accuracy.md (mesh bias)"),
+            fix=("Re-evaluate at --pitch 0.125 (about 4x the cells), or add margin: shorten or tighten this loop."
+                 if near_pass else "Re-evaluate at --pitch 0.125 (about 4x the cells) before changing the layout for this harm.")))
     return out
 
 
-MESH_BIAS = ("absolute inductances read high at the default 0.25 mm pitch (first-order convergence): +15% on the boost "
-             "hot loop, +1.5-2% on a trace over a plane (physics-driven-build.md, 'Checks of the field solver'); "
-             "comparisons of two layouts at one pitch cancel most of it")
-SKIN_NOTE = ("copper loss through the thickness from nsub filaments (kae.em.mesh.Layer): nsub = 2 holds to ~10 MHz; "
-             "above, R reads low and ring Q high (physics-driven-build.md)")
+MESH_BIAS = ("loop inductances at the 0.25 mm pitch differ from converged values by -3% to +16% (hot loops and plane pairs "
+             "read high, first order in pitch; small decap loops whose pads and vias snap to the cells either way); "
+             "comparisons of two layouts at one pitch cancel most of it (docs/research/physics/field-solver-accuracy.md)")
+SKIN_NOTE = ("copper loss through the thickness from nsub filaments (kae.em.mesh.Layer): at nsub = 2 copper R is within "
+             "5% to 10 MHz and 0.56x at 100 MHz; this evaluator's bands are at or below 10 MHz (the wideband one corrects it, "
+             "kae.em.skin)")
 
 
 def apply_tcr(rows, tcr, tot, notes, hazards):

@@ -155,9 +155,11 @@ def coplanar(nsub, pitch, w=1.0, gap=0.5):
     y0 = gap / 2
     m.rect(0, "A", 0, y0, 10, y0 + w)
     m.rect(0, "B", 0, -y0 - w, 10, -y0)
-    m.rect(0, "A", 10, -y0 - w, 10.5, y0 + w)                # the far-end short
     m.terminal("a", 0, geom=box(0, y0, 0.5, y0 + w), net="A")
-    m.terminal("b", 0, geom=box(0, -y0 - w, 0.5, -y0), net="A")
+    m.terminal("b", 0, geom=box(0, -y0 - w, 0.5, -y0), net="B")
+    m.terminal("ae", 0, geom=box(9.5, y0, 10, y0 + w), net="A")
+    m.terminal("be", 0, geom=box(9.5, -y0 - w, 10, -y0), net="B")
+    m.part("ae", "be")                                       # the far-end short
     m.port("p", "a", "b")
     return m
 

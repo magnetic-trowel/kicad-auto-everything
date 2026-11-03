@@ -40,9 +40,9 @@ from . import sources as S
 from . import spectrum as SP
 
 SKIN_VALIDITY = ("one-sided crowding (copper facing its return across a dielectric: traces and pours over planes, "
-                 "plane pairs): R within -12%..+6% of nsub = 8 solves to 200 MHz at nsub = 2; two-sided crowding (go and "
-                 "return side by side without a plane, striplines) is under-corrected, so its ring Q stays high "
-                 "(docs/research/physics/field-solver-accuracy.md)")
+                 "plane pairs): R within -8%..+7% of nsub = 8 solves, 1-200 MHz, at nsub = 2; two-sided crowding (go and "
+                 "return side by side without a plane, striplines) -30%..+9%, under-corrected above 100 MHz, so its ring "
+                 "Q stays high (docs/research/physics/field-solver-accuracy.md)")
 F_TOP = 3e8
 THETA = 0.3                 # electrical size below which the quasi-static model holds
 EPS_EFF = 3.5               # FR4 microstrip, for the limit's wave speed
