@@ -7,7 +7,7 @@
 - **Human boards (112).** Shuffles score worse than the human in 87–99% for every term but thermal (41%; 93% counting all terms). Decap budgets sit at the careful-designer loop: median u 0.82, 35% over, 6% beyond 2× [C].
 - **Speed.** `delta` on sparkfun-xrp (387 parts): median 40 µs, p90 137 µs (was 131 µs, 2.1 ms); over 82 boards, median 22 µs, p90 70 µs [C].
 
-Code: [`kae.physics.place_terms`](../../../kae/src/kae/physics/place_terms.py) (`Terms(board, brief)`: `total`, `delta`, `breakdown`, `parts`, `structures_of`); kernels [`_kernels.py`](../../../kae/src/kae/physics/_kernels.py); priors [`priors.py`](../../../kae/src/kae/physics/priors.py). The brief is [comprehension](comprehension.md). Tags: [C] computed by [pt_validate_kernels.py](../../../tools/research/physics/pt_validate_kernels.py), [pt_routed_calib.py](../../../tools/research/physics/pt_routed_calib.py) or [pt_human_perturb.py](../../../tools/research/physics/pt_human_perturb.py); [S] secondary.
+Code: [`kae.physics.place_terms`](../../../kae/src/kae/physics/place_terms.py) (`Terms(board, brief)`: `total`, `delta`, `breakdown`, `parts`, `structures_of`); kernels [`_kernels.py`](../../../kae/src/kae/physics/_kernels.py); priors [`priors.py`](../../../kae/src/kae/physics/priors.py). The brief is [comprehension](comprehension.md). Tags: [C] computed by the scripts under Sources; [S] secondary.
 
 ## 1. One currency
 
@@ -15,7 +15,7 @@ Each structure s returns a spend v_s in physical units, with allocation a_s and 
 
 J = Σ_s c_s φ(u_s),  φ(u) = u (u ≤ 1);  u + β(u−1)² (1 < u ≤ u_sat);  φ(u_sat) + φ′(u_sat)·u_sat·ln(u/u_sat) (beyond),
 
-with β = 4, u_sat = 10 and c_s = confidence × calibrated ownership; φ is C¹. Over-budget structures dominate; beyond 10× a structure has failed (usually misidentified); the log tail keeps a gradient.
+with β = 4, u_sat = 10 and c_s = confidence × calibrated ownership; φ is C¹. Over-budget structures dominate; beyond 10× a structure has failed (usually misidentified), and the log tail keeps a gradient.
 
 | Term | Spend | Default allocation (E5) |
 |---|---|---|
@@ -23,15 +23,15 @@ with β = 4, u_sat = 10 and c_s = confidence × calibrated ownership; φ is C¹.
 | (a′) power path | loop L (nH) C_in → pass elements → C_out | load step: L ≤ 5%·V·100 ns/I, ≤ 50 nH |
 | (b) decap | loop L (nH) per power-pin cluster or capacitor | n_IC·Z_t/(2π·100 MHz) per pin, held to [L_c, 2L_c]; stability and module caps max(10 nH, L_c) |
 | (c) coupling | noise (mV) = 1e3·M·dI/dt + ΔV·C_m/(C_m + C_v + t_sw/Z_v) | feedback 10, sense 1, analog 1 mV |
-| (d) crystal | pulling (ppm) = S·C′·ℓ/4, S = C1/(2(C0 + C_L)²); C_L 12.5 pF (32 kHz) / 12 pF (MHz), or the board's own with `KAE_CRYSTAL_CL=board` (A/B, [component-priors](../../research/physics/component-priors.md#crystal-load-capacitance)) | 5 ppm |
+| (d) crystal | pulling (ppm) = S·C′·ℓ/4, S = C1/(2(C0 + C_L)²); C_L 12.5 / 12 pF (32 kHz / MHz), or the board's (`KAE_CRYSTAL_CL=board`, [A/B](../../research/physics/component-priors.md#crystal-load-capacitance)) | 5 ppm |
 | (e) thermal | rise above the board mean (K) | sources 20 K; victims by class |
 | (f) world | cable CM (µA); ESD surge path (nH); feed loss (dB) | 2.6 µA (the evaluator's line at 100 MHz); 5.3 nH; 0.5 dB |
 
-The (a) allocation's V_abs is a prior: the smallest standard rating ≥ 1.25 × V_in, with V_in the bus's nominal voltage (no +10% input tolerance: the ladder already sits one or two steps above it). This halves the budget against the research case's 20 V part at 13.2 V ([schematic-to-physics](schematic-to-physics.md), 1.36 vs 0.78 nH at 12 V). With `KAE_SHARED_OVERSHOOT=1` a known switch rating (parts.json, via the brief's `excite.V_abs`) replaces the prior (an A/B arm, [component-priors](../../research/physics/component-priors.md#overshoot)); the place report always raises a hazard when the loop estimate lets the ring pass V_abs. A cell without an input voltage takes 24 V, above 90% of the corpus's named inputs. A power path (load switch, eFuse, ideal diode) is priced like a cell, each stage's elements in parallel; it does not commutate, so its budget comes from a full-load step, L·I/t ≤ 5% of V at t = 100 ns. Ownership is recalibrated, logit q = 0.67 + 0.515·logit p, to kae.circuit's measured reliability.
+The (a) allocation's V_abs is a prior, the smallest standard rating ≥ 1.25 × the bus's nominal V_in: half the research case's budget ([schematic-to-physics](schematic-to-physics.md), 0.78 vs 1.36 nH at 12 V). `KAE_SHARED_OVERSHOOT=1` uses a known switch rating instead (A/B, [component-priors](../../research/physics/component-priors.md#overshoot)); a loop that lets the ring pass V_abs is always a hazard. A cell without an input voltage takes 24 V (above 90% of named inputs). A power path (load switch, eFuse, ideal diode) is priced like a cell, each stage's elements in parallel; it does not commutate, so its budget comes from a full-load step, L·I/t ≤ 5% of V at t = 100 ns. Ownership is recalibrated, logit q = 0.67 + 0.515·logit p, to kae.circuit's measured reliability.
 
 ## 2. Loop inductance (a, b)
 
-**Theorem 1.** For a closed chain of straight segments over a perfectly conducting plane, L = Σ_ij [M(s_i, s_j) + M(s_i, s_j*)], where s_j* is the mirror image of s_j (horizontal parts reversed, vertical kept). Self terms use the conductor's geometric mean distance (GMD); a chain ending on the plane is closed by it. *Proof:* images replace the plane, and a partial inductance is ∫A·dl over a segment (Ruehli [S]). Parallel filaments give M = (μ0/4π)[G(e1) − G(e1−l1) − G(e0) + G(e0−l1)], G(u) = u·asinh(u/d) − √(u² + d²) (Grover [S]).
+**Theorem 1.** For a closed chain of straight segments over a perfectly conducting plane, L = Σ_ij [M(s_i, s_j) + M(s_i, s_j*)], where s_j* is the mirror image of s_j (horizontal parts reversed). Self terms use the conductor's GMD; a chain ending on the plane is closed by it. *Proof:* images replace the plane; a partial inductance is ∫A·dl (Ruehli [S]). Parallel filaments give M = (μ0/4π)[G(e1) − G(e1−l1) − G(e0) + G(e0−l1)], G(u) = u·asinh(u/d) − √(u² + d²) (Grover [S]).
 
 **Strip self term.** A filament overstates wide strips over a near plane by 20–107% [C]. L_self = M(ℓ, a) − M(ℓ, d_eff), with a = 0.2235(w + t) and d_eff = a·exp(L′_HJ/0.2), has the Hammerstad–Jensen slope L′ = Z0,air/c0 (within 1%) and keeps the end terms.
 
@@ -74,8 +74,8 @@ Outliers were estimator faults: an outer pour taken for the return plane (bldcm 
 
 - *Clusters.* Power pins cluster at 1.6 mm, each returning through its nearest ground pin. Parts without one (inductors, diodes, fuses) close through the plane under the power pin; split_supply returns on V−.
 - *Pairing* follows the brief. With 'pin', the pin's paired caps and the spec's other owned caps act in parallel, so the nearest dominates. With 'nearest_pin', each cap is charged its loop to the IC's nearest pin cluster at the current poses. Unowned caps (caps_p < 0.5) and 'nearest_load' caps go to the nearest load pin on the rail (in a rail group, of its loads).
-- *Pours.* When, at the current poses, a rail zone joins the power pin and the cap's rail pad and a ground zone joins the cap's ground pad and the return, L = L_mount,cap + L_mount,IC + (μ0d/π)·ln(D/r), mountings down to the nearer layer of the pair. Inner pairs come first (outer pours are perforated by pads), then thinner dielectrics; else straight hops apply. The spreading term matches a sheet solve to 0.4% median when r is the entry via's radius (0.15 mm, as the mountings); the code's r = 0.3 (`pour_r_eff`, reason unrecorded) reads 17–27% low at 2–10 mm, A/B pending [C]. On 41 routed decaps in pour mode, routed/estimate is 1.04, against 0.94 for straight hops [C].
-- *Budgets.* An IC's transient splits over all its power pins on every rail, so each pin may present n_IC·Z_t (Z_t = 5%·V/I) up to the 100 MHz handover to package and die capacitance; A 100 nF 0402 (ESL 0.5 nH) meets that while L_loop ≤ L_pin − ESL (3–8 nH per MCU pin). The budget is held between L_c, the loop with the capacitor beside its pin (four rotations, evaluated on the board), and 2L_c: u = 1 marks careful practice, since the loop also carries HF current that radiates and couples. Stability capacitors (VCAP, LDO output) and module bulk capacitors get max(10 nH, L_c): they need C and ESR at the regulator's crossover (≤ 1 MHz), where 10 nH adds 63 mΩ, below LDO ESR windows of 0.1–1 Ω.
+- *Pours.* When rail and ground zones join the cap's pads to the power pin and the return at the current poses, L = L_mount,cap + L_mount,IC + (μ0d/π)·ln(D/r), mountings down to the nearer layer of the pair. Inner pairs first, then thinner dielectrics; else straight hops. The spreading term matches a sheet solve (0.4% median) with r the via radius (0.15 mm); the code's r = 0.3 (`pour_r_eff`) reads 17–27% low at 2–10 mm, A/B pending [C]. On 41 routed decaps in pour mode, routed/estimate is 1.04, against 0.94 for straight hops [C].
+- *Budgets.* An IC's transient splits over all its power pins on every rail, so each pin may present n_IC·Z_t (Z_t = 5%·V/I) up to the 100 MHz handover to the package; a 100 nF 0402 (ESL 0.5 nH) meets that while L_loop ≤ L_pin − ESL (3–8 nH per MCU pin). The budget is held between L_c, the loop with the capacitor beside its pin (four rotations, evaluated on the board), and 2L_c: u = 1 marks careful practice, since the loop also carries HF current that radiates. Stability (VCAP, LDO output) and module bulk capacitors get max(10 nH, L_c): at the regulator's crossover (≤ 1 MHz) 10 nH adds 63 mΩ, below LDO ESR windows (0.1–1 Ω).
 - *Human boards* (1,471 structures): median u 0.82 (p10 0.44, p90 1.61). Load caps are 39% over budget (median u 0.88), VCAP bypass 23% (64% and u 3.2 under the HF rule), regulator outputs 2%, converter outputs 5%.
 
 ## 4. Coupling (c)
@@ -102,13 +102,13 @@ C′(w, h, εr) times the XIN and XOUT nets' half-perimeters, stretched by 1 + 0
 
 ## 7. World node (f)
 
-- *Cable CM.* ωMI/Z_cm + ωC_mV at 100 MHz (Z_cm 150 Ω), against 2.6 µA: the evaluator's own line (`kae.physics.criteria.cable_i_lim`, CISPR 32 class B at 10 m from 1 m of cable, Ott 12-7 capped at the resonant cable's 2·60·I/r). Ott's 5 µA rule is 6 dB over class B at 100 MHz by the same chain ([fields-emi-budget](fields-emi-budget.md#4-consistency-checks)); it was the budget until 2026-11. Windowed by the copper gap between aggressor and connector: 1 to 15 mm, 0 beyond 30 mm, a cubic step between (beyond 15 mm it is below 10⁻³ of the budget). Human boards run 3–4 orders below the budget.
+- *Cable CM.* ωMI/Z_cm + ωC_mV at 100 MHz (Z_cm 150 Ω), against 2.6 µA, the evaluator's line (`criteria.cable_i_lim`: CISPR 32 B from 1 m of cable, capped at resonance); Ott's 5 µA, the budget until 2026-11, is 6 dB over it ([fields-emi-budget](fields-emi-budget.md#4-consistency-checks)). Windowed by the copper gap between aggressor and connector: 1 to 15 mm, 0 beyond 30 mm, a cubic step between (past 15 mm, < 10⁻³ of the budget). Human boards sit 3–4 orders below.
 - *ESD surge path.* L′·ℓ·(1 + 0.11√ℓ) (connector → protector) + L_via; distance past the protected pin counts twice, a lateral offset is free. An adjacent trace picks up k·L·dI/dt (k ≈ 0.2); ≤ 40 V at 37.5 A/ns (IEC 61000-4-2 level 4) gives 5.3 nH.
 - *Antenna feed.* 0.015 dB/mm × the feed terminals' minimum spanning tree.
 
 ## 8. Human boards: does the physics prefer the human placement? [C]
 
-On all 112 kaebench boards, each term's parts get three 1–5 mm translations and three rotations each, and 20 shuffles to random legal-ish poses. Share is worse/(worse + better) over *material* moves (some structure changes by ≥ 1% of its allocation) of *credible* structures (some component's pad-to-pad hops all ≤ 15 mm); brackets give the decided counts.
+On the 112 kaebench boards, each term's parts get three 1–5 mm translations, three rotations and 20 random shuffles. Share is worse/(worse + better) over *material* moves (≥ 1% of an allocation) of *credible* structures (some component's hops all ≤ 15 mm); brackets give decided counts.
 
 | Term | Boards | Translate worse | Rotate worse | Shuffle worse | Shuffle, all terms |
 |---|---|---|---|---|---|
@@ -144,11 +144,11 @@ Of 2,321 material better-than-human local moves, the estimator or brief explains
 
 Caches are invalidated per sub-term. Every coupling sub-term a move touches goes to one kernel call; cable pickup beyond its window is exactly zero; a thermal move updates one column and row. A cap serving the nearest of n loads caches each candidate loop against its parts' pose ids, so a load move that keeps the cap's nearest load costs only the search.
 
-`delta` on random single-part moves (numba, shared 4-core host): sparkfun-xrp (87 physics parts) median 40 µs, p90 137 µs, p99 0.68 ms, from 131 µs, 2.1 ms and 7.4 ms. Over 29,040 moves on 82 boards, median 22 µs, p90 70 µs, p99 0.32 ms; the slowest board's p90 is 0.36 ms (buspirate5, whose 25-LED rail took 0.77 ms before the candidate cache). `delta` equals the `total` difference to 2.4e-7 with accepted moves in between. Construction takes 9 ms on split B and 35 ms on split C (median; max 0.39 s), plus 0.5–0.8 s once per process to import numba and load its cached kernels. The Python fallback is about 12× slower.
+`delta` on random single-part moves (numba, shared 4-core host): sparkfun-xrp (87 physics parts) median 40 µs, p90 137 µs, p99 0.68 ms, from 131 µs, 2.1 ms and 7.4 ms. Over 29,040 moves on 82 boards: median 22 µs, p90 70 µs, p99 0.32 ms (slowest p90 0.36 ms, buspirate5). `delta` equals the `total` difference to 2.4e-7. Construction: 9 / 35 ms median on splits B / C (max 0.39 s), plus 0.5–0.8 s once for numba. The Python fallback is about 12× slower.
 
 ## 10. Priors that matter, and open questions
 
-Within a term, rankings ignore the budget (u is linear below it); budgets set the balance between terms. The priors that matter most are the hot-loop class priors (L_max ∝ t_sw²/C_oss), the ESD pickup (k, 40 V), the victim budgets and the converter loss split. Open: snubber, bootstrap and charge-pump loops are unpriced; multi-drop victims follow netlist order; antenna overruns come from misidentified feeds.
+Within a term rankings ignore the budget (u is linear below it); budgets balance the terms. The priors that matter most: the hot-loop class priors (L_max ∝ t_sw²/C_oss), the ESD pickup (k, 40 V), the victim budgets and the converter loss split. Open: snubber, bootstrap and charge-pump loops are unpriced; multi-drop victims follow netlist order; antenna overruns come from misidentified feeds.
 
 ## Sources
 

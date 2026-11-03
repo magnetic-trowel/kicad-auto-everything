@@ -67,7 +67,7 @@ Part kinds come from lib ids (`R_Shunt_*_Kelvin`, `Crystal`), part-number famili
 | Diff pair | complementary names on a common IC or connector; MIPI on a camera FPC | an LED across the pair; a crystal's XTALP/XTALN |
 | Analog, reset, boot | amplifier and AFE inputs; charger PROG pins; ADC, sense, reference names (alone where no IC pin is named); RST, BOOT pins | a bare name beside named pins; control or bus suffixes (`ADC_CS`); `Net-(FB1-Pad1)`; logic and bridge-driver pins; BST nets |
 
-**Rail sources**, first match wins: battery, a module's 3V3 pin, a jack's supply pin, an IC's internal output, a rectifier, a regulator or load-switch output, an inductor, a series path (fuse, bead, ≤ 1 Ω, closed jumper, diode, shunt), any connector, unknown. A diode from a low-side switch's drain is a flyback clamp, not a source. Of two fused rails naming each other, the connector side wins. **Voltages** come from the name, a regulator part number, USB or battery defaults, a core-regulator table, inheritance through series parts (−0.4 V per diode), and last the lowest capacitor rating ÷ 1.6.
+**Rail sources**, first match wins: battery, a module's 3V3 pin, a jack's supply pin, an IC's internal output, a rectifier, a regulator or load-switch output, an inductor, a series path (fuse, bead, ≤ 1 Ω, closed jumper, diode, shunt), any connector, unknown. A low-side switch's drain diode is a clamp, not a source. Of fused rails naming each other, the connector side wins. **Voltages** come from the name, a regulator part number, USB or battery defaults, a core-regulator table, inheritance through series parts (−0.4 V per diode), else the lowest capacitor rating bounds it (no value).
 
 ### 3.2 Commutation cells
 
