@@ -318,3 +318,12 @@ def test_section_edits_reject_unresolved_members_and_id_collisions():
     it = {"sections": {"add": [{"id": "x", "parts": ["U99_TYPO"]}]}, "terms": []}
     with pytest.raises(SE.SectionError):
         OB.evaluate(WIDE, it, brief)
+
+
+def test_the_unit_modules_own_examples_parse():
+    """units.py's docstring and the design doc's T4 use '-180 dBm/Hz'; it raised UnitError."""
+    assert U.quantity("-180 dBm/Hz") == (-180.0, "dBm/Hz")
+    assert U.to_log(1e-21, "dBm/Hz") == pytest.approx(-180.0)
+    assert U.quantity("27 mV") == pytest.approx((0.027, "V"))
+    assert U.rate("2 mW_eq/mV", "mW_eq") == pytest.approx((2000.0, "V"))
+    assert U.rate("20 mW_eq/dB", "mW_eq") == (20.0, "dB")
