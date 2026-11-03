@@ -107,6 +107,14 @@ DEFAULTS = {
     # compress a frozen job's memory: let its scope swap (memory.swap.max) and reclaim it (memory.reclaim), into
     # zram swap only ("zram"), any swap ("any", e.g. for tests), or "off". Swap that is not zram is disk: slow
     "compress_frozen": "zram",
+    # squeeze: when free memory beyond the reserve falls below the growth buffer (before any requeue, at half of
+    # it), the biggest running timed job that is not growing (at least squeeze_min_gb anon) has up to twice the
+    # shortfall (at most half its memory) compressed into zram while it keeps running: the kernel's LRU takes its
+    # oldest pages; it pays only when it touches them again. A job that pulls back (refaults) over a quarter of
+    # what was squeezed out of it is hot and not squeezed again. One at a time, at most every squeeze_every_s.
+    "squeeze": True,
+    "squeeze_min_gb": 1.0,
+    "squeeze_every_s": 5,
     "lease_step_gb": 1.0,    # lease: a grant grows by max(this, lease_step_frac of the grant) at a time
     "lease_step_frac": 0.25,
     "lease_margin_mb": 512,  # lease: a job within max(this, lease_margin_frac of its grant) of its grant gets more
@@ -184,7 +192,7 @@ CREATE TABLE IF NOT EXISTS jobs(
  mem_hist TEXT, grant_mb INTEGER DEFAULT 0,
  frozen_s REAL DEFAULT 0, frozen_since REAL DEFAULT 0, freezes INTEGER DEFAULT 0, cpu_s REAL DEFAULT 0,
  lost_run_s REAL DEFAULT 0, lost_cpu_s REAL DEFAULT 0, qos TEXT DEFAULT 'timed',
- cpu_wait_s REAL DEFAULT 0, cpu_stall_s REAL DEFAULT 0, cpu_peak REAL DEFAULT 0);
+ cpu_wait_s REAL DEFAULT 0, cpu_stall_s REAL DEFAULT 0, cpu_peak REAL DEFAULT 0, squeezed_mb REAL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS jobs_state ON jobs(state);
 CREATE TABLE IF NOT EXISTS events(
  id INTEGER PRIMARY KEY, ts REAL, owner TEXT, job INTEGER, kind TEXT, msg TEXT,
@@ -232,7 +240,7 @@ def db(restore=False):
     for col, dflt in (("disk_mb", 1024), ("disk_peak_mb", 0), ("grant_mb", 0), ("freezes", 0)):  # upgrade an older database
         if col not in have:
             c.execute(f"ALTER TABLE jobs ADD COLUMN {col} INTEGER DEFAULT {dflt}")
-    for col in ("frozen_s", "frozen_since", "cpu_s", "lost_run_s", "lost_cpu_s", "cpu_wait_s", "cpu_stall_s", "cpu_peak"):
+    for col in ("frozen_s", "frozen_since", "cpu_s", "lost_run_s", "lost_cpu_s", "cpu_wait_s", "cpu_stall_s", "cpu_peak", "squeezed_mb"):
         if col not in have:
             c.execute(f"ALTER TABLE jobs ADD COLUMN {col} REAL DEFAULT 0")
     return c
@@ -339,6 +347,8 @@ def times(j, now=None):
         out += f" (+{fdur(fz)} frozen, {j['freezes']}x{', now' if j['frozen_since'] else ''})"
     if j["cpu_s"]:
         out += f" cpu {fdur(j['cpu_s'])}"
+    if "squeezed_mb" in j.keys() and j["squeezed_mb"] >= 1:
+        out += f" (squeezed {fgb(j['squeezed_mb'])} of cold memory into zram)"
     if "cpu_wait_s" in j.keys() and j["cpu_wait_s"] >= 1:
         out += f" (waited for CPUs {fdur(j['cpu_wait_s'])}, all threads {fdur(j['cpu_stall_s'])})"
     if j["lost_run_s"]:
@@ -646,6 +656,20 @@ def cg_swap_mb(cg):
         return 0.0
 
 
+def cg_anon_refaults(cg):
+    """(anon MB, anon pages refaulted from swap so far) of a job (memory.stat). Under MGLRU active/inactive_anon
+    say nothing about coldness, but reclaim takes the oldest pages first, and refaults show what was hot."""
+    try:
+        st = {}
+        with open(os.path.join(cg, "memory.stat")) as f:
+            for line in f:
+                k, v = line.split()
+                st[k] = int(v)
+        return st.get("anon", 0) / (1 << 20), st.get("workingset_refault_anon", 0)
+    except (OSError, ValueError):
+        return 0.0, 0
+
+
 def compress_room_mb(mode):
     """Swap that compress_frozen may fill (MB): zram devices only for "zram", up to 80% of their size (the
     host's systemd-oomd kills when swap is 90% used), less 512 MB."""
@@ -663,19 +687,21 @@ def compress_room_mb(mode):
     return max(0.0, free - 512)
 
 
-def compress(cg, mb):
-    """Push up to mb of a frozen job's memory into swap (zram: compressed in RAM). Runs in a thread: a large
-    reclaim takes seconds. The job stays frozen; its pages come back as it touches them after a thaw."""
+def compress(cg, mb, running=False, done=None):
+    """Push up to mb of a job's memory into swap (zram: compressed in RAM), in a thread (a large reclaim takes
+    seconds). A frozen job stays frozen; its pages come back as it touches them after a thaw. running=True: a
+    running job (squeeze): the kernel takes its least recently used pages, and swapping is turned off again after.
+    done(mb_reclaimed) is called at the end."""
     def go():
         try:
             with open(os.path.join(cg, "memory.swap.max"), "w") as f:
                 f.write("max")
         except OSError:
             return
-        left = int(mb)
-        while left > 0 and cg_frozen(cg):        # in steps, pausing while the user manager is under pressure
-            if user_pressure() > 10.0:           # (systemd-oomd kills it at 50% for 20 s)
-                time.sleep(2)
+        left, t0 = int(mb), time.time()
+        while left > 0 and (running or cg_frozen(cg)) and time.time() - t0 < 120:
+            if user_pressure() > 10.0:           # in steps, pausing while the user manager is under pressure
+                time.sleep(2)                    # (systemd-oomd kills it at 50% for 20 s)
                 continue
             step = min(512, left)
             try:
@@ -684,6 +710,10 @@ def compress(cg, mb):
             except OSError:
                 break                             # nothing more to reclaim (EAGAIN) or the job ended
             left -= step
+        if running:
+            uncompress(cg)
+        if done:
+            done(int(mb) - max(0, left))
     import threading
     threading.Thread(target=go, daemon=True).start()
 
@@ -765,6 +795,7 @@ def lease_plan(jobs, real_mb, cfg, now, buffer=0.0, timed_held=None):
         held = timed_held + sum(max(0.0, grants[j["id"]] - j["use"]) * (1.0 if young(j) else hold)
                                 for j in jobs if young(j) or not j.get("timed"))
     held += sum(j.get("swapped", 0.0) for j in jobs if not j.get("compressed"))   # thawed: still coming back
+    # (a squeezed running job's cold pages are passed as swapped=0: they stay out unless it touches them)
     free_mb = real_mb - buffer - held
     stalled = []
     if real_mb < buffer:     # the fleet grew into the buffer: freeze who grew, lowest priority and newest first
@@ -1108,6 +1139,7 @@ class Daemon:
         self.growth = []
         self.timed_preempt_ts = 0.0
         self.mem_stalled = set()     # jobs the last lease pass left waiting (frozen) for memory
+        self.squeezing, self.squeeze_ts, self.squeezed_add = None, 0.0, {}   # squeeze in flight; MB per job to record
         self.oc = load_overcommit()  # {hold, hist: [(t, done core-s, lost core-s)]}: the adaptive overcommit
         self.oc_t, self.oc_done, self.oc_lost, self.evict_ts = 0.0, 0.0, 0.0, 0.0
         if self.oc.get("hist"):
@@ -1170,6 +1202,9 @@ class Daemon:
                 tr[1].append(rss)
             self.check(j, rss, now, cfg, self.disk.get(j["id"], 0.0), lease=lease_on and j["id"] in self.cgroups)
         self.sample_cpu(cfg, now, running, usage)
+        for jid, mb in list(self.squeezed_add.items()):
+            c.execute("UPDATE jobs SET squeezed_mb=squeezed_mb+? WHERE id=?", (mb, jid))
+            del self.squeezed_add[jid]
         if now - self.cpu_ts >= 60:
             c.executemany("UPDATE jobs SET cpu_s=? WHERE id=? AND state='running'",
                           [(v, k) for k, v in self.cpu_s.items()])
@@ -1329,6 +1364,8 @@ class Daemon:
             swapped = cg_swap_mb(cg)       # (compressed, in zram) comes back as the job touches it; read from the
             if swapped > 0 and st.get("frozen_since"):   # scope, so a restarted daemon knows a compressed job
                 st["compressed"] = st["was_compressed"] = True
+            elif swapped > 0 and (j["qos"] or "timed") == "timed":   # running timed with pages in swap: squeezed
+                st["squeezed"] = True
             st["max_use"] = max(st.get("max_use", 0.0), m[0] + swapped)
             t0, u0 = st["last"]
             grew = max(0.0, m[0] - u0)
@@ -1345,8 +1382,10 @@ class Daemon:
                              waited_frozen=frozen_for(j, now) - st.get("wait_base", 0.0),
                              protected=j["preempts"] >= cfg["evict_protect_after"],
                              invest=active_for(j, now) * max(1.0, j["cpus"]),
-                             compressed=bool(st.get("compressed") and st.get("frozen_since")), swapped=swapped,
-                             owner=j["owner"], expect=max(self.need_mb(j, cfg), st["max_use"])))
+                             compressed=bool(st.get("compressed") and st.get("frozen_since")),
+                             swapped=0.0 if st.get("squeezed") else swapped,   # squeezed: cold, stays out
+                             owner=j["owner"], expect=max(self.need_mb(j, cfg), st["max_use"]),
+                             held_out=swapped if st.get("squeezed") else 0.0, cg=cg))
         for jid in set(self.lease_st) - set(cgs):
             del self.lease_st[jid]
         room = avail - reserve
@@ -1391,7 +1430,8 @@ class Daemon:
         timed_held = None
         if cfg["timed_forecast"]:         # forecast growth of timed jobs past their warm-up, pooled (pooled_headroom)
             warm = cfg.get("lease_warm_s", 120)
-            grow = [(j["owner"], j["expect"], j["use"], None if j.get("protected") else self.profiles.get(j["owner"]))
+            grow = [(j["owner"], j["expect"], j["use"] + j["held_out"],   # squeezed pages: used, not room to grow into
+                     None if j.get("protected") else self.profiles.get(j["owner"]))
                     for j in jobs if j["timed"] and now - (j["started"] or now) >= warm]
             timed_held = pooled_headroom(grow, z, cfg["mem_pool_rho"], {o: r for o, (r, _) in self.rho.items()})[0]
         plan = lease_plan(jobs, room - other, dict(cfg, timed_hold_frac=hold), now, buffer, timed_held)
@@ -1431,6 +1471,7 @@ class Daemon:
                                  f"(restarts with --mem {fgb(need)})")
             c.execute("UPDATE jobs SET mem_mb=?, grant_mb=0 WHERE id=?", (need, v["id"]))
         self.mem_stalled = set(plan["stalled"])
+        self.squeeze_one(cfg, now, jobs, room - other, buffer)
         ev = plan["evict"]
         if ev is not None and now - self.evict_ts >= cfg["evict_every_s"]:
             self.evict_ts = now
@@ -1458,6 +1499,42 @@ class Daemon:
                     granted=sum(grants.values()), used=sum(use.values()), stalled=plan["stalled"],
                     victim=plan["victim"], short=plan["short"], jobs=len(jobs), hold=hold, z=z, loss=self.oc.get("loss"),
                     timed_held=timed_held, compressed=[j["id"] for j in jobs if j["compressed"]])
+
+    def squeeze_one(self, cfg, now, jobs, real_mb, buffer):
+        """Free memory beyond the reserve is under the growth buffer: compress the coldest memory of the running
+        timed job that has the most of it, while it keeps running (compress(running=True)). One at a time."""
+        if not cfg["squeeze"] or real_mb >= buffer or self.squeezing or now - self.squeeze_ts < cfg["squeeze_every_s"]:
+            return
+        room = compress_room_mb(cfg["compress_frozen"])
+        for j in jobs:                    # judge earlier squeezes: what came back was hot
+            st = self.lease_st.get(j["id"]) or {}
+            if st.get("squeeze_base") is not None and st.get("squeezed_total", 0) > 0:
+                back = (cg_anon_refaults(j["cg"])[1] - st["squeeze_base"]) * 4 / 1024
+                if back > 0.25 * st["squeezed_total"] and not st.get("hot"):
+                    st["hot"] = True
+                    dlog(f"#{j['id']}: hot ({fgb(back)} of {fgb(st['squeezed_total'])} squeezed came back): not squeezed again")
+        cand = [(cg_anon_refaults(j["cg"])[0], j) for j in jobs if j["timed"] and not j.get("frozen")
+                and not (self.lease_st.get(j["id"]) or {}).get("hot") and j.get("rate", 0.0) < 1.0]
+        cand = [(anon, j) for anon, j in cand if anon >= cfg["squeeze_min_gb"] * 1024]
+        if not cand or room < 256:
+            return
+        anon, j = max(cand, key=lambda x: x[0])
+        cold = anon / 2
+        mb = min(cold, room, max(1024.0, 2 * (buffer - real_mb)))
+        self.squeezing, self.squeeze_ts = j["id"], now
+        st = self.lease_st[j["id"]]
+        st["squeezed"] = True
+        if st.get("squeeze_base") is None:
+            st["squeeze_base"] = cg_anon_refaults(j["cg"])[1]
+        jid = j["id"]
+
+        def done(got):
+            self.squeezed_add[jid] = self.squeezed_add.get(jid, 0.0) + got
+            st["squeezed_total"] = st.get("squeezed_total", 0.0) + got
+            self.squeezing = None
+        compress(j["cg"], mb, running=True, done=done)
+        dlog(f"#{jid}: squeezing up to {fgb(mb)} of its {fgb(anon)} into zram while it runs "
+             f"(free beyond the reserve {fgb(real_mb)} < buffer {fgb(buffer)})")
 
     def compress_frozen(self, jid, cg, use_mb, cfg):
         """A job was just frozen: compress its memory into zram (compress_frozen), so the freeze frees RAM."""
@@ -1758,7 +1835,7 @@ class Daemon:
         self.popen[j["id"]] = p
         self.cpu_s.pop(j["id"], None)
         self.c.execute("UPDATE jobs SET state='running',pid=?,started=?,deadline=?,peak_mb=0,note=NULL,grant_mb=?,"
-                       "frozen_s=0,frozen_since=0,freezes=0,cpu_s=0,cpu_wait_s=0,cpu_stall_s=0,cpu_peak=0 WHERE id=?",
+                       "frozen_s=0,frozen_since=0,freezes=0,cpu_s=0,cpu_wait_s=0,cpu_stall_s=0,cpu_peak=0,squeezed_mb=0 WHERE id=?",
                        (p.pid, time.time(), time.time() + j["timeout_s"], grant, j["id"]))
         dlog(f"start #{j['id']} attempt {j['attempt']} pid {p.pid} mem {fgb(j['mem_mb'])} "
              f"{'timed' if timed else 'batch'} {j['name'] or j['cmd'][:60]}")
@@ -2163,25 +2240,25 @@ def cmd_usage(a):
         q, args = q + " AND tag=?", args + [a.tag]
     rows = {}
     for j in c.execute(q, args):
-        r = rows.setdefault(j["owner"], [0, 0.0, 0.0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        r = rows.setdefault(j["owner"], [0, 0.0, 0.0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         act = active_for(j, now)
         for k, v in enumerate((1, act, frozen_for(j, now), j["freezes"], j["cpu_s"], act * j["cpus"],
-                               j["lost_run_s"], j["lost_cpu_s"], j["cpu_wait_s"], j["cpu_stall_s"])):
+                               j["lost_run_s"], j["lost_cpu_s"], j["cpu_wait_s"], j["cpu_stall_s"], j["squeezed_mb"])):
             r[k] += v
     if not rows:
         print(f"no jobs ran within {a.since}")
         return
-    rows["TOTAL"] = [sum(r[k] for r in rows.values()) for k in range(10)] if len(rows) > 1 else None
+    rows["TOTAL"] = [sum(r[k] for r in rows.values()) for k in range(11)] if len(rows) > 1 else None
     w = max(len(o) for o in rows)
     h = lambda s: f"{s / 3600:.1f}"
     print(f"{'OWNER':<{w}} {'JOBS':>5} {'ACTIVE_H':>8} {'FROZEN_H':>8} {'FROZEN%':>7} {'FREEZES':>7} {'CPU_H':>7} "
-          f"{'CPU/DECL':>8} {'LOST_H':>6} {'LOST_CPU_H':>10} {'CPU_WAIT_H':>10} {'CPU_STALL_H':>11}")
+          f"{'CPU/DECL':>8} {'LOST_H':>6} {'LOST_CPU_H':>10} {'CPU_WAIT_H':>10} {'CPU_STALL_H':>11} {'SQUEEZED_GB':>11}")
     for o, r in sorted(rows.items(), key=lambda kv: (kv[0] == "TOTAL", kv[0])):
         if r is None:
             continue
-        n, act, fz, nf, cpu, decl, lr, lc, cw, cs = r
+        n, act, fz, nf, cpu, decl, lr, lc, cw, cs, sq = r
         print(f"{o:<{w}} {n:>5} {h(act):>8} {h(fz):>8} {100 * fz / max(1.0, act + fz):>6.1f}% {nf:>7} {h(cpu):>7} "
-              f"{100 * cpu / max(1.0, decl):>7.0f}% {h(lr):>6} {h(lc):>10} {h(cw):>10} {h(cs):>11}")
+              f"{100 * cpu / max(1.0, decl):>7.0f}% {h(lr):>6} {h(lc):>10} {h(cw):>10} {h(cs):>11} {sq / 1024:>11.1f}")
 
 
 def cmd_retry(a):

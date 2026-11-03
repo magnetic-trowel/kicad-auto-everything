@@ -625,6 +625,24 @@ def test_a_frozen_job_is_compressed_and_nothing_starts_until_it_is_back(kq, tmp_
     drive(kq, d, lambda: states(d)["hog"] == "ok" and states(d)["later"] == "ok", secs=90)
 
 
+def test_a_running_timed_job_has_its_cold_memory_squeezed_into_zram(kq, tmp_path):
+    if kq.compress_room_mb("zram") < 2048:
+        pytest.skip("needs a zram swap device")
+    d = _lease_daemon(kq, tmp_path, mem_budget_gb=4, lease_buffer_gb=0.9, squeeze_min_gb=0.2, squeeze_every_s=0)
+    prog = ("import time\ncold = bytearray(600 << 20)\nfor i in range(0, len(cold), 4096): cold[i] = 1\n"
+            "hot = bytearray(32 << 20)\nt = time.time()\n"
+            "while time.time() - t < 25:\n    hot[int(time.time() * 1000) % len(hot)] = 1\nprint('ok', sum(cold[::4096]))")
+    submit(kq, "python3 -c " + repr(prog).replace("\\n", "\n"), name="sq", mem="800M", timeout="2m")
+    drive(kq, d, lambda: d.cgroups.get(1) and kq.cg_mem(d.cgroups[1])[0] > 600, secs=30)   # cold memory touched
+    conf = json.load(open(kq.CONF)); conf["mem_budget_gb"] = 1.2; json.dump(conf, open(kq.CONF, "w"))  # now short
+    drive(kq, d, lambda: kq.cg_swap_mb(d.cgroups[1]) > 200, secs=40)                     # squeezed...
+    assert not kq.cg_frozen(d.cgroups[1])                                                  # ...while running
+    drive(kq, d, lambda: states(d)["sq"] == "ok", secs=60)
+    j = d.c.execute("SELECT * FROM jobs").fetchone()
+    assert j["squeezed_mb"] > 200 and j["freezes"] == 0
+    assert "ok 153600" in (tmp_path / "jobs" / "1" / "log").read_text()          # its memory came back intact
+
+
 def _lease_daemon(kq, tmp_path, **cfg):
     conf = json.load(open(kq.CONF))
     conf.update(cgroup="auto", slice="kaeqtest.slice", mem_pool="lease", lease_buffer_gb=0.1, lease_buffer_ticks=0)
