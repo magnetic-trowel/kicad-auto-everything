@@ -229,3 +229,27 @@ def test_a_custom_rule_that_is_not_an_error_does_not_bind(tmp_path):
     w = R.strictest(rb, "track_width", track("B"), None, "F.Cu")
     assert (w.min, w.max) == (0.13, None)                                 # net class and board setup
     assert R.strictest(rb, "track_width", track("D_P"), None, "F.Cu").min == 0.6   # error severity binds
+
+
+def test_a_rules_file_kicad_drops_gives_no_custom_rules(tmp_path, capsys):
+    """drc-rule-language-reference.md: KiCad drops the whole .kicad_dru on any parse error and
+    its DRC runs with net-class and board rules only; both readers do the same, say why on
+    stderr and record it for the route and place reports."""
+    from kae.board import kicad_file
+    from kae.route import constraints as C
+    dru = """(version 1)
+(rule big (constraint clearance (min 0.9mm)))
+(rule typo (constraint clearence (min 0.1mm)))
+"""
+    (tmp_path / "board.kicad_dru").write_text(dru)
+    info = dict(copper=COPPER, settings=SETTINGS, netclasses=CLASSES, nets={"A": {}, "B": {}})
+    rb = C.rule_board(info, tmp_path / "board.kicad_pcb")
+    assert rb.dru_rejected.startswith("board.kicad_dru:3:")
+    assert not [r for r in rb.rules if r.source == "custom"]
+    assert R.strictest(rb, "clearance", track("A"), track("B"), "F.Cu").min == 0.2   # net class, not 0.9
+    r = kicad_file.read_rules(tmp_path / "board.kicad_pcb")
+    assert r.custom == [] and r.dru_rejected == rb.dru_rejected
+    assert "KiCad drops this rules file" in capsys.readouterr().err
+    (tmp_path / "board.kicad_dru").write_text(dru.replace("clearence", "clearance").replace("0.1mm", "0.1mm) (max 1mm"))
+    rb = C.rule_board(info, tmp_path / "board.kicad_pcb")
+    assert not rb.dru_rejected and R.strictest(rb, "clearance", track("A"), track("B"), "F.Cu").min == 0.1

@@ -202,6 +202,10 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         except Exception as e:  # comprehension must not stop placement
             log(f"brief failed ({type(e).__name__}: {e}); placing without it")
             brief, src = {}, "none"
+    rejected = getattr(board.rules, "dru_rejected", "") if board.rules else ""
+    if rejected:   # kicad_file.read_rules: KiCad drops the file, so no custom rules apply
+        rep["dru_rejected"] = rejected
+        log(f"rules: KiCad drops the .kicad_dru ({rejected}); placing with net-class and board rules only")
     rep["brief"] = dict(source=src, structures=len((brief or {}).get("structures") or []),
                         labels=len((brief or {}).get("labels") or []))
     stage("brief", t)

@@ -409,6 +409,8 @@ def plan(info, board_path, opts=None):
     p.edge_clearance = max(edge_vals) if edge_vals else s.get("edge_clearance", 0.0)
     p.notes["unsupported_functions"] = sorted(rb.unsupported)
     p.notes["rule_errors"] = list(rb.errors)
+    if rb.dru_rejected:
+        p.notes["dru_rejected"] = rb.dru_rejected   # KiCad drops the file: no custom rules applied
     return p
 
 
@@ -1119,4 +1121,5 @@ def validate(info, board_path):
             check(f"pad {ctype} {pad['ref']}.{pad['number']} {l}", c.min or 0.0, v)
     out["unsupported"] = sorted(rb.unsupported)
     out["rule_errors"] = rb.errors
+    out["dru_rejected"] = rb.dru_rejected
     return out

@@ -34,6 +34,8 @@ override and local (clearances in mm), layers. Values are mm.
 """
 import fnmatch
 import re
+import sys
+from pathlib import Path
 from dataclasses import dataclass, field
 
 from kae.board import sexpr
@@ -510,6 +512,7 @@ class Board:
     nets: set = field(default_factory=set)
     rules: list = field(default_factory=list)       # implicit + custom, in KiCad's order
     errors: list = field(default_factory=list)      # conditions that failed to compile
+    dru_rejected: str = ""                          # why KiCad drops the .kicad_dru (no custom rules)
     unsupported: set = field(default_factory=set)   # functions met but not modelled
     ignored: dict = field(default_factory=dict)     # ctype -> floor: clearance checks the project turns off
     soft_floor: dict = field(default_factory=dict)  # ctype -> floor for a clearance whose winning custom
@@ -575,6 +578,14 @@ def build(copper, settings, netclasses, nets, dru_path=None):
     clearance_rules.sort(key=lambda r: r.constraints[0].min if r.constraints[0].min is not None else 0.0)
     rules += clearance_rules + specific
     if dru_path:
+        # KiCad drops the whole file on any parse error and its DRC runs with net-class and
+        # board rules only (drc-rule-language-reference.md); route against what it checks
+        from kae.board.dru_check import rejection
+        b.dru_rejected = rejection(dru_path, Path(dru_path).with_suffix(".kicad_pcb")) or ""
+        if b.dru_rejected:
+            print(f"warning: KiCad drops this rules file ({b.dru_rejected}); routing with net-class "
+                  f"and board rules only, as KiCad's DRC will", file=sys.stderr, flush=True)
+    if dru_path and not b.dru_rejected:
         for r in read_dru(dru_path):
             try:
                 cond = compile_condition(r["condition"])

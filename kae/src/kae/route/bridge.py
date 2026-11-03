@@ -169,6 +169,8 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
         translate.write_rules(p, dsn)
         log(f"plan: {len(p.classes)} classes, {len(p.obstacle_classes)} obstacle classes, "
             f"{report['translate'].get('obstacles')} obstacles ({time.monotonic() - t0:.1f}s)")
+        if p.notes.get("dru_rejected"):
+            log(f"rules: KiCad drops the .kicad_dru ({p.notes['dru_rejected']}); no custom rules applied")
 
         # 3: route. Freerouting stops itself at its job timeout and writes what it has; it is
         # killed only past its grace period, inside our deadline. If it still writes nothing,

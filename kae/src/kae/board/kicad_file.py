@@ -26,6 +26,7 @@ graphics of on-board footprints (as pcbnew does); off-board footprints keep thei
 import json
 import math
 import re
+import sys
 import uuid as _uuid
 from pathlib import Path
 
@@ -781,11 +782,19 @@ def read_rules(pcb_path, tree=None):
                                            diff_pair_width=0.2, diff_pair_gap=0.25, priority=2147483647)
     dru = pcb_path.with_suffix(".kicad_dru")
     if dru.exists():
-        try:
-            r.custom = read_dru(dru)
-            r.source = (r.source + " + " if r.source else "") + dru.name
-        except (ValueError, OSError) as e:
-            r.custom = [dict(name="(unreadable)", condition=str(e), layer="", constraints=[])]
+        # KiCad drops the whole file on any parse error, and its DRC then checks net-class and
+        # board rules only (drc-rule-language-reference.md): place against what it checks
+        from .dru_check import rejection
+        r.dru_rejected = rejection(dru, pcb_path) or ""
+        if r.dru_rejected:
+            print(f"warning: KiCad drops this rules file ({r.dru_rejected}); using net-class and board "
+                  f"rules only, as KiCad's DRC will", file=sys.stderr, flush=True)
+        else:
+            try:
+                r.custom = read_dru(dru)
+                r.source = (r.source + " + " if r.source else "") + dru.name
+            except (ValueError, OSError) as e:
+                r.custom = [dict(name="(unreadable)", condition=str(e), layer="", constraints=[])]
     return r
 
 
