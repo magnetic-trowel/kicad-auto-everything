@@ -336,6 +336,7 @@ class Rules(_Dict):
     mask_to_copper: float = 0.0      # .kicad_pro solder_mask_to_copper_clearance (mask opening to other copper)
     mask_bridges_in_footprints: bool = False  # board (setup) allow_soldermask_bridges_in_footprints
     source: str = ""                 # where the numbers came from
+    dru_rejected: str = ""           # why KiCad drops the .kicad_dru (then no custom rules, as in KiCad)
 
     _to = {"netclasses": lambda v: {k: c.to_dict() for k, c in v.items()}}
     _from = {"netclasses": lambda v: {k: NetClass.from_dict(c) for k, c in v.items()},
