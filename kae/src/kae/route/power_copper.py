@@ -76,7 +76,7 @@ DEFAULTS = dict(
     stitch_want=3,
     stitch_pitch=2.0,
     stitch_min_area=0.3,
-    drc_rounds=3,
+    drc_budget=16,            # KiCad DRC runs the gate may spend (attribution and bisection)
 )
 
 VICTIM_ROLES = ("clock", "high_speed", "analog", "rf")
@@ -399,7 +399,8 @@ class PowerCopper:
             sp.remove([it])
             for a, b, w in merged:
                 sp.add_track(t.net, t.layer, w, a, b, owner=("pc-widen", t.uuid))
-            self.edits[t.uuid] = [(tuple(a), tuple(b), w) for a, b, w in merged]
+            self.edits[t.uuid] = [(tuple(a), tuple(b), w, t.uuid if i == 0 else W.new_uuid())
+                                  for i, (a, b, w) in enumerate(merged)]
             self.stats["widened"] += 1
             self.stats["widened_mm"] += sum(math.dist(a, b) for a, b, w in merged if w > t.width + 1e-9)
         self.stats["widened_mm"] = round(self.stats["widened_mm"], 2)
@@ -571,8 +572,7 @@ class PowerCopper:
             net = self._net_name(m_net.group(1)) if m_net else None
             out.append(text[pos:a])
             pos = W._eat_newline(text, b)
-            for i, (pa, pb, w) in enumerate(widen[u]):
-                nu = u if i == 0 else W.new_uuid()
+            for pa, pb, w, nu in widen[u]:
                 groups[nu] = u
                 out.append(W.track_sexpr(net, m_layer.group(1), w, pa, pb, uid=nu, locked=locked))
             tracks[u] = True
@@ -594,6 +594,24 @@ class PowerCopper:
             if s.exists() and s.resolve() != t.resolve():
                 shutil.copy2(s, t)
         return groups
+
+    def group_geoms(self):
+        """{group: shapely geometry} of every planned change (a widened track's pieces, a via
+        with its pad-to-via track)."""
+        out = {}
+        for u, pieces in self.edits.items():
+            out[u] = unary_union([LineString([a, b]).buffer(w / 2) for a, b, w, _ in pieces])
+        for v in self.vias:
+            out[v[5]] = Point(v[1], v[2]).buffer(v[3] / 2)
+        for net, layer, w, a, b, u, owner in self.tracks:
+            if owner in out:
+                out[owner] = out[owner].union(LineString([a, b]).buffer(w / 2))
+        return out
+
+    def group_kind(self, g):
+        if g in self.edits:
+            return "widen"
+        return next((v[6] for v in self.vias if v[5] == g), None)
 
     def _net_name(self, tok):
         if tok.startswith('"'):
@@ -643,21 +661,28 @@ def _worse(s, base):
     return out
 
 
-def _culprits(rep, base_rep, groups):
-    """Groups (original track uuid or via uuid) named by violations of `rep` not in `base_rep`."""
+def _new_violations(rep, base_rep):
     from . import drc
 
     def key(v):
         return (v.get("type"), tuple(sorted((i.get("description") or "") for i in v.get("items") or [])))
     old = {key(v) for v in drc.errors(base_rep)} | {key(v) for v in base_rep.get("unconnected_items") or []}
+    return [v for v in drc.errors(rep) + list(rep.get("unconnected_items") or []) if key(v) not in old]
+
+
+def _culprits(rep, base_rep, groups, geoms, near=1.0):
+    """Groups behind violations of `rep` not in `base_rep`: named by uuid (`groups`: written uuid
+    -> group), else within `near` mm of a reported position (zones' anchors aside)."""
     bad = set()
-    for v in drc.errors(rep) + list(rep.get("unconnected_items") or []):
-        if key(v) in old:
+    for v in _new_violations(rep, base_rep):
+        named = {groups[i.get("uuid")] for i in v.get("items") or [] if i.get("uuid") in groups}
+        if named:
+            bad |= named
             continue
-        for i in v.get("items") or []:
-            g = groups.get(i.get("uuid"))
-            if g:
-                bad.add(g)
+        pts = [i.get("pos") for i in v.get("items") or [] if i.get("pos") and not (i.get("description") or "").startswith("Zone")]
+        for p in pts:
+            q = Point(p["x"], p["y"])
+            bad |= {g for g, geo in geoms.items() if g in set(groups.values()) and geo.distance(q) <= near}
     return bad
 
 
@@ -683,33 +708,49 @@ def run(input_path, output_path, opts=None, workdir=None, timeout=1800, log=prin
     rounds = []
     cand = wd / "out" / "board.kicad_pcb"
     cand.parent.mkdir(parents=True, exist_ok=True)
+    geoms = pc.group_geoms()
     final = None
-    for r in range(int(o["drc_rounds"]) + 3):
-        groups = pc.write(cand, skip=skip, kinds=tuple(kinds))
+    budget = [int(o["drc_budget"])]
+
+    def check(skip_set, tag):
+        groups = pc.write(cand, skip=skip_set, kinds=tuple(kinds))
         if not groups:
-            break
-        rep, s = _drc(cand, wd / f"out.drc{r}.json", timeout)
+            return None, None, groups
+        budget[0] -= 1
+        rep, s = _drc(cand, wd / f"out.{tag}.json", timeout)
         worse = _worse(s, base)
-        rounds.append(dict(kinds=list(kinds), skipped=len(skip), summary=s, worse=worse))
-        log(f"[power-copper] round {r}: {s['errors']} errors, {s['unconnected']} unconnected "
-            f"(input {base['errors']}, {base['unconnected']}); worse {worse or 'none'}")
-        if not worse:
-            final = s
+        rounds.append(dict(tag=tag, skipped=len(skip_set), summary=s, worse=worse))
+        log(f"[power-copper] {tag}: {s['errors']} errors, {s['unconnected']} unconnected "
+            f"(input {base['errors']}, {base['unconnected']}); skipped {len(skip_set)}; worse {worse or 'none'}")
+        return rep, worse, groups
+
+    r = 0
+    while budget[0] > 0:
+        rep, worse, groups = check(skip, f"r{r}")
+        r += 1
+        if rep is None:
             break
-        bad = _culprits(rep, base_rep, groups) - skip
-        if bad and r < int(o["drc_rounds"]):
+        if not worse:
+            final = rounds[-1]["summary"]
+            break
+        bad = _culprits(rep, base_rep, groups, geoms) - skip
+        if bad:
             skip |= bad
             continue
-        # not attributable (or out of rounds): drop the last stage still written
-        if not kinds:
-            break
-        kinds.pop()
+        # not attributable: bisect the groups still written (one culprit at a time)
+        sus = sorted(set(groups.values()) - skip)
+        while len(sus) > 1 and budget[0] > 1:
+            half = sus[:len(sus) // 2]
+            _, w2, _ = check(skip | set(half), f"r{r}b{len(sus)}")
+            sus = half if not w2 else sus[len(sus) // 2:]
+        skip |= set(sus)
+    if final is None:
+        kinds = []
     out = Path(output_path)
     if final is not None:
         shutil.copy2(cand, out)
     else:
         shutil.copy2(staged, out)
-        kinds = []
     for ext in (".kicad_pro", ".kicad_dru"):
         s_ = inp.with_suffix(ext)
         if s_.exists() and s_.resolve() != out.with_suffix(ext).resolve():
