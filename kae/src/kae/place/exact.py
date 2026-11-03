@@ -441,9 +441,13 @@ class ExactModel:
             # pad's mask expansion; a pad on the zone's net is skipped, a net-less pad is not, an
             # NPTH pad without copper is never tested. The fill keeps the clearance rule's gap from
             # the pad (zone, netclass and pad-local clearances), so the opening reaches copper only
-            # when s2c + expansion exceeds that gap (arcs approximated to max_error)
+            # when s2c + expansion exceeds that gap. No max_error allowance: the fill comes to
+            # exactly the gap (straight edges, and the vertices of its arcs, which KiCad
+            # approximates outside the true arc), and KiCad 10 flags a 0.102 mm expansion against
+            # a 0.1 mm gap (gecko5: U3's QFP pads against the fixed +2V5 / +3.3V F.Cu islands,
+            # every DRC error of the staged runs, which a 0.005 mm allowance let through)
             s2c = float(getattr(getattr(P.board, "rules", None), "mask_to_copper", 0.0) or 0.0)
-            tol = max(1e-6, float(getattr(P, "max_error", 0.005) or 0.005))
+            tol = 1e-6
             for geom, k, pd in A["pads"]:
                 if _npth_without_copper(pd):
                     continue
