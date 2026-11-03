@@ -326,16 +326,53 @@ class Mesh:
     def port(self, name, plus, minus):
         self.ports.append((name, plus, minus))
 
+    def thin_cells(self, layer):
+        """(ny, nx) bool: copper cells of `layer` in features of their own net narrower than 3 cells (the cells a
+        3 x 3 morphological opening of the net's copper removes; a thin track beside another net's pour counts)."""
+        lab = self.lab[layer]
+        ny, nx = lab.shape
+        pad = np.full((ny + 2, nx + 2), -2, lab.dtype)
+        pad[1:-1, 1:-1] = lab
+        sh = [(dj, di) for dj in (-1, 0, 1) for di in (-1, 0, 1)]
+        # interior: the whole 3 x 3 window holds the cell's own net
+        inner = lab >= 0
+        for dj, di in sh:
+            inner &= pad[1 + dj:1 + dj + ny, 1 + di:1 + di + nx] == lab
+        il = np.full((ny + 2, nx + 2), -3, lab.dtype)
+        il[1:-1, 1:-1] = np.where(inner, lab, -3)
+        # kept by the opening: some interior cell of the same net within the 3 x 3 window
+        kept = np.zeros((ny, nx), bool)
+        for dj, di in sh:
+            kept |= il[1 + dj:1 + dj + ny, 1 + di:1 + di + nx] == lab
+        return (lab >= 0) & ~kept
+
+    def resolution(self, nets=None):
+        """{net: (cells in features narrower than 3 cells, copper cells)} over every layer, for `nets` (default
+        all)."""
+        ids = None if nets is None else {self.nets.index(n) for n in nets if n in self.nets}
+        out = {}
+        for l in range(len(self.layers)):
+            lab = self.lab[l]
+            thin = self.thin_cells(l)
+            ks, n_all = np.unique(lab[lab >= 0], return_counts=True)
+            n_thin = np.bincount(lab[thin], minlength=int(ks.max()) + 1 if len(ks) else 0)
+            for k, n in zip(ks, n_all):
+                if ids is not None and int(k) not in ids:
+                    continue
+                t, a = out.get(self.nets[k], (0, 0))
+                out[self.nets[k]] = (t + int(n_thin[k]), a + int(n))
+        return out
+
     def check(self):
-        """Resolution warnings: copper features narrower than 3 cells on any layer."""
-        from scipy import ndimage
+        """Resolution warnings: copper features narrower than 3 cells (per net) on any layer. Their R and self
+        inductance are exact (paint_line: a sub-cell track's bars carry its width and length); their coupling,
+        the return current under them and their edges are resolved only to a cell."""
         out = []
         for l, lay in enumerate(self.layers):
             occ = self.lab[l] >= 0
             if not occ.any():
                 continue
-            thin = occ & ~ndimage.binary_opening(occ, structure=np.ones((3, 3)))
-            frac = thin.sum() / occ.sum()
+            frac = self.thin_cells(l).sum() / occ.sum()
             if frac > 0.02:
                 out.append(f"{lay.name}: {frac:.0%} of copper cells are in features narrower than 3 cells "
                            f"({3 * self.pitch:g} mm); refine the pitch for them")

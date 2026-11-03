@@ -160,6 +160,26 @@ def test_pnr_prices_a_trunk_hop_with_every_island_beyond_it():
     assert calls[2:] == [("cur", ["P2"]), ("dc", ["P2"])]
 
 
+def test_thin_cells_is_a_per_net_opening():
+    """Mesh.thin_cells: the cells a 3 x 3 opening of each net's own copper removes (a 2-cell track beside another
+    net's pour is thin; the old whole-layer opening merged it into the pour)."""
+    from scipy import ndimage
+    m = Mesh.over(0, 0, 10, 5, 0.25, [Layer("F", 0, 0.035, 1)])
+    m.rect(0, "POUR", 0, 0, 10, 2.5)
+    m.rect(0, "TRK", 0, 2.5, 10, 3.0)          # 2 cells wide, touching the pour
+    m.rect(0, "WIDE", 2, 3.5, 6, 5)
+    thin = m.thin_cells(0)
+    ref = np.zeros_like(thin)
+    for k in range(len(m.nets)):
+        occ = m.lab[0] == k
+        ref |= occ & ~ndimage.binary_opening(occ, structure=np.ones((3, 3)))
+    assert (thin == ref).all()
+    res = m.resolution(["TRK", "POUR"])
+    assert res["TRK"][0] == res["TRK"][1] > 0
+    assert res["POUR"][0] < 0.05 * res["POUR"][1] and "WIDE" not in res
+    assert any("narrower than 3 cells" in w for w in m.check())
+
+
 def test_narrow_bar_correction_is_independent_of_nsub():
     """A trace narrower than its cells (0.3 mm on 0.25 mm cells: partly covered edge cells) over a plane, at
     1 kHz (uniform current through the thickness): its loop inductance must not depend on how many filaments

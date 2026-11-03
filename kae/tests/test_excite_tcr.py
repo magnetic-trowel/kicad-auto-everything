@@ -89,3 +89,15 @@ def test_apply_tcr_scales_dc_rows_totals_and_adds_a_runaway_hazard():
     assert tot[1] == pytest.approx(10.0 + phi(0.78) - phi(0.6) + phi(1.32) - phi(1.2))
     assert len(hz) == 1 and hz[0]["code"] == "thermal_runaway_copper" and hz[0]["severity"] == "block"
     assert hz[0]["objects"] == ["+3V3"]
+
+
+def test_field_harm_just_over_its_bound_gets_a_mesh_bias_hazard():
+    from kae.excite.evaluate import bias_hazards
+    harms = [dict(observer="ovs:Q1", source="cell:U1", kind="overshoot", u_hi=1.1),
+             dict(observer="ovs:Q2", source="cell:U2", kind="overshoot", u_hi=1.4),
+             dict(observer="sup:U3", source="cell:U1", kind="supply", u_hi=0.95),
+             dict(observer="dc:drop:U1@3V3", source="dc", kind="dc_drop", u_hi=1.05)]
+    hz = bias_hazards(harms, 0.25)
+    assert [h["objects"][0] for h in hz] == ["ovs:Q1"]
+    assert hz[0]["severity"] == "info" and hz[0]["evidence"]["bias"] == pytest.approx(0.15)
+    assert bias_hazards(harms, 0.125) == []          # half the pitch, half the excess: 1.1 is beyond it

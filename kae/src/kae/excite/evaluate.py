@@ -116,6 +116,9 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
                 xs.append(x), ys.append(y)
         window = (min(xs) - 3, min(ys) - 3, max(xs) + 3, max(ys) + 3)
     bm = BoardMesh(path, window, pitch, nsub=nsub, b=b, fills=fills)
+    priced = {bd.net_of.get(p) for J in [v for _, v in pats.values()] + list(opats.values())
+              for p, j in J.items() if abs(j) > 1e-9} - {None}
+    mesh_rep, mesh_notes = mesh_report(bm.m, priced, nsub)
     missing = []
     for p in sorted(pads):
         try:
@@ -170,7 +173,7 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
         if band_res:
             solver_stats.append(_solver_row(f, band_res, time.time() - t_band))
             log("solver: " + _solver_line(solver_stats[-1]))
-    notes = []
+    notes = list(mesh_notes)
     uncomputed = []
     # an aggressor whose pattern drives current into a pad outside the copper model loses that current
     # from its solve: its harms are not computed (a dropped contribution is not a zero one)
@@ -312,6 +315,7 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
         del sys_dc
     apply_tcr(harms, tcr, tot, notes, hazards)
     harms.sort(key=lambda h: -(h["u_hi"] or 0))
+    hazards += bias_hazards(harms, pitch)
     # each cell's parasitic ring: its copper loop with the switch node's capacitance
     rings = []
     for pr in pairs:
@@ -333,7 +337,7 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
                                                       basis=p.basis) for p in ledger.flagged()],
                 bands={k: v for k, v in bands.items()}, rings=rings,
                 observers=[dict(name=o.name, kind=o.kind, bound=o.bound, basis=o.basis) for o in obs],
-                harms=harms, observations=observations, hazards=hazards,
+                harms=harms, observations=observations, hazards=hazards, mesh=mesh_rep,
                 part_power_W={k: round(v, 6) for k, v in sorted(part_power.items())},
                 solver_stats=solver_stats,
                 notes=notes + [f"pad {p}: not in the copper model" for p in missing][:20],
@@ -518,6 +522,57 @@ def _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes,
     return rows
 
 
+THIN_SHARE = 0.25         # a priced net with this share of its copper in features under 3 cells is reported
+
+
+def mesh_report(m, priced, nsub):
+    """(report dict, notes) on how well the raster resolves the board: Mesh.check's per-layer warnings, the priced
+    nets (the aggressors' and observers' patterns) whose copper is mostly narrower than 3 cells, and the known
+    discretization biases at this pitch and nsub (physics-driven-build.md, 'Checks of the field solver')."""
+    warn = m.check()
+    res = m.resolution(priced)
+    thin = {n: round(t / a, 3) for n, (t, a) in sorted(res.items()) if a and t / a >= THIN_SHARE}
+    rep = dict(pitch_mm=m.pitch, nsub=nsub, layer_warnings=warn, priced_nets_under_3_cells=thin,
+               inductance_bias=MESH_BIAS, skin_effect=SKIN_NOTE)
+    notes = [f"mesh: {w}" for w in warn]
+    if thin:
+        notes.append(f"mesh: priced nets with copper under 3 cells ({3 * m.pitch:g} mm) across: "
+                     + ", ".join(f"{n} {f:.0%}" for n, f in list(thin.items())[:8])
+                     + "; their R and self inductance are exact, their loop coupling resolved to one cell")
+    notes.append(f"mesh: {MESH_BIAS}")
+    return rep, notes
+
+
+FIELD_KINDS = ("overshoot", "supply", "victim", "cm", "radiated")   # harms that rest on the copper's inductance
+L_BIAS_AT_025 = 0.15     # the largest measured excess of a loop inductance at 0.25 mm pitch (first order in pitch)
+
+
+def bias_hazards(harms, pitch):
+    """An info hazard per field harm that fails by less than the raster's known inductance excess at this pitch
+    (u in (1, 1 + bias]): it may pass on a finer mesh. The excess is upward (a raster restricts the current, so its
+    inductance is an upper bound), so a harm below 1 does not hide a failure from this cause."""
+    bias = L_BIAS_AT_025 * pitch / 0.25
+    out = []
+    for h in harms:
+        if h.get("kind") in FIELD_KINDS and 1.0 < (h.get("u_hi") or 0.0) <= 1.0 + bias:
+            out.append(dict(code="field_harm_within_mesh_bias", severity="info", category="data",
+                            message=f"{h['observer']} from {h['source']} exceeds its bound by less than the field solver's "
+                                    f"inductance excess at {pitch:g} mm pitch, so it may pass on a finer mesh.",
+                            objects=[h["observer"], h["source"]],
+                            evidence=dict(u_hi=round(h["u_hi"], 4), bias=round(bias, 3), pitch_mm=pitch,
+                                          source="physics-driven-build.md 'Checks of the field solver'; "
+                                                 "docs/research/physics/field-solver-accuracy.md"),
+                            fix="Re-evaluate at --pitch 0.125 (about 4x the cells) before changing the layout for this harm."))
+    return out
+
+
+MESH_BIAS = ("absolute inductances read high at the default 0.25 mm pitch (first-order convergence): +15% on the boost "
+             "hot loop, +1.5-2% on a trace over a plane (physics-driven-build.md, 'Checks of the field solver'); "
+             "comparisons of two layouts at one pitch cancel most of it")
+SKIN_NOTE = ("copper loss through the thickness from nsub filaments (kae.em.mesh.Layer): nsub = 2 holds to ~10 MHz; "
+             "above, R reads low and ring Q high (physics-driven-build.md)")
+
+
 def apply_tcr(rows, tcr, tot, notes, hazards):
     """The DC band's copper loss and rail drops at the copper's own temperature (kae.excite.heat.tcr_solve): each
     corner's value and u times the heat band's copper-loss factor at that corner (a drop: the largest factor of its
@@ -571,6 +626,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(prog="kae.excite.evaluate")
     ap.add_argument("board")
     ap.add_argument("--pitch", type=float, default=0.25)
+    ap.add_argument("--nsub", type=int, default=2, help="filaments through each copper layer's thickness (kae.em.mesh.Layer)")
     ap.add_argument("--window", type=float, nargs=4)
     ap.add_argument("-o")
     ap.add_argument("--no-lumped", action="store_true", help="copper only, with the circuit's ideal-copper split")
@@ -578,7 +634,7 @@ def main(argv=None):
     ap.add_argument("--seed", type=int, default=0)
     a = ap.parse_args(argv)
     from .beliefs import load_intent
-    r = evaluate(a.board, a.pitch, tuple(a.window) if a.window else None, log=lambda m: print(m, file=sys.stderr),
+    r = evaluate(a.board, a.pitch, tuple(a.window) if a.window else None, nsub=a.nsub, log=lambda m: print(m, file=sys.stderr),
                  lumped=not a.no_lumped, intent=load_intent(a.intent), seed=a.seed)
     print_total(r["total"])
     print("assumptions:")
