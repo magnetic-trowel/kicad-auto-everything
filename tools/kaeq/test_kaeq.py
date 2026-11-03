@@ -289,7 +289,7 @@ def test_admission_learns_what_an_owners_jobs_really_use(kq):
     cfg = kq.config()
     d.learn_ratios(cfg, time.time())
     need = d.need_mb({"owner": "x", "mem_mb": 10240}, cfg)
-    assert 1900 < need < 2600  # p95 of peak/--mem (~0.19) x 1.2 margin, not the declared 10G
+    assert need == pytest.approx(1504 * 1.1)  # median peak/--mem (1504/10240) x 1.1 margin, not the declared 10G
     assert d.need_mb({"owner": "new", "mem_mb": 10240}, cfg) == 10240  # no history: what it asked for
 
 
@@ -518,6 +518,45 @@ def test_overcommit_adapts_to_the_work_lost_to_requeues(kq):
     assert kq.adapt_hold(1.0, [(0, 0.0, 0.0), (1, 1e6, 1e6)], cfg, now=1)[0] == 1.0     # capped
 
 
+def test_jobs_are_sized_by_their_owners_median_not_by_a_few_under_declared_ones(kq):
+    d = kq.Daemon()
+    now = time.time()
+    rows = [("o", 1000, 800)] * 18 + [("o", 1000, 4000)] * 2 + [("u", 1000, 2000)] * 20   # o: 2 of 20 under-declared
+    for i, (o, m, p) in enumerate(rows):
+        d.c.execute("INSERT INTO jobs(owner,cmd,cpus,mem_mb,timeout_s,state,submitted,started,finished,peak_mb) "
+                    "VALUES(?,'x',1,?,60,'ok',?,?,?,?)", (o, m, now - 100 + i, now - 50, now - 10 + i * 1e-3, p))
+    d.c.execute("INSERT INTO jobs(owner,cmd,cpus,mem_mb,timeout_s,state,submitted) VALUES('o','x',1,1000,60,'queued',?)", (now,))
+    d.c.execute("INSERT INTO jobs(owner,cmd,cpus,mem_mb,timeout_s,state,submitted) VALUES('u','x',1,1000,60,'queued',?)", (now,))
+    cfg = kq.config()
+    d.learn_ratios(cfg, now)
+    o, u = d.c.execute("SELECT * FROM jobs WHERE state='queued' ORDER BY owner").fetchall()
+    assert d.need_mb(o, cfg) == pytest.approx(1000 * 0.8 * cfg["mem_learn_margin"])    # not 4x
+    assert d.need_mb(u, cfg) == pytest.approx(1000 * 2.0 * cfg["mem_learn_margin"])    # sized up, past --mem
+
+
+def test_lease_plan_uses_the_timed_forecast_and_thaws_compressed_jobs_only_with_room(kq):
+    cfg = dict(LEASE, lease_hold_frac=0.25, lease_warm_s=120)
+    jobs = [dict(id=1, prio=0, started=10, grant=30000, use=20000, timed=True),          # old timed: forecast
+            dict(id=2, prio=0, started=950, grant=4000, use=1000, timed=True),            # young: in full
+            dict(id=3, prio=0, started=10, grant=8000, use=2000),                         # batch: 25%
+            dict(id=4, prio=0, started=10, grant=3000, use=500, swapped=2000)]            # thawed, 2 GB to come back
+    p = kq.lease_plan(jobs, 100000.0, cfg, now=1000.0, timed_held=5000.0)
+    assert p["held"] == pytest.approx(5000 + 3000 + 0.25 * 6000 + 0.25 * 2500 + 2000)
+    frozen = [dict(id=5, prio=0, started=10, grant=1200, use=1000, swapped=6000, compressed=True, frozen=True),
+              dict(id=6, prio=0, started=20, grant=4096, use=4000, timed=True)]
+    p = kq.lease_plan(frozen, 5000.0, cfg, now=1000.0, timed_held=0.0)
+    assert 5 in p["stalled"] and p["grants"][6] > 4096    # 6 GB would come back: no room; others still get memory
+    p = kq.lease_plan(frozen, 9000.0, cfg, now=1000.0, timed_held=0.0)
+    assert 5 not in p["stalled"] and p["grants"][5] > 1200   # room for it: it goes first
+
+
+def test_the_timed_forecast_z_adapts_to_lost_work(kq):
+    cfg = dict(overcommit_window_s=21600, overcommit_loss_target=0.02)
+    assert kq.adapt_z(2.0, [(0, 0.0, 0.0), (3600, 100000.0, 5000.0)], cfg, now=3600)[0] == 2.5
+    assert kq.adapt_z(2.0, [(0, 0.0, 0.0), (3600, 100000.0, 100.0)], cfg, now=3600)[0] == 1.75
+    assert kq.adapt_z(2.0, [(0, 0.0, 0.0), (3600, 10.0, 5.0)], cfg, now=3600) == (2.0, None)
+
+
 def test_lease_plan_freezes_growers_when_the_buffer_is_eaten(kq):
     cfg = dict(LEASE, lease_hold_frac=0.0)
     jobs = [dict(id=1, prio=0, started=10, grant=60000, use=50000, grew=3000),   # oldest grower
@@ -567,6 +606,23 @@ def test_each_attempt_leaves_a_trace(kq, tmp_path):
     assert head["owner"] == "t" and head["qos"] == "timed" and lines[-1].startswith("# end ok")
     rows = [l.split("\t") for l in lines[1:-1]]
     assert len(rows) >= 1 and float(rows[-1][2]) >= 150 and float(rows[-1][3]) > 0.5   # ~200 MB, ~1 core
+
+
+def test_a_frozen_job_is_compressed_and_nothing_starts_until_it_is_back(kq, tmp_path):
+    if kq.compress_room_mb("any") < 700:
+        pytest.skip("needs about 1.2 GB of free swap")
+    d = _lease_daemon(kq, tmp_path, mem_budget_gb=0.8, compress_frozen="any")
+    submit(kq, HOG.format(n=4, after="", hold=3), name="hog", mem="300M", timeout="3m", qos="batch")
+    drive(kq, d, lambda: d.cgroups.get(1) and kq.cg_frozen(d.cgroups[1]), secs=60)
+    drive(kq, d, lambda: kq.cg_swap_mb(d.cgroups[1]) > 200, secs=60)        # its memory went to swap
+    submit(kq, "true", name="later", mem="10M")
+    for _ in range(10):
+        d.tick()
+        time.sleep(0.2)
+    assert states(d)["later"] == "queued"                                   # nothing starts meanwhile
+    assert d.sys["lease"]["compressed"] == [1]
+    conf = json.load(open(kq.CONF)); conf["mem_budget_gb"] = 4; json.dump(conf, open(kq.CONF, "w"))
+    drive(kq, d, lambda: states(d)["hog"] == "ok" and states(d)["later"] == "ok", secs=90)
 
 
 def _lease_daemon(kq, tmp_path, **cfg):

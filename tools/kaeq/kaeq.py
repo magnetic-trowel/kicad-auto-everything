@@ -102,7 +102,10 @@ DEFAULTS = {
     # admission and warm-up on what jobs really use: once an owner has mem_learn_min_jobs finished jobs, a new job
     # of it needs its --mem x (p95 of the owner's peak/--mem) x mem_learn_margin, never more than --mem
     "mem_learn_min_jobs": 20,
-    "mem_learn_margin": 1.2,
+    "mem_learn_margin": 1.1,
+    # compress a frozen job's memory: let its scope swap (memory.swap.max) and reclaim it (memory.reclaim), into
+    # zram swap only ("zram"), any swap ("any", e.g. for tests), or "off". Swap that is not zram is disk: slow
+    "compress_frozen": "zram",
     "lease_step_gb": 1.0,    # lease: a grant grows by max(this, lease_step_frac of the grant) at a time
     "lease_step_frac": 0.25,
     "lease_margin_mb": 512,  # lease: a job within max(this, lease_margin_frac of its grant) of its grant gets more
@@ -124,8 +127,15 @@ DEFAULTS = {
     # timed_hold_auto it adapts every overcommit_every_s so that work lost to such requeues stays near
     # overcommit_loss_target of the timed work done over overcommit_window_s (up by 0.1 above it, down by 0.05
     # below half of it). A job requeued evict_protect_after times keeps its whole grant set aside.
-    "timed_hold_frac": 1.0,
+    "timed_hold_frac": 1.0,  # (used only with timed_forecast off)
     "timed_hold_auto": False,
+    # timed_forecast: set aside for timed jobs what they are forecast to grow into, not their unused grants: each
+    # job may reach its expected size (need_mb, or the most it has used), and spends its life at each fraction of
+    # that as its owner's finished jobs did (their memory histograms); jobs of one owner correlated as measured.
+    # Mean + timed_z std of that growth, pooled over all timed jobs (pooled_headroom). timed_z adapts to the work
+    # lost to requeues (overcommit_loss_target): +0.5 above it, -0.25 below half of it, within [0, 6].
+    "timed_forecast": True,
+    "timed_z": 2.0,
     "overcommit_loss_target": 0.02,
     "overcommit_window_s": 21600,
     "overcommit_every_s": 600,
@@ -626,6 +636,55 @@ def cg_frozen(cg):
         return False
 
 
+def cg_swap_mb(cg):
+    """MB of a job's memory in swap (memory.swap.current): compressed, if the swap is zram."""
+    try:
+        with open(os.path.join(cg, "memory.swap.current")) as f:
+            return int(f.read()) / (1 << 20)
+    except (OSError, ValueError):
+        return 0.0
+
+
+def compress_room_mb(mode):
+    """Swap that compress_frozen may fill (MB, keeping 512 MB): zram devices only for "zram"."""
+    if mode == "off":
+        return 0.0
+    free = 0.0
+    try:
+        with open("/proc/swaps") as f:
+            for line in list(f)[1:]:
+                name, _, size, used, *_ = line.split()
+                if mode == "any" or "/zram" in name:
+                    free += (int(size) - int(used)) / 1024
+    except (OSError, ValueError):
+        return 0.0
+    return max(0.0, free - 512)
+
+
+def compress(cg, mb):
+    """Push up to mb of a frozen job's memory into swap (zram: compressed in RAM). Runs in a thread: a large
+    reclaim takes seconds. The job stays frozen; its pages come back as it touches them after a thaw."""
+    def go():
+        try:
+            with open(os.path.join(cg, "memory.swap.max"), "w") as f:
+                f.write("max")
+            with open(os.path.join(cg, "memory.reclaim"), "w") as f:
+                f.write(f"{int(mb)}M")
+        except OSError:
+            pass                                  # reclaimed less than asked (EAGAIN) or the job ended
+    import threading
+    threading.Thread(target=go, daemon=True).start()
+
+
+def uncompress(cg):
+    """After a thaw: no more swapping (memory.swap.max 0); what is in swap comes back as the job needs it."""
+    try:
+        with open(os.path.join(cg, "memory.swap.max"), "w") as f:
+            f.write("0")
+    except OSError:
+        pass
+
+
 def cg_set_high(cg, mb):
     """Set a job's grant: its scope's memory.high (the kernel throttles, never kills, above it); None: no limit."""
     try:
@@ -636,7 +695,7 @@ def cg_set_high(cg, mb):
         return False
 
 
-def lease_plan(jobs, real_mb, cfg, now, buffer=0.0):
+def lease_plan(jobs, real_mb, cfg, now, buffer=0.0, timed_held=None):
     """One pass of the memory leases. jobs: [{id, prio, started, grant, use, slack_since, stall_since, grew}] (MB, s;
     grew: MB the job grew since the last tick). real_mb: memory really free beyond the reserve (MemAvailable). A grant
     is a limit, not a reservation: what is free for grants and new jobs is real_mb minus `buffer` (room for the
@@ -674,9 +733,14 @@ def lease_plan(jobs, real_mb, cfg, now, buffer=0.0):
     warm = cfg.get("lease_warm_s", 120)
     hold = cfg.get("lease_hold_frac", 1.0)
     thold = cfg.get("timed_hold_frac", 1.0)
-    held = sum(max(0.0, grants[j["id"]] - j["use"])
-               * (1.0 if now - (j["started"] or now) < warm or j.get("protected")
-                  else thold if j.get("timed") else hold) for j in jobs)
+    young = lambda j: now - (j["started"] or now) < warm
+    if timed_held is None:
+        held = sum(max(0.0, grants[j["id"]] - j["use"])
+                   * (1.0 if young(j) or j.get("protected") else thold if j.get("timed") else hold) for j in jobs)
+    else:   # timed jobs past warm-up: their forecast growth (timed_held), computed by the daemon
+        held = timed_held + sum(max(0.0, grants[j["id"]] - j["use"]) * (1.0 if young(j) else hold)
+                                for j in jobs if young(j) or not j.get("timed"))
+    held += sum(j.get("swapped", 0.0) for j in jobs if not j.get("compressed"))   # thawed: still coming back
     free_mb = real_mb - buffer - held
     stalled = []
     if real_mb < buffer:     # the fleet grew into the buffer: freeze who grew, lowest priority and newest first
@@ -697,10 +761,11 @@ def lease_plan(jobs, real_mb, cfg, now, buffer=0.0):
         if cand:
             evict = min(cand, key=lambda j: j.get("invest", 0.0) / j["use"])["id"]
     short = []                           # timed jobs that need memory nobody can give
-    for j in sorted(jobs, key=lambda j: (not j.get("timed"), -j["prio"], j["started"] or 0)):
+    # memory goes first to a compressed frozen job (it waits to come back), then timed jobs, then by priority, age
+    for j in sorted(jobs, key=lambda j: (not j.get("compressed"), not j.get("timed"), -j["prio"], j["started"] or 0)):
         if j["id"] in stalled:
             continue
-        g, u = grants[j["id"]], j["use"]
+        g, u = grants[j["id"]], j["use"] + (j.get("swapped", 0.0) if j.get("compressed") else 0.0)  # it holds that
         margin = max(cfg["lease_margin_mb"], cfg.get("lease_margin_frac", 0.0) * g)
         if u < g - margin:
             stall[j["id"]] = 0.0
@@ -708,10 +773,11 @@ def lease_plan(jobs, real_mb, cfg, now, buffer=0.0):
         step = max(cfg["lease_step_gb"] * 1024, cfg["lease_step_frac"] * g, u + margin - g)
         if free_mb > 4 * step:           # plenty free: grow well ahead of a fast-growing job
             step = max(step, 0.5 * g)
-        if free_mb >= min(step, 256.0):
-            take = min(step, free_mb)
+        back = j.get("swapped", 0.0) if j.get("compressed") else 0.0   # a compressed job thaws only with room for it
+        if free_mb - back >= min(step, 256.0):
+            take = min(step, free_mb - back)
             grants[j["id"]] = g + take
-            free_mb -= take
+            free_mb -= take + back
             stall[j["id"]] = 0.0
         elif j.get("timed"):
             stall[j["id"]] = 0.0         # never frozen: it runs on (unthrottled), and a batch job makes room
@@ -760,6 +826,19 @@ def load_overcommit():
             return json.load(f)
     except (OSError, ValueError):
         return {}
+
+
+def adapt_z(z, hist, cfg, now):
+    """The next timed_z (std deviations of forecast growth set aside for timed jobs), from the work lost to
+    requeues like adapt_hold: +0.5 above overcommit_loss_target, -0.25 below half of it, within [0, 6]."""
+    new, loss = adapt_hold(z / 6.0, hist, cfg, now)
+    if loss is None:
+        return z, None
+    if loss > cfg["overcommit_loss_target"]:
+        return min(6.0, z + 0.5), loss
+    if loss < cfg["overcommit_loss_target"] / 2:
+        return max(0.0, z - 0.25), loss
+    return z, loss
 
 
 def adapt_hold(hold, hist, cfg, now):
@@ -1182,7 +1261,8 @@ class Daemon:
         disk_room = cap - self.disk_total - disk_unrealized
         mem_room = avail - unrealized - reserve
         if lease is not None:   # running jobs waiting for memory come first: nothing starts meanwhile
-            mem_room = -1.0 if lease["stalled"] or lease["short"] else lease["room"]
+            # a compressed job waiting to be thawed comes before any new job: nothing starts meanwhile
+            mem_room = -1.0 if lease["stalled"] or lease["short"] or lease["compressed"] else lease["room"]
         self.admit(cfg, now, mem_room, cpu_commit, len(running), disk_room)
         self.idle_events(now)
         if now - self.last_backup > 300 and DB != os.path.join(HOME, "queue.db"):
@@ -1222,12 +1302,12 @@ class Daemon:
                                                "last": (now, m[0]), "rate": 0.0}
                 if fs and not j["frozen_since"]:
                     c.execute("UPDATE jobs SET frozen_since=?, freezes=freezes+1 WHERE id=?", (fs, j["id"]))
+            swapped = cg_swap_mb(cg) if st.get("was_compressed") else 0.0   # comes back as the job touches it
+            st["max_use"] = max(st.get("max_use", 0.0), m[0] + swapped)
             t0, u0 = st["last"]
             grew = max(0.0, m[0] - u0)
-            if (j["qos"] or "timed") == "timed":   # its whole grant is set aside: only growth past it is not
-                fleet += max(0.0, m[0] - max(u0, j["grant_mb"] or 0))
-            elif now - (j["started"] or now) >= cfg.get("lease_warm_s", 120):
-                fleet += grew   # a young job's growth is set aside already (its whole unused grant counts)
+            if now - (j["started"] or now) >= cfg.get("lease_warm_s", 120):
+                fleet += m[0] - u0  # net: one job's fall offsets another's rise (young jobs are set aside in full)
             if now > t0:       # growth rate (MB/s), rises at once and decays slowly; a frozen job does not grow
                 r = max(0.0, (m[0] - u0) / (now - t0))
                 st["rate"] = r if r > st["rate"] else 0.9 * st["rate"] + 0.1 * r
@@ -1238,14 +1318,16 @@ class Daemon:
                              frozen=bool(st.get("frozen_since")), grew=grew, timed=(j["qos"] or "timed") == "timed",
                              waited_frozen=frozen_for(j, now) - st.get("wait_base", 0.0),
                              protected=j["preempts"] >= cfg["evict_protect_after"],
-                             invest=active_for(j, now) * max(1.0, j["cpus"])))
+                             invest=active_for(j, now) * max(1.0, j["cpus"]),
+                             compressed=bool(st.get("compressed") and st.get("frozen_since")), swapped=swapped,
+                             owner=j["owner"], expect=max(self.need_mb(j, cfg), st["max_use"])))
         for jid in set(self.lease_st) - set(cgs):
             del self.lease_st[jid]
         room = avail - reserve
         if cfg["mem_budget_gb"] > 0:
             used = sum(j["use"] for j in jobs) + sum(usage.get(j["id"], (0.0, 0))[0] for j in running if j["id"] not in cgs)
             room = min(room, cfg["mem_budget_gb"] * 1024 - used)
-        self.growth.append((now, fleet))      # the fleet's growth per tick, for the buffer
+        self.growth.append((now, max(0.0, fleet)))   # the fleet's net growth per tick, for the buffer
         while self.growth and self.growth[0][0] < now - 600:
             self.growth.pop(0)
         buffer = max(cfg["lease_buffer_gb"] * 1024, cfg["lease_buffer_ticks"] * max(g for _, g in self.growth))
@@ -1254,6 +1336,7 @@ class Daemon:
             self.oc_done += sum(max(1.0, j["cpus"]) for j in running if (j["qos"] or "timed") == "timed") * (now - self.oc_t)
         self.oc_t = now
         hold = self.oc.get("hold", cfg["timed_hold_frac"]) if cfg["timed_hold_auto"] else cfg["timed_hold_frac"]
+        z = self.oc.get("z", cfg["timed_z"])
         hist = self.oc.setdefault("hist", [])
         if not hist or now - hist[-1][0] >= cfg["overcommit_every_s"]:
             hist.append((now, self.oc_done, self.oc_lost))
@@ -1266,13 +1349,26 @@ class Daemon:
                          f"{loss:.1%} of timed work, target {cfg['overcommit_loss_target']:.0%})")
                 hold = self.oc["hold"] = new
                 self.oc["loss"] = loss
+            if cfg["timed_forecast"]:
+                new, loss = adapt_z(z, hist, cfg, now)
+                if new != z:
+                    dlog(f"overcommit: timed forecast z {z:.2f} -> {new:.2f} (work lost to requeues "
+                         f"{loss:.1%} of timed work, target {cfg['overcommit_loss_target']:.0%})")
+                z = self.oc["z"] = new
+                self.oc["loss"] = loss
             try:
                 with open(OVERCOMMIT + ".tmp", "w") as f:
                     json.dump(self.oc, f)
                 os.replace(OVERCOMMIT + ".tmp", OVERCOMMIT)
             except OSError:
                 pass
-        plan = lease_plan(jobs, room - other, dict(cfg, timed_hold_frac=hold), now, buffer)
+        timed_held = None
+        if cfg["timed_forecast"]:         # forecast growth of timed jobs past their warm-up, pooled (pooled_headroom)
+            warm = cfg.get("lease_warm_s", 120)
+            grow = [(j["owner"], j["expect"], j["use"], None if j.get("protected") else self.profiles.get(j["owner"]))
+                    for j in jobs if j["timed"] and now - (j["started"] or now) >= warm]
+            timed_held = pooled_headroom(grow, z, cfg["mem_pool_rho"], {o: r for o, (r, _) in self.rho.items()})[0]
+        plan = lease_plan(jobs, room - other, dict(cfg, timed_hold_frac=hold), now, buffer, timed_held)
         by = {j["id"]: j for j in running}
         for j in jobs:
             st, g = self.lease_st[j["id"]], int(plan["grants"][j["id"]])
@@ -1291,10 +1387,13 @@ class Daemon:
             if wait and not st.get("frozen_since"):
                 if cg_freeze(cgs[j["id"]], True):
                     st["frozen_since"] = now
+                    self.compress_frozen(j["id"], cgs[j["id"]], j["use"], cfg)
                     c.execute("UPDATE jobs SET frozen_since=?, freezes=freezes+1 WHERE id=?", (now, j["id"]))
                     dlog(f"lease #{j['id']}: frozen at {fgb(j['use'])} (grant {fgb(g)}): no memory free")
             elif not wait and st.get("frozen_since") and not st.get("cpu_frozen"):   # (cpu_freeze thaws those)
                 if cg_freeze(cgs[j["id"]], False):
+                    if st.pop("compressed", None):
+                        uncompress(cgs[j["id"]])
                     self.thawed(j["id"], now)
         if plan["victim"] is not None:
             w = by[plan["waiter"]]          # its wait starts again: the next victim only after another lease_stall_s
@@ -1331,7 +1430,18 @@ class Daemon:
         return dict(room=plan["free"], held=other + plan["held"] + buffer, buffer=buffer,
                     unused=sum(max(0.0, g - use[i]) for i, g in grants.items()),
                     granted=sum(grants.values()), used=sum(use.values()), stalled=plan["stalled"],
-                    victim=plan["victim"], short=plan["short"], jobs=len(jobs), hold=hold, loss=self.oc.get("loss"))
+                    victim=plan["victim"], short=plan["short"], jobs=len(jobs), hold=hold, z=z, loss=self.oc.get("loss"),
+                    timed_held=timed_held, compressed=[j["id"] for j in jobs if j["compressed"]])
+
+    def compress_frozen(self, jid, cg, use_mb, cfg):
+        """A job was just frozen: compress its memory into zram (compress_frozen), so the freeze frees RAM."""
+        room = compress_room_mb(cfg["compress_frozen"])
+        if room < 256 or use_mb < 256:
+            return
+        st = self.lease_st.setdefault(jid, {})
+        st["compressed"] = st["was_compressed"] = True
+        compress(cg, min(use_mb, room))
+        dlog(f"#{jid}: frozen; compressing up to {fgb(min(use_mb, room))} of its memory into swap")
 
     def sample_cpu(self, cfg, now, running, usage=None):
         """Every 10 s per job: cores used (cpu.stat) and seconds some / all of its threads waited for a CPU
@@ -1433,6 +1543,9 @@ class Daemon:
                     st = self.lease_st.setdefault(v["id"], {"slack_since": 0.0, "stall_since": 0.0, "set": None,
                                                             "last": (now, 0.0), "rate": 0.0})
                     st["frozen_since"], st["cpu_frozen"] = now, True
+                    m = cg_mem(self.cgroups[v["id"]])
+                    if m:
+                        self.compress_frozen(v["id"], self.cgroups[v["id"]], m[0], cfg)
                     self.c.execute("UPDATE jobs SET frozen_since=?, freezes=freezes+1 WHERE id=?", (now, v["id"]))
                     dlog(f"cpu: batch #{v['id']} frozen: timed jobs waited for CPUs {self.timed_wait:.0%} of the time")
                     self.cpu_freeze_ts = now
@@ -1447,6 +1560,8 @@ class Daemon:
                 if v["id"] not in self.mem_stalled:          # else it stays frozen, now waiting for memory
                     self.thawed(v["id"], now)
                     cg_freeze(self.cgroups[v["id"]], False)
+                    if st.pop("compressed", None):
+                        uncompress(self.cgroups[v["id"]])
                 self.cpu_freeze_ts = now
         else:
             self.calm_since = 0.0
@@ -1683,8 +1798,9 @@ class Daemon:
                 self.finish_fail(j, "oom", f"RSS {fgb(rss)} exceeded declared {fgb(j['mem_mb'])}; resubmit with --mem {fgb(new)}", peak)
 
     def learn_ratios(self, cfg, now):
-        """{owner: p95 of peak/--mem over its last 100 finished jobs} for owners with enough of them
-        (refreshed every 5 minutes)."""
+        """{owner: median of peak/--mem over its last 100 finished jobs} for owners with enough of them
+        (refreshed every 5 minutes). The median, not a high quantile: a few badly under-declared jobs would
+        otherwise size every job of their owner by their ratio."""
         if now - self.ratios_ts < 300:
             return
         out, samples = {}, {}
@@ -1693,14 +1809,15 @@ class Daemon:
                 "SELECT mem_mb, peak_mb FROM jobs WHERE owner=? AND state='ok' AND peak_mb>0 AND mem_mb>0 "
                 "ORDER BY finished DESC LIMIT 100", (o,)))
             if len(r) >= cfg["mem_learn_min_jobs"]:
-                out[o] = r[int(0.95 * (len(r) - 1))]
+                out[o] = r[len(r) // 2]
                 samples[o] = r
         self.ratios, self.ratio_samples, self.ratios_ts = out, samples, now
 
     def need_mb(self, j, cfg):
-        """Memory a job is expected to need: --mem, scaled by its owner's learned peak/--mem."""
+        """Memory a job is expected to need: --mem, scaled by its owner's median peak/--mem (x mem_learn_margin).
+        Not capped at --mem: an owner whose jobs use more than they declare gets them sized up."""
         q = self.ratios.get(j["owner"])
-        return j["mem_mb"] if q is None else min(j["mem_mb"], max(256.0, j["mem_mb"] * q * cfg["mem_learn_margin"]))
+        return j["mem_mb"] if q is None else max(256.0, j["mem_mb"] * q * cfg["mem_learn_margin"])
 
     def owner_profiles(self, cfg, now, running):
         """{owner: MEM_BINS weights}: the average memory histogram of an owner's last 50 finished
@@ -1933,7 +2050,8 @@ def cmd_status(a):
     for j in run[: a.limit]:
         lease = f" grant {fgb(j['grant_mb'])}" if j["grant_mb"] else ""
         cls = "batch" if j["qos"] == "batch" else "timed"
-        print(f"{'FRZN' if j['frozen_since'] else 'RUN '} #{j['id']} {j['owner']} {cls} {times(j, now)} {fgb(j['peak_mb'])}/{fgb(j['mem_mb'])}"
+        z = j["id"] in ((d or {}).get("sys", {}).get("lease") or {}).get("compressed", [])
+        print(f"{('FRZ*' if z else 'FRZN') if j['frozen_since'] else 'RUN '} #{j['id']} {j['owner']} {cls} {times(j, now)} {fgb(j['peak_mb'])}/{fgb(j['mem_mb'])}"
               f"{lease} {j['cpus']:g}c {j['name'] or j['cmd'][:50]}")
     if len(run) > a.limit:
         print(f"  (+{len(run) - a.limit} more running)")

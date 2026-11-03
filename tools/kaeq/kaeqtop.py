@@ -121,6 +121,10 @@ def frame(c, cfg, sampler, args, width):
         L.append(f"     leases: {ls.get('jobs', 0)} jobs hold {gb(ls.get('granted', 0))} (memory.high), use {gb(ls.get('used', 0))}; "
                  f"unused grants {gb(ls.get('unused', unreal))}, of which set aside {gb(unreal - ls.get('buffer', 0))}"
                  f" + {gb(ls.get('buffer', 0))} growth buffer"
+                 + (f"; timed jobs' forecast growth {gb(ls['timed_held'])} (z {ls.get('z', 0):.2f})"
+                    if ls.get("timed_held") is not None else "")
+                 + (f"; compressed, waiting: {', '.join('#%d' % i for i in ls['compressed'])} (no starts)"
+                    if ls.get("compressed") else "")
                  + (f"  << {len(st)} job(s) waiting at their grant for memory: no new starts ({', '.join('#%d' % i for i in st[:6])})"
                     if st else ""))
     elif bsys.get("mem_rise") is not None and str(bsys.get("mem_mode")) == "measured":
