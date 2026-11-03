@@ -31,7 +31,7 @@ from kae.physics import priors as PR
 from kae.physics.boardview import body_z
 
 from .critical_grid import Anchor
-from .critical_physics import INF, Loop, dielectric_er, ipc2221_width, trace_capacitance_pf
+from .critical_physics import INF, Loop, dielectric_er, heat_hazard, ipc2221_width, trace_capacitance_pf
 from kae.physics.kernels import lprime_hj
 
 GND_RE = re.compile(r'(^|[^A-Z])(A|D|P|S|C)?GND|^/?VSS|^0V$|GROUND|EARTH', re.I)
@@ -53,6 +53,7 @@ class Module:
     status: str = "pending"
     notes: list = field(default_factory=list)
     flags: list = field(default_factory=list)       # dicts for the report: copper the current asks more of
+    hazards: list = field(default_factory=list)     # hazard dicts (critical_physics.heat_hazard) for the report
 
 
 DT_MAX_K = 10.0           # IPC-2221 temperature rise (K) of critical copper (high-current.md), opts dT_max_K
@@ -484,6 +485,8 @@ def route_cell(ctx, m):
             hi = max(w_cur, opt)            # the switch node: as narrow as the current allows
         else:
             hi = max(a, w_cur, opt)         # terminal width (wider gains nothing)
+        if ctx.opts.get("rail_over_cap") and w_ipc > cap:
+            hi = max(hi, w_ipc)             # A/B arm (decide C2): the IPC width first, the cap the floor
         widths = sorted(set(round(w, 4) for w in width_ladder(hi, floor, 5)), reverse=True)
         # a ground hop over its own plane has the vias as its return: a detour on the surface
         # buys nothing, so it is routed only when it stays short
@@ -502,13 +505,23 @@ def route_cell(ctx, m):
             outer = [ctx.sp.cu[0], ctx.sp.cu[-1]]
             rt = route_hop(ctx, m, f"hop{k}", net, [anchor(ta)], [anchor(tb)], widths[-3:], outer, via=True,
                            via_cost=4.0)
+        t_l0 = ctx.sp.tcu.get(L0, 0.035)
+        refs = [getattr(ctx.fp.get(t_.fp), "ref", t_.fp) for t_ in (ta, tb)]
+        where = f"{m.id} hop {k} ({refs[0]} to {refs[1]})"
         if rt is not None:
             ok += 1
+            t_min = min((ctx.sp.tcu.get(l_, 0.035) for l_, _, _ in rt.segs), default=t_l0)
+            hz = heat_hazard("copper_below_ipc_width", I, rt.width, t_min, dT_max(ctx), [net], where=where,
+                             w_ipc=ipc2221_width(I, dT=dT_max(ctx), t_mm=t_min))
         else:
             m.notes.append(f"hop {k} ({net}): no room at its IPC-2221 width {floor:.2f} mm for {I:.2f} A; "
                            f"left to the bridge")
             m.flags.append(dict(flag="ipc_floor_unroutable", hop=k, net=net, I_A=round(I, 3),
                                 floor_mm=round(floor, 3)))
+            hz = heat_hazard("rail_left_narrow", I, max(opt, mn), t_l0, dT_max(ctx), [net],
+                             where=where + " (left to the bridge at the class width)", w_ipc=w_ipc)
+        if hz is not None:
+            m.hazards.append(hz)
     # return vias at the ground terminals of the loop
     _return_vias(ctx, m, T, side)
     m.status = "routed" if ok == len(hops) else ("partial" if ok else "failed")

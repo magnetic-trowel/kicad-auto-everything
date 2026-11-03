@@ -88,6 +88,8 @@ def main(argv=None):
                         "when routed physics holds (the joint loop's rule; critical.soft_critical)")
     r.add_argument("--bridge-opt", action="append", default=[], metavar="KEY=VALUE",
                    help="another kae.route.bridge DEFAULT_OPTS entry, e.g. rounds=auto, router_share=auto")
+    r.add_argument("--opt", action="append", default=[], metavar="KEY=VALUE",
+                   help="another kae.route.critical DEFAULTS entry (checked), e.g. rail_over_cap=1, via_A=1.0")
     r.add_argument("--budgets", help="board.budgets.json from `kae.sim.cli budgets`: simulated allocations")
     r.add_argument("--intent", help="intent file (JSON, as kae.em.pnr --intent): its requirements dT_max_K and "
                                     "drop_share size the critical copper (default 10 K, 2 %%)")
@@ -127,6 +129,10 @@ def main(argv=None):
             opts["trim_tol"] = a.trim_tol
         if a.budgets:
             opts["budgets"] = a.budgets
+        for k, v in _bridge_opts(a.opt).items():
+            if k not in critical.DEFAULTS:
+                raise SystemExit(f"--opt {k}: not a kae.route.critical option ({', '.join(sorted(critical.DEFAULTS))})")
+            opts[k] = v
         if a.intent:
             from kae.excite.beliefs import load_intent
             opts.update(critical.intent_opts(load_intent(a.intent)))

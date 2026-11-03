@@ -1252,3 +1252,84 @@ def test_rail_ladder_floor_and_cap_flag():
     assert floor == 0.30 and min(ws) >= 0.30 and max(ws) >= 0.9 and "capped" not in b
     ws, floor = _branch_widths(ctx, m, "br:y", b, 10.0, 7.19, 1.0, 0.0, 0.2)
     assert ws == [3.0] and floor == 3.0 and b["capped"]["cap_mm"] == 3.0 and "rail_max_mm" in m.notes[-1]
+
+
+# ----------------------------------------------------------------------------- heat of capped copper (decide)
+def test_via_current_reproduces_slva959_and_counts_vias():
+    """One via's current: IPC-2221's internal curve on the barrel pi (d + t) t at 20 um plating
+    reproduces TI SLVA959 Table 3-1 (8-16 mil rows) within 13 %; the count is the larger of
+    I / I_via and IPC-2152's equal cross-section (binding above ~10 A)."""
+    from kae.route.critical_physics import via_current, vias_needed
+    for mil, ti in ((8, 0.55), (10, 0.81), (12, 0.84), (16, 1.1)):
+        assert via_current(mil * 0.0254) == pytest.approx(ti, rel=0.13), mil
+    assert via_current(0.3, 0.025) > via_current(0.3, 0.020)        # plating matters (high-current.md)
+    assert vias_needed(1.0, 0.3) == 2 and vias_needed(4.0, 0.3) == 5   # 0.81 A each
+    assert vias_needed(4.0, 0.3, per_via_a=1.0) == 4                    # opts via_A: TI's one per amp
+    assert vias_needed(20.0, 0.3) > 20.0 / via_current(0.3)            # equal cross-section binds
+
+
+def test_track_rise_by_ipc2221_and_ipc2152():
+    from kae.route.critical_physics import ipc2152_dT, ipc2221_dT, ipc2221_width
+    assert ipc2221_dT(1.0, ipc2221_width(1.0)) == pytest.approx(10.0, rel=1e-6)
+    assert ipc2221_dT(10.0, 3.0) == pytest.approx(42.3, abs=0.5)      # 3 mm of 1 oz at 10 A
+    assert ipc2152_dT(10.0, 3.0) == pytest.approx(64.7, abs=0.5)      # Brooks-Adam, KiCad's calculator
+    assert ipc2152_dT(10.0, 3.0, 0.070) < ipc2152_dT(10.0, 3.0)
+
+
+def test_heat_hazard_severity():
+    from kae.route.critical_physics import heat_hazard, ipc2221_width
+    assert heat_hazard("c", 1.0, 0.5, 0.035, 10.0, ["+5V"]) is None
+    hz = heat_hazard("c", 10.0, 3.0, 0.035, 10.0, ["+12V"], nominal_a=10 / 3)
+    assert hz["severity"] == "warn" and hz["evidence"]["dT_ipc2221_K"] > 40 and hz["objects"] == ["+12V"]
+    assert heat_hazard("c", 15.0, 3.0, 0.035, 10.0, ["+12V"])["severity"] == "block"   # 106-145 K
+    w = ipc2221_width(2.0)
+    assert heat_hazard("c", 2.0, w / 1.15, 0.035, 10.0, ["X"])["severity"] == "info"  # within the 1.2x gate
+
+
+def test_capped_cell_hop_reports_its_rise_as_a_hazard(tmp_path):
+    """The rail_max_mm cap left 10 A on a 3 mm hop (IPC-2221 wants 7.2 mm) with only a flag; now
+    a hazard carries the rise, and the report gathers it at the top level."""
+    s = F.session(tmp_path, kinds=("cell",), rails="none")
+    m = _cell(s, 10.0)
+    hz = [h for h in m.hazards if h["code"] in ("copper_below_ipc_width", "rail_left_narrow")]
+    assert hz and all(h["severity"] in ("warn", "block") for h in hz)
+    assert all(h["evidence"]["dT_ipc2221_K"] > 10.0 and h["category"] == "thermal" for h in hz)
+    s.modules = [m]
+    assert s.report()["hazards"]
+
+
+def test_rail_left_to_the_router_narrow_is_a_hazard(tmp_path, monkeypatch):
+    """A rail branch with no room at its IPC width goes to the general router at the class width:
+    a hazard with its rise there."""
+    from kae.route import critical_rails as CR
+    monkeypatch.setattr(CR, "load_current", lambda ctx, u, net, cells, draws=None: 2.0)
+    monkeypatch.setattr(CR, "route_hop", lambda *a, **k: None)
+    s = F.session(tmp_path, kinds=(), rails="all")
+    s.route()
+    hz = [h for r in s.rails for h in r.get("hazards", []) if h["code"] == "rail_left_narrow"]
+    assert hz and all(h["severity"] in ("warn", "block") for h in hz)
+    assert {h["code"] for h in s.report()["hazards"]} >= {"rail_left_narrow"}
+
+
+def test_rail_over_cap_arm_tries_the_ipc_width_first():
+    """A/B arm rail_over_cap (decide C2): above the cap the ladder starts at the IPC width and the cap
+    is only its floor; off (the default) the cap is the only width."""
+    from types import SimpleNamespace
+
+    from kae.route.critical_modules import Module
+    from kae.route.critical_rails import _branch_widths
+    m, b = Module(id="r", kind="rail", spec={}, parts=[]), {}
+    ws, floor = _branch_widths(SimpleNamespace(opts={"rail_max_mm": 3.0}), m, "br:y", b, 10.0, 7.19, 1.0, 0.0, 0.2)
+    assert ws == [3.0]
+    ws, floor = _branch_widths(SimpleNamespace(opts={"rail_max_mm": 3.0, "rail_over_cap": True}), m, "br:y", b,
+                               10.0, 7.19, 1.0, 0.0, 0.2)
+    assert ws[0] == pytest.approx(7.19, abs=1e-3) and floor == 3.0 and min(ws) == 3.0
+
+
+def test_via_hazard_severity():
+    from kae.route.critical_physics import via_hazard
+    assert via_hazard(4.0, 5, 5, 0.3, 0.02, 10.0, ["+5V"]) is None
+    hz = via_hazard(4.0, 2, 5, 0.3, 0.02, 10.0, ["+5V"], nominal_a=4 / 3)
+    assert hz["severity"] == "warn" and hz["code"] == "vias_below_current" and hz["evidence"]["vias_needed"] == 5
+    assert via_hazard(10.0, 1, 13, 0.3, 0.02, 10.0, ["+12V"])["severity"] == "block"   # 10 A in one 0.3 mm barrel
+    assert via_hazard(1.0, 0, 2, 0.3, 0.02, 10.0, ["+3V3"])["severity"] == "warn"      # none: the router's one
