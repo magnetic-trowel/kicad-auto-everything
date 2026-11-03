@@ -61,7 +61,8 @@ Locally, on six A+B boards the soft tier made paw3222 clean with better physics 
 
 ### Restart portfolio ([portfolio.py](../../../kae/src/kae/route/portfolio.py))
 `python -m kae.route.portfolio route IN OUT --parallel P --first-s F [--router M[:ARGS]]...`
-- **Waves.** Attempts run in waves of `parallel` seeds. The wave budget starts at `first_s` and doubles, so a board that needs a long attempt still gets one. The first clean attempt (0 errors, 0 open) stops the rest; otherwise the best (errors, unconnected) is kept.
+- **Waves.** Attempts run in waves of `parallel` seeds. The wave budget starts at `first_s` and doubles, so a board that needs a long attempt still gets one. Attempts rank as the restart wrapper's judge and the harness do: fewer open connections first, then fewer DRC errors beyond the input's own (`repair.input_errors`). The first attempt routed fully (0 open, no error beyond the input's) stops the rest; otherwise the best is kept.
+- **Final last mile.** The kept board gets one more last mile (`bridge.last_mile_only`), with time reserved from the start and all time left at the end, however late its attempt ended. It is kept only if it ranks better (`--no-final` turns it off). The restart wrapper's `--final` does the same for any method.
 - **Why it works.** Routing time is heavy-tailed, and the winners come from deep in the seed sequence (paw3395 won with its 9th and 10th seeds). Item-order diversity closes the last connections, not attempt length. canhw-processor's "clock-bound" first route was a bad order: other seeds route it clean in 128–190 s.
 - **Mixed routers.** Attempts cycle through the listed routers. Among equal results the first-listed router wins, and its running attempts finish before a later router's clean result ends the run. List the physics-first router first; otherwise the faster bridge wins every board and the physics edge is lost.
 - **Cost.** Up to `parallel` cores and JVMs per board.
@@ -73,7 +74,7 @@ Locally, on six A+B boards the soft tier made paw3222 clean with better physics 
 - **Sandboxes.** kaebench gives each attempt a private /tmp, so there `-j` and the heap cap govern memory.
 
 ## Recommendations for our system
-- **Last mile on.** Keep it on, with the no-new-error rule. Route through the portfolio when cores allow. On small hosts use `KAE_FR_XMX=3g` and at most two JVMs.
+- **Last mile on.** Keep it on, with the no-new-error rule. Route through the portfolio (or the restart wrapper with `--final`) when cores allow: either way the kept board gets a last mile of its own. On small hosts use `KAE_FR_XMX=3g` and at most two JVMs.
 - **Mixed portfolio for physics.** List `kae.route.critical_cli … --last-mile-soft` first and `kae.route.cli` second: the union of what each closes, with the critical router's physics.
 - **Don't tune budgets.** Spend effort on diversity (seeds, routers) and exact local repair.
 
