@@ -279,3 +279,47 @@ def test_loop_fast_mixed_plane_heights_and_order_symmetry():
     # strips over no plane still use the exact corner formula (inf == inf counts as same height)
     Hn = [(0, 0, 4, 0, 0.5, inf), (4, 0, 4, 2, 0.5, inf), (4, 2, 0, 2, 0.5, inf), (0, 2, 0, 0, 0.5, inf)]
     assert math.isfinite(loop_fast(Hn)) and loop_fast(Hn) > 0
+
+
+# ----------------------------------------------------------------------------- crystal d_min
+def _xtal_board(y_xtal, d_min=2.7):
+    """decap_board's U1 (X1/X2 pins at (20.5, 22) and (19.5, 22)) with a 2-pad crystal Y1 above it
+    at (20, y_xtal), pads 1.6 mm apart."""
+    from place_terms_fixtures import NETS, board, fp
+    b0, brief = decap_board()
+    u1 = next(f for f in b0.footprints if f.ref == 'U1')
+    y1 = fp('Y1', 'Crystal:Crystal_SMD_3215-2Pin_3.2x1.5mm', [('1', 'X1', 0.8, 0.0, 1.0, 1.4), ('2', 'X2', -0.8, 0.0, 1.0, 1.4)],
+            20.0, y_xtal)
+    b = board([u1, y1])
+    brief = dict(nets=NETS, parts={'uuid-U1': {'ref': 'U1', 'kind': 'ic'}, 'uuid-Y1': {'ref': 'Y1', 'kind': 'crystal'}},
+                 structures=[dict(id='xtal:Y1', kind='crystal', confidence=0.9, ic='uuid-U1', xin='5', xout='6',
+                                  crystal='uuid-Y1', load_caps=[], f_Hz=40e6, nets=['X1', 'X2'],
+                                  budget={'d_min': {'value': d_min, 'unit': 'mm', 'class': 'E5', 'basis': 'test'}})])
+    return b, brief
+
+
+def test_crystal_inside_the_vendor_minimum_distance_is_priced_and_reported():
+    """crystals-clocks.md XTAL-DMIN: placement is an annulus; the brief's budget.d_min (ESP32 2.7 mm)
+    must stop the pulling term (which falls with distance) from pulling the crystal in."""
+    b, brief = _xtal_board(24.0)
+    T = _terms(b, brief)
+    poses = T.bv.pose0()
+    rows = {r['id']: r for r in T.breakdown(poses)}
+    r = rows['xtal:Y1#d_min']
+    assert r['kind'] == 'crystal' and r['unit'] == 'mm'
+    assert r["value"] == pytest.approx(2.7 - math.hypot(0.3, 2.0), abs=1e-6)   # nearest pad to pin
+    assert r['util'] > 1.0                                        # a violation shows as over budget
+    far = dict(poses)
+    x, y, rot, side = poses['uuid-Y1']
+    far['uuid-Y1'] = (x, 25.0, rot, side)
+    assert {q['id']: q for q in T.breakdown(far)}['xtal:Y1#d_min']['value'] == 0.0
+    # at the minimum the total is lower than inside it, though the pulling term alone prefers closer
+    assert T.total(far) < T.total(poses)
+    assert _value(T, far, 'xtal:Y1') > _value(T, poses, 'xtal:Y1')
+
+
+def test_crystal_without_d_min_has_no_clearance_term():
+    b, brief = _xtal_board(24.0)
+    del brief['structures'][0]['budget']
+    T = _terms(b, brief)
+    assert not any(r['id'].endswith('#d_min') for r in T.breakdown(T.bv.pose0()))

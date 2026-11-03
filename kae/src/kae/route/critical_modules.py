@@ -64,6 +64,15 @@ def dT_max(ctx):
     return float(ctx.opts.get("dT_max_K") or DT_MAX_K)
 
 
+def _opt(ctx, key):
+    """An option, falling back to kae.route.critical.DEFAULTS (Session merges them; a bare
+    Ctx does not)."""
+    if key in ctx.opts:
+        return ctx.opts[key]
+    from .critical import DEFAULTS
+    return DEFAULTS[key]
+
+
 def modules_from_brief(brief, kinds=("cell", "path", "decap", "rgroup", "crystal", "chain")):
     """Modules in the brief's placement order (physically decisive first). A decap of a rail
     group is the group's (its capacitors pair with the nearest group load)."""
@@ -920,7 +929,7 @@ def route_decap(ctx, m):
         m.status = "skipped"
         m.notes.append("no capacitor-pin pairs")
         return m
-    max_d = float(ctx.opts.get("decap_max_mm", 15.0))
+    max_d = float(_opt(ctx, "decap_max_mm"))
     loops = []
     done = tried = 0
     for pin, cap in pairs:
@@ -1269,13 +1278,15 @@ def _tree(ctx, m, net, terms, tag, widths=None):
         srcs = [anchor(x) for x in done]
         for d in done:
             srcs += ctx.net_copper_anchors(net, connected_to=d)
+        # no via fallback: "no vias on the clock input/output traces" (Espressif, XTAL-DMIN in
+        # docs/topics/rules/crystals-clocks.md); a hop that needs one is left to the bridge
         rt = route_hop(ctx, m, f"{tag}:{k}", net, [anchor(t)], srcs, ws, [layers[0]], via=False)
-        if rt is None and len(ctx.sp.cu) > 1:
-            rt = route_hop(ctx, m, f"{tag}:{k}", net, [anchor(t)], srcs, ws[-1:], [ctx.sp.cu[0], ctx.sp.cu[-1]],
-                           via=True, via_cost=3.0)
         k += 1
         if rt is not None:
             ok += 1
+        else:
+            m.notes.append(f"{tag}: {net} to {ctx.fp[t.fp].ref} has no same-layer route (no vias on crystal "
+                           "traces); left to the bridge")
         done.append(t)
     return ok, need
 
@@ -1320,12 +1331,13 @@ def route_chain(ctx, m):
     # hops after the first protector carry no surge-path physics; chain_tail=False leaves
     # them to the general router (less locked copper in its way, the order not enforced)
     first_prot = next((k for k, t in enumerate(T) if k > 0 and t.fp in prot), len(T) - 1)
+    has_prot = any(t.fp in prot for t in T[1:])
     ok = need = 0
     for k in range(len(T) - 1):
         ta, tb = T[k], T[k + 1]
         if ta.fp == tb.fp or ta.net != tb.net:
             continue
-        if k >= first_prot and not ctx.opts.get("chain_tail", True):
+        if k >= first_prot and not _opt(ctx, "chain_tail"):
             m.notes.append(f"hop {k} after the protector left to the general router")
             continue
         need += 1
@@ -1344,13 +1356,18 @@ def route_chain(ctx, m):
         rt = None
         if layers:
             rt = route_hop(ctx, m, f"hop{k}", ta.net, [anchor(ta)], tgt, ws, [layers[0]], via=False)
-        if rt is None and len(ctx.sp.cu) > 1:
+        if rt is None and has_prot and k < first_prot:
+            # connector -> TVS: no via or stub before the TVS (docs/topics/rules/emc-placement.md,
+            # interfaces/usb2.md "ESD path order, 0 vias"): left to the bridge
+            m.notes.append(f"hop {k} ({ta.net}, {ctx.fp[ta.fp].ref} -> {ctx.fp[tb.fp].ref}): connector->TVS "
+                           "needs same-side placement (no via before the TVS)")
+        elif rt is None and len(ctx.sp.cu) > 1:
             # parts on opposite sides, or no room on the shared layer: through one via
             rt = route_hop(ctx, m, f"hop{k}", ta.net, [anchor(ta)], tgt, ws, [ctx.sp.cu[0], ctx.sp.cu[-1]],
                            via=True, via_cost=3.0)
         if rt is not None:
             ok += 1
-        else:
+        elif not (has_prot and k < first_prot):
             m.notes.append(f"hop {k} ({ta.net}, {ctx.fp[ta.fp].ref} -> {ctx.fp[tb.fp].ref}) not routed")
     # the protector's ground into the plane (or to the connector's ground pin)
     for u in prot:
@@ -1413,7 +1430,7 @@ def route_rail_group(ctx, m):
     s = m.spec
     rail = s.get("rail")
     loads = s.get("loads") or []
-    max_d = float(ctx.opts.get("decap_max_mm", 10.0))
+    max_d = float(_opt(ctx, "decap_max_mm"))
     lt = []
     for u in loads:
         f = ctx.fp.get(u)

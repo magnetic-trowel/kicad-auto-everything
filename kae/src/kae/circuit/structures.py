@@ -1367,13 +1367,15 @@ def crystals(b: _B) -> list:
                 evs.append(ev('pinfunction', f"oscillator pins {', '.join(x[1].label for x in (xin, xout) if x)}", STRONG))
             elif xin and xout:
                 evs.append(ev('pinfunction', 'IC pins on both crystal nets (unnamed: xin/xout order from pin numbers)', WEAK))
-        loads = []
-        for n in xn:
-            for c in b.caps_on(n):
-                loads.append(c)
+        # XIN side first: its cap is placed first and closest (crystals-clocks.md XTAL-CAP)
+        loads, per_side = [], {}
+        for n in sorted(xn, key=lambda n: (not (xin and n == xin[0]), not (xout and n == xout[0]))):
+            mine = [c for c in b.caps_on(n) if c not in loads]
             if series.get(n):
                 far = side[n][0]
-                loads += [c for c in b.caps_on(far) if c not in loads]
+                mine += [c for c in b.caps_on(far) if c not in loads and c not in mine]
+            loads += mine
+            per_side[n] = mine
         if loads:
             vals = [cap_class(b.nl.parts[c])[1] for c in loads]
             evs.append(ev('topology', f"load capacitors {', '.join(loads)} ({', '.join(V.si(v, 'F') for v in vals)})", MODERATE))
@@ -1381,7 +1383,8 @@ def crystals(b: _B) -> list:
         f = V.frequency(part.value) or V.frequency(' '.join(str(v) for v in part.fields.values()))
         st = _struct('crystal', f"xtal:{ref}", evs, conf_cap=pr.kind_confidence, prior=0.0,
                      ic=common, xin=(xin[1].number if xin else None), xout=(xout[1].number if xout else None), crystal=ref,
-                     load_caps=loads, f_Hz=f, nets=xn, series_r=[series[n] for n in series], feedback_r=fb,
+                     load_caps=loads, load_caps_xin=(per_side.get(xin[0], []) if xin else []),
+                     load_caps_xout=(per_side.get(xout[0], []) if xout else []), f_Hz=f, nets=xn, series_r=[series[n] for n in series], feedback_r=fb,
                      xin_fn=(xin[1].function if xin else None), xout_fn=(xout[1].function if xout else None))
         if common and re.search(r'ESP32', b.nl.parts[common].text(), re.I):
             dmin = 2.0 if re.search(r'S3', b.nl.parts[common].text()) else 2.7
