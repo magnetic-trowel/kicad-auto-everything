@@ -8,7 +8,8 @@ import json
 import re
 from pathlib import Path
 
-from kae.joint.loop import DEFAULTS
+from kae.joint.feedback import PartGeom, Spot
+from kae.joint.loop import DEFAULTS, escalate
 from kae.joint.scorecard import Scorecard
 
 from test_joint_loop import FakeStages, _run
@@ -205,6 +206,27 @@ def test_loop_rows_carry_checked_and_note():
             assert r["physics"] is None and r["flagged"] is None and "recheck failed" in r["note"]
             assert r["checked"]["physics"] is False
     assert rep["stop"] == "clean, physics not checked" and rep["final"]["physics"] is None
+
+
+# ---- 5: escalated windows keep the part-share cap
+def test_escalated_windows_respect_the_part_share_cap():
+    parts = {f"u{k}": PartGeom(uuid=f"u{k}", ref=f"R{k}", bbox=(2.0 * k - 0.5, -0.5, 2.0 * k + 0.5, 0.5), pins=2)
+             for k in range(15)}
+    bounds = (-5, -5, 40, 5)
+    spots = (Spot(kind="unrouted", x=14.0, y=0.0, points=((12.0, 0.0), (16.0, 0.0)), refs=("R6", "R8"), nets=("N",),
+                  weight=3.0),)
+    o = dict(DEFAULTS, max_parts=5)                     # the loop's cap on 15 movable parts: round(0.35 x 15) = 5
+    from kae.joint.feedback import plan_windows
+    win = plan_windows(spots, parts, bounds, margin=o["margin"], max_parts=5, merge_factor=1.0)[0]
+    sizes = [len(escalate(win, a, parts, bounds, o).parts) for a in range(3)]
+    assert max(sizes) <= 5, sizes                       # before: 5 / 7 / 9 (60 % of the board)
+    # with room under the share cap, two more parts per escalation
+    big = {f"u{k}": PartGeom(uuid=f"u{k}", ref=f"R{k}", bbox=(2.0 * k - 0.5, -0.5, 2.0 * k + 0.5, 0.5), pins=2)
+           for k in range(60)}
+    o6 = dict(DEFAULTS)
+    w6 = plan_windows(spots, big, (-5, -5, 130, 5), margin=30.0, max_parts=6, merge_factor=1.0)[0]
+    o6["margin"] = 30.0
+    assert [len(escalate(w6, a, big, (-5, -5, 130, 5), o6).parts) for a in range(4)] == [6, 8, 10, 10]
 
 
 # ---- 8: an exception after OUTPUT was written is a partial result

@@ -65,15 +65,23 @@ DEFAULTS = dict(
 )
 
 
+def share_cap(parts, o):
+    """The part-share cap: at most max_part_share of the board's movable parts (at least 3)."""
+    n_mov = sum(1 for g in parts.values() if not g.locked)
+    return max(3, int(round(o["max_part_share"] * n_mov)))
+
+
 def escalate(win, attempt, parts, bounds, o):
     """Window `win` for its attempt number: the same spots with the margin x1.5, two more
-    parts per earlier attempt, and parts with many pins allowed; the highest-priority window
-    they form."""
+    parts per earlier attempt (never beyond the part-share cap: on a 15-part board 5 -> 7 -> 9
+    parts was 60 % of the board, a global re-place), and parts with many pins allowed; the
+    highest-priority window they form. Spots are not merged beyond the cap either."""
     if attempt <= 0:
         return win
     k = min(attempt, 2)          # windows stop growing after two escalations; seeds still differ
+    cap = min(o["max_parts"] + 2 * k, share_cap(parts, o))
     ws = plan_windows(win.spots, parts, bounds, margin=o["margin"] * (1.5 ** k),
-                      max_parts=o["max_parts"] + 2 * k, max_pins=None)
+                      max_parts=cap, max_pins=None, merge_factor=1.0)
     return ws[0] if ws else win
 
 
@@ -239,8 +247,7 @@ class JointLoop:
                 break
             spots = self._spots(best_fb, best)
             parts, bounds, _, _ = self._geom
-            n_mov = sum(1 for g in parts.values() if not g.locked)
-            cap = min(o["max_parts"], max(3, int(round(o["max_part_share"] * n_mov))))
+            cap = min(o["max_parts"], share_cap(parts, o))
             o_win = dict(o, max_parts=cap)
             base = [w for w in plan_windows(spots, parts, bounds, margin=o["margin"], max_parts=cap,
                                             max_pins=o["max_pins"], merge_factor=1.0)
