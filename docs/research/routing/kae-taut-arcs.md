@@ -56,3 +56,36 @@
 - **Power copper on arcs** (`power_copper.PowerCopper._widen_arc`). Arcs enter the `Space` as sampled arcs (`arcs.fix_space_arcs`; the `Space` keeps them as two chords). Each arc is sampled every 0.1 mm along its length. Free half-widths come from the same constraints, so current sharing, victim gaps and neck rule apply unchanged. The same runs become sub-arcs of one circle with shared joints, each checked exactly. Ground vias reach arcs through the sampled geometry.
 - **Physics evaluator fix** (`kae.excite.dc._arc_frame`, separate commit). `track_currents` sampled a track at its chord's quarter points; for an arc the chord leaves the copper, so heat.track read zero. It now samples on the arc.
 
+## Results
+
+12 boards: the 10 power-copper smoke boards plus circuitmonkey chips-0123 and zephray nekoink. Inputs are the `kae-bridge-main-final-restarts` outputs with the human project files; there is no re-routing. DRC is kicad-cli on the re-opened board. Script: `tools/research/routing/taut_smoke.sh DIR taut`; table: `taut_summary.py`. Taut uses the defaults (pours held, victims on, pad tails, coupled pairs). "+pc" is the arc-aware power copper on the taut board.
+
+| Board | DRC err/unconn in → taut → +pc | Signal mm | Corners | Acute | Arcs | Pad entries perp/oblique/acute | Taut s | Pc s |
+|---|---|---|---|---|---|---|---|---|
+| adafruit magtag | 51/0 → 50/0 → 51/0 | 1671 → 1561 | 545 → 282 | 2 → 3 | 281 | 258/14/8 → 259/13/8 | 54 | 179 |
+| adafruit metro-m7 | 22/1 → 22/1 → 22/1 | 1604 → 1482 | 776 → 404 | 4 → 4 | 360 | 325/29/19 → 334/28/11 | 38 | 34 |
+| aifryz sensor-hub | 9/0 → 9/0 → 9/0 | 1698 → 1601 | 573 → 325 | 8 → 5 | 265 | 272/113/14 → 309/81/9 | 33 | 19 |
+| circuitmonkey chips-0123 | 45/4 → 45/4 → 45/4 | 22 → 22 | 5 → 4 | 0 → 0 | 2 | 9/10/0 → 9/10/0 | 6 | 6 |
+| dream117er paicorea | 0/1 → 0/1 → 0/1 | 2145 → 2018 | 474 → 267 | 10 → 8 | 257 | 270/124/10 → 271/107/6 | 35 | 23 |
+| freetronics secsense | 0/0 → 0/0 → 0/0 | 423 → 403 | 100 → 39 | 0 → 0 | 77 | 70/1/0 → 70/1/0 | 11 | 9 |
+| greatscottgadgets ubertooth | 37/13 → 37/13 → 37/13 | 613 → 554 | 577 → 405 | 22 → 11 | 123 | 348/39/14 → 352/34/15 | 25 | 10 |
+| jjhorton pmod-tester | 0/0 → 0/0 → 0/0 | 274 → 249 | 64 → 25 | 0 → 0 | 19 | 42/0/0 → 42/0/0 | 7 | 6 |
+| jkiv cm4-carrier | 612/0 → 605/0 → 605/0 | 1279 → 1246 | 255 → 240 | 1 → 1 | 12 | 153/38/6 → 160/31/6 | 11 | 12 |
+| lenaschimmel bestelampe | 16/0 → 16/0 → 15/0 | 2047 → 2012 | 487 → 394 | 8 → 7 | 84 | 142/23/7 → 142/23/7 | 51 | 21 |
+| sparkfun redbot | 133/0 → 133/0 → 133/0 | 1110 → 1018 | 414 → 170 | 4 → 7 | 241 | 180/27/11 → 187/22/9 | 28 | 17 |
+| zephray nekoink | 11/95 → 11/93 → 11/93 | 2361 → 2252 | 1338 → 928 | 26 → 26 | 496 | 715/205/25 → 770/158/17 | 122 | 63 |
+
+- **DRC never worse.** Over 12 boards, errors went 936 → 928 and unconnected 114 → 112. cm4 lost 7 errors (Freerouting's tracks that bulged beside their lands). nekoink closed 2 connections, where taut copper now runs over a same-net pad. With power copper as well: 929 errors and 112 unconnected.
+- **Length.** Signal −5.4 % (15.25 → 14.42 m). Power −1.2 % (3.50 → 3.46 m), ground −1.4 %; all copper −4.5 %. The topology doc predicts about 5 % from straightening alone; part of this is copper inside lands (the pad trim's share).
+- **Corners.** Corners fell 5,608 → 3,483 (−38 %); arc-to-tangent joints are G1 and are not counted. Acute corners went 85 → 72 and acute pad entries 114 → 88. Oblique entries fell 623 → 508, perpendicular rose 2,784 → 2,905. Acute corners rose on redbot (4 → 7) and magtag (2 → 3) where a tail met an input corner: those branches were trimmed but not re-solved.
+- **Optimality.** 1,716 branches were rewritten with a taut path. All are G1 with positive wraps, and none touched its window, so each carries the local-optimality certificate. Of these, 51 needed an atom inserted after the exact check, 17 got a Dubins start or end, and 121 more were only trimmed (fallback).
+- **Convergence.** Pass 0 gave 933 of the 968 mm gained, pass 1 0.03-28 mm per board, pass 2 nothing: 10 boards stop after 3 passes and nekoink after 4. magtag oscillates at 1.3 µm per pass up to the 8-pass cap, below the 2 µm requirement margin.
+- **Why branches stay.** 4,135 attempts gained nothing, mostly branches already straight between their ends (counted once per pass). 861 were locked: the bridge's repair loop locks its joins. 665 already broke a clearance (cm4 alone has 249 clearance errors). Only 20 failed in the solver (insert limit, not in free space) and 12 failed the final `Space` check.
+- **Diff pairs.** 710 P/N branch pairs were tested and none was coupled: Freerouting routes the legs independently, with at most 17 % of a leg at constant pitch, except cm4's E0_TR1/TR2 at 96 %. Those two already break a clearance, so they stay as they are. The coupled mode is shown on a synthetic pair in the board test: shorter, pitch 0.5 ± 0.02 mm, skew not worse.
+- **Gate.** Two boards needed reverts. lenaschimmel had a starved thermal at J5/J7 that could not be attributed: 23 of 43 nets came back, and the recovery added 1. ubertooth had 3 clearances named, and 4 nets came back. Every other board was kept on the first DRC run.
+- **Power copper on arcs.** The power-copper pass planned 96 arc widenings over 10 boards, all checked exactly. Widening, ground vias and stitching behaved as on the input; with power copper alone on the input, its counts are within a few per board.
+- **Pours.** In the `refill` variant, other nets' fills are not obstacles. Copper was 1.1-3.2 % shorter on 4 boards (dream117er −2.5 %, secsense −3.2 %). On 4 others the gate reverted 18-45 nets (starved thermals), so overall it is slightly longer: 18.86 m against 18.82 m with pours held. `hold` stays the default ([kae-power-copper](kae-power-copper.md): "rails may not cut ground pours").
+- **Runtime.** The taut pass took 6-122 s per board: setup (export, brief, space) 2-27 s, passes 0.1-71 s, the rest KiCad DRC. Power copper took 6-179 s.
+
+PHYSICS_SECTION
+

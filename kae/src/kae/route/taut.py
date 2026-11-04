@@ -639,7 +639,7 @@ class Taut:
             # as segments)
             mid = _dedupe([h0[1]] + list(pts[h0[3]:len(pts) - t0[3]]) + [t0[1]])
             pieces = _tail_pieces(h0[0]) + _tail_pieces(mid) + _tail_pieces(t0[0][::-1])
-            cands.append(((0 if (h0[2] and t0[2]) else 1, _acute_corners(pieces), G.path_length(pieces)),
+            cands.append(((_acute_corners(pieces), 0 if (h0[2] and t0[2]) else 1, G.path_length(pieces)),
                           pieces, G.path_length(pieces), None))
         fails = []
         input_bad = False
@@ -668,16 +668,18 @@ class Taut:
                     r = _fillet_anchors(r, h[0], t[0], w, bs.check)
                     L = r.length + _plen(h[0]) + _plen(t[0])
                     pieces = _tail_pieces(h[0]) + r.pieces + _tail_pieces(t[0][::-1])
-                    got.append(((0 if (h[2] and t[2]) else 1, _acute_corners(pieces), L), pieces, L, r))
+                    got.append(((_acute_corners(pieces), 0 if (h[2] and t[2]) else 1, L), pieces, L, r))
             if not got and "apex unmapped" in fails and grow < 4:
                 continue                  # the funnel ran along the window: a larger one
             if got and not all(g[3].certificate.get("window", True) for g in got) and grow < 4:
                 continue
             cands += got
             break
-        # the best candidate (perpendicular entries first, then fewer acute corners, then length) that
+        # the best candidate (fewest acute corners: a hairpin at a tail is worse than an oblique entry;
+        # then perpendicular entries, then length) that
         # is shorter than the input and passes the board's exact check
-        ok = sorted((c for c in cands if c[2] < old_len - self.o["min_gain"]), key=lambda c: c[0])
+        acute_in = _acute_corners(_tail_pieces(pts))     # never more acute corners than the input had
+        ok = sorted((c for c in cands if c[2] < old_len - self.o["min_gain"] and c[0][0] <= acute_in), key=lambda c: c[0])
         if not ok:
             self._skip("input breaks a clearance" if input_bad else
                        ("no gain" if cands else "solve: " + (fails[0] if fails else "tails illegal")))
@@ -690,7 +692,7 @@ class Taut:
             self._skip("space check")
             return None
         st = self.stats.setdefault("certificate", dict(g1=0, window=0, fillet=0, inserted=0, perpendicular=0, trim_only=0))
-        st["perpendicular"] += score[0] == 0
+        st["perpendicular"] += score[1] == 0
         if r is None:
             st["trim_only"] = st.get("trim_only", 0) + 1
             return dict(pieces=pieces, length=L, old=old_len, cert={}, inserted=0, score=score)
