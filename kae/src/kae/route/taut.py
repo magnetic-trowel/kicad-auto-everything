@@ -630,18 +630,26 @@ class Taut:
         allp = list(pts) + [h[1] for h in heads] + [t[1] for t in tails]
         orig_line = LineString(pts)
         self._floors = {}
-        self._floor_hit = False
-        res = None
+        cands = []
+        # the plain trim: the input's own path with each pad tail cut to its entry (pad_trim's cut,
+        # perpendicular where the input already was); a fallback when no taut path is found
+        h0, t0 = heads[-1], tails[-1]
+        if h0[4] is None and t0[4] is None:
+            mid = _dedupe([h0[1]] + list(pts[h0[3]:len(pts) - t0[3]]) + [t0[1]])
+            pieces = _tail_pieces(h0[0]) + _tail_pieces(mid) + _tail_pieces(t0[0][::-1])
+            cands.append(((0 if (h0[2] and t0[2]) else 1, _acute_corners(pieces), G.path_length(pieces)),
+                          pieces, G.path_length(pieces), None))
+        fails = []
+        input_bad = False
         for grow in (1, 2, 4):
             window = G.convex_window(allp, self.o["margin_win"] * grow)
             self._input_bad = False
             obs = self.obstacles(net, layer, w, window, orig_line)
             if self._input_bad:
-                self._skip("input breaks a clearance")
-                return None
+                input_bad = True
+                break
             bs = G.BranchSpace(obs, window, None, eps_topo=self.o["eps_topo"], check=self.checker(obs, w), slack=MARGIN)
-            best = None
-            fails = []
+            got, fails = [], []
             for h in heads:
                 for t in tails:
                     mid = [h[1]] + ([h[4]] if h[4] is not None else []) + list(pts[h[3]:len(pts) - t[3]]) \
@@ -656,45 +664,51 @@ class Taut:
                         fails.append(bs.fail)
                         continue
                     r = _fillet_anchors(r, h[0], t[0], w, bs.check)
-                    tail_len = _plen(h[0]) + _plen(t[0])
-                    L = r.length + tail_len
+                    L = r.length + _plen(h[0]) + _plen(t[0])
                     pieces = _tail_pieces(h[0]) + r.pieces + _tail_pieces(t[0][::-1])
-                    ac = _acute_corners(pieces)
-                    score = (0 if (h[2] and t[2]) else 1, ac, L)
-                    if best is None or score < best[0]:
-                        best = (score, pieces, L, r)
-            if best is None:
-                if "apex unmapped" in fails and grow < 4:
-                    continue              # the funnel ran along the window: a larger one
-                self._skip("solve: " + (fails[0] if fails else "tails illegal"))
-                return None
-            if best[3].certificate.get("window", True):
-                res = best
-                break
-            res = best
-        if res is None:
+                    got.append(((0 if (h[2] and t[2]) else 1, _acute_corners(pieces), L), pieces, L, r))
+            if not got and "apex unmapped" in fails and grow < 4:
+                continue                  # the funnel ran along the window: a larger one
+            if got and not all(g[3].certificate.get("window", True) for g in got) and grow < 4:
+                continue
+            cands += got
+            break
+        # the best candidate (perpendicular entries first, then fewer acute corners, then length) that
+        # is shorter than the input and passes the board's exact check
+        ok = sorted((c for c in cands if c[2] < old_len - self.o["min_gain"]), key=lambda c: c[0])
+        if not ok:
+            self._skip("input breaks a clearance" if input_bad else
+                       ("no gain" if cands else "solve: " + (fails[0] if fails else "tails illegal")))
             return None
-        score, pieces, L, r = res
-        if L > old_len - self.o["min_gain"]:
-            self._skip("no gain")
+        for score, pieces, L, r in ok:
+            pieces = _merge_tiny(pieces)
+            if r is None or self._exact_ok(net, layer, w, pieces):
+                break             # (the plain trim is a subset of the input's copper)
+        else:
+            self._skip("space check")
             return None
-        pieces = _merge_tiny(pieces)
-        # canonical exact check against the board's Space (the chain's own copper is the same net)
-        for p in pieces:
-            for it, d, nd in A.polyline_violations(sp, net, layer, w, A.piece_coords(p)):
-                fl = self._floors.get(id(it)) if it != "edge" else None
-                if fl is not None and d >= fl - 1e-6:
-                    continue          # no closer than the input was
-                self._skip("space check")
-                return None
+        st = self.stats.setdefault("certificate", dict(g1=0, window=0, fillet=0, inserted=0, perpendicular=0, trim_only=0))
+        st["perpendicular"] += score[0] == 0
+        if r is None:
+            st["trim_only"] = st.get("trim_only", 0) + 1
+            return dict(pieces=pieces, length=L, old=old_len, cert={}, inserted=0, score=score)
         cert = r.certificate
-        st = self.stats.setdefault("certificate", dict(g1=0, window=0, fillet=0, inserted=0, perpendicular=0))
         st["g1"] += bool(cert.get("g1"))
         st["window"] += bool(cert.get("window", True))
         st["fillet"] += bool(cert.get("fillet"))
         st["inserted"] += r.inserted
-        st["perpendicular"] += score[0] == 0
         return dict(pieces=pieces, length=L, old=old_len, cert=cert, inserted=r.inserted, score=score)
+
+    def _exact_ok(self, net, layer, w, pieces):
+        """The board's exact check (critical_space.Space, the chain's own copper is the same net), an
+        item the input was already this close to excepted (floors)."""
+        for p in pieces:
+            for it, d, nd in A.polyline_violations(self.sp, net, layer, w, A.piece_coords(p)):
+                fl = self._floors.get(id(it)) if it != "edge" else None
+                if fl is not None and d >= fl - 1e-6:
+                    continue
+                return False
+        return True
 
     def _tail_ok(self, net, layer, w, tail):
         for a, b in zip(tail[:-1], tail[1:]):
