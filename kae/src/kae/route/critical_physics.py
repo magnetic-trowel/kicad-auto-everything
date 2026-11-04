@@ -48,6 +48,8 @@ RHO_CU = MAT.RHO_CU_OHM_MM        # ohm mm at 20 C
 T_PLATE = MAT.VIA_PLATING_MM      # mm via plating (IPC-6012 class 2 average), opts via_plating_mm
 T_AMB_MAX_C = 50.0                # warmest ambient a board is assumed to see (excite.heat's prior: 25-50 C)
 T_LAMINATE_MAX_C = 130.0          # FR-4's maximum operating temperature (UL RTI of standard FR-4, Tg 130-140)
+T_PARTS_WARN_C = 105.0            # copper hotter than this cooks nearby parts rated 85-105 C (aluminium
+                                  # electrolytics, many connectors): a warning even when the laminate is fine
 
 
 # ----------------------------------------------------------------------------- DC
@@ -111,12 +113,13 @@ def vias_needed(current_a, drill, plating=T_PLATE, dT=10.0, per_via_a=None):
 
 
 def heat_hazard(code, current_a, width_mm, t_mm, dT_max, objects, nominal_a=None, where="", w_ipc=None,
-                t_amb=T_AMB_MAX_C, t_max=T_LAMINATE_MAX_C):
+                t_amb=T_AMB_MAX_C, t_max=T_LAMINATE_MAX_C, t_warn=T_PARTS_WARN_C):
     """A hazard for copper of width_mm carrying current_a (the design current; nominal_a the expected
     one, without the E5 margin) when IPC-2221 puts it above dT_max: 'block' when even at the nominal
-    current the hotter of IPC-2221 and IPC-2152 lifts it from t_amb past the laminate's t_max, 'info'
-    when it is within 1.2x of its IPC width (at most 1.35 dT_max: the slack critical_rails' auto
-    gate grants), else 'warn'. None when the copper is wide enough."""
+    current the hotter of IPC-2221 and IPC-2152 lifts it from t_amb past the laminate's t_max; 'warn'
+    when it lifts it past t_warn (nearby parts rated 85-105 C), or when the copper is not within 1.2x of
+    its IPC width; else 'info' (within 1.2x: at most 1.35 dT_max, the slack critical_rails' auto gate
+    grants). None when the copper is wide enough."""
     d21, d52 = track_dT(current_a, width_mm, t_mm)
     if d21 <= dT_max * 1.001:
         return None
@@ -124,19 +127,25 @@ def heat_hazard(code, current_a, width_mm, t_mm, dT_max, objects, nominal_a=None
     n21, n52 = track_dT(nom, width_mm, t_mm)
     hot = max(n21, n52)
     w_ipc = ipc2221_width(current_a, dT_max, t_mm) if w_ipc is None else w_ipc
-    sev = "block" if t_amb + hot > t_max else ("info" if w_ipc <= 1.2 * width_mm else "warn")
+    if t_amb + hot > t_max:
+        sev = "block"
+    elif t_amb + hot > t_warn or w_ipc > 1.2 * width_mm:
+        sev = "warn"
+    else:
+        sev = "info"
     w_safe = ipc2221_width(nom, max(t_max - t_amb, dT_max), t_mm)
     return dict(
         code=code, severity=sev, category="thermal",
         message=(f"{where or objects[0]}: {width_mm:.2f} mm of {1e3 * t_mm:.0f} um copper carries {current_a:.2f} A, "
                  f"a {d21:.0f} K rise by IPC-2221 ({d52:.0f} K by IPC-2152) against {dT_max:g} K; "
-                 f"{'it would overheat' if sev == 'block' else 'it runs warm'} at the expected {nom:.2f} A "
+                 f"{'it would overheat the board' if sev == 'block' else ('it would cook parts rated to ' + format(t_warn, 'g') + ' C nearby' if t_amb + hot > t_warn else 'it runs warm')} at the expected {nom:.2f} A "
                  f"({n21:.0f}/{n52:.0f} K)"),
         objects=list(objects),
         evidence=dict(current_A=round(current_a, 3), nominal_A=round(nom, 3), width_mm=round(width_mm, 3),
                       copper_mm=t_mm, dT_ipc2221_K=round(d21, 1), dT_ipc2152_K=round(d52, 1),
                       dT_nominal_ipc2221_K=round(n21, 1), dT_nominal_ipc2152_K=round(n52, 1), dT_max_K=dT_max,
-                      ipc_width_mm=round(w_ipc, 3), T_amb_C=t_amb, T_laminate_max_C=t_max,
+                      ipc_width_mm=round(w_ipc, 3), T_amb_C=t_amb, T_laminate_max_C=t_max, T_parts_warn_C=t_warn,
+                      T_copper_nominal_C=round(t_amb + hot, 1),
                       source="IPC-2221 (k 0.048), IPC-2152 via Brooks-Adam (no plane); "
                              "docs/topics/rules/power/high-current.md"),
         fix=(f"pour the net (a zone at least {w_ipc:.1f} mm wide along the path), or give it "

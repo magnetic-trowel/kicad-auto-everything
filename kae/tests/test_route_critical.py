@@ -1356,3 +1356,26 @@ def test_text_writers_refuse_pre_kicad10_boards(tmp_path):
     W.edit(k9, out, remove=["11111111-1111-1111-1111-111111111111"])
     assert "1111" not in out.read_text()
     assert [i["locked"] for i in W.routing(k6)] == [True] and [i["locked"] for i in W.routing(k9)] == [False]
+
+
+def test_copper_hotter_than_nearby_parts_is_a_warning_and_past_the_laminate_a_block():
+    """Copper heat hazards: block past FR-4's 130 C, warn past 105 C (parts rated 85-105 C nearby), at a
+    50 C ambient, judged at the expected current."""
+    from kae.route.critical_physics import heat_hazard, ipc2221_dT, ipc2152_dT
+    # find widths that put 2 A of 35 um copper at ~80 K (130 C) and ~65 K (115 C) above ambient
+    def width_for(rise):
+        lo, hi = 0.01, 20.0
+        for _ in range(80):
+            mid = (lo + hi) / 2
+            if max(ipc2221_dT(2.0, mid), ipc2152_dT(2.0, mid)) > rise:
+                lo = mid
+            else:
+                hi = mid
+        return hi
+    hot = heat_hazard("copper_below_ipc_width", 2.0, width_for(90), 0.035, 10.0, ["N"], w_ipc=width_for(90) * 1.1)
+    warm = heat_hazard("copper_below_ipc_width", 2.0, width_for(65), 0.035, 10.0, ["N"], w_ipc=width_for(65) * 1.1)
+    cool = heat_hazard("copper_below_ipc_width", 2.0, width_for(30), 0.035, 10.0, ["N"], w_ipc=width_for(30) * 1.1)
+    assert hot["severity"] == "block"
+    assert warm["severity"] == "warn" and warm["evidence"]["T_parts_warn_C"] == 105.0
+    assert "105" in warm["message"]
+    assert cool["severity"] == "info"

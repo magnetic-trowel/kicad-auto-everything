@@ -82,7 +82,7 @@
 
 | Code | Severity | From |
 |---|---|---|
-| `copper_below_ipc_width`, `rail_left_narrow` | block / warn / info, thermal | copper narrower than its IPC width (the `rail_max_mm` cap, or a hop left to the bridge at the class width): block past 130 °C from 50 °C at the expected current, info within 1.2× |
+| `copper_below_ipc_width`, `rail_left_narrow` | block / warn / info, thermal | copper narrower than its IPC width (the `rail_max_mm` cap, or a hop left to the bridge at the class width): block past 130 °C from 50 °C at the expected current, warn past 105 °C (nearby parts rated 85–105 °C), info within 1.2× and below 105 °C |
 | `class_max_below_ipc` | warn, thermal | net class maximum below the IPC-2221 width for the current |
 | `escape_infeasible` | block, electrical | `escape.certificate`: balls no routing can escape under the rules, with the relaxations that suffice ([bga-routing-ranked-ideas.md](../routing/bga-routing-ranked-ideas.md)) |
 | `body_overlap` / `body_relaxed` | block / info, assembly | `Problem.relaxed_body_hazards`, per part `relax_bodies` freed (off by default; `escalate`, `auto`), on the final poses: block when its body overlaps another part ([kae-exact-legality](../../research/placement/kae-exact-legality.md)) |
