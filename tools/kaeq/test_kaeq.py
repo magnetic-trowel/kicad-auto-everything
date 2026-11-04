@@ -933,3 +933,25 @@ def test_light_batch_jobs_fill_spare_cpus_and_heavy_ones_wait_for_the_run_queue(
         d.tick()
     assert states(d)["filler"] == "running" and states(d)["heavy"] == "queued"
     d.c.execute("UPDATE jobs SET state='cancelled' WHERE state IN ('queued','running')")
+
+
+def test_a_waiting_filler_holds_no_room_for_itself(kq):
+    clock = [0]
+
+    def idle_cpus():
+        clock[0] += 4000
+        return 0, clock[0]
+    kq.cpu_ticks = idle_cpus
+    kq.runnable_threads = lambda: 200                        # no spare CPU right now: fillers wait
+    conf = json.load(open(kq.CONF)); conf.update(threads=64, reserve_cpu=0, cgroup="off", starve_after_s=0)
+    json.dump(conf, open(kq.CONF, "w"))
+    d = kq.Daemon()
+    submit(kq, "sleep 20", name="busy", qos="timed")
+    drive(kq, d, lambda: states(d)["busy"] == "running")
+    submit(kq, "sleep 20", name="filler", qos="batch", cpus=2, mem="1G", prio=5)   # first in line, long "starving"
+    submit(kq, "sleep 20", name="timed", qos="timed", cpus=1, mem="1G")
+    drive(kq, d, lambda: states(d)["timed"] == "running")
+    assert states(d)["filler"] == "queued"
+    kq.runnable_threads = lambda: 0                          # CPUs spare: it starts
+    drive(kq, d, lambda: states(d)["filler"] == "running")
+    d.c.execute("UPDATE jobs SET state='cancelled' WHERE state IN ('queued','running')")

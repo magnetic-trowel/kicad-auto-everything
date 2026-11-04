@@ -189,11 +189,12 @@ DEFAULTS = {
     # "full", at least starve_full of the time for starve_s) holds its memory while hardly progressing: it is frozen
     # and compressed into zram, which costs it almost nothing, and thawed once the run queue has room for its CPUs
     "starve_full": 0.5,
-    # fillers: light batch jobs run at SCHED_IDLE (heavy_boost), so they only take CPU nothing else wants. They are
-    # admitted by memory, not by the run queue, while their declared CPUs stay within filler_frac of the CPUs jobs
-    # may use; starved ones are frozen and compressed (starve_*). The run queue that gates normal-priority starts
-    # leaves out idle-priority threads
-    "filler_frac": 1.0,
+    # fillers: light batch jobs run at SCHED_IDLE (heavy_boost), so they only take CPU nothing else wants. One starts
+    # whenever CPUs are spare right now (all threads ready to run below the CPUs jobs may use), memory permitting,
+    # while their declared CPUs stay within filler_frac of those CPUs (a loose limit); starved ones are frozen and
+    # compressed (starve_*); a waiting filler never holds room (no starvation hold). The run queue that gates
+    # normal-priority starts leaves out idle-priority threads
+    "filler_frac": 2.0,
     "starve_s": 180,
     "timed_preempt_s": 30,   # a timed job that needs memory nobody can give requeues the newest batch job, at most this often
     "lease_hold_frac": 0.1,  # lease: share (batch jobs; frozen and compressed cheaply when short) of a job's unused grant counted as taken (1: grants are reservations;
@@ -2086,8 +2087,12 @@ class Daemon:
         queued = c.execute("SELECT * FROM jobs WHERE state='queued' AND not_before<=?", (now,)).fetchall()
         running = c.execute("SELECT * FROM jobs WHERE state='running'").fetchall()
         pool = len(job_cpus(cfg) or ()) or cfg["threads"] - cfg["reserve_cpu"]
-        fill = [sum(j["cpus"] for j in running if j["qos"] == "batch" and self.is_filler(j, cfg))]
-        filler_ok = lambda j: fill[0] + j["cpus"] <= cfg["filler_frac"] * pool
+        # a filler starts when CPUs are spare right now (all threads ready to run, idle priority included, below
+        # the CPUs jobs may use): at idle priority it cannot hurt anyone if that is brief. filler_frac x those CPUs
+        # caps fillers' declared CPUs, a loose sanity limit
+        fill = [sum(j["cpus"] for j in running if j["qos"] == "batch" and self.is_filler(j, cfg)),
+                runnable_threads()]
+        filler_ok = lambda j: (fill[1] + j["cpus"] <= pool and fill[0] + j["cpus"] <= cfg["filler_frac"] * pool)
         per_owner = {}
         for j in c.execute("SELECT owner, COUNT(*) n FROM jobs WHERE state='running' GROUP BY owner"):
             per_owner[j["owner"]] = j["n"]
@@ -2101,8 +2106,10 @@ class Daemon:
                                                       else filler_ok(j) if self.is_filler(j, cfg)
                                                       else j["cpus"] <= cpu_room)))
             fit = next((j for j in queued if fits(j)), None)
-            head = queued[0]
-            if fit is not None and fit is not head and now - head["submitted"] > cfg["starve_after_s"]:
+            # the first job that is not a filler (fillers wait for spare CPU, opportunistically: they hold no room)
+            head = next((j for j in queued if not self.is_filler(j, cfg)), queued[0])
+            if fit is not None and fit is not head and now - head["submitted"] > cfg["starve_after_s"] \
+                    and not self.is_filler(head, cfg):
                 # head is starving: hold the room for it, but let jobs that end soon use it meanwhile,
                 # so the head waits at most about backfill_short_s longer once its room frees
                 short = self.short_owners(cfg) if short is None else short
@@ -2115,6 +2122,7 @@ class Daemon:
             if self.start(fit, cfg):
                 if fit["qos"] == "batch" and self.is_filler(fit, cfg):
                     fill[0] += fit["cpus"]
+                    fill[1] += fit["cpus"]            # its threads appear as it starts up
                 mem_room -= self.need_mb(fit, cfg)
                 cpu_room -= fit["cpus"]
                 disk_room -= fit["disk_mb"]
