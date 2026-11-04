@@ -42,7 +42,7 @@ import tempfile
 from pathlib import Path
 
 from shapely import STRtree
-from shapely.geometry import Point
+from shapely.geometry import LineString, Point
 
 from . import critical_write as W
 from . import pad_entry as PE
@@ -200,7 +200,9 @@ def write(text, trims, skip=frozenset()):
 
 def stats(text, info, tol=1e-3):
     """Pad entries of the board: {entries, at_centre, near_edge, perpendicular (<= 10 deg off
-    the edge normal), oblique (10-45), acute (> 45: a wedge under 45 deg), track_mm}."""
+    the edge normal), oblique (10-45), acute (> 45: a wedge under 45 deg), overhanging (the
+    entering piece adds copper beside or beyond the land, pad_entry.overhang), overhang_mm2
+    (that copper, summed), track_mm}."""
     from shapely.ops import unary_union
     pads = {}
     for k, lst in _pads(info).items():
@@ -211,8 +213,8 @@ def stats(text, info, tol=1e-3):
             cs = [c for h, c, _ in lst if g.buffer(1e-6).contains(Point(c))]
             pads.setdefault(k, []).append((g, cs, None))
     segs = _segments(text)
-    st = dict(entries=0, at_centre=0, near_edge=0, perpendicular=0, oblique=0, acute=0,
-              track_mm=round(sum(math.dist(s["a"], s["b"]) for s in segs), 3), vias=len(_vias(text)))
+    st = dict(entries=0, at_centre=0, near_edge=0, on_centreline=0, perpendicular=0, oblique=0, acute=0,
+              overhanging=0, overhang_mm2=0.0, track_mm=round(sum(math.dist(s["a"], s["b"]) for s in segs), 3), vias=len(_vias(text)))
     for s in segs:
         for g, c, _ in pads.get((s["net"], s["layer"]), ()):
             ina, inb = g.contains(Point(s["a"])), g.contains(Point(s["b"]))
@@ -222,6 +224,13 @@ def stats(text, info, tol=1e-3):
             ang = PE.entry_angle(g, s["a"], s["b"])
             st["entries"] += 1
             st["at_centre" if any(math.dist(inside, x) <= tol for x in c) else "near_edge"] += 1
+            a0, b0 = PE.centreline(g)
+            if LineString([a0, b0]).distance(Point(inside)) <= 0.01 if math.dist(a0, b0) > 0 else math.dist(a0, inside) <= 0.01:
+                st["on_centreline"] += 1
+            ov = PE.overhang(g, s["b"] if ina else s["a"], inside, s["w"])
+            if ov > PE.OVER_AREA:
+                st["overhanging"] += 1
+                st["overhang_mm2"] = round(st["overhang_mm2"] + ov, 4)
             if ang is None:
                 continue
             st["perpendicular" if ang <= 10 else "oblique" if ang <= 45 else "acute"] += 1
