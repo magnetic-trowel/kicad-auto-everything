@@ -327,3 +327,88 @@ def test_fillet_turns_an_acute_anchor_into_a_tangent_arc():
     pieces2 = [("seg", head[0], head[1])] + r2.pieces
     assert _acute_corners(pieces2) == 0
     assert r2.pieces[0][0] == "arc" and G.g1_defects(pieces2) == []
+
+
+# ----------------------------------------------------------------------------- tails into lands narrower than the track
+def _fake_taut(currents=None, min_w=0.1):
+    from types import SimpleNamespace
+    from kae.route import power_copper as PC
+    from kae.route.taut import Taut
+
+    class _SP:
+        def width_limits(self, net, layer):
+            return (min_w, 0.2, None)
+    t = SimpleNamespace(PC=PC, sp=_SP(), hazards=[], _flagged=set(), stats={})
+    t._pad_current = lambda pd, net: (currents or {}).get(net, 0.0)
+    t._land_targets = lambda *a: Taut._land_targets(t, *a)
+    return t
+
+
+def test_taut_tails_use_pad_entry_overhang_neck_and_hazard():
+    from types import SimpleNamespace
+    from shapely.geometry import box
+    from kae.route import pad_entry as PE
+    from kae.route.taut import Taut
+    land = box(-0.5, -0.3, 0.5, 0.3)
+    pd = SimpleNamespace(owner=("R1", "1"))
+    t = _fake_taut()
+    # narrower than the land: rule D as before, no neck
+    ts, neck, wide = Taut._land_targets(t, land, pd, "N", "F.Cu", 0.25, (3.0, 0.1), 0.25, False)
+    assert ts and neck is None and not wide
+    # wider than the short side: only the long-edge entry, no copper past the land
+    ts, neck, wide = Taut._land_targets(t, land, pd, "N", "F.Cu", 0.8, (3.0, 0.1), 0.8, False)
+    assert [k for _, _, k in ts] == ["long"] and neck is None
+    assert all(PE.overhang(land, a, e, 0.8) <= PE.OVER_AREA for a, e, _ in ts)
+    # wider than the land: necked to at most the land width, the wide copper neck_len + w/2 out
+    ts, neck, wide = Taut._land_targets(t, land, pd, "N", "F.Cu", 1.2, (3.0, 0.1), 1.2, False)
+    assert neck is not None and neck <= 0.6 + 1e-9 and ts
+    for a, e, _ in ts:
+        assert math.dist(a, PE.crossing(land, a, e)) >= PE.NECK_LEN + 0.6 - 1e-6
+    # a current needing more than the land: wide copper kept, one hazard per pad
+    t = _fake_taut({"+5V": 2.0})
+    for _ in range(2):
+        ts, neck, wide = Taut._land_targets(t, land, pd, "+5V", "F.Cu", 1.2, (3.0, 0.1), 1.2, True)
+    assert neck is None and wide and ts and len(t.hazards) == 1
+    assert t.hazards[0]["code"] == "land_enlarged_by_track" and t.hazards[0]["objects"] == ["R1.1", "+5V"]
+
+
+def test_merge_tiny_keeps_a_width_step():
+    from kae.route.taut import _merge_tiny
+    pieces = [("seg", (0, 0), (1, 0)), ("seg", (1, 0), (2, 0)), ("seg", (2, 0), (3, 0))]
+    out, ws = _merge_tiny(pieces, [0.6, 1.2, 1.2])
+    assert ws == [0.6, 1.2] and out[0] == ("seg", (0, 0), (1, 0)) and out[1][2] == (3, 0)
+
+
+def _land(ref, net, x, y, s=0.6):
+    return (ref, "Land", "x:Land", x, y, 0.0, [("1", net, 0.0, 0.0, s, s, "smd", 0.0, "", "passive")], (0.6, 0.85))
+
+
+@pytest.mark.kicad
+def test_taut_necks_a_track_wider_than_its_lands(tmp_path):
+    """A 1.0 mm track with a detour between two 0.6 mm lands: taut pulls it straight and necks both
+    ends to at most the land width; no entry hangs copper past its land; DRC no worse."""
+    from kae.board import pcbnew_io
+    if not pcbnew_io.available():
+        pytest.skip("no Python with pcbnew")
+    import critical_fixtures as F
+    from kae.board.kicad_file import load
+    from kae.route import critical_write as W
+    from kae.route import taut
+    src = F.write_board(tmp_path / "in", extra=[_land("R1", "WIDE", 103.0, 103.0), _land("R2", "WIDE", 118.0, 103.0)])
+    pts = [(103, 103), (107, 103), (108.4, 101.6), (112.6, 101.6), (114, 103), (118, 103)]
+    tracks = [("WIDE", "F.Cu", 1.0, a, b, W.new_uuid(), False) for a, b in zip(pts[:-1], pts[1:])]
+    out = tmp_path / "routed" / "board.kicad_pcb"
+    out.parent.mkdir()
+    W.append_items(src, out, tracks=tracks)
+    for ext in (".kicad_pro", ".kicad_dru"):
+        if src.with_suffix(ext).exists():
+            (out.with_suffix(ext)).write_text(src.with_suffix(ext).read_text())
+    st0 = taut.board_stats(out)
+    rep = taut.run(out, tmp_path / "out.kicad_pcb", workdir=tmp_path / "w", log=lambda *a: None)
+    for t, n in rep["drc_out"]["by_type"].items():
+        assert n <= rep["drc_in"]["by_type"].get(t, 0)
+    st1 = taut.board_stats(tmp_path / "out.kicad_pcb")
+    assert st0["overhanging"] == 2 and st1["overhanging"] == 0, (st0, st1, rep["stats"])
+    assert rep["necks"] == 2 and rep["hazards"] == []
+    ws = sorted({round(t.width, 3) for t in load(tmp_path / "out.kicad_pcb").tracks if t.net == "WIDE"})
+    assert ws[0] <= 0.6 and ws[-1] == 1.0

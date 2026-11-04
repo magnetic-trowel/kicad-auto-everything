@@ -68,10 +68,13 @@ DEFAULTS = dict(
     pairs="coupled",         # diff pairs: "coupled" (a coupled section is tightened as one centreline at
                              # constant spacing, its ends' headings kept; skew never worse) or "fixed"
     respect_locked=True,
+    operating=None,          # operating facts JSON (pad currents: necks and land hazards); default: the project's
+                             # KAE_OPERATING text variable (power_copper._operating)
     drc_budget=40,
     eps_topo=3e-3,
 )
 
+LEN_ABS, LEN_REL = 1.0, 0.2              # a tail taking copper off a land may grow this much (pad_reroute's limit)
 MARGIN = 2e-3 + 2 * A.SAG + 1e-4          # mm the exact path keeps above every requirement (TOL + sampling)
 CHECK_TOL = 2e-3                          # mm above every requirement in the exact check (critical_space.TOL)
 
@@ -136,6 +139,8 @@ class Taut:
         self.vias = [it for it in sp.existing if it.kind == "via"]
         self.fixed_nets, self.why_fixed = self._fixed_nets()
         self.stats = dict(branches=0, tried=0, improved=0, skipped={}, passes=[])
+        self.hazards, self._flagged, self._currents = [], set(), None
+        self.necks, self.over_fixed = {}, {}           # per net: necks made, overhanging entries removed
         self.changed_nets = set()
         self.t_setup = time.monotonic() - t0
         log(f"[taut] {len(self.recs)} tracks, {len(self.fixed_nets)} nets fixed "
@@ -550,20 +555,59 @@ class Taut:
             opt = w
         return w >= 0.4 or w > opt + 1e-6
 
+    def _pad_current(self, pd, net):
+        """Current (A) through the pad `pd` of `net` (power_copper.pad_currents on the operating facts)."""
+        if self._currents is None:
+            op = self.PC._operating(self.path, self.o.get("operating"))
+            pads = [(f.ref, p.net) for f in self.board.footprints for p in f.pads if p.net]
+            self._currents = self.PC.pad_currents(op, pads, self.power, self.ground) if op else {}
+        ref = pd.owner[0] if isinstance(pd.owner, tuple) else None
+        return self._currents.get((ref, net), 0.0)
+
+    def _land_targets(self, pad, pd, net, layer, w, R, stub, cur):
+        """Rule-D targets of pad_entry (centreline_targets: no copper beside or beyond the land) for
+        a branch of width w released at R: ([(a, end, kind)], neck width or None, overhang kept).
+        A track wider than every entry is necked (pad_entry.neck_width: at most the land width, at
+        least the board minimum and what the pad's current needs, the wide copper ending
+        neck_len + w/2 off the outline); when the current needs more, the wide copper stays (the
+        tip test alone) and a land hazard is recorded."""
+        ts = PE.centreline_targets(pad, R, w, stub=stub)
+        if ts:
+            return ts, None, False
+        i_a = self._pad_current(pd, net)
+        need = self.PC.current_need(i_a, self.PC.DEFAULTS["current_margin"])
+        min_w = self.sp.width_limits(net, layer)[0]
+        land = PE.land_width(pad)
+        fit, nts = PE.neck_width(pad, R, w, 0.0, min_w, stub=PE.NECK_LEN + w / 2)
+        if fit is not None and fit + 1e-9 >= need and fit < w - 1e-9:
+            return nts, fit, False
+        if need > 0 and (need >= land or fit is not None):
+            ref, pin = pd.owner if isinstance(pd.owner, tuple) and len(pd.owner) == 2 else (None, None)
+            key = (ref, pin, net)
+            if key not in self._flagged:
+                self._flagged.add(key)
+                self.hazards.append(PE.land_hazard(ref, pin, net, w, land, need, i_a))
+            return PE.centreline_targets(pad, R, w, stub=stub, check_overhang=False), None, True
+        return [], None, False
+
     def tails(self, net, layer, w, pts):
         """Candidate tails at the start of pts (which begins in a pad of net), pad-entry rule D:
         every track ends on the pad's long centre line (the segment along the long axis, (w - h)/2
         each side of the centre; a square or round pad's centre; a stadium's end-circle centres),
         and the piece crossing the pad outline is within 10 degrees of the outline's normal.
         [(tail points from the end to the anchor, anchor, square, index into pts of the first kept
-        point, connector, pad to check a direct entry against)]; [] when the start is no pad end:
+        point, connector, pad to check a direct entry against, tail width or None, overhangs)];
+        [] when the start is no pad end:
         - direct: the path runs straight to the nearest centre-line point (no tail; kept only when
-          its crossing turns out square, checked in tighten);
-        - square through the long edge to the centre line, or along the axis through the short
-          edge to the centre line's end (a round pad: radially to its centre); the anchor is one
-          track width outside the outline, the turn there becomes a tangent arc (_fillet_anchors);
+          its crossing turns out square and adds no copper past the land, checked in tighten);
+        - pad_entry.centreline_targets (square through the long edge to the centre line, along the
+          axis through the short edge to the centre line's end, radially into a round end; the
+          same overhang test as pad_reroute: no copper beside or beyond the land); the anchor is
+          one track width outside the outline, the turn there becomes a tangent arc
+          (_fillet_anchors). A track wider than every entry is necked to the widest that fits
+          (tail width), or kept wide with a land hazard where its current needs the width;
         - the input's own tail as the fallback.
-        Current-carrying tracks end at least a width inside the outline they cross."""
+        Current-carrying tracks entering along the axis end at least a width inside the outline."""
         pd = self._pad_at(net, layer, pts[0])
         if pd is None:
             return []
@@ -582,7 +626,8 @@ class Taut:
         orig_anchor = (c[0] + d[0] * min(stub, seg_out), c[1] + d[1] * min(stub, seg_out))
         orig_tail = list(pts[:k]) + [orig_anchor]
         perp_orig = ang is not None and ang <= self.o["max_angle"] and seg_out >= stub - 1e-9
-        fallback = (orig_tail, orig_anchor, perp_orig, k, None, None)
+        over_orig = PE.overhangs(pad, pts[k], pts[k - 1], w)
+        fallback = (orig_tail, orig_anchor, perp_orig, k, None, None, None, over_orig)
         if self._bga(pd) or any(v.geom.distance(pd.geom) <= 1e-6 for v in self.vias if v.net == net) \
                 or not self.o["pad_tails"]:
             return [fallback]
@@ -592,36 +637,31 @@ class Taut:
         ctr, u, L, H, round_ = fr
         cur = self._current(net, w)
         vx, vy = -u[1], u[0]
-
-        def world(x, y):
-            return (ctr[0] + x * u[0] + y * vx, ctr[1] + x * u[1] + y * vy)
         R = pts[k]
         rx = (R[0] - ctr[0]) * u[0] + (R[1] - ctr[1]) * u[1]
-        ry = (R[0] - ctr[0]) * vx + (R[1] - ctr[1]) * vy
         half = max(0.0, (L - H) / 2)
+        ts, neck, kept_wide = self._land_targets(pad, pd, net, layer, w, R, stub, cur)
+        if neck is not None:
+            self.stats["necks_planned"] = self.stats.get("necks_planned", 0) + 1
         out = []
-        if round_:
-            n = math.hypot(R[0] - ctr[0], R[1] - ctr[1])
-            if n > 1e-9:
-                dx, dy = (R[0] - ctr[0]) / n, (R[1] - ctr[1]) / n
-                e = PE.crossing(pad, R, ctr) or ctr
-                a = (e[0] + stub * dx, e[1] + stub * dy)
-                out.append(([ctr, a], a, True, k, orig_anchor, None))
-        else:
-            x_c = max(-half, min(half, rx))
-            sy = 1.0 if ry >= 0 else -1.0
-            sx = 1.0 if rx >= 0 else -1.0
-            # through the long edge, square, to the centre line
-            a = world(x_c, sy * (H / 2 + stub))
-            out.append(([world(x_c, 0.0), a], a, True, k, orig_anchor, None))
-            # along the axis through the short edge, to the centre line's end (a width deep for
-            # current-carrying copper)
-            xe = min(half, L / 2 - stub) if cur else half
-            a = world(sx * (L / 2 + stub), 0.0)
-            out.append(([world(sx * max(0.0, xe), 0.0), a], a, True, k, orig_anchor, None))
-        # direct to the nearest centre-line point, when the crossing is square (checked after the solve)
-        e_d = ctr if round_ else world(max(-half, min(half, rx)), 0.0)
-        out.append(([e_d], e_d, True, k, orig_anchor, pad))
+        tw = neck or w
+        for a, end, kind in ts:
+            if kind == "straight" and not round_:
+                continue                 # the direct candidate below is the free version of it
+            if kind == "axial" and cur and neck is None:
+                # current-carrying copper along the axis: at least a width deep, where that still fits
+                x = PE.crossing(pad, a, end)
+                dd = PE._unit(end[0] - a[0], end[1] - a[1])
+                if x is not None and dd is not None:
+                    t = min(max(math.dist(x, end), w), max(0.0, (ctr[0] - x[0]) * dd[0] + (ctr[1] - x[1]) * dd[1]))
+                    e2 = (x[0] + t * dd[0], x[1] + t * dd[1])
+                    if kept_wide or not PE.overhangs(pad, a, e2, w):
+                        end = e2
+            out.append(([end, a], a, True, k, orig_anchor, None, neck, kept_wide))
+        if neck is None:
+            # direct to the nearest centre-line point, when the crossing is square (checked after the solve)
+            e_d = ctr if round_ else (ctr[0] + max(-half, min(half, rx)) * u[0], ctr[1] + max(-half, min(half, rx)) * u[1])
+            out.append(([e_d], e_d, True, k, orig_anchor, pad, None, None))
         out.append(fallback)
         return out
 
@@ -634,9 +674,10 @@ class Taut:
         if heads is None or tails is None:
             return None
         if not heads:
-            heads = [([pts[0]], pts[0], True, 1, None, None)]
+            heads = [([pts[0]], pts[0], True, 1, None, None, None, False)]
         if not tails:
-            tails = [([pts[-1]], pts[-1], True, 1, None, None)]
+            tails = [([pts[-1]], pts[-1], True, 1, None, None, None, False)]
+        over_in = int(bool(heads[-1][7])) + int(bool(tails[-1][7]))     # the input's entries hanging past their lands
         ka, kb = heads[-1][3], tails[-1][3]
         if ka >= len(pts) - kb:
             return None
@@ -652,8 +693,8 @@ class Taut:
             # as segments)
             mid = _dedupe([h0[1]] + list(pts[h0[3]:len(pts) - t0[3]]) + [t0[1]])
             pieces = _tail_pieces(h0[0]) + _tail_pieces(mid) + _tail_pieces(t0[0][::-1])
-            cands.append(((_acute_corners(pieces), 0 if (h0[2] and t0[2]) else 1, G.path_length(pieces)),
-                          pieces, G.path_length(pieces), None))
+            cands.append(((_acute_corners(pieces), over_in, 0 if (h0[2] and t0[2]) else 1, G.path_length(pieces)),
+                          pieces, G.path_length(pieces), None, [w] * len(pieces)))
         fails = []
         input_bad = False
         for grow in (1, 2, 4):
@@ -672,7 +713,7 @@ class Taut:
                     mid = _dedupe(mid)
                     if len(mid) < 2:
                         continue
-                    if not self._tail_ok(net, layer, w, h[0]) or not self._tail_ok(net, layer, w, t[0]):
+                    if not self._tail_ok(net, layer, h[6] or w, h[0]) or not self._tail_ok(net, layer, t[6] or w, t[0]):
                         continue
                     r = bs.solve(mid)
                     if r is None:
@@ -684,9 +725,17 @@ class Taut:
                     if t[5] is not None and not _square_entry(t[5], r.pieces, 1, self.o["max_angle"]):
                         continue
                     r = _fillet_anchors(r, h[0], t[0], w, bs.check)
+                    # a neck: the wide copper stays neck_len off the land (power_copper's neck rule)
+                    if any(x[6] is not None and _near_land(x[0][0], r.pieces, PE.NECK_LEN + w / 2 - 2e-3, self, net, layer)
+                           for x in (h, t)):
+                        continue
                     L = r.length + _plen(h[0]) + _plen(t[0])
-                    pieces = _tail_pieces(h[0]) + r.pieces + _tail_pieces(t[0][::-1])
-                    got.append(((_acute_corners(pieces), 0 if (h[2] and t[2]) else 1, L), pieces, L, r))
+                    hp, tp = _tail_pieces(h[0]), _tail_pieces(t[0][::-1])
+                    pieces = hp + r.pieces + tp
+                    widths = [h[6] or w] * len(hp) + [w] * len(r.pieces) + [t[6] or w] * len(tp)
+                    ov = sum(int(bool(x[7])) if x[7] is not None else
+                             int(_direct_overhangs(x[5], r.pieces, e, w)) for x, e in ((h, 0), (t, 1)))
+                    got.append(((_acute_corners(pieces), ov, 0 if (h[2] and t[2]) else 1, L), pieces, L, r, widths))
             if not got and "apex unmapped" in fails and grow < 4:
                 continue                  # the funnel ran along the window: a larger one
             if got and not all(g[3].certificate.get("window", True) for g in got) and grow < 4:
@@ -697,35 +746,43 @@ class Taut:
         # then perpendicular entries, then length) that
         # is shorter than the input and passes the board's exact check
         acute_in = _acute_corners(_tail_pieces(pts))     # never more acute corners than the input had
-        ok = sorted((c for c in cands if c[2] < old_len - self.o["min_gain"] and c[0][0] <= acute_in), key=lambda c: c[0])
+        # shorter than the input; or, where it takes copper off a land the input hung past, at most
+        # pad_reroute's length limit longer. Never more acute corners or overhanging entries.
+        ok = sorted((c for c in cands if c[0][0] <= acute_in and c[0][1] <= over_in and
+                     (c[2] < old_len - self.o["min_gain"] or
+                      (c[0][1] < over_in and c[2] <= old_len * (1 + LEN_REL) + LEN_ABS))), key=lambda c: c[0])
         if not ok:
             self._skip("input breaks a clearance" if input_bad else
                        ("no gain" if cands else "solve: " + (fails[0] if fails else "tails illegal")))
             return None
-        for score, pieces, L, r in ok:
-            pieces = _merge_tiny(pieces)
-            if r is None or self._exact_ok(net, layer, w, pieces):
+        for score, pieces, L, r, widths in ok:
+            pieces, widths = _merge_tiny(pieces, widths)
+            if r is None or self._exact_ok(net, layer, widths, pieces):
                 break             # (the plain trim is a subset of the input's copper)
         else:
             self._skip("space check")
             return None
         st = self.stats.setdefault("certificate", dict(g1=0, window=0, fillet=0, inserted=0, perpendicular=0, trim_only=0))
-        st["perpendicular"] += score[1] == 0
+        st["perpendicular"] += score[2] == 0
+        necks = sum(1 for x in (widths[0], widths[-1]) if x < w - 1e-9) if len(widths) > 1 else int(widths[0] < w - 1e-9)
         if r is None:
             st["trim_only"] = st.get("trim_only", 0) + 1
-            return dict(pieces=pieces, length=L, old=old_len, cert={}, inserted=0, score=score)
+            return dict(pieces=pieces, widths=widths, length=L, old=old_len, cert={}, inserted=0, score=score, necks=0,
+                        over=score[1], over_in=over_in)
         cert = r.certificate
         st["g1"] += bool(cert.get("g1"))
         st["window"] += bool(cert.get("window", True))
         st["fillet"] += bool(cert.get("fillet"))
         st["inserted"] += r.inserted
-        return dict(pieces=pieces, length=L, old=old_len, cert=cert, inserted=r.inserted, score=score)
+        return dict(pieces=pieces, widths=widths, length=L, old=old_len, cert=cert, inserted=r.inserted, score=score,
+                    necks=necks, over=score[1], over_in=over_in)
 
     def _exact_ok(self, net, layer, w, pieces):
         """The board's exact check (critical_space.Space, the chain's own copper is the same net), an
-        item the input was already this close to excepted (floors)."""
-        for p in pieces:
-            for it, d, nd in A.polyline_violations(self.sp, net, layer, w, A.piece_coords(p)):
+        item the input was already this close to excepted (floors). w: one width, or one per piece."""
+        ws = w if isinstance(w, (list, tuple)) else [w] * len(pieces)
+        for p, wp in zip(pieces, ws):
+            for it, d, nd in A.polyline_violations(self.sp, net, layer, wp, A.piece_coords(p)):
                 fl = self._floors.get(id(it)) if it != "edge" else None
                 if fl is not None and d >= fl - 1e-6:
                     continue
@@ -927,8 +984,9 @@ class Taut:
         return gain
 
     # ---------------------------------------------------------------- apply
-    def apply(self, net, layer, w, recs, pieces):
+    def apply(self, net, layer, w, recs, pieces, widths=None):
         sp = self.sp
+        widths = widths or [w] * len(pieces)
         rm = []
         for r in recs:
             self.recs.pop(r["uuid"], None)
@@ -938,7 +996,7 @@ class Taut:
         if rm:
             self._remove(rm)
         prev = None
-        for p in pieces:
+        for p, w in zip(pieces, widths):
             u = W.new_uuid()
             s, e = A.piece_ends(p)
             if prev is not None:
@@ -984,8 +1042,10 @@ class Taut:
                     got = None
                 if got is None:
                     continue
-                self.apply(net, layer, w, recs, got["pieces"])
+                self.apply(net, layer, w, recs, got["pieces"], got.get("widths"))
                 gain[net] = gain.get(net, 0.0) + got["old"] - got["length"]
+                self.necks[net] = self.necks.get(net, 0) + got.get("necks", 0)
+                self.over_fixed[net] = self.over_fixed.get(net, 0) + got.get("over_in", 0) - got.get("over", 0)
                 n_imp += 1
             if self.o["pairs"] == "coupled" and self.pair_of:
                 for got in self.pairs_pass():
@@ -1285,26 +1345,47 @@ def _acute_corners(pieces, tol_deg=90.0):
     return n
 
 
-def _merge_tiny(pieces):
+def _merge_tiny(pieces, widths=None):
     """Arcs narrower than arcs.MIN_SWEEP become their chord (checked again by the caller); collinear
-    neighbouring segments merge."""
-    out = []
-    for p in pieces:
+    neighbouring segments of one width merge. With `widths` (one per piece): (pieces, widths)."""
+    out, ws = [], []
+    for p, w in zip(pieces, widths if widths is not None else [None] * len(pieces)):
         if p[0] == "arc" and abs(p[4]) < A.MIN_SWEEP:
             s, e = A.piece_ends(p)
             p = ("seg", s, e)
         if p[0] == "seg" and math.dist(p[1], p[2]) < 1e-6:
             continue
-        if out and p[0] == "seg" and out[-1][0] == "seg" and _deflect(out[-1][1], out[-1][2], p[2]) < 1e-9:
+        if out and p[0] == "seg" and out[-1][0] == "seg" and ws[-1] == w \
+                and _deflect(out[-1][1], out[-1][2], p[2]) < 1e-9:
             out[-1] = ("seg", out[-1][1], p[2])
             continue
         out.append(p)
+        ws.append(w)
     # re-chain exactly
     for i in range(1, len(out)):
         prev_end = A.piece_ends(out[i - 1])[1]
         if out[i][0] == "seg":
             out[i] = ("seg", prev_end, out[i][2])
-    return out
+    return out if widths is None else (out, ws)
+
+
+def _direct_overhangs(pad, pieces, end, w):
+    """Whether a direct entry (the path's own piece crossing into `pad`) hangs copper past the land."""
+    if pad is None or not pieces:
+        return False
+    p = pieces[0] if end == 0 else pieces[-1]
+    if p[0] != "seg":
+        return True
+    a, b = (p[2], p[1]) if end == 0 else (p[1], p[2])      # outside -> inside
+    return PE.overhangs(pad, a, b, w)
+
+
+def _near_land(end, pieces, dist, tt, net, layer):
+    """Whether any of the taut pieces comes closer than `dist` (centre line) to the pad holding `end`."""
+    pd = tt._pad_at(net, layer, end)
+    if pd is None:
+        return False
+    return any(pd.geom.distance(LineString(A.piece_coords(p))) < dist for p in pieces)
 
 
 # ----------------------------------------------------------------------------- statistics
@@ -1320,7 +1401,7 @@ def board_stats(board_path, info=None, power=None, ground=None):
         from . import power_copper as PC
         power, ground, _, _ = PC.classify(build(b), b.nets)
     st = dict(length=dict(signal=0.0, power=0.0, ground=0.0), corners=0, acute=0, arcs=0, segments=0,
-              entries=0, perpendicular=0, oblique=0, acute_entries=0)
+              entries=0, perpendicular=0, oblique=0, acute_entries=0, overhanging=0, overhang_mm2=0.0)
     ends = {}
     for t in b.tracks:
         cls = "ground" if t.net in ground else "power" if t.net in power else "signal"
@@ -1367,6 +1448,10 @@ def board_stats(board_path, info=None, power=None, ground=None):
                 continue
             ang = PE.entry_angle(g, t.start, t.end)
             st["entries"] += 1
+            ov = PE.overhang(g, t.end if ina else t.start, t.start if ina else t.end, t.width)
+            if ov > PE.OVER_AREA:
+                st["overhanging"] += 1
+                st["overhang_mm2"] = round(st["overhang_mm2"] + ov, 4)
             if ang is None:
                 continue
             st["perpendicular" if ang <= 10 else "oblique" if ang <= 45 else "acute_entries"] += 1
@@ -1482,7 +1567,11 @@ def run(input_path, output_path, opts=None, workdir=None, timeout=1800, log=prin
     reverted = set(getattr(tt, "_final", {})) - set(tt.changed_nets)
     rep = dict(board=str(inp), stats=tt.stats, nets_changed=sorted(tt.changed_nets), nets_reverted=sorted(reverted),
                fixed=tt._count_why(), drc_in=base, drc_out=final, rounds=rounds, plan_s=round(t_plan, 2),
-               setup_s=round(tt.t_setup, 2), passes_s=round(getattr(tt, "t_passes", 0.0), 2))
+               setup_s=round(tt.t_setup, 2), passes_s=round(getattr(tt, "t_passes", 0.0), 2),
+               necks=sum(tt.necks.get(n, 0) for n in tt.changed_nets),
+               overhang_fixed=sum(tt.over_fixed.get(n, 0) for n in tt.changed_nets),
+               hazards=list(tt.hazards))
+    rep["stats"]["hazards"] = len(tt.hazards)
     if o.get("power_copper"):
         t1 = time.monotonic()
         pc_out = out.with_name(out.stem + ".pc.kicad_pcb")
@@ -1509,6 +1598,8 @@ def main(argv=None):
     r.add_argument("--no-victims", action="store_true")
     r.add_argument("--no-tails", action="store_true")
     r.add_argument("--power-copper", action="store_true", help="then the (arc-aware) power copper pass")
+    r.add_argument("--operating", help="operating facts JSON (pad currents for necks and land hazards; default: the "
+                   "project's KAE_OPERATING text variable)")
     s = sub.add_parser("stats")
     s.add_argument("board")
     a = ap.parse_args(argv)
@@ -1516,12 +1607,13 @@ def main(argv=None):
         print(json.dumps(board_stats(a.board)))
         return
     rep = run(a.input, a.output, dict(pours=a.pours, passes=a.passes, victims=not a.no_victims,
-                                      pad_tails=not a.no_tails, power_copper=a.power_copper),
+                                      pad_tails=not a.no_tails, power_copper=a.power_copper, operating=a.operating),
               workdir=a.workdir, timeout=a.timeout)
     txt = json.dumps(rep, indent=1, default=str)
     if a.report:
         Path(a.report).write_text(txt)
     print(json.dumps(dict(stats=rep["stats"], drc_in=rep["drc_in"], drc_out=rep["drc_out"], total_s=rep["total_s"],
+                          necks=rep["necks"], overhang_fixed=rep["overhang_fixed"], hazards=len(rep["hazards"]),
                           changed=len(rep["nets_changed"]), reverted=len(rep["nets_reverted"])), default=str))
 
 
