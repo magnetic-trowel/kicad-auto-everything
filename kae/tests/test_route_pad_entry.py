@@ -230,3 +230,30 @@ def test_tie_pins_joins_edge_ends_to_the_pin_centre_for_freerouting():
     path = S.find(tie, "path")
     assert [float(v) for v in path[3:]] == [137600.0, -107800.0, 137250.0, -107800.0]
     assert str(S.find(tie, "net")[1]) == "A"
+
+
+def test_reend_turns_an_oblique_entry_onto_the_edge_normal():
+    """A 45-degree track into a land's centre: re-ended, the segment stops at a turn a width
+    outside the edge and a new piece runs straight in, overlap deep; refused pieces fall back
+    to the plain cut along the axis."""
+    g = box(9.5, -0.75, 10.5, 0.75)
+    text = "(kicad_pcb\n" + _seg((7.0, -3.0), (10.0, 0.0), w=0.2) + ")\n"
+    info = _info(("R1", "SIG", (10.0, 0.0), g))
+    (t,) = PT.plan(text, info, 0.05, legal=lambda *a: True)
+    assert t[4] == "reend" and t[3] is not None
+    out = PT._segments(PT.write(text, [t]))
+    assert len(out) == 2
+    a, b = out[1]["a"], out[1]["b"]
+    assert out[0]["b"] == a and g.contains(Point(b)) and not g.contains(Point(a))
+    assert PE.entry_angle(g, a, b) < 1e-6 and _depth(g, a, b) >= 0.05 - 1e-9
+    st = PT.stats(PT.write(text, [t]), info)
+    assert st["perpendicular"] == 1 and st["oblique"] + st["acute"] == 0
+    (c,) = PT.plan(text, info, 0.05, legal=lambda *a: False)
+    assert c[4] == "cut" and c[3] is None and PE.entry_angle(g, (7.0, -3.0), c[2]) > 40
+
+
+def test_wide_track_counts_as_current_carrying():
+    g = box(9.0, -1.0, 11.0, 1.0)
+    text = "(kicad_pcb\n" + _seg((0.0, 0.0), (10.0, 0.0), w=PT.CURRENT_W) + ")\n"
+    (t,) = PT.plan(text, _info(("R1", "SIG", (10.0, 0.0), g)), 0.05)
+    assert abs((t[2][0] - 9.0) - PT.CURRENT_W) < 1e-9

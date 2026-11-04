@@ -11,8 +11,8 @@ for an end on the pad's edge. So this pass works on the routed board instead:
 
 - a segment with one end at a same-net pad's centre on its layer and the other end outside
   the pad's copper is cut back to `pad_entry_overlap` inside the edge it crosses (along its own
-  axis), at least the track width on rails and grounds (an edge entry would halve a joint that
-  carries current);
+  axis), at least the track width on rails, grounds and tracks CURRENT_W or wider (an edge
+  entry would halve a joint that carries current), centred on the edge when re-ended;
 - the cut piece is a subset of the original copper, so no clearance can get worse; the gate
   (KiCad DRC on the re-opened board, errors by type and the unconnected count) is the judge
   all the same, and a worse board reverts the trims near each new violation, then all;
@@ -23,7 +23,12 @@ for an end on the pad's edge. So this pass works on the routed board instead:
 `stats` counts pad entries on any board: how many end at the centre or near the edge, and
 their angle to the edge's normal (an acute wedge between track and pad edge is an acid trap).
 
-    python -m kae.route.pad_trim trim IN.kicad_pcb OUT.kicad_pcb [--report R.json]
+- re-ending (the CLI's default; `--no-reend` off, the bridge hook off): an end that enters more
+  than 10 degrees off the edge normal turns onto the normal before the nearest edge and runs
+  straight in (pad_entry.entries), every new piece checked exactly against KiCad's
+  requirements (critical_space.Space.track_violations) before the DRC gate.
+
+    python -m kae.route.pad_trim trim IN.kicad_pcb OUT.kicad_pcb [--report R.json] [--no-reend]
     python -m kae.route.pad_trim stats BOARD.kicad_pcb
 """
 from __future__ import annotations
@@ -105,8 +110,18 @@ def _pads(info, balls=True):
     return out
 
 
-def plan(text, info, overlap=0.05, tol=1e-3):
-    """Trims [(segment, which end 'a'|'b', new point)] for the board text."""
+CURRENT_W = 0.4            # mm: a track this wide carries current whatever its net's name
+
+
+def plan(text, info, overlap=0.05, tol=1e-3, legal=None, reend_deg=10.0):
+    """Changes [(segment, which end 'a'|'b', new end, turn or None, "cut"|"reend")] for the board text.
+
+    Each end of a segment at a same-net pad centre, its other end outside the pad, is cut back
+    to `overlap` inside the edge it crosses (the width on rails, grounds and tracks at least
+    CURRENT_W wide). With `legal(net, layer, w, a, b)` (an exact clearance check), an end that
+    enters more than `reend_deg` off the edge normal is re-ended instead: the track turns onto
+    the normal before the nearest edge and runs straight in (pad_entry.entries); the segment
+    then ends at the turn and a new piece runs from it into the pad."""
     pads = _pads(info, balls=False)
     vias = _vias(text)
     vtree = STRtree([Point(v) for v in vias]) if vias else None
@@ -129,34 +144,51 @@ def plan(text, info, overlap=0.05, tol=1e-3):
             e = PE.crossing(g, Q, E)
             if e is None:
                 continue
-            depth = max(overlap, s["w"] if PE.current_net(s["net"]) else 0.0)
-            run = math.dist(e, E)
-            if run <= depth + 1e-4:
+            cur = PE.current_net(s["net"]) or s["w"] >= CURRENT_W - 1e-9
+            depth = max(overlap, s["w"] if cur else 0.0)
+            if legal is not None and (PE.entry_angle(g, Q, E) or 0.0) > reend_deg:
+                got = None
+                for tail in PE.entries(g, c, Q, s["w"], overlap, centred=cur, current=cur):
+                    pts = [Q] + tail
+                    if all(legal(s["net"], s["layer"], s["w"], a, b) for a, b in zip(pts[:-1], pts[1:])):
+                        got = (s, end, tail[-1], tail[0] if len(tail) == 2 else None, "reend")
+                        break
+                if got is not None:
+                    out.append(got)
+                    break
+            if math.dist(e, E) <= depth + 1e-4:
                 continue
             u = ((E[0] - Q[0]) / math.dist(Q, E), (E[1] - Q[1]) / math.dist(Q, E))
-            new = (e[0] + depth * u[0], e[1] + depth * u[1])
-            out.append((s, end, new))
+            out.append((s, end, (e[0] + depth * u[0], e[1] + depth * u[1]), None, "cut"))
             break
     return out
 
 
 def write(text, trims, skip=frozenset()):
-    """The board text with `trims` applied (segment uuids in `skip` left as they are)."""
-    edits = []
-    for s, end, new in trims:
+    """The board text with `trims` applied (segment uuids in `skip` left as they are); a re-ended
+    end adds a piece from its turn into the pad, with a uuid derived from the segment's."""
+    import uuid as _uuid
+    edits, extra = [], []
+    for s, end, new, turn, _kind in trims:
         if s["uuid"] in skip:
             continue
         a0, b0 = s["span"]
         sp = s["sa"] if end == "a" else s["se"]
         key = "start" if end == "a" else "end"
-        edits.append((a0 + sp[0], a0 + sp[1], f"({key} {W.fmt(new[0])} {W.fmt(new[1])})"))
+        p = turn if turn is not None else new
+        edits.append((a0 + sp[0], a0 + sp[1], f"({key} {W.fmt(p[0])} {W.fmt(p[1])})"))
+        if turn is not None:
+            uid = str(_uuid.uuid5(_uuid.NAMESPACE_URL, f"kae-pad-trim:{s['uuid']}:{end}"))
+            locked = "(locked yes)" in text[a0:b0]
+            extra.append(W.track_sexpr(s["net"], s["layer"], s["w"], turn, new, uid=uid, locked=locked))
     out, pos = [], 0
     for a, b, rep in sorted(edits):
         out.append(text[pos:a])
         out.append(rep)
         pos = b
     out.append(text[pos:])
-    return "".join(out)
+    text = "".join(out)
+    return W._insert(text, extra) if extra else text
 
 
 def stats(text, info, tol=1e-3):
@@ -187,8 +219,20 @@ def _info(board):
         return pcbnew_io.export_dsn(Path(board), Path(d) / "board.dsn", probes=False)
 
 
-def run(input_path, output_path, overlap=None, workdir=None, timeout=1800, log=print):
-    """The DRC-gated pass. Returns a report."""
+def _legal(staged, info):
+    """An exact clearance check on the routed board (critical_space.Space.track_violations)."""
+    from kae.board.kicad_file import load
+    from .bridge import severities
+    from .critical_space import Space
+    sp = Space(load(staged), info, sev=severities(staged))
+    return lambda net, layer, w, a, b: not sp.track_violations(net, layer, w, a, b, first=True)
+
+
+def run(input_path, output_path, overlap=None, workdir=None, timeout=1800, reend=False, log=print):
+    """The DRC-gated pass: plan, write, KiCad DRC, revert what made it worse. With `reend`, entries
+    more than 10 degrees off the edge normal are re-ended perpendicular (pieces checked exactly).
+    Returns a report: planned/kept changes, cut and re-ended counts, DRC in and out, and the pad
+    entries (stats) of the input and the output."""
     from . import constraints as CN
     from . import drc
     import time
@@ -200,9 +244,11 @@ def run(input_path, output_path, overlap=None, workdir=None, timeout=1800, log=p
     ovl = float(CN.setting("pad_entry_overlap", staged)) if overlap is None else float(overlap)
     info = _info(staged)
     text = staged.read_text(encoding="utf-8")
-    trims = plan(text, info, ovl)
-    rep = dict(board=str(inp), planned=len(trims), overlap=ovl,
-               cut_mm=round(sum(math.dist(s[e], n) for s, e, n in trims), 3))
+    trims = plan(text, info, ovl, legal=_legal(staged, info) if reend else None)
+    rep = dict(board=str(inp), planned=len(trims), overlap=ovl, reend=bool(reend),
+               reended=sum(1 for t in trims if t[4] == "reend"),
+               cut_mm=round(sum(math.dist(t[0][t[1]], t[2]) for t in trims if t[4] == "cut"), 3),
+               stats_in=stats(text, info))
     base_rep = drc.run(staged, wd / "in.drc.json", timeout=max(10, end_t - time.monotonic()))
     base = drc.summary(base_rep)
     rep["drc_in"] = base
@@ -213,7 +259,7 @@ def run(input_path, output_path, overlap=None, workdir=None, timeout=1800, log=p
             shutil.copy2(staged.with_suffix(ext), cand.with_suffix(ext))
     skip = set()
     final = None
-    for rnd in range(3):
+    for rnd in range(4):
         if not trims or len(skip) >= len(trims) or end_t - time.monotonic() < 10:
             break
         cand.write_text(write(text, trims, skip), encoding="utf-8")
@@ -227,23 +273,25 @@ def run(input_path, output_path, overlap=None, workdir=None, timeout=1800, log=p
         if not worse:
             final = s
             break
-        if rnd == 2:
+        if rnd == 3:
             break
         # revert the trims near each new violation's items; at the last chance, all of them
         pts = [(it["pos"]["x"], it["pos"]["y"]) for v in drc.errors(r) + list(r.get("unconnected_items") or [])
                for it in v.get("items") or [] if it.get("pos")]
         near = {t[0]["uuid"] for t in trims if any(math.dist(t[2], p) <= 1.0 or math.dist(t[0]["a"], p) <= 1.0
                                                     or math.dist(t[0]["b"], p) <= 1.0 for p in pts)}
-        skip |= near if rnd == 0 and near - skip else {t[0]["uuid"] for t in trims}
+        skip |= near if rnd < 2 and near - skip else {t[0]["uuid"] for t in trims}
     out = Path(output_path)
     if final is not None:
         shutil.copy2(cand, out)
-        rep["kept"] = len(trims) - len(skip)
+        rep["kept"] = sum(1 for t in trims if t[0]["uuid"] not in skip)
         rep["drc_out"] = final
+        rep["stats_out"] = stats(cand.read_text(encoding="utf-8"), info)
     else:
         shutil.copy2(staged, out)
         rep["kept"] = 0
         rep["drc_out"] = base
+        rep["stats_out"] = rep["stats_in"]
     for ext in (".kicad_pro", ".kicad_dru"):
         s_ = inp.with_suffix(ext)
         if s_.exists() and s_.resolve() != out.with_suffix(ext).resolve():
@@ -277,11 +325,13 @@ def main(argv=None):
     t.add_argument("--workdir")
     t.add_argument("--report")
     t.add_argument("--timeout", type=int, default=1800)
+    t.add_argument("--no-reend", action="store_true",
+                   help="only shorten along each track's axis (no perpendicular re-ending)")
     s = sub.add_parser("stats")
     s.add_argument("board")
     a = ap.parse_args(argv)
     if a.cmd == "trim":
-        rep = run(a.input, a.output, a.overlap, a.workdir, a.timeout)
+        rep = run(a.input, a.output, a.overlap, a.workdir, a.timeout, reend=not a.no_reend)
         if a.report:
             Path(a.report).write_text(json.dumps(rep, indent=1))
         print(json.dumps(rep))
