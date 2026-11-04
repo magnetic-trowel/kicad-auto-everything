@@ -56,7 +56,7 @@ def test_compact_truncates_with_counts():
 def test_finalize_hoists_nested_and_derives_flags():
     rep = dict(status="ok",
                critical=dict(hazards=[H.make("a", "warn", "data", "m")],
-                             modules=[dict(flags=[dict(flag="rail_max_cap", hop=0, net="+12V", I_A=5.0,
+                             modules=[dict(flags=[dict(flag="class_max_below_ipc", hop=0, net="+12V", I_A=5.0,
                                                        ipc_mm=4.1, cap_mm=3.0)])]),
                iterations=[dict(hazards=[H.make("a", "warn", "data", "m")]),
                            dict(hazards=[H.make("s", "block", "electrical", "short", objects=["GND", "+5V"])])],
@@ -67,7 +67,7 @@ def test_finalize_hoists_nested_and_derives_flags():
     assert list(rep)[-2:] == ["hazards", "hazard_summary"]
     codes = [h["code"] for h in rep["hazards"]]
     assert codes[0] == "s"
-    assert sorted(codes) == sorted(["s", "a", "rail_max_cap", "dru_rejected", "top"])
+    assert sorted(codes) == sorted(["s", "a", "class_max_below_ipc", "dru_rejected", "top"])
     # relaxed bodies are reported only by Problem.relaxed_body_hazards (body_overlap / body_relaxed)
     assert "bodies_relaxed" not in codes
     assert "hazards" not in rep["critical"] and "hazards" not in rep["iterations"][0]
@@ -113,3 +113,11 @@ def test_derive_place_and_rules_flags():
     assert hz["outline_incomplete"]["severity"] == "block" and hz["outline_incomplete"]["objects"] == ["J9"]
     assert hz["placement_illegal"]["evidence"]["exact_findings"] == 2
     assert hz["rules_not_modelled"]["objects"] == ["inDiffPair"] and "rule_errors" not in hz
+
+
+def test_capped_rail_flags_are_left_to_the_copper_heat_hazards():
+    """rail_max_cap / ipc_floor_unroutable flags are not derived: the same hop already carries
+    copper_below_ipc_width / rail_left_narrow with its computed rise (one cause, one entry)."""
+    rep = dict(modules=[dict(flags=[dict(flag="rail_max_cap", hop=0, net="+12V", I_A=10.0, ipc_mm=7.2, cap_mm=3.0),
+                                    dict(flag="ipc_floor_unroutable", hop=1, net="+12V", I_A=10.0, floor_mm=7.2)])])
+    assert H.derive(rep) == []

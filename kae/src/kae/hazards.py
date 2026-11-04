@@ -376,14 +376,6 @@ def sim_hazards(evaluation):
     return out
 
 
-def _flag_rail_max_cap(d):
-    return make("rail_max_cap", "warn", "thermal",
-                f"Rail {d.get('net')} needs a {d.get('ipc_mm')} mm track for {d.get('I_A')} A (IPC-2221); kae capped "
-                f"its critical track at {d.get('cap_mm')} mm, so without a pour it runs hotter than the rise target.",
-                objects=[d.get("net")], evidence={k: d[k] for k in ("hop", "I_A", "ipc_mm", "cap_mm") if k in d},
-                fix="Feed the rail with a copper pour (zone), or confirm the current is lower.")
-
-
 def _flag_class_max_below_ipc(d):
     return make("class_max_below_ipc", "warn", "thermal",
                 f"Net {d.get('net')}'s class maximum width {d.get('max_mm')} mm is below the IPC-2221 width "
@@ -392,13 +384,8 @@ def _flag_class_max_below_ipc(d):
                 fix="Raise the class maximum width or feed the rail with a pour.")
 
 
-def _flag_ipc_floor_unroutable(d):
-    return make("ipc_floor_unroutable", "warn", "thermal",
-                f"Rail {d.get('net')} could not be routed at the IPC-2221 width for {d.get('I_A')} A; the hop "
-                "was left to narrower routing.", objects=[d.get("net")],
-                evidence={k: d[k] for k in d if k not in ("flag", "net")},
-                fix="Make room for a wider track or a pour on this rail, or confirm the current is lower.")
-
-
-_FLAG_HAZARDS = dict(rail_max_cap=_flag_rail_max_cap, class_max_below_ipc=_flag_class_max_below_ipc,
-                     ipc_floor_unroutable=_flag_ipc_floor_unroutable)
+# The critical router's rail_max_cap and ipc_floor_unroutable flags are not derived: the same hop
+# gets copper_below_ipc_width or rail_left_narrow (kae.route.critical_physics.heat_hazard), with
+# the copper's computed rise and a severity from it, so a second, fixed-severity entry would
+# report one cause twice.
+_FLAG_HAZARDS = dict(class_max_below_ipc=_flag_class_max_below_ipc)

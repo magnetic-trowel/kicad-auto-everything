@@ -35,7 +35,7 @@
 |---|---|
 | `kae place` | static project hazards; recheck of OUTPUT (opens and dangling copper left out: a placement is not routed); `body_overlap`/`body_relaxed`; `connector_off_edge`; writer checks; `dru_rejected` |
 | `kae.route.cli route`, `lastmile` | static; recheck of OUTPUT; BGA `escape_infeasible`; else the bridge's final DRC counts |
-| `kae.route.critical_cli route` | static; recheck; `rail_max_cap`, `class_max_below_ipc`, `ipc_floor_unroutable` module flags |
+| `kae.route.critical_cli route` | static; recheck; `copper_below_ipc_width`, `rail_left_narrow`, `vias_below_current` (heat of the copper drawn, [critical-net-routing](../routing/critical-net-routing.md)); `class_max_below_ipc` module flags; `crystal_ground_no_plane` |
 | `kae.route.critical_cli physics` | `physics_over_budget` (u > 1), `physics_unmeasured`; static |
 | `kae.joint.cli run` | static; recheck; everything nested in iterations; `check_not_run` and `physics_over_budget` of the final card; KiCad's writer checks of every pose write, once per code (`kicad_format_upgraded`, ...) |
 | `kae brief` | static project hazards with the brief's net voltages (route and joint reports have no brief at hand, so `hv_clearance_below_ipc` and `capacitor_over_voltage` come from `kae brief` and `kae place`) |
@@ -82,9 +82,8 @@
 
 | Code | Severity | From |
 |---|---|---|
-| `rail_max_cap` | warn, thermal | `critical_modules`: IPC-2221 width capped at `rail_max_mm` |
+| `copper_below_ipc_width`, `rail_left_narrow` | block / warn / info, thermal | copper narrower than its IPC width (the `rail_max_mm` cap, or a hop left to the bridge at the class width): block past 130 °C from 50 °C at the expected current, info within 1.2× |
 | `class_max_below_ipc` | warn, thermal | net class maximum below the IPC-2221 width for the current |
-| `ipc_floor_unroutable` | warn, thermal | no room for the rail at its IPC-2221 width; left to the bridge |
 | `escape_infeasible` | block, electrical | `escape.certificate`: balls no routing can escape under the rules, with the relaxations that suffice ([bga-routing-ranked-ideas.md](../routing/bga-routing-ranked-ideas.md)) |
 | `body_overlap` / `body_relaxed` | block / info, assembly | `Problem.relaxed_body_hazards`, per part `relax_bodies` freed (off by default; `escalate`, `auto`), on the final poses: block when its body overlaps another part ([kae-exact-legality](../../research/placement/kae-exact-legality.md)) |
 | `check_not_run` | warn, data | the joint loop's final card `checked` has `false` (values reported `null`) |
