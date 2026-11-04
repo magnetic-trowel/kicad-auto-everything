@@ -102,13 +102,13 @@ def test_an_unsolved_bound_neither_certifies_nor_throws_away_the_plan(tmp_path, 
     assert "error" not in pk and pk["planned"] == 64 and pk["laid"] >= 44 and not out["blocked"]
 
 
-def _grid_space(tmp_path, pitch, ball, small=(), net=lambda r, c: f"S{r}{c}"):
+def _grid_space(tmp_path, pitch, ball, small=(), net=lambda r, c: f"S{r}{c}", drop=()):
     """An 8 x 8 grid at `pitch` of `ball` mm pads (the indices in `small` 0.3 mm), each with a
     partner, on the synthetic 2-layer board (clearance 0.2, tracks >= 0.15, vias 0.6/0.3);
     `net(row, column)` names each ball's net."""
     balls = [(f"{chr(65 + r)}{c + 1}", net(r, c), (c - (N - 1) / 2) * pitch, (r - (N - 1) / 2) * pitch,
               0.3 if r * N + c in small else ball, 0.3 if r * N + c in small else ball, "smd", 0.0, "", "passive")
-             for r in range(N) for c in range(N)]
+             for r in range(N) for c in range(N) if (r, c) not in drop]
     grid = ("U7", "BGA", "Package_BGA:Grid", 134.5, 121.0, 0.0, balls, (4.8, 4.8))
     p = F.write_board(tmp_path, extra=[grid, PARTNER])
     info = F.synth_info(load(p))
@@ -219,3 +219,14 @@ def test_the_demand_is_one_escape_per_net_that_leaves(tmp_path):
     e, ctx, _d = escape.bound(sp, pkg, info, floors=escape.fab_floors(*escape._fab(sp, None)))
     assert ctx["demand"] == 64 - 16 + 1 and e >= ctx["demand"] - 0.5
     assert escape.certificate(sp, pkg, info, log=lambda m: None) is None
+
+
+def test_a_depopulated_interior_is_no_proof(tmp_path):
+    """The model puts vias only at the dog-bone sites and in the pads; in a depopulated
+    interior a via may sit anywhere (three eMMC-153 packages routed cleanly by hand were
+    certified 1 net short). The entry says so and carries proof False."""
+    sp, info, pkg = _grid_space(tmp_path, 1.0, 0.4, drop={(3, 3), (3, 4), (4, 3), (4, 4)})
+    c = escape.certificate(sp, pkg, info, log=lambda m: None)
+    assert c and c["proof"] is False and "not a proof" in c["summary"]
+    sp, info, pkg = _grid_space(tmp_path / "full", 1.0, 0.4)
+    assert escape.certificate(sp, pkg, info, log=lambda m: None)["proof"] is True

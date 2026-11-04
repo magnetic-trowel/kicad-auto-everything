@@ -361,6 +361,9 @@ def _setup(sp, pkg, info, opts=None, minimum=False, override=None, extra_layers=
     zone_on = {(z[0], z[1]) for z in sp.zones}
     balls = {ij: (pd, r) for pd, ij, r in zip(pkg["pads"], pkg["idx"], pkg["rings"])}
     nx, ny = max(i for i, _ in balls) + 1, max(j for _, j in balls) + 1
+    # lattice positions inside the field without a ball: a depopulated interior, where a via
+    # may sit off the dog-bone sites (the model does not see it)
+    holes = sum(1 for i in range(1, nx - 1) for j in range(1, ny - 1) if (i, j) not in balls)
     sig, pln = [], []
     for k, (pd, r) in sorted(balls.items()):
         if not pd.net:
@@ -406,7 +409,7 @@ def _setup(sp, pkg, info, opts=None, minimum=False, override=None, extra_layers=
     caps = {}
     for l in layers:
         caps[l] = _caps(p, d, cpad, R[l], l == B, sound=minimum)
-    return dict(p=p, B=B, layers=layers, real=real, R=R, d=d, cpad=cpad, balls=balls, nx=nx, ny=ny, sig=sig, pln=pln,
+    return dict(p=p, B=B, layers=layers, real=real, R=R, d=d, cpad=cpad, holes=holes, balls=balls, nx=nx, ny=ny, sig=sig, pln=pln,
                 xy=xy, cap=caps, ref=pkg["ref"], pkg=pkg)
 
 
@@ -1106,13 +1109,20 @@ def certificate(sp, pkg, info, opts=None, log=print, deadline=None):
         return s_ + (f" ({prof['name']} {c})" if c else (" (no fab class)" if "fab_class" in r else ""))
     fixes = [fix(r) for r in relax if r.get("all")]
     head = "" if pads else "without vias in their pads, "
+    # the model puts vias only at the dog-bone sites and in the pads: where the field has a
+    # depopulated interior, a via may sit elsewhere in it, so the bound is no proof there (the
+    # corpus scan of 2026-11: three eMMC-153 packages, routed cleanly by hand, 1 net short)
+    proof = not meta["holes"]
+    if not proof:
+        head = "the model finds (not a proof: a depopulated interior, " \
+               f"{meta['holes']} empty ball sites, may hold vias off the dog-bone sites) " + head
     summary = (f"{pkg['ref']}: {head}{short} of {demand} signal nets can't leave its ball field on {len(real)} layers "
                f"({', '.join(real)}; LP bound {esc:.1f}; rules floored at {prof['name']}'s finest class); {where}; "
                + ("no obstruction found with " + " or ".join(fixes) if fixes else
                   "none of the relaxations tried, down to the fab's finest class, removes the obstruction"))
     log("escape certificate " + summary)
     return dict(package=pkg["ref"], cause="rule" if pads else "via in pad", constraint="escape", demand=demand,
-                escapable=round(esc, 1), via_in_pad_considered=pads, fab=prof["name"],
+                escapable=round(esc, 1), via_in_pad_considered=pads, fab=prof["name"], proof=proof,
                 short=short, layers=real, cut=cut, relaxations=relax, summary=summary, source="board",
                 where=".kicad_pro net classes and board setup, .kicad_dru rules", hazards=hazards)
 
