@@ -311,9 +311,9 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         rep["silk_text"] = exactmod.refine_silk_text(P, log=log)
     if angle_step:
         rep["angle_step"] = angle_step
-    # relax_bodies (kae-exact-legality.md, "Bodies"): 'off' (default) keeps the body of a part
-    # without a courtyard as an obstacle; 'escalate' frees it to its pads only when legalization
-    # or the floorplan fails; 'auto' also up front on a board over 95% full (the old behaviour)
+    # relax_bodies (kae-exact-legality.md, "Bodies"): 'escalate' (default, decide-ab tier 1) frees the
+    # body of a part without a courtyard to its pads only when legalization or the floorplan fails;
+    # 'off' keeps it as an obstacle always (10 pp less probe completion on 52 dense boards); 'auto' also up front on a board over 95% full (the old behaviour)
     from kae.route.constraints import setting
     relax_mode = str(setting("relax_bodies", board_path, opts)).strip().lower()
     if relax_mode not in ("off", "escalate", "auto"):

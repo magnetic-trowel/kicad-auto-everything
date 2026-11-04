@@ -1162,7 +1162,7 @@ class Problem:
                                 objects=[p.ref] + [r for r, _ in hits],
                                 evidence=dict(overlap_mm2=dict(hits), body_mm2=round(float(a.area), 2),
                                               source="footprint F.Fab box and pads (no courtyard)"),
-                                fix=f"If {p.ref} sits on the board, re-place with relax_bodies off (the default) and "
+                                fix=f"If {p.ref} sits on the board, re-place with relax_bodies off and "
                                     "accept fewer parts placed, or give its footprint a courtyard; otherwise "
                                     "confirm the stand-off height clears the parts below."))
             else:

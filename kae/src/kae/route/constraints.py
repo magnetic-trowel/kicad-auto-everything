@@ -175,9 +175,9 @@ DEFAULTS = dict(
                                    # clearance, shorts and hole clearance errors whatever the project says,
                                    # courtyards at IPC Level C where it waives them; "strict" drawn courtyards
                                    # everywhere; "board" follows the project (kae.place.problem)
-    relax_bodies="off",            # placement: a part without a courtyard keeps its body as an obstacle ("off");
-                                   # "escalate" frees it to its pads when legalization fails; "auto" also
-                                   # up front on a board over 95% full (kae.place.pipeline)
+    relax_bodies="escalate",       # placement: "escalate" (default) frees a courtyard-less part to its pads only when
+                                   # legalization fails (each such overlap a body_overlap block hazard); "off" never;
+                                   # "auto" also up front on a board over 95% full (kae.place.pipeline)
     place_w_cong=30.0,             # placement: weight of the annealer's RUDY + pin-escape congestion term
                                    # (kae.place.cost.Congestion). Never ablated inside the placer; RUDY ranks
                                    # PCB routability near chance (docs/research/placement/

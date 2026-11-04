@@ -301,7 +301,7 @@ def test_fixed_parts_keep_their_input_pose_and_the_rest_moves(tmp_path):
 
 
 def test_relax_bodies_off_skips_the_step_and_relaxed_overlaps_are_hazards():
-    """relax_bodies 'off' (default): escalation never frees bodies. A relaxed part whose body
+    """relax_bodies 'off': escalation never frees bodies. A relaxed part whose body
     ends up over another part is a 'block' hazard (an axial resistor or a USB receptacle over
     0402s cannot be assembled); one with nothing under it is 'info'."""
     from shapely.geometry import box as sbox
