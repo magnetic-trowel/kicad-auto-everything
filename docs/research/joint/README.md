@@ -13,6 +13,7 @@ Keys: joint place-and-route, pnr, pnr line, ab33, dev6, phys10, v5 era, v7 era, 
 
 | page | methods (code) | verdict |
 |---|---|---|
+| [board-studies-2611.md](board-studies-2611.md) | four hard boards taken apart: open connections by cause (polarfire-som, nekoink, sdi-mipi, gecko5education) | worked (study): fixed zones ignored by the placer, scattered arrays, deep BGA rings, blind restart choices |
 | [engine.md](engine.md) | pnr engine, `route_only`, fast router `PNR_FAST`, anytime output (`tools/research/pnr`) | worked (substrate); fast router thin evidence; anytime untested alone |
 | [sequential-controls.md](sequential-controls.md) | seq, seq_margin, grow | control; no merit; no merit alone |
 | [physics-objective.md](physics-objective.md) | physics place terms, physics scorer (`pnr_phys`) | worked |
