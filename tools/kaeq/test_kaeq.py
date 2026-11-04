@@ -316,6 +316,7 @@ def test_no_start_while_threads_queue_for_a_cpu(kq):
         clock[0] += 4000
         return 0, clock[0]
     kq.cpu_ticks = idle_cpus
+    conf = json.load(open(kq.CONF)); conf["runq_window_s"] = 1; json.dump(conf, open(kq.CONF, "w"))   # a short window
     d = kq.Daemon()
     submit(kq, "sleep 20", name="busy", qos="batch")
     drive(kq, d, lambda: states(d)["busy"] == "running")  # (with nothing running, one job always starts)
@@ -856,3 +857,32 @@ def test_expensive_batch_jobs_run_on_and_cheap_ones_make_room(kq):
     # ...unless free memory is below half the buffer: then it may be frozen again
     p = kq.lease_plan([dict(small_a, keep=True)], 1000.0, cfg, now=1000.0, buffer=3000.0)
     assert p["stalled"] == [2]
+
+
+def test_batch_cpu_admission_needs_a_lasting_dip_and_its_quantile_adapts(kq):
+    assert kq.quantile([10, 120, 120, 120, 125], 0.8) == 125 and kq.quantile([], 0.8) == 0.0
+    cfg = dict(runq_over_target=0.10, runq_idle_target=0.20, runq_idle_cpus=4)
+    over = [(130, True)] * 3 + [(110, True)] * 7               # 30% of samples oversubscribed: more cautious
+    assert kq.adapt_runq_q(0.8, over, 122, cfg)[0] == pytest.approx(0.85)
+    idle = [(100, True)] * 5 + [(121, True)] * 5               # half the time 4+ CPUs idle while jobs waited: bolder
+    assert kq.adapt_runq_q(0.8, idle, 122, cfg)[0] == pytest.approx(0.75)
+    assert kq.adapt_runq_q(0.8, [(100, False)] * 10, 122, cfg)[0] == 0.8   # idle but nothing waits: unchanged
+    assert kq.adapt_runq_q(0.95, over, 122, cfg)[0] == 0.95 and kq.adapt_runq_q(0.5, idle, 122, cfg)[0] == 0.5
+    # one dip in a saturated window does not open the door
+    clock = [0]
+
+    def idle_cpus():
+        clock[0] += 4000
+        return 0, clock[0]
+    kq.cpu_ticks = idle_cpus
+    conf = json.load(open(kq.CONF)); conf.update(threads=64, reserve_cpu=0, runq_window_s=600); json.dump(conf, open(kq.CONF, "w"))
+    d = kq.Daemon()
+    kq.runnable_threads = lambda: 0
+    submit(kq, "sleep 20", name="busy", qos="batch")
+    drive(kq, d, lambda: states(d)["busy"] == "running")      # (with nothing running, one job always starts)
+    now = time.time()
+    d.runq_hist = [(now - 100 + i, 70.0, True) for i in range(99)] + [(now, 0.0, True)]   # saturated, one dip
+    submit(kq, "true", name="b", qos="batch", cpus=2)
+    d.tick()
+    assert states(d)["b"] == "queued"
+    d.c.execute("UPDATE jobs SET state='cancelled' WHERE state IN ('queued','running')")

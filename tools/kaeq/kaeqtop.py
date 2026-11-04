@@ -107,8 +107,13 @@ def frame(c, cfg, sampler, args, width):
              f"queue jobs {ours_cpu:.1f}, everything else {others:.1f} | jobs may use {pinned} CPUs, {rcpu} kept free")
     if "runnable" in bsys:
         rq = bsys["runnable"]
-        L.append(f"     threads ready to run: {rq:.0f} for {threads - rcpu} CPUs jobs may use"
-                 + ("  << oversubscribed: jobs wait for a CPU, no new starts until this drops" if rq > threads - rcpu else ""))
+        qv, q = bsys.get("runq_qv", rq), bsys.get("runq_q")
+        L.append(f"     threads ready to run: {rq:.0f} now"
+                 + (f", {qv:.0f} at the {q * 100:.0f}th percentile of {cfg.get('runq_window_s', 120) // 60} min (what batch starts go by;"
+                    f" last {cfg.get('runq_adapt_s', 300) // 60} min: oversubscribed {bsys.get('runq_over', 0):.0%},"
+                    f" CPUs idle while jobs wait {bsys.get('runq_idle', 0):.0%})" if q else "")
+                 + f" | {threads - rcpu} CPUs jobs may use"
+                 + ("  << oversubscribed: no new batch starts" if qv > threads - rcpu else ""))
     mi = kaeq.meminfo()
     total, avail = mi["MemTotal"], bsys.get("avail", mi["MemAvailable"])
     ours_rss, unreal = bsys.get("ours_rss", 0.0), bsys.get("unrealized", 0.0)

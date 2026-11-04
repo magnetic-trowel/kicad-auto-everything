@@ -192,7 +192,18 @@ DEFAULTS = {
     "lease_buffer_gb": 4.0,  # lease: free memory kept for growth between ticks: at least this, and
     "lease_buffer_ticks": 3.0,  # this many times the fleet's largest growth within one tick over the last 10 minutes    # lease: a job stalled this long for memory that nothing frees requeues the newest other job
     "mem_budget_gb": 0,      # cap on what all jobs together may use and hold (0: none beyond the reserve)
-    "starts_per_tick": 1,    # ramp: at most this many job starts every 2 s, so new jobs show their memory before more start
+    "starts_per_tick": 1,
+    # CPU admission of batch jobs: not the run queue of the moment but its runq_q quantile over the last
+    # runq_window_s (a dip must last), plus jobs started in the last 60 s that have not ramped up yet. runq_q adapts
+    # every runq_adapt_s: more than runq_over_target of the samples oversubscribed (more runnable threads than CPUs
+    # jobs may use) -> +0.05; more than runq_idle_target of them with runq_idle_cpus free while jobs wait -> -0.05;
+    # within [0.5, 0.95]
+    "runq_window_s": 120,
+    "runq_q": 0.8,
+    "runq_adapt_s": 300,
+    "runq_over_target": 0.10,
+    "runq_idle_target": 0.20,
+    "runq_idle_cpus": 4,    # ramp: at most this many job starts every 2 s, so new jobs show their memory before more start
     "cpu_affinity": "auto",  # auto: pin jobs to the first threads-reserve_cpu CPUs (a hard cap); off; or e.g. "0-101"
     "max_running": 256,
     "mem_overrun": 1.5,      # kill a job whose RSS exceeds declared * this (+1 GB)
@@ -1131,6 +1142,26 @@ def load_rise_hist():
 TICK_HZ = os.sysconf("SC_CLK_TCK")
 
 
+def quantile(values, q):
+    v = sorted(values)
+    return v[min(len(v) - 1, int(q * len(v)))] if v else 0.0
+
+
+def adapt_runq_q(q, samples, pool, cfg):
+    """The next runq_q from the last runq_adapt_s of (runnable threads, jobs waiting for a CPU start) samples:
+    oversubscribed too often -> more cautious (+0.05), idle CPUs too often while jobs wait -> bolder (-0.05).
+    Returns (q, oversubscribed share, idle-while-waiting share)."""
+    if not samples:
+        return q, 0.0, 0.0
+    over = sum(1 for r, _ in samples if r > pool) / len(samples)
+    idle = sum(1 for r, w in samples if w and r < pool - cfg["runq_idle_cpus"]) / len(samples)
+    if over > cfg["runq_over_target"]:
+        q = min(0.95, q + 0.05)
+    elif idle > cfg["runq_idle_target"]:
+        q = max(0.5, q - 0.05)
+    return q, over, idle
+
+
 def runnable_threads():
     """Threads ready to run right now, over the whole machine (procs_running, minus this one)."""
     with open("/proc/stat") as f:
@@ -1320,6 +1351,8 @@ class Daemon:
         self.popen = {}          # id -> Popen (to reap zombies)
         self.others_ema = 0.0
         self.runq_ema = 0.0
+        self.runq_hist, self.runq_q, self.runq_q_ts, self.runq_stats = [], None, time.time(), (0.0, 0.0)
+        self.cpu_waiting = False     # a queued job waited for CPUs at the last admission
         self.prev = cpu_ticks()
         self.prev_ours = {}
         self.sys = {}
@@ -1429,7 +1462,18 @@ class Daemon:
         self.others_ema = 0.7 * self.others_ema + 0.3 * max(0.0, sys_threads - ours_threads)
         self.prev = (busy, total)
         # demand, not just use: when CPUs are saturated, use stops at capacity but threads keep queueing
-        self.runq_ema = 0.8 * self.runq_ema + 0.2 * runnable_threads()
+        rq = runnable_threads()
+        self.runq_ema = 0.8 * self.runq_ema + 0.2 * rq
+        self.runq_hist.append((now, rq, self.cpu_waiting))     # the window behind batch CPU admission
+        while self.runq_hist and self.runq_hist[0][0] < now - max(cfg["runq_window_s"], cfg["runq_adapt_s"]):
+            self.runq_hist.pop(0)
+        if now - self.runq_q_ts >= cfg["runq_adapt_s"]:
+            pool = len(job_cpus(cfg) or ()) or cfg["threads"] - cfg["reserve_cpu"]
+            new, over, idle = adapt_runq_q(self.runq_q or cfg["runq_q"], [(r, w) for _, r, w in self.runq_hist], pool, cfg)
+            if self.runq_q and new != self.runq_q:
+                dlog(f"cpu: admission quantile {self.runq_q:.2f} -> {new:.2f} (oversubscribed {over:.0%}, "
+                     f"CPUs idle while jobs wait {idle:.0%})")
+            self.runq_q, self.runq_q_ts, self.runq_stats = new, now, (over, idle)
         mi = meminfo()
         running = c.execute("SELECT * FROM jobs WHERE state='running'").fetchall()
         for jid in set(self.trace) - {j["id"] for j in running}:
@@ -1504,7 +1548,10 @@ class Daemon:
         self.sys = dict(threads=cfg["threads"], others=self.others_ema, ours_cpu=ours_threads, cpu_commit=cpu_commit,
                         mem_total=mi["MemTotal"], avail=avail, ours_rss=ours_rss, unrealized=unrealized,
                         unrealized_peak=unrealized_peak, pooled_owners=sorted(profiles),
-                        runnable=self.runq_ema,
+                        runnable=self.runq_ema, runq_q=self.runq_q or cfg["runq_q"],
+                        runq_qv=quantile([r for t, r, _ in self.runq_hist if t >= now - cfg["runq_window_s"]],
+                                         self.runq_q or cfg["runq_q"]),
+                        runq_over=self.runq_stats[0], runq_idle=self.runq_stats[1],
                         pool_rho={o: [round(r, 2), n] for o, (r, n) in self.rho.items()},
                         mem_ratio={o: round(q, 3) for o, q in self.ratios.items()},
                         mem_mode=mode, mem_rise=self.rise, mem_single=single, mem_warm=warm_need,
@@ -1968,8 +2015,13 @@ class Daemon:
     def admit(self, cfg, now, mem_room, cpu_commit, n_running, disk_room=float("inf")):
         c = self.c
         cpu_room = cfg["threads"] - cfg["reserve_cpu"] - self.others_ema - cpu_commit
-        # no start while threads already queue for a CPU: more work would only slow every running job
-        cpu_room = min(cpu_room, cfg["threads"] - cfg["reserve_cpu"] - self.runq_ema)
+        # no start while threads already queue for a CPU: more work would only slow every running job. The run
+        # queue counts as its runq_q quantile over runq_window_s (a dip must last), plus the CPUs of jobs started
+        # in the last 60 s, which have not ramped up yet
+        win = [r for t, r, _ in self.runq_hist if t >= now - cfg["runq_window_s"]] or [self.runq_ema]
+        q = self.runq_q or cfg["runq_q"]
+        fresh = sum(j["cpus"] for j in c.execute("SELECT cpus FROM jobs WHERE state='running' AND started>?", (now - 60,)))
+        cpu_room = min(cpu_room, cfg["threads"] - cfg["reserve_cpu"] - quantile(win, q) - fresh)
         queued = c.execute("SELECT * FROM jobs WHERE state='queued' AND not_before<=?", (now,)).fetchall()
         running = c.execute("SELECT * FROM jobs WHERE state='running'").fetchall()
         per_owner = {}
@@ -1990,6 +2042,8 @@ class Daemon:
                 short = self.short_owners(cfg) if short is None else short
                 fit = next((j for j in queued if j["owner"] in short and fits(j)), None)
             if fit is None:
+                # jobs that fit in memory but wait for CPUs: what the runq_q controller weighs idle CPUs against
+                self.cpu_waiting = any(self.need_mb(j, cfg) <= mem_room and j["cpus"] > cpu_room for j in queued[:50])
                 break
             queued.remove(fit)
             if self.start(fit, cfg):
