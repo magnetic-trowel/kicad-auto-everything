@@ -468,9 +468,8 @@ def test_lease_plan_never_stalls_a_timed_job_and_makes_room_with_a_batch_job(kq)
     assert 1 not in p["stalled"] and p["short"] == [1] and 2 in p["stalled"]
     # making room in two stages: first the running batch job is frozen (its memory compressed), no requeue yet
     assert 4 in p["stalled"] and p["timed_victim"] is None
-    jobs[3]["frozen"] = True                       # all batch jobs frozen: requeue the least valuable one
-    jobs[1]["value"], jobs[2]["value"], jobs[3]["value"] = 5.0, 1.0, 3.0
-    assert kq.lease_plan(jobs, 0.0, cfg, now=1000.0)["timed_victim"] == 3
+    jobs[3]["frozen"] = True                       # all batch jobs frozen: for a timed job, requeue the newest
+    assert kq.lease_plan(jobs, 0.0, cfg, now=1000.0)["timed_victim"] == 4
     jobs[3]["frozen"] = False
     # timed jobs get memory first, and their unused grant counts in full; never frozen as growers
     jobs[0]["grew"] = jobs[1]["grew"] = 500.0
@@ -837,22 +836,23 @@ def test_run_time_is_owner_speed_times_board_difficulty(kq):
 
 def test_expensive_batch_jobs_run_on_and_cheap_ones_make_room(kq):
     """A frozen job holds its memory for nothing, a big one most: expensive batch jobs are kept running (never
-    frozen for a grant), their forecast growth is set aside, grants go by memory / time left, and room is made
-    by freezing the least valuable cheap job; a just-thawed job is kept for its run window."""
+    frozen for a grant); room is made by freezing the newest cheap job, never by a requeue for a batch job; a
+    just-thawed job is kept for its run window, which gives way below half the buffer."""
     cfg = dict(LEASE, lease_hold_frac=0.1)
-    big = dict(id=1, prio=0, started=10, grant=20000, use=19900, keep=True, reserve_mb=8000, value=50.0)
-    small_a = dict(id=2, prio=0, started=20, grant=2000, use=1990, value=1.0)        # at its grant, low value
-    small_b = dict(id=3, prio=0, started=30, grant=2000, use=1000, value=0.5)        # running, lowest value
+    big = dict(id=1, prio=0, started=10, grant=20000, use=19900, keep=True, dear=True)
+    small_a = dict(id=2, prio=0, started=20, grant=2000, use=1990)        # at its grant
+    small_b = dict(id=3, prio=0, started=30, grant=2000, use=1000)        # running, newest
     p = kq.lease_plan([big, small_a, small_b], 0.0, cfg, now=1000.0)
     assert 1 not in p["stalled"] and p["short"] == [1]            # the big job is not frozen...
-    assert 3 in p["stalled"] and 2 in p["stalled"]                # ...the cheap ones are (lowest value made room)
-    # the big job's forecast growth is set aside in full; the small ones only 10% of their unused grant
-    p = kq.lease_plan([big, small_a, small_b], 100000.0, dict(cfg, lease_warm_s=0), now=1000.0)
-    assert p["held"] == pytest.approx(8000 + 0.1 * 10 + 0.1 * 1000)
-    # grants by value: with room for one 5 GB step, the big job (most memory freed per second) gets it first
-    p = kq.lease_plan([dict(small_a, value=100.0, grant=20000, use=19900, id=7), dict(big, keep=False, reserve_mb=None)],
-                      5100.0, cfg, now=1000.0)
-    assert p["grants"][7] > 20000 and p["grants"][1] == 20000
-    # a just-thawed small job is kept (in its window): not frozen though at its grant with nothing free
-    p = kq.lease_plan([dict(small_a, keep=True)], 0.0, cfg, now=1000.0)
+    assert 3 in p["stalled"] and 2 in p["stalled"]                # ...the cheap ones are (the newest made room)
+    p = kq.lease_plan([big, dict(small_a, frozen=True), dict(small_b, frozen=True)], 0.0, cfg, now=1000.0)
+    assert p["timed_victim"] is None                             # all frozen: no requeue for a batch job
+    # with keep_reserve_frac, part of its forecast growth is set aside (the daemon passes reserve_mb)
+    p = kq.lease_plan([dict(big, reserve_mb=4000), small_a, small_b], 100000.0, dict(cfg, lease_warm_s=0), now=1000.0)
+    assert p["held"] == pytest.approx(4000 + 0.1 * 10 + 0.1 * 1000)
+    # a just-thawed small job is kept (in its window): not frozen though at its grant with nothing free...
+    p = kq.lease_plan([dict(small_a, keep=True)], 2000.0, cfg, now=1000.0, buffer=3000.0)
     assert p["stalled"] == [] and p["short"] == [2]
+    # ...unless free memory is below half the buffer: then it may be frozen again
+    p = kq.lease_plan([dict(small_a, keep=True)], 1000.0, cfg, now=1000.0, buffer=3000.0)
+    assert p["stalled"] == [2]
