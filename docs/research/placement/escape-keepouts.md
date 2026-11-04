@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: CC-BY-4.0 -->
 # Escape bands: keeping unrelated parts out of BGA and fine-pitch escape strips
 
-**Status:** not finished. The placer side works and is measured; the routing A/B (`escape-ab`, 3 seeds) is queued.
+**Status:** did not work. The bands do what they say (soft halves unrelated parts in the strips), but on the routing A/B (63 merit boards × 3 seeds) they leave open connections unchanged, and hard is worse on ball grids. `escape_band` is off by default since this result; both modes stay as options.
 **First published:** 2026-11-01, branch `place-escape-keepouts` (code 0efc1ec, A/B recipe b1bad94).
 
 ## Why
@@ -100,14 +100,46 @@ the bands of the package's own parts too. No arm dropped its bands for legality.
 soft w=1 within 3 % of each other, hard up to 10 % and soft w=4 up to 24 % slower (gecko5education). kae suite: 613 passed, 1 failed (the known flaky
 `test_router_killed_at_its_deadline_still_yields_a_board`).
 
-## Routing A/B (pending)
+## Routing A/B
 
 `tools/kaeres/experiments/escape-ab.sh`: every arm is merge3-ab's staged arm (merit staged wrapper +
 `--screen` + `--final`, 900 s × sqrt(footprints/40), routing from the bare placement of the joint-fixed
-task) at the same commit; only `--set escape_band=` differs. Experiment `escape-ab`: off vs soft on the 67
-boards, 3 seeds; `escape-ab-hard`: hard on the 9 ball-grid boards, 3 seeds. Harness e87baed, numba cache
-warmed for the commit. Metrics: open connections and completion per board and seed, DRC errors beyond the
-input's, cp1, and the same-router delta against the bridge on the human placement (merge3-ab).
+task) at the same commit (21bc53d, after the code audit); only `--set escape_band=` differs. Experiments
+`escape-ab3` (off vs soft, 65 boards, 3 seeds) and `escape-ab3-hard` (hard, the 10 ball-grid boards, 3
+seeds). Earlier runs `escape-ab`, `escape-ab2` are void (the methods ran the restart wrapper from a harness
+without `--resume`; then pre-audit code). Open connections are pcbnew's count past KiCad's 499 cap. Pairs
+are (board, seed); a run the queue froze for memory counts unless it also hit its deadline (none did).
+
+| comparison | pairs | open connections | per board (3-seed means) | errors / run |
+|---|---|---|---|---|
+| off vs soft, all boards | 188 | 12,096 → 13,099 (+8.3 %); pairs 57 fewer, 57 more, 74 equal | 22 better, 19 worse, median ±0 % | 39.5 → 38.2 |
+| off vs soft, pad rings only | 158 | 6,422 → 6,327 (−1.5 %), sign test p = 0.76 | 19 better, 15 worse | 37.1 → 36.1 |
+| off vs soft, ball grids | 30 | 5,674 → 6,772 (+19 %), polarfire-som most | 3 better, 4 worse, median +0.8 % | 52.2 → 49.7 |
+| off vs hard, ball grids | 30 | 5,674 → 6,286 (+11 %) | 3 better, 3 worse | 52.2 → 55.5 |
+
+Why, from four board studies (polarfire-som, nekoink, sdi-mipi, gecko5education):
+
+- The strips are not what limits these boards. Re-routing the off and hard placements of polarfire for
+  1,500 s each left 647 vs 646 open. Hard emptied sdi-mipi's strips in two seeds and still left 178 and
+  208 open; gecko5's hard arm clears the BGA's ring (3 parts within 3 mm vs 32) with no change in opens.
+- What does limit them: the router on deep ball-grid rings (75-80 % of sdi-mipi's opens, also on the human
+  placement), fixed copper zones the placer ignored (power pads off their planes: polarfire 148-221 of 469
+  vs the human's 404), scattered arrays (gecko5's 120-LED matrix: ~165 opens), and Freerouting's time on
+  big boards. Those are what the next experiments target (zone-aware placement, `zone-ab`).
+- Hard bands do not fit dense boards: at 76 % courtyard utilisation the legaliser moves parts 1,713 mm
+  (off: 717 mm) and the placer then drops the bands, keeping the worse spread.
+- The restart wrapper read KiCad's capped DRC list (499) as the open count, so on the big boards its
+  choices between attempts were blind in both arms; fixed since (7221e4a), after these runs.
+
+### The ball-grid router changes (`bga-next-ab`)
+
+Branch `route-bga-next` (c5f328a): the BGA window repair from `close-bga-region` merged, one shared
+small-ball-grid test (3 × 3 sites and up) for router and placer, and escape rings counted from the nearest
+open side, an empty channel inside the grid included (nekoink U202). Against its base (7221e4a), kae staged,
+the 10 ball-grid boards × 3 seeds: 26 pairs, open 5,270 → 5,526 (+4.9 %), pairs 9 fewer and 10 more,
+per board 2 better and 4 worse; errors 51.5 → 49.6 per run. No gain. On a big board the window repair
+rarely runs at all: it needs 120 s after the repair rounds, which on nekoink run to the last mile's
+90 s reserve (Freerouting took 694 of 1,200 s).
 
 ## Not done
 

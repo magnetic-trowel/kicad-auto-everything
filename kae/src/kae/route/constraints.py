@@ -164,9 +164,12 @@ DEFAULTS = dict(
     pad_entry_overlap=0.05,        # mm: a track may end outside a pad when its copper still overlaps the pad by
                                    # this much (KiCad connects any overlap); a 0.4 mm-pitch WLP ball is left
                                    # cleanly no other way at 0.2 / 0.2 mm (critical_grid._escapes)
-    escape_band=1,                 # placement (kae.place.escape_band): the surface escapes of each ball grid
+    escape_band=0,                 # placement (kae.place.escape_band): the surface escapes of each ball grid
                                    # and fine-pitch ring kept free of parts that are not its own (1: a soft
-                                   # annealer term; 2: hard occupancy against every part; 0: off)
+                                   # annealer term; 2: hard occupancy against every part; 0: off). Off: on
+                                   # escape-ab3 (63 merit boards x 3 seeds) soft left open connections unchanged
+                                   # (ring boards -1.5%, grid boards +19% in total, per-board median +-0%) and hard
+                                   # was worse on the grids (+11%); soft trims ~1 DRC error per run
     escape_band_w=1.0,             # weight of the soft band term (overlap / mean part area, as silk)
     escape_band_scale=1.0,         # band depth per side = scale x escapes on that side x (track + clearance)
     escape_band_max_mm=2.5,        # mm: the deepest band on one side
