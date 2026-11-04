@@ -6,7 +6,8 @@
 # <board>.{intent,operating}.json (board = basename of DIR).
 #   taut:     kae.route.taut run (DRC-gated) before -> taut.kicad_pcb, report taut.json; then the
 #             arc-aware power copper on it -> tautpc.kicad_pcb (pc.json), and on the input alone ->
-#             pc.kicad_pcb (pcin.json); stats.{before,taut,tautpc,pc}.json; times in times.txt
+#             pc.kicad_pcb (pcin.json); stats.{before,taut,tautpc,pc}.json; times in times.txt.
+#             TAUT_ONLY=1: taut alone. INTENT_DIR set: its operating facts give the pads' currents
 #   refill:   taut with other nets' fills ignored (KiCad refills around the moved copper) -> tautr.*
 #   phys-TAG: physics of TAG.kicad_pcb (eval_intent.sh) -> DIR/phys/TAG.*
 # Summary over many DIRs: tools/research/routing/taut_summary.py.
@@ -21,9 +22,10 @@ case "$mode" in
     ( ulimit -v 40000000; export PYTHONPATH=$REPO/kae/src
       for e in kicad_pro kicad_dru; do [ -f "$dir/before.$e" ] && cp "$dir/before.$e" "$dir/taut.$e"; done
       t0=$(date +%s.%N)
-      $PY -m kae.route.taut run "$dir/before.kicad_pcb" "$dir/taut.kicad_pcb" --workdir "$dir/taut-work" --report "$dir/taut.json"
+      op=(); [ -n "$INTENT_DIR" ] && [ -f "$INTENT_DIR/$id.operating.json" ] && op=(--operating "$INTENT_DIR/$id.operating.json")
+      $PY -m kae.route.taut run "$dir/before.kicad_pcb" "$dir/taut.kicad_pcb" --workdir "$dir/taut-work" --report "$dir/taut.json" "${op[@]}"
       t1=$(date +%s.%N)
-      $PY -m kae.route.power_copper "$dir/taut.kicad_pcb" "$dir/tautpc.kicad_pcb" --workdir "$dir/pc-work" --report "$dir/pc.json"
+      [ -n "$TAUT_ONLY" ] || $PY -m kae.route.power_copper "$dir/taut.kicad_pcb" "$dir/tautpc.kicad_pcb" --workdir "$dir/pc-work" --report "$dir/pc.json"
       t2=$(date +%s.%N)
       [ -n "$SKIP_PCIN" ] || $PY -m kae.route.power_copper "$dir/before.kicad_pcb" "$dir/pc.kicad_pcb" --workdir "$dir/pcin-work" --report "$dir/pcin.json"
       t3=$(date +%s.%N)
