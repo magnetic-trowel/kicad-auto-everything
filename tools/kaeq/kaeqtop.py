@@ -254,29 +254,34 @@ def frame(c, cfg, sampler, args, width):
         L.append("Problems in the last 24 h: " + ", ".join(f"{o} {n} {st}" for o, st, n in probs)
                  + "   (details: kaeq result --owner OWNER)")
 
-    # running jobs
+    # running jobs: the top args.jobs by CPU, then the top args.jobs by RAM
+    def job_line(j):
+        rss, cores = use.get(j["id"], (0.0, None))
+        el = kaeq.active_for(j, now)        # what --timeout counts: time frozen for memory is left out
+        fz = kaeq.frozen_for(j, now)
+        nfz = j["freezes"] if "freezes" in j.keys() else 0   # (a database the new daemon has not upgraded yet)
+        frz = (("*" if j["frozen_since"] else "") + f"{dur(fz)}/{nfz}x") if nfz else "-"
+        cpu = "  -  " if cores is None else f"{cores:5.1f}"
+        return (f"  {j['id']:>6} {j['owner'][:ow]:<{ow}} {cpu} {gb(rss):>6}/{gb(j['mem_mb']):<6} {dur(el):>7} "
+                f"{dur(j['timeout_s']):>7} {frz:>9} {'B' if (j['qos'] if 'qos' in j.keys() else '') == 'batch' else 'T'}"
+                f"  {j['name'] or j['cmd'][:60]}")
+
     if args.jobs and running:
-        L.append("")
-        L.append(f"RUNNING JOBS (top {min(args.jobs, len(running))} of {len(running)} by CPU)")
-        L.append(f"  {'ID':>6} {'OWNER':<{ow}} {'CPU':>5} {'RAM':>6}/{'DECL':<6} {'ACTIVE':>7} {'LIMIT':>7} {'FROZEN':>9} C  NAME")
-        order = sorted(running, key=lambda j: -(use.get(j["id"], (0, 0))[1] or 0))
-        for j in order[:args.jobs]:
-            rss, cores = use.get(j["id"], (0.0, None))
-            el = kaeq.active_for(j, now)        # what --timeout counts: time frozen for memory is left out
-            fz = kaeq.frozen_for(j, now)
-            nfz = j["freezes"] if "freezes" in j.keys() else 0   # (a database the new daemon has not upgraded yet)
-            frz = (("*" if j["frozen_since"] else "") + f"{dur(fz)}/{nfz}x") if nfz else "-"
-            cpu = "  -  " if cores is None else f"{cores:5.1f}"
-            L.append(f"  {j['id']:>6} {j['owner'][:ow]:<{ow}} {cpu} {gb(rss):>6}/{gb(j['mem_mb']):<6} {dur(el):>7} "
-                     f"{dur(j['timeout_s']):>7} {frz:>9} {'B' if (j['qos'] if 'qos' in j.keys() else '') == 'batch' else 'T'}"
-                     f"  {j['name'] or j['cmd'][:60]}")
+        n = min(args.jobs, len(running))
+        head = f"  {'ID':>6} {'OWNER':<{ow}} {'CPU':>5} {'RAM':>6}/{'DECL':<6} {'ACTIVE':>7} {'LIMIT':>7} {'FROZEN':>9} C  NAME"
+        for what, key in (("CPU", lambda j: -(use.get(j["id"], (0, 0))[1] or 0)),
+                          ("RAM", lambda j: -use.get(j["id"], (0.0, 0))[0])):
+            L.append("")
+            L.append(f"RUNNING JOBS (top {n} of {len(running)} by {what})")
+            L.append(head)
+            L += [job_line(j) for j in sorted(running, key=key)[:n]]
     return [line[:width] for line in L]
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("-n", "--interval", type=float, default=5.0, help="seconds between refreshes (default 5)")
-    ap.add_argument("--jobs", type=int, default=15, help="running jobs to list (0 = none)")
+    ap.add_argument("--jobs", type=int, default=5, help="running jobs to list, by CPU and by RAM (0 = none)")
     ap.add_argument("--all", action="store_true", help="also owners with nothing active or finished in 3 h")
     ap.add_argument("--once", action="store_true", help="print one frame and exit")
     args = ap.parse_args()
