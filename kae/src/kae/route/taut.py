@@ -365,6 +365,18 @@ class Taut:
             c[k] = math.inf if a is None or b is None else float(a.distance(b))
         return c[k]
 
+    def _item_gap(self, it, net, layer):
+        """Edge-to-edge distance from item `it` to the input copper of `net` on `layer`: the floor
+        a victim pair keeps at this item when the input was already nearer than the victim gap.
+        Per item, so one pair of adjacent pins does not lift the rule along the whole net; measured
+        on the input, so passes cannot ratchet it down."""
+        c = self.__dict__.setdefault("_itg", {})
+        k = (id(it), net, layer)
+        if k not in c:
+            own = self._input_copper(net, layer)
+            c[k] = math.inf if own is None else max(0.0, float(it.geom.distance(own)) - it.r)
+        return c[k]
+
     def obstacles(self, net, layer, w, window, orig_line):
         """[Obstacle] for a branch of `net`, width w on `layer` inside `window`; each Obstacle.key =
         (item or tag, R_need) where R_need is the centreline distance the requirement asks."""
@@ -381,7 +393,7 @@ class Taut:
                 nd = 0.0
             gap = self._sensitive_gap(net, it.net, layer) if it.kind in ("track", "via", "pad") else None
             if gap is not None:
-                nd = max(nd, min(gap, self._input_gap(net, it.net, layer)))
+                nd = max(nd, min(gap, self._item_gap(it, net, layer)))
             Rn = it.r + nd + half
             if it.geom.distance(window) > Rn + 1e-6:
                 continue
@@ -405,7 +417,7 @@ class Taut:
                     gap = self._sensitive_gap(net, it.net, l)
                     if gap is None:
                         continue
-                    d0 = self._input_gap(net, it.net, (layer, l))
+                    d0 = self._item_gap(it, net, layer)
                     if d0 <= CHECK_TOL:
                         continue
                     Rn = it.r + min(gap, d0) + half
