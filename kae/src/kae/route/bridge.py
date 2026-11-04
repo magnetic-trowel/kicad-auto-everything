@@ -73,6 +73,8 @@ DEFAULT_OPTS = dict(
                              # "outside" (polygons that contain the pad's copper, translate.circumscribe_pins)
     power_copper=False,      # after repair: kae.route.power_copper (widen rails and grounds into free space,
                              # ground vias at decap/IC pads, stitch pours), kept only if DRC is no worse
+    pad_trim=None,           # last: kae.route.pad_trim (Freerouting's centre ends cut back to the pad edge,
+                             # DRC-gated); None = when the pad_entry setting is "edge"
 )
 
 
@@ -235,6 +237,11 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             from . import power_copper
             report["power_copper"] = power_copper.hook(output_path, input_path, wd / "power_copper",
                                                        timeout=max(30, left() - 10), log=log)
+        trim = opts.get("pad_trim")
+        if (trim if trim is not None else getattr(p, "pad_entry", "centre") == "edge") and left() > 30:
+            from . import pad_trim
+            report["pad_trim"] = pad_trim.hook(output_path, input_path, wd / "pad_trim",
+                                               timeout=max(20, left() - 10), log=log)
         if report.get("blocked_packages"):
             # packages no routing can escape under the board's rules (escape.certificate), in front
             # of the per-connection diagnosis

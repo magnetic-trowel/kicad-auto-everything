@@ -191,6 +191,8 @@ def run(input_path, output_path, overlap=None, workdir=None, timeout=1800, log=p
     """The DRC-gated pass. Returns a report."""
     from . import constraints as CN
     from . import drc
+    import time
+    end_t = time.monotonic() + timeout
     inp = Path(input_path).resolve()
     wd = Path(workdir or tempfile.mkdtemp(prefix="kae-trim-"))
     wd.mkdir(parents=True, exist_ok=True)
@@ -201,7 +203,7 @@ def run(input_path, output_path, overlap=None, workdir=None, timeout=1800, log=p
     trims = plan(text, info, ovl)
     rep = dict(board=str(inp), planned=len(trims), overlap=ovl,
                cut_mm=round(sum(math.dist(s[e], n) for s, e, n in trims), 3))
-    base_rep = drc.run(staged, wd / "in.drc.json", timeout=timeout)
+    base_rep = drc.run(staged, wd / "in.drc.json", timeout=max(10, end_t - time.monotonic()))
     base = drc.summary(base_rep)
     rep["drc_in"] = base
     cand = wd / "out" / "board.kicad_pcb"
@@ -212,10 +214,10 @@ def run(input_path, output_path, overlap=None, workdir=None, timeout=1800, log=p
     skip = set()
     final = None
     for rnd in range(3):
-        if not trims or len(skip) >= len(trims):
+        if not trims or len(skip) >= len(trims) or end_t - time.monotonic() < 10:
             break
         cand.write_text(write(text, trims, skip), encoding="utf-8")
-        r = drc.run(cand, wd / f"out.r{rnd}.json", timeout=timeout)
+        r = drc.run(cand, wd / f"out.r{rnd}.json", timeout=max(10, end_t - time.monotonic()))
         s = drc.summary(r)
         worse = {t: n for t, n in s["by_type"].items() if n > base["by_type"].get(t, 0)}
         if s["unconnected"] > base["unconnected"]:
@@ -246,6 +248,22 @@ def run(input_path, output_path, overlap=None, workdir=None, timeout=1800, log=p
         s_ = inp.with_suffix(ext)
         if s_.exists() and s_.resolve() != out.with_suffix(ext).resolve():
             shutil.copy2(s_, out.with_suffix(ext))
+    return rep
+
+
+def hook(output_path, project_board, workdir, timeout=900, log=print):
+    """The router's last stage (bridge opts pad_trim): the pass on the routed `output_path`
+    (staged with `project_board`'s project files), which it replaces when trims were kept."""
+    from . import drc
+    wd = Path(workdir)
+    staged = drc.stage_board(output_path, project_board, wd / "routed")
+    try:
+        rep = run(staged, wd / "out.kicad_pcb", workdir=wd / "pass", timeout=timeout, log=log)
+    except Exception as e:      # noqa: BLE001 - a post-pass never costs the routed board
+        log(f"[pad-trim] skipped: {type(e).__name__}: {e}")
+        return dict(error=f"{type(e).__name__}: {e}")
+    if rep.get("kept"):
+        Path(output_path).write_text((wd / "out.kicad_pcb").read_text(encoding="utf-8"), encoding="utf-8")
     return rep
 
 
