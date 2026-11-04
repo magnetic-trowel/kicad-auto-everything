@@ -245,7 +245,7 @@ def route(dsn, ses, workdir, *, passes=0, settings=None, budget_s=600.0, margin_
     except (OSError, ValueError):
         pass
     if key:
-        _store(key, p.returncode, dt, timed_out, out or "", report, ses, result, workdir)
+        _store(key, p.returncode, dt, timed_out, out or "", report, ses, result, workdir, job_s)
     return Run(rc=p.returncode, ses=ses if ses.exists() and ses.stat().st_size > 0 else None, log=out or "",
                seconds=round(dt, 2), timed_out=timed_out,
                report=dict(_summary(report, out or ""), slot_wait_s=slot.waited, job_timeout_s=round(job_s, 1),
@@ -267,7 +267,8 @@ def _argv(dsn, ses, user, result, job_s, passes, settings):
 def _cache_key(dsn, ses, workdir, user, result, passes, settings):
     """Step-cache key of a Freerouting run: the DSN's bytes (its work directory normalised), the
     program's jars, argv without its paths or job timeout (a run that stopped by itself does not
-    depend on it; _replay checks that it fits), and the JVM options."""
+    depend on it; _replay checks that it fits; _timeout_key adds it for one that did), and the JVM
+    options."""
     argv = _argv(dsn, ses, user, result, 0, passes, settings)
     exe = argv[2] if argv[:2] == ["java", "-jar"] else argv[0]
     rest = [a for a in argv[3 if argv[:2] == ["java", "-jar"] else 1:] if not a.startswith("--router.job_timeout=")]
@@ -277,49 +278,66 @@ def _cache_key(dsn, ses, workdir, user, result, passes, settings):
         dsn=stepcache.file_sha(dsn, workdir), jvm=_env().get("JAVA_TOOL_OPTIONS", "")))
 
 
-def _cacheable(rc, timed_out, ses, report, log):
-    """A run that stopped by itself: written, not killed, neither the autorouter nor the optimizer
-    stopped by the clock. Only such a run is the same under any job timeout it fits in."""
+TIMEOUT_BUCKET_S = 10.0   # runs that stopped at their job timeout are keyed by it, in steps of this
+
+
+def _stopped_by_itself(report, log):
     s = _summary(report, log)
-    return (rc == 0 and not timed_out and ses.exists() and ses.stat().st_size > 0 and bool(report)
-            and report.get("final_state") != "TIMED_OUT" and s.get("autorouter_stop") != "TIMED_OUT"
+    return (bool(report) and report.get("final_state") != "TIMED_OUT" and s.get("autorouter_stop") != "TIMED_OUT"
             and s.get("optimizer_stop") != "timed_out")
 
 
-def _store(key, rc, dt, timed_out, log, report, ses, result, workdir):
-    ok = _cacheable(rc, timed_out, ses, report, log)
+def _timeout_key(key, job_s):
+    return stepcache.make_key("freerouting-timed-out", dict(base=key, job=round(job_s / TIMEOUT_BUCKET_S)))
+
+
+def _store(key, rc, dt, timed_out, log, report, ses, result, workdir, job_s):
+    """Cache a run that wrote a session and was not killed. One that stopped by itself is the result
+    under any job timeout it fits in (key without it); one that stopped at its job timeout is the
+    result under that timeout (key with it, to TIMEOUT_BUCKET_S)."""
+    ok = rc == 0 and not timed_out and ses.exists() and ses.stat().st_size > 0
     if ok:
+        own = _stopped_by_itself(report, log)
         logf = Path(workdir) / f"{ses.stem}.cache-log"
         logf.write_text(log)
-        stepcache.put(key, dict(step="freerouting", rc=rc, seconds=round(dt, 3), final_state=report.get("final_state")),
+        stepcache.put(key if own else _timeout_key(key, job_s),
+                      dict(step="freerouting", rc=rc, seconds=round(dt, 3), job_s=round(job_s, 1), stopped_by_itself=own,
+                           final_state=report.get("final_state")),
                       {"ses": ses, "result": result, "log": logf}, workdir)
         logf.unlink()
     stepcache.charge("freerouting", False, dt, dt, key, cacheable=ok)
 
 
 def _replay(key, ses, result, workdir, budget_s, margin, hard_s, log_path, passes, settings, dsn, user):
-    """A Run from the cache, or None: the recorded run must fit in this call's job timeout and kill
-    time with no slot wait (it then would have stopped by itself here too). Charged its duration."""
+    """A Run from the cache, or None: a run that stopped by itself and fits in this call's job
+    timeout and kill time (with no slot wait), else one that stopped at this call's job timeout.
+    Charged its recorded duration."""
     t0 = time.monotonic()
-    meta = stepcache.get(key)
     job_s = max(5.0, budget_s - margin)
     hard = max(job_s + 5.0, hard_s if hard_s is not None else budget_s + GRACE_S)
-    if meta is None or meta["seconds"] + 2.0 > min(job_s, hard):
-        return None
-    logf = Path(workdir) / f"{ses.stem}.cache-log"
-    stepcache.restore(meta, {"ses": ses, "result": result, "log": logf}, workdir)
-    log = logf.read_text(errors="replace")
-    logf.unlink()
-    if log_path:
-        Path(log_path).write_text(log)
-    try:
-        report = json.loads(result.read_text())
-    except (OSError, ValueError):
-        report = {}
-    stepcache.charge("freerouting", True, meta["seconds"], time.monotonic() - t0, key)
-    return Run(rc=meta["rc"], ses=ses, log=log, seconds=meta["seconds"], timed_out=False,
-               report=dict(_summary(report, log), slot_wait_s=0.0, job_timeout_s=round(job_s, 1), step_cache="hit"),
-               argv=_argv(dsn, ses, user, result, job_s, passes, settings))
+    for k in (key, _timeout_key(key, job_s)):
+        with stepcache.reading(k) as meta:
+            if meta is None or meta["seconds"] > hard - 2.0 or (k == key and meta["seconds"] + 2.0 > job_s):
+                continue
+            logf = Path(workdir) / f"{ses.stem}.cache-log"
+            try:
+                stepcache.restore(meta, {"ses": ses, "result": result, "log": logf}, workdir)
+            except OSError:
+                continue
+        log = logf.read_text(errors="replace")
+        logf.unlink()
+        if log_path:
+            Path(log_path).write_text(log)
+        try:
+            report = json.loads(result.read_text())
+        except (OSError, ValueError):
+            report = {}
+        stepcache.charge("freerouting", True, meta["seconds"], time.monotonic() - t0, k)
+        return Run(rc=meta["rc"], ses=ses, log=log, seconds=meta["seconds"], timed_out=False,
+                   report=dict(_summary(report, log), slot_wait_s=0.0, job_timeout_s=round(job_s, 1),
+                               step_cache="hit"),
+                   argv=_argv(dsn, ses, user, result, job_s, passes, settings))
+    return None
 
 
 def _autorouter_stop(log, final_state):

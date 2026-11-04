@@ -69,9 +69,91 @@ def test_concurrent_writers_leave_one_whole_entry(cache):
         won = pool.map(_writer, [(str(cache), key, i) for i in range(16)])
     assert sum(won) == 1
     meta = stepcache.get(key)
-    data = (meta["dir"] / "files" / meta["files"]["out"]).read_bytes()
-    assert data == bytes([meta["who"]]) * 200_000                       # one writer's files, whole
+    out = cache / "restored"
+    with stepcache.reading(key) as m:
+        stepcache.restore(m, {"out": out})
+    assert out.read_bytes() == bytes([meta["who"]]) * 200_000          # one writer's file, whole
     assert not any((cache / "tmp").iterdir())                          # no leftovers
+    assert stepcache._ledger() == stepcache._scan()[0]                 # the ledger is the store's size
+
+
+def _fill(cache, tmp_path, n, kb, prefix="e", keep=None):
+    import os
+    keys = []
+    for i in range(n):
+        if keep:
+            with stepcache.reading(keep):                              # a key some job keeps using
+                pass
+        f = tmp_path / f"{prefix}{i}.bin"
+        f.write_bytes(os.urandom(kb * 1024))                           # incompressible
+        k = stepcache.make_key("fill", dict(i=i, p=prefix))
+        assert stepcache.put(k, dict(step="fill"), {"f": f})
+        keys.append(k)
+        time.sleep(0.01)                                               # distinct use times
+    return keys
+
+
+def test_the_cap_holds_and_evicts_least_recently_used(cache, tmp_path, monkeypatch):
+    monkeypatch.setenv("KAE_STEP_CACHE_MAX_GB", str(2.0 / 1024))       # 2 MB
+    keys = _fill(cache, tmp_path, 10, 90)                              # 0.9 MB
+    keys += _fill(cache, tmp_path, 30, 90, prefix="g", keep=keys[0])   # 2.7 MB more, keys[0] in use: past the cap
+    total = stepcache._scan()[0]
+    assert total <= stepcache.cap_bytes() and stepcache._ledger() == total
+    assert stepcache.get(keys[0]) is not None                          # the recently used one stayed
+    assert stepcache.get(keys[1]) is None                              # the oldest went
+    assert stepcache.get(keys[-1]) is not None
+    _, entries, blobs = stepcache._scan()
+    assert set(blobs) == {b for _, _, bs in entries.values() for b in bs}   # no orphan, none missing
+
+
+def test_an_entry_being_read_is_never_evicted(cache, tmp_path, monkeypatch):
+    monkeypatch.setenv("KAE_STEP_CACHE_MAX_GB", str(2.0 / 1024))
+    first = _fill(cache, tmp_path, 1, 90)[0]
+    with stepcache.reading(first) as meta:                             # a job restores it meanwhile
+        _fill(cache, tmp_path, 40, 90, prefix="g")
+        stepcache.restore(meta, {"f": tmp_path / "back.bin"})
+    assert stepcache.get(first) is not None and (tmp_path / "back.bin").read_bytes() == (tmp_path / "e0.bin").read_bytes()
+
+
+def test_identical_files_are_stored_once_and_compressed(cache, tmp_path):
+    f = tmp_path / "board.kicad_pcb"
+    f.write_text("(kicad_pcb (segment (start 1 2) (end 3 4)))\n" * 20000)
+    for i in range(3):
+        stepcache.put(stepcache.make_key("d", dict(i=i)), dict(step="d"), {"b": f})
+    _, entries, blobs = stepcache._scan()
+    assert len(entries) == 3 and len(blobs) == 1
+    assert next(iter(blobs.values()))[0] < f.stat().st_size / 20
+
+
+def test_an_entry_over_5_percent_of_the_cap_is_not_cached(cache, tmp_path, monkeypatch):
+    import os
+    monkeypatch.setenv("KAE_STEP_CACHE_MAX_GB", str(2.0 / 1024))
+    f = tmp_path / "big"
+    f.write_bytes(os.urandom(200 * 1024))                               # 10% of 2 MB
+    assert not stepcache.put("ef" * 32, dict(step="big"), {"f": f}) and stepcache.get("ef" * 32) is None
+
+
+def test_cli_stats_and_prune(cache, tmp_path, capsys):
+    _fill(cache, tmp_path, 5, 50)
+    stepcache.main(["stats"])
+    assert json.loads(capsys.readouterr().out)["entries"] == 5
+    stepcache.main(["prune", "--max-gb", "0"])
+    assert json.loads(capsys.readouterr().out)["entries"] == 0
+
+
+def test_fork_points_are_keyed_by_input_seed_and_code(cache, tmp_path):
+    b = tmp_path / "in" / "board.kicad_pcb"
+    b.parent.mkdir()
+    b.write_text("(kicad_pcb)")
+    out = tmp_path / "out.kicad_pcb"
+    out.write_text("(kicad_pcb (segment))")
+    ctx = stepcache.fork_context(b, 3, 300.0, {"last_mile": True})
+    assert stepcache.save_fork(ctx, "repaired", {"board": out}, 42.0, {"status": "routed"})
+    meta = stepcache.find_fork(stepcache.fork_context(b, 3, 300.0, {"last_mile": True}), "repaired")
+    assert meta["seconds"] == 42.0 and set(meta["files"]) == {"board", "report"}
+    assert stepcache.find_fork(stepcache.fork_context(b, 4, 300.0, {"last_mile": True}), "repaired") is None
+    assert stepcache.find_fork(ctx, "repaired", code="0" * 64) is None
+    assert stepcache.fork_context(b, 3, 300.0, {}) is not None and not list(out.parent.glob(".fork-*"))
 
 
 def test_charges_parse_and_skip_a_partial_line(tmp_path):
@@ -183,13 +265,15 @@ def test_freerouting_replays_a_run_that_stopped_by_itself(cache, tmp_path, monke
     assert runs.read_text() == "2" and c.report.get("step_cache") is None
 
 
-def test_freerouting_at_its_timeout_is_not_cached(cache, tmp_path, monkeypatch):
+def test_freerouting_at_its_timeout_replays_only_under_that_timeout(cache, tmp_path, monkeypatch):
     runs, _ = _fr(tmp_path, monkeypatch)
     _route(tmp_path, "a", "timeout")
-    _route(tmp_path, "b", "timeout")
+    b, _ = _route(tmp_path, "b", "timeout")                       # the same job timeout: replayed
+    assert runs.read_text() == "1" and b.report.get("step_cache") == "hit"
+    _route(tmp_path, "c", "timeout", budget=200.0)                # another job timeout: runs
     assert runs.read_text() == "2"
     t = stepcache.charges(tmp_path / "charge.jsonl")
-    assert (t["hits"], t["misses"], t["uncacheable"]) == (0, 0, 2)
+    assert (t["hits"], t["misses"], t["uncacheable"]) == (1, 2, 0)
 
 
 def test_freerouting_unchanged_without_the_cache(tmp_path, monkeypatch):

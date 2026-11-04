@@ -26,6 +26,8 @@ when it stopped by itself (not at its job timeout, nor its optimizer at its own)
 only when the recorded run fits in the caller's time limit, so the uncached run would also
 have finished on its own; DRC only when it wrote its report within its timeout.
 """
+import fcntl
+import gzip
 import hashlib
 import json
 import os
@@ -149,6 +151,25 @@ def norm_argv(argv, wd, extra=()):
 
 
 # ---- store --------------------------------------------------------------------------------
+#
+#   entries/<k2>/<key>.json   an entry's meta: its files as blob hashes (mtime: last use, for LRU)
+#   blobs/<h2>/<sha>.gz       files, gzip-compressed, deduplicated by the sha256 of their content
+#   locks/<key>               flock: shared while a job restores the entry, exclusive to evict it
+#   lock, size.json           the store's write lock and its size ledger (bytes of blobs + entries)
+#
+# Every write takes the store's lock, adds its new bytes to the ledger and, past the cap
+# (KAE_STEP_CACHE_MAX_GB, default 50), evicts the least recently used entries that no job is
+# reading down to 90% of it, then the blobs no entry still names. An entry larger than 5% of
+# the cap is not stored.
+
+MAX_GB = 50.0
+TARGET = 0.9        # eviction goes down to this share of the cap
+MAX_ENTRY = 0.05    # an entry above this share of the cap is not stored
+
+
+def cap_bytes():
+    return int(float(os.environ.get("KAE_STEP_CACHE_MAX_GB") or MAX_GB) * 2 ** 30)
+
 
 def _atomic_write(path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -157,58 +178,209 @@ def _atomic_write(path, data):
     os.replace(tmp, path)
 
 
-def _entry(key):
-    return root() / key[:2] / key
+def _meta_path(key):
+    return root() / "entries" / key[:2] / f"{key}.json"
+
+
+def _blob(sha):
+    return root() / "blobs" / sha[:2] / f"{sha}.gz"
+
+
+class _Flock:
+    def __init__(self, path, mode):
+        self.path, self.mode, self.f = Path(path), mode, None
+
+    def __enter__(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.f = open(self.path, "a")
+        try:
+            fcntl.flock(self.f, self.mode)
+        except OSError:
+            self.f.close()
+            self.f = None
+        return self.f is not None
+
+    def __exit__(self, *exc):
+        if self.f is not None:
+            fcntl.flock(self.f, fcntl.LOCK_UN)
+            self.f.close()
 
 
 def get(key):
-    """The entry's meta (with "dir": its directory), None on a miss."""
+    """An entry's meta, None on a miss (no lock: use reading() to restore it)."""
     if not enabled():
         return None
-    d = _entry(key)
     try:
-        meta = json.loads((d / "meta.json").read_text())
+        return json.loads(_meta_path(key).read_text())
     except (OSError, ValueError):
         return None
-    meta["dir"] = d
-    return meta
+
+
+class reading:
+    """`with reading(key) as meta:` the entry (None on a miss), kept from eviction while the block
+    runs; a use marks it recently used."""
+
+    def __init__(self, key):
+        self.key, self.lock = key, None
+
+    def __enter__(self):
+        if not enabled():
+            return None
+        self.lock = _Flock(root() / "locks" / self.key, fcntl.LOCK_SH)
+        self.lock.__enter__()
+        meta = get(self.key)
+        if meta is not None:
+            try:
+                os.utime(_meta_path(self.key))
+            except OSError:
+                pass
+        return meta
+
+    def __exit__(self, *exc):
+        if self.lock is not None:
+            self.lock.__exit__()
 
 
 def put(key, meta, files, wd=None):
     """Store an entry: `meta` (JSON-able) and `files` {name: path}, `wd` replaced by WD in the
-    files. Written into tmp/ and renamed into place: atomic, and a key already stored (by a
-    concurrent job) is kept. Returns True when this call stored it."""
+    files, compressed and deduplicated. The first writer of a key wins (a concurrent job's entry
+    is kept). Returns True when this call stored it."""
     if not enabled():
         return False
-    tmp = root() / "tmp" / f"{key}.{os.getpid()}.{uuid.uuid4().hex[:8]}"
+    r = root()
+    tmps, names = {}, {}
     try:
-        (tmp / "files").mkdir(parents=True)
-        names = {}
-        for i, (name, src) in enumerate(sorted(files.items())):
+        (r / "tmp").mkdir(parents=True, exist_ok=True)
+        for name, src in sorted(files.items()):
             b = Path(src).read_bytes()
             if wd:
                 b = _sub(b, wd, WD)
-            (tmp / "files" / f"f{i}").write_bytes(b)
-            names[name] = f"f{i}"
-        (tmp / "meta.json").write_text(json.dumps(dict(meta, files=names, key=key, schema=SCHEMA,
-                                                       stored=time.strftime("%Y-%m-%dT%H:%M:%S")), indent=1))
-        dst = _entry(key)
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            os.rename(tmp, dst)
-            return True
-        except OSError:   # stored meanwhile by another job: the same deterministic result
-            return False
+            sha = hashlib.sha256(b).hexdigest()
+            names[name] = sha
+            if sha not in tmps and not _blob(sha).exists():
+                t = r / "tmp" / f"{sha}.{os.getpid()}.{uuid.uuid4().hex[:8]}"
+                t.write_bytes(gzip.compress(b, 6))
+                tmps[sha] = t
+        doc = json.dumps(dict(meta, files=names, key=key, schema=SCHEMA,
+                              stored=time.strftime("%Y-%m-%dT%H:%M:%S")), indent=1).encode()
+        if sum(t.stat().st_size for t in tmps.values()) + len(doc) > MAX_ENTRY * cap_bytes():
+            return False   # one entry too large for the cap: not cached
+        with _Flock(r / "lock", fcntl.LOCK_EX):
+            if _meta_path(key).exists():
+                return False
+            added = len(doc)
+            for sha, t in tmps.items():
+                dst = _blob(sha)
+                if dst.exists():
+                    continue
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                added += t.stat().st_size
+                os.rename(t, dst)
+            known = (root() / "size.json").exists()
+            _atomic_write(_meta_path(key), doc)
+            size = _ledger() + added if known else _scan()[0]
+            if size > cap_bytes():
+                size = _evict(int(TARGET * cap_bytes()))
+            _atomic_write(r / "size.json", json.dumps(dict(bytes=size)).encode())
+        return True
     except OSError:
         return False
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        for t in tmps.values():
+            if t.exists():
+                t.unlink()
+
+
+def _ledger():
+    try:
+        return int(json.loads((root() / "size.json").read_text())["bytes"])
+    except (OSError, ValueError, KeyError):
+        return _scan()[0]
+
+
+def _scan():
+    """(bytes, entries {key: (mtime, path, blobs)}, blobs {sha: (bytes, path)}) by walking the store."""
+    r, entries, blobs, total = root(), {}, {}, 0
+    for p in (r / "entries").glob("*/*.json"):
+        try:
+            st, meta = p.stat(), json.loads(p.read_text())
+        except (OSError, ValueError):
+            continue
+        entries[p.stem] = (st.st_mtime, p, set(meta.get("files", {}).values()))
+        total += st.st_size
+    for p in (r / "blobs").glob("*/*.gz"):
+        try:
+            blobs[p.name[:-3]] = (p.stat().st_size, p)
+            total += blobs[p.name[:-3]][0]
+        except OSError:
+            pass
+    return total, entries, blobs
+
+
+def _evict(target):
+    """With the store's lock held: drop least recently used entries that no job is reading, and
+    the blobs no remaining entry names, until the store is at most `target` bytes. Returns its size."""
+    total, entries, blobs = _scan()
+    refs = {}
+    for _, _, bs in entries.values():
+        for b in bs:
+            refs[b] = refs.get(b, 0) + 1
+    for b, (n, p) in list(blobs.items()):   # orphans (a write that died between blob and entry)
+        if not refs.get(b) and time.time() - p.stat().st_mtime > 3600:
+            p.unlink(missing_ok=True)
+            total -= n
+    for key, (_, path, bs) in sorted(entries.items(), key=lambda kv: kv[1][0]):
+        if total <= target:
+            break
+        with _Flock(root() / "locks" / key, fcntl.LOCK_EX | fcntl.LOCK_NB) as free:
+            if not free:
+                continue           # a job is restoring it
+            try:
+                total -= path.stat().st_size
+                path.unlink()
+            except OSError:
+                continue
+        (root() / "locks" / key).unlink(missing_ok=True)
+        for b in bs:
+            refs[b] -= 1
+            if refs[b] == 0 and b in blobs:
+                blobs[b][1].unlink(missing_ok=True)
+                total -= blobs[b][0]
+    return total
+
+
+def stats():
+    """The store: bytes (walked), the ledger, the cap, entries per step, blobs."""
+    if not enabled() or not root().exists():
+        return dict(bytes=0, entries=0)
+    total, entries, blobs = _scan()
+    steps = {}
+    for key in entries:
+        m = get(key) or {}
+        steps[m.get("step", "?")] = steps.get(m.get("step", "?"), 0) + 1
+    return dict(bytes=total, gb=round(total / 2 ** 30, 3), ledger=_ledger(), cap_gb=round(cap_bytes() / 2 ** 30, 2),
+                entries=len(entries), blobs=len(blobs), steps=steps)
+
+
+def size_gb():
+    """The store's size by its ledger (cheap), for run reports."""
+    return round(_ledger() / 2 ** 30, 3) if enabled() and root().exists() else 0.0
+
+
+def prune(max_gb=None):
+    """Evict down to `max_gb` (default: the cap's eviction target). Returns the size in bytes."""
+    target = int(max_gb * 2 ** 30) if max_gb is not None else int(TARGET * cap_bytes())
+    with _Flock(root() / "lock", fcntl.LOCK_EX):
+        size = _evict(target)
+        _atomic_write(root() / "size.json", json.dumps(dict(bytes=size)).encode())
+    return size
 
 
 def restore(meta, dests, wd=None):
-    """Write an entry's files to `dests` {name: path} (WD replaced by `wd`)."""
+    """Write an entry's files to `dests` {name: path} (WD replaced by `wd`). Call it inside
+    reading(); raises OSError when a blob is missing."""
     for name, dst in dests.items():
-        b = (meta["dir"] / "files" / meta["files"][name]).read_bytes()
+        b = gzip.decompress(_blob(meta["files"][name]).read_bytes())
         if wd:
             b = b.replace(WD.encode(), str(wd).encode())
         Path(dst).parent.mkdir(parents=True, exist_ok=True)
@@ -217,6 +389,79 @@ def restore(meta, dests, wd=None):
 
 def tail(text, n=4000):
     return (text or "")[-n:]
+
+
+# ---- fork points --------------------------------------------------------------------------
+#
+# kae.route.bridge saves an attempt's board at the stage boundaries an A/B branches at: "routed"
+# (Freerouting's session imported; the raw session too), "repaired" (repair rounds and last mile)
+# and "final" (the attempt's output). The key is conservative: the input board and its project
+# files, the seed, the time budget, the caller's options, the KAE_* environment, the failure
+# history it reads and the whole kae source (code_id), so a hit is the same attempt by the same
+# code. A method that knows its change lies past a stage can look up the control arm's point with
+# that arm's code id (find_fork(..., code=...)) and continue from it.
+
+_NOT_SETTINGS = ("KAE_STEP_CACHE", "KAE_STEP_CACHE_MAX_GB", "KAE_CHARGE_FILE", "KAE_ROUTE_HISTORY", "KAE_HOME",
+                 "KAE_FR_LOCKDIR", "KAE_FR_SLOTS", "KAE_KICAD_WRAP", "KAE_KICAD_CLI", "KAE_KICAD_PYTHON",
+                 "KAE_RESUME", "KAE_WORKERS", "KAE_DRC_TIMEOUT")
+_code = {}
+
+
+def code_id(src=None):
+    """sha256 over the kae package's Python sources (kae/src/kae/**/*.py)."""
+    src = Path(src or Path(__file__).resolve().parents[1])
+    if src not in _code:
+        h = hashlib.sha256()
+        for f in sorted(src.rglob("*.py")):
+            h.update(str(f.relative_to(src)).encode() + b"\0" + hashlib.sha256(f.read_bytes()).digest())
+        _code[src] = h.hexdigest()
+    return _code[src]
+
+
+def fork_context(input_path, seed, time_s, opts):
+    """What a route attempt's fork points are keyed by (None when the cache is off)."""
+    if not enabled():
+        return None
+    b = Path(input_path)
+    files = {e: file_sha(b.with_suffix(e)) for e in (".kicad_pcb", ".kicad_pro", ".kicad_dru") if b.with_suffix(e).exists()}
+    hist = os.environ.get("KAE_ROUTE_HISTORY")
+    env = {k: v for k, v in os.environ.items() if k.startswith("KAE_") and k not in _NOT_SETTINGS}
+    if env.get("KAE_BRIDGE_FREEROUTING"):
+        try:
+            env["KAE_BRIDGE_FREEROUTING"] = tool_sha(env["KAE_BRIDGE_FREEROUTING"])
+        except OSError:
+            pass
+    return dict(input=files, seed=seed, time_s=time_s, env=env,
+                opts=json.loads(json.dumps(opts or {}, sort_keys=True, default=str)),
+                history=file_sha(hist) if hist and Path(hist).exists() else None, code=code_id())
+
+
+def fork_key(ctx, stage, code=None):
+    return make_key(f"fork:{stage}", dict(ctx, code=code or ctx["code"]))
+
+
+def save_fork(ctx, stage, files, elapsed_s, report=None):
+    """Store fork point `stage` of an attempt: `files` {name: path}, the charged seconds spent to
+    reach it and its report. A no-op without the cache; never fails the attempt."""
+    if ctx is None:
+        return False
+    try:
+        fs = {n: p for n, p in files.items() if p and Path(p).exists()}
+        if report is not None:
+            rp = Path(next(iter(fs.values()))).with_name(f".fork-{stage}-report.json")
+            rp.write_text(json.dumps(report, default=str))
+            fs["report"] = rp
+        ok = put(fork_key(ctx, stage), dict(step=f"fork:{stage}", seconds=round(elapsed_s, 3)), fs)
+        if report is not None:
+            rp.unlink(missing_ok=True)
+        return ok
+    except (OSError, StopIteration, TypeError, ValueError):
+        return False
+
+
+def find_fork(ctx, stage, code=None):
+    """The meta of a saved fork point (restore it inside reading(fork_key(...))), None if there is none."""
+    return get(fork_key(ctx, stage, code)) if ctx is not None else None
 
 
 # ---- charges ------------------------------------------------------------------------------
@@ -305,12 +550,16 @@ def run(step, argv, *, inputs, outputs, wd, timeout, tool, cwd=None):
                  inputs={norm_argv([p], wd)[0]: (file_sha(p, wd) if Path(p).exists() else None) for p in map(str, inputs)})
     key = make_key(step, parts)
     t0 = _real_monotonic()
-    meta = get(key)
-    if meta is not None and meta.get("seconds", 0) <= timeout:
-        side = {n: wd / n for n in meta.get("side", [])}
-        restore(meta, {**outputs, **{f"side:{n}": p for n, p in side.items()}}, wd)
-        saved = charge(step, True, meta["seconds"], _real_monotonic() - t0, key)
-        return Result(meta["rc"], meta.get("stdout", ""), meta.get("stderr", ""), True, meta["seconds"], saved)
+    with reading(key) as meta:
+        if meta is not None and meta.get("seconds", 0) <= timeout:
+            side = {n: wd / n for n in meta.get("side", [])}
+            try:
+                restore(meta, {**outputs, **{f"side:{n}": p for n, p in side.items()}}, wd)
+            except OSError:
+                meta = None
+            if meta is not None:
+                saved = charge(step, True, meta["seconds"], _real_monotonic() - t0, key)
+                return Result(meta["rc"], meta.get("stdout", ""), meta.get("stderr", ""), True, meta["seconds"], saved)
     before = _listing(wd)
     t1 = _real_monotonic()
     try:
@@ -330,3 +579,24 @@ def run(step, argv, *, inputs, outputs, wd, timeout, tool, cwd=None):
             {**outs, **{f"side:{n}": wd / n for n in side}}, wd)
     charge(step, False, dt, dt, key, cacheable=ok)
     return Result(r.returncode, r.stdout, r.stderr, False, dt)
+
+
+def main(argv=None):
+    import argparse
+    ap = argparse.ArgumentParser(prog="stepcache", description="kae's step cache (KAE_STEP_CACHE)")
+    ap.add_argument("cmd", choices=("stats", "prune"))
+    ap.add_argument("--dir", help="the cache directory (default: $KAE_STEP_CACHE)")
+    ap.add_argument("--max-gb", type=float, help="prune: down to this size (default: 90%% of the cap)")
+    a = ap.parse_args(argv)
+    if a.dir:
+        os.environ["KAE_STEP_CACHE"] = a.dir
+    if not enabled():
+        ap.error("no cache: set KAE_STEP_CACHE or pass --dir")
+    if a.cmd == "prune":
+        prune(a.max_gb)
+    print(json.dumps(stats(), indent=1))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

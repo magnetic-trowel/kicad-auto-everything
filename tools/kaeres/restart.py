@@ -718,7 +718,7 @@ def main():
             for k_ in tot:
                 tot[k_] += (d_.get("step_cache") or {}).get(k_, 0)
         work["step_cache"] = dict({k_: round(v, 1) if isinstance(v, float) else v for k_, v in tot.items()},
-                                  real_wall_s=round(work["wall_s"] - SC.offset(), 1))
+                                  real_wall_s=round(work["wall_s"] - SC.offset(), 1), cache_gb=SC.size_gb())
     summary = dict(work, attempt_log=[{k_: (v["id"] if k_ == "cand" else v) for k_, v in d.items()
                                        if k_ not in ("out", "t", "charge", "dead_at")}
                                       for d in done])
