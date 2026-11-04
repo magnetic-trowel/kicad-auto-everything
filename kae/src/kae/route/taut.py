@@ -126,8 +126,12 @@ class Taut:
             self.recs[t.uuid] = dict(uuid=t.uuid, net=t.net or "", layer=t.layer, w=t.width, a=tuple(t.start),
                                      b=tuple(t.end), mid=tuple(t.mid) if t.mid is not None else None,
                                      locked=t.locked, parent=t.uuid, orig=True)
-        self.orig = {u: dict(r) for u, r in self.recs.items()}
         self.item_of = {it.uuid: it for it in sp.existing if it.kind == "track"}
+        self.n_split = self._split_tees()
+        self.orig = {u: dict(r) for u, r in self.recs.items()}
+        self.parts_of = {}
+        for r in self.recs.values():
+            self.parts_of[r["parent"]] = self.parts_of.get(r["parent"], 0) + 1
         self.vias = [it for it in sp.existing if it.kind == "via"]
         self.fixed_nets, self.why_fixed = self._fixed_nets()
         self.stats = dict(branches=0, tried=0, improved=0, skipped={}, passes=[])
@@ -135,6 +139,53 @@ class Taut:
         self.t_setup = time.monotonic() - t0
         log(f"[taut] {len(self.recs)} tracks, {len(self.fixed_nets)} nets fixed "
             f"({', '.join(f'{k} {v}' for k, v in self._count_why().items())}); setup {self.t_setup:.1f}s")
+
+    def _split_tees(self):
+        """Cut every straight track at the T-joins on its interior (an end of another track of its
+        net and layer), so each piece belongs to one branch. A split track is written back as one
+        block while none of its pieces changes."""
+        by = {}
+        for r in self.recs.values():
+            by.setdefault((r["net"], r["layer"]), []).append(r)
+        n = 0
+        for (net, layer), rs in by.items():
+            if not net or len(rs) < 3:
+                continue
+            ends = np.array([p for r in rs for p in (r["a"], r["b"])], float)
+            for r in rs:
+                if r["mid"] is not None:
+                    continue
+                a, b = np.array(r["a"]), np.array(r["b"])
+                d = b - a
+                L2 = float(d @ d)
+                if L2 < 1e-12:
+                    continue
+                t = ((ends - a) @ d) / L2
+                foot = a + np.outer(t, d)
+                dist = np.hypot(*(ends - foot).T)
+                L = math.sqrt(L2)
+                k = np.nonzero((dist < 1e-5) & (t * L > 1e-4) & ((1 - t) * L > 1e-4))[0]
+                if not len(k):
+                    continue
+                ts = sorted({round(float(t[i]), 9) for i in k})
+                # each cut is the joining end itself (KiCad connects equal points)
+                cuts = [tuple(r["a"])] + [tuple(ends[next(i for i in k if round(float(t[i]), 9) == tt_)]) for tt_ in ts] \
+                    + [tuple(r["b"])]
+                self.recs.pop(r["uuid"])
+                it = self.item_of.pop(r["uuid"], None)
+                if it is not None:
+                    self._remove([it])
+                for m, (p, q) in enumerate(zip(cuts[:-1], cuts[1:])):
+                    u = f"{r['uuid']}#{m}"
+                    nr = dict(r, uuid=u, a=p, b=q, parent=r["uuid"], orig=True)
+                    self.recs[u] = nr
+                    nit = self.Item("track", net, [layer], LineString([p, q]), r["w"] / 2, self.sp.rc(net), owner="existing")
+                    nit.uuid, nit.width, nit.locked = u, r["w"], r["locked"]
+                    self.sp.items[layer].append(nit)
+                    self.item_of[u] = nit
+                self.sp.invalidate(layer)
+                n += 1
+        return n
 
     # ---------------------------------------------------------------- what is fixed
     def _count_why(self):
@@ -204,8 +255,8 @@ class Taut:
                     continue
                 P = Point(lst[0][0][lst[0][1]])
                 for r in rs:
-                    if r is lst[0][0]:
-                        continue
+                    if r is lst[0][0] or r["mid"] is None:
+                        continue              # straight tracks were split at their T-joins
                     g = LineString(A.track_coords(_T(r)))
                     if g.distance(P) < 1e-4 and min(math.dist(r["a"], P.coords[0]), math.dist(r["b"], P.coords[0])) > 1e-4:
                         tee.add(k)
@@ -497,11 +548,19 @@ class Taut:
         centre = pd.pos or (pad.centroid.x, pad.centroid.y)
         for a, end, u, facing in PE.approach_targets(pad, centre, pts[k], w, ovl, current=cur, stub=stub, max_targets=3):
             if cur and self.o["rails"] == "centre":
-                tail = [pts[0]] if math.dist(pts[0], end) < 1e-6 else [pts[0], end]
-                # a centre end with a dog-leg inside the land is fine (same-net copper)
-                tail = tail + [a]
-                if len(tail) == 3 and _deflect(tail[0], tail[1], tail[2]) < 1e-3:
-                    tail = [tail[0], tail[2]]
+                # rails keep their end where it is when it lies on the entry's normal line, or
+                # deeper in the land than the entry (a dog-leg inside the land is same-net copper);
+                # an end nearer the edge than that moves to the entry's end (a width deep)
+                e_ = (a[0] + stub * u[0], a[1] + stub * u[1])
+                depth0 = (pts[0][0] - e_[0]) * u[0] + (pts[0][1] - e_[1]) * u[1]
+                off = abs((pts[0][0] - a[0]) * -u[1] + (pts[0][1] - a[1]) * u[0])
+                depth = (end[0] - e_[0]) * u[0] + (end[1] - e_[1]) * u[1]
+                if off < 1e-4 and depth0 > 0:
+                    tail = [pts[0], a]
+                elif depth0 >= depth - 1e-9:
+                    tail = [pts[0], end, a]
+                else:
+                    tail = [end, a]
             else:
                 tail = [end, a]
             out.append((tail, a, True, k, orig_anchor))
@@ -550,6 +609,7 @@ class Taut:
                     if r is None:
                         fails.append(bs.fail)
                         continue
+                    r = _fillet_anchors(r, h[0], t[0], w, bs.check)
                     tail_len = _plen(h[0]) + _plen(t[0])
                     L = r.length + tail_len
                     pieces = _tail_pieces(h[0]) + r.pieces + _tail_pieces(t[0][::-1])
@@ -709,8 +769,13 @@ class Taut:
     def write(self, dst):
         """dst = the input with the current routing of changed nets. Returns {written uuid: net}."""
         text = self.path.read_text(encoding="utf-8")
-        keep = {u for u, r in self.recs.items() if r["orig"]}
-        drop = {u for u, r in self.orig.items() if r["net"] in self.changed_nets and u not in keep}
+        present = {}
+        for r in self.recs.values():
+            if r["orig"]:
+                present.setdefault(r["parent"], []).append(r)
+        # an input track stays as it is when all its pieces do; else its kept pieces are rewritten
+        drop = {r["parent"] for r in self.orig.values() if r["net"] in self.changed_nets
+                and len(present.get(r["parent"], ())) != self.parts_of[r["parent"]]}
         out, pos = [], 0
         for head, a, b in W._blocks(text, ("segment", "arc")):
             u = W._uuid_of(text[a:b])
@@ -722,8 +787,10 @@ class Taut:
         chunks = []
         groups = {}
         for r in self.recs.values():
-            if r["orig"]:
+            if r["orig"] and r["parent"] not in drop:
                 continue
+            if r["orig"]:
+                r = dict(r, uuid=W.new_uuid())          # a kept piece of a rewritten track
             groups[r["uuid"]] = r["net"]
             if r["mid"] is None:
                 chunks.append(W.track_sexpr(r["net"], r["layer"], r["w"], r["a"], r["b"], uid=r["uuid"], locked=False))
@@ -778,6 +845,46 @@ def _heading(p, end):
     return G._heading(p, end)
 
 
+def _fillet_anchors(r, head, tail, w, check):
+    """Where the taut path leaves a pad tail's anchor at more than 90 degrees to the tail (an acute
+    corner), start it instead with an arc tangent to the tail (radius 2w, w or w/2, the largest that
+    is legal): the path out of the anchor is then the shortest one with that initial heading and
+    turning radius (a Dubins-type start), still the same homotopy class. The same at the far end."""
+    nodes = list(r.nodes)
+    changed = False
+    for end in (0, 1):
+        tl = _dedupe(head if end == 0 else tail)
+        if len(tl) < 2 or not r.pieces:
+            continue
+        a = tl[-1]
+        hd = _ang(tl[-2], tl[-1])                       # the tail's heading out of the pad
+        if end == 0:
+            h_path = _heading(r.pieces[0], 0)
+            turn = A.norm_angle(h_path - hd)
+        else:
+            h_path = _heading(r.pieces[-1], 1) + math.pi      # reversed: leaving the far anchor
+            turn = A.norm_angle(h_path - hd)
+        if abs(turn) <= math.pi / 2 + 1e-9:
+            continue
+        sgn = 1 if turn > 0 else -1
+        for rho in (2 * w, w, w / 2):
+            # circle tangent to the tail at the anchor, on the side the path turns to
+            Lx, Ly = -math.sin(hd), math.cos(hd)
+            c = (a[0] + sgn * rho * Lx, a[1] + sgn * rho * Ly)
+            if end == 0:
+                trial = [nodes[0], G.Wrap(c, rho, sgn, abs(turn))] + nodes[1:]
+            else:
+                # travelling towards the anchor the turn runs the other way round
+                trial = nodes[:-1] + [G.Wrap(c, rho, -sgn, abs(turn)), nodes[-1]]
+            pieces, kept, _ = G.solve_wraps(trial)
+            if pieces is None or check(pieces) or _acute_corners(pieces):
+                continue
+            nodes, changed = kept, True
+            r = G.Result(pieces, G.path_length(pieces), kept, dict(r.certificate, fillet=True), r.window_grown, r.inserted)
+            break
+    return r
+
+
 def _acute_corners(pieces, tol_deg=90.0):
     n = 0
     for p, q in zip(pieces[:-1], pieces[1:]):
@@ -827,9 +934,14 @@ def board_stats(board_path, info=None, power=None, ground=None):
         cls = "ground" if t.net in ground else "power" if t.net in power else "signal"
         st["length"][cls] += A.track_length(t)
         st["arcs" if t.mid is not None else "segments"] += 1
-        cs = A.track_coords(t, sag=1e-3)
-        h0 = _ang(cs[0], cs[1]) if len(cs) > 1 else 0.0
-        h1 = _ang(cs[-2], cs[-1]) if len(cs) > 1 else 0.0
+        got = A.sme_to_csa(t.start, t.mid, t.end) if t.mid is not None else None
+        if got is not None:
+            # exact tangents at the arc's ends (a chord's direction is off by half its angle)
+            c, r_, a0, sw = got
+            h0 = a0 + math.copysign(math.pi / 2, sw)
+            h1 = a0 + sw + math.copysign(math.pi / 2, sw)
+        else:
+            h0 = h1 = _ang(t.start, t.end)
         ends.setdefault((t.net, t.layer, _key(t.start)), []).append(h0 + math.pi)    # pointing away from the joint
         ends.setdefault((t.net, t.layer, _key(t.end)), []).append(h1)
     vias = {(v.net, _key((v.x, v.y))) for v in b.vias}

@@ -217,3 +217,73 @@ def test_acute_corner_count():
     from kae.route.taut import _acute_corners
     assert _acute_corners([("seg", (0, 0), (1, 0)), ("seg", (1, 0), (0, 0.5))]) == 1
     assert _acute_corners([("seg", (0, 0), (1, 0)), ("seg", (1, 0), (2, 1))]) == 0
+
+
+# ----------------------------------------------------------------------------- the board pass (KiCad)
+def _tp(ref, net, x, y):
+    return (ref, "TP", "TestPoint:TestPoint_Pad_1.0x1.0mm", x, y, 0.0,
+            [("1", net, 0.0, 0.0, 1.0, 1.0, "smd", 0.0, "", "passive")], (0.7, 0.7))
+
+
+def _detour_board(tmp_path):
+    """The critical-router fixture plus four 2-point nets, each routed with a detour: SIGA (free to
+    tighten), the pair USB_D+/USB_D- (left alone), LEN1 (a length rule: left alone)."""
+    import critical_fixtures as F
+    from kae.route import critical_write as W
+    extra = [_tp("TP1", "SIGA", 103.0, 103.0), _tp("TP2", "SIGA", 118.0, 103.0),
+             _tp("TP3", "USB_D+", 121.0, 103.0), _tp("TP4", "USB_D+", 137.0, 103.0),
+             _tp("TP5", "USB_D-", 121.0, 105.0), _tp("TP6", "USB_D-", 137.0, 105.0),
+             _tp("TP7", "LEN1", 103.0, 105.0), _tp("TP8", "LEN1", 118.0, 105.0)]
+    src = F.write_board(tmp_path / "in", extra=extra)
+    (src.with_suffix(".kicad_dru")).write_text(
+        '(version 1)\n(rule "len1"\n\t(condition "A.NetName == \'LEN1\'")\n\t(constraint length (min 5mm) (max 40mm))\n)\n')
+
+    def path(net, pts):
+        return [(net, "F.Cu", 0.25, a, b, W.new_uuid(), False) for a, b in zip(pts[:-1], pts[1:])]
+    tracks = path("SIGA", [(103, 103), (107, 103), (108.4, 101.6), (112.6, 101.6), (114, 103), (118, 103)])
+    tracks += path("USB_D+", [(121, 103), (125, 103), (126.4, 101.6), (131.6, 101.6), (133, 103), (137, 103)])
+    tracks += path("USB_D-", [(121, 105), (125, 105), (126.4, 103.9), (131.6, 103.9), (133, 105), (137, 105)])
+    tracks += path("LEN1", [(103, 105), (107, 105), (108.1, 104.2), (112.9, 104.2), (114, 105), (118, 105)])
+    out = tmp_path / "routed" / "board.kicad_pcb"
+    out.parent.mkdir()
+    W.append_items(src, out, tracks=tracks)
+    for ext in (".kicad_pro", ".kicad_dru"):
+        (out.with_suffix(ext)).write_text(src.with_suffix(ext).read_text())
+    return out
+
+
+@pytest.mark.kicad
+def test_taut_board_pass(tmp_path):
+    from kae.board import pcbnew_io
+    if not pcbnew_io.available():
+        pytest.skip("no Python with pcbnew")
+    from kae.board.kicad_file import load
+    from kae.route import taut
+    src = _detour_board(tmp_path)
+    before = load(src)
+    rep = taut.run(src, tmp_path / "out.kicad_pcb", workdir=tmp_path / "w", log=lambda *a: None)
+    after = load(tmp_path / "out.kicad_pcb")
+    # DRC no worse
+    for t, n in rep["drc_out"]["by_type"].items():
+        assert n <= rep["drc_in"]["by_type"].get(t, 0)
+    assert rep["drc_out"]["unconnected"] <= rep["drc_in"]["unconnected"]
+    # converged: the last pass shortened no net by more than conv_eps
+    assert rep["stats"]["passes"][-1]["max_net_gain_mm"] <= taut.DEFAULTS["conv_eps"]
+
+    def tracks(b, net):
+        return sorted((t.start, t.end, t.mid) for t in b.tracks if t.net == net)
+
+    def length(b, net):
+        return sum(A.track_length(t) for t in b.tracks if t.net == net)
+    # the free net is now (nearly) the straight line between its pads, entering each pad perpendicular
+    assert "SIGA" in rep["nets_changed"]
+    assert length(after, "SIGA") < 15.0 + 1e-6 < length(before, "SIGA")
+    st = taut.board_stats(tmp_path / "out.kicad_pcb")
+    assert st["acute_entries"] == 0
+    for t in after.tracks:
+        if t.net == "SIGA" and t.mid is None:
+            assert abs(t.start[1] - 103.0) < 1e-6 and abs(t.end[1] - 103.0) < 1e-6
+    # a diff pair and a length-ruled net are untouched
+    for net in ("USB_D+", "USB_D-", "LEN1"):
+        assert tracks(after, net) == tracks(before, net), net
+    assert rep["fixed"].get("diff pair") == 2 and rep["fixed"].get("length rule") == 1
