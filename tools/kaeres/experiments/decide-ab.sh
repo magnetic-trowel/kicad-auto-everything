@@ -118,8 +118,13 @@ tier1() {
   # barrel, RJ, video/D-sub or SMA/BNC part (kae.place.edge_check.PIN_KINDS); 1 = hazard only (old placement)
   staged "kae staged decide edge2 $S7 (restarts)" joint ""
   staged "kae staged decide edge1 $S7 (restarts)" joint "--set connector_edge=1"
+  # edge-ab (58 merit-213 boards, k=2) was the smoke; edge-ab2 is the run: the 135 merit-500 boards with
+  # an unlocked pinned-kind part (decide-ab/edge_boards.py), k=1, for more boards rather than more seeds
   exp edge-ab $B/edge.boards.txt 2 \
     "P4 (decide-placement): connector_edge=2 (pin panel connectors to the edge, default) vs 1 (hazard only, the old placement); staged kae, joint task (free interface), at $S7, k=2" \
+    "kae staged decide edge2 $S7 (restarts)" "kae staged decide edge1 $S7 (restarts)"
+  exp edge-ab2 $B/edge500.boards.txt 1 \
+    "P4 (decide-placement): connector_edge=2 (default) vs 1 (hazard only, the old placement); staged kae, joint task (free interface), 135 merit-500 boards with an unlocked USB/barrel/RJ/video/SMA part, at $S7, k=1" \
     "kae staged decide edge2 $S7 (restarts)" "kae staged decide edge1 $S7 (restarts)"
 
   # ---- A/A: one recipe under two names (the twin differs only in an inert parameter, so it gets its
@@ -168,7 +173,7 @@ tier3() {
 
 exps() {
   case $1 in
-    1) echo legality-ab-place-down legality-ab-place-relax legality-ab-place-ctrl legality-ab-fixed-down legality-ab-fixed-relax copper-ab edge-ab aa-joint ;;
+    1) echo legality-ab-place-down legality-ab-place-relax legality-ab-place-ctrl legality-ab-fixed-down legality-ab-fixed-relax copper-ab edge-ab2 aa-joint ;;
     2) echo eff-tiebreak-ab keepupright-ab area-cost-ab ;;
     3) echo placement-decide-staged placement-decide-joint ;;
   esac
