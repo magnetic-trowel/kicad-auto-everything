@@ -185,6 +185,11 @@ DEFAULTS = {
     "timed_wait_freeze": 0.05,
     "timed_wait_thaw": 0.01,
     "cpu_freeze_every_s": 10,
+    # a batch job (not kept running) starved of CPU (all its runnable threads waiting for a CPU, cpu.pressure
+    # "full", at least starve_full of the time for starve_s) holds its memory while hardly progressing: it is frozen
+    # and compressed into zram, which costs it almost nothing, and thawed once the run queue has room for its CPUs
+    "starve_full": 0.5,
+    "starve_s": 180,
     "timed_preempt_s": 30,   # a timed job that needs memory nobody can give requeues the newest batch job, at most this often
     "lease_hold_frac": 0.1,  # lease: share (batch jobs; frozen and compressed cheaply when short) of a job's unused grant counted as taken (1: grants are reservations;
                              # 0: only real use counts, and jobs that collide take turns, frozen)
@@ -1378,6 +1383,7 @@ class Daemon:
         self.cpuj = {}           # job id -> CPU samples every 10 s: {t, cpu, some, full, rates: [(t, cores)], ...}
         self.timed_wait = 0.0    # share of time timed jobs had a thread waiting for a CPU (smoothed, ~30 s)
         self.cpu_freeze_ts, self.calm_since = 0.0, 0.0
+        self.runq_class, self.runq_class_ts = {}, 0.0
         self.cpu_learn, self.cpu_learn_ts = {}, 0.0
         self.growth = []
         self.timed_preempt_ts = 0.0
@@ -1551,7 +1557,7 @@ class Daemon:
                         runnable=self.runq_ema, runq_q=self.runq_q or cfg["runq_q"],
                         runq_qv=quantile([r for t, r, _ in self.runq_hist if t >= now - cfg["runq_window_s"]],
                                          self.runq_q or cfg["runq_q"]),
-                        runq_over=self.runq_stats[0], runq_idle=self.runq_stats[1],
+                        runq_over=self.runq_stats[0], runq_idle=self.runq_stats[1], runq_class=self.runq_class,
                         pool_rho={o: [round(r, 2), n] for o, (r, n) in self.rho.items()},
                         mem_ratio={o: round(q, 3) for o, q in self.ratios.items()},
                         mem_mode=mode, mem_rise=self.rise, mem_single=single, mem_warm=warm_need,
@@ -1802,7 +1808,8 @@ class Daemon:
                     unused=sum(max(0.0, g - use[i]) for i, g in grants.items()),
                     granted=sum(grants.values()), used=sum(use.values()), stalled=plan["stalled"],
                     victim=plan["victim"], short=plan["short"], jobs=len(jobs), hold=hold, z=z, loss=self.oc.get("loss"),
-                    timed_held=timed_held, compressed=[j["id"] for j in jobs if j["compressed"]])
+                    timed_held=timed_held, compressed=[j["id"] for j in jobs if j["compressed"]
+                                                        and not (self.lease_st.get(j["id"]) or {}).get("cpu_frozen")])
 
     def squeeze_one(self, cfg, now, jobs, real_mb, buffer):
         """Free memory beyond the reserve is under the growth buffer: compress the coldest memory of the running
@@ -1878,6 +1885,7 @@ class Daemon:
             st.update(t=now, cpu=cpu, some=pr[0], full=pr[1], peak=max(st["peak"], r))
             st["wait_s"] += dw
             st["stall_s"] += df
+            st["starved_since"] = (st.get("starved_since") or now) if df / dt >= cfg["starve_full"] else 0.0
             m = cg_mem(cg)
             write_trace(j, now, rss=(usage or {}).get(j["id"], (0.0, 0))[0], use=m[0] if m else 0.0, cores=r,
                         wait=dw / dt, stall=df / dt, frozen=bool((self.lease_st.get(j["id"]) or {}).get("frozen_since")),
@@ -1889,6 +1897,24 @@ class Daemon:
                 wait, span = wait + dw, span + dt
         if span:
             self.timed_wait = 0.7 * self.timed_wait + 0.3 * min(1.0, wait / span)
+        if now - self.runq_class_ts >= 10:          # threads ready to run, by class (kaeqtop)
+            self.runq_class_ts, self.runq_class = now, {"timed": 0, "batch": 0}
+            for j in running:
+                cg = self.cgroups.get(j["id"])
+                if not cg:
+                    continue
+                try:
+                    tids = open(os.path.join(cg, "cgroup.threads")).read().split()
+                except OSError:
+                    continue
+                n = 0
+                for t in tids:
+                    try:
+                        with open(f"/proc/{t}/stat") as f:
+                            n += f.read().rpartition(")")[2].split()[0] == "R"
+                    except (OSError, IndexError):
+                        pass
+                self.runq_class["timed" if (j["qos"] or "timed") == "timed" else "batch"] += n
 
     def flush_cpu(self, jid=None):
         rows = [(st["wait_s"], st["stall_s"], st["peak"], k) for k, st in self.cpuj.items() if jid in (None, k)]
@@ -1942,6 +1968,30 @@ class Daemon:
         batch = [j for j in running if j["qos"] == "batch" and j["id"] in self.cgroups]
         if now - self.cpu_freeze_ts < cfg["cpu_freeze_every_s"]:
             return
+        pool = len(job_cpus(cfg) or ()) or cfg["threads"] - cfg["reserve_cpu"]
+        qv = quantile([r for t, r, _ in self.runq_hist if t >= now - cfg["runq_window_s"]] or [self.runq_ema],
+                      self.runq_q or cfg["runq_q"])
+        # starved batch jobs: frozen and compressed (they hardly progress, but hold their memory)
+        starved = [j for j in batch if not (self.lease_st.get(j["id"]) or {}).get("frozen_since")
+                   and not (self.lease_st.get(j["id"]) or {}).get("dear")
+                   and (self.lease_st.get(j["id"]) or {}).get("no_freeze_until", 0.0) <= now
+                   and (self.cpuj.get(j["id"]) or {}).get("starved_since")
+                   and now - self.cpuj[j["id"]]["starved_since"] >= cfg["starve_s"]]
+        if starved:
+            v = min(starved, key=lambda j: self.cpuj[j["id"]]["starved_since"])
+            if cg_freeze(self.cgroups[v["id"]], True):
+                st = self.lease_st.setdefault(v["id"], {"slack_since": 0.0, "stall_since": 0.0, "set": None,
+                                                        "last": (now, 0.0), "rate": 0.0})
+                st["frozen_since"], st["cpu_frozen"] = now, True
+                m = cg_mem(self.cgroups[v["id"]])
+                if m:
+                    self.compress_frozen(v["id"], self.cgroups[v["id"]], m[0], cfg)
+                self.c.execute("UPDATE jobs SET frozen_since=?, freezes=freezes+1 WHERE id=?", (now, v["id"]))
+                dlog(f"cpu: batch #{v['id']} starved of CPU {fdur(now - self.cpuj[v['id']]['starved_since'])}: frozen "
+                     f"and compressed until the run queue has room for it")
+                self.cpuj[v["id"]]["starved_since"] = 0.0
+                self.cpu_freeze_ts = now
+                return
         if self.timed_wait > cfg["timed_wait_freeze"]:
             self.calm_since = 0.0
             free = [j for j in batch if not (self.lease_st.get(j["id"]) or {}).get("frozen_since")
@@ -1962,7 +2012,8 @@ class Daemon:
             return
         if self.timed_wait < cfg["timed_wait_thaw"]:
             self.calm_since = self.calm_since or now
-            held = [j for j in batch if (self.lease_st.get(j["id"]) or {}).get("cpu_frozen")]
+            # thawed only when the run queue (as batch admission sees it) has room for its CPUs
+            held = [j for j in batch if (self.lease_st.get(j["id"]) or {}).get("cpu_frozen") and qv + j["cpus"] <= pool]
             if held and now - self.calm_since >= cfg["cpu_freeze_every_s"]:
                 v = min(held, key=lambda j: j["started"])
                 st = self.lease_st[v["id"]]

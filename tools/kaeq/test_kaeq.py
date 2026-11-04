@@ -886,3 +886,25 @@ def test_batch_cpu_admission_needs_a_lasting_dip_and_its_quantile_adapts(kq):
     d.tick()
     assert states(d)["b"] == "queued"
     d.c.execute("UPDATE jobs SET state='cancelled' WHERE state IN ('queued','running')")
+
+
+def test_a_batch_job_starved_of_cpu_is_frozen_compressed_and_thawed_when_there_is_room(kq, tmp_path):
+    d = _lease_daemon(kq, tmp_path, cpu_freeze_every_s=0, threads=512, reserve_cpu=0)
+    submit(kq, "python3 -c 'import time\na = bytearray(300 << 20)\nfor i in range(0, len(a), 4096): a[i] = 1\n"
+               "time.sleep(40)'", name="b", qos="batch", mem="400M")
+    submit(kq, "sleep 40", name="later", qos="batch")
+    drive(kq, d, lambda: d.cgroups.get(1) and 1 in d.cpuj and kq.cg_mem(d.cgroups[1])[0] > 250, secs=30)
+    d.cpuj[1]["starved_since"] = time.time() - 300            # as if its threads had waited for a CPU 5 min
+    d.timed_wait = 0.03                                        # (not calm: no thaw in the same pass)
+    running = d.c.execute("SELECT * FROM jobs WHERE state='running'").fetchall()
+    d.cpu_freeze(kq.config(), time.time(), running)
+    assert kq.cg_frozen(d.cgroups[1])
+    drive(kq, d, lambda: kq.cg_swap_mb(d.cgroups[1]) > 100 and states(d)["later"] == "running", secs=40)
+    assert 1 not in d.sys["lease"]["compressed"]             # waiting for CPU, not memory: starts go on
+    d.timed_wait, d.calm_since = 0.0, time.time() - 60
+    d.runq_hist = [(time.time(), 0.0, False)]
+    d.cpu_freeze(kq.config(), time.time(), running)          # room in the run queue: thawed
+    assert not kq.cg_frozen(d.cgroups[1])
+    d.c.execute("UPDATE jobs SET state='cancelled'")
+    for i in (1, 2):
+        kq.kill_tree(d.c.execute("SELECT pid FROM jobs WHERE id=?", (i,)).fetchone()[0], d.cgroups.get(i))
