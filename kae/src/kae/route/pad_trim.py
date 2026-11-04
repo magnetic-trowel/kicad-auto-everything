@@ -259,7 +259,10 @@ def run(input_path, output_path, overlap=None, workdir=None, timeout=1800, reend
             shutil.copy2(staged.with_suffix(ext), cand.with_suffix(ext))
     skip = set()
     final = None
-    for rnd in range(4):
+    # reverts after a worse round: changes within 1 mm of a new violation's items, within 2.5 mm,
+    # every re-end (keeping the plain cuts), then everything
+    steps = [1.0, 2.5, "reend", "all"]
+    for rnd in range(len(steps) + 1):
         if not trims or len(skip) >= len(trims) or end_t - time.monotonic() < 10:
             break
         cand.write_text(write(text, trims, skip), encoding="utf-8")
@@ -273,14 +276,18 @@ def run(input_path, output_path, overlap=None, workdir=None, timeout=1800, reend
         if not worse:
             final = s
             break
-        if rnd == 3:
+        if rnd == len(steps):
             break
-        # revert the trims near each new violation's items; at the last chance, all of them
-        pts = [(it["pos"]["x"], it["pos"]["y"]) for v in drc.errors(r) + list(r.get("unconnected_items") or [])
-               for it in v.get("items") or [] if it.get("pos")]
-        near = {t[0]["uuid"] for t in trims if any(math.dist(t[2], p) <= 1.0 or math.dist(t[0]["a"], p) <= 1.0
-                                                    or math.dist(t[0]["b"], p) <= 1.0 for p in pts)}
-        skip |= near if rnd < 2 and near - skip else {t[0]["uuid"] for t in trims}
+        step = steps[rnd]
+        if step == "reend":
+            skip |= {t[0]["uuid"] for t in trims if t[4] == "reend"}
+        elif step == "all":
+            skip |= {t[0]["uuid"] for t in trims}
+        else:
+            pts = [(it["pos"]["x"], it["pos"]["y"]) for v in drc.errors(r) + list(r.get("unconnected_items") or [])
+                   for it in v.get("items") or [] if it.get("pos")]
+            skip |= {t[0]["uuid"] for t in trims if any(math.dist(t[2], p) <= step or math.dist(t[0]["a"], p) <= step
+                                                         or math.dist(t[0]["b"], p) <= step for p in pts)}
     out = Path(output_path)
     if final is not None:
         shutil.copy2(cand, out)
