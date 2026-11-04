@@ -74,6 +74,26 @@ A method runs with the harness commit recorded in it, and an experiment's jobs r
 experiment's frozen copy of `kaeres.py`. Code changes after `exp create` therefore change
 nothing in that experiment.
 
+## Running an experiment without wasting it
+
+Lessons from experiments that ran and measured nothing (2026-11):
+- **One harness for the experiment and its methods.** A method prepares its boards and runs its restart
+  wrapper from its own `--harness`. Pin every method's `--harness` and the experiment's `--harness` to
+  the same commit (or commits with the same `TASK_SPEC` and `restart.py`): a method pinned to a harness
+  of another task spec runs every job and writes nothing, because its runs land on another task
+  (`exp create` now refuses it); a wrapper from a harness without a flag the method uses (`--resume`)
+  fails every run at once.
+- **Smoke first.** One or two boards, 1 attempt, `exp submit` on that experiment, then read the runs
+  (status, scores, bug records) before submitting the full one.
+- **`results.csv` holds attempt 0 only** (cp1's attempt). A multi-seed comparison reads every attempt from
+  the run folders (`boards/<id>/runs/<slug>.<method8>.a<k>/`).
+- **Timed jobs.** Runs budget on wall time, so their kaeq jobs must be class `timed` (never frozen).
+  Before kaeq had classes, jobs frozen for memory ran shorter and worse, unevenly between arms;
+  `kaeq`'s jobs table records `freezes` and `frozen_s` per job.
+- **Big boards.** KiCad's DRC lists at most 499 unconnected items; the scorer, the restart judge and
+  `kae.route.drc` count past it with pcbnew. Freerouting stops on its own time limit, so on big boards
+  its result moves with host load; compare arms on the boards where a control did not move.
+
 ## Per board job
 
 1. **Preflight.** KiCad's Python must import pcbnew. If it can't, the job exits 75 and kaeq retries it; this is an infrastructure failure, not a board result.

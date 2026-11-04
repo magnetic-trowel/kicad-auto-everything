@@ -2,6 +2,9 @@
 <!-- SPDX-License-Identifier: CC-BY-4.0 -->
 # Escape bands: keeping unrelated parts out of BGA and fine-pitch escape strips
 
+Scope: defensive publication of escape bands in the placer (mechanism, human-vs-kae measurement, routing A/B, verdict) and the ball-grid router changes' A/B. Not here: the escape planner itself -> [closing open connections](../routing/kae-closing-open-connections.md).
+Keys: escape bands, escape_band, escape_band_w, escape_grid, related parts, kae.place.escape_band, small ball grid, ball_grid, void rings, depopulated grid, escape-ab3, bga-next-ab, BGA window repair
+
 **Status:** did not work. The bands do what they say (soft halves unrelated parts in the strips), but on the routing A/B (63 merit boards × 3 seeds) they leave open connections unchanged, and hard is worse on ball grids. `escape_band` is off by default since this result; both modes stay as options.
 **First published:** 2026-11-01, branch `place-escape-keepouts` (code 0efc1ec, A/B recipe b1bad94).
 

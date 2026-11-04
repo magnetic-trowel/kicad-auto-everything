@@ -2,6 +2,9 @@
 <!-- SPDX-License-Identifier: CC-BY-4.0 -->
 # Post-audit baselines (2026-11)
 
+Scope: the reference methods re-run after the 2026-11 bug audit, against the pre-audit runs; the score v8 rescore of boards that ignore the unconnected check. Not here: the audit itself -> [audit](../audit-2611.md).
+Keys: baseline-2611b, post-audit baselines, merge3-ab, load-stable boards, fr-h1-rescore2, unconnected_items ignore, score v8
+
 **Status:** worked. The reference methods re-run after the whole-codebase bug audit, on the 213 merit
 boards; kae staged improves on the pre-audit runs, the bridge on the human placement does not move.
 **First published:** 2026-11-04, branch `place-escape-keepouts`.
