@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: CC-BY-4.0 -->
 # kae taut arcs: every connection pulled to its shortest path in its own topology, with true arcs
 
-**Status:** in progress (design note written before the code).
+**Status:** partial (RESULTS_STATUS).
 **First published:** 2026-11-04, branch `arc-taut` (off `pad-edge-entry`).
 
 ## Design note (written before the code)
@@ -45,3 +45,14 @@
 6. **Order.** route → pad entry → taut → power copper (arc-aware widening) → DRC gate. Taut first because widening fills the room that tightening frees, and widened copper cannot move.
 7. **Passes.** Shortest branches last; iterate until no net shortens by more than ε, logging the decrease per pass.
 8. **Gate.** Each piece is checked exactly (arcs sampled with chord error ≤ 0.5 µm, which is added to the requirement). Then whole-board KiCad DRC must be no worse, with the power-copper gate's stepwise revert per branch.
+
+## How it works (as built)
+
+- **Branches** (`taut.Taut.chains`). Per net and layer, the tracks between fixed points: pads, vias, ends shared by three or more tracks, width changes. Straight tracks are first cut at the T-joins on their interior (`_split_tees`) and written back whole while unchanged. Skipped: locked tracks (kae's repair loop locks its joins), nets of a diff pair (KiCad naming or the brief), nets with a `length` or `skew` rule, tuning patterns.
+- **Pad tails** (`Taut.tails`). A perpendicular entry (within 10°, one width outside the edge) is kept, a signal's end cut to `pad_entry_overlap` inside the edge. Otherwise each of `pad_entry.approach_targets` is a candidate tail, plus the input's own direction as a fallback; tails are checked exactly. Rails keep their end where it is on the normal through the edge middle. Ball grids and pads with a via in them keep their tails. Every head × tail pair is solved; perpendicular at both ends wins, then fewer acute corners, then length. Where the path leaves an anchor at more than 90°, it starts on an arc tangent to the tail, radius 2w, w or w/2 (`_fillet_anchors`): a Dubins-type start, so no acute corner is made.
+- **Requirements** (`Taut.obstacles`). These are the bridge's own `Space.need` (KiCad rules, custom DRC rules, pad classes, keepouts, edge), plus victim gaps. Where the input keeps a rule with less than the 2.5 µm margin (a gap exactly one track wide), the branch may use the input's own distance, measured per item on the input board, never less than the rule. A branch that already breaks a clearance stays as it is. Without that rule, branches on jkiv cm4 slid along items they already violated and KiCad counted 24 more clearance errors.
+- **Geometry** (`taut_geom`). The topology uses inscribed polygons, 12 segments per quarter, at the requirement less 3 µm. The exact path keeps requirement + 2 µm + 2 × 0.2 µm arc sampling + 0.1 µm. Pads come from KiCad as polygons; co-circular runs of their vertices (round pads, roundrect corners) merge into one atom only when consecutive vertices are at most 30° apart, so a rectangle's four corners stay four atoms. A start on a triangle edge is located a hair along its first move. The window grows (×2, ×4) when the funnel runs along it.
+- **Writing** (`Taut.write`, `arcs.arc_sexpr`). KiCad `(arc (start) (mid) (end))` items. Each joint is one shared point, so KiCad sees the pieces connected. An arc under 0.02 rad becomes its chord, checked again.
+- **Power copper on arcs** (`power_copper.PowerCopper._widen_arc`). Arcs enter the `Space` as sampled arcs (`arcs.fix_space_arcs`; the `Space` keeps them as two chords). Each arc is sampled every 0.1 mm along its length. Free half-widths come from the same constraints, so current sharing, victim gaps and neck rule apply unchanged. The same runs become sub-arcs of one circle with shared joints, each checked exactly. Ground vias reach arcs through the sampled geometry.
+- **Physics evaluator fix** (`kae.excite.dc._arc_frame`, separate commit). `track_currents` sampled a track at its chord's quarter points; for an arc the chord leaves the copper, so heat.track read zero. It now samples on the arc.
+

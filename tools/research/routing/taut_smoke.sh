@@ -7,6 +7,7 @@
 #   taut:     kae.route.taut run (DRC-gated) before -> taut.kicad_pcb, report taut.json; then the
 #             arc-aware power copper on it -> tautpc.kicad_pcb (pc.json), and on the input alone ->
 #             pc.kicad_pcb (pcin.json); stats.{before,taut,tautpc,pc}.json; times in times.txt
+#   refill:   taut with other nets' fills ignored (KiCad refills around the moved copper) -> tautr.*
 #   phys-TAG: physics of TAG.kicad_pcb (eval_intent.sh) -> DIR/phys/TAG.*
 # Summary over many DIRs: tools/research/routing/taut_summary.py.
 set -eo pipefail
@@ -30,6 +31,13 @@ case "$mode" in
       for t in before taut tautpc pc; do $PY -m kae.route.taut stats "$dir/$t.kicad_pcb" > "$dir/stats.$t.json"; done
     ) > "$dir/taut.log" 2>&1
     find "$dir/taut-work" "$dir/pc-work" "$dir/pcin-work" -name "*.kicad_pcb" -delete;;
+  refill)
+    ( ulimit -v 40000000; export PYTHONPATH=$REPO/kae/src
+      for e in kicad_pro kicad_dru; do [ -f "$dir/before.$e" ] && cp "$dir/before.$e" "$dir/tautr.$e"; done
+      $PY -m kae.route.taut run "$dir/before.kicad_pcb" "$dir/tautr.kicad_pcb" --pours refill --workdir "$dir/tautr-work" --report "$dir/tautr.json"
+      $PY -m kae.route.taut stats "$dir/tautr.kicad_pcb" > "$dir/stats.tautr.json"
+    ) > "$dir/tautr.log" 2>&1
+    find "$dir/tautr-work" -name "*.kicad_pcb" -delete;;
   phys-*)
     t=${mode#phys-}
     INTENT_DIR=${INTENT_DIR:?set INTENT_DIR}
