@@ -154,7 +154,7 @@ def chain(segs_by_node, start_seg, pad_end, R, stop_nodes, at_pad=lambda q: Fals
         s, p = nxt[0], q
 
 
-def plan(text, info, sp, gr, overlap=0.05, log=print, deadline=None):
+def plan(text, info, sp, gr, overlap=0.05, log=print, deadline=None, rails="middle"):
     """Re-routes [(change dict)] and per-entry outcomes {reason: count}. `sp` is a Space of the
     board (updated as changes are accepted), `gr` a GridRouter on it."""
     from .critical_grid import Anchor
@@ -217,6 +217,9 @@ def plan(text, info, sp, gr, overlap=0.05, log=print, deadline=None):
                 note("skip_via")
                 break
             cur = PE.current_net(s["net"]) or w >= PT.CURRENT_W - 1e-9
+            if cur and rails == "centre":
+                note("skip_rail")
+                break
             got = None
             why = "no_route"
             for R0 in RELEASE:
@@ -383,7 +386,7 @@ def write(text, changes, skip=frozenset()):
     return W._insert(t, extra) if extra else t
 
 
-def run(input_path, output_path, overlap=None, workdir=None, timeout=3600, log=print):
+def run(input_path, output_path, overlap=None, workdir=None, timeout=3600, rails="middle", log=print):
     """The DRC-gated pass. Returns a report: entries considered and their outcomes, the kept
     re-routes, DRC in and out, pad-entry counts in and out, seconds."""
     from kae.board.kicad_file import load
@@ -404,7 +407,7 @@ def run(input_path, output_path, overlap=None, workdir=None, timeout=3600, log=p
     sp = Space(load(staged), info, sev=severities(staged))
     gr = GridRouter(sp, pad_entry="centre")
     t1 = time.monotonic()
-    changes, outcome, octo = plan(text, info, sp, gr, ovl, log=log, deadline=t0 + 0.6 * timeout)
+    changes, outcome, octo = plan(text, info, sp, gr, ovl, log=log, deadline=t0 + 0.6 * timeout, rails=rails)
     t_plan = time.monotonic() - t1
     rep = dict(board=str(inp), overlap=ovl, octilinear=octo, outcome=outcome, planned=len(changes),
                stats_in=PT.stats(text, info), setup_s=round(t1 - t0, 1), plan_s=round(t_plan, 1),
@@ -478,8 +481,10 @@ def main(argv=None):
     ap.add_argument("--workdir")
     ap.add_argument("--report")
     ap.add_argument("--timeout", type=int, default=3600)
+    ap.add_argument("--rails", choices=("middle", "centre"), default="middle",
+                    help="rails, grounds and wide tracks: re-route into the edge middle a width deep, or leave them")
     a = ap.parse_args(argv)
-    rep = run(a.input, a.output, a.overlap, a.workdir, a.timeout)
+    rep = run(a.input, a.output, a.overlap, a.workdir, a.timeout, rails=a.rails)
     if a.report:
         Path(a.report).write_text(json.dumps(rep, indent=1))
     print(json.dumps({k: v for k, v in rep.items()}))
