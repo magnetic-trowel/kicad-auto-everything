@@ -21,7 +21,7 @@ FORK="$HOME/.cache/kaebench/kae-freerouting-fork-2e1125a/bin/freerouting"
 CP="cp -r $KH/numba-kae-bga-${SHA:0:7} numba 2>/dev/null;"
 E_="env NUMBA_CACHE_DIR=\$PWD/numba OMP_NUM_THREADS=1 KAE_WORKERS=1 KAE_BRIDGE_FREEROUTING=$FORK {py:kae}"
 FIN="$CP $E_ -m kae.route.cli lastmile @IN@ @BEST@ @OUT@ --seed @SEED@ --time @TIME@"
-rs() { echo "{py:kae} {code:harness}/tools/kaeres/restart.py --input {input} --output {output} --time {timeout} --seed {attempt} --parallel 4 --first-s 60 --scale-first --slack 1.15 --resume 0.5 --final \"'$FIN'\" --"; }
+rs() { echo "{py:kae} {code:harness}/tools/kaeres/restart.py --input {input} --output {output} --time {timeout} --seed {attempt} --parallel 4 --first-s 60 --scale-first --slack 1.15 --resume 0.5 --final '$FIN' --"; }
 arm() {  # NAME SET
   $K method add "$1" --kind route --description "kae.route.cli $2 at ${SHA:0:7} (route-bga-next); restart --resume 0.5 --final; restart portfolio (tools/kaeres/restart.py)" \
     --command "$(rs) '$CP if [ \"\$KAE_RESUME\" = 1 ]; then $E_ -m kae.route.cli route @BEST@ @OUT@ --seed @SEED@ --time @TIME@ $2; else $E_ -m kae.route.cli route @IN@ @OUT@ --seed @SEED@ --time @TIME@ $2; fi'" \
