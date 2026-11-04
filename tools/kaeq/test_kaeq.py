@@ -734,3 +734,71 @@ def test_retry_keeps_or_sets_cpus_timeout_and_books_the_lost_attempt(kq):
     assert (a["cpus"], a["timeout_s"]) == (4, 3600) and (b["cpus"], b["timeout_s"]) == (8, 5 * 3600)
     for j in (a, b):   # the failed attempt ran 600 s, 100 s of it frozen: 500 s lost
         assert j["state"] == "queued" and j["lost_run_s"] == pytest.approx(500, abs=2)
+
+
+def test_forecast_replays_the_queue_by_priority_capacity_and_run_times(kq):
+    now = 1000.0
+    J = lambda i, o, prio=0, sub=0.0, started=None: dict(id=i, owner=o, prio=prio, submitted=sub, started=started,
+                                                          frozen_s=0.0)
+    running = [J(1, "a", started=now - 600)]                       # expected 1000 s: 400 s left
+    queued = [J(2, "a", sub=1), J(3, "b", prio=5, sub=2), J(4, "b", prio=5, sub=3)]
+    dur = {1: 1000.0, 2: 100.0, 3: 300.0, 4: 300.0}
+    mem = {1: 10.0, 2: 10.0, 3: 10.0, 4: 10.0}
+    cpus = {i: 1.0 for i in dur}
+    # room for two jobs at once: b (priority 5) takes the free slot now (ends 1300) and again when that one ends
+    # (1300-1600); a's queued job gets the slot a's running job frees at 1400 (ends 1500)
+    fc = kq.forecast_queue(running, queued, dur, mem, cpus, mem_cap=20.0, cpu_cap=100.0, now=now)
+    assert fc["b"] == (None, pytest.approx(now + 600))
+    assert fc["a"] == (None, pytest.approx(now + 500))
+    fc = kq.forecast_queue([], queued, dur, mem, cpus, mem_cap=10.0, cpu_cap=100.0, now=now)   # one at a time
+    assert fc["a"] == (pytest.approx(now + 600), pytest.approx(now + 700))    # starts after both of b's
+    # plenty of room: everything at once
+    fc = kq.forecast_queue(running, queued, dur, mem, cpus, mem_cap=1000.0, cpu_cap=100.0, now=now)
+    assert fc["a"][1] == pytest.approx(now + 400) and fc["b"][1] == pytest.approx(now + 300)
+
+
+def test_expected_durations_use_the_same_name_then_the_owner_then_a_guess(kq):
+    c = kq.db()
+    for i, (o, n, act) in enumerate([("x", "board1", 500), ("x", "b2", 100), ("x", "b3", 200), ("x", "b4", 300)]):
+        c.execute("INSERT INTO jobs(owner,name,cmd,cpus,mem_mb,timeout_s,state,submitted,started,finished,frozen_s) "
+                  "VALUES(?,?,'x',1,1,3600,'ok',0,?,?,10)", (o, n, 100 + i, 100 + i + act + 10))
+    c.execute("INSERT INTO jobs(owner,name,cmd,cpus,mem_mb,timeout_s,state,submitted) VALUES('y','board1','x',1,1,3600,'queued',0)")
+    c.execute("INSERT INTO jobs(owner,name,cmd,cpus,mem_mb,timeout_s,state,submitted) VALUES('x','new','x',1,1,3600,'queued',0)")
+    c.execute("INSERT INTO jobs(owner,name,cmd,cpus,mem_mb,timeout_s,state,submitted) VALUES('z','new','x',1,1,3600,'queued',0)")
+    q = c.execute("SELECT * FROM jobs WHERE state='queued' ORDER BY id").fetchall()
+    d = kq.expected_durations(c, q)
+    assert d[q[0]["id"]] == (500, "name")          # the same board ran before (another owner): its time
+    assert d[q[1]["id"]] == (300, "size")          # under 8 jobs: x's median (100, 200, 300, 500 -> 300)
+    assert d[q[2]["id"]] == (1800, "guess")        # nothing known: half its timeout
+
+
+def test_run_time_grows_with_size_and_overruns_extrapolate_from_history(kq):
+    rows = [(m, 10.0 * m) for m in (1000, 2000, 4000, 8000, 1000, 2000, 4000, 8000)]   # time proportional to size
+    pred, ratios = kq.size_model(rows)
+    assert pred(16000) == pytest.approx(160000, rel=0.01) and pred(500) == pytest.approx(5000, rel=0.01)
+    assert ratios == pytest.approx([1.0] * 8)
+    # how jobs that ran past their prediction ended: actual/predicted 0.5 .. 3
+    ratios = [0.5, 0.8, 1.0, 1.0, 1.2, 2.0, 3.0]
+    assert kq.given_so_far(100.0, 10.0, ratios) == pytest.approx(100 * sum(ratios) / 7)   # early: the mean
+    assert kq.given_so_far(100.0, 150.0, ratios) == pytest.approx(250.0)   # past 1.5x: those ended at 2x or 3x
+    assert kq.given_so_far(100.0, 400.0, ratios) == pytest.approx(520.0)   # past them all: 1.3x what it has run
+
+
+def test_run_time_is_owner_speed_times_board_difficulty(kq):
+    c = kq.db()
+    rows = []   # owner slow takes 4x fast; board big-board-aaaaaa takes 10x small-board-bbbbbb
+    for o, f in (("fast", 1.0), ("slow", 4.0)):
+        for b, g in (("big-board-aaaaaa", 10.0), ("small-board-bbbbbb", 1.0)):
+            for k in range(3):
+                rows.append((o, f"x:{b}:{k}", 100 * f * g))
+    rows += [("fast", "x:huge-board-cccccc:0", 3000.0), ("fast", "x:huge-board-cccccc:1", 3000.0)]   # only fast ran it
+    for i, (o, n, t) in enumerate(rows):
+        c.execute("INSERT INTO jobs(owner,name,cmd,cpus,mem_mb,timeout_s,state,submitted,started,finished,frozen_s) "
+                  "VALUES(?,?,'x',1,1,99999,'ok',0,?,?,0)", (o, n, i, i + t))
+    c.execute("INSERT INTO jobs(owner,name,cmd,cpus,mem_mb,timeout_s,state,submitted) "
+              "VALUES('slow','y:huge-board-cccccc:9','x',1,1,99999,'queued',0)")
+    q = c.execute("SELECT * FROM jobs WHERE state='queued'").fetchall()
+    d, src = kq.expected_durations(c, q, now=1e9)[q[0]["id"]]
+    # slow's speed x the huge board's difficulty (seen twice: shrunk to 2/3 of its log effect): far above the
+    # owner's typical job, below the unshrunk 4 x 3000
+    assert src == "board" and 4 * 100 * 30 ** 0.5 < d < 4 * 3000

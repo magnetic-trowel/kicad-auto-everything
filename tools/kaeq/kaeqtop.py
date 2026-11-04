@@ -5,7 +5,7 @@
 
 Shows the machine's CPU and memory as the scheduler sees them, what the next job is waiting for,
 and per owner (experiment/session): priority, running jobs, CPU and RAM in use, memory set aside,
-queued and finished counts, progress, throughput and an ETA if the current rate holds.
+queued and finished counts, progress, throughput and when each owner should finish (the queue replayed forward).
 
   kaeqtop                 refresh every 5 s (Ctrl-C quits)
   kaeqtop -n 2 --jobs 30  faster, and list more running jobs
@@ -80,6 +80,9 @@ class Sampler:
         return out
 
 
+MODEL = [None, 0.0]   # (runtime_model fit, when)
+
+
 def frame(c, cfg, sampler, args, width):
     now = time.time()
     L = []
@@ -152,9 +155,9 @@ def frame(c, cfg, sampler, args, width):
         per_owner[j["owner"]] = per_owner.get(j["owner"], 0) + 1
     ratio = bsys.get("mem_ratio") or {}
 
-    def need(j):  # as the daemon: --mem scaled by the owner's learned peak/--mem
+    def need(j):  # as the daemon: --mem scaled by the owner's median peak/--mem (not capped at --mem)
         q = ratio.get(j["owner"])
-        return j["mem_mb"] if q is None else min(j["mem_mb"], max(256.0, j["mem_mb"] * q * cfg["mem_learn_margin"]))
+        return j["mem_mb"] if q is None else max(256.0, j["mem_mb"] * q * cfg["mem_learn_margin"])
 
     if queued:
         queued.sort(key=lambda j: (-j["prio"], per_owner.get(j["owner"], 0), j["submitted"]))
@@ -200,7 +203,20 @@ def frame(c, cfg, sampler, args, width):
     pooled = set(bsys.get("pooled_owners") or [])
     pw = max(10, min(20, width - 120))
     ow = max(12, min(26, max([len(o) for o in owners] + [5])))
-    L.append(f"{'OWNER':<{ow}} PRIO RUN  CPU   RAM  ASIDE  QUEUED   DONE  FAIL  {'PROGRESS':<{pw + 7}} DONE/h 1h  3h   ETA (at 3h rate)")
+    # forecast: the queue replayed forward (kaeq.forecast_queue) with each job's expected run time
+    allq = c.execute("SELECT * FROM jobs WHERE state='queued'").fetchall()
+    if now - MODEL[1] > 600:                  # the run-time model: refit every 10 minutes
+        MODEL[:] = [kaeq.runtime_model(c), now]
+    edur = kaeq.expected_durations(c, list(running) + list(allq), now, MODEL[0])
+    guess = {j["owner"] for j in list(running) + list(allq) if edur[j["id"]][1] in ("guess", "board~")}
+    fmem = {j["id"]: need(j) for j in allq}
+    fmem.update({j["id"]: max(need(j), use.get(j["id"], (0.0, 0))[0]) for j in running})
+    fcpu = {j["id"]: float(j["cpus"]) for j in list(running) + list(allq)}
+    pool = bsys.get("pinned") or (threads - rcpu)
+    fc = kaeq.forecast_queue(running, allq, {k: v[0] for k, v in edur.items()}, fmem, fcpu,
+                             sum(fmem[j["id"]] for j in running) + max(0.0, room), pool - others, now)
+    L.append(f"{'OWNER':<{ow}} PRIO RUN  CPU   RAM  ASIDE  QUEUED   DONE  FAIL  {'PROGRESS':<{pw + 7}} DONE/h 1h  3h   "
+             "FINISH (queue replayed; ~ = some run times guessed)")
     tot_run = tot_q = 0
     for o in owners:
         s = rows[o]
@@ -214,11 +230,12 @@ def frame(c, cfg, sampler, args, width):
         left = run + q
         if not left:
             eta = "finished"
-        elif r3:
-            secs = left / (r3 / 3) * 3600
-            eta = f"{dur(secs)}  ({eta_clock(secs, now)})"
+        elif o in fc:
+            first, fin = fc[o]
+            eta = (("~" if o in guess else "") + f"{dur(fin - now)}  ({eta_clock(fin - now, now)})"
+                   + (f", starts in {dur(first - now)}" if first else ""))
         else:
-            eta = "stalled" if run == 0 else "no finishes in 3h"
+            eta = "not within 14 days at this rate"
         pr = ",".join(str(p) for p in sorted(prios.get(o, []), reverse=True)) or "-"
         name = (o[:ow - 1] + "*") if o in pooled else o[:ow]
         L.append(f"{name:<{ow}} {pr:>4} {run:>3} {cpu:5.1f} {gb(ram):>5} {gb(aside.get(o, 0)):>5} {q:>7} {done:>6} {bad:>5}  "
