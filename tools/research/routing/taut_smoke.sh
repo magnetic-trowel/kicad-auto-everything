@@ -25,12 +25,12 @@ case "$mode" in
       t1=$(date +%s.%N)
       $PY -m kae.route.power_copper "$dir/taut.kicad_pcb" "$dir/tautpc.kicad_pcb" --workdir "$dir/pc-work" --report "$dir/pc.json"
       t2=$(date +%s.%N)
-      $PY -m kae.route.power_copper "$dir/before.kicad_pcb" "$dir/pc.kicad_pcb" --workdir "$dir/pcin-work" --report "$dir/pcin.json"
+      [ -n "$SKIP_PCIN" ] || $PY -m kae.route.power_copper "$dir/before.kicad_pcb" "$dir/pc.kicad_pcb" --workdir "$dir/pcin-work" --report "$dir/pcin.json"
       t3=$(date +%s.%N)
       echo "taut_s $(echo "$t1 - $t0" | bc) pc_s $(echo "$t2 - $t1" | bc) pcin_s $(echo "$t3 - $t2" | bc)" > "$dir/times.txt"
-      for t in before taut tautpc pc; do $PY -m kae.route.taut stats "$dir/$t.kicad_pcb" > "$dir/stats.$t.json"; done
+      for t in before taut tautpc pc; do [ -f "$dir/$t.kicad_pcb" ] && $PY -m kae.route.taut stats "$dir/$t.kicad_pcb" > "$dir/stats.$t.json"; done
     ) > "$dir/taut.log" 2>&1
-    find "$dir/taut-work" "$dir/pc-work" "$dir/pcin-work" -name "*.kicad_pcb" -delete;;
+    find "$dir/taut-work" "$dir/pc-work" "$dir/pcin-work" -name "*.kicad_pcb" -delete 2>/dev/null || true;;
   refill)
     ( ulimit -v 40000000; export PYTHONPATH=$REPO/kae/src
       for e in kicad_pro kicad_dru; do [ -f "$dir/before.$e" ] && cp "$dir/before.$e" "$dir/tautr.$e"; done

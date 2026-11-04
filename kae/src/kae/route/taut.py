@@ -969,47 +969,71 @@ class Taut:
         return self.stats
 
     # ---------------------------------------------------------------- revert (exact)
-    def revert(self, nets):
-        """Restore the input copper of `nets`; then revert, exactly, every other changed net whose
-        new copper is too close to restored copper. Returns the full set reverted."""
+    def _install(self, net, recs):
+        """Replace the current copper of `net` by the records `recs` (Space kept in step)."""
         sp = self.sp
-        todo = list(nets)
-        done = set()
-        while todo:
-            net = todo.pop()
-            if net in done or net not in self.changed_nets:
-                continue
-            done.add(net)
-            if net in self.pair_of and self.pair_of[net] in self.changed_nets:
-                todo.append(self.pair_of[net])        # a pair is kept or reverted together
-            rm = [r for r in self.recs.values() if r["net"] == net]
-            for r in rm:
-                self.recs.pop(r["uuid"])
-                it = self.item_of.pop(r["uuid"], None)
-                if it is not None:
-                    self._remove([it])
-            layers = set()
-            for u, r in self.orig.items():
-                if r["net"] != net:
-                    continue
-                rr = dict(r)
-                self.recs[u] = rr
-                layers.add(r["layer"])
-                it = self.Item("track", net, [r["layer"]], LineString(A.track_coords(_T(r))), r["w"] / 2,
-                               sp.rc(net), owner="existing")
-                it.uuid, it.width, it.locked = u, r["w"], r["locked"]
-                sp.items[r["layer"]].append(it)
-                self.item_of[u] = it
-            for l in layers:
-                sp.invalidate(l)
-            self.changed_nets.discard(net)
-            # cascade
-            for r in list(self.recs.values()):
-                if r["orig"] or r["net"] in done or r["net"] not in self.changed_nets:
-                    continue
-                if A.polyline_violations(sp, r["net"], r["layer"], r["w"], A.track_coords(_T(r)), first=True):
-                    todo.append(r["net"])
-        return done
+        for r in [r for r in self.recs.values() if r["net"] == net]:
+            self.recs.pop(r["uuid"])
+            it = self.item_of.pop(r["uuid"], None)
+            if it is not None:
+                self._remove([it])
+        layers = set()
+        for r in recs:
+            rr = dict(r)
+            self.recs[rr["uuid"]] = rr
+            layers.add(rr["layer"])
+            it = self.Item("track", net, [rr["layer"]], LineString(A.track_coords(_T(rr))), rr["w"] / 2,
+                           sp.rc(net), owner="existing" if rr["orig"] else ("taut", rr["uuid"]))
+            it.uuid, it.width, it.locked = rr["uuid"], rr["w"], rr["locked"]
+            sp.items[rr["layer"]].append(it)
+            self.item_of[rr["uuid"]] = it
+        for l in layers:
+            sp.invalidate(l)
+
+    def snapshot(self):
+        """Remember the passes' result per changed net (set_kept installs any subset of it)."""
+        self._final = {n: [dict(r) for r in self.recs.values() if r["net"] == n] for n in self.changed_nets}
+        self._orig_of = {}
+        for r in self.orig.values():
+            self._orig_of.setdefault(r["net"], []).append(r)
+
+    def set_kept(self, keep):
+        """The passes' copper for the nets in `keep` (diff pairs together), the input's for the other
+        changed nets; then, exactly, drop every kept net whose new copper is too close to restored
+        copper (only conflicts with restored nets count: the rest was checked when it was made).
+        Returns the nets kept."""
+        keep = set(keep) & set(self._final)
+        keep = {n for n in keep if n not in self.pair_of or self.pair_of[n] in keep or self.pair_of[n] not in self._final}
+        for n in self._final:
+            self._install(n, self._final[n] if n in keep else self._orig_of.get(n, []))
+        while True:
+            restored = set(self._final) - keep
+            drop = set()
+            for n in keep:
+                for r in self._final[n]:
+                    if r["orig"]:
+                        continue
+                    v = A.polyline_violations(self.sp, n, r["layer"], r["w"], A.track_coords(_T(r)))
+                    if any(it != "edge" and it.net in restored for it, _, _ in v):
+                        drop.add(n)
+                        break
+            if not drop:
+                break
+            for n in list(drop):
+                if n in self.pair_of:
+                    drop.add(self.pair_of[n])
+            keep -= drop
+            for n in drop & set(self._final):
+                self._install(n, self._orig_of.get(n, []))
+        self.changed_nets = set(keep)
+        return keep
+
+    def revert(self, nets):
+        """Restore the input copper of `nets` (and whatever then conflicts with it, exactly).
+        Returns the full set reverted."""
+        before = set(self.changed_nets)
+        self.set_kept(before - set(nets))
+        return before - self.changed_nets
 
     # ---------------------------------------------------------------- write
     def write(self, dst):
@@ -1307,6 +1331,8 @@ def run(input_path, output_path, opts=None, workdir=None, timeout=1800, log=prin
             f"{base['unconnected']}); {len(tt.changed_nets)} nets changed; worse {worse or 'none'}")
         return rep, worse, groups
 
+    tt.snapshot()
+    allnets = sorted(tt._final)
     r = 0
     while tt.changed_nets and budget[0] > 0:
         rep, worse, groups = check(f"r{r}")
@@ -1318,11 +1344,56 @@ def run(input_path, output_path, opts=None, workdir=None, timeout=1800, log=prin
         bad = PC._culprits(rep, base_rep, groups, geoms) & tt.changed_nets
         if not bad:
             bad = PC._culprits(rep, base_rep, groups, geoms, near=2.5) & tt.changed_nets
-        if not bad:
-            # not attributable: halve the changed set (largest gains kept first)
-            nets = sorted(tt.changed_nets)
-            bad = set(nets[len(nets) // 2:]) if len(nets) > 1 else set(nets)
-        reverted |= tt.revert(bad)
+        if bad:
+            reverted |= tt.revert(bad)
+            continue
+        # not attributable (a starved thermal spoke, a mask bridge named on neighbours): add the
+        # nets back batch by batch from the input, keeping each batch that leaves DRC no worse and
+        # splitting the ones that do not (ddmin, as power_copper's gate); the best board seen wins
+        cands = sorted(tt.changed_nets)
+        accepted = set()
+        q = max(1, len(cands) // 4)
+        queue = [cands[i:i + q] for i in range(0, len(cands), q)]
+        k = 0
+        while queue and budget[0] > 0:
+            batch = queue.pop(0)
+            kept = tt.set_kept(accepted | set(batch))
+            if not (kept - accepted):
+                continue
+            _, w2, _ = check(f"r{r}a{k}")
+            k += 1
+            if not w2:
+                accepted = set(kept)
+            elif len(batch) > 1:
+                queue[:0] = [batch[:len(batch) // 2], batch[len(batch) // 2:]]
+        tt.set_kept(accepted)
+        reverted |= set(allnets) - accepted
+        if accepted and budget[0] > 0:
+            continue                  # the accepted set is checked once more as a whole
+        break
+    if final is not None and budget[0] > 0:
+        # recover: the nets reverted by attribution or by conflict with restored copper, added
+        # back batch by batch where DRC stays no worse
+        good = set(tt.changed_nets)
+        cands = sorted(set(allnets) - good)
+        q = max(1, len(cands) // 4)
+        queue = [cands[i:i + q] for i in range(0, len(cands), q)]
+        k = 0
+        while queue and budget[0] > 0:
+            batch = queue.pop(0)
+            kept = tt.set_kept(good | set(batch))
+            if not (kept - good):
+                continue
+            _, w2, _ = check(f"rec{k}")
+            k += 1
+            if not w2:
+                good = set(kept)
+                final = rounds[-1]["summary"]
+                shutil.copy2(cand, wd / "best.kicad_pcb")
+            elif len(batch) > 1:
+                queue[:0] = [batch[:len(batch) // 2], batch[len(batch) // 2:]]
+        tt.set_kept(good)
+        tt.write(cand)
     out = Path(output_path)
     if final is not None and tt.changed_nets:
         shutil.copy2(cand, out)
@@ -1335,6 +1406,7 @@ def run(input_path, output_path, opts=None, workdir=None, timeout=1800, log=prin
         s_ = inp.with_suffix(ext)
         if s_.exists() and s_.resolve() != out.with_suffix(ext).resolve():
             shutil.copy2(s_, out.with_suffix(ext))
+    reverted = set(getattr(tt, "_final", {})) - set(tt.changed_nets)
     rep = dict(board=str(inp), stats=tt.stats, nets_changed=sorted(tt.changed_nets), nets_reverted=sorted(reverted),
                fixed=tt._count_why(), drc_in=base, drc_out=final, rounds=rounds, plan_s=round(t_plan, 2),
                setup_s=round(tt.t_setup, 2), passes_s=round(getattr(tt, "t_passes", 0.0), 2))
