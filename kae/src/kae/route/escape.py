@@ -649,9 +649,10 @@ def _neighbours_diag(k):
     return ((2 * i + 1, 2 * j + 1), (2 * i - 1, 2 * j + 1), (2 * i - 1, 2 * j - 1), (2 * i + 1, 2 * j - 1))
 
 
-def _stage1(sp, ctx, site_ok, planes=True, pads=False):
+def _stage1(sp, ctx, site_ok, planes=True, pads=False, per_net=False):
     """All layers, one commodity: layer and dog-bone site per ball, vias as variables.
-    -> (model, option vars {(ball, layer, site or None): var}, plane vars, nets)."""
+    `per_net` (the bound): the gain is per net that leaves the package (ctx["z"]), not per
+    ball. -> (model, option vars {(ball, layer, site or None): var}, plane vars, nets)."""
     M = _Model()
     B, layers = ctx["B"], ctx["layers"]
     y = {t: M.var(0.0, 1) for t in _sites(ctx)}
@@ -697,6 +698,20 @@ def _stage1(sp, ctx, site_ok, planes=True, pads=False):
         use[t].append(v)
     for t, yv in y.items():
         M.row([(v, 1) for v in use[t]] + [(yv, -1)], 0, 0)
+    if per_net:
+        # the bound's demand: one escape per net that has a pad off the package; its other balls
+        # may join it inside (cameranexus U30's four adjacent +SYS balls, an eMMC's paired data
+        # balls), so counting each ball would over-state the demand
+        z = {}
+        for (k, l, t), v in opt.items():
+            M.gain[v] = 0.0
+            n = ctx["balls"][k][0].net
+            if n in ctx["leaving"]:
+                z.setdefault(n, []).append(v)
+        ctx["z"] = {}
+        for n, vs in z.items():
+            zv = ctx["z"][n] = M.var(ESCAPE_GAIN, 1)
+            M.row([(zv, 1)] + [(v, -1) for v in vs], -np.inf, 0)
     nets = {l: _network(M, ctx, l, y if l == B else {**y, **pad_y}, ["*"], src[l]) for l in layers}
     return M, opt, plane, nets
 
@@ -863,7 +878,8 @@ def plan_grid(sp, pkg, info, opts=None, deadline=None, order=None):
 
 
 def bound(sp, pkg, info, opts=None, **kw):
-    """(LP bound on the escapable signal balls, ctx, duals): one commodity on every layer,
+    """(LP bound on the signal nets that can leave the package, ctx (its "demand": the nets
+    with a pad off the package), duals): one commodity on every layer,
     the board's smallest legal width, clearances and via (rules_of `minimum`), raised to
     `floors` (the fab's finest class, fab_floors), and the relaxations in `kw` (override,
     extra_layers, open_planes)."""
@@ -875,11 +891,15 @@ def bound(sp, pkg, info, opts=None, **kw):
                  (ctx["R"][ctx["B"]]["D"], ctx["R"][ctx["B"]]["drill"]))
     ok = _site_ok(sp, ctx, override=kw.get("override"), small=small)
     # plane balls' vias left out: the bound only credits the signal balls more room
-    M, opt, plane, _ = _stage1(sp, ctx, ok, planes=False, pads=kw.get("pads", False))
+    ref = pkg["ref"]
+    out = {it.net for it in sp.pads if it.kind == "pad" and it.net and it.owner and it.owner[0] != ref}
+    ctx["leaving"] = {ctx["balls"][k][0].net for k in ctx["sig"]} & out
+    ctx["demand"] = len(ctx["leaving"])
+    M, opt, plane, _ = _stage1(sp, ctx, ok, planes=False, pads=kw.get("pads", False), per_net=True)
     obj, x, duals = M.solve(integer=False)
     if x is None:
         return None, ctx, {}
-    return float(sum(x[v] for v in opt.values())), ctx, duals
+    return float(sum(x[v] for v in ctx["z"].values())), ctx, duals
 
 
 def _fab(sp, opts):
@@ -980,7 +1000,7 @@ def certificate(sp, pkg, info, opts=None, log=print, deadline=None):
     if esc is None:
         # the relaxation did not solve (linprog status != 0): nothing is proved either way
         return None
-    demand = len(meta["sig"])
+    demand = meta["demand"]
     pads = True
     if esc is not None and esc >= demand - 0.5:
         esc, meta, duals = bound(sp, pkg, info, opts, floors=fl)
@@ -1086,7 +1106,7 @@ def certificate(sp, pkg, info, opts=None, log=print, deadline=None):
         return s_ + (f" ({prof['name']} {c})" if c else (" (no fab class)" if "fab_class" in r else ""))
     fixes = [fix(r) for r in relax if r.get("all")]
     head = "" if pads else "without vias in their pads, "
-    summary = (f"{pkg['ref']}: {head}{short} of {demand} signal balls can't escape on {len(real)} layers "
+    summary = (f"{pkg['ref']}: {head}{short} of {demand} signal nets can't leave its ball field on {len(real)} layers "
                f"({', '.join(real)}; LP bound {esc:.1f}; rules floored at {prof['name']}'s finest class); {where}; "
                + ("no obstruction found with " + " or ".join(fixes) if fixes else
                   "none of the relaxations tried, down to the fab's finest class, removes the obstruction"))

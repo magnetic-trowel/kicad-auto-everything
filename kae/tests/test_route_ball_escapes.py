@@ -102,10 +102,11 @@ def test_an_unsolved_bound_neither_certifies_nor_throws_away_the_plan(tmp_path, 
     assert "error" not in pk and pk["planned"] == 64 and pk["laid"] >= 44 and not out["blocked"]
 
 
-def _grid_space(tmp_path, pitch, ball, small=()):
+def _grid_space(tmp_path, pitch, ball, small=(), net=lambda r, c: f"S{r}{c}"):
     """An 8 x 8 grid at `pitch` of `ball` mm pads (the indices in `small` 0.3 mm), each with a
-    partner, on the synthetic 2-layer board (clearance 0.2, tracks >= 0.15, vias 0.6/0.3)."""
-    balls = [(f"{chr(65 + r)}{c + 1}", f"S{r}{c}", (c - (N - 1) / 2) * pitch, (r - (N - 1) / 2) * pitch,
+    partner, on the synthetic 2-layer board (clearance 0.2, tracks >= 0.15, vias 0.6/0.3);
+    `net(row, column)` names each ball's net."""
+    balls = [(f"{chr(65 + r)}{c + 1}", net(r, c), (c - (N - 1) / 2) * pitch, (r - (N - 1) / 2) * pitch,
               0.3 if r * N + c in small else ball, 0.3 if r * N + c in small else ball, "smd", 0.0, "", "passive")
              for r in range(N) for c in range(N)]
     grid = ("U7", "BGA", "Package_BGA:Grid", 134.5, 121.0, 0.0, balls, (4.8, 4.8))
@@ -206,3 +207,15 @@ def test_the_bound_credits_the_smallest_via_the_rules_allow(tmp_path):
         assert escape.legal_via(sp, dict(D=(0.2, 0.1))) == (0.4, 0.2)
     finally:
         s.update(old)
+
+
+def test_the_demand_is_one_escape_per_net_that_leaves(tmp_path):
+    """Balls of one net may join inside the ball field (four adjacent supply balls of a CSP, an
+    eMMC's paired data balls), so the bound demands one escape per net with a pad off the
+    package, not one per ball: the inner 4 x 4 on one net is one demand, and the 1 mm-pitch
+    grid that leaves 8 inner balls shut in is no longer certified."""
+    inner = lambda r, c: "S22" if 2 <= r <= 5 and 2 <= c <= 5 else f"S{r}{c}"    # noqa: E731
+    sp, info, pkg = _grid_space(tmp_path, 1.0, 0.4, net=inner)
+    e, ctx, _d = escape.bound(sp, pkg, info, floors=escape.fab_floors(*escape._fab(sp, None)))
+    assert ctx["demand"] == 64 - 16 + 1 and e >= ctx["demand"] - 0.5
+    assert escape.certificate(sp, pkg, info, log=lambda m: None) is None
