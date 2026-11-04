@@ -340,9 +340,14 @@ def test_batch_jobs_run_at_sched_idle_timed_jobs_above_them(kq, tmp_path):
     submit(kq, f"ps -o ni=,cls= -p $$ > {tmp_path / 'b'}", name="b", qos="batch")
     submit(kq, f"ps -o ni=,cls= -p $$ > {tmp_path / 't'}", name="t")
     drive(kq, d, lambda: all(v == "ok" for v in states(d).values()))
-    ni, cls = (tmp_path / "b").read_text().split()
-    assert cls == "IDL" and ni in ("19", "-")  # ps prints "-" for the nice of SCHED_IDLE on some versions
-    assert (tmp_path / "t").read_text().split() == ["10", "TS"]   # normal scheduling, far above SCHED_IDLE
+    # no history for its owner: it starts one step up (heavy_boost), at normal scheduling, nice 19
+    assert (tmp_path / "b").read_text().split() == ["19", "TS"]
+    assert (tmp_path / "t").read_text().split() == ["10", "TS"]   # timed: nice 10, far above batch
+    conf = json.load(open(kq.CONF)); conf["heavy_boost"] = False; json.dump(conf, open(kq.CONF, "w"))
+    submit(kq, f"ps -o ni=,cls= -p $$ > {tmp_path / 'b2'}", name="b2", qos="batch")
+    drive(kq, d, lambda: states(d)["b2"] == "ok")
+    ni, cls = (tmp_path / "b2").read_text().split()
+    assert cls == "IDL" and ni in ("19", "-")  # without the boost: SCHED_IDLE (ps may print "-" for its nice)
 
 
 LEASE = dict(lease_margin_frac=0.15, warmup_s=300, lease_release_frac=0.25, mem_overrun=1.5, lease_release_gb=2.0, lease_release_after_s=120, lease_margin_mb=512, lease_step_gb=1.0,
@@ -659,6 +664,22 @@ def test_a_running_timed_job_has_its_cold_memory_squeezed_into_zram(kq, tmp_path
     j = d.c.execute("SELECT * FROM jobs").fetchone()
     assert j["squeezed_mb"] > 200 and j["freezes"] == 0
     assert "ok 153600" in (tmp_path / "jobs" / "1" / "log").read_text()          # its memory came back intact
+
+
+def test_jobs_that_are_not_memory_heavy_move_one_cpu_step_down(kq, tmp_path):
+    d = _lease_daemon(kq, tmp_path, lease_warm_s=0, keep_gb=64)
+    prog = "import threading, time\nt = threading.Thread(target=time.sleep, args=(30,))\nt.start()\ntime.sleep(30)"
+    submit(kq, "python3 -c " + repr(prog).replace("\\n", "\n"), name="b", qos="batch")
+    submit(kq, "python3 -c " + repr(prog).replace("\\n", "\n"), name="t", qos="timed")
+    drive(kq, d, lambda: len(d.cgroups) == 2)
+    d.demote_ts = 0.0
+    drive(kq, d, lambda: d.demoted == {1, 2}, secs=20)
+    tids = lambda i: [int(x) for x in open(d.cgroups[i] + "/cgroup.threads").read().split()]
+    assert all(os.sched_getscheduler(t) == os.SCHED_IDLE for t in tids(1))       # batch: down to SCHED_IDLE
+    assert all(os.getpriority(os.PRIO_PROCESS, t) == 11 for t in tids(2))         # timed: nice 10 -> 11
+    d.c.execute("UPDATE jobs SET state='cancelled'")
+    for i in (1, 2):
+        kq.kill_tree(d.c.execute("SELECT pid FROM jobs WHERE id=?", (i,)).fetchone()[0], d.cgroups.get(i))
 
 
 def _lease_daemon(kq, tmp_path, **cfg):

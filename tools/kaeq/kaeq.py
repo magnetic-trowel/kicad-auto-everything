@@ -149,6 +149,12 @@ DEFAULTS = {
     # memory soonest run on. A thawed job is not frozen again for max(thaw_min_run_s, thaw_min_frac x the time it
     # was frozen), so a job is not flipped in and out.
     "keep_gb": 8.0,
+    # heavy_boost: jobs that hold the most memory get one step more CPU, so they wait less under contention and
+    # free their memory sooner. Without privileges a priority can only be lowered, so every job starts one step
+    # up (timed: timed_nice; batch: nice 19, normal scheduling) and those not memory-heavy (expected peak under
+    # keep_gb: known at start from the owner's history, else after lease_warm_s) are moved one step down
+    # (timed: timed_nice + 1; batch: SCHED_IDLE). Heavy timed > timed > heavy batch > batch.
+    "heavy_boost": True,
     "keep_core_h": 1.0,
     "thaw_min_run_s": 300,
     "thaw_min_frac": 0.25,  # class of a job submitted without --class: batch (packs tighter, may be paused)
@@ -1341,6 +1347,7 @@ class Daemon:
         self.mem_stalled = set()     # jobs the last lease pass left waiting (frozen) for memory
         self.squeezing, self.squeeze_ts, self.squeezed_add = None, 0.0, {}   # squeeze in flight; MB per job to record
         self.rt_model, self.rt_ts, self.rt_exp, self.rt_exp_ts = None, 0.0, {}, 0.0   # run-time model, expected totals
+        self.demoted, self.demote_ts = set(), 0.0   # jobs moved one CPU step down (heavy_boost)
         self.oc = load_overcommit()  # {hold, hist: [(t, done core-s, lost core-s)]}: the adaptive overcommit
         self.oc_t, self.oc_done, self.oc_lost, self.evict_ts = 0.0, 0.0, 0.0, 0.0
         if self.oc.get("hist"):
@@ -1542,6 +1549,32 @@ class Daemon:
             json.dump({"pid": os.getpid(), "ts": now, "sys": self.sys}, f)
         os.replace(tmp, BEAT)
 
+    def demote_light(self, cfg, now, jobs):
+        """heavy_boost: move every thread of jobs that are not memory-heavy (expected peak under keep_gb, past
+        lease_warm_s) one CPU step down: timed to timed_nice + 1, batch to SCHED_IDLE. Re-applied every 30 s, for
+        threads started since. Heavy jobs keep the step they started with (a priority cannot be raised again)."""
+        self.demote_ts = now
+        for j in jobs:
+            if now - (j["started"] or now) < cfg.get("lease_warm_s", 120) or j["expect"] >= cfg["keep_gb"] * 1024:
+                continue
+            try:
+                with open(os.path.join(j["cg"], "cgroup.threads")) as f:
+                    tids = [int(x) for x in f.read().split()]
+            except (OSError, ValueError):
+                continue
+            for t in tids:
+                try:
+                    if j["timed"]:
+                        if os.getpriority(os.PRIO_PROCESS, t) < cfg["timed_nice"] + 1:
+                            os.setpriority(os.PRIO_PROCESS, t, int(cfg["timed_nice"]) + 1)
+                    elif os.sched_getscheduler(t) != os.SCHED_IDLE:
+                        os.sched_setscheduler(t, os.SCHED_IDLE, os.sched_param(0))
+                except OSError:
+                    pass                          # the thread ended
+            if j["id"] not in self.demoted:
+                self.demoted.add(j["id"])
+        self.demoted &= {j["id"] for j in jobs}
+
     def time_left(self, now, running):
         """{job id: expected seconds left} for running jobs (runtime_model, refitted every 10 min; expected totals
         every 30 s)."""
@@ -1612,6 +1645,8 @@ class Daemon:
                     jj["reserve_mb"] = max(0.0, jj["expect"] - m[0] - swapped)
         for jid in set(self.lease_st) - set(cgs):
             del self.lease_st[jid]
+        if cfg["heavy_boost"] and now - self.demote_ts >= 30:
+            self.demote_light(cfg, now, jobs)
         room = avail - reserve
         if cfg["mem_budget_gb"] > 0:
             used = sum(j["use"] for j in jobs) + sum(usage.get(j["id"], (0.0, 0))[0] for j in running if j["id"] not in cgs)
@@ -2023,16 +2058,20 @@ class Daemon:
                     *lim, "-p", "MemorySwapMax=0"] + argv
         pinned = job_cpus(cfg)
         tnice = int(cfg["timed_nice"])
+        # light from the start when its owner's history says so (heavy_boost); else it starts one step up
+        light = (cfg["heavy_boost"] and j["owner"] in self.ratios and self.need_mb(j, cfg) < cfg["keep_gb"] * 1024)
+        boosted = cfg["heavy_boost"] and not light
 
         def pre():
             os.setsid()
             if pinned:
                 os.sched_setaffinity(0, pinned)
-            try:  # batch: nice 19 and SCHED_IDLE, below every normal task; timed: nice timed_nice (10), well above
-                os.setpriority(os.PRIO_PROCESS, 0, tnice if timed else 19)   # batch, below other users' work
+            try:  # batch: nice 19 and SCHED_IDLE, below every normal task; timed: nice timed_nice (10), well above;
+                # light jobs one step down (heavy_boost): timed + 1 nice
+                os.setpriority(os.PRIO_PROCESS, 0, (tnice if boosted or not cfg["heavy_boost"] else tnice + 1) if timed else 19)
             except OSError:
                 pass
-            if not timed:
+            if not timed and not boosted:     # (a boosted batch job stays SCHED_OTHER at nice 19 until demoted)
                 try:
                     os.sched_setscheduler(0, os.SCHED_IDLE, os.sched_param(0))
                 except OSError:
