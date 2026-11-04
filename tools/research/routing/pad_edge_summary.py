@@ -2,7 +2,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Summarize pad_edge_smoke.sh results: one row per board directory (before -> after).
 
-    python3 tools/research/routing/pad_edge_summary.py DIR... [--terms]
+    python3 tools/research/routing/pad_edge_summary.py DIR... [--terms] [--variant reend]
+
+Variants: "after" (the axis-only cut: trim.json, stats.*.json, phys/after.*) or "reend" (the
+post-pass as the CLI runs it: reend.json with its stats, phys/reend.*).
 
 Columns: DRC errors and unconnected (kicad-cli on the re-opened boards, trim.json), new
 violations of any severity, track length, pad entries at the centre / near the edge, and
@@ -35,21 +38,23 @@ def _terms(st):
 
 def main(argv):
     terms = "--terms" in argv
-    dirs = [Path(a) for a in argv if not a.startswith("--")]
+    var = argv[argv.index("--variant") + 1] if "--variant" in argv else "after"
+    dirs = [Path(a) for a in argv if not a.startswith("--") and a != var]
     print("| board | errors | unconnected | new violations | track mm | centre/edge entries | oblique | acute | cut mm | physics total mW_eq |")
     print("|---|---|---|---|---|---|---|---|---|---|")
     notes = []
     for d in dirs:
-        tr = _j(d / "trim.json") or {}
-        sb, sa = _j(d / "stats.before.json") or {}, _j(d / "stats.after.json") or {}
+        tr = _j(d / ("trim.json" if var == "after" else f"{var}.json")) or {}
+        sb = tr.get("stats_in") or _j(d / "stats.before.json") or {}
+        sa = tr.get("stats_out") or _j(d / "stats.after.json") or {}
         di, do = tr.get("drc_in") or {}, tr.get("drc_out") or {}
-        wd = d / "trim-work"
+        wd = d / ("trim-work" if var == "after" else f"{var}-work")
         rin = _j(wd / "in.drc.json")
         outs = sorted(wd.glob("out.r*.json"))
         rout = _j(outs[-1]) if outs and tr.get("kept") else rin
         ti, to = _all_types(rin), _all_types(rout)
         new = {k: to[k] - ti.get(k, 0) for k in to if to[k] > ti.get(k, 0)}
-        pb, pa = _j(d / "phys" / "before.status.json"), _j(d / "phys" / "after.status.json")
+        pb, pa = _j(d / "phys" / "before.status.json"), _j(d / "phys" / f"{var}.status.json")
 
         def tot(s):
             return sum(c for c, _ in _terms(s).values() if c is not None) if s else None

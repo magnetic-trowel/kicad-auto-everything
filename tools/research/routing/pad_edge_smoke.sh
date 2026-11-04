@@ -32,7 +32,7 @@ case "$mode" in
     ) > "$dir/reend.log" 2>&1
     find "$dir/reend-work" -name "*.kicad_pcb" -delete
     exec bash "$0" "$dir" phys-reend;;
-  phys-before|phys-after|phys-reend)
+  phys-*)
     t=${mode#phys-}
     INTENT_DIR=${INTENT_DIR:?set INTENT_DIR}
     KAE_RULES_FROM=$dir/before.kicad_pcb bash "$REPO/tools/research/physics/eval_intent.sh" "$dir/$t.kicad_pcb" \

@@ -175,11 +175,12 @@ def test_trim_cuts_back_to_overlap_inside_the_edge():
 def test_trim_keeps_rails_a_width_deep_and_skips_vias_and_balls():
     g = box(9.0, -1.0, 11.0, 1.0)
     text = "(kicad_pcb\n" + _seg((0.0, 0.0), (10.0, 0.0), w=0.5, net="GND") + ")\n"
-    trims = PT.plan(text, _info(("R1", "GND", (10.0, 0.0), g)), 0.05)
+    assert PT.plan(text, _info(("R1", "GND", (10.0, 0.0), g)), 0.05) == []      # rails keep the centre
+    trims = PT.plan(text, _info(("R1", "GND", (10.0, 0.0), g)), 0.05, rails="width")
     assert trims and abs(trims[0][2][0] - 9.5) < 1e-9                   # the width (0.5) deep
     via = '\t(via\n\t\t(at 10 0)\n\t\t(size 0.6)\n\t\t(drill 0.3)\n\t\t(layers "F.Cu" "B.Cu")\n\t\t(net "GND")\n\t)\n'
     with_via = "(kicad_pcb\n" + _seg((0.0, 0.0), (10.0, 0.0), w=0.5, net="GND") + via + ")\n"
-    assert PT.plan(with_via, _info(("R1", "GND", (10.0, 0.0), g)), 0.05) == []
+    assert PT.plan(with_via, _info(("R1", "GND", (10.0, 0.0), g)), 0.05, rails="width") == []
     # a ball grid's pads (escape stage): untouched
     balls = [("U1", "SIG" if k == 0 else f"N{k}", (10.0 + 0.5 * k, 0.0), Point(10.0 + 0.5 * k, 0.0).buffer(0.15, 16))
              for k in range(PT.BALL_GRID_MIN)]
@@ -255,5 +256,5 @@ def test_reend_turns_an_oblique_entry_onto_the_edge_normal():
 def test_wide_track_counts_as_current_carrying():
     g = box(9.0, -1.0, 11.0, 1.0)
     text = "(kicad_pcb\n" + _seg((0.0, 0.0), (10.0, 0.0), w=PT.CURRENT_W) + ")\n"
-    (t,) = PT.plan(text, _info(("R1", "SIG", (10.0, 0.0), g)), 0.05)
+    (t,) = PT.plan(text, _info(("R1", "SIG", (10.0, 0.0), g)), 0.05, rails="width")
     assert abs((t[2][0] - 9.0) - PT.CURRENT_W) < 1e-9

@@ -113,7 +113,7 @@ def _pads(info, balls=True):
 CURRENT_W = 0.4            # mm: a track this wide carries current whatever its net's name
 
 
-def plan(text, info, overlap=0.05, tol=1e-3, legal=None, reend_deg=10.0):
+def plan(text, info, overlap=0.05, tol=1e-3, legal=None, reend_deg=10.0, rails="centre"):
     """Changes [(segment, which end 'a'|'b', new end, turn or None, "cut"|"reend")] for the board text.
 
     Each end of a segment at a same-net pad centre, its other end outside the pad, is cut back
@@ -121,7 +121,9 @@ def plan(text, info, overlap=0.05, tol=1e-3, legal=None, reend_deg=10.0):
     CURRENT_W wide). With `legal(net, layer, w, a, b)` (an exact clearance check), an end that
     enters more than `reend_deg` off the edge normal is re-ended instead: the track turns onto
     the normal before the nearest edge and runs straight in (pad_entry.entries); the segment
-    then ends at the turn and a new piece runs from it into the pad."""
+    then ends at the turn and a new piece runs from it into the pad. `rails`: "centre" leaves
+    current-carrying ends at the pad centre (the physics evaluator saw rail drop and copper loss
+    rise 0.1-1.3 % when they were cut a width deep), "width" cuts them a width deep."""
     pads = _pads(info, balls=False)
     vias = _vias(text)
     vtree = STRtree([Point(v) for v in vias]) if vias else None
@@ -145,6 +147,8 @@ def plan(text, info, overlap=0.05, tol=1e-3, legal=None, reend_deg=10.0):
             if e is None:
                 continue
             cur = PE.current_net(s["net"]) or s["w"] >= CURRENT_W - 1e-9
+            if cur and rails == "centre":
+                continue
             depth = max(overlap, s["w"] if cur else 0.0)
             if legal is not None and (PE.entry_angle(g, Q, E) or 0.0) > reend_deg:
                 got = None
@@ -231,7 +235,7 @@ def _legal(staged, info):
     return lambda net, layer, w, a, b: not sp.track_violations(net, layer, w, a, b, first=True)
 
 
-def run(input_path, output_path, overlap=None, workdir=None, timeout=1800, reend=False, log=print):
+def run(input_path, output_path, overlap=None, workdir=None, timeout=1800, reend=False, rails="centre", log=print):
     """The DRC-gated pass: plan, write, KiCad DRC, revert what made it worse. With `reend`, entries
     more than 10 degrees off the edge normal are re-ended perpendicular (pieces checked exactly).
     Returns a report: planned/kept changes, cut and re-ended counts, DRC in and out, and the pad
@@ -247,8 +251,8 @@ def run(input_path, output_path, overlap=None, workdir=None, timeout=1800, reend
     ovl = float(CN.setting("pad_entry_overlap", staged)) if overlap is None else float(overlap)
     info = _info(staged)
     text = staged.read_text(encoding="utf-8")
-    trims = plan(text, info, ovl, legal=_legal(staged, info) if reend else None)
-    rep = dict(board=str(inp), planned=len(trims), overlap=ovl, reend=bool(reend),
+    trims = plan(text, info, ovl, legal=_legal(staged, info) if reend else None, rails=rails)
+    rep = dict(board=str(inp), planned=len(trims), overlap=ovl, reend=bool(reend), rails=rails,
                reended=sum(1 for t in trims if t[4] == "reend"),
                cut_mm=round(sum(math.dist(t[0][t[1]], t[2]) for t in trims if t[4] == "cut"), 3),
                stats_in=stats(text, info))
@@ -335,13 +339,15 @@ def main(argv=None):
     t.add_argument("--workdir")
     t.add_argument("--report")
     t.add_argument("--timeout", type=int, default=1800)
+    t.add_argument("--rails", choices=("centre", "width"), default="centre",
+                   help="rails, grounds and wide tracks: keep their centre ends (default) or cut a width deep")
     t.add_argument("--no-reend", action="store_true",
                    help="only shorten along each track's axis (no perpendicular re-ending)")
     s = sub.add_parser("stats")
     s.add_argument("board")
     a = ap.parse_args(argv)
     if a.cmd == "trim":
-        rep = run(a.input, a.output, a.overlap, a.workdir, a.timeout, reend=not a.no_reend)
+        rep = run(a.input, a.output, a.overlap, a.workdir, a.timeout, reend=not a.no_reend, rails=a.rails)
         if a.report:
             Path(a.report).write_text(json.dumps(rep, indent=1))
         print(json.dumps(rep))
