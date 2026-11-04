@@ -672,7 +672,14 @@ class Taut:
                     continue          # no closer than the input was
                 self._skip("space check")
                 return None
-        return dict(pieces=pieces, length=L, old=old_len, cert=r.certificate, inserted=r.inserted, score=score)
+        cert = r.certificate
+        st = self.stats.setdefault("certificate", dict(g1=0, window=0, fillet=0, inserted=0, perpendicular=0))
+        st["g1"] += bool(cert.get("g1"))
+        st["window"] += bool(cert.get("window", True))
+        st["fillet"] += bool(cert.get("fillet"))
+        st["inserted"] += r.inserted
+        st["perpendicular"] += score[0] == 0
+        return dict(pieces=pieces, length=L, old=old_len, cert=cert, inserted=r.inserted, score=score)
 
     def _tail_ok(self, net, layer, w, tail):
         for a, b in zip(tail[:-1], tail[1:]):
