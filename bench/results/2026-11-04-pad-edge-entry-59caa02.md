@@ -98,3 +98,26 @@ Physics, change of the intent total against the original (edge rule: re-route + 
 | jkiv cm4-carrier | 9931.3 | -0.11 % (S0 166.3 mV → 166.1 mV, M1 71.44 C → 71.46 C) | -0.00 % |
 | lenaschimmel bestelampe | 5237.8 | -1.49 % (S0 200.1 mV → 193.5 mV, R0 2.007 V → 1.991 V) | -1.74 % (S0 200.1 mV → 193.2 mV, R0 2.007 V → 1.986 V) |
 | sparkfun redbot | 96538.6 | +0.02 % (S5 206.2 mV → 206.9 mV, P1 997.4 mW → 998.2 mW) | +0.25 % (S0 2.054 V → 2.057 V, R0 8.745 V → 8.773 V) |
+
+
+## 5. Tracks wider than the land
+
+`pad_reroute` rule D at 75d1e2b (base; byte-identical to §4's outputs) against rule D with the overhang test, necks and land hazard (c964c3d), both from the original outputs, operating facts of compiled-6329e71 for the pads' currents. `tools/research/routing/pad_edge_smoke.sh DIR rd-TAG`, table `pad_wide_summary.py rd ROOT rdbase rdw`. Overhanging: the entering piece adds more than 2·10⁻⁴ mm² beside or beyond the land (`pad_entry.overhang`), counted by the new `pad_trim.stats` for every version. No target: `fail_no_target` + `fail_no_fit` of the new run. Physics: change of the intent total against the original; boards whose output is byte-identical reuse §4's physics.
+
+| Board | Candidates base/new | Kept base/new | Oblique/acute in / base / new | Overhanging in / base / new | Necks | Hazards | No target | Track Δ mm base/new | DRC err/unconn new (worse vs base) | Physics base / new |
+|---|---|---|---|---|---|---|---|---|---|---|
+| adafruit magtag | 16/18 | 13/15 | 14/8 / 8/2 / 9/2 | 2 / 2 / 0 | 0 | 0 | 0 | +4.8/+5.1 | 50/0 (none) | +0.02 % / +0.03 % |
+| adafruit metro-m7 | 42/43 | 38/39 | 29/19 / 8/3 / 8/3 | 2 / 1 / 0 | 0 | 0 | 0 | +11.9/+12.6 | 22/1 (none) | +0.12 % / +0.12 % |
+| aifryz sensor-hub | 124/127 | 84/84 | 113/14 / 37/6 / 37/6 | 6 / 3 / 3 | 0 | 0 | 0 | +4.0/+4.0 | 9/0 (none) | +5.07 % / +5.07 % |
+| circuitmonkey chips-0123 | 2/2 | 2/2 | 7/0 / 5/0 / 5/0 | 6 / 6 / 6 | 0 | 0 | 0 | +0.4/+0.4 | 45/4 (none) | – |
+| dream117er paicorea | 89/89 | 74/74 | 87/5 / 14/4 / 14/4 | 3 / 2 / 2 | 0 | 0 | 0 | -1.8/-1.8 | 0/1 (none) | -0.00 % / -0.00 % |
+| freetronics secsense | 1/1 | 1/1 | 1/0 / 0/0 / 0/0 | 0 / 0 / 0 | 0 | 0 | 0 | +0.4/+0.4 | 0/0 (none) | +0.00 % / +0.00 % |
+| greatscottgadgets ubertooth | 36/38 | 29/29 | 39/13 / 20/4 / 20/4 | 7 / 4 / 4 | 0 | 0 | 0 | +7.7/+7.7 | 37/13 (none) | +0.02 % / +0.02 % |
+| jjhorton pmod-tester | 0/0 | 0/0 | 0/0 / 0/0 / 0/0 | 0 / 0 / 0 | 0 | 0 | 0 | +0.0/+0.0 | 0/0 (none) | +0.00 % / +0.00 % |
+| jkiv cm4-carrier | 40/41 | 3/3 | 36/5 / 33/5 / 33/5 | 1 / 1 / 1 | 0 | 0 | 0 | +0.6/+0.6 | 612/0 (none) | -0.00 % / -0.00 % |
+| lenaschimmel bestelampe | 28/29 | 24/24 | 23/7 / 6/1 / 6/1 | 1 / 2 / 2 | 0 | 0 | 0 | +2.0/+2.0 | 16/0 (none) | -1.74 % / -1.74 % |
+| sparkfun redbot | 38/40 | 12/14 | 27/11 / 20/8 / 20/8 | 2 / 2 / 0 | 0 | 0 | 0 | -0.3/-0.4 | 133/0 (none) | +0.25 % / +0.26 % |
+| zephray nekoink | 208/208 | 134/134 | 205/25 / 89/11 / 89/11 | 0 / 0 / 0 | 0 | 0 | 0 | +6.3/+6.3 | 11/95 (none) | – |
+| **total** | 624/636 | 414/419 | 581/107 / 240/44 / 241/44 | 30 / 23 / 18 | 0 | 0 | 0 | +36.0/+36.8 | | |
+
+New outcomes over the 12 boards: candidates 636 (overhang_in 23), rerouted 438, kept 419, DRC-reverted 19, skip_via 138, fail_no_route 31, fail_release_at_pad 20, fail_overlap 5, fail_length 2, fail_style 1, fail_final_piece 1; 202 s (base 183 s). DRC by type no worse than the base on any board (magtag `solder_mask_bridge` 25 → 24, run-to-run noise). The only entry whose track is wider than its land's short side (lenaschimmel IC4 pad 1, a 0.2 mm track into one 0.15 mm shape of a pad that is 0.4 mm wide merged) is not one when the shapes are merged.
