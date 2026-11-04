@@ -11,20 +11,19 @@
 
 | Doc | What it says | What it fixes here |
 |---|---|---|
-| [topological-routing](../../topics/routing/topological-routing.md) | Topological routers pick each wire's homotopy class, then realize a rubber-band sketch (SURF, TopoR, toporouter). For a fixed topology, octilinear wiring is ~5% longer than any-angle; gains come from topology | The pass keeps the router's topology and only realizes it optimally. Expect single-digit-percent length gains on top of the pad trim, not more; larger gains mean detours |
-| [rule-genealogy-routing-style-dfm](../../topics/physics/rule-genealogy-routing-style-dfm.md) R01-R04, R35 | Corner shape and 45° are physics-neutral below ~10 GHz (a 90° bend is 0.56 squares, rounded 0.50); any-angle ≤ 8% shorter than 45°; acid traps are fab legacy; "keep 45° for editability"; rounding inside corners of pulsed power copper removes the current-crowding peak | **Conflict with the brief.** The doc recommends 45° except for RF, flex, HV and pulsed power. The brief asks for arcs unless the rules require a style. The doc's reason is editability (a cognition cost, not physics or fab), so the brief's choice stands as a style decision; the pass has a switch for it. Arcs are also what R35 asks for on power copper |
-| [myths-and-contested](../../topics/rules/myths-and-contested.md) | Corners matter for ESD paths (≤ 45°), RF (arcs or 135°), diff pairs (skew) and ≥ 10 Gb/s | Arcs are at least neutral everywhere and better on those classes |
-| [diff-pairs](../../topics/rules/diff-pairs.md) | Rounded corners do not remove skew: the outer leg gains ~1.57 p per corner; bends > 135°; uncoupled length ≤ 1.14 mm into a pin | A pair is tightened only as a pair (one centreline, legs offset by the pitch, so the coupling never breaks), else left alone. Skew from arcs is d·(sum of signed turns), which is set by the end directions: kept ends keep the skew |
-| [length-matching-and-buses](../../topics/routing/length-matching-and-buses.md) | Length is tuned after routing with meanders; meanders are explicit rules | Nets with a length or skew rule, and nets that carry meanders, are never shortened |
-| [si-fundamentals](../../topics/rules/si-fundamentals.md) | Crosstalk K = 1/(1+(D/h)²); express spacing in units of h, never "3W" | Victim spacing is power copper's `victim_gap` D = h·sqrt(1/K-1), K = 5%, 0.5-2 mm; a pass never moves copper closer to a victim than min(D, the distance it had) |
-| [kae-power-copper](kae-power-copper.md) | Classes from the physics brief (rails, grounds, switch nodes, victims); extra gaps; current-proportional sharing; necks at small lands; "rails may not cut ground pours"; free space, not the cap, limits widening; DRC gate with attribution, 2.5 mm spatial pass, ddmin | Same classes and gaps (imported, not copied). Other nets' fills stay obstacles. Widening along arcs reuses the same sampling, run and neck rules |
-| [kae-pad-edge-entry](kae-pad-edge-entry.md) | Entry within 10° of the edge normal for one width outside the pad, `pad_entry_overlap` inside; rails, grounds and wide tracks keep their centre ends (cutting them raised rail drop 0.1-1.3%); most acute entries are Freerouting's 45° runs into a pad corner; re-ending needs room for a turn | Pad entries are fixed points: the taut path ends at an approach point one width outside the edge and the tail runs along the normal. Rails keep their centre ends, and their tail runs out through the edge middle |
-| [power-copper (physics)](../../topics/physics/power-copper.md) | L ∝ l/w, C ∝ w·l, R ∝ l/w: "width trades one parasitic for another; only length lowers all of them"; the switch node minimises capacitance to victims | Shortening is the one edit that lowers every parasitic, so the objective is length. Switch nodes are tightened but keep victim gaps |
-| [hv-and-manufacturing-physics](../../topics/physics/hv-and-manufacturing-physics.md), [rf-geometry](../../topics/physics/rf-geometry.md) | Curves cost nothing at a modern fab; arcs are cosmetic for SI at edges slower than ~30 ps; acid traps only as sub-resolution pockets | Arcs need no fab or SI exception. Acute angles are still counted (the pad-edge doc's metric) |
-| [research-gaps](../../topics/physics/research-gaps.md) #15, [autorouter-skepticism](../../topics/routing/autorouter-skepticism.md), [looks-right-metrics](../../topics/verification/looks-right-metrics.md) | Arcs and any-angle routes must survive review and edits; practitioners count bends, jogs and acute angles | Report corners and acute angles; arcs are true KiCad arcs, not polylines (also [TM48](../../ideas/physics-first/thermal-hv-mfg.md)) |
-| [open-source-routers](../../topics/landscape/open-source-routers.md) | route-rnd's libgrbs (a rubber-band sketch with arcs): "convex-only crbs leaves unnecessary curves", some rats take "long detours" | Detours are the router's topology, which this pass keeps by design; unnecessary curves are what a wrap with a negative sweep would leave, so such wraps are dropped |
-| [physics-in-the-loop-optimization](../../topics/physics/physics-in-the-loop-optimization.md) | Elastic bands (Quinlan-Khatib) relax a fixed-homotopy path under tension | The same relaxation, solved exactly (the tension-only limit is the shortest path) |
-| [kae-routing-dead-ends](kae-routing-dead-ends.md) | What pays is exact local joins, not rip-ups of neighbours | No net is ripped up; only a branch's interior moves |
+| [topological-routing](../../topics/routing/topological-routing.md) | Routers pick a homotopy class, then realize a rubber band (SURF, TopoR); for a fixed topology octilinear is ~5 % longer than any-angle | Keep the router's topology and realize it optimally; expect single-digit gains |
+| [rule-genealogy-routing-style-dfm](../../topics/physics/rule-genealogy-routing-style-dfm.md) R01-R04, R35 | Corners and 45° are physics-neutral below ~10 GHz; any-angle ≤ 8 % shorter; acid traps are fab legacy; "keep 45° for editability"; round inside corners of pulsed power copper | **Conflict with the brief.** The doc keeps 45° for editability (a cognition cost, not physics or fab); the brief asks for arcs, so arcs stand as a style choice. R35 asks for arcs on power copper |
+| [myths-and-contested](../../topics/rules/myths-and-contested.md) | Corners matter for ESD, RF (arcs or 135°), diff pairs, ≥ 10 Gb/s | Arcs are neutral or better everywhere |
+| [diff-pairs](../../topics/rules/diff-pairs.md) | Rounded corners do not remove skew; outer leg +1.57 p per corner; uncoupled ≤ 1.14 mm | Tighten a pair only as a pair (legs offset from one centreline, end headings kept, so skew = D × net turning is unchanged), else leave it |
+| [length-matching-and-buses](../../topics/routing/length-matching-and-buses.md) | Length is tuned after routing; meanders are explicit rules | Length/skew-ruled and meandered nets are never shortened |
+| [si-fundamentals](../../topics/rules/si-fundamentals.md) | K = 1/(1+(D/h)²); spacing in units of h, never "3W" | Victims keep min(power copper's `victim_gap`, the input's distance) |
+| [kae-power-copper](kae-power-copper.md) | Brief classes, extra gaps, sharing, necks; "rails may not cut ground pours"; gate with attribution and ddmin | Same classes (imported); other nets' fills stay obstacles; widening along arcs reuses the sampling, runs and necks |
+| [kae-pad-edge-entry](kae-pad-edge-entry.md) | Entry ≤ 10° off the normal for a width outside the pad, overlap inside; rails keep centre ends (cutting them raised rail drop 0.1-1.3 %); acute entries come from 45° runs into pad corners | Pad ends are fixed tails along the normal; rails keep their centre and run out through the edge middle |
+| [power-copper (physics)](../../topics/physics/power-copper.md) | "Width trades one parasitic for another; only length lowers all of them" | Length is the objective; switch nodes keep victim gaps |
+| [hv-and-manufacturing-physics](../../topics/physics/hv-and-manufacturing-physics.md), [rf-geometry](../../topics/physics/rf-geometry.md) | Curves cost nothing at a modern fab; arcs are cosmetic for SI below ~30 ps edges | No fab or SI exception needed |
+| [research-gaps](../../topics/physics/research-gaps.md) #15, [autorouter-skepticism](../../topics/routing/autorouter-skepticism.md) | Arcs must survive review; practitioners count bends and acute angles | Report corners and acute angles; write true KiCad arcs ([TM48](../../ideas/physics-first/thermal-hv-mfg.md)) |
+| [open-source-routers](../../topics/landscape/open-source-routers.md) | route-rnd's rubber-band sketch "leaves unnecessary curves" | Wraps that would sweep backwards are dropped |
+| [physics-in-the-loop-optimization](../../topics/physics/physics-in-the-loop-optimization.md), [kae-routing-dead-ends](kae-routing-dead-ends.md) | Elastic bands relax a fixed-homotopy path; exact local joins pay, rip-ups do not | Solve the tension-only limit exactly; never rip up a neighbour |
 
 ### Outside literature built on
 
@@ -62,30 +61,38 @@
 
 | Board | DRC err/unconn in → taut → +pc | Signal mm | Corners | Acute | Arcs | Pad entries perp/oblique/acute | Taut s | Pc s |
 |---|---|---|---|---|---|---|---|---|
-| adafruit magtag | 51/0 → 50/0 → 51/0 | 1671 → 1561 | 545 → 282 | 2 → 3 | 281 | 258/14/8 → 259/13/8 | 54 | 179 |
-| adafruit metro-m7 | 22/1 → 22/1 → 22/1 | 1604 → 1482 | 776 → 404 | 4 → 4 | 360 | 325/29/19 → 334/28/11 | 38 | 34 |
+| adafruit magtag | 51/0 → 51/0 → 50/0 | 1671 → 1561 | 545 → 281 | 2 → 1 | 281 | 258/14/8 → 258/14/8 | 57 | 346 |
+| adafruit metro-m7 | 22/1 → 22/1 → 22/1 | 1604 → 1482 | 776 → 404 | 4 → 4 | 360 | 325/29/19 → 334/28/11 | 42 | 35 |
 | aifryz sensor-hub | 9/0 → 9/0 → 9/0 | 1698 → 1601 | 573 → 325 | 8 → 5 | 265 | 272/113/14 → 309/81/9 | 33 | 19 |
 | circuitmonkey chips-0123 | 45/4 → 45/4 → 45/4 | 22 → 22 | 5 → 4 | 0 → 0 | 2 | 9/10/0 → 9/10/0 | 6 | 6 |
-| dream117er paicorea | 0/1 → 0/1 → 0/1 | 2145 → 2018 | 474 → 267 | 10 → 8 | 257 | 270/124/10 → 271/107/6 | 35 | 23 |
-| freetronics secsense | 0/0 → 0/0 → 0/0 | 423 → 403 | 100 → 39 | 0 → 0 | 77 | 70/1/0 → 70/1/0 | 11 | 9 |
-| greatscottgadgets ubertooth | 37/13 → 37/13 → 37/13 | 613 → 554 | 577 → 405 | 22 → 11 | 123 | 348/39/14 → 352/34/15 | 25 | 10 |
+| dream117er paicorea | 0/1 → 0/1 → 0/1 | 2145 → 2018 | 474 → 268 | 10 → 7 | 257 | 270/124/10 → 271/107/6 | 37 | 24 |
+| freetronics secsense | 0/0 → 0/0 → 0/0 | 423 → 403 | 100 → 39 | 0 → 0 | 77 | 70/1/0 → 70/1/0 | 12 | 9 |
+| greatscottgadgets ubertooth | 37/13 → 37/13 → 37/13 | 613 → 554 | 577 → 405 | 22 → 10 | 123 | 348/39/14 → 352/34/15 | 28 | 11 |
 | jjhorton pmod-tester | 0/0 → 0/0 → 0/0 | 274 → 249 | 64 → 25 | 0 → 0 | 19 | 42/0/0 → 42/0/0 | 7 | 6 |
-| jkiv cm4-carrier | 612/0 → 605/0 → 605/0 | 1279 → 1246 | 255 → 240 | 1 → 1 | 12 | 153/38/6 → 160/31/6 | 11 | 12 |
-| lenaschimmel bestelampe | 16/0 → 16/0 → 15/0 | 2047 → 2012 | 487 → 394 | 8 → 7 | 84 | 142/23/7 → 142/23/7 | 51 | 21 |
-| sparkfun redbot | 133/0 → 133/0 → 133/0 | 1110 → 1018 | 414 → 170 | 4 → 7 | 241 | 180/27/11 → 187/22/9 | 28 | 17 |
-| zephray nekoink | 11/95 → 11/93 → 11/93 | 2361 → 2252 | 1338 → 928 | 26 → 26 | 496 | 715/205/25 → 770/158/17 | 122 | 63 |
+| jkiv cm4-carrier | 612/0 → 612/0 → 612/0 | 1279 → 1261 | 255 → 255 | 1 → 1 | 2 | 153/38/6 → 156/35/6 | 27 | 12 |
+| lenaschimmel bestelampe | 16/0 → 16/0 → 15/0 | 2047 → 2012 | 487 → 394 | 8 → 7 | 84 | 142/23/7 → 142/23/7 | 53 | 21 |
+| sparkfun redbot | 133/0 → 133/0 → 133/0 | 1110 → 1019 | 414 → 177 | 4 → 4 | 239 | 180/27/11 → 187/21/10 | 29 | 19 |
+| zephray nekoink | 11/95 → 11/93 → 11/93 | 2361 → 2251 | 1338 → 927 | 26 → 24 | 496 | 715/205/25 → 768/159/18 | 125 | 63 |
 
-- **DRC never worse.** Over 12 boards, errors went 936 → 928 and unconnected 114 → 112. cm4 lost 7 errors (Freerouting's tracks that bulged beside their lands). nekoink closed 2 connections, where taut copper now runs over a same-net pad. With power copper as well: 929 errors and 112 unconnected.
-- **Length.** Signal −5.4 % (15.25 → 14.42 m). Power −1.2 % (3.50 → 3.46 m), ground −1.4 %; all copper −4.5 %. The topology doc predicts about 5 % from straightening alone; part of this is copper inside lands (the pad trim's share).
-- **Corners.** Corners fell 5,608 → 3,483 (−38 %); arc-to-tangent joints are G1 and are not counted. Acute corners went 85 → 72 and acute pad entries 114 → 88. Oblique entries fell 623 → 508, perpendicular rose 2,784 → 2,905. Acute corners rose on redbot (4 → 7) and magtag (2 → 3) where a tail met an input corner: those branches were trimmed but not re-solved.
-- **Optimality.** 1,716 branches were rewritten with a taut path. All are G1 with positive wraps, and none touched its window, so each carries the local-optimality certificate. Of these, 51 needed an atom inserted after the exact check, 17 got a Dubins start or end, and 121 more were only trimmed (fallback).
-- **Convergence.** Pass 0 gave 933 of the 968 mm gained, pass 1 0.03-28 mm per board, pass 2 nothing: 10 boards stop after 3 passes and nekoink after 4. magtag oscillates at 1.3 µm per pass up to the 8-pass cap, below the 2 µm requirement margin.
-- **Why branches stay.** 4,135 attempts gained nothing, mostly branches already straight between their ends (counted once per pass). 861 were locked: the bridge's repair loop locks its joins. 665 already broke a clearance (cm4 alone has 249 clearance errors). Only 20 failed in the solver (insert limit, not in free space) and 12 failed the final `Space` check.
-- **Diff pairs.** 710 P/N branch pairs were tested and none was coupled: Freerouting routes the legs independently, with at most 17 % of a leg at constant pitch, except cm4's E0_TR1/TR2 at 96 %. Those two already break a clearance, so they stay as they are. The coupled mode is shown on a synthetic pair in the board test: shorter, pitch 0.5 ± 0.02 mm, skew not worse.
-- **Gate.** Two boards needed reverts. lenaschimmel had a starved thermal at J5/J7 that could not be attributed: 23 of 43 nets came back, and the recovery added 1. ubertooth had 3 clearances named, and 4 nets came back. Every other board was kept on the first DRC run.
-- **Power copper on arcs.** The power-copper pass planned 96 arc widenings over 10 boards, all checked exactly. Widening, ground vias and stitching behaved as on the input; with power copper alone on the input, its counts are within a few per board.
-- **Pours.** In the `refill` variant, other nets' fills are not obstacles. Copper was 1.1-3.2 % shorter on 4 boards (dream117er −2.5 %, secsense −3.2 %). On 4 others the gate reverted 18-45 nets (starved thermals), so overall it is slightly longer: 18.86 m against 18.82 m with pours held. `hold` stays the default ([kae-power-copper](kae-power-copper.md): "rails may not cut ground pours").
-- **Runtime.** The taut pass took 6-122 s per board: setup (export, brief, space) 2-27 s, passes 0.1-71 s, the rest KiCad DRC. Power copper took 6-179 s.
+- **DRC never worse.** Errors stayed at 936 over the 12 boards; unconnected went 114 → 112 (nekoink: taut copper now runs over a same-net pad). With power copper: 934 errors, 112 unconnected. KiCad's `solder_mask_bridge` count moves by ±2 between runs on cm4 (612 / 605 / 607 seen); the gate takes each run as it comes.
+- **Length.** Signal −5.3 % (15.25 → 14.43 m), power −1.1 %, ground −1.4 %, all copper −4.4 % (19.70 → 18.84 m). Part of it is copper inside lands (the pad trim's share); the [topological-routing](../../topics/routing/topological-routing.md) estimate for straightening a fixed topology is about 5 %.
+- **Corners and acute angles.** Corners fell 5,608 → 3,504 (−38 %); arc-tangent joints are G1 and not counted. Acute corners went 85 → 63, acute pad entries 114 → 90, and oblique entries 623 → 513. No branch gets more acute corners than it had: on redbot, perpendicular tails into pads behind the path first made 140-174° hairpins, so candidates now rank by acute corners first.
+- **Optimality.** 1,706 branches carry the certificate: G1, positive wraps, and the window untouched. 51 needed an atom inserted after the exact check and 11 got a Dubins start or end. 123 more were only trimmed (fallback).
+- **Convergence.** Pass 0 gave 933 of the 967 mm gained. Pass 1 gave 0.03-28 mm per board, pass 2 nothing. Ten boards stop after 3 passes and nekoink after 4. magtag oscillates at 1 µm per pass up to the 8-pass cap, below the 2 µm requirement margin.
+- **Why branches stay.**
+  - 4,143 attempts gained nothing: mostly branches already straight between their ends, counted once per pass.
+  - 861 were locked: the bridge's repair loop locks its joins.
+  - 665 already broke a clearance (cm4 has 249 clearance errors).
+  - 8 failed in the solver and 12 failed the final `Space` check.
+- **Diff pairs.** 710 P/N branch pairs were tested and none was coupled. Freerouting routes the legs independently: at most 17 % of a leg runs at constant pitch, except cm4's E0_TR1/TR2 at 96 %, and those break a clearance already. The coupled mode is shown on a synthetic pair (board test): shorter, pitch 0.5 ± 0.02 mm, skew not worse.
+- **Gate.**
+  - lenaschimmel: a starved thermal at J5/J7 could not be attributed; 23 of 43 nets came back, recovery added 1.
+  - ubertooth: 3 named clearances; 4 nets came back.
+  - cm4: 2 mask bridges; 17 nets came back.
+  - Every other board passed on the first DRC run.
+- **Power copper on arcs.** 96 arcs were widened over 10 boards, all checked exactly. Ground vias and stitching behaved as on the input.
+- **Pours.** With the `refill` variant (other nets' fills ignored), copper was 1.1-3.2 % shorter on 4 boards (secsense −3.2 %, dream117er −2.5 %). On 4 others the gate reverted 18-45 nets for starved thermals, so the total is slightly longer: 18.86 m vs 18.84 m. `hold` stays the default (power copper: "rails may not cut ground pours").
+- **Runtime.** Taut took 6-125 s per board: setup 2-29 s, passes 0.1-73 s, the rest KiCad DRC. Power copper took 6-346 s.
 
 PHYSICS_SECTION
 

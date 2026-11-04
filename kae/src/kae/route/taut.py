@@ -430,7 +430,6 @@ class Taut:
                     # the branch breaks this clearance already (an input DRC error): moving it
                     # could repeat the error along the item, so it stays as it is
                     self._input_bad = True
-                    self._bad_why = (it.kind, round(nd - (d_in - it.r - half), 4))
                 # the input keeps the clearance with less than the margin (a gap exactly one track
                 # wide): the branch may use the input's own distance, never less than the rule
                 d_edge = max(nd, min(self._item_gap(it, net, layer), d_in - it.r - half))
@@ -552,9 +551,19 @@ class Taut:
         return w >= 0.4 or w > opt + 1e-6
 
     def tails(self, net, layer, w, pts):
-        """Candidate tails at the start of pts (which begins in a pad of net): [(tail points from
-        the pad end to the anchor, anchor, perpendicular, index into pts of the first kept point,
-        connector)] best first; [] when the start is no pad end."""
+        """Candidate tails at the start of pts (which begins in a pad of net), pad-entry rule D:
+        every track ends on the pad's long centre line (the segment along the long axis, (w - h)/2
+        each side of the centre; a square or round pad's centre; a stadium's end-circle centres),
+        and the piece crossing the pad outline is within 10 degrees of the outline's normal.
+        [(tail points from the end to the anchor, anchor, square, index into pts of the first kept
+        point, connector, pad to check a direct entry against)]; [] when the start is no pad end:
+        - direct: the path runs straight to the nearest centre-line point (no tail; kept only when
+          its crossing turns out square, checked in tighten);
+        - square through the long edge to the centre line, or along the axis through the short
+          edge to the centre line's end (a round pad: radially to its centre); the anchor is one
+          track width outside the outline, the turn there becomes a tangent arc (_fillet_anchors);
+        - the input's own tail as the fallback.
+        Current-carrying tracks end at least a width inside the outline they cross."""
         pd = self._pad_at(net, layer, pts[0])
         if pd is None:
             return []
@@ -565,7 +574,6 @@ class Taut:
         k = next((i for i, p in enumerate(pts) if not fat.contains(Point(p))), None)
         if k is None:
             return None            # the branch never leaves the pad
-        out = []
         stub = max(w, 0.1)
         c = PE.crossing(pad, pts[k], pts[k - 1]) or pts[k - 1]
         seg_out = math.dist(c, pts[k])
@@ -573,40 +581,48 @@ class Taut:
         ang = PE.entry_angle(pad, pts[k], pts[k - 1])
         orig_anchor = (c[0] + d[0] * min(stub, seg_out), c[1] + d[1] * min(stub, seg_out))
         orig_tail = list(pts[:k]) + [orig_anchor]
-        from . import constraints as CN
-        ovl = float(CN.setting("pad_entry_overlap", self.path))
-        cur = self._current(net, w)
-        if not (cur and self.o["rails"] == "centre") and seg_out > 1e-9:
-            # a signal ends `pad_entry_overlap` inside the edge it crosses, along its own axis
-            e_in = (c[0] - d[0] * ovl, c[1] - d[1] * ovl)
-            if pad.buffer(1e-6).contains(Point(e_in)):
-                orig_tail = [e_in, orig_anchor]
         perp_orig = ang is not None and ang <= self.o["max_angle"] and seg_out >= stub - 1e-9
-        bga = self._bga(pd)
-        via_in_pad = any(v.geom.distance(pd.geom) <= 1e-6 for v in self.vias if v.net == net)
-        if perp_orig or bga or via_in_pad or not self.o["pad_tails"]:
-            out.append((orig_tail, orig_anchor, perp_orig, k, None))
-            return out
-        centre = pd.pos or (pad.centroid.x, pad.centroid.y)
-        for a, end, u, facing in PE.approach_targets(pad, centre, pts[k], w, ovl, current=cur, stub=stub, max_targets=3):
-            if cur and self.o["rails"] == "centre":
-                # rails keep their end where it is when it lies on the entry's normal line, or
-                # deeper in the land than the entry (a dog-leg inside the land is same-net copper);
-                # an end nearer the edge than that moves to the entry's end (a width deep)
-                e_ = (a[0] + stub * u[0], a[1] + stub * u[1])
-                depth0 = (pts[0][0] - e_[0]) * u[0] + (pts[0][1] - e_[1]) * u[1]
-                off = abs((pts[0][0] - a[0]) * -u[1] + (pts[0][1] - a[1]) * u[0])
-                depth = (end[0] - e_[0]) * u[0] + (end[1] - e_[1]) * u[1]
-                if off < 1e-4 and depth0 > 0:
-                    tail = [pts[0], a]
-                elif depth0 >= depth - 1e-9:
-                    tail = [pts[0], end, a]
-                else:
-                    tail = [end, a]
-            else:
-                tail = [end, a]
-            out.append((tail, a, True, k, orig_anchor))
-        out.append((orig_tail, orig_anchor, False, k, None))
+        fallback = (orig_tail, orig_anchor, perp_orig, k, None, None)
+        if self._bga(pd) or any(v.geom.distance(pd.geom) <= 1e-6 for v in self.vias if v.net == net) \
+                or not self.o["pad_tails"]:
+            return [fallback]
+        fr = _pad_frame(pad)
+        if fr is None:
+            return [fallback]
+        ctr, u, L, H, round_ = fr
+        cur = self._current(net, w)
+        vx, vy = -u[1], u[0]
+
+        def world(x, y):
+            return (ctr[0] + x * u[0] + y * vx, ctr[1] + x * u[1] + y * vy)
+        R = pts[k]
+        rx = (R[0] - ctr[0]) * u[0] + (R[1] - ctr[1]) * u[1]
+        ry = (R[0] - ctr[0]) * vx + (R[1] - ctr[1]) * vy
+        half = max(0.0, (L - H) / 2)
+        out = []
+        if round_:
+            n = math.hypot(R[0] - ctr[0], R[1] - ctr[1])
+            if n > 1e-9:
+                dx, dy = (R[0] - ctr[0]) / n, (R[1] - ctr[1]) / n
+                e = PE.crossing(pad, R, ctr) or ctr
+                a = (e[0] + stub * dx, e[1] + stub * dy)
+                out.append(([ctr, a], a, True, k, orig_anchor, None))
+        else:
+            x_c = max(-half, min(half, rx))
+            sy = 1.0 if ry >= 0 else -1.0
+            sx = 1.0 if rx >= 0 else -1.0
+            # through the long edge, square, to the centre line
+            a = world(x_c, sy * (H / 2 + stub))
+            out.append(([world(x_c, 0.0), a], a, True, k, orig_anchor, None))
+            # along the axis through the short edge, to the centre line's end (a width deep for
+            # current-carrying copper)
+            xe = min(half, L / 2 - stub) if cur else half
+            a = world(sx * (L / 2 + stub), 0.0)
+            out.append(([world(sx * max(0.0, xe), 0.0), a], a, True, k, orig_anchor, None))
+        # direct to the nearest centre-line point, when the crossing is square (checked after the solve)
+        e_d = ctr if round_ else world(max(-half, min(half, rx)), 0.0)
+        out.append(([e_d], e_d, True, k, orig_anchor, pad))
+        out.append(fallback)
         return out
 
     # ---------------------------------------------------------------- one branch
@@ -618,12 +634,9 @@ class Taut:
         if heads is None or tails is None:
             return None
         if not heads:
-            heads = [([pts[0]], pts[0], True, 1, None)]
-            hfix = True
-        else:
-            hfix = False
+            heads = [([pts[0]], pts[0], True, 1, None, None)]
         if not tails:
-            tails = [([pts[-1]], pts[-1], True, 1, None)]
+            tails = [([pts[-1]], pts[-1], True, 1, None, None)]
         ka, kb = heads[-1][3], tails[-1][3]
         if ka >= len(pts) - kb:
             return None
@@ -664,6 +677,11 @@ class Taut:
                     r = bs.solve(mid)
                     if r is None:
                         fails.append(bs.fail)
+                        continue
+                    # a direct entry counts only when the piece crossing the outline is square
+                    if h[5] is not None and not _square_entry(h[5], r.pieces, 0, self.o["max_angle"]):
+                        continue
+                    if t[5] is not None and not _square_entry(t[5], r.pieces, 1, self.o["max_angle"]):
                         continue
                     r = _fillet_anchors(r, h[0], t[0], w, bs.check)
                     L = r.length + _plen(h[0]) + _plen(t[0])
@@ -1133,6 +1151,42 @@ def _heading(p, end):
     return G._heading(p, end)
 
 
+def _pad_frame(pad):
+    """(centre, unit long axis, length L, width H, round) of a pad polygon from its minimum rotated
+    rectangle; round when its area is a disc's. None for shapes the rule cannot frame (a centre
+    line outside the copper)."""
+    mrr = pad.minimum_rotated_rectangle
+    if mrr.geom_type != "Polygon":
+        return None
+    cs = list(mrr.exterior.coords)[:4]
+    e1 = (cs[1][0] - cs[0][0], cs[1][1] - cs[0][1])
+    e2 = (cs[2][0] - cs[1][0], cs[2][1] - cs[1][1])
+    l1, l2 = math.hypot(*e1), math.hypot(*e2)
+    if min(l1, l2) < 1e-6:
+        return None
+    (ex, ey), L, H = (e1, l1, l2) if l1 >= l2 else (e2, l2, l1)
+    u = (ex / L, ey / L)
+    c = mrr.centroid
+    ctr = (c.x, c.y)
+    round_ = abs(L - H) < 0.02 * L and abs(pad.area - math.pi * L * L / 4) < 0.05 * pad.area
+    half = (L - H) / 2
+    for x in (-half, half):
+        if not pad.buffer(1e-6).contains(Point(ctr[0] + x * u[0], ctr[1] + x * u[1])):
+            return None
+    return ctr, u, L, H, round_
+
+
+def _square_entry(pad, pieces, end, max_angle):
+    """Whether the path's piece that crosses the pad outline (at its start: end 0, else at its end)
+    is a segment within max_angle of the outline's normal."""
+    p = pieces[0] if end == 0 else pieces[-1]
+    if p[0] != "seg":
+        return False
+    a, b = (p[2], p[1]) if end == 0 else (p[1], p[2])      # outside -> inside
+    ang = PE.entry_angle(pad, a, b)
+    return ang is not None and ang <= max_angle
+
+
 def _of_net(ob, net):
     k = ob.key[0]
     if isinstance(k, tuple) and k and k[0] == "fill":
@@ -1183,10 +1237,11 @@ def _sub_line(line, a, b):
 
 
 def _fillet_anchors(r, head, tail, w, check):
-    """Where the taut path leaves a pad tail's anchor at more than 90 degrees to the tail (an acute
-    corner), start it instead with an arc tangent to the tail (radius 2w, w or w/2, the largest that
-    is legal): the path out of the anchor is then the shortest one with that initial heading and
-    turning radius (a Dubins-type start), still the same homotopy class. The same at the far end."""
+    """Where the taut path turns at a pad tail's anchor (pad-entry rule D: the turn before the
+    entry is a tangent arc, not a corner), start it instead with an arc tangent to the tail (radius
+    1.5w, w or w/2, the largest that is legal and makes no acute corner): the path out of the
+    anchor is then the shortest one with that initial heading and turning radius (a Dubins-type
+    start), still the same homotopy class. The same at the far end."""
     nodes = list(r.nodes)
     changed = False
     for end in (0, 1):
@@ -1201,10 +1256,10 @@ def _fillet_anchors(r, head, tail, w, check):
         else:
             h_path = _heading(r.pieces[-1], 1) + math.pi      # reversed: leaving the far anchor
             turn = A.norm_angle(h_path - hd)
-        if abs(turn) <= math.pi / 2 + 1e-9:
+        if abs(turn) <= math.radians(1.0):
             continue
         sgn = 1 if turn > 0 else -1
-        for rho in (2 * w, w, w / 2):
+        for rho in (1.5 * w, w, w / 2):
             # circle tangent to the tail at the anchor, on the side the path turns to
             Lx, Ly = -math.sin(hd), math.cos(hd)
             c = (a[0] + sgn * rho * Lx, a[1] + sgn * rho * Ly)
