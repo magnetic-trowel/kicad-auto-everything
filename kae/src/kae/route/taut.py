@@ -634,7 +634,9 @@ class Taut:
         # the plain trim: the input's own path with each pad tail cut to its entry (pad_trim's cut,
         # perpendicular where the input already was); a fallback when no taut path is found
         h0, t0 = heads[-1], tails[-1]
-        if h0[4] is None and t0[4] is None:
+        if h0[4] is None and t0[4] is None and all(r["mid"] is None for r in recs):
+            # (a branch with arcs is a taut result already: its sampled arcs must not come back
+            # as segments)
             mid = _dedupe([h0[1]] + list(pts[h0[3]:len(pts) - t0[3]]) + [t0[1]])
             pieces = _tail_pieces(h0[0]) + _tail_pieces(mid) + _tail_pieces(t0[0][::-1])
             cands.append(((0 if (h0[2] and t0[2]) else 1, _acute_corners(pieces), G.path_length(pieces)),
