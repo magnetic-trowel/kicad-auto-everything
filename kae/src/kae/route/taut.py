@@ -693,7 +693,7 @@ class Taut:
             # as segments)
             mid = _dedupe([h0[1]] + list(pts[h0[3]:len(pts) - t0[3]]) + [t0[1]])
             pieces = _tail_pieces(h0[0]) + _tail_pieces(mid) + _tail_pieces(t0[0][::-1])
-            cands.append(((_acute_corners(pieces), over_in, 0 if (h0[2] and t0[2]) else 1, G.path_length(pieces)),
+            cands.append(((_acute_corners(pieces), 0 if (h0[2] and t0[2]) else 1, over_in, G.path_length(pieces)),
                           pieces, G.path_length(pieces), None, [w] * len(pieces)))
         fails = []
         input_bad = False
@@ -735,7 +735,7 @@ class Taut:
                     widths = [h[6] or w] * len(hp) + [w] * len(r.pieces) + [t[6] or w] * len(tp)
                     ov = sum(int(bool(x[7])) if x[7] is not None else
                              int(_direct_overhangs(x[5], r.pieces, e, w)) for x, e in ((h, 0), (t, 1)))
-                    got.append(((_acute_corners(pieces), ov, 0 if (h[2] and t[2]) else 1, L), pieces, L, r, widths))
+                    got.append(((_acute_corners(pieces), 0 if (h[2] and t[2]) else 1, ov, L), pieces, L, r, widths))
             if not got and "apex unmapped" in fails and grow < 4:
                 continue                  # the funnel ran along the window: a larger one
             if got and not all(g[3].certificate.get("window", True) for g in got) and grow < 4:
@@ -747,10 +747,11 @@ class Taut:
         # is shorter than the input and passes the board's exact check
         acute_in = _acute_corners(_tail_pieces(pts))     # never more acute corners than the input had
         # shorter than the input; or, where it takes copper off a land the input hung past, at most
-        # pad_reroute's length limit longer. Never more acute corners or overhanging entries.
-        ok = sorted((c for c in cands if c[0][0] <= acute_in and c[0][1] <= over_in and
+        # pad_reroute's length limit longer. Never more acute corners or overhanging entries; ranked
+        # by acute corners, square entries, overhanging entries, length.
+        ok = sorted((c for c in cands if c[0][0] <= acute_in and c[0][2] <= over_in and
                      (c[2] < old_len - self.o["min_gain"] or
-                      (c[0][1] < over_in and c[2] <= old_len * (1 + LEN_REL) + LEN_ABS))), key=lambda c: c[0])
+                      (c[0][2] < over_in and c[2] <= old_len * (1 + LEN_REL) + LEN_ABS))), key=lambda c: c[0])
         if not ok:
             self._skip("input breaks a clearance" if input_bad else
                        ("no gain" if cands else "solve: " + (fails[0] if fails else "tails illegal")))
@@ -763,19 +764,19 @@ class Taut:
             self._skip("space check")
             return None
         st = self.stats.setdefault("certificate", dict(g1=0, window=0, fillet=0, inserted=0, perpendicular=0, trim_only=0))
-        st["perpendicular"] += score[2] == 0
+        st["perpendicular"] += score[1] == 0
         necks = sum(1 for x in (widths[0], widths[-1]) if x < w - 1e-9) if len(widths) > 1 else int(widths[0] < w - 1e-9)
         if r is None:
             st["trim_only"] = st.get("trim_only", 0) + 1
             return dict(pieces=pieces, widths=widths, length=L, old=old_len, cert={}, inserted=0, score=score, necks=0,
-                        over=score[1], over_in=over_in)
+                        over=score[2], over_in=over_in)
         cert = r.certificate
         st["g1"] += bool(cert.get("g1"))
         st["window"] += bool(cert.get("window", True))
         st["fillet"] += bool(cert.get("fillet"))
         st["inserted"] += r.inserted
         return dict(pieces=pieces, widths=widths, length=L, old=old_len, cert=cert, inserted=r.inserted, score=score,
-                    necks=necks, over=score[1], over_in=over_in)
+                    necks=necks, over=score[2], over_in=over_in)
 
     def _exact_ok(self, net, layer, w, pieces):
         """The board's exact check (critical_space.Space, the chain's own copper is the same net), an
