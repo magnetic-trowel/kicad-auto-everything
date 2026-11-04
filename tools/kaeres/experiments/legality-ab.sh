@@ -25,7 +25,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 K="python3 tools/kaeres/kaeres.py"
-SHA=${SHA:?commit of decide-legality}
+SHA=${SHA:-680c30ebb0c960d2d6f2b240baf2c09e1d648c9e}  # decide-2611; the 2026-11 run uses decide-ab.sh
 KAE=(--code kae=.@$SHA)
 H=(--harness $SHA)
 arm() {  # NAME SEVERITY RELAX

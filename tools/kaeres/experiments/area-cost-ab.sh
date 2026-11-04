@@ -18,7 +18,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 K="python3 tools/kaeres/kaeres.py"
-SHA=${SHA:?commit of decide-intent-circuit}
+SHA=${SHA:-680c30ebb0c960d2d6f2b240baf2c09e1d648c9e}  # decide-2611 (decide-ab.sh tier 2 calls this)
 KAE=(--code kae=.@$SHA)
 FORK="$HOME/.cache/kaebench/kae-freerouting-fork-2e1125a/bin/freerouting"
 arm() {  # AREA
