@@ -96,9 +96,15 @@ computing them again. The setting is in `experiment.json` (`env`), not in any me
 change; only result-neutral settings are accepted there. Methods need a harness commit whose sandbox binds
 the cache directory (kaebench `Sandbox`) and whose `restart.py` charges cached time.
 
-- Results do not change: Freerouting is cached only when it stopped by itself, and DRC only when it wrote
-  its report within its timeout. A hit costs its recorded duration: kae's clock and `restart.py`'s budgets,
-  holds and kills count it as if the step had run.
+- Keys are content only (input bytes, tool, settings), never experiment or run paths, so any later A/B on the
+  same input hits too. A Freerouting run that stopped by itself replays under any job timeout it fits in; one
+  that stopped at its job timeout replays under that timeout. A DRC replays when it fits in its timeout. A
+  hit costs its recorded duration: kae's clock and `restart.py`'s budgets, holds and kills count it as if
+  the step had run.
+- Fork points: each attempt's board after Freerouting's import (with the raw session), after repair and last
+  mile, and at its end, keyed by input, seed, budget, options and the kae source (`stepcache.find_fork`).
+- Size: at most `KAE_STEP_CACHE_MAX_GB` (default 50), gzip blobs deduplicated by content; past the cap the
+  least recently used entries go, never one a job is reading. `python -m kae.route.stepcache stats|prune`.
 - `run.json` → `work.step_cache` holds hits, misses, uncacheable steps, charged and saved seconds and the
   real wall time; `wall_s` is charged time.
 - Put the cache on local disk, never the NFS home. Delete it any time; nothing else depends on it.
