@@ -71,9 +71,9 @@ Physics total (mW_eq, sum of the intent's terms). Two variants: rails cut a widt
 | adafruit magtag | 26972.5 | 26962.7 | 26983.9 (E1 442.9 → 443.3 mV) |
 | aifryz sensor-hub | 47275.4 | 46937.3 (supply S1/S4/S7 −0.3 to −0.8 %) | pending |
 | lenaschimmel bestelampe | 5237.8 | 5312.7 (supply S0 200.1 → 202.8 mV) | pending |
-| sparkfun redbot | 96538.6 | 96556.4 (S1, S5 +0.1-0.3 %) | pending |
+| sparkfun redbot | 96538.6 | 96556.4 (S1, S5 +0.1-0.3 %) | 96542.9 (copper +0.08 %, S5 206.2 → 206.9 mV) |
 
-With rails cut, the power terms moved by up to 1.3 %, mostly for the worse. With rails left at the centre, 3 of 7 boards are unchanged and the rest move by at most 0.15 % (emission 0.06 dB). That is within the evaluator's grid noise at 0.25 mm pitch.
+With rails cut, the power terms moved by up to 1.3 %, mostly for the worse. With rails left at the centre, 3 of 8 boards are unchanged and the rest move by at most 0.3 % (redbot S5; emission 0.06 dB). That is within the evaluator's grid noise at 0.25 mm pitch.
 
 ### Router A/B (in-router edge ends, pin ties and trim together)
 
