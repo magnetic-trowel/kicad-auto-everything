@@ -65,7 +65,8 @@ DEFAULTS = dict(
     pad_tails=True,          # pad ends get a tail along the edge normal (pad_entry targets)
     max_angle=10.0,          # degrees: an entry within this of the edge normal is perpendicular
     rails="centre",          # rails, grounds and wide tracks keep their centre ends (tail out through the edge middle)
-    pairs="fixed",           # diff pairs: "fixed" (left alone)
+    pairs="coupled",         # diff pairs: "coupled" (a coupled section is tightened as one centreline at
+                             # constant spacing, its ends' headings kept; skew never worse) or "fixed"
     respect_locked=True,
     drc_budget=40,
     eps_topo=3e-3,
@@ -200,13 +201,15 @@ class Taut:
         why = {}
         nets = set(self.board.nets) if not isinstance(self.board.nets, dict) else set(self.board.nets)
         nets = {n for n in nets if n}
+        self.pair_of = {}
         for n in nets:
             if R.diff_base(n) is not None and R.complement_net(n) in nets:
                 why[n] = "diff pair"
+                self.pair_of[n] = R.complement_net(n)
         for dp in self.brief.get("diff_pairs") or []:
-            for k in ("p", "n"):
-                if dp.get(k) in nets:
-                    why[dp[k]] = "diff pair"
+            if dp.get("p") in nets and dp.get("n") in nets:
+                why[dp["p"]] = why[dp["n"]] = "diff pair"
+                self.pair_of[dp["p"]], self.pair_of[dp["n"]] = dp["n"], dp["p"]
         rb = self.sp.rb
         layer = self.sp.cu[0]
         for n in nets:
@@ -232,15 +235,16 @@ class Taut:
         return set(why), why
 
     # ---------------------------------------------------------------- chains
-    def chains(self):
-        """[(net, layer, w, [rec], [(x, y) path], (end kinds))] of movable branches."""
+    def chains(self, only=None):
+        """[(net, layer, w, [rec], [(x, y) path], (end kinds))] of movable branches (of the nets
+        `only`, fixed or not, when given)."""
         sp = self.sp
         by = {}
         for r in self.recs.values():
             by.setdefault((r["net"], r["layer"]), []).append(r)
         out = []
         for (net, layer), rs in by.items():
-            if not net or net in self.fixed_nets:
+            if not net or (net in self.fixed_nets if only is None else net not in only):
                 continue
             ends = {}
             for r in rs:
@@ -387,7 +391,7 @@ class Taut:
             c[k] = math.inf if not len(gs) else max(0.0, float(np.min(shapely.distance(gs, it.geom) - rs)) - it.r)
         return c[k]
 
-    def obstacles(self, net, layer, w, window, orig_line):
+    def obstacles(self, net, layer, w, window, orig_line, skip_nets=()):
         """[Obstacle] for a branch of `net`, width w on `layer` inside `window`; each Obstacle.key =
         (item or tag, R_need) where R_need is the centreline distance the requirement asks."""
         sp = self.sp
@@ -396,6 +400,8 @@ class Taut:
         reach = sp.max_need + w / 2 + 2.5
         half = w / 2
         for it in sp.query(layer, bb, reach):
+            if it.net and it.net in skip_nets:
+                continue
             nd = sp.need(it, net, "track", layer)
             if nd is None:
                 continue
@@ -436,7 +442,7 @@ class Taut:
         if self.o["victims"]:
             for l in self.adj[layer]:
                 for it in sp.query(l, bb, 2.5):
-                    if it.kind != "track":
+                    if it.kind != "track" or it.net in skip_nets:
                         continue
                     gap = self._sensitive_gap(net, it.net, l)
                     if gap is None:
@@ -451,7 +457,7 @@ class Taut:
         # other nets' fills
         if self.o["pours"] == "hold":
             for onet, byl in self.fills.items():
-                if onet == net:
+                if onet == net or onet in skip_nets:
                     continue
                 for poly in byl.get(layer) or []:
                     if poly.distance(window) > reach:
@@ -698,6 +704,192 @@ class Taut:
                 return False
         return True
 
+    # ---------------------------------------------------------------- diff pairs
+    def pairs_pass(self):
+        """Tighten each coupled diff-pair section as a pair: one centreline, legs at its constant
+        offset +-D/2. Yields {net: gain} per pair changed."""
+        seen = set()
+        for p, n in sorted(self.pair_of.items()):
+            if (n, p) in seen or p not in self.pair_of:
+                continue
+            seen.add((p, n))
+            ch = self.chains(only={p, n})
+            for layer in {c[1] for c in ch}:
+                cps = [c for c in ch if c[0] == p and c[1] == layer]
+                cns = [c for c in ch if c[0] == n and c[1] == layer]
+                for cp in cps:
+                    for cn in cns:
+                        if abs(cp[2] - cn[2]) > 1e-6:
+                            continue
+                        self.stats["pairs_tried"] = self.stats.get("pairs_tried", 0) + 1
+                        try:
+                            got = self.tighten_pair(cp, cn)
+                        except Exception as e:      # noqa: BLE001
+                            self._skip(f"pair error {type(e).__name__}")
+                            got = None
+                        if got:
+                            self.stats["pairs_improved"] = self.stats.get("pairs_improved", 0) + 1
+                            yield got
+                            break
+
+    def tighten_pair(self, cp, cn, tol=0.02, step=0.05):
+        net_p, layer, w, recs_p, pts_p, _ = cp
+        net_n, _, _, recs_n, pts_n, _ = cn
+        LP, LN = LineString(pts_p), LineString(pts_n)
+        if LP.length < 1.0 or LN.length < 1.0:
+            return None
+        ss = np.arange(0.0, LP.length + 1e-9, step)
+        P = [LP.interpolate(t) for t in ss]
+        d = np.array([LN.distance(q) for q in P])
+        D = float(np.median(d))
+        if D > 1.5 or D < w:
+            return None
+        self.stats["pairs_coupled"] = self.stats.get("pairs_coupled", 0) + 1
+        ok = np.abs(d - D) <= tol
+
+        def head(L, t):
+            a, b = L.interpolate(max(0.0, t - 0.02)), L.interpolate(min(L.length, t + 0.02))
+            return math.atan2(b.y - a.y, b.x - a.x)
+        # coupled = at the pitch and running parallel (a converging fan-out is at the pitch for a moment)
+        par = np.array([abs(math.sin(head(LP, t) - head(LN, LN.project(q)))) < math.sin(math.radians(2))
+                        for t, q in zip(ss, P)])
+        ok &= par
+        # corners of a coupled pair (mitred or rounded) leave short dips (the legs turn a pitch apart):
+        # close gaps of up to 1.5 pitches
+        gap = int(round(max(0.25, 1.5 * D) / step))
+        idx = np.nonzero(ok)[0]
+        for a_, b_ in zip(idx[:-1], idx[1:]):
+            if 1 < b_ - a_ <= gap + 1:
+                ok[a_:b_] = True
+        # the longest coupled run along P
+        best, cur = (0, -1), None
+        for i, v in enumerate(ok):
+            if v and cur is None:
+                cur = i
+            if (not v or i == len(ok) - 1) and cur is not None:
+                j = i if v else i - 1
+                if j - cur > best[1] - best[0]:
+                    best = (cur, j)
+                cur = None
+        i0, i1 = best
+        if i1 - i0 < 1.0 / step or (i1 - i0 + 1) < 0.6 * len(ss):
+            return None                   # not a coupled pair (Freerouting's pairs mostly are not)
+        s0, s1 = ss[i0], ss[i1]
+
+        def frame(s):
+            a, b = LP.interpolate(max(0.0, s - 0.01)), LP.interpolate(min(LP.length, s + 0.01))
+            t = _ang((a.x, a.y), (b.x, b.y))
+            q = LP.interpolate(s)
+            m = LN.interpolate(LN.project(q))
+            return (q.x, q.y), (m.x, m.y), t
+        p0, n0, t0 = frame(s0)
+        p1, n1, t1 = frame(s1)
+        side = 1 if math.sin(t0) * (n0[0] - p0[0]) * -1 + math.cos(t0) * (n0[1] - p0[1]) < 0 else -1
+        # side = +1: P is on the left of the travel direction (N on the right)
+        m0 = ((p0[0] + n0[0]) / 2, (p0[1] + n0[1]) / 2)
+        m1 = ((p1[0] + n1[0]) / 2, (p1[1] + n1[1]) / 2)
+        mids = [m0]
+        for s in ss[i0 + 1:i1]:
+            q = LP.interpolate(s)
+            m = LN.interpolate(LN.project(q))
+            mids.append(((q.x + m.x) / 2, (q.y + m.y) / 2))
+        mids.append(m1)
+        mids = _dedupe(mids)
+        if len(mids) < 2:
+            return None
+        weff = w + D
+        cline = LineString(mids)
+        window = G.convex_window(list(pts_p) + list(pts_n), self.o["margin_win"])
+        self._floors = {}
+        self._input_bad = False
+        obs = self.obstacles(net_p, layer, weff, window, cline, skip_nets={net_n})
+        if self._input_bad:
+            self._skip("pair: input breaks a clearance")
+            return None
+        # the partner's requirements too (a pad of a third net may need more from N than from P)
+        obs_n = self.obstacles(net_n, layer, weff, window, cline, skip_nets={net_p})
+        if self._input_bad:
+            self._skip("pair: input breaks a clearance")
+            return None
+        obs = obs + obs_n
+        bs = G.BranchSpace(obs, window, None, eps_topo=self.o["eps_topo"], check=self.checker(obs, weff), slack=MARGIN)
+        r = bs.solve(mids)
+        if r is None:
+            self._skip("pair: " + str(bs.fail))
+            return None
+        # keep the section's end headings (the legs then meet the fixed fan-outs): Dubins-type
+        # start and end arcs where the free path would turn at an end
+        best = None
+        rho = D / 2 + w / 2 + 0.05
+        for s_a in (0, 1, -1):
+            for s_b in (0, 1, -1):
+                nodes = [G.Wrap(m0)]
+                if s_a:
+                    nodes.append(G.Wrap((m0[0] - s_a * rho * math.sin(t0), m0[1] + s_a * rho * math.cos(t0)), rho, s_a, 1.0))
+                nodes += r.nodes[1:-1]
+                if s_b:
+                    nodes.append(G.Wrap((m1[0] - s_b * rho * math.sin(t1), m1[1] + s_b * rho * math.cos(t1)), rho, s_b, 1.0))
+                nodes.append(G.Wrap(m1))
+                pieces, kept, _ = G.solve_wraps(nodes)
+                if pieces is None or bs.check(pieces):
+                    continue
+                if abs(A.norm_angle(_heading(pieces[0], 0) - t0)) > 1e-6 or abs(A.norm_angle(_heading(pieces[-1], 1) - t1)) > 1e-6:
+                    continue
+                L = G.path_length(pieces)
+                if best is None or L < best[0]:
+                    best = (L, pieces)
+        if best is None:
+            self._skip("pair: end headings")
+            return None
+        cpieces = best[1]
+        legs = {}
+        for net, o, recs, pts, L0 in ((net_p, side * D / 2, recs_p, pts_p, LP), (net_n, -side * D / 2, recs_n, pts_n, LN)):
+            leg = _offset(cpieces, o)
+            if leg is None:
+                self._skip("pair: offset")
+                return None
+            if net == net_p:
+                a_s, b_s = s0, s1
+            else:
+                a_s, b_s = LN.project(Point(n0)), LN.project(Point(n1))
+            head = _sub_line(L0, 0.0, a_s)
+            tail = _sub_line(L0, b_s, L0.length)
+            pieces = _tail_pieces(head + [A.piece_ends(leg[0])[0]]) + leg + _tail_pieces([A.piece_ends(leg[-1])[1]] + tail)
+            pieces = _merge_tiny(pieces)
+            legs[net] = (pieces, recs, L0.length)
+        # skew never worse (the legs differ by D x the net turning, fixed by the kept headings)
+        dl_old = legs[net_p][2] - legs[net_n][2]
+        dl_new = G.path_length(legs[net_p][0]) - G.path_length(legs[net_n][0])
+        if abs(dl_new) > abs(dl_old) + 5e-3:
+            self._skip("pair: skew")
+            return None
+        gain = {k: v[2] - G.path_length(v[0]) for k, v in legs.items()}
+        if sum(gain.values()) < 2 * self.o["min_gain"]:
+            self._skip("pair: no gain")
+            return None
+        # exact checks with both nets' old copper out of the way
+        olds = [self.item_of[r["uuid"]] for k in legs for r in legs[k][1] if r["uuid"] in self.item_of]
+        self._remove(olds)
+        try:
+            for k, (pieces, _, _) in legs.items():
+                for pc in pieces:
+                    for it, dd, nd in A.polyline_violations(self.sp, k, layer, w, A.piece_coords(pc)):
+                        fl = self._floors.get(id(it)) if it != "edge" else None
+                        if it != "edge" and it.net in legs:
+                            continue          # the partner's old copper (both move)
+                        if fl is not None and dd >= fl - 1e-6:
+                            continue
+                        self._skip("pair: space check")
+                        return None
+        finally:
+            for it in olds:
+                for l in it.layers:
+                    self.sp.items[l].append(it)
+                self.sp.invalidate()
+        for k, (pieces, recs, _) in legs.items():
+            self.apply(k, layer, w, recs, pieces)
+        return gain
+
     # ---------------------------------------------------------------- apply
     def apply(self, net, layer, w, recs, pieces):
         sp = self.sp
@@ -759,6 +951,11 @@ class Taut:
                 self.apply(net, layer, w, recs, got["pieces"])
                 gain[net] = gain.get(net, 0.0) + got["old"] - got["length"]
                 n_imp += 1
+            if self.o["pairs"] == "coupled" and self.pair_of:
+                for got in self.pairs_pass():
+                    for net in got:
+                        gain[net] = gain.get(net, 0.0) + got[net]
+                    n_imp += 1
             tot = sum(gain.values())
             mx = max(gain.values()) if gain else 0.0
             self.stats["passes"].append(dict(branches=len(chains), improved=n_imp, gain_mm=round(tot, 4),
@@ -783,6 +980,8 @@ class Taut:
             if net in done or net not in self.changed_nets:
                 continue
             done.add(net)
+            if net in self.pair_of and self.pair_of[net] in self.changed_nets:
+                todo.append(self.pair_of[net])        # a pair is kept or reverted together
             rm = [r for r in self.recs.values() if r["net"] == net]
             for r in rm:
                 self.recs.pop(r["uuid"])
@@ -890,6 +1089,55 @@ def _deflect(a, b, c):
 
 def _heading(p, end):
     return G._heading(p, end)
+
+
+def _of_net(ob, net):
+    k = ob.key[0]
+    if isinstance(k, tuple) and k and k[0] == "fill":
+        return k[1] == net
+    if isinstance(k, tuple) and k and k[0] == "adj":
+        return False
+    return getattr(k, "net", None) == net
+
+
+def _offset(pieces, o):
+    """The tangent/arc path offset by o to its left (o < 0: right): segments shifted along their
+    left normal, arcs about the same centre at radius r - o (counter-clockwise) or r + o."""
+    out = []
+    for p in pieces:
+        if p[0] == "seg":
+            h = _ang(p[1], p[2])
+            nx, ny = -math.sin(h) * o, math.cos(h) * o
+            out.append(("seg", (p[1][0] + nx, p[1][1] + ny), (p[2][0] + nx, p[2][1] + ny)))
+        else:
+            _, c, r, a0, sw = p
+            rr = r - o if sw > 0 else r + o
+            if rr <= 1e-6:
+                return None
+            out.append(("arc", c, rr, a0, sw))
+    # one shared point per joint
+    for i in range(1, len(out)):
+        e = A.piece_ends(out[i - 1])[1]
+        if out[i][0] == "seg":
+            out[i] = ("seg", e, out[i][2])
+    return out
+
+
+def _sub_line(line, a, b):
+    """Points of `line` between arc lengths a and b (both ends included)."""
+    if b - a < 1e-9:
+        q = line.interpolate(a)
+        return [(q.x, q.y)]
+    cs = list(line.coords)
+    out = [tuple(line.interpolate(a).coords[0])]
+    acc = 0.0
+    for p, q in zip(cs[:-1], cs[1:]):
+        L = math.dist(p, q)
+        if a < acc + L - 1e-12 and acc + L < b - 1e-12:
+            out.append(tuple(q))
+        acc += L
+    out.append(tuple(line.interpolate(b).coords[0]))
+    return _dedupe(out)
 
 
 def _fillet_anchors(r, head, tail, w, check):

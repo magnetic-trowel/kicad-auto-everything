@@ -233,7 +233,9 @@ def _detour_board(tmp_path):
     extra = [_tp("TP1", "SIGA", 103.0, 103.0), _tp("TP2", "SIGA", 118.0, 103.0),
              _tp("TP3", "USB_D+", 121.0, 103.0), _tp("TP4", "USB_D+", 137.0, 103.0),
              _tp("TP5", "USB_D-", 121.0, 105.0), _tp("TP6", "USB_D-", 137.0, 105.0),
-             _tp("TP7", "LEN1", 103.0, 105.0), _tp("TP8", "LEN1", 118.0, 105.0)]
+             _tp("TP7", "LEN1", 103.0, 105.0), _tp("TP8", "LEN1", 118.0, 105.0),
+             _tp("TP9", "ETH_P", 103.0, 128.0), _tp("TP10", "ETH_P", 125.0, 128.0),
+             _tp("TP11", "ETH_N", 103.0, 126.0), _tp("TP12", "ETH_N", 125.0, 126.0)]
     src = F.write_board(tmp_path / "in", extra=extra)
     (src.with_suffix(".kicad_dru")).write_text(
         '(version 1)\n(rule "len1"\n\t(condition "A.NetName == \'LEN1\'")\n\t(constraint length (min 5mm) (max 40mm))\n)\n')
@@ -244,6 +246,15 @@ def _detour_board(tmp_path):
     tracks += path("USB_D+", [(121, 103), (125, 103), (126.4, 101.6), (131.6, 101.6), (133, 103), (137, 103)])
     tracks += path("USB_D-", [(121, 105), (125, 105), (126.4, 103.9), (131.6, 103.9), (133, 105), (137, 105)])
     tracks += path("LEN1", [(103, 105), (107, 105), (108.1, 104.2), (112.9, 104.2), (114, 105), (118, 105)])
+    # a coupled pair (0.5 mm pitch) with a common detour down: tightened as a pair
+    centre = LineString([(105, 127), (108, 127), (109.5, 128.2), (116.5, 128.2), (118, 127), (123, 127)])
+    legs = {}
+    for net, o in (("ETH_N", -0.25), ("ETH_P", 0.25)):      # shapely: positive offsets lie to the left (+y here)
+        g = centre.offset_curve(o, join_style="mitre")
+        cs = [tuple(c) for part in getattr(g, "geoms", [g]) for c in part.coords]
+        legs[net] = [c for k, c in enumerate(cs) if k == 0 or math.dist(c, cs[k - 1]) > 1e-9]
+    tracks += path("ETH_N", [(103, 126)] + legs["ETH_N"] + [(125, 126)])
+    tracks += path("ETH_P", [(103, 128)] + legs["ETH_P"] + [(125, 128)])
     out = tmp_path / "routed" / "board.kicad_pcb"
     out.parent.mkdir()
     W.append_items(src, out, tracks=tracks)
@@ -286,7 +297,21 @@ def test_taut_board_pass(tmp_path):
     # a diff pair and a length-ruled net are untouched
     for net in ("USB_D+", "USB_D-", "LEN1"):
         assert tracks(after, net) == tracks(before, net), net
-    assert rep["fixed"].get("diff pair") == 2 and rep["fixed"].get("length rule") == 1
+    assert rep["fixed"].get("diff pair") == 4 and rep["fixed"].get("length rule") == 1
+    # the coupled pair: shorter, still at its pitch along the coupled section, skew not worse
+    if "ETH_P" in rep["nets_changed"]:
+        assert "ETH_N" in rep["nets_changed"]
+        assert length(after, "ETH_P") < length(before, "ETH_P")
+        skew0 = abs(length(before, "ETH_P") - length(before, "ETH_N"))
+        skew1 = abs(length(after, "ETH_P") - length(after, "ETH_N"))
+        assert skew1 <= skew0 + 5e-3
+        lp = LineString([p for t in after.tracks if t.net == "ETH_P" for p in A.track_coords(t)])
+        ln = [t for t in after.tracks if t.net == "ETH_N"]
+        for t in ln:
+            for q in A.track_coords(t)[1:-1]:
+                if 106 < q[0] < 122:
+                    assert lp.distance(Point(q)) == pytest.approx(0.5, abs=0.02)
+    assert rep["stats"].get("pairs_improved", 0) >= 1
 
 
 def test_fillet_turns_an_acute_anchor_into_a_tangent_arc():
