@@ -345,3 +345,13 @@ def test_reroute_plan_on_a_fixture_board_arrives_along_the_normal(tmp_path):
             assert not sp.track_violations("FA", "F.Cu", 0.25, u, v)
         out = RR.write(text, [ch])
         assert len(PT._segments(out)) >= 2
+
+
+def test_chain_releases_at_a_t_junction_mid_segment():
+    from kae.route import pad_reroute as RR
+    s1 = dict(uuid="1", net="N", layer="F.Cu", w=0.2, a=(0.0, 0.0), b=(4.0, 0.0))
+    by = {}
+    for p in (s1["a"], s1["b"]):
+        by.setdefault(("N", "F.Cu", RR._key(p)), []).append(s1)
+    pieces, rel, kind = RR.chain(by, s1, (0.0, 0.0), 3.0, set(), taps=[(0.0, 0.0), (4.0, 0.0), (1.2, 0.05)])
+    assert kind == "split" and abs(rel[0] - 1.2) < 1e-9 and len(pieces) == 1

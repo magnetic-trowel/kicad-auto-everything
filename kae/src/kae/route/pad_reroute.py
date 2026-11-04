@@ -113,11 +113,13 @@ def sliver_ratio(pad, a, b, w):
     return near.area / (w * w) if w > 0 else 0.0
 
 
-def chain(segs_by_node, start_seg, pad_end, R, stop_nodes, at_pad=lambda q: False, tol=TOL):
+def chain(segs_by_node, start_seg, pad_end, R, stop_nodes, at_pad=lambda q: False, taps=(), tol=TOL):
     """Walk from the pad end of `start_seg` outward: [(segment, from point, to point)] and the
     release point. Stops at a node in `stop_nodes` (vias, junctions, arcs, other pads), at a
     width change or a node of degree != 2, or R along the path (the release point then splits a
-    segment). Returns (pieces, release, kind) with kind "node" or "split"."""
+    segment). A track or via of the net that meets a piece between its ends (`taps`: points of
+    the net on the layer, a T-junction) releases there too. Returns (pieces, release, kind) with
+    kind "node" or "split"."""
     pieces, dist = [], 0.0
     s, p = start_seg, pad_end
     w = s["w"]
@@ -125,6 +127,18 @@ def chain(segs_by_node, start_seg, pad_end, R, stop_nodes, at_pad=lambda q: Fals
     while True:
         q = s["b"] if math.dist(s["a"], p) <= tol else s["a"]
         L = math.dist(p, q)
+        if L > tol and taps:
+            ux, uy = (q[0] - p[0]) / L, (q[1] - p[1]) / L
+            hits = []
+            for t in taps:
+                d = (t[0] - p[0]) * ux + (t[1] - p[1]) * uy
+                if tol < d < L - tol and abs((t[0] - p[0]) * uy - (t[1] - p[1]) * ux) <= s["w"] / 2:
+                    hits.append(d)
+            if hits and dist + min(hits) < R:
+                d = min(hits)
+                r = (p[0] + d * ux, p[1] + d * uy)
+                pieces.append((s, p, r))
+                return pieces, r, "split"
         if dist + L >= R - 1e-9:
             t = (R - dist) / L if L > 0 else 0.0
             r = (p[0] + t * (q[0] - p[0]), p[1] + t * (q[1] - p[1]))
@@ -156,6 +170,10 @@ def plan(text, info, sp, gr, overlap=0.05, log=print, deadline=None):
         for p in (s["a"], s["b"]):
             by_node.setdefault((s["net"], s["layer"], _key(p)), []).append(s)
     stop = {_key(v) for v in vias} | {_key(p) for p in _arcs(text)}
+    taps = {}
+    for x in segs:
+        for p in (x["a"], x["b"]):
+            taps.setdefault((x["net"], x["layer"]), []).append(p)
     allpads = PT._pads(info)
     pad_nodes = {}
     for (net, layer), lst in allpads.items():
@@ -205,7 +223,8 @@ def plan(text, info, sp, gr, overlap=0.05, log=print, deadline=None):
                 R = max(3 * w, 1.0) if R0 is None else R0
                 others = [h for h in pad_nodes.get((s["net"], s["layer"]), ()) if not h.within(g.buffer(0.01))]
                 pieces, rel, kind = chain(by_node, s, E, R, stop,
-                                          at_pad=lambda q: any(h.distance(Point(q)) < 1e-6 for h in others))
+                                          at_pad=lambda q: any(h.distance(Point(q)) < 1e-6 for h in others),
+                                          taps=taps.get((s["net"], s["layer"]), ()))
                 if any(x[0]["uuid"] in done for x in pieces):
                     why = "overlap"
                     break
@@ -228,6 +247,16 @@ def plan(text, info, sp, gr, overlap=0.05, log=print, deadline=None):
                                               for p, q in zip(pts[:-1], pts[1:])):
                             why = "style"
                             continue
+                    if any(c2["net"] == s["net"] and c2["layer"] == s["layer"] and not c2.get("joined")
+                           and _key(c2["pts"][-2]) == _key(a) and _key(c2["pts"][-1]) == _key(end) for c2 in changes):
+                        # a second track into the same land meets the first at its approach point
+                        # (no doubled final piece)
+                        pts = pts if len(pts) >= 2 else pts + [a]
+                        got = dict(id=s["uuid"], net=s["net"], layer=s["layer"], w=w, pieces=pieces, release=rel,
+                                   kind=kind, pts=pts, old_len=old_len,
+                                   new_len=sum(math.dist(p, q) for p, q in zip(pts[:-1], pts[1:])), angle_in=ang,
+                                   current=cur, joined=True)
+                        break
                     pts = pts + [end]
                     if not sp_legal(sp, s["net"], s["layer"], w, pts[-2], end):
                         why = "final_piece"
