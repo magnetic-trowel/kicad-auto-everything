@@ -136,6 +136,19 @@ tier1() {
     "kae joint decide control $S7 (restarts)" "kae joint decide control twin $S7 (restarts)"
 }
 
+tier1b() {
+  # ---- P2/P3 follow-up (2026-11-04): tier 1 showed strict gains most legal_strict (+29 pp) but, without
+  # escalation, piles parts into shorts on more boards (13 vs 5); escalate kept shorts at baseline.
+  # strict + escalate is the untested combination. Existing arms are reused (same method ids, no reruns).
+  for kind in place place-fixed; do place "$(lname strict-esc "$kind")" "$kind" strict escalate; done
+  exp legality-ab2-place-down $LB/legality-ab.boards.txt 2 \
+    "P2/P3 follow-up: strict + escalate vs the tier-1 arms on the 113 downgrade boards; kae place at $S7, k=2" \
+    "$(lname old place)" "$(lname strict place)" "$(lname escalate place)" "$(lname strict-esc place)"
+  exp legality-ab2-fixed-down $LB/legality-ab.boards.txt 2 \
+    "P2/P3 follow-up, place-fixed: strict + escalate vs old / strict / level-c; kae place at $S7, k=2" \
+    "$(lname old place-fixed)" "$(lname strict place-fixed)" "$(lname level-c place-fixed)" "$(lname strict-esc place-fixed)"
+}
+
 tier2() {
   # ---- J13 eff_tiebreak: reuses the A/A control's runs
   joint "kae joint decide eff1 $S7 (restarts)" "--set eff_tiebreak=1"
@@ -174,6 +187,7 @@ tier3() {
 exps() {
   case $1 in
     1) echo legality-ab-place-down legality-ab-place-relax legality-ab-place-ctrl legality-ab-fixed-down legality-ab-fixed-relax copper-ab edge-ab2 aa-joint ;;
+    1b) echo legality-ab2-place-down legality-ab2-fixed-down ;;
     2) echo eff-tiebreak-ab keepupright-ab area-cost-ab ;;
     3) echo placement-decide-staged placement-decide-joint ;;
   esac
