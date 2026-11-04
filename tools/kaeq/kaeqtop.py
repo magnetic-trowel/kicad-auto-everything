@@ -110,7 +110,8 @@ def frame(c, cfg, sampler, args, width):
         qv, q = bsys.get("runq_qv", rq), bsys.get("runq_q")
         rc = bsys.get("runq_class") or {}
         L.append(f"     threads ready to run: {rq:.0f} now"
-                 + (f" (queue jobs: timed {rc.get('timed', 0)}, batch {rc.get('batch', 0)})" if rc else "")
+                 + (f" (queue jobs: timed {rc.get('timed', 0)}, batch {rc.get('batch', 0)}, of them at idle priority, "
+                    f"taking only spare CPU: {rc.get('idle', 0)})" if rc else "")
                  + (f", {qv:.0f} at the {q * 100:.0f}th percentile of {cfg.get('runq_window_s', 120) // 60} min (what batch starts go by;"
                     f" last {cfg.get('runq_adapt_s', 300) // 60} min: oversubscribed {bsys.get('runq_over', 0):.0%},"
                     f" CPUs idle while jobs wait {bsys.get('runq_idle', 0):.0%})" if q else "")

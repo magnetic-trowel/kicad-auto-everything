@@ -189,6 +189,11 @@ DEFAULTS = {
     # "full", at least starve_full of the time for starve_s) holds its memory while hardly progressing: it is frozen
     # and compressed into zram, which costs it almost nothing, and thawed once the run queue has room for its CPUs
     "starve_full": 0.5,
+    # fillers: light batch jobs run at SCHED_IDLE (heavy_boost), so they only take CPU nothing else wants. They are
+    # admitted by memory, not by the run queue, while their declared CPUs stay within filler_frac of the CPUs jobs
+    # may use; starved ones are frozen and compressed (starve_*). The run queue that gates normal-priority starts
+    # leaves out idle-priority threads
+    "filler_frac": 1.0,
     "starve_s": 180,
     "timed_preempt_s": 30,   # a timed job that needs memory nobody can give requeues the newest batch job, at most this often
     "lease_hold_frac": 0.1,  # lease: share (batch jobs; frozen and compressed cheaply when short) of a job's unused grant counted as taken (1: grants are reservations;
@@ -1470,6 +1475,7 @@ class Daemon:
         # demand, not just use: when CPUs are saturated, use stops at capacity but threads keep queueing
         rq = runnable_threads()
         self.runq_ema = 0.8 * self.runq_ema + 0.2 * rq
+        rq = max(0.0, rq - self.runq_class.get("idle", 0))      # idle-priority threads take only spare CPUs
         self.runq_hist.append((now, rq, self.cpu_waiting))     # the window behind batch CPU admission
         while self.runq_hist and self.runq_hist[0][0] < now - max(cfg["runq_window_s"], cfg["runq_adapt_s"]):
             self.runq_hist.pop(0)
@@ -1897,8 +1903,8 @@ class Daemon:
                 wait, span = wait + dw, span + dt
         if span:
             self.timed_wait = 0.7 * self.timed_wait + 0.3 * min(1.0, wait / span)
-        if now - self.runq_class_ts >= 10:          # threads ready to run, by class (kaeqtop)
-            self.runq_class_ts, self.runq_class = now, {"timed": 0, "batch": 0}
+        if now - self.runq_class_ts >= 10:          # threads ready to run, by class and by scheduling policy
+            self.runq_class_ts, self.runq_class = now, {"timed": 0, "batch": 0, "idle": 0}
             for j in running:
                 cg = self.cgroups.get(j["id"])
                 if not cg:
@@ -1907,14 +1913,18 @@ class Daemon:
                     tids = open(os.path.join(cg, "cgroup.threads")).read().split()
                 except OSError:
                     continue
-                n = 0
+                n = idle = 0
                 for t in tids:
                     try:
                         with open(f"/proc/{t}/stat") as f:
-                            n += f.read().rpartition(")")[2].split()[0] == "R"
+                            fs = f.read().rpartition(")")[2].split()
+                        if fs[0] == "R":
+                            n += 1
+                            idle += fs[38] == "5"            # SCHED_IDLE
                     except (OSError, IndexError):
                         pass
                 self.runq_class["timed" if (j["qos"] or "timed") == "timed" else "batch"] += n
+                self.runq_class["idle"] += idle
 
     def flush_cpu(self, jid=None):
         rows = [(st["wait_s"], st["stall_s"], st["peak"], k) for k, st in self.cpuj.items() if jid in (None, k)]
@@ -2075,6 +2085,9 @@ class Daemon:
         cpu_room = min(cpu_room, cfg["threads"] - cfg["reserve_cpu"] - quantile(win, q) - fresh)
         queued = c.execute("SELECT * FROM jobs WHERE state='queued' AND not_before<=?", (now,)).fetchall()
         running = c.execute("SELECT * FROM jobs WHERE state='running'").fetchall()
+        pool = len(job_cpus(cfg) or ()) or cfg["threads"] - cfg["reserve_cpu"]
+        fill = [sum(j["cpus"] for j in running if j["qos"] == "batch" and self.is_filler(j, cfg))]
+        filler_ok = lambda j: fill[0] + j["cpus"] <= cfg["filler_frac"] * pool
         per_owner = {}
         for j in c.execute("SELECT owner, COUNT(*) n FROM jobs WHERE state='running' GROUP BY owner"):
             per_owner[j["owner"]] = j["n"]
@@ -2084,7 +2097,9 @@ class Daemon:
             queued.sort(key=lambda j: (-j["prio"], per_owner.get(j["owner"], 0), j["submitted"]))
             fits = lambda j: (self.need_mb(j, cfg) <= mem_room and j["disk_mb"] <= disk_room
                               and (n_running == 0 or (self.timed_cpu_fits(j, cfg, now, running)
-                                                      if (j["qos"] or "timed") == "timed" else j["cpus"] <= cpu_room)))
+                                                      if (j["qos"] or "timed") == "timed"
+                                                      else filler_ok(j) if self.is_filler(j, cfg)
+                                                      else j["cpus"] <= cpu_room)))
             fit = next((j for j in queued if fits(j)), None)
             head = queued[0]
             if fit is not None and fit is not head and now - head["submitted"] > cfg["starve_after_s"]:
@@ -2098,12 +2113,18 @@ class Daemon:
                 break
             queued.remove(fit)
             if self.start(fit, cfg):
+                if fit["qos"] == "batch" and self.is_filler(fit, cfg):
+                    fill[0] += fit["cpus"]
                 mem_room -= self.need_mb(fit, cfg)
                 cpu_room -= fit["cpus"]
                 disk_room -= fit["disk_mb"]
                 n_running += 1
                 started += 1
                 per_owner[fit["owner"]] = per_owner.get(fit["owner"], 0) + 1
+
+    def is_filler(self, j, cfg):
+        """A batch job that runs at SCHED_IDLE (heavy_boost: expected under keep_gb): it takes only spare CPU."""
+        return cfg["heavy_boost"] and (j["qos"] or "timed") == "batch" and self.need_mb(j, cfg) < cfg["keep_gb"] * 1024
 
     def short_owners(self, cfg):
         """Owners whose recent jobs (p90 of the last 50, at least 5) ran within backfill_short_s."""

@@ -316,7 +316,8 @@ def test_no_start_while_threads_queue_for_a_cpu(kq):
         clock[0] += 4000
         return 0, clock[0]
     kq.cpu_ticks = idle_cpus
-    conf = json.load(open(kq.CONF)); conf["runq_window_s"] = 1; json.dump(conf, open(kq.CONF, "w"))   # a short window
+    conf = json.load(open(kq.CONF)); conf.update(runq_window_s=1, heavy_boost=False)   # a short window; no fillers
+    json.dump(conf, open(kq.CONF, "w"))
     d = kq.Daemon()
     submit(kq, "sleep 20", name="busy", qos="batch")
     drive(kq, d, lambda: states(d)["busy"] == "running")  # (with nothing running, one job always starts)
@@ -875,7 +876,8 @@ def test_batch_cpu_admission_needs_a_lasting_dip_and_its_quantile_adapts(kq):
         clock[0] += 4000
         return 0, clock[0]
     kq.cpu_ticks = idle_cpus
-    conf = json.load(open(kq.CONF)); conf.update(threads=64, reserve_cpu=0, runq_window_s=600); json.dump(conf, open(kq.CONF, "w"))
+    conf = json.load(open(kq.CONF)); conf.update(threads=64, reserve_cpu=0, runq_window_s=600, heavy_boost=False)
+    json.dump(conf, open(kq.CONF, "w"))
     d = kq.Daemon()
     kq.runnable_threads = lambda: 0
     submit(kq, "sleep 20", name="busy", qos="batch")
@@ -908,3 +910,26 @@ def test_a_batch_job_starved_of_cpu_is_frozen_compressed_and_thawed_when_there_i
     d.c.execute("UPDATE jobs SET state='cancelled'")
     for i in (1, 2):
         kq.kill_tree(d.c.execute("SELECT pid FROM jobs WHERE id=?", (i,)).fetchone()[0], d.cgroups.get(i))
+
+
+def test_light_batch_jobs_fill_spare_cpus_and_heavy_ones_wait_for_the_run_queue(kq):
+    clock = [0]
+
+    def idle_cpus():
+        clock[0] += 4000
+        return 0, clock[0]
+    kq.cpu_ticks = idle_cpus
+    kq.runnable_threads = lambda: 0
+    conf = json.load(open(kq.CONF)); conf.update(threads=64, reserve_cpu=0, runq_window_s=600, cgroup="off")
+    json.dump(conf, open(kq.CONF, "w"))
+    d = kq.Daemon()
+    submit(kq, "sleep 20", name="busy", qos="timed")
+    drive(kq, d, lambda: states(d)["busy"] == "running")
+    now = time.time()
+    d.runq_hist = [(now - 100 + i, 70.0, True) for i in range(100)]      # normal-priority threads saturate
+    submit(kq, "sleep 20", name="heavy", qos="batch", cpus=2, mem="16G")    # starts at nice 19, normal policy
+    submit(kq, "sleep 20", name="filler", qos="batch", cpus=2, mem="1G")    # starts at SCHED_IDLE
+    for _ in range(3):
+        d.tick()
+    assert states(d)["filler"] == "running" and states(d)["heavy"] == "queued"
+    d.c.execute("UPDATE jobs SET state='cancelled' WHERE state IN ('queued','running')")
