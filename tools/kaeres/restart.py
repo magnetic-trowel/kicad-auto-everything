@@ -33,8 +33,18 @@ counts too) are sampled from /proc each second (CPU seconds summed over all of t
 an attempt that exits is reaped with wait4, whose rusage covers every descendant it waited for,
 and the larger of the two counts. The DRC judging is counted separately. The totals go to
 restarts/summary.json and to a last stdout line `KAE_WORK {json}` that kaeres records.
+
+With KAE_STEP_CACHE set (kae/src/kae/route/stepcache.py), the judge's DRCs and the attempts'
+Freerouting runs and DRCs replay earlier identical runs, and time is charged as if they had
+run. Every attempt appends its steps to its own KAE_CHARGE_FILE (restarts/a<k>/charge.jsonl);
+the time a hit saved keeps the attempt's slot held after it exits, and counts against its
+budget while it runs. A judge's hit holds this loop just as long. A hold elapses in real time
+while any attempt is computing, and is skipped when none is, so the schedule (what starts, is
+judged or killed when) is the uncached one, and only the wall time shrinks. The hits, misses
+and charged seconds go to summary.json and KAE_WORK (step_cache).
 """
 import argparse
+import importlib.util
 import resource
 import json
 import os
@@ -49,6 +59,47 @@ from pathlib import Path
 
 GRACE_S = 30.0  # an attempt is killed this long after its own budget
 FINAL_MIN_S = 60.0  # the final pass at least, beyond one DRC of the board (a last mile's joins and refill)
+
+
+def _stepcache():
+    """kae's step cache module, loaded by path (stdlib only), when KAE_STEP_CACHE is set."""
+    f = Path(__file__).resolve().parents[2] / "kae" / "src" / "kae" / "route" / "stepcache.py"
+    if not os.environ.get("KAE_STEP_CACHE") or not f.exists():
+        return None
+    spec = importlib.util.spec_from_file_location("kae_stepcache", f)
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    m.AUTO_ADVANCE = False   # this loop holds instead: attempts compute meanwhile (hold)
+    return m
+
+
+SC = _stepcache()
+BUSY = [lambda: False]   # whether any attempt is computing (main sets it)
+
+
+def hold(seconds, tick=lambda: None):
+    """Spend `seconds` of charged time a cache hit saved: in real time while an attempt computes
+    (it would have computed meanwhile), skipped at once when none does."""
+    end = time.monotonic() + seconds
+    while (left := end - time.monotonic()) > 0:
+        if not BUSY[0]():
+            SC.advance(left)
+            return
+        tick()
+        time.sleep(min(1.0, left))
+
+
+def saved(info):
+    """Charged seconds an attempt's cache hits saved so far (its charge file), 0 without one."""
+    return SC.charges(info["charge"])["saved_s"] if SC and info.get("charge") else 0.0
+
+
+def alive(pid):
+    """A process that runs (not exited: a zombie waiting for wait4 is not computing)."""
+    try:
+        return open(f"/proc/{pid}/stat").read().rsplit(")", 1)[1].split()[0] != "Z"
+    except (OSError, IndexError):
+        return False
 
 
 def log(msg):
@@ -159,7 +210,13 @@ def drc(board, inp, timeout):
     cmd = [*shlex.split(os.environ.get("KAE_KICAD_WRAP", "")), "kicad-cli", "pcb", "drc", "--format", "json",
            "--severity-all", "--refill-zones", "--output", str(rep), str(board)]
     try:
-        subprocess.run(cmd, capture_output=True, timeout=max(60, timeout))
+        if SC:
+            rep.unlink(missing_ok=True)
+            r = SC.run("kicad-drc-judge", cmd, inputs=SC.kicad_inputs(board), outputs={"report": rep}, wd=board.parent,
+                       timeout=max(60, timeout), tool=SC.kicad_version(cmd[:cmd.index("kicad-cli") + 1]))
+            hold(r.saved)
+        else:
+            subprocess.run(cmd, capture_output=True, timeout=max(60, timeout))
         r = json.loads(rep.read_text())
     except (subprocess.TimeoutExpired, OSError, ValueError):
         return None
@@ -287,6 +344,10 @@ def record_open(info, history, path):
     os.replace(tmp, path)
 
 
+def charge_env(info):
+    return {"KAE_CHARGE_FILE": info["charge"]} if info.get("charge") else {}
+
+
 def final_reserve(a, judge_est):
     """Seconds kept free from the start for the final pass: its command (--final-s, else
     FINAL_MIN_S plus one DRC of the board, as long as the slowest judgement so far) and the
@@ -316,18 +377,23 @@ def final_pass(a, best, inp, base, wd, end, judge_est, meter, stop, cpu_s, base_
     c = a.final.replace("@IN@", shlex.quote(str(inp))).replace("@OUT@", shlex.quote(str(o)))
     c = c.replace("@BEST@", shlex.quote(str(src))).replace("@SEED@", str(seed)).replace("@TIME@", str(int(b)))
     log(f"final pass on #{best['k']}'s board: {b:.0f}s")
-    p = subprocess.Popen(["sh", "-c", c], cwd=d, stdout=open(d / "log", "w"), stderr=subprocess.STDOUT,
-                         start_new_session=True, env=dict(os.environ, KAE_RESUME="1"))
     info = dict(k="final", seed=seed, budget=round(b), out=o, t=t, resumed_from=best["k"])
+    if SC:
+        info["charge"] = str(d / "charge.jsonl")
+    p = subprocess.Popen(["sh", "-c", c], cwd=d, stdout=open(d / "log", "w"), stderr=subprocess.STDOUT,
+                         start_new_session=True, env=dict(os.environ, KAE_RESUME="1", **charge_env(info)))
     while reap(p, info) is None:
-        if time.monotonic() > t + b + GRACE_S or time.monotonic() > end - judge_est - 5:
+        if time.monotonic() + saved(info) > min(t + b + GRACE_S, end - judge_est - 5):
             stop(p, info)
             info["killed"] = True
             break
         meter.sample([p.pid])
         time.sleep(1)
-    info.update(wall_s=round(time.monotonic() - t, 1), cpu_s=cpu_s(p, info), peak_rss_mb=meter.rss_mb(p.pid),
-                rc=p.returncode)
+    info.update(cpu_s=cpu_s(p, info), peak_rss_mb=meter.rss_mb(p.pid), rc=p.returncode)
+    if SC:
+        hold(saved(info))
+        info["step_cache"] = SC.charges(info["charge"])
+    info["wall_s"] = round(time.monotonic() - t, 1)
     c0, w0 = child_cpu(), time.monotonic()
     rank = judge(o, inp, base, max(10.0, end - w0 - 5), a.check_placement, base_pairs)
     info.update(rank=rank, judge_cpu_s=child_cpu() - c0, judge_wall_s=time.monotonic() - w0)
@@ -517,10 +583,12 @@ def main():
         c = cmd.replace("@IN@", shlex.quote(str(inp))).replace("@OUT@", shlex.quote(str(o)))
         c = c.replace("@BEST@", shlex.quote(str(src)))
         c = c.replace("@SEED@", str(s)).replace("@TIME@", str(int(b)))
+        ch = dict(charge=str(d / "charge.jsonl")) if SC else {}
         p = subprocess.Popen(["sh", "-c", c], cwd=d, stdout=open(d / "log", "w"), stderr=subprocess.STDOUT,
-                             start_new_session=True, env=dict(os.environ, KAE_RESUME="1" if resume else "0"))
+                             start_new_session=True, env=dict(os.environ, KAE_RESUME="1" if resume else "0",
+                                                              **charge_env(ch)))
         running[p] = dict(k=k, seed=s, budget=round(b), out=o, t=time.monotonic(),
-                          resumed_from=frm["k"] if resume else None)
+                          resumed_from=frm["k"] if resume else None, **ch)
         if sh is not None:
             running[p].update(cand=sh.started(cand, k, s), rung=rung)
         log(f"start #{k} seed {s} budget {b:.0f}s" + (f" from #{frm['k']}'s board" if resume else "")
@@ -542,20 +610,45 @@ def main():
     def cpu_s(p, info):
         return max(meter.cpu_s(p.pid), round(info.pop("ru_cpu_s", 0.0), 1))
 
+    def busy():
+        # an attempt that has exited but is not reaped yet computes no more: note when it was seen
+        # so, its hold counts from then even when a judge's hold is skipped meanwhile
+        live = False
+        for p, i in running.items():
+            if "hold" not in i:
+                if alive(p.pid):
+                    live = True
+                else:
+                    i.setdefault("dead_at", time.monotonic())
+        return live
+    BUSY[0] = busy
     while launch() if len(running) < a.parallel else False:
         pass
     while running:
-        time.sleep(1)
-        meter.sample([p.pid for p in running])
+        if SC and all("hold" in i for i in running.values()):   # nothing computes: skip to the first hold's end
+            SC.advance(min(i["hold"] for i in running.values()) - time.monotonic())
+        else:
+            time.sleep(1)
+        meter.sample([p.pid for p in running if "hold" not in running[p]])
         now = time.monotonic()
         for p, info in list(running.items()):
-            over = now > info["t"] + info["budget"] * a.slack + GRACE_S or now > deadline() + GRACE_S
-            if reap(p, info) is None and not over:
+            if "hold" not in info:
+                spent = now + saved(info)   # the attempt's own clock: charged time counts as elapsed
+                over = spent > info["t"] + info["budget"] * a.slack + GRACE_S or spent > deadline() + GRACE_S
+                if reap(p, info) is None and not over:
+                    continue
+                if p.returncode is None:
+                    stop(p, info)
+                info.update(cpu_s=cpu_s(p, info), peak_rss_mb=meter.rss_mb(p.pid))
+                # its slot stays taken for the time its hits saved, from when it exited
+                info["hold"] = min(now, info.pop("dead_at", now)) + saved(info)
+                if SC:
+                    info["step_cache"] = SC.charges(info["charge"])
+            if time.monotonic() < info["hold"]:
                 continue
-            if p.returncode is None:
-                stop(p, info)
+            del info["hold"]
             del running[p]
-            info.update(wall_s=round(time.monotonic() - info["t"], 1), cpu_s=cpu_s(p, info), peak_rss_mb=meter.rss_mb(p.pid))
+            info["wall_s"] = round(time.monotonic() - info["t"], 1)
             c0, w0 = child_cpu(), time.monotonic()
             if w0 + judge_est > end - 5:
                 rank = None   # no time left to judge it: the best so far stays the output
@@ -582,16 +675,21 @@ def main():
             log(f"#{best['k']} is clean: stopping the rest")
             meter.sample([p.pid for p in running])
             for p, info in list(running.items()):
-                stop(p, info)
-                info.update(wall_s=round(time.monotonic() - info["t"], 1), cpu_s=cpu_s(p, info),
-                            peak_rss_mb=meter.rss_mb(p.pid), rc=None, rank=None, stopped=True)
+                if "hold" not in info:   # a held one has exited: its CPU and memory are counted
+                    stop(p, info)
+                    info.update(cpu_s=cpu_s(p, info), peak_rss_mb=meter.rss_mb(p.pid))
+                    if SC:
+                        info["step_cache"] = SC.charges(info["charge"])
+                info.pop("hold", None)
+                info.update(wall_s=round(time.monotonic() - info["t"], 1), rc=None, rank=None, stopped=True)
                 done.append(info)
             running.clear()
             break
         if fast_fails >= 2 * a.parallel:
             log(f"{fast_fails} attempts in a row died within 10 s without a board: giving up (see restarts/a*/log)")
             for p, info in list(running.items()):
-                stop(p, info)
+                if "hold" not in info:
+                    stop(p, info)
             running.clear()
             break
         while len(running) < a.parallel and launch():
@@ -613,7 +711,16 @@ def main():
                 judge_wall_s=round(judge_wall, 1), wall_s=round(time.monotonic() - t0, 1), budget_s=a.time,
                 parallel=a.parallel, peak_rss_mb=max([d.get("peak_rss_mb", 0) for d in done] + [0]),
                 wall_to_best_s=best and round(best["t"] + best["wall_s"] - t0, 1))
-    summary = dict(work, attempt_log=[{k_: (v["id"] if k_ == "cand" else v) for k_, v in d.items() if k_ not in ("out", "t")}
+    if SC:   # wall_s and the attempts' times above are charged time; real_wall_s is what passed
+        tot = dict(hits=SC.STATS["hits"], misses=SC.STATS["misses"], uncacheable=SC.STATS["uncacheable"],
+                   charged_s=SC.STATS["charged_s"], saved_s=SC.STATS["saved_s"])
+        for d_ in done:
+            for k_ in tot:
+                tot[k_] += (d_.get("step_cache") or {}).get(k_, 0)
+        work["step_cache"] = dict({k_: round(v, 1) if isinstance(v, float) else v for k_, v in tot.items()},
+                                  real_wall_s=round(work["wall_s"] - SC.offset(), 1))
+    summary = dict(work, attempt_log=[{k_: (v["id"] if k_ == "cand" else v) for k_, v in d.items()
+                                       if k_ not in ("out", "t", "charge")}
                                       for d in done])
     if sh is not None:
         summary["halving"] = sh.summary()

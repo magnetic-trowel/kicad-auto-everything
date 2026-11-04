@@ -26,6 +26,8 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import stepcache
+
 KAE_HOME = Path(os.environ.get("KAE_HOME", Path.home() / ".cache" / "kaebench"))
 
 # Settings that stop Freerouting from drawing tracks narrower than their class: automatic
@@ -199,6 +201,11 @@ def route(dsn, ses, workdir, *, passes=0, settings=None, budget_s=600.0, margin_
     if ses.exists():
         ses.unlink()
     margin = margin_s if margin_s is not None else min(15.0, 0.1 * budget_s)
+    key = _cache_key(dsn, ses, workdir, user, result, passes, settings) if stepcache.enabled() else None
+    if key:   # KAE_STEP_CACHE: the same DSN and settings routed before replay that session (see stepcache)
+        hit = _replay(key, ses, result, workdir, budget_s, margin, hard_s, log_path, passes, settings, dsn, user)
+        if hit is not None:
+            return hit
     # the wait for a slot is part of the caller's budget: Freerouting gets what is left of it,
     # and after the budget it runs without a slot (a wait without end would hang the caller)
     slot = _Slot(timeout=max(1.0, budget_s - margin - 5.0)).__enter__()
@@ -212,13 +219,7 @@ def route(dsn, ses, workdir, *, passes=0, settings=None, budget_s=600.0, margin_
               flush=True)
     job_s = max(5.0, budget_s - margin - waited)
     hard = max(job_s + 5.0, (hard_s if hard_s is not None else budget_s + GRACE_S) - waited)
-    argv = [*command(), "-de", str(dsn), "-do", str(ses), "-mt", "1", "--gui.enabled=false", "-da",
-            f"--user_data_path={user}", f"--router.result_json={result}",
-            f"--router.job_timeout={_hms(job_s)}"]
-    if passes:
-        argv += ["-mp", str(int(passes))]
-    for k, v in (settings or {}).items():
-        argv.append(f"--router.{k}={v}")
+    argv = _argv(dsn, ses, user, result, job_s, passes, settings)
     try:
         t0 = time.monotonic()
         p = subprocess.Popen(argv, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
@@ -243,11 +244,82 @@ def route(dsn, ses, workdir, *, passes=0, settings=None, budget_s=600.0, margin_
         report = json.loads(result.read_text())
     except (OSError, ValueError):
         pass
+    if key:
+        _store(key, p.returncode, dt, timed_out, out or "", report, ses, result, workdir)
     return Run(rc=p.returncode, ses=ses if ses.exists() and ses.stat().st_size > 0 else None, log=out or "",
                seconds=round(dt, 2), timed_out=timed_out,
                report=dict(_summary(report, out or ""), slot_wait_s=slot.waited, job_timeout_s=round(job_s, 1),
                           **({"slot_gave_up": True} if slot.gave_up else {})),
                argv=argv)
+
+
+def _argv(dsn, ses, user, result, job_s, passes, settings):
+    argv = [*command(), "-de", str(dsn), "-do", str(ses), "-mt", "1", "--gui.enabled=false", "-da",
+            f"--user_data_path={user}", f"--router.result_json={result}",
+            f"--router.job_timeout={_hms(job_s)}"]
+    if passes:
+        argv += ["-mp", str(int(passes))]
+    for k, v in (settings or {}).items():
+        argv.append(f"--router.{k}={v}")
+    return argv
+
+
+def _cache_key(dsn, ses, workdir, user, result, passes, settings):
+    """Step-cache key of a Freerouting run: the DSN's bytes (its work directory normalised), the
+    program's jars, argv without its paths or job timeout (a run that stopped by itself does not
+    depend on it; _replay checks that it fits), and the JVM options."""
+    argv = _argv(dsn, ses, user, result, 0, passes, settings)
+    exe = argv[2] if argv[:2] == ["java", "-jar"] else argv[0]
+    rest = [a for a in argv[3 if argv[:2] == ["java", "-jar"] else 1:] if not a.startswith("--router.job_timeout=")]
+    rest = stepcache.norm_argv(rest, workdir, ((dsn, "<DSN>"), (ses, "<SES>"), (user, "<USER>"), (result, "<RESULT>")))
+    return stepcache.make_key("freerouting", dict(
+        tool=stepcache.tool_sha(shutil.which(exe) or exe), java=argv[:2] == ["java", "-jar"], argv=rest,
+        dsn=stepcache.file_sha(dsn, workdir), jvm=_env().get("JAVA_TOOL_OPTIONS", "")))
+
+
+def _cacheable(rc, timed_out, ses, report, log):
+    """A run that stopped by itself: written, not killed, neither the autorouter nor the optimizer
+    stopped by the clock. Only such a run is the same under any job timeout it fits in."""
+    s = _summary(report, log)
+    return (rc == 0 and not timed_out and ses.exists() and ses.stat().st_size > 0 and bool(report)
+            and report.get("final_state") != "TIMED_OUT" and s.get("autorouter_stop") != "TIMED_OUT"
+            and s.get("optimizer_stop") != "timed_out")
+
+
+def _store(key, rc, dt, timed_out, log, report, ses, result, workdir):
+    ok = _cacheable(rc, timed_out, ses, report, log)
+    if ok:
+        logf = Path(workdir) / f"{ses.stem}.cache-log"
+        logf.write_text(log)
+        stepcache.put(key, dict(step="freerouting", rc=rc, seconds=round(dt, 3), final_state=report.get("final_state")),
+                      {"ses": ses, "result": result, "log": logf}, workdir)
+        logf.unlink()
+    stepcache.charge("freerouting", False, dt, dt, key, cacheable=ok)
+
+
+def _replay(key, ses, result, workdir, budget_s, margin, hard_s, log_path, passes, settings, dsn, user):
+    """A Run from the cache, or None: the recorded run must fit in this call's job timeout and kill
+    time with no slot wait (it then would have stopped by itself here too). Charged its duration."""
+    t0 = time.monotonic()
+    meta = stepcache.get(key)
+    job_s = max(5.0, budget_s - margin)
+    hard = max(job_s + 5.0, hard_s if hard_s is not None else budget_s + GRACE_S)
+    if meta is None or meta["seconds"] + 2.0 > min(job_s, hard):
+        return None
+    logf = Path(workdir) / f"{ses.stem}.cache-log"
+    stepcache.restore(meta, {"ses": ses, "result": result, "log": logf}, workdir)
+    log = logf.read_text(errors="replace")
+    logf.unlink()
+    if log_path:
+        Path(log_path).write_text(log)
+    try:
+        report = json.loads(result.read_text())
+    except (OSError, ValueError):
+        report = {}
+    stepcache.charge("freerouting", True, meta["seconds"], time.monotonic() - t0, key)
+    return Run(rc=meta["rc"], ses=ses, log=log, seconds=meta["seconds"], timed_out=False,
+               report=dict(_summary(report, log), slot_wait_s=0.0, job_timeout_s=round(job_s, 1), step_cache="hit"),
+               argv=_argv(dsn, ses, user, result, job_s, passes, settings))
 
 
 def _autorouter_stop(log, final_state):
