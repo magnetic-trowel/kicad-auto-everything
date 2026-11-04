@@ -428,3 +428,161 @@ def test_rule_d_drops_ends_whose_tip_leaves_the_pad():
     thin = box(-1.0, -0.1, 1.0, 0.1)
     # a 0.4 mm track across a 0.2 mm land: its round end would stick out of the far side
     assert all(k != "long" for _, _, k in PE.centreline_targets(thin, (0.0, 2.0), 0.4))
+
+
+# ----------------------------------------------------------------------------- rule D: tracks wider than the land
+LAND = box(-0.5, -0.3, 0.5, 0.3)              # 1.0 x 0.6 mm land (0603-class)
+
+
+def test_overhang_measures_sides_and_tip_beyond_the_land():
+    # square, narrower than the land: nothing outside it once entered
+    assert PE.overhang(LAND, (0.0, 1.0), (0.0, 0.0), 0.25) == 0.0
+    # axial 0.8 mm track along a 0.6 mm land: 0.1 mm of each side hangs past the long edges
+    assert PE.overhang(LAND, (2.0, 0.0), (0.2, 0.0), 0.8) > 0.1
+    # an oblique (10 deg) square-ish entry: the wedge before the edge is approach, not overhang
+    t = math.radians(10)
+    assert PE.overhang(LAND, (0.5 * math.sin(t), 0.3 + 0.5 * math.cos(t)), (0.0, 0.3 - 0.05), 0.25) <= PE.OVER_AREA
+    # 0.8 mm across through the long edge to the centre line: the round end pokes 0.1 mm out
+    assert PE.overhang(LAND, (0.0, 1.0), (0.0, 0.0), 0.8) > PE.OVER_AREA
+    # radial into a disc, narrower than it: the junction sliver before the sides enter is approach
+    disc = Point(0, 0).buffer(0.5, 64)
+    assert PE.overhang(disc, (1.5, 0.0), (0.0, 0.0), 0.3) <= PE.OVER_AREA
+
+
+def test_track_narrower_than_the_land_keeps_rule_d():
+    ts = PE.centreline_targets(LAND, (3.0, 0.1), 0.25)
+    assert ts and ts[0][2] == "straight"
+    for a, end, kind in ts:
+        assert PE.overhang(LAND, a, end, 0.25) <= PE.OVER_AREA
+        assert abs(end[1]) < 1e-9 and abs(end[0]) <= 0.2 + 1e-9          # on the centre line
+
+
+def test_track_wider_than_the_short_side_enters_through_the_long_edge():
+    """0.8 mm into 1.0 x 0.6: the axial and straight entries hang 0.1 mm past both long edges;
+    the long-edge entry fits once its end is pulled back so its round tip stays inside."""
+    for rel in ((3.0, 0.1), (0.2, 3.0), (2.0, 2.0)):
+        ts = PE.centreline_targets(LAND, rel, 0.8)
+        assert [k for _, _, k in ts] == ["long"]
+        a, end, _ = ts[0]
+        assert PE.overhang(LAND, a, end, 0.8) <= PE.OVER_AREA
+        assert PE.entry_angle(LAND, a, end) < 1e-6
+        assert 0.3 - abs(end[1]) >= PE.MIN_DEPTH - 1e-9                  # still inside the outline
+        assert abs(end[0]) + 0.4 <= 0.5 + PE.OVER_TOL                     # both sides land on the edge
+    # the old tip test alone (copper that must stay wide) still offers the axial entry
+    assert "axial" in [k for _, _, k in PE.centreline_targets(LAND, (3.0, 0.1), 0.8, check_overhang=False)]
+
+
+def test_track_wider_than_the_land_is_necked_to_the_widest_entry_that_fits():
+    assert PE.centreline_targets(LAND, (3.0, 0.1), 1.2) == []
+    wn, ts = PE.neck_width(LAND, (3.0, 0.1), 1.2, stub=PE.NECK_LEN + 0.6)
+    assert wn is not None and wn <= PE.land_width(LAND) + 1e-9 and ts
+    assert abs(wn - 0.6) < 1e-9                    # the land width caps it (1.0 would fit the long edge)
+    wn2, _ = PE.neck_width(box(-0.3, -0.5, 0.3, 0.5).buffer(-0.0), (3.0, 0.1), 1.2)
+    assert wn2 is not None and PE.centreline_targets(box(-0.3, -0.5, 0.3, 0.5), (3.0, 0.1), wn2 + 0.01) == [] \
+        or abs(wn2 - 0.6) < 1e-9                   # else the widest that fits
+    for a, end, kind in ts:
+        assert PE.overhang(LAND, a, end, wn) <= PE.OVER_AREA
+        x = PE.crossing(LAND, a, end)
+        assert math.dist(a, x) >= PE.NECK_LEN + 0.6 - 1e-6                # wide copper neck_len off
+    # never below what the current needs
+    assert PE.neck_width(LAND, (3.0, 0.1), 1.2, need=0.7)[0] is None
+    sq = box(-0.3, -0.3, 0.3, 0.3)
+    assert PE.centreline_targets(sq, (2.0, 0.1), 1.0) == []
+    wn, ts = PE.neck_width(sq, (2.0, 0.1), 1.0)
+    assert wn is not None and wn <= 0.6 + 1e-9 and ts
+
+
+def test_stadium_and_round_pads_with_wide_tracks():
+    oval = LineString([(0, -0.45), (0, 0.45)]).buffer(0.85, 64)         # 1.7 x 2.6 stadium
+    for rel in ((2.3, 0.2), (2.3, 2.6)):
+        ts = PE.centreline_targets(oval, rel, 1.2)
+        assert ts
+        for a, end, kind in ts:
+            assert PE.overhang(oval, a, end, 1.2) <= PE.OVER_AREA
+    assert PE.centreline_targets(oval, (2.3, 0.2), 2.8) == []          # wider than the stadium is long
+    wn, ts = PE.neck_width(oval, (2.3, 0.2), 2.8)
+    assert wn is not None and wn <= 1.7 + 1e-9 and ts
+    disc = Point(0, 0).buffer(0.5, 64)
+    (a, end, kind), *_ = PE.centreline_targets(disc, (2.4, 1.7), 0.9)
+    assert math.dist(end, (0, 0)) < 1e-9 and PE.overhang(disc, a, end, 0.9) <= PE.OVER_AREA
+    assert PE.centreline_targets(disc, (2.4, 1.7), 1.2) == []
+    wn, ts = PE.neck_width(disc, (2.4, 1.7), 1.2)
+    assert wn is not None and wn <= 1.0 + 1e-9 and ts
+
+
+class _SP:
+    def width_limits(self, net, layer):
+        return (0.1, 0.2, None)
+
+
+def test_current_above_the_land_keeps_the_wide_copper_and_raises_a_hazard():
+    from kae.route import pad_reroute as RR
+    from kae.route import power_copper as PC
+    seg = dict(net="+5V", layer="F.Cu", w=1.2)
+    pd = dict(ref="L1", pin="2")
+    hz, notes = [], []
+    # 2 A through a 0.6 mm land: IPC-2221 at 3 x 2 A asks for far more than the land
+    ts, neck, why = RR._neck_or_wide(_SP(), LAND, pd, seg, (3.0, 0.1), 1.2, {("L1", "+5V"): 2.0}, 3.0, hz, set(),
+                                     notes.append)
+    assert neck is None and ts and why is None
+    assert notes == ["hazard"] and len(hz) == 1
+    h = hz[0]
+    assert h["code"] == "land_enlarged_by_track" and h["severity"] == "warn" and h["category"] == "assembly"
+    assert "tombstone" in h["message"] and "wicking" in h["message"]
+    assert h["objects"] == ["L1.2", "+5V"]
+    ev = h["evidence"]
+    assert ev["track_w_mm"] == 1.2 and ev["land_w_mm"] == 0.6 and ev["need_w_mm"] == round(PC.current_need(2.0, 3.0), 4)
+    # no current: the same entry is necked instead
+    ts, neck, why = RR._neck_or_wide(_SP(), LAND, pd, seg, (3.0, 0.1), 1.2, {}, 3.0, [], set(), notes.append)
+    assert neck is not None and neck <= 0.6 and ts
+
+
+def test_pad_currents_follow_the_neck_rules():
+    from kae.route import power_copper as PC
+    op = {"parts": {"U1": {"I_A": [0.1, 0.4]}, "F1": {}, "C1": {"I_A": 0.0}}}
+    pads = [("U1", "+5V"), ("U1", "+5V"), ("U1", "GND"), ("U1", "SDA"),
+            ("F1", "VIN"), ("F1", "+5V"), ("C1", "+5V"), ("C1", "GND")]
+    i = PC.pad_currents(op, pads, {"VIN", "+5V"}, {"GND"})
+    assert i[("U1", "+5V")] == 0.2 and i[("U1", "GND")] == 0.4 and i[("U1", "SDA")] == 0.0
+    assert i[("F1", "VIN")] == i[("F1", "+5V")] == 0.4          # in series with the rail: its current
+    assert i[("C1", "GND")] == 0.0 and i[("C1", "+5V")] == 0.0    # a decap carries no DC
+    assert PC.current_need(0.0) == 0.0 and PC.current_need(1.0) > PC.current_need(0.5) > 0
+
+
+SMALL = ("R1", "Land", "x:Land", 110.0, 110.0, 0.0,
+         [("1", "FW", 0.0, 0.0, 0.6, 0.6, "smd", 0.0, "", "passive")], (0.6, 0.85))
+SMALL2 = ("R2", "Land", "x:Land", 116.0, 114.0, 0.0,
+          [("1", "FW", 0.0, 0.0, 0.6, 0.6, "smd", 0.0, "", "passive")], (0.6, 0.85))
+
+
+def test_reroute_necks_a_track_wider_than_the_land(tmp_path):
+    """A 1.0 mm track between two 0.6 mm lands: each end is re-routed with a neck no wider than the
+    land, the wide copper stopping neck_len off it, every piece legal; written at both widths."""
+    from kae.route import pad_reroute as RR
+    p = F.write_board(tmp_path, extra=[SMALL, SMALL2])
+    info = F.synth_info(load(p))
+    plan = CN.plan(info, p, {})
+    sp = Space(load(p), info, plan=plan)
+    gr = GridRouter(sp, pad_entry="centre")
+    a = next(it for it in sp.pads if it.owner == ("R1", "1"))
+    b = next(it for it in sp.pads if it.owner == ("R2", "1"))
+    text = "(kicad_pcb\n" + _seg(a.pos, b.pos, w=1.0, net="FW") + ")\n"
+    for pd in info["pads"]:
+        pd.setdefault("attr", "smd")
+    assert PT.stats(text, info)["overhanging"] == 2
+    changes, outcome, octo = RR.plan(text, info, sp, gr, 0.05)
+    assert outcome.get("necked", 0) >= 1, outcome
+    for ch in changes:
+        assert ch["neck"] is not None and ch["neck"] <= 0.6 + 1e-9
+        pts = ch["pts"]
+        g = (a if ch["pieces"][0][1] == a.pos else b).geom
+        assert PE.overhang(g, pts[-2], pts[-1], ch["neck"]) <= PE.OVER_AREA
+        assert PE.entry_angle(g, pts[-2], pts[-1]) <= RR.ENTRY_DEG
+        for u, v in zip(pts[:-2], pts[1:-1]):
+            assert g.distance(LineString([u, v])) >= 0.5 + 0.5 - 2e-3       # wide copper neck_len off
+            assert not sp.track_violations("FW", "F.Cu", 1.0, u, v)
+        assert not sp.track_violations("FW", "F.Cu", ch["neck"], pts[-2], pts[-1])
+    out = RR.write(text, changes)
+    ws = {s["w"] for s in PT._segments(out)}
+    assert 1.0 in ws and any(w <= 0.6 for w in ws)
+    assert PT.stats(out, info)["overhanging"] < 2

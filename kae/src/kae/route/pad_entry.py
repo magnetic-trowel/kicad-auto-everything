@@ -23,6 +23,11 @@ coming from a point outside the pad should end and how it should cross the edge:
   joint an edge entry would otherwise halve. An end that would pass the pad's centre, or whose
   round end would poke out of the far side, is no edge entry: the caller keeps the centre.
 
+Rule D (`centreline_targets`) ends a track on the land's long centre line instead, and judges
+every candidate by the copper it adds beside or beyond the land (`overhang`); a track wider than
+every entry allows is necked to the widest entry that fits (`neck_width`), or, where its current
+needs the width, kept wide with a hazard (`land_hazard`).
+
 The caller checks each candidate piece exactly (Space.track_violations) and falls back to the
 centre when none is legal. Nothing here knows the board; it is plane geometry on shapely shapes.
 """
@@ -289,7 +294,75 @@ def _nearest_on(a, b, p):
     return (a[0] + t * dx, a[1] + t * dy)
 
 
-def centreline_targets(pad, release, width, stub=None, max_deg=10.0):
+# ----------------------------------------------------------------------------- overhang: a land no wider than drawn
+OVER_TOL = 0.005         # mm: copper this close outside the outline counts as on it (polygonised pads and ends)
+OVER_AREA = 2e-4         # mm^2 of copper beyond the outline a final piece may add (about 0.01 x 0.02 mm)
+MIN_DEPTH = 0.05         # mm: an end pulled back to fit lies at least this far inside the outline (pad_entry_overlap)
+NECK_LEN = 0.5           # mm of neck before the outline (power_copper.DEFAULTS["neck_len"])
+
+
+def _shadow(pad, d, D):
+    """The pad swept a distance D against the direction d: the band it occupies across d, behind it."""
+    from shapely.geometry import Polygon
+    from shapely.ops import unary_union
+    from shapely import affinity
+    g, pts = _ring(pad)
+    back = (-d[0] * D, -d[1] * D)
+    hull = g.convex_hull
+    if hull.area - g.area <= 1e-6 * max(g.area, 1e-9):       # convex: the hull of it and its copy
+        return hull.union(affinity.translate(g, *back)).convex_hull
+    quads = [Polygon([p, q, (q[0] + back[0], q[1] + back[1]), (p[0] + back[0], p[1] + back[1])])
+             for p, q in zip(pts[:-1], pts[1:]) if math.dist(p, q) > EPS]
+    return unary_union([g] + [x for x in quads if x.is_valid and x.area > 0])
+
+
+def overhang(pad, a, end, w, tol=OVER_TOL):
+    """Copper (mm^2) the piece a -> end of width w (round ends) adds beside or beyond `pad`: the
+    piece buffered by w/2, minus the pad and minus the pad's shadow toward the approach (the pad
+    swept back along the piece's direction). The shadow is the copper every track arriving along
+    that direction needs (the approach, and the shoulders where a round outline meets the
+    track's sides); what is left is copper hanging past the land's extent across the track (a
+    track wider than the land) or out of its far side (a round end too deep).
+
+    Measured against the copper, not the mask opening (pad plus expansion): copper outside the
+    copper land is exposed land or a heat sink under mask, and both unbalance a joint."""
+    d = _unit(end[0] - a[0], end[1] - a[1])
+    if d is None or w <= 0:
+        return 0.0
+    cu = LineString([a, end]).buffer(w / 2, quad_segs=16)
+    keep = _shadow(pad, d, math.dist(a, end) + w + 1.0).buffer(tol)
+    return float(cu.difference(keep).area)
+
+
+def overhangs(pad, a, end, w):
+    return overhang(pad, a, end, w) > OVER_AREA
+
+
+def land_width(pad):
+    """The land's width (mm): the short side of its smallest rotated rectangle (a disc's diameter)."""
+    return pad_frame(pad)[4]
+
+
+def _fit_depth(pad, a, x, d, t_full, w, min_depth=MIN_DEPTH):
+    """The deepest end x + t d, t <= t_full, whose piece from a adds no overhang (its round end
+    stays inside the far side): t_full when that fits, else found by bisection down to min_depth;
+    None when even min_depth overhangs (the sides, not the tip, are too wide)."""
+    def ok(t):
+        return not overhangs(pad, a, (x[0] + t * d[0], x[1] + t * d[1]), w)
+    if ok(t_full):
+        return t_full
+    lo = min(min_depth, t_full)
+    if not ok(lo):
+        return None
+    hi = t_full
+    for _ in range(10):
+        mid = (lo + hi) / 2
+        lo, hi = (mid, hi) if ok(mid) else (lo, mid)
+    # the bisection stops at the tolerance's edge: back off by the tolerance, so the end really fits
+    return lo - OVER_TOL if lo - OVER_TOL >= min(min_depth, t_full) else lo
+
+
+def centreline_targets(pad, release, width, stub=None, max_deg=10.0, check_overhang=True):
     """Rule D: where a re-routed tail from `release` ends and how it crosses the outline. The end
     lies on the long centre line (so the track sits centred across the pad); the straight piece
     that crosses the outline is within `max_deg` of the outline's normal there. [(a, end, kind)],
@@ -303,7 +376,13 @@ def centreline_targets(pad, release, width, stub=None, max_deg=10.0):
       centre line's end (radial through a stadium's rounded end);
     - "radial": a on the ray from the nearer centre-line end toward the release point (a round
       pad, or a stadium's rounded end), kept only where it crosses within max_deg.
-    Each end's round tip must stay inside the pad (no sliver beyond its far side)."""
+
+    Every candidate is judged by one rule, `overhang`: the final piece may add no copper outside
+    the pad. Where only its round end pokes out of the far side, the end is pulled back along the
+    piece (at least MIN_DEPTH inside the outline); a long-edge entry whose width hangs past the
+    edge's ends slides toward the edge's middle. A track wider than the land along the piece has
+    no target here (see neck_targets). `check_overhang=False`: the tip test alone (the end and its
+    round tip inside the pad), for copper that must stay wide."""
     from shapely.geometry import LineString as _L, Point as _P
     stub = max(width, 0.1) if stub is None else stub
     c, u, v, w, h = pad_frame(pad)
@@ -311,26 +390,36 @@ def centreline_targets(pad, release, width, stub=None, max_deg=10.0):
     fat = pad.buffer(1e-6)
     out = []
 
-    def add(end, d, kind):
-        """d: unit direction the final piece runs (outside -> end)."""
-        x = None
+    def judge(end, d, kind):
+        """d: unit direction the final piece runs (outside -> end). (length, a, end, kind) or None."""
         far = (end[0] - d[0] * (w + h + stub + 1.0), end[1] - d[1] * (w + h + stub + 1.0))
-        seg = _L([far, end])
-        hit = seg.intersection(pad.exterior)
+        hit = _L([far, end]).intersection(pad.exterior)
         if hit.is_empty:
-            return
+            return None
         pts = [(q[0], q[1]) for g in getattr(hit, "geoms", [hit]) for q in g.coords]
         x = min(pts, key=lambda q: math.dist(q, far))           # where the piece enters the pad
         a = (x[0] - d[0] * stub, x[1] - d[1] * stub)
         if pad.contains(_P(a)) or pad.distance(_P(a)) < 0.5 * stub:
-            return
+            return None
         ang = entry_angle(pad, a, end)
-        if ang is None or ang > max_deg + 1e-9:
-            return
-        tip = (end[0] + d[0] * width / 2, end[1] + d[1] * width / 2)
-        if not fat.contains(_P(tip)) or not fat.contains(_P(end)):
-            return
-        out.append((math.dist(release, a) + math.dist(a, end), a, end, kind))
+        if ang is None or ang > max_deg + 1e-9 or not fat.contains(_P(end)):
+            return None
+        if check_overhang:
+            t = _fit_depth(pad, a, x, d, math.dist(x, end), width)
+            if t is None:
+                return None
+            end = (x[0] + t * d[0], x[1] + t * d[1])
+        else:
+            tip = (end[0] + d[0] * width / 2, end[1] + d[1] * width / 2)
+            if not fat.contains(_P(tip)):
+                return None
+        return (math.dist(release, a) + math.dist(a, end), a, end, kind)
+
+    def add(end, d, kind):
+        got = judge(end, d, kind)
+        if got is not None:
+            out.append(got)
+        return got
 
     q = _nearest_on(p0, p1, release)
     d = _unit(q[0] - release[0], q[1] - release[1])
@@ -339,7 +428,17 @@ def centreline_targets(pad, release, width, stub=None, max_deg=10.0):
     if h > 0:
         side = 1.0 if (release[0] - c[0]) * v[0] + (release[1] - c[1]) * v[1] >= 0 else -1.0
         foot = _nearest_on(p0, p1, release)
-        add(foot, (-side * v[0], -side * v[1]), "long")
+        dl = (-side * v[0], -side * v[1])
+        if add(foot, dl, "long") is None and check_overhang and math.dist(foot, c) > 1e-9 \
+                and judge(c, dl, "long") is not None:
+            # the width hangs past the long edge's ends: slide toward the edge's middle, as little as fits
+            def at(f):
+                return (foot[0] + f * (c[0] - foot[0]), foot[1] + f * (c[1] - foot[1]))
+            lo, hi = 0.0, 1.0                     # hi fits, lo does not
+            for _ in range(12):
+                mid = (lo + hi) / 2
+                lo, hi = (lo, mid) if judge(at(mid), dl, "long") is not None else (mid, hi)
+            add(at(min(1.0, hi + OVER_TOL / math.dist(foot, c))), dl, "long")      # off the tolerance's edge
         end_side = 1.0 if (release[0] - c[0]) * u[0] + (release[1] - c[1]) * u[1] >= 0 else -1.0
         e = p1 if end_side > 0 else p0
         add(e, (-end_side * u[0], -end_side * u[1]), "axial")
@@ -358,3 +457,51 @@ def centreline_targets(pad, release, width, stub=None, max_deg=10.0):
     # the straight entry, when it qualifies, comes first: no corner
     res.sort(key=lambda t: t[2] != "straight")
     return res
+
+
+def neck_width(pad, release, width, need=0.0, min_w=0.0, step=0.01, **kw):
+    """The neck for a track too wide for every rule-D entry: the widest width wn (a multiple of
+    `step`, wn <= the land width and < `width`) at which centreline_targets has a target, and
+    wn >= max(need, min_w). `need` is what the current asks (power_copper.current_need). Returns
+    (wn, targets), (None, []) when no width in that range fits (the caller keeps the wide copper
+    and, where the current is the reason, raises a hazard)."""
+    top = min(width, land_width(pad))
+    lo_w = max(need, min_w, step)
+    if top < lo_w - 1e-9:
+        return None, []
+    top = math.floor(top / step + 1e-9) * step
+    if top < lo_w - 1e-9:
+        return None, []
+    ts = centreline_targets(pad, release, top, **kw)
+    if ts:
+        return top, ts
+    lo_w = math.ceil(lo_w / step - 1e-9) * step
+    ts_lo = centreline_targets(pad, release, lo_w, **kw)
+    if not ts_lo:
+        return None, []
+    lo, hi = int(round(lo_w / step)), int(round(top / step))       # lo fits, hi does not
+    best = (lo_w, ts_lo)
+    while hi - lo > 1:
+        m = (lo + hi) // 2
+        ts = centreline_targets(pad, release, m * step, **kw)
+        if ts:
+            lo, best = m, (m * step, ts)
+        else:
+            hi = m
+    return best
+
+
+def land_hazard(ref, pad_name, net, width, land_w, need, current_a):
+    """The hazard (kae.hazards schema, branch decide-2611) for a track kept wider than the land it
+    enters because its current needs the width."""
+    obj = [o for o in (f"{ref}.{pad_name}" if ref and pad_name else ref, net) if o]
+    return dict(code="land_enlarged_by_track", severity="warn", category="assembly",
+                message=(f"land effectively enlarged: tombstone and solder-wicking risk; the {width:.3f} mm track "
+                         f"into {ref or '?'} pad {pad_name or '?'} ({net}) is wider than the {land_w:.3f} mm land, and "
+                         f"its current needs {need:.3f} mm"),
+                objects=obj,
+                evidence=dict(track_w_mm=round(width, 4), land_w_mm=round(land_w, 4), need_w_mm=round(need, 4),
+                              current_a=round(current_a, 4),
+                              source="IPC-2221 width at power_copper current_margin x the pad's current"),
+                fix="widen the land (or use a larger package), split the current over more pads, or accept the risk "
+                    "after checking the process")

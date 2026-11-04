@@ -195,8 +195,46 @@ def neck_rule(land_w, process, series_current_a=0.0, margin=DEFAULTS["current_ma
     if w is None:
         return None
     w = min(w, land_w)
-    need = ipc_width(margin * series_current_a) if series_current_a else 0.0
+    need = current_need(series_current_a, margin)
     return None if need >= land_w else max(w, need)
+
+
+def current_need(current_a, margin=DEFAULTS["current_margin"]):
+    """Width (mm) a current asks of copper: IPC-2221 at margin x I (0 without a current)."""
+    return ipc_width(margin * current_a) if current_a else 0.0
+
+
+def pad_currents(operating, pads, power, ground):
+    """{(ref, net): A} through each pad, from operating facts, by the rules of the neck: a part's own
+    current (I_A's upper end, else I_sustained_A) on its power and (when it has a power pad) ground
+    pads, shared over its pads on that net; a two-terminal part in series with a rail (no ground pad)
+    carries the rail's current (net_currents), as power_copper._necks; a part to ground with no power
+    pad (a decap) carries none; signal pads none. `pads`: iterable of (ref, net), one per pad."""
+    by_ref = {}
+    for ref, net in pads:
+        if ref and net:
+            by_ref.setdefault(ref, []).append(net)
+    parts = (operating or {}).get("parts") or {}
+    rail = net_currents(operating, {r: set(n) for r, n in by_ref.items()}, power, ground) if operating else {}
+    out = {}
+    for ref, nets in by_ref.items():
+        f = parts.get(ref) or {}
+        ia = f.get("I_A")
+        own = max(ia) if isinstance(ia, (list, tuple)) and ia else (ia if isinstance(ia, (int, float)) else None)
+        if own is None:
+            own = f.get("I_sustained_A")
+        own = float(own) if isinstance(own, (int, float)) and own > 0 else 0.0
+        s = set(nets)
+        series = len(nets) == 2 and not s & set(ground) and s & set(power)
+        for net in s:
+            if series:
+                i = max(rail.get(n, 0.0) for n in s)
+            elif net in power or (net in ground and s & set(power)):
+                i = own
+            else:
+                i = 0.0
+            out[(ref, net)] = i / nets.count(net) if i else 0.0
+    return out
 
 
 def neck_half(dist, neck_w, neck_len):

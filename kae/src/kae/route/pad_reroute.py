@@ -16,7 +16,14 @@ pass rips up the connection's tail and routes it again with kae's grid router:
 2. **Release point.** Walk the track from the pad along the chain of segments (same layer, same
    width, no other branch): stop at the first via, junction, width change, arc or other pad
    within R, else at the point R along the path. R = max(3 widths, 1 mm), then 2 and 4 mm.
-3. **Target.** pad_entry.approach_targets: the approach point a stub (at least one width)
+3. **Target.** Rule D (`--target centreline`, the default): pad_entry.centreline_targets, the
+   end on the land's long centre line, the crossing piece within 10 deg of the outline normal,
+   and no copper beside or beyond the land (pad_entry.overhang; an entry whose copper overhangs
+   is a candidate too). A track wider than every entry allows is necked: its last piece is the
+   widest width that fits (at most the land width, at least what the pad's current needs,
+   power_copper.current_need), and the wide copper ends neck_len + w/2 before the outline. When
+   the current needs more than that, the wide copper stays and a `land_enlarged_by_track`
+   hazard is reported. `--target edge`: pad_entry.approach_targets, the approach point a stub
    outside the edge the release point faces, and the end `pad_entry_overlap` inside along the
    normal; rails, grounds and tracks 0.4 mm or wider take the edge's middle a width deep.
 4. **Route.** critical_grid.GridRouter from the release point to the approach point, on the
@@ -154,9 +161,17 @@ def chain(segs_by_node, start_seg, pad_end, R, stop_nodes, at_pad=lambda q: Fals
         s, p = nxt[0], q
 
 
-def plan(text, info, sp, gr, overlap=0.05, log=print, deadline=None, rails="middle", target="centreline"):
+def plan(text, info, sp, gr, overlap=0.05, log=print, deadline=None, rails="middle", target="centreline",
+         currents=None, margin=None, hazards=None):
     """Re-routes [(change dict)] and per-entry outcomes {reason: count}. `sp` is a Space of the
-    board (updated as changes are accepted), `gr` a GridRouter on it."""
+    board (updated as changes are accepted), `gr` a GridRouter on it. `currents`: {(ref, net): A}
+    through each pad (power_copper.pad_currents), which sets the narrowest neck; `hazards`: a list
+    the land hazards are appended to (kae.hazards entries)."""
+    from . import power_copper as PC
+    margin = PC.DEFAULTS["current_margin"] if margin is None else margin
+    currents = currents or {}
+    hazards = [] if hazards is None else hazards
+    flagged = set()
     from .critical_grid import Anchor
     pads = PT._pads(info, balls=False)
     vias = PT._vias(text)
@@ -210,9 +225,14 @@ def plan(text, info, sp, gr, overlap=0.05, log=print, deadline=None, rails="midd
             ang = PE.entry_angle(g, Q, E)
             w = s["w"]
             sl = sliver_ratio(g, Q, E, w)
-            if (ang is None or ang <= ENTRY_DEG) and sl <= SLIVER_X:
+            # rule D also re-routes a square entry whose copper hangs past the land (a track wider
+            # than the pad, or a round end poking out of its far side)
+            wide = target == "centreline" and PE.overhangs(g, Q, E, w)
+            if (ang is None or ang <= ENTRY_DEG) and sl <= SLIVER_X and not wide:
                 continue
             note("candidates")
+            if wide:
+                note("overhang_in")
             if vtree is not None and (len(vtree.query(Point(Q).buffer(TOL))) or len(vtree.query(g, predicate="intersects"))):
                 note("skip_via")
                 break
@@ -222,6 +242,7 @@ def plan(text, info, sp, gr, overlap=0.05, log=print, deadline=None, rails="midd
                 break
             got = None
             why = "no_route"
+            land_done = False
             for R0 in RELEASE:
                 R = max(3 * w, 1.0) if R0 is None else R0
                 others = [h for h in pad_nodes.get((s["net"], s["layer"]), ()) if not h.within(g.buffer(0.01))]
@@ -235,10 +256,18 @@ def plan(text, info, sp, gr, overlap=0.05, log=print, deadline=None, rails="midd
                     why = "release_at_pad"
                     continue
                 old_len = sum(math.dist(p, q) for _, p, q in pieces)
+                neck, keep = None, w / 2
                 if target == "centreline":
                     # rule D: end on the long centre line, the crossing piece square to the outline;
                     # every candidate is routed and the shortest legal one kept
                     tgts = [(a, end, None, kind) for a, end, kind in PE.centreline_targets(g, rel, w)]
+                    if not tgts:
+                        tgts, neck, why_n = _neck_or_wide(sp, g, pd, s, rel, w, currents, margin, hazards, flagged,
+                                                          note if not land_done else (lambda k: None))
+                        land_done = True
+                        if neck is not None:
+                            keep = w / 2 + PE.NECK_LEN - 1e-3     # the wide copper stays neck_len off the land
+                        why = why_n or why
                 else:
                     tgts = PE.approach_targets(g, c, rel, w, overlap, current=cur)
                 if not tgts:
@@ -246,13 +275,13 @@ def plan(text, info, sp, gr, overlap=0.05, log=print, deadline=None, rails="midd
                     continue
                 best = None
                 for a, end, u, facing in tgts:
-                    rt = _route(gr, sp, Anchor, s["net"], s["layer"], w, rel, a, g)
+                    rt = _route(gr, sp, Anchor, s["net"], s["layer"], w, rel, a, g, keep=keep)
                     if rt is None:
                         continue
                     pts = rt
                     if octo:
                         pts = _octo(sp, s["net"], s["layer"], w, pts)
-                        if pts is None or any(g.distance(LineString([p, q])) < w / 2 - 1e-6
+                        if pts is None or any(g.distance(LineString([p, q])) < keep - 1e-6
                                               for p, q in zip(pts[:-1], pts[1:])):
                             why = "style"
                             continue
@@ -267,7 +296,7 @@ def plan(text, info, sp, gr, overlap=0.05, log=print, deadline=None, rails="midd
                                    current=cur, joined=True)
                         break
                     pts = pts + [end]
-                    if not sp_legal(sp, s["net"], s["layer"], w, pts[-2], end):
+                    if not sp_legal(sp, s["net"], s["layer"], neck or w, pts[-2], end):
                         why = "final_piece"
                         continue
                     new_len = sum(math.dist(p, q) for p, q in zip(pts[:-1], pts[1:]))
@@ -279,7 +308,7 @@ def plan(text, info, sp, gr, overlap=0.05, log=print, deadline=None, rails="midd
                         continue
                     cand = dict(id=s["uuid"], net=s["net"], layer=s["layer"], w=w, pieces=pieces, release=rel,
                                 kind=kind, pts=pts, old_len=old_len, new_len=new_len, angle_in=ang,
-                                current=cur, entry=facing if target == "centreline" else "edge")
+                                current=cur, entry=facing if target == "centreline" else "edge", neck=neck)
                     if target != "centreline":
                         got = cand
                         break
@@ -301,30 +330,72 @@ def plan(text, info, sp, gr, overlap=0.05, log=print, deadline=None, rails="midd
                 far = last[0]["b"] if math.dist(last[0]["a"], last[1]) <= TOL else last[0]["a"]
                 if math.dist(keep_from, far) > 1e-6:
                     sp.add_track(s["net"], s["layer"], w, keep_from, far, owner=("pad-reroute", "kept"))
-            for p, q in zip(got["pts"][:-1], got["pts"][1:]):
-                sp.add_track(s["net"], s["layer"], w, p, q, owner=("pad-reroute", got["id"]))
+            n_p = len(got["pts"]) - 1
+            for i, (p, q) in enumerate(zip(got["pts"][:-1], got["pts"][1:])):
+                sp.add_track(s["net"], s["layer"], _piece_w(got, i, n_p), p, q, owner=("pad-reroute", got["id"]))
             done.update(p[0]["uuid"] for p in got["pieces"])
             changes.append(got)
             note("rerouted")
+            if got.get("neck"):
+                note("necked")
             break
     return changes, outcome, octo
+
+
+def _piece_w(ch, i, n):
+    """Width of piece i of n of a change: the neck's for the final piece of a necked tail."""
+    return ch["neck"] if ch.get("neck") and i == n - 1 else ch["w"]
+
+
+def _neck_or_wide(sp, g, pd, s, rel, w, currents, margin, hazards, flagged, note):
+    """No rule-D target at the track's width w (wider than every entry allows). The narrowest the
+    pad's current permits (power_copper.current_need) up to the land width: the widest neck that
+    fits, its targets (the wide route ending neck_len + w/2 off the outline). When the current
+    needs more than fits, the wide copper stays (rule D without the overhang test) and a land
+    hazard is raised. Returns (targets, neck width or None, failure reason or None)."""
+    from . import power_copper as PC
+    net, layer = s["net"], s["layer"]
+    ref, pin = pd.get("ref"), pd.get("pin") or pd.get("number")
+    i_a = currents.get((ref, net), 0.0)
+    need = PC.current_need(i_a, margin)
+    min_w = sp.width_limits(net, layer)[0]
+    land = PE.land_width(g)
+    fit, ts = PE.neck_width(g, rel, w, 0.0, min_w, stub=PE.NECK_LEN + w / 2)
+    if fit is not None and fit + 1e-9 >= need:
+        if fit >= w - 1e-9:
+            return [], None, "no_target"
+        note("neck_planned")
+        return [(a, end, None, kind) for a, end, kind in ts], fit, None
+    if need > 0 and (need >= land or fit is not None):
+        key = (ref, pin, net)
+        if key not in flagged:
+            flagged.add(key)
+            hazards.append(PE.land_hazard(ref, pin, net, w, land, need, i_a))
+            note("hazard")
+        wide = PE.centreline_targets(g, rel, w, check_overhang=False)
+        return [(a, end, None, kind) for a, end, kind in wide], None, ("no_target" if not wide else None)
+    return [], None, "no_fit"
 
 
 def sp_legal(sp, net, layer, w, a, b):
     return not sp.track_violations(net, layer, w, a, b, first=True)
 
 
-def _route(gr, sp, Anchor, net, layer, w, rel, a, pad):
-    """Grid route from `rel` to the approach point `a`, the pad kept out: the points, or None."""
+def _route(gr, sp, Anchor, net, layer, w, rel, a, pad, keep=None):
+    """Grid route from `rel` to the approach point `a`, the pad kept out (every piece's centre line
+    at least `keep`, default w/2, from it): the points, or None."""
+    keep = w / 2 if keep is None else keep
     r = max(w / 2, gr.res)
     src = Anchor(Point(rel).buffer(r, quad_segs=8), (layer,), centre=tuple(rel), kind="track")
     dst = Anchor(Point(a).buffer(r, quad_segs=8), (layer,), centre=tuple(a), kind="track")
-    rt = gr.connect(net, [src], [dst], w, [layer], via=False, avoid=[(pad, w / 2 + 1e-3, layer)])
+    rt = gr.connect(net, [src], [dst], w, [layer], via=False, avoid=[(pad, keep + 1e-3, layer)])
     if rt is None or rt.vias:
         return None
     if not rt.segs:
         if math.dist(rel, a) < 1e-6:
             return [tuple(rel)]
+        if pad.distance(LineString([rel, a])) < keep - 1e-6:
+            return None
         return [tuple(rel), tuple(a)] if sp_legal(sp, net, layer, w, rel, a) else None
     pts = [rt.segs[0][1]] + [s[2] for s in rt.segs]
     # the search ends on cells: the route must start at the release point and end at a exactly
@@ -336,8 +407,8 @@ def _route(gr, sp, Anchor, net, layer, w, rel, a, pad):
         if not sp_legal(sp, net, layer, w, pts[-1], a):
             return None
         pts = pts + [tuple(a)]
-    # no piece may run inside the pad before the final one
-    if any(pad.distance(LineString([p, q])) < w / 2 - 1e-6 for p, q in zip(pts[:-1], pts[1:])):
+    # no piece may run inside the pad (or, before a neck, within neck_len of it) before the final one
+    if any(pad.distance(LineString([p, q])) < keep - 1e-6 for p, q in zip(pts[:-1], pts[1:])):
         return None
     return pts
 
@@ -378,9 +449,10 @@ def write(text, changes, skip=frozenset()):
                 edits.append((a0 + spn[0], a0 + spn[1], f"({key} {W.fmt(q[0])} {W.fmt(q[1])})"))
             else:
                 remove.add(s["uuid"])
+        n_p = len(ch["pts"]) - 1
         for i, (p, q) in enumerate(zip(ch["pts"][:-1], ch["pts"][1:])):
             uid = str(_uuid.uuid5(_uuid.NAMESPACE_URL, f"kae-pad-reroute:{ch['id']}:{i}"))
-            extra.append(W.track_sexpr(ch["net"], ch["layer"], ch["w"], p, q, uid=uid, locked=locked))
+            extra.append(W.track_sexpr(ch["net"], ch["layer"], _piece_w(ch, i, n_p), p, q, uid=uid, locked=locked))
     out, pos = [], 0
     for _h, a, b in W._blocks(text, ("segment",)):
         u = W._uuid_of(text[a:b])
@@ -399,9 +471,11 @@ def write(text, changes, skip=frozenset()):
 
 
 def run(input_path, output_path, overlap=None, workdir=None, timeout=3600, rails="middle", target="centreline",
-        log=print):
+        operating=None, log=print):
     """The DRC-gated pass. Returns a report: entries considered and their outcomes, the kept
-    re-routes, DRC in and out, pad-entry counts in and out, seconds."""
+    re-routes, DRC in and out, pad-entry counts in and out, seconds, and `hazards` (kae.hazards
+    entries: lands a current keeps wider copper on). `operating`: operating facts JSON for the
+    pads' currents (default: the project's KAE_OPERATING text variable, as power_copper)."""
     from kae.board.kicad_file import load
     from . import constraints as CN
     from . import drc
@@ -419,14 +493,22 @@ def run(input_path, output_path, overlap=None, workdir=None, timeout=3600, rails
     text = staged.read_text(encoding="utf-8")
     sp = Space(load(staged), info, sev=severities(staged))
     gr = GridRouter(sp, pad_entry="centre")
+    from . import power_copper as PC
+    op = PC._operating(inp, operating)
+    pad_nets = [(pd.get("ref"), pd.get("net")) for pd in info.get("pads") or [] if pd.get("net")]
+    nets = {n for _, n in pad_nets}
+    ground = {n for n in nets if PE.GND_RE.search(n.rsplit("/", 1)[-1])}
+    power = {n for n in nets if n not in ground and PE.current_net(n)}
+    currents = PC.pad_currents(op, pad_nets, power, ground) if op else {}
+    hazards = []
     t1 = time.monotonic()
     changes, outcome, octo = plan(text, info, sp, gr, ovl, log=log, deadline=t0 + 0.6 * timeout, rails=rails,
-                                  target=target)
+                                  target=target, currents=currents, hazards=hazards)
     t_plan = time.monotonic() - t1
     rep = dict(board=str(inp), target=target, overlap=ovl, octilinear=octo, outcome=outcome, planned=len(changes),
                stats_in=PT.stats(text, info), setup_s=round(t1 - t0, 1), plan_s=round(t_plan, 1),
                len_old_mm=round(sum(c["old_len"] for c in changes), 3),
-               len_new_mm=round(sum(c["new_len"] for c in changes), 3))
+               len_new_mm=round(sum(c["new_len"] for c in changes), 3), operating=bool(op))
     base_rep = drc.run(staged, wd / "in.drc.json", timeout=max(10, end_t - time.monotonic()))
     base = drc.summary(base_rep)
     rep["drc_in"] = base
@@ -472,6 +554,7 @@ def run(input_path, output_path, overlap=None, workdir=None, timeout=3600, rails
         rep["drc_out"] = final
         rep["stats_out"] = PT.stats(cand.read_text(encoding="utf-8"), info)
         rep["len_delta_mm"] = round(sum(c["new_len"] - c["old_len"] for c in kept), 3)
+        rep["necks"] = sum(1 for c in kept if c.get("neck"))
     else:
         shutil.copy2(staged, out)
         rep["kept"] = 0
@@ -479,11 +562,13 @@ def run(input_path, output_path, overlap=None, workdir=None, timeout=3600, rails
         rep["drc_out"] = base
         rep["stats_out"] = rep["stats_in"]
         rep["len_delta_mm"] = 0.0
+        rep["necks"] = 0
     for ext in (".kicad_pro", ".kicad_dru"):
         s_ = inp.with_suffix(ext)
         if s_.exists() and s_.resolve() != out.with_suffix(ext).resolve():
             shutil.copy2(s_, out.with_suffix(ext))
     rep["total_s"] = round(time.monotonic() - t0, 1)
+    rep["hazards"] = hazards
     return rep
 
 
@@ -498,11 +583,14 @@ def main(argv=None):
     ap.add_argument("--rails", choices=("middle", "centre"), default="middle",
                     help="rails, grounds and wide tracks: re-route them (edge rule: into the edge middle a width deep; rule D: "
                          "to the centre line like any track), or leave their tails as they are")
+    ap.add_argument("--operating", help="operating facts JSON (pad currents for necks and land hazards; default: the "
+                    "project's KAE_OPERATING text variable)")
     ap.add_argument("--target", choices=("centreline", "edge"), default="centreline",
                     help="rule D (default): end on the pad's long centre line, the crossing piece within 10 deg "
                          "of the outline normal; edge: the approach-target rule (end overlap-deep past the facing edge)")
     a = ap.parse_args(argv)
-    rep = run(a.input, a.output, a.overlap, a.workdir, a.timeout, rails=a.rails, target=a.target)
+    rep = run(a.input, a.output, a.overlap, a.workdir, a.timeout, rails=a.rails, target=a.target,
+              operating=a.operating)
     if a.report:
         Path(a.report).write_text(json.dumps(rep, indent=1))
     print(json.dumps({k: v for k, v in rep.items()}))
