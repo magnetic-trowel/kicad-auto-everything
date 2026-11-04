@@ -24,7 +24,8 @@ Stdlib only; deterministic for a given seed.
 Not modelled: anything faster than the 10-s samples (a spike between two samples is invisible); other
 users' memory and CPU vary (here a constant); a job's own CPU demand when it was recorded under contention
 (its curve and duration include that slowdown); a timed job's budget shrinking under contention (reported as
-slowdown, its resource curve does not change); work that survives a restart (checkpoints); freezing batch jobs.
+slowdown, its resource curve does not change); work that survives a restart (checkpoints); freezing batch jobs
+(sim_freeze.py extends this engine with them).
 """
 import argparse
 import bisect

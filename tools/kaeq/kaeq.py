@@ -151,8 +151,8 @@ DEFAULTS = {
     "keep_gb": 8.0,
     # heavy_boost: jobs that hold the most memory get one step more CPU, so they wait less under contention and
     # free their memory sooner. Without privileges a priority can only be lowered, so every job starts one step
-    # up (timed: timed_nice; batch: nice 19, normal scheduling) and those not memory-heavy (expected peak under
-    # keep_gb: known at start from the owner's history, else after lease_warm_s) are moved one step down
+    # up when expected to be memory-heavy (its learned size, or --mem without history, at least keep_gb), and those
+    # not memory-heavy are one step down from the start, or moved down after lease_warm_s
     # (timed: timed_nice + 1; batch: SCHED_IDLE). Heavy timed > timed > heavy batch > batch.
     "heavy_boost": True,
     "keep_core_h": 1.0,
@@ -2058,8 +2058,9 @@ class Daemon:
                     *lim, "-p", "MemorySwapMax=0"] + argv
         pinned = job_cpus(cfg)
         tnice = int(cfg["timed_nice"])
-        # light from the start when its owner's history says so (heavy_boost); else it starts one step up
-        light = (cfg["heavy_boost"] and j["owner"] in self.ratios and self.need_mb(j, cfg) < cfg["keep_gb"] * 1024)
+        # one step up only if it is expected to be memory-heavy (heavy_boost): its learned size, or its --mem when
+        # its owner has no history, at least keep_gb. A job that turns heavy later cannot be raised (no privileges)
+        light = cfg["heavy_boost"] and self.need_mb(j, cfg) < cfg["keep_gb"] * 1024
         boosted = cfg["heavy_boost"] and not light
 
         def pre():

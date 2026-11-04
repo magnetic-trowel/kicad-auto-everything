@@ -340,9 +340,13 @@ def test_batch_jobs_run_at_sched_idle_timed_jobs_above_them(kq, tmp_path):
     submit(kq, f"ps -o ni=,cls= -p $$ > {tmp_path / 'b'}", name="b", qos="batch")
     submit(kq, f"ps -o ni=,cls= -p $$ > {tmp_path / 't'}", name="t")
     drive(kq, d, lambda: all(v == "ok" for v in states(d).values()))
-    # no history for its owner: it starts one step up (heavy_boost), at normal scheduling, nice 19
-    assert (tmp_path / "b").read_text().split() == ["19", "TS"]
-    assert (tmp_path / "t").read_text().split() == ["10", "TS"]   # timed: nice 10, far above batch
+    # light (--mem 50M, no history): one step down from the start; timed at timed_nice + 1
+    ni, cls = (tmp_path / "b").read_text().split()
+    assert cls == "IDL" and ni in ("19", "-")
+    assert (tmp_path / "t").read_text().split() == ["11", "TS"]
+    submit(kq, f"ps -o ni=,cls= -p $$ > {tmp_path / 'bh'}", name="bh", qos="batch", mem="16G")   # heavy: a step up
+    drive(kq, d, lambda: states(d)["bh"] in ("ok", "queued") and (tmp_path / "bh").exists() or states(d)["bh"] == "ok")
+    assert (tmp_path / "bh").read_text().split() == ["19", "TS"]
     conf = json.load(open(kq.CONF)); conf["heavy_boost"] = False; json.dump(conf, open(kq.CONF, "w"))
     submit(kq, f"ps -o ni=,cls= -p $$ > {tmp_path / 'b2'}", name="b2", qos="batch")
     drive(kq, d, lambda: states(d)["b2"] == "ok")
@@ -667,11 +671,12 @@ def test_a_running_timed_job_has_its_cold_memory_squeezed_into_zram(kq, tmp_path
 
 
 def test_jobs_that_are_not_memory_heavy_move_one_cpu_step_down(kq, tmp_path):
-    d = _lease_daemon(kq, tmp_path, lease_warm_s=0, keep_gb=64)
+    d = _lease_daemon(kq, tmp_path, lease_warm_s=0, keep_gb=4, mem_budget_gb=200)
     prog = "import threading, time\nt = threading.Thread(target=time.sleep, args=(30,))\nt.start()\ntime.sleep(30)"
-    submit(kq, "python3 -c " + repr(prog).replace("\\n", "\n"), name="b", qos="batch")
-    submit(kq, "python3 -c " + repr(prog).replace("\\n", "\n"), name="t", qos="timed")
+    submit(kq, "python3 -c " + repr(prog).replace("\\n", "\n"), name="b", qos="batch", mem="6G")   # starts up
+    submit(kq, "python3 -c " + repr(prog).replace("\\n", "\n"), name="t", qos="timed", mem="6G")
     drive(kq, d, lambda: len(d.cgroups) == 2)
+    d.ratios, d.ratios_ts = {"t": 0.01}, time.time() + 3600   # its owner's history now says: light after all
     d.demote_ts = 0.0
     drive(kq, d, lambda: d.demoted == {1, 2}, secs=20)
     tids = lambda i: [int(x) for x in open(d.cgroups[i] + "/cgroup.threads").read().split()]
