@@ -258,3 +258,90 @@ def test_wide_track_counts_as_current_carrying():
     text = "(kicad_pcb\n" + _seg((0.0, 0.0), (10.0, 0.0), w=PT.CURRENT_W) + ")\n"
     (t,) = PT.plan(text, _info(("R1", "SIG", (10.0, 0.0), g)), 0.05, rails="width")
     assert abs((t[2][0] - 9.0) - PT.CURRENT_W) < 1e-9
+
+
+# ----------------------------------------------------------------------------- tail re-route
+def test_approach_targets_face_the_release_point_along_the_normal():
+    rel = (3.0, 0.4)
+    (a, end, u, facing), *_ = PE.approach_targets(PAD, C, rel, 0.2, 0.05)
+    assert facing and abs(u[0] + 1) < 1e-9 and abs(u[1]) < 1e-9
+    assert abs(end[0] - 0.45) < 1e-9 and abs(end[1] - 0.4) < 1e-9          # the foot, 0.05 deep
+    assert abs(a[0] - (0.5 + 0.2)) < 1e-9 and abs(a[1] - 0.4) < 1e-9       # one width outside, on the normal
+    assert PE.entry_angle(PAD, a, end) < 1e-9
+
+
+def test_approach_targets_rails_take_the_edge_middle_a_width_deep():
+    (a, end, u, facing), *_ = PE.approach_targets(PAD, C, (3.0, 0.6), 0.3, 0.05, current=True)
+    assert abs(end[1]) < 1e-9 and abs((0.5 - end[0]) - 0.3) < 1e-9
+
+
+def test_approach_targets_prefer_the_facing_edge_over_the_nearest_corner():
+    # below and to the right: the bottom edge faces the point as squarely as the right one, but
+    # every target listed first is one the release point lies in front of
+    ts = PE.approach_targets(PAD, C, (0.9, -3.0), 0.2, 0.05)
+    a, end, u, facing = ts[0]
+    assert facing and abs(u[1] - 1.0) < 1e-9                                 # the bottom edge (y = -0.75)
+    assert abs(end[1] - (-0.70)) < 1e-9 and abs(a[1] - (-0.95)) < 1e-9
+    assert not ts[-1][3]                                                      # the far edges come last
+
+
+def test_doglegs_and_octilinear_share():
+    from kae.route import pad_reroute as RR
+    for path in RR.doglegs((0.0, 0.0), (3.0, 1.0)):
+        assert all(RR._is_octo(p, q) for p, q in zip(path[:-1], path[1:]))
+        assert path[-1] == (3.0, 1.0)
+    segs = [dict(a=(0, 0), b=(1, 0)), dict(a=(1, 0), b=(2, 1)), dict(a=(2, 1), b=(2.3, 2))]
+    assert abs(RR.octilinear_share(segs) - (1 + 2 ** 0.5) / (1 + 2 ** 0.5 + math.hypot(0.3, 1))) < 1e-9
+
+
+def test_sliver_ratio_flags_corner_crossings():
+    from kae.route import pad_reroute as RR
+    straight = RR.sliver_ratio(PAD, (3.0, 0.0), (0.0, 0.0), 0.25)
+    corner = RR.sliver_ratio(PAD, (2.0, 2.25), (0.0, 0.25), 0.25)
+    assert straight < 1.6 and corner > straight
+
+
+def test_chain_releases_at_a_junction_or_at_R():
+    from kae.route import pad_reroute as RR
+    s1 = dict(uuid="1", net="N", layer="F.Cu", w=0.2, a=(0.0, 0.0), b=(2.0, 0.0))
+    s2 = dict(uuid="2", net="N", layer="F.Cu", w=0.2, a=(2.0, 0.0), b=(2.0, 5.0))
+    by = {}
+    for s in (s1, s2):
+        for p in (s["a"], s["b"]):
+            by.setdefault((s["net"], s["layer"], RR._key(p)), []).append(s)
+    pieces, rel, kind = RR.chain(by, s1, (0.0, 0.0), 3.0, set())
+    assert kind == "split" and abs(rel[1] - 1.0) < 1e-9 and len(pieces) == 2
+    pieces, rel, kind = RR.chain(by, s1, (0.0, 0.0), 3.0, {RR._key((2.0, 0.0))})
+    assert kind == "node" and rel == (2.0, 0.0) and len(pieces) == 1
+    s3 = dict(s2, uuid="3", w=0.4)
+    by2 = {k: [s3 if x is s2 else x for x in v] for k, v in by.items()}
+    _, rel, kind = RR.chain(by2, s1, (0.0, 0.0), 3.0, set())
+    assert kind == "node" and rel == (2.0, 0.0)                             # a width change releases
+
+
+def test_reroute_plan_on_a_fixture_board_arrives_along_the_normal(tmp_path):
+    """An oblique entry into a 1.0 x 1.5 mm land is re-routed from its release point: the new
+    tail ends overlap-deep in the land along the edge normal, every piece legal."""
+    from kae.route import pad_reroute as RR
+    p = F.write_board(tmp_path, extra=[DIAG, DIAG2])
+    info = F.synth_info(load(p))
+    plan = CN.plan(info, p, {})
+    sp = Space(load(p), info, plan=plan)
+    gr = GridRouter(sp, pad_entry="centre")
+    a = next(it for it in sp.pads if it.owner == ("Q1", "1"))
+    b = next(it for it in sp.pads if it.owner == ("Q2", "1"))
+    text = "(kicad_pcb\n" + _seg(a.pos, b.pos, w=0.25, net="FA") + ")\n"
+    for pd in info["pads"]:
+        pd.setdefault("attr", "smd")
+    changes, outcome, octo = RR.plan(text, info, sp, gr, 0.05)
+    assert outcome.get("rerouted", 0) >= 1
+    for ch in changes:
+        pts = ch["pts"]
+        g = (a if ch["pieces"][0][1] == a.pos else b).geom
+        assert PE.entry_angle(g, pts[-2], pts[-1]) <= RR.ENTRY_DEG
+        assert _depth(g, pts[-2], pts[-1]) >= 0.05 - 1e-6
+        assert math.dist(pts[-2], PE.crossing(g, pts[-2], pts[-1])) >= 0.25 - 1e-6
+        for u, v in zip(pts[:-1], pts[1:]):
+            assert not sp.track_violations("FA", "F.Cu", 0.25, u, v)
+        out = RR.write(text, [ch])
+        assert len(PT._segments(out)) >= 2

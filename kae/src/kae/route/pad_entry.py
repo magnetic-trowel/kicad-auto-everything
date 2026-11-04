@@ -189,3 +189,62 @@ def entry_angle(pad, a, b):
     if d is None:
         return None
     return math.degrees(math.acos(max(-1.0, min(1.0, abs(d[0] * n[0] + d[1] * n[1])))))
+
+
+def _edges(pad):
+    g, pts = _ring(pad)
+    return [(a, b) for a, b in zip(pts[:-1], pts[1:]) if math.dist(a, b) > EPS]
+
+
+def approach_targets(pad, centre, release, width, overlap, current=False, stub=None, max_targets=4):
+    """Where a re-routed tail from `release` (outside the pad) may enter the pad, best first:
+    [(a, end, u, facing)]: the route reaches the approach point a, then runs straight along the
+    edge's inward normal u, `stub` (at least the width) to the edge and `depth` past it to `end`.
+
+    One target per straight edge at least the width long (the whole width lands on it): its
+    middle for current-carrying copper (a width deep), else the release point's foot on the
+    edge, kept half a width from the corners. A round pad (or one whose edges are all shorter
+    than the width) is entered radially, toward the release point. Edges the release point lies
+    in front of come first (no route around the pad), then by the route's straight-line length
+    release -> a plus the wrong-side penalty; targets whose end would pass the centre or whose
+    round end leaves the pad are dropped."""
+    from shapely.geometry import Point as _P
+    stub = max(width, 0.1) if stub is None else stub
+    depth = max(overlap, width if current else 0.0, EPS)
+    fat = pad.buffer(EPS)
+    out = []
+
+    def keep(e, u):
+        end = (e[0] + depth * u[0], e[1] + depth * u[1])
+        if (centre[0] - e[0]) * u[0] + (centre[1] - e[1]) * u[1] < depth - EPS:
+            return
+        tip = (end[0] + width / 2 * u[0], end[1] + width / 2 * u[1])
+        if not fat.contains(_P(end)) or not fat.contains(_P(tip)):
+            return
+        a = (e[0] - stub * u[0], e[1] - stub * u[1])
+        if pad.distance(_P(a)) < stub - 1e-6:
+            return                       # the approach point must clear the pad (a corner beside it)
+        facing = (release[0] - e[0]) * -u[0] + (release[1] - e[1]) * -u[1] > 0
+        cost = math.dist(release, a) + (0.0 if facing else 2.0 * stub + pad.length / 4)
+        out.append((cost, a, end, u, facing))
+
+    for a0, b0 in _edges(pad):
+        L = math.dist(a0, b0)
+        if L + EPS < width:
+            continue
+        t = _unit(b0[0] - a0[0], b0[1] - a0[1])
+        u = _inward(pad, a0, b0)
+        if current:
+            s = L / 2
+        else:
+            s = (release[0] - a0[0]) * t[0] + (release[1] - a0[1]) * t[1]
+            s = min(max(s, width / 2), L - width / 2)
+        keep((a0[0] + s * t[0], a0[1] + s * t[1]), u)
+    if not out:
+        u = _unit(centre[0] - release[0], centre[1] - release[1])
+        if u is not None:
+            e = crossing(pad, release, centre)
+            if e is not None:
+                keep(e, u)
+    out.sort(key=lambda x: x[0])
+    return [x[1:] for x in out[:max_targets]]

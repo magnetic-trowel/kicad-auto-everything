@@ -201,10 +201,18 @@ def write(text, trims, skip=frozenset()):
 def stats(text, info, tol=1e-3):
     """Pad entries of the board: {entries, at_centre, near_edge, perpendicular (<= 10 deg off
     the edge normal), oblique (10-45), acute (> 45: a wedge under 45 deg), track_mm}."""
-    pads = _pads(info)
+    from shapely.ops import unary_union
+    pads = {}
+    for k, lst in _pads(info).items():
+        # touching shapes of one net (a pad of several shapes, a THT pad with an SMD twin) are
+        # one land: a track running from one into the other is no entry
+        merged = unary_union([g for g, _, _ in lst])
+        for g in getattr(merged, "geoms", [merged]):
+            cs = [c for h, c, _ in lst if g.buffer(1e-6).contains(Point(c))]
+            pads.setdefault(k, []).append((g, cs, None))
     segs = _segments(text)
     st = dict(entries=0, at_centre=0, near_edge=0, perpendicular=0, oblique=0, acute=0,
-              track_mm=round(sum(math.dist(s["a"], s["b"]) for s in segs), 3))
+              track_mm=round(sum(math.dist(s["a"], s["b"]) for s in segs), 3), vias=len(_vias(text)))
     for s in segs:
         for g, c, _ in pads.get((s["net"], s["layer"]), ()):
             ina, inb = g.contains(Point(s["a"])), g.contains(Point(s["b"]))
@@ -213,7 +221,7 @@ def stats(text, info, tol=1e-3):
             inside = s["a"] if ina else s["b"]
             ang = PE.entry_angle(g, s["a"], s["b"])
             st["entries"] += 1
-            st["at_centre" if math.dist(inside, c) <= tol else "near_edge"] += 1
+            st["at_centre" if any(math.dist(inside, x) <= tol for x in c) else "near_edge"] += 1
             if ang is None:
                 continue
             st["perpendicular" if ang <= 10 else "oblique" if ang <= 45 else "acute"] += 1
