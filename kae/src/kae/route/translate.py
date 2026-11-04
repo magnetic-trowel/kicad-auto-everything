@@ -422,6 +422,62 @@ def snap_wiring(tree, pads=None, tol_um=SNAP_TOL_UM):
     return summary, snaps
 
 
+TIE_W_MM = 0.05            # width of a pin tie: inside any pad, so no obstacle to other nets
+
+
+def tie_pins(tree, info, names_of):
+    """Freerouting joins a trace to a pin only at the pin's exact centre (Trace.getNormalContacts:
+    a pin counts when the trace's end equals DrillItem.getCenter; getTraceConnectionShape is the
+    centre point), so a wire that ends at a pad's edge reads as a tail and its pin as open.
+    Every wiring end that lies inside a same-net pad's copper on its layer, off the pin's
+    centre, therefore gets a `(type fix)` wire from that end to the centre, TIE_W_MM wide.
+    Fixed wiring is never written to the session (SesWriter.writeNet), so the routed board
+    keeps its edge entry. Returns the number of ties."""
+    from shapely import affinity
+    from shapely.geometry import Point
+    wiring = find(tree, "wiring")
+    if wiring is None:
+        return 0
+    scale = S.unit_scale(tree)
+    eps = 1e-3 * scale                      # 1 um
+    centres = dsn_pin_centres(tree)
+    pads = {}                               # (net, DSN layer name) -> [(copper in DSN units, centre)]
+    for pd in (info or {}).get("pads") or []:
+        net, pos = pd.get("net"), pd.get("pos")
+        if not net or not pos or not centres.get(net):
+            continue
+        q = (pos[0] * scale, -pos[1] * scale)
+        c = min(centres[net], key=lambda x: math.dist(x, q))
+        if math.dist(c, q) > 2 * SNAP_TOL_UM * 1e-3 * scale:
+            continue
+        for l in pd.get("layers") or []:
+            g = _pad_copper(pd, l)
+            if g is None or g.is_empty:
+                continue
+            g = affinity.affine_transform(g, [scale, 0, 0, -scale, 0, 0])
+            pads.setdefault((net, names_of.get(l, l)), []).append((g, c))
+    ties = []
+    for w in findall(wiring, "wire"):
+        path, net = find(w, "path"), find(w, "net")
+        if path is None or net is None or len(path) < 7:
+            continue
+        cands = pads.get((str(net[1]), str(path[1])))
+        if not cands:
+            continue
+        try:
+            xy = [float(v) for v in path[3:]]
+        except (TypeError, ValueError):
+            continue
+        for e in ((xy[0], xy[1]), (xy[-2], xy[-1])):
+            for g, c in cands:
+                if math.dist(e, c) > eps and g.contains(Point(e)):
+                    ties.append(["wire", ["path", path[1], fmt(TIE_W_MM * scale), fmt(e[0]), fmt(e[1]),
+                                          fmt(c[0]), fmt(c[1])], ["net", net[1]], ["type", "fix"]])
+                    break
+    wiring.extend(ties)
+    return len(ties)
+
+
 def plane_layers(info, share=PLANE_SHARE):
     """{inner copper layer: net} of the layers where one net's zones (not rule areas, not
     teardrops) cover at least `share` of the board outline."""
@@ -537,6 +593,8 @@ def apply(tree, plan, info):
     def lname(l):
         return names_of.get(l, l)
     summary["layer_names"] = {c: d for c, d in names_of.items() if c != d}
+    if getattr(plan, "pad_entry", "centre") == "edge":
+        summary["pin_ties"] = tie_pins(tree, info, names_of)
     # all-power boards get signal layers
     kinds = [find(l, "type") for l in layers]
     if kinds and all(k is not None and len(k) > 1 and k[1] == "power" for k in kinds):

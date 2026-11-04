@@ -165,6 +165,7 @@ class Space:
         self.settings = info.get("settings") or {}
         self.via_in_pad = bool(self.opts.get("via_in_pad", False))
         self.pad_overlap = float(CN.setting("pad_entry_overlap", getattr(board, "path", None), self.opts))
+        self.pad_entry = CN.pad_entry_mode(getattr(board, "path", None), self.opts)
         st = board.stackup
         z = [0.0]
         if st is not None and st.copper == self.cu and len(st.gaps) == len(self.cu) - 1:

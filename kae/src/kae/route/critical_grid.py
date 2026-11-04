@@ -384,8 +384,11 @@ class GridRouter:
     """Routes single connections in a Space (see the module docstring)."""
 
     def __init__(self, space, res=0.05, max_cells=1_500_000, halo=0.4, halo_cost=0.6, pour_cost=0.4,
-                 via_cost=1.5, max_exp=4_000_000):
+                 via_cost=1.5, max_exp=4_000_000, pad_entry=None):
         self.sp = space
+        # "centre": track ends snap onto pad centres; "edge": they end at the edge they approach
+        # (kae.route.pad_entry; Space.pad_entry from the pad_entry setting by default)
+        self.pad_entry = pad_entry or getattr(space, "pad_entry", "centre")
         self.res = res
         self.max_cells = max_cells
         self.halo, self.halo_cost, self.pour_cost = halo, halo_cost, pour_cost
@@ -818,11 +821,19 @@ class GridRouter:
         segs = []
         for ri, (l, pts) in enumerate(runs):
             pts = _merge_collinear(pts)
-            if ri == 0 and not pre:
-                pts = self._snap_end(net, l, width, pts, sources, first=True)
-            if ri == len(runs) - 1 and not post:
-                pts = self._snap_end(net, l, width, pts, targets, first=False)
-            pts = self._pull(net, l, width, pts, tol)
+            head, tail = ri == 0 and not pre, ri == len(runs) - 1 and not post
+            if self.pad_entry == "edge" and (head or tail):
+                pts = self._pull(net, l, width, pts, tol)
+                for anchors, first, on in ((sources, True, head), (targets, False, tail)):
+                    if on:
+                        got = self._edge_end(net, l, width, pts, anchors, first, tol)
+                        pts = got if got is not None else self._snap_end(net, l, width, pts, anchors, first=first)
+            else:
+                if head:
+                    pts = self._snap_end(net, l, width, pts, sources, first=True)
+                if tail:
+                    pts = self._snap_end(net, l, width, pts, targets, first=False)
+                pts = self._pull(net, l, width, pts, tol)
             for a, b in zip(pts[:-1], pts[1:]):
                 if math.dist(a, b) > 1e-6:
                     segs.append((l, a, b))
@@ -923,6 +934,44 @@ class GridRouter:
                     return [c] + pts[1:] if first else pts[:-1] + [c]
                 return [c] + pts if first else pts + [c]
         return pts
+
+    def _edge_end(self, net, layer, w, pts, anchors, first, tol=TOL):
+        """End the path at the edge of the pad it reaches (kae.route.pad_entry.entries): the
+        tail inside the pad is replaced by a perpendicular entry `pad_entry_overlap` deep (the
+        width on rails and grounds, centred on the edge), every new piece exactly legal. None
+        when the end is at no pad, the path never leaves the pad, or no entry is legal (the
+        caller snaps to the centre as before)."""
+        from . import pad_entry as PE
+        seq = list(pts[::-1] if first else pts)
+        if len(seq) < 2:
+            return None
+        end = seq[-1]
+        best = None
+        for a in anchors:
+            if a.kind != "pad" or layer not in a.layers or a.centre_on(layer) is None:
+                continue
+            g = a.geom_on(layer)
+            d = g.distance(Point(end))
+            if d <= 1e-6 + 0.75 * self.res and (best is None or d < best[0]):
+                best = (d, a, g)
+        if best is None:
+            return None
+        _, a, g = best
+        k = next((i for i in range(len(seq) - 1, -1, -1) if not g.contains(Point(seq[i]))), None)
+        if k is None:
+            return None
+        p = seq[k]
+        sp = self.sp
+        opt = sp.width_limits(net, layer)[1] or 0.0
+        cur = PE.current_net(net) or (opt > 0 and w > 1.05 * opt)
+        for tail in PE.entries(g, a.centre_on(layer), p, w, float(getattr(sp, "pad_overlap", 0.05)),
+                               centred=cur, current=cur):
+            pieces = [p] + tail
+            if all(not sp.track_violations(net, layer, w, u, v, first=True, tol=tol)
+                   for u, v in zip(pieces[:-1], pieces[1:])):
+                out = seq[:k + 1] + tail
+                return out[::-1] if first else out
+        return None
 
     def _pull(self, net, layer, w, pts, tol=TOL):
         """String pulling: keep the farthest straight shortcut that is exactly legal."""

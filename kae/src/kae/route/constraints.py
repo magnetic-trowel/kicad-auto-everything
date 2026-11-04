@@ -164,6 +164,10 @@ DEFAULTS = dict(
     pad_entry_overlap=0.05,        # mm: a track may end outside a pad when its copper still overlaps the pad by
                                    # this much (KiCad connects any overlap); a 0.4 mm-pitch WLP ball is left
                                    # cleanly no other way at 0.2 / 0.2 mm (critical_grid._escapes)
+    pad_entry="centre",            # where kae's grid router ends a track at a pad: "centre" (snapped onto the pad
+                                   # centre where legal), or "edge" (at the edge it approaches, perpendicular,
+                                   # pad_entry_overlap inside, at least the width on rails; route.pad_entry);
+                                   # env KAE_PAD_ENTRY when neither the project nor opts set it
     escape_band=1,                 # placement (kae.place.escape_band): the surface escapes of each ball grid
                                    # and fine-pitch ring kept free of parts that are not its own (1: a soft
                                    # annealer term; 2: hard occupancy against every part; 0: off)
@@ -203,6 +207,16 @@ def setting(name, board_path=None, opts=None):
             if isinstance(DEFAULTS[name], str):
                 return v
     return DEFAULTS[name]
+
+
+def pad_entry_mode(board_path=None, opts=None):
+    """The pad_entry setting ("centre" or "edge"): project text variable, opts, else env
+    KAE_PAD_ENTRY, else the default."""
+    import os
+    v = setting("pad_entry", board_path, opts)
+    if v == DEFAULTS["pad_entry"]:
+        v = os.environ.get("KAE_PAD_ENTRY") or v
+    return v if v in ("centre", "edge") else DEFAULTS["pad_entry"]
 
 
 def rule_board(info, board_path, opts=None):
@@ -278,6 +292,7 @@ def plan(info, board_path, opts=None):
     rb = rule_board(info, board_path, opts)
     cu = list(info["copper"])
     p = Plan(copper=cu, rule_board=rb)
+    p.pad_entry = pad_entry_mode(board_path, opts)
     sev = opts.get("severities") or {}
     s = info["settings"]
 
