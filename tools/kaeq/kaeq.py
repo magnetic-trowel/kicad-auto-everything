@@ -2302,8 +2302,8 @@ def cmd_retry(a):
         c.execute("UPDATE jobs SET state='queued',attempt=attempt+1,preempts=0,mem_mb=?,timeout_s=?,cpus=?,pid=NULL,rc=NULL,"
                   "lost_run_s=lost_run_s+?,lost_cpu_s=lost_cpu_s+cpu_s,cpu_s=0,frozen_s=0,frozen_since=0,freezes=0,"
                   "started=NULL,finished=NULL,note=NULL,submitted=?,retries_left=?,disk_mb=? WHERE id=?",
-                  (mem, active_for(j, time.time()), parse_dur(a.timeout) if a.timeout else j["timeout_s"], a.cpus or j["cpus"], time.time(), a.retries,
-                   disk, j["id"]))
+                  (mem, parse_dur(a.timeout) if a.timeout else j["timeout_s"], a.cpus or j["cpus"], active_for(j, time.time()),
+                   time.time(), a.retries, disk, j["id"]))
         if os.path.isdir(jobdir(j["id"])):
             with open(os.path.join(jobdir(j["id"]), "log"), "ab") as f:
                 f.write(f"\n=== kaeq retry (attempt {j['attempt'] + 1}) ===\n".encode())

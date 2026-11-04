@@ -716,3 +716,21 @@ def test_jobs_go_in_as_batch_unless_marked_timed(kq):
     submit(kq, "true", name="bench", qos="timed")
     c = kq.db()
     assert dict(c.execute("SELECT name, qos FROM jobs").fetchall()) == {"plain": "batch", "bench": "timed"}
+
+
+def test_retry_keeps_or_sets_cpus_timeout_and_books_the_lost_attempt(kq):
+    import argparse
+    c = kq.db()
+    now = time.time()
+    for name in ("a", "b"):
+        c.execute("INSERT INTO jobs(owner,name,cmd,cpus,mem_mb,timeout_s,state,submitted,started,finished,peak_mb,"
+                  "frozen_s) VALUES('t',?,'x',4,1000,3600,'failed',?,?,?,0,100)", (name, now - 1000, now - 900, now - 300))
+    c.commit()
+    ns = dict(owner=None, tag=None, mem=None, timeout=None, cpus=None, retries=0, disk=None)
+    kq.ensure_daemon = lambda: None
+    kq.cmd_retry(argparse.Namespace(ids=["1"], **ns))
+    kq.cmd_retry(argparse.Namespace(ids=["2"], **dict(ns, timeout="5h", cpus=8.0)))
+    a, b = c.execute("SELECT * FROM jobs ORDER BY id").fetchall()
+    assert (a["cpus"], a["timeout_s"]) == (4, 3600) and (b["cpus"], b["timeout_s"]) == (8, 5 * 3600)
+    for j in (a, b):   # the failed attempt ran 600 s, 100 s of it frozen: 500 s lost
+        assert j["state"] == "queued" and j["lost_run_s"] == pytest.approx(500, abs=2)
