@@ -287,3 +287,18 @@ def test_taut_board_pass(tmp_path):
     for net in ("USB_D+", "USB_D-", "LEN1"):
         assert tracks(after, net) == tracks(before, net), net
     assert rep["fixed"].get("diff pair") == 2 and rep["fixed"].get("length rule") == 1
+
+
+def test_fillet_turns_an_acute_anchor_into_a_tangent_arc():
+    from kae.route.taut import _acute_corners, _fillet_anchors
+    # a tail along +x ending at (0, 0); the target lies behind it: a corner of about 135 degrees
+    head = [(-0.5, 0.0), (0.0, 0.0)]
+    tail = [(-3.0, 1.0)]
+    bs = _space([], [(0, 0), (-3, 1)], margin=2.0)
+    r = bs.solve([(0.0, 0.0), (-3.0, 1.0)])
+    pieces = [("seg", head[0], head[1])] + r.pieces
+    assert _acute_corners(pieces) == 1
+    r2 = _fillet_anchors(r, head, tail, 0.25, bs.check)
+    pieces2 = [("seg", head[0], head[1])] + r2.pieces
+    assert _acute_corners(pieces2) == 0
+    assert r2.pieces[0][0] == "arc" and G.g1_defects(pieces2) == []
