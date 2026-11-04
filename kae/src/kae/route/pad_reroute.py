@@ -217,7 +217,7 @@ def plan(text, info, sp, gr, overlap=0.05, log=print, deadline=None, rails="midd
                 note("skip_via")
                 break
             cur = PE.current_net(s["net"]) or w >= PT.CURRENT_W - 1e-9
-            if cur and rails == "centre" and target != "centreline":
+            if cur and rails == "centre":
                 note("skip_rail")
                 break
             got = None
@@ -496,7 +496,8 @@ def main(argv=None):
     ap.add_argument("--report")
     ap.add_argument("--timeout", type=int, default=3600)
     ap.add_argument("--rails", choices=("middle", "centre"), default="middle",
-                    help="rails, grounds and wide tracks: re-route into the edge middle a width deep, or leave them")
+                    help="rails, grounds and wide tracks: re-route them (edge rule: into the edge middle a width deep; rule D: "
+                         "to the centre line like any track), or leave their tails as they are")
     ap.add_argument("--target", choices=("centreline", "edge"), default="centreline",
                     help="rule D (default): end on the pad's long centre line, the crossing piece within 10 deg "
                          "of the outline normal; edge: the approach-target rule (end overlap-deep past the facing edge)")

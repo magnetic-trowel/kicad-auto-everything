@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: CC-BY-4.0 -->
 # kae pad-edge entry: end a track at the pad edge it approaches, not at the centre
 
-**Status:** partial. The tail re-route (`kae.route.pad_reroute`) on 12 routed boards fixed 397 of 624 oblique or sliver-prone entries: acute 107 → 46, oblique 581 → 249 with the trim after it. DRC was never worse and no vias were added; physics moved by at most 1.5 % per board, in both directions. The end-only post-pass (`kae.route.pad_trim`) cut 4 % of track but barely changed angles. The in-router option gained nothing on a 2-board A/B. All three are off by default.
+**Status:** partial. Rule D (`pad_reroute --target centreline`, the default) fixed 414 of 624 oblique or sliver-prone entries on 12 boards (acute 107 → 44, oblique 581 → 240), every end on the pad's long centre line; DRC never worse. Before it, the edge rule of the tail re-route (`kae.route.pad_reroute`) on 12 routed boards fixed 397 of 624 oblique or sliver-prone entries: acute 107 → 46, oblique 581 → 249 with the trim after it. DRC was never worse and no vias were added; physics moved by at most 1.5 % per board, in both directions. The end-only post-pass (`kae.route.pad_trim`) cut 4 % of track but barely changed angles. The in-router option gained nothing on a 2-board A/B. All three are off by default.
 **First published:** 2026-11-03, branch `pad-edge-entry` (off `power-copper`).
 
 Every routing stage aimed at a pad's centre. A connection only needs to reach the pad's copper, so the run from the edge to the centre is copper inside the land (or, for a track wider than the land, a bulge beside it), and the snap to the centre adds a last piece at whatever angle the centre lies.
@@ -67,14 +67,36 @@ Re-route then trim, totals over the 12 boards:
 - **Runtime:** 3-63 s per board, 199 s for all 12, of which 23 s is planning and routing.
 - **Physics** (10 boards, intent totals in the results): with rail tails into the edge middle, 8 boards moved by 0.4 % or less. lenaschimmel improved 1.5 % (supply S0 200.1 → 193.5 mV) and aifryz got 1.1 % worse (S1 1.114 → 1.131 V). With rail tails left at the centre, every board stayed within 0.4 %.
 
+### Rule D: end on the long centre line (`--target centreline`, the default since 2026-11-04)
+
+The edge rule ends a track `pad_entry_overlap` past the edge it reaches. Rule D (`pad_entry.centreline_targets`) ends it on the pad's long centre line instead: the segment along the long axis between the points (w − h)/2 from the centre. For round and near-square pads (|w − h| ≤ 10 % of w) that is the centre point; for an oval it is the segment between the end-circle centres. The track then sits centred across the pad. The straight piece that crosses the outline must be within 10° of the outline's normal there.
+- **Path.** Straight from the approach direction to the nearest centre-line point if that line already crosses within 10°, with no corner. Otherwise the shortest legal of (a) a corner one width outside the long edge the release point faces, then in along its normal, and (b) a corner one width outside the short edge on the axis, then along the axis to the centre line's end. A round end (stadium, round pad) is entered radially.
+- **Choice.** Every candidate is routed and the shortest legal one is kept. A target whose round end would leave the far side of the pad is dropped.
+- **Rails.** No special case: the end is a full width or more inside. Where no D target is reachable legally, the old tail (its centre end) stays.
+- **Unchanged.** Release walk, grid search, exact legality, DRC gate, length limit and skip rules are as above. `--target edge` keeps the edge rule.
+
+On the same 12 boards, both rules from the original outputs (per board in the [results](../../../bench/results/2026-11-04-pad-edge-entry-59caa02.md#4-rule-d-against-the-edge-rule)):
+
+| | Kept | Oblique / acute | Ends on the centre line | Track m | DRC reverted | Time s |
+|---|---|---|---|---|---|---|
+| Original | – | 581 / 107 | 2922 of 3385 | 19.70 | – | – |
+| Edge rule | 397 | 252 / 48 | 2613 | 19.64 | 0 | 229 |
+| Rule D | 414 | 240 / 44 | 3016 | 19.74 | 19 | 258 |
+
+- **Fixed:** D re-routed 433 of 624 candidates and DRC kept 414 (edge rule: 397). D failed fewer: no route 27, release point at the land 20, tail shared 4, too long 2, no 45/90° dogleg 1, illegal final piece 1. It never lacked a target (the edge rule had 29 such failures: no edge long enough for the width).
+- **Board by board:** D fixed more on 9 boards and fewer on 2. On cm4-carrier it kept 3 against 18: 16 re-routes came in over the long edge of fine-pitch lands, and DRC reverted them for 4 new `solder_mask_bridge` errors. On dream it kept 74 against 78: 3 were reverted for one unconnected.
+- **DRC:** after the gate, no board worse in any error type. nekoink has one more `track_dangling` warning: a 0.1 mm stub where a tail was split at a tap that overlapped it 0.05 mm off its centreline (still connected).
+- **Track:** +36 mm against −65 mm for the edge rule, since D runs on to the centre line. No vias added.
+- **Physics** (rails as D routes them): 8 of 10 boards within 0.25 %, as with the edge rule. lenaschimmel improved 1.7 % (edge rule 1.5 %). aifryz got 5.1 % worse (S4/S7 supply peak 1.305 → 1.377 V); the edge rule cost 1.1 % there. D re-routes 8 segments of +BATT on aifryz that the edge rule did not touch. `--rails centre` leaves rail, ground and wide-track tails as they are under D too.
+
 ### Router A/B (in-router edge ends)
 
 `tools/research/routing/pad_edge_ab.sh` ran merge3-ab's bridge-final portfolio with `KAE_PAD_ENTRY` set to centre vs edge. It was stopped once re-routing was ruled out. chips-0123: both arms clean on 2 seeds. nekoink, 1 seed each: edge 106 open vs centre 67, against 95 in the stored output (noise).
 
 ## Verdict
 
-- **Tail re-route + trim: the pad-entry pass to use.** It more than halves oblique and acute entries at no DRC cost, in 3-63 s per board. It needs a merit-size A/B before it becomes a bridge stage or a default. What is left is mostly fan-out and dog-bone stubs (skipped by rule) and tight spots with no room.
-- **Rail tails: into the edge middle (the default, `--rails middle`).** Leaving them at the centre gives up a third of the fixes (acute 46 → 75, oblique 249 → 365). The physics difference is not one-sided: lenaschimmel 1.5 % better, aifryz 1.1 % worse, the rest within 0.2 %. Use `--rails centre` where a supply term has no margin.
+- **Tail re-route with rule D: the pad-entry pass to use (the default).** It fixes the most entries (414 of 624), ends 3,016 of 3,385 entries on the centre line, and needs no rail special case. Since D ends on the centre line, no trim runs after it. A merit-size A/B still comes first. On boards with fine-pitch lands the long-edge approach can bridge solder mask; DRC catches it (cm4-carrier). Physics is unchanged on 8 boards. The exception is the supply peak on aifryz, where D re-routed rail tails (+5 %). Until that is understood, run D with `--rails centre` on boards with supply limits.
+- **Rail tails under the edge rule (`--target edge`): into the edge middle (`--rails middle`).** Leaving them at the centre gives up a third of the fixes (acute 46 → 75, oblique 249 → 365). The physics difference is not one-sided: lenaschimmel 1.5 % better, aifryz 1.1 % worse, the rest within 0.2 %. Use `--rails centre` where a supply term has no margin.
 - **End-only post-pass (`pad_trim`): worth running, not yet the default.** It never made DRC worse and cut 5.5 % of track; on one board it removed 7 errors. With rails left at the centre, physics did not move. It does little for what the user cares about most, acute entries (114 → 96 over 12 boards): those come from Freerouting's 45° runs, and re-ending them needs room for a turn outside the pad. Next steps: re-end along the chain of segments rather than one segment, and run it as the bridge's last stage in a merit-sized A/B.
 - **Rails in `pad_trim`: keep their centre ends (default `--rails centre`).** Cutting them a width deep only removes copper; rail drop and copper loss rose up to 1.4 %.
 - **In-router option (`pad_entry=edge`): keep off.** Freerouting completes most connections itself, so the grid router rarely ends a track. Where it does, Freerouting needs a DSN pin tie to see the joint. The one paired BGA run was worse (106 vs 67 open; noisy). Nothing here argues for it.

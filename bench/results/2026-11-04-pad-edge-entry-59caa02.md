@@ -62,3 +62,39 @@ Counts with touching same-net shapes merged into one land.
 
 Columns: `pad_trim --rails width` (the first trim run), `pad_trim` (rails at the centre, the default), `pad_reroute` + `pad_trim` with rail tails into the edge middle (`--rails middle`, the default), and the same with rail tails left (`--rails centre`).
 
+
+## 4. Rule D against the edge rule
+
+`pad_reroute --target centreline` (rule D) against `--target edge`, both from the original outputs; same code (4 Nov), edge-rule rows re-run for the timing. Entries counted with touching same-net shapes merged; "on centre line" = the inside end within 0.01 mm of the land's long centre line.
+
+| Board | Candidates | Kept: edge / D | Oblique/acute: original / edge / D | On centre line: original / edge / D | DRC err/unconn: original → D | Track mm: original / edge / D | Time s: edge / D |
+|---|---|---|---|---|---|---|---|
+| adafruit magtag | 16 | 12 / 13 | 14/8 / 9/2 / 8/2 | 254 / 247 / 258 | 51/0 → 51/0 | 2144 / 2144 / 2149 | 17 / 16 |
+| adafruit metro-m7 | 42 | 37 / 38 | 29/19 / 9/3 / 8/3 | 313 / 289 / 326 | 22/1 → 22/1 | 2329 / 2326 / 2341 | 22 / 24 |
+| aifryz sensor-hub | 124 | 75 / 84 | 113/14 / 46/6 / 37/6 | 316 / 259 / 340 | 9/0 → 9/0 | 1973 / 1961 / 1977 | 20 / 20 |
+| dream117er paicorea | 89 | 78 / 74 | 87/5 / 12/2 / 14/4 | 232 / 162 / 237 | 0/1 → 0/1 | 2477 / 2458 / 2475 | 23 / 39 |
+| freetronics secsense | 1 | 0 / 1 | 1/0 / 1/0 / 0/0 | 70 / 70 / 71 | 0/0 → 0/0 | 584 / 584 / 585 | 6 / 9 |
+| greatscottgadgets ubertooth | 36 | 21 / 29 | 39/13 / 26/6 / 20/4 | 336 / 327 / 352 | 37/13 → 37/13 | 1177 / 1176 / 1184 | 13 / 13 |
+| jjhorton pmod-tester | 0 | 0 / 0 | 0/0 / 0/0 / 0/0 | 42 / 42 / 42 | 0/0 → 0/0 | 309 / 309 / 309 | 4 / 4 |
+| jkiv cm4-carrier | 40 | 18 / 3 | 36/5 / 18/5 / 33/5 | 178 / 166 / 179 | 612/0 → 612/0 | 1561 / 1559 / 1562 | 12 / 14 |
+| lenaschimmel bestelampe | 28 | 18 / 24 | 23/7 / 11/2 / 6/1 | 153 / 137 / 160 | 16/0 → 16/0 | 2361 / 2361 / 2363 | 19 / 19 |
+| sparkfun redbot | 38 | 11 / 12 | 27/11 / 20/8 / 20/8 | 191 / 186 / 195 | 133/0 → 133/0 | 1517 / 1514 / 1517 | 15 / 15 |
+| circuitmonkey chips-0123 | 2 | 2 / 2 | 7/0 / 5/0 / 5/0 | 5 / 3 / 5 | 45/4 → 45/4 | 33 / 33 / 34 | 6 / 6 |
+| zephray nekoink | 208 | 125 / 134 | 205/25 / 95/14 / 89/11 | 832 / 725 / 851 | 11/95 → 11/95 | 3235 / 3210 / 3241 | 74 / 78 |
+
+Rule D outcomes over the 12 boards: candidates 624, fail_final_piece 1, fail_length 2, fail_no_route 27, fail_overlap 4, fail_release_at_pad 20, fail_style 1, rerouted 433, skip_via 136 ; DRC-reverted 19 (cm4-carrier 16, dream117er 3).
+
+Physics, change of the intent total against the original (edge rule: re-route + trim, rails into the edge middle; rule D: re-route only, rails routed like every track):
+
+| Board | Original | Edge rule (re-route + trim) | Rule D |
+|---|---|---|---|
+| adafruit magtag | 26972.5 | +0.06 % (S3 50.39 mV → 50.45 mV, S4 442.9 mV → 443.6 mV) | +0.02 % (S3 50.39 mV → 50.39 mV, S4 442.9 mV → 443.1 mV) |
+| adafruit metro-m7 | 7442.9 | +0.06 % (S2 194.7 mV → 194.4 mV, S0 120.3 mV → 120.3 mV) | +0.12 % (S2 194.7 mV → 194 mV, S0 120.3 mV → 120.2 mV) |
+| aifryz sensor-hub | 47275.4 | +1.12 % (S1 1.114 V → 1.131 V, S4 1.305 V → 1.32 V) | +5.07 % (S4 1.305 V → 1.377 V, S7 1.305 V → 1.377 V) |
+| dream117er paicorea | 348.7 | +0.38 % (D1 121.8 mV → 122 mV, P1 76.25 mW → 76.32 mW) | -0.00 % |
+| freetronics secsense | 15818.6 | +0.00 % | +0.00 % |
+| greatscottgadgets ubertooth | 2204.1 | +0.18 % (E3 40.12 dBuV/m → 40.19 dBuV/m, E2 618.3 µV → 620.2 µV) | +0.02 % |
+| jjhorton pmod-tester | 904.1 | +0.00 % | +0.00 % |
+| jkiv cm4-carrier | 9931.3 | -0.11 % (S0 166.3 mV → 166.1 mV, M1 71.44 C → 71.46 C) | -0.00 % |
+| lenaschimmel bestelampe | 5237.8 | -1.49 % (S0 200.1 mV → 193.5 mV, R0 2.007 V → 1.991 V) | -1.74 % (S0 200.1 mV → 193.2 mV, R0 2.007 V → 1.986 V) |
+| sparkfun redbot | 96538.6 | +0.02 % (S5 206.2 mV → 206.9 mV, P1 997.4 mW → 998.2 mW) | +0.25 % (S0 2.054 V → 2.057 V, R0 8.745 V → 8.773 V) |
