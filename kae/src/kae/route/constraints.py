@@ -189,6 +189,8 @@ DEFAULTS = dict(
                                    # USB, barrel, audio, RJ/modular, video/D-sub; at or near 100 % on an
                                    # edge on human boards) 2: pinned to the edge facing out after the seed,
                                    # 1: only the connector_off_edge hazard, 0: neither (audit P4)
+    fab="jlcpcb",                  # the fab whose classes clip and label suggested relaxations (escape
+                                   # certificates, kae.route.blocked): kae.route.fab.PROFILES
     escape_fanout=0,               # placement: 1 also reserves the dog-bone via sites of each ball grid on the
                                    # other side (no part there covers them); 0: off
 )
