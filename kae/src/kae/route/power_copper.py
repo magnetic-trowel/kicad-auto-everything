@@ -50,6 +50,7 @@ import shapely
 from shapely.geometry import LineString, Point
 from shapely.ops import unary_union
 
+from . import arcs as A
 from . import critical_write as W
 
 DEFAULTS = dict(
@@ -365,6 +366,7 @@ class PowerCopper:
             with tempfile.TemporaryDirectory(prefix="kae-pc-") as d:
                 info = pcbnew_io.export_dsn(self.path, Path(d) / "board.dsn")
         self.sp = Space(self.board, info, sev=severities(self.path), opts=dict(no_corridors=False))
+        A.fix_space_arcs(self.sp, self.board.tracks)      # arcs as sampled arcs, not two chords
         if fills is None:
             from .critical_recheck import fills_of
             fills = fills_of(self.path)
@@ -472,16 +474,25 @@ class PowerCopper:
             a = np.minimum(a, np.where(inside, d, -1.0))
         return a
 
-    def _legal(self, net, layer, w, a, b, ignore):
-        if self.sp.track_violations(net, layer, w, a, b, ignore=ignore, first=True):
+    def _legal(self, net, layer, w, a, b, ignore, coords=None):
+        """Whether a piece of width w is legal: a segment a-b, or the sampled arc `coords` (every
+        requirement raised by the sampling's sagitta, arcs.polyline_violations)."""
+        sag = 0.0
+        if coords is not None:
+            if A.polyline_violations(self.sp, net, layer, w, coords, ignore=ignore, first=True):
+                return False
+            seg = LineString(coords)
+            sag = A.SAG
+        elif self.sp.track_violations(net, layer, w, a, b, ignore=ignore, first=True):
             return False
-        seg = LineString([a, b])
+        else:
+            seg = LineString([a, b])
         for g, r, req, f in self._constraints(net, layer, seg, w / 2 + self.o["victim_gap_max"] + self.o["antenna_gap"], ignore):
             if f < 0:
                 if w > -f + 1e-9 and g.distance(seg) - w / 2 < req - TOL:
                     return False
                 continue
-            if g.distance(seg) - r - w / 2 < req + TOL:
+            if g.distance(seg) - r - w / 2 < req + TOL + sag:
                 return False
         return True
 
@@ -493,7 +504,10 @@ class PowerCopper:
         ladder = self.o["ladder"]
         order = sorted(self.board.tracks, key=lambda t: (-self.current.get(t.net, 0.0), t.net in self.ground))
         for t in order:
-            if t.mid is not None or t.net not in nets or t.layer not in sp.items:
+            if t.net not in nets or t.layer not in sp.items:
+                continue
+            if t.mid is not None:
+                self._widen_arc(t, by_uuid.get(t.uuid), ladder)
                 continue
             it = by_uuid.get(t.uuid)
             if it is None:
@@ -547,6 +561,78 @@ class PowerCopper:
             self.stats["widened_mm"] += sum(math.dist(a, b) for a, b, w in merged if w > t.width + 1e-9)
         self.stats["widened_mm"] = round(self.stats["widened_mm"], 2)
         return self.stats["widened"]
+
+    def _widen_arc(self, t, it, ladder):
+        """widen() for an arc track: the same sampling, runs and ladder along its arc length; each
+        run becomes an arc of the same circle at its own width, checked exactly (sampled arc)."""
+        sp = self.sp
+        if it is None:
+            return
+        got = A.sme_to_csa(t.start, t.mid, t.end)
+        if got is None:
+            return
+        c, rad, a0, sw = got
+        cap = sp.clamp_width(t.net, t.layer, width_cap(self.o["max_width"], self.current.get(t.net),
+                                                        self.o["current_margin"], self.o["current_cap"]))
+        steps = width_ladder(t.width, cap, ladder)
+        if not steps:
+            return
+        L = abs(rad * sw)
+        if L < 1e-6:
+            return
+        n = max(2, int(math.ceil(L / self.o["sample"])) + 1)
+        xs = np.linspace(0.0, L, n)
+        ang = a0 + sw * xs / L
+        pts = np.c_[c[0] + rad * np.cos(ang), c[1] + rad * np.sin(ang)]
+        geom = LineString(A.track_coords(t))
+        cons = self._constraints(t.net, t.layer, geom, steps[0] / 2 + self.o["victim_gap_max"] + self.o["antenna_gap"]
+                                 + sp.max_need, {it})
+        half = self._allowed_half(pts, cons, t.net, t.layer, t.width / 2)
+        ws = [next((w for w in steps if w / 2 <= h), t.width) for h in half]
+        rs = runs(ws, xs, t.width, self.o["min_run"])
+        if all(w <= t.width + 1e-9 for _, _, w in rs):
+            return
+
+        def sub(x0, x1):
+            b0, b1 = a0 + sw * x0 / L, a0 + sw * x1 / L
+            return (c, rad, b0, b1 - b0)
+
+        pieces = []
+        for x0, x1, w in rs:
+            cc, rr, b0, bs = sub(x0, x1)
+            coords = A.arc_coords(cc, rr, b0, bs)
+            if w > t.width + 1e-9:
+                for w2 in [s for s in steps if s <= w + 1e-9] + [t.width]:
+                    if w2 <= t.width + 1e-9 or self._legal(t.net, t.layer, w2, None, None, {it}, coords=coords):
+                        w = w2
+                        break
+            pieces.append([x0, x1, w])
+        merged = [pieces[0]]
+        for x0, x1, w in pieces[1:]:
+            if abs(w - merged[-1][2]) < 1e-9:
+                merged[-1][1] = x1
+            else:
+                merged.append([x0, x1, w])
+        if all(w <= t.width + 1e-9 for _, _, w in merged):
+            return
+        sp.remove([it])
+        out = []
+        # joints computed once, so neighbouring pieces share their end points exactly
+        joints = [tuple(t.start)] + [A.point_at(c, rad, a0 + sw * x1 / L) for _, x1, _ in merged[:-1]] + [tuple(t.end)]
+        for i, (x0, x1, w) in enumerate(merged):
+            cc, rr, b0, bs = sub(x0, x1)
+            _, m_, _ = A.csa_to_sme(cc, rr, b0, bs)
+            s_, e_ = joints[i], joints[i + 1]
+            nit = sp.add_track(t.net, t.layer, w, s_, e_, owner=("pc-widen", t.uuid))
+            nit.geom = LineString(A.arc_coords(cc, rr, b0, bs))
+            x0_, y0_, x1_, y1_ = nit.geom.bounds
+            nit.bbox = (x0_ - w / 2, y0_ - w / 2, x1_ + w / 2, y1_ + w / 2)
+            out.append((tuple(s_), tuple(e_), w, t.uuid if i == 0 else W.new_uuid(), tuple(m_)))
+        sp.invalidate(t.layer)
+        self.edits[t.uuid] = out
+        self.stats["widened"] += 1
+        self.stats["widened_arcs"] = self.stats.get("widened_arcs", 0) + 1
+        self.stats["widened_mm"] += sum(abs(rad * sw * (x1 - x0) / L) for x0, x1, w in merged if w > t.width + 1e-9)
 
     # ---------------------------------------------------------------- 1b. vector growth
     def grow_vector(self):
@@ -860,7 +946,7 @@ class PowerCopper:
         widen = {u: p for u, p in self.edits.items() if "widen" in kinds and u not in skip}
         out, pos = [], 0
         tracks = {}
-        for head, a, b in W._blocks(text, ("segment",)):
+        for head, a, b in W._blocks(text, ("segment", "arc")):
             blk = text[a:b]
             u = W._uuid_of(blk)
             if u not in widen:
@@ -871,9 +957,13 @@ class PowerCopper:
             net = self._net_name(m_net.group(1)) if m_net else None
             out.append(text[pos:a])
             pos = W._eat_newline(text, b)
-            for pa, pb, w, nu in widen[u]:
+            for piece in widen[u]:
+                pa, pb, w, nu = piece[:4]
                 groups[nu] = u
-                out.append(W.track_sexpr(net, m_layer.group(1), w, pa, pb, uid=nu, locked=locked))
+                if len(piece) > 4 and piece[4] is not None:
+                    out.append(A.arc_sexpr(net, m_layer.group(1), w, pa, piece[4], pb, uid=nu, locked=locked))
+                else:
+                    out.append(W.track_sexpr(net, m_layer.group(1), w, pa, pb, uid=nu, locked=locked))
             tracks[u] = True
         out.append(text[pos:])
         text = "".join(out)
@@ -917,7 +1007,14 @@ class PowerCopper:
         with its pad-to-via track)."""
         out = {}
         for u, pieces in self.edits.items():
-            out[u] = unary_union([LineString([a, b]).buffer(w / 2) for a, b, w, _ in pieces])
+            gs = []
+            for pc in pieces:
+                a, b, w = pc[:3]
+                if len(pc) > 4 and pc[4] is not None:
+                    gs.append(LineString(A.arc_coords(*A.sme_to_csa(a, pc[4], b))).buffer(w / 2))
+                else:
+                    gs.append(LineString([a, b]).buffer(w / 2))
+            out[u] = unary_union(gs)
         for net, layer, kept, gid in self.vector:
             for a, b, w, u in kept:
                 out[u] = LineString([a, b]).buffer(w / 2, quad_segs=4)
