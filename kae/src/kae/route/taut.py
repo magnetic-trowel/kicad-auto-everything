@@ -419,13 +419,18 @@ class Taut:
                 # crosses: no constraint here; the DRC gate judges the spokes (starved_thermal)
                 self._floors[id(it)] = -math.inf
                 continue
-            d_edge = self._item_gap(it, net, layer) if d_in < Rn + MARGIN else math.inf
-            if d_edge + it.r + half < Rn + MARGIN:
-                # the input board's copper of this net was already this close (a clearance the
-                # input breaks, or keeps with less than the margin): the branch may come no closer
-                # than it did (measured on the input, so passes cannot ratchet it down)
-                Rn = it.r + d_edge + half - MARGIN
-                self._floors[id(it)] = d_edge - A.SAG - 1e-4
+            if d_in < Rn + MARGIN and it.kind not in ("keepout", "corridor"):
+                if d_in - it.r - half < nd - 1e-6:
+                    # the branch breaks this clearance already (an input DRC error): moving it
+                    # could repeat the error along the item, so it stays as it is
+                    self._input_bad = True
+                    self._bad_why = (it.kind, round(nd - (d_in - it.r - half), 4))
+                # the input keeps the clearance with less than the margin (a gap exactly one track
+                # wide): the branch may use the input's own distance, never less than the rule
+                d_edge = max(nd, min(self._item_gap(it, net, layer), d_in - it.r - half))
+                if d_edge + it.r + half < Rn + MARGIN:
+                    Rn = it.r + d_edge + half - MARGIN
+                    self._floors[id(it)] = d_edge - A.SAG - 1e-4
             out.append(G.make_obstacle(it.geom, Rn + MARGIN, key=(it, Rn)))
         # adjacent layers: sensitive tracks keep the distance they had (broadside coupling)
         if self.o["victims"]:
@@ -623,7 +628,11 @@ class Taut:
         res = None
         for grow in (1, 2, 4):
             window = G.convex_window(allp, self.o["margin_win"] * grow)
+            self._input_bad = False
             obs = self.obstacles(net, layer, w, window, orig_line)
+            if self._input_bad:
+                self._skip("input breaks a clearance")
+                return None
             bs = G.BranchSpace(obs, window, None, eps_topo=self.o["eps_topo"], check=self.checker(obs, w), slack=MARGIN)
             best = None
             fails = []
