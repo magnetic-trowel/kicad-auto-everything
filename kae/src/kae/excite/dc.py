@@ -475,6 +475,29 @@ def observe(pl, cv, V, info, tracks=None):
     return out
 
 
+def _arc_frame(t):
+    """(f(q) -> (x, y, ux, uy) at fraction q of the arc, centre, radius, length) of an arc track; None
+    when its three points are collinear."""
+    (x0, y0), (xm, ym), (x1, y1) = t.start, t.mid, t.end
+    d = 2.0 * (x0 * (ym - y1) + xm * (y1 - y0) + x1 * (y0 - ym))
+    if abs(d) < 1e-14:
+        return None
+    a1, a2, a3 = x0 * x0 + y0 * y0, xm * xm + ym * ym, x1 * x1 + y1 * y1
+    cx = (a1 * (ym - y1) + a2 * (y1 - y0) + a3 * (y0 - ym)) / d
+    cy = (a1 * (x1 - xm) + a2 * (x0 - x1) + a3 * (xm - x0)) / d
+    r = math.hypot(x0 - cx, y0 - cy)
+    b0, bm_, b1 = (math.atan2(y - cy, x - cx) for x, y in ((x0, y0), (xm, ym), (x1, y1)))
+    sw = (b1 - b0) % (2 * math.pi)
+    if (bm_ - b0) % (2 * math.pi) > sw:
+        sw -= 2 * math.pi
+
+    def at(q):
+        a = b0 + sw * q
+        s = 1.0 if sw > 0 else -1.0
+        return cx + r * math.cos(a), cy + r * math.sin(a), -s * math.sin(a), s * math.cos(a)
+    return at, (cx, cy), r, abs(r * sw)
+
+
 def track_currents(bm, board_tracks, net, nets=None):
     """A function x -> [(I, w_eff mm, t mm, external)] per track: the current through the track's
     cross-section at its quarter points (the largest), summed over the cells of its net along the
@@ -491,12 +514,20 @@ def track_currents(bm, board_tracks, net, nets=None):
         nid = m.nets.index(t.net)
         (x0, y0), (x1, y1) = t.start, t.end
         L = math.hypot(x1 - x0, y1 - y0)
+        arc = _arc_frame(t) if getattr(t, "mid", None) is not None else None
+        if arc is not None:
+            L = arc[3]
         if L < p:
             continue
         ux, uy = (x1 - x0) / L, (y1 - y0) / L
         pts = []
         for q in (0.25, 0.5, 0.75):
-            cx, cy = x0 + q * (x1 - x0), y0 + q * (y1 - y0)
+            if arc is not None:
+                # an arc track: its quarter points on the arc, across its local direction (a chord
+                # can run outside the copper and would see none of the track's current)
+                cx, cy, ux, uy = arc[0](q)
+            else:
+                cx, cy = x0 + q * (x1 - x0), y0 + q * (y1 - y0)
             cells = []
             half = t.width / 2 + p
             for s in np.arange(-half, half + 1e-9, p):
