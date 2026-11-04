@@ -165,7 +165,7 @@ tier2() {
   SHA=$SHA bash tools/kaeres/experiments/area-cost-ab.sh
   exp area-cost-ab bench/suites/qualified-kicad-10.0.7.txt 1 \
     "CI7b (decide-intent-circuit): route.area_cost 0.05 / 0.2 / 0.5, kae-plain (pnr --plain --lock + bridge) at $S7, qualified suite, k=1" \
-    "kae-plain area 0.05" "kae-plain area 0.2" "kae-plain area 0.5"
+    "kae-plain area 0.05 $S7" "kae-plain area 0.2 $S7" "kae-plain area 0.5 $S7"
 }
 
 tier3() {

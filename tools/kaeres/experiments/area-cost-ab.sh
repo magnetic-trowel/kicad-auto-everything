@@ -23,7 +23,7 @@ KAE=(--code kae=.@$SHA)
 FORK="$HOME/.cache/kaebench/kae-freerouting-fork-2e1125a/bin/freerouting"
 arm() {  # AREA
   local a=$1
-  $K method add "kae-plain area $a" --kind route \
+  $K method add "kae-plain area $a ${SHA:0:7}" --kind route --harness "$SHA" \
     --description "kae.em.pnr --plain --lock under a neutral intent with route.area_cost=$a at ${SHA:0:7}, then the Freerouting bridge (new_board.sh kae-plain)" \
     --command "in={input}; for e in kicad_pro kicad_dru; do [ -f \"\${in%.kicad_pcb}.\$e\" ] && cp \"\${in%.kicad_pcb}.\$e\" mid.\$e; done; env OMP_NUM_THREADS=1 {py:kae} -u -W ignore -m kae.em.pnr {input} \$PWD/mid.kicad_pcb --plain --lock --intent {code:kae}/tools/kaeres/experiments/area-cost-ab/area-$a.json --work \$PWD/work-pnr && env KAE_BRIDGE_FREEROUTING=$FORK {py:kae} -u -W ignore -m kae.route.cli route \$PWD/mid.kicad_pcb {output} --time {timeout}" \
     --param timeout_s=900 --param area_cost=$a "${KAE[@]}"
