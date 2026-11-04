@@ -69,8 +69,8 @@ def tangent(c1, r1, s1, c2, r2, s2):
     dx, dy = c2[0] - c1[0], c2[1] - c1[1]
     D = math.hypot(dx, dy)
     k = s2 * r2 - s1 * r1
-    if D < 1e-12 or abs(k) > D * (1 + 1e-12):
-        return None
+    if D < 1e-12 or abs(k) > D * (1 + 1e-9) + 1e-9:
+        return None                 # (within 1 nm: two wraps that touch, a gap exactly one track wide)
     phi = math.atan2(dy, dx)
     th = phi - math.asin(max(-1.0, min(1.0, k / D)))
     ux, uy = math.cos(th), math.sin(th)

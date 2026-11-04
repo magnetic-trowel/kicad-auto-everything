@@ -353,28 +353,38 @@ class Taut:
             c[k] = unary_union(gs) if gs else None
         return c[k]
 
-    def _input_gap(self, net, other, layer):
-        """Edge-to-edge distance between two nets' input copper on `layer` (or between layers
-        (l1, l2) projected): the floor a victim pair keeps when it was already nearer than the
-        victim gap. Measured on the input, so passes cannot ratchet it down."""
-        c = self.__dict__.setdefault("_ing", {})
-        l1, l2 = layer if isinstance(layer, tuple) else (layer, layer)
-        k = (net, other, l1, l2)
+    def _input_parts(self, net, layer):
+        """The input's copper of `net` on `layer` as (geometries, radii): track centrelines (arcs
+        sampled), via centres, pad shapes; distances to it are exact (no buffered polygons)."""
+        c = self.__dict__.setdefault("_inp", {})
+        k = (net, layer)
         if k not in c:
-            a, b = self._input_copper(net, l1), self._input_copper(other, l2)
-            c[k] = math.inf if a is None or b is None else float(a.distance(b))
+            gs, rs = [], []
+            for r in self.orig.values():
+                if r["net"] == net and r["layer"] == layer:
+                    gs.append(LineString(A.track_coords(_T(r))))
+                    rs.append(r["w"] / 2)
+            for v in self.vias:
+                if v.net == net and layer in v.layers:
+                    gs.append(v.geom)
+                    rs.append(v.r)
+            for p in self.sp.items[layer]:
+                if p.kind == "pad" and p.net == net:
+                    gs.append(p.geom)
+                    rs.append(0.0)
+            c[k] = (np.array(gs, dtype=object), np.array(rs, float))
         return c[k]
 
     def _item_gap(self, it, net, layer):
         """Edge-to-edge distance from item `it` to the input copper of `net` on `layer`: the floor
-        a victim pair keeps at this item when the input was already nearer than the victim gap.
-        Per item, so one pair of adjacent pins does not lift the rule along the whole net; measured
-        on the input, so passes cannot ratchet it down."""
+        a pair keeps at this item when the input was already nearer than the rule (a victim gap,
+        or a clearance the input broke). Per item, so one pair of adjacent pins does not lift a
+        rule along the whole net; measured on the input, so passes cannot ratchet it down."""
         c = self.__dict__.setdefault("_itg", {})
         k = (id(it), net, layer)
         if k not in c:
-            own = self._input_copper(net, layer)
-            c[k] = math.inf if own is None else max(0.0, float(it.geom.distance(own)) - it.r)
+            gs, rs = self._input_parts(net, layer)
+            c[k] = math.inf if not len(gs) else max(0.0, float(np.min(shapely.distance(gs, it.geom) - rs)) - it.r)
         return c[k]
 
     def obstacles(self, net, layer, w, window, orig_line):
@@ -392,19 +402,28 @@ class Taut:
             if it.kind in ("keepout", "corridor"):
                 nd = 0.0
             gap = self._sensitive_gap(net, it.net, layer) if it.kind in ("track", "via", "pad") else None
+            floor = False
             if gap is not None:
-                nd = max(nd, min(gap, self._item_gap(it, net, layer)))
-            Rn = it.r + nd + half
+                ig = self._item_gap(it, net, layer)
+                if min(gap, ig) > nd:
+                    nd = min(gap, ig)
+                    floor = ig < gap          # held at the input's own distance: no margin on top
+                    if floor:
+                        self._floors[id(it)] = ig - A.SAG - 1e-4
+            Rn = it.r + nd + half - (MARGIN if floor else 0.0)
             if it.geom.distance(window) > Rn + 1e-6:
                 continue
             d_in = it.geom.distance(orig_line)
-            if d_in < Rn + CHECK_TOL:
-                # the input is already this close (a DRC error of the input, a spoke corridor it
-                # crosses): the branch may come no closer than the input board's copper of this
-                # net did (measured on the input, so passes cannot ratchet it down)
-                own = self._input_copper(net, layer)
-                d_edge = (it.geom.distance(own) - it.r) if own is not None else 0.0
-                d_edge = max(0.0, min(d_edge, d_in - it.r - half))
+            if it.kind == "corridor" and d_in - it.r <= half + 1e-6:
+                # a thermal-spoke corridor (kae's guidance, not a KiCad rule) the input already
+                # crosses: no constraint here; the DRC gate judges the spokes (starved_thermal)
+                self._floors[id(it)] = -math.inf
+                continue
+            d_edge = self._item_gap(it, net, layer) if d_in < Rn + MARGIN else math.inf
+            if d_edge + it.r + half < Rn + MARGIN:
+                # the input board's copper of this net was already this close (a clearance the
+                # input breaks, or keeps with less than the margin): the branch may come no closer
+                # than it did (measured on the input, so passes cannot ratchet it down)
                 Rn = it.r + d_edge + half - MARGIN
                 self._floors[id(it)] = d_edge - A.SAG - 1e-4
             out.append(G.make_obstacle(it.geom, Rn + MARGIN, key=(it, Rn)))
@@ -420,7 +439,7 @@ class Taut:
                     d0 = self._item_gap(it, net, layer)
                     if d0 <= CHECK_TOL:
                         continue
-                    Rn = it.r + min(gap, d0) + half
+                    Rn = it.r + min(gap, d0) + half - (MARGIN if d0 < gap else 0.0)
                     if it.geom.distance(window) > Rn:
                         continue
                     out.append(G.make_obstacle(it.geom, Rn + MARGIN, key=(("adj", l, it.uuid), Rn)))
