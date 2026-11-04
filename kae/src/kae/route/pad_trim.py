@@ -150,6 +150,9 @@ def plan(text, info, overlap=0.05, tol=1e-3, legal=None, reend_deg=10.0):
                 got = None
                 for tail in PE.entries(g, c, Q, s["w"], overlap, centred=cur, current=cur):
                     pts = [Q] + tail
+                    ang = PE.entry_angle(g, pts[-2], pts[-1])
+                    if ang is None or ang > reend_deg:
+                        continue        # a direct piece that crosses another edge, or no better
                     if all(legal(s["net"], s["layer"], s["w"], a, b) for a, b in zip(pts[:-1], pts[1:])):
                         got = (s, end, tail[-1], tail[0] if len(tail) == 2 else None, "reend")
                         break
