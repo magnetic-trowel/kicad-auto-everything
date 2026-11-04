@@ -178,7 +178,8 @@ DEFAULTS = {
     # CPU for timed jobs, measured, not reserved: a timed job starts only while the timed jobs' mean use plus their
     # bursts pooled as independent (sqrt of the summed squares of max-minus-mean over cpu_window_s), plus its own
     # (learned per owner from finished jobs, else --cpus), fit beside other users' load, and while timed jobs spent
-    # under timed_wait_start of their time with a thread waiting for a CPU (cpu.pressure). Above timed_wait_freeze,
+    # under timed_wait_start of their time with all their runnable threads waiting for a CPU (cpu.pressure full).
+    # Above timed_wait_freeze,
     # the newest batch job is frozen (one per cpu_freeze_every_s) until it falls below timed_wait_thaw.
     "cpu_window_s": 600,
     "timed_wait_start": 0.02,
@@ -1900,8 +1901,8 @@ class Daemon:
             st["rates"].append((now, r))
             while st["rates"] and st["rates"][0][0] < now - cfg["cpu_window_s"]:
                 st["rates"].pop(0)
-            if st["timed"]:
-                wait, span = wait + dw, span + dt
+            if st["timed"]:                       # "full": all its runnable threads waited (with "some", one
+                wait, span = wait + df, span + dt   # thread of a multi-threaded job waiting counted, too touchy)
         if span:
             self.timed_wait = 0.7 * self.timed_wait + 0.3 * min(1.0, wait / span)
         if now - self.runq_class_ts >= 10:          # threads ready to run, by class and by scheduling policy
@@ -2113,7 +2114,9 @@ class Daemon:
                 # head is starving: hold the room for it, but let jobs that end soon use it meanwhile,
                 # so the head waits at most about backfill_short_s longer once its room frees
                 short = self.short_owners(cfg) if short is None else short
-                fit = next((j for j in queued if j["owner"] in short and fits(j)), None)
+                # (a filler takes only spare CPU: it may start too, if it leaves the head's memory free)
+                fit = next((j for j in queued if fits(j) and (j["owner"] in short or self.is_filler(j, cfg)
+                            and mem_room - self.need_mb(j, cfg) >= self.need_mb(head, cfg))), None)
             if fit is None:
                 # jobs that fit in memory but wait for CPUs: what the runq_q controller weighs idle CPUs against
                 self.cpu_waiting = any(self.need_mb(j, cfg) <= mem_room and j["cpus"] > cpu_room for j in queued[:50])
