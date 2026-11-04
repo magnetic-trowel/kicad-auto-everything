@@ -141,7 +141,17 @@ DEFAULTS = {
     # timed_hold_auto it adapts every overcommit_every_s so that work lost to such requeues stays near
     # overcommit_loss_target of the timed work done over overcommit_window_s (up by 0.1 above it, down by 0.05
     # below half of it). A job requeued evict_protect_after times keeps its whole grant set aside.
-    "default_class": "batch",  # class of a job submitted without --class: batch (packs tighter, may be paused)
+    "default_class": "batch",
+    # expensive batch jobs are kept running (a frozen job holds its memory for nothing, and big ones most): a batch
+    # job expected to reach keep_gb, or with keep_core_h of work in it, is never frozen for a grant and never
+    # throttled, gets memory before other batch jobs, and the growth it is forecast to need is set aside in full.
+    # Grants go, and freezes come, by memory held / expected time left (runtime_model): the jobs that free the most
+    # memory soonest run on. A thawed job is not frozen again for max(thaw_min_run_s, thaw_min_frac x the time it
+    # was frozen), so a job is not flipped in and out.
+    "keep_gb": 8.0,
+    "keep_core_h": 1.0,
+    "thaw_min_run_s": 300,
+    "thaw_min_frac": 0.25,  # class of a job submitted without --class: batch (packs tighter, may be paused)
     "timed_hold_frac": 1.0,  # (used only with timed_forecast off)
     "timed_hold_auto": False,
     # timed_forecast: set aside for timed jobs what they are forecast to grow into, not their unused grants: each
@@ -960,19 +970,24 @@ def lease_plan(jobs, real_mb, cfg, now, buffer=0.0, timed_held=None, credit=0.0)
     hold = cfg.get("lease_hold_frac", 1.0)
     thold = cfg.get("timed_hold_frac", 1.0)
     young = lambda j: now - (j["started"] or now) < warm
+    keep = lambda j: j.get("timed") or j.get("keep")     # kept running: timed, or expensive / just-thawed batch
+    value = lambda j: j.get("value", 0.0)                 # MB freed per second left if it keeps running
     if timed_held is None:
         held = sum(max(0.0, grants[j["id"]] - j["use"])
-                   * (1.0 if young(j) or j.get("protected") else thold if j.get("timed") else hold) for j in jobs)
+                   * (1.0 if young(j) or j.get("protected") else thold if j.get("timed") else hold) for j in jobs
+                   if young(j) or j.get("timed") or j.get("reserve_mb") is None)
     else:   # timed jobs past warm-up: their forecast growth (timed_held), computed by the daemon
         held = timed_held + sum(max(0.0, grants[j["id"]] - j["use"]) * (1.0 if young(j) else hold)
-                                for j in jobs if young(j) or not j.get("timed"))
+                                for j in jobs if young(j) or not j.get("timed") and j.get("reserve_mb") is None)
+    # expensive batch jobs: the growth they are forecast to need is set aside in full, so new jobs do not take it
+    held += sum(j["reserve_mb"] for j in jobs if j.get("reserve_mb") is not None and not young(j) and not j.get("timed"))
     held += sum(j.get("swapped", 0.0) for j in jobs if not j.get("compressed"))   # thawed: still coming back
     # (a squeezed running job's cold pages are passed as swapped=0: they stay out unless it touches them)
     free_mb = real_mb - buffer - held + credit     # credit: squeezable memory of timed jobs (squeeze_credit)
     stalled = []
-    if real_mb < buffer:     # the fleet grew into the buffer: freeze who grew, lowest priority and newest first
-        grew = sorted((j for j in jobs if j.get("grew", 0.0) > 0 and not j.get("timed")),
-                      key=lambda j: (j["prio"], -(j["started"] or 0)))
+    if real_mb < buffer:     # the fleet grew into the buffer: freeze who grew, the least valuable first
+        grew = sorted((j for j in jobs if j.get("grew", 0.0) > 0 and not keep(j)),
+                      key=lambda j: (j["prio"], value(j), -(j["started"] or 0)))
         if grew and real_mb > buffer / 2:
             grew.pop()                   # the oldest of highest priority grows on while there is half a buffer
         for j in grew:
@@ -985,11 +1000,12 @@ def lease_plan(jobs, real_mb, cfg, now, buffer=0.0, timed_held=None, credit=0.0)
     evict = None
     if real_mb < buffer / 2:
         cand = [j for j in jobs if not j.get("protected") and j["use"] > 256]
-        if cand:
-            evict = min(cand, key=lambda j: j.get("invest", 0.0) / j["use"])["id"]
-    short = []                           # timed jobs that need memory nobody can give
-    # memory goes first to a compressed frozen job (it waits to come back), then timed jobs, then by priority, age
-    for j in sorted(jobs, key=lambda j: (not j.get("compressed"), not j.get("timed"), -j["prio"], j["started"] or 0)):
+        if cand:                         # (jobs kept running for being expensive go last)
+            evict = min(cand, key=lambda j: (bool(j.get("keep")), j.get("invest", 0.0) / j["use"]))["id"]
+    short = []                           # kept jobs that need memory nobody can give
+    # memory goes first to a compressed frozen job (it waits to come back), then kept jobs, then by priority, and
+    # within those to the jobs that free the most memory soonest if they keep running (memory / time left)
+    for j in sorted(jobs, key=lambda j: (not j.get("compressed"), not keep(j), -j["prio"], -value(j), j["started"] or 0)):
         if j["id"] in stalled:
             continue
         g, u = grants[j["id"]], j["use"] + (j.get("swapped", 0.0) if j.get("compressed") else 0.0)  # it holds that
@@ -1003,12 +1019,12 @@ def lease_plan(jobs, real_mb, cfg, now, buffer=0.0, timed_held=None, credit=0.0)
         back = 0.0   # (a compressed job's u includes what it has in swap: its step makes room for all of it)
         # a batch job gets a whole step or waits frozen: fed in crumbs it would sit throttled at memory.high, which
         # stalls it and builds the pressure systemd-oomd kills for (a timed job is never throttled: crumbs are fine)
-        if free_mb - back >= (min(step, 256.0) if j.get("timed") else step):
+        if free_mb - back >= (min(step, 256.0) if keep(j) else step):
             take = min(step, free_mb - back)
             grants[j["id"]] = g + take
             free_mb -= take + back
             stall[j["id"]] = 0.0
-        elif j.get("timed"):
+        elif keep(j):
             stall[j["id"]] = 0.0         # never frozen: it runs on (unthrottled), and a batch job makes room
             if u >= g - max(cfg.get("lease_freeze_mb", 256), 2 * TICK * j.get("rate", 0.0)):
                 short.append(j["id"])
@@ -1027,7 +1043,7 @@ def lease_plan(jobs, real_mb, cfg, now, buffer=0.0, timed_held=None, credit=0.0)
     if long_:
         by = {j["id"]: j for j in jobs}
         s = waiter = max(long_, key=lambda i: waited[i])
-        peers = [j for j in jobs if j["prio"] <= by[s]["prio"] and not j.get("timed")]
+        peers = [j for j in jobs if j["prio"] <= by[s]["prio"] and not keep(j)]
         over = [j for j in peers if j["use"] > j.get("declared", float("inf")) * cfg.get("mem_overrun", 1.5)]
         if over:                    # the job furthest past what it declared (a runaway), whichever it is
             victim = max(over, key=lambda j: j["use"] - j["declared"])["id"]
@@ -1036,10 +1052,20 @@ def lease_plan(jobs, real_mb, cfg, now, buffer=0.0, timed_held=None, credit=0.0)
             victim = max(others, key=lambda j: j["started"] or 0)["id"] if others else None
         if victim is not None:
             stall[s] = now          # the next victim only after another lease_stall_s
+    # a kept job needs memory and it is really short: make room with the least valuable batch job not kept, in two
+    # stages: freeze it (its memory is compressed: about a third comes free), and once all such jobs are frozen,
+    # requeue the least valuable frozen one
     timed_victim = None
-    batch = [j for j in jobs if not j.get("timed") and j["id"] not in (victim, evict)]
-    if short and batch and real_mb <= buffer:   # really short: the newest batch job, a frozen one first
-        timed_victim = max(batch, key=lambda j: (bool(j.get("frozen")), j["started"] or 0))["id"]
+    batch = [j for j in jobs if not keep(j) and j["id"] not in (victim, evict)]
+    if short and batch and real_mb <= buffer:
+        running = [j for j in batch if not j.get("frozen") and j["id"] not in stalled]
+        if running:
+            j = min(running, key=lambda j: (value(j), -(j["started"] or 0)))
+            grants[j["id"]] = min(grants[j["id"]], j["use"])
+            stalled.append(j["id"])
+            stall[j["id"]] = stall[j["id"]] or now
+        else:
+            timed_victim = min(batch, key=lambda j: (value(j), -(j["started"] or 0)))["id"]
     return dict(grants=grants, slack_since=slack, stall_since=stall, stalled=stalled, free=free_mb, held=held,
                 victim=victim, waiter=waiter if victim is not None else None, timed_victim=timed_victim, short=short,
                 evict=evict if evict != victim else None)
@@ -1314,6 +1340,7 @@ class Daemon:
         self.timed_preempt_ts = 0.0
         self.mem_stalled = set()     # jobs the last lease pass left waiting (frozen) for memory
         self.squeezing, self.squeeze_ts, self.squeezed_add = None, 0.0, {}   # squeeze in flight; MB per job to record
+        self.rt_model, self.rt_ts, self.rt_exp, self.rt_exp_ts = None, 0.0, {}, 0.0   # run-time model, expected totals
         self.oc = load_overcommit()  # {hold, hist: [(t, done core-s, lost core-s)]}: the adaptive overcommit
         self.oc_t, self.oc_done, self.oc_lost, self.evict_ts = 0.0, 0.0, 0.0, 0.0
         if self.oc.get("hist"):
@@ -1515,10 +1542,24 @@ class Daemon:
             json.dump({"pid": os.getpid(), "ts": now, "sys": self.sys}, f)
         os.replace(tmp, BEAT)
 
+    def time_left(self, now, running):
+        """{job id: expected seconds left} for running jobs (runtime_model, refitted every 10 min; expected totals
+        every 30 s)."""
+        if self.rt_model is None or now - self.rt_ts > 600:
+            try:
+                self.rt_model, self.rt_ts = runtime_model(self.c), now
+            except sqlite3.Error:
+                return {}
+        if now - self.rt_exp_ts > 30 or set(self.rt_exp) != {j["id"] for j in running}:
+            self.rt_exp = {k: v[0] for k, v in expected_durations(self.c, running, now, self.rt_model).items()}
+            self.rt_exp_ts = now
+        return {j["id"]: max(60.0, self.rt_exp.get(j["id"], 3600.0) - active_for(j, now)) for j in running}
+
     def lease(self, cfg, now, running, usage, avail, reserve):
         """Grow, trim and enforce running jobs' memory grants (kaeq.lease_plan); requeue a victim if a job has
         waited lease_stall_s for memory nothing frees. Returns what the rest of the tick needs to know."""
         c = self.c
+        left = self.time_left(now, running)
         jobs, cgs, other, fleet = [], {}, 0.0, 0.0
         for j in running:
             cg = self.cgroups.get(j["id"]) or (job_cgroup(j["pid"]) if j["pid"] else None)
@@ -1560,6 +1601,15 @@ class Daemon:
                              swapped=0.0 if st.get("squeezed") else swapped,   # squeezed: cold, stays out
                              owner=j["owner"], expect=max(self.need_mb(j, cfg), st["max_use"]),
                              held_out=swapped if st.get("squeezed") else 0.0, cg=cg))
+            jj = jobs[-1]
+            jj["value"] = (m[0] + swapped) / left.get(j["id"], 3600.0)      # MB freed per second if it runs on
+            if not jj["timed"]:
+                dear = (jj["expect"] >= cfg["keep_gb"] * 1024 or jj["invest"] >= cfg["keep_core_h"] * 3600)
+                window = st.get("no_freeze_until", 0.0) > now
+                jj["keep"] = dear or window      # (a frozen expensive job is thawed and kept running)
+                st["dear"] = dear
+                if dear:
+                    jj["reserve_mb"] = max(0.0, jj["expect"] - m[0] - swapped)
         for jid in set(self.lease_st) - set(cgs):
             del self.lease_st[jid]
         room = avail - reserve
@@ -1625,7 +1675,7 @@ class Daemon:
                 if by[j["id"]]["grant_mb"]:
                     dlog(f"lease #{j['id']}: {fgb(by[j['id']]['grant_mb'])} -> {fgb(g)} (uses {fgb(j['use'])})")
             # a timed job is never throttled (memory.high max): throttling would cost it time, like a freeze
-            high = None if j.get("timed") else int(g + max(1024, cfg.get("lease_backstop_frac", 0.1) * g))
+            high = None if j.get("timed") or j.get("keep") else int(g + max(1024, cfg.get("lease_backstop_frac", 0.1) * g))
             if st["set"] != high and cg_set_high(cgs[j["id"]], high):
                 st["set"] = high
             # a job that needs memory nobody can give waits frozen (no pressure for systemd-oomd to kill it for);
@@ -1638,6 +1688,7 @@ class Daemon:
                     c.execute("UPDATE jobs SET frozen_since=?, freezes=freezes+1 WHERE id=?", (now, j["id"]))
                     dlog(f"lease #{j['id']}: frozen at {fgb(j['use'])} (grant {fgb(g)}): no memory free")
             elif not wait and st.get("frozen_since") and not st.get("cpu_frozen"):   # (cpu_freeze thaws those)
+                st["no_freeze_until"] = now + max(cfg["thaw_min_run_s"], cfg["thaw_min_frac"] * (now - st["frozen_since"]))
                 if cg_freeze(cgs[j["id"]], False):
                     if st.pop("compressed", None):
                         uncompress(cgs[j["id"]])
@@ -1670,8 +1721,8 @@ class Daemon:
         if tv is not None and now - self.timed_preempt_ts >= cfg["timed_preempt_s"]:
             self.timed_preempt_ts = now
             v = by[tv]
-            self.preempt(v, now, f"requeued: timed job(s) {plan['short']} needed memory nobody could give, and a "
-                                 f"batch job makes room for a timed one (it restarts later)")
+            self.preempt(v, now, f"requeued: job(s) {plan['short']} kept running (timed, or expensive) needed memory "
+                                 f"nobody could give; the least valuable frozen batch job makes room (it restarts later)")
             c.execute("UPDATE jobs SET grant_mb=0 WHERE id=?", (v["id"],))
         else:
             tv = None
@@ -1823,8 +1874,10 @@ class Daemon:
             return
         if self.timed_wait > cfg["timed_wait_freeze"]:
             self.calm_since = 0.0
-            free = [j for j in batch if not (self.lease_st.get(j["id"]) or {}).get("frozen_since")]
-            if free:
+            free = [j for j in batch if not (self.lease_st.get(j["id"]) or {}).get("frozen_since")
+                    and not (self.lease_st.get(j["id"]) or {}).get("dear")
+                    and (self.lease_st.get(j["id"]) or {}).get("no_freeze_until", 0.0) <= now]
+            if free:                      # the newest of the cheap ones (expensive jobs run on)
                 v = max(free, key=lambda j: j["started"])
                 if cg_freeze(self.cgroups[v["id"]], True):
                     st = self.lease_st.setdefault(v["id"], {"slack_since": 0.0, "stall_since": 0.0, "set": None,
@@ -1845,6 +1898,8 @@ class Daemon:
                 st = self.lease_st[v["id"]]
                 st["cpu_frozen"] = False
                 if v["id"] not in self.mem_stalled:          # else it stays frozen, now waiting for memory
+                    st["no_freeze_until"] = now + max(cfg["thaw_min_run_s"],
+                                                      cfg["thaw_min_frac"] * (now - (st.get("frozen_since") or now)))
                     self.thawed(v["id"], now)
                     cg_freeze(self.cgroups[v["id"]], False)
                     if st.pop("compressed", None):
