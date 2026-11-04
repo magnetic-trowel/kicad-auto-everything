@@ -2,10 +2,10 @@
 <!-- SPDX-License-Identifier: CC-BY-4.0 -->
 # kae pad-edge entry: end a track at the pad edge it approaches, not at the centre
 
-**Status:** partial. Rule D (`pad_reroute --target centreline`, the default) fixed 414 of 624 oblique or sliver-prone entries on 12 boards (acute 107 → 44, oblique 581 → 240), every end on the pad's long centre line; DRC never worse. Before it, the edge rule of the tail re-route (`kae.route.pad_reroute`) on 12 routed boards fixed 397 of 624 oblique or sliver-prone entries: acute 107 → 46, oblique 581 → 249 with the trim after it. DRC was never worse and no vias were added; physics moved by at most 1.5 % per board, in both directions. The end-only post-pass (`kae.route.pad_trim`) cut 4 % of track but barely changed angles. The in-router option gained nothing on a 2-board A/B. All three are off by default.
+**Status:** partial. Rule D (`pad_reroute --target centreline`, the default) fixed 419 of 636 oblique, sliver-prone or overhanging entries on 12 boards (acute 107 → 44, oblique 581 → 241), every end on the pad's long centre line or as near as the land allows, no copper past the land; DRC never worse. The edge rule fixed 397. The end-only post-pass (`kae.route.pad_trim`) cut 4 % of track but barely changed angles. The in-router option gained nothing on a 2-board A/B. All three are off by default.
 **First published:** 2026-11-03, branch `pad-edge-entry` (off `power-copper`).
 
-Every routing stage aimed at a pad's centre. A connection only needs to reach the pad's copper, so the run from the edge to the centre is copper inside the land (or, for a track wider than the land, a bulge beside it), and the snap to the centre adds a last piece at whatever angle the centre lies.
+Every routing stage aimed at a pad's centre. A connection only needs to reach the pad's copper; the run to the centre is copper inside the land (or a bulge beside it), and the snap to the centre adds a last piece at whatever angle the centre lies.
 
 ## Where the ends were set (survey, branch base d1f36d6)
 
@@ -35,12 +35,9 @@ All per-board tables are in [results](../../../bench/results/2026-11-04-pad-edge
 
 ### End-only post-pass (`pad_trim`)
 
-- **DRC never worse.** Every change was kept on the first check, with no new violation of any severity. cm4-carrier lost 4 `solder_mask_bridge` and 3 `clearance` errors: Freerouting's tracks wider than a land had run to its centre and bulged beside it.
-- **Track** −4 % (19.70 → 18.86 m), all of it copper inside lands.
-- **Angles barely move** (oblique / acute 581/107 → 567/94). A cut keeps its track's angle, and only 47 of 2,113 ends could be re-ended within one segment.
-- **BGA and WLP intact.** Balls and dog-bones are skipped.
-- **DRC noise.** KiCad's `solder_mask_bridge` count on the unchanged magtag board is 24 on one run and 25 on another, so the gate reverts in steps.
-- **Physics.** With rails cut a width deep, rail drop and copper loss rose up to 1.4 % (jjhorton +3V3 drop 122.1 → 123.7 mV; lenaschimmel +1.4 %). With rails left at the centre (the default), no board got worse by more than 0.2 %, and aifryz improved by 0.6 %.
+- **DRC never worse**, every change kept on the first check; cm4-carrier lost 4 `solder_mask_bridge` and 3 `clearance` errors (Freerouting's tracks had bulged beside lands). KiCad's `solder_mask_bridge` count on the unchanged magtag board is 24 or 25 from run to run, so the gate reverts in steps.
+- **Track** −4 % (19.70 → 18.86 m), all inside lands. **Angles barely move** (581/107 → 567/94): a cut keeps its track's angle; 47 of 2,113 ends could be re-ended within one segment. Balls and dog-bones are skipped.
+- **Physics.** With rails cut a width deep, rail drop and copper loss rose up to 1.4 %; with rails left at the centre (the default), no board got worse by more than 0.2 %.
 
 ### Tail re-route (`kae.route.pad_reroute`, 2026-11-04)
 
@@ -61,19 +58,16 @@ Re-route then trim, totals over the 12 boards:
 | re-route + trim, rails into the edge middle | 249 / 46 | 18.89 | 1488 |
 | re-route + trim, rails left at the centre | 365 / 75 | 18.89 | 1488 |
 
-- **Fixed:** 397 of 624 candidates (64 %). 136 (22 %) were skipped by rule: via-ended stubs, or vias in the land.
-- **Failed:** 91 (15 %): no route 29, no admissible edge 29, release point at the land 20, too long 5, tail shared 4, no 45/90° dogleg 2, illegal final piece 2. DRC reverted none.
-- **DRC:** no board worse in any type or severity; cm4-carrier went 612 → 608 errors. No vias added; the re-routed tails are 65 mm shorter in total.
-- **Runtime:** 3-63 s per board, 199 s for all 12, of which 23 s is planning and routing.
-- **Physics** (10 boards, intent totals in the results): with rail tails into the edge middle, 8 boards moved by 0.4 % or less. lenaschimmel improved 1.5 % (supply S0 200.1 → 193.5 mV) and aifryz got 1.1 % worse (S1 1.114 → 1.131 V). With rail tails left at the centre, every board stayed within 0.4 %.
+- **Fixed:** 397 of 624 candidates; 136 skipped by rule (via-ended stubs, vias in the land); 91 failed (no route 29, no admissible edge 29, release point at the land 20, other 13). DRC reverted none.
+- **DRC:** no board worse in any type; cm4-carrier 612 → 608 errors. No vias added; tails 65 mm shorter. 199 s for all 12 boards.
+- **Physics** (10 boards): with rail tails into the edge middle, 8 moved by 0.4 % or less; lenaschimmel 1.5 % better, aifryz 1.1 % worse. With rail tails left at the centre, all within 0.4 %.
 
 ### Rule D: end on the long centre line (`--target centreline`, the default since 2026-11-04)
 
 The edge rule ends a track `pad_entry_overlap` past the edge it reaches. Rule D (`pad_entry.centreline_targets`) ends it on the pad's long centre line instead: the segment along the long axis between the points (w − h)/2 from the centre. For round and near-square pads (|w − h| ≤ 10 % of w) that is the centre point; for an oval it is the segment between the end-circle centres. The track then sits centred across the pad. The straight piece that crosses the outline must be within 10° of the outline's normal there.
 - **Path.** Straight from the approach direction to the nearest centre-line point if that line already crosses within 10°, with no corner. Otherwise the shortest legal of (a) a corner one width outside the long edge the release point faces, then in along its normal, and (b) a corner one width outside the short edge on the axis, then along the axis to the centre line's end. A round end (stadium, round pad) is entered radially.
-- **Choice.** Every candidate is routed and the shortest legal one is kept. A target whose round end would leave the far side of the pad is dropped.
-- **Rails.** No special case: the end is a full width or more inside. Where no D target is reachable legally, the old tail (its centre end) stays.
-- **Unchanged.** Release walk, grid search, exact legality, DRC gate, length limit and skip rules are as above. `--target edge` keeps the edge rule.
+- **Choice.** Every candidate is routed and the shortest legal one kept; no copper may hang past the land (below). Rails get no special case; where no target is reachable legally, the old tail stays.
+- **Unchanged.** Release walk, grid search, exact legality, DRC gate, length limit and skip rules. `--target edge` keeps the edge rule.
 
 On the same 12 boards, both rules from the original outputs (per board in the [results](../../../bench/results/2026-11-04-pad-edge-entry-59caa02.md#4-rule-d-against-the-edge-rule)):
 
@@ -84,10 +78,30 @@ On the same 12 boards, both rules from the original outputs (per board in the [r
 | Rule D | 414 | 240 / 44 | 3016 | 19.74 | 19 | 258 |
 
 - **Fixed:** D re-routed 433 of 624 candidates and DRC kept 414 (edge rule: 397). D failed fewer: no route 27, release point at the land 20, tail shared 4, too long 2, no 45/90° dogleg 1, illegal final piece 1. It never lacked a target (the edge rule had 29 such failures: no edge long enough for the width).
-- **Board by board:** D fixed more on 9 boards and fewer on 2. On cm4-carrier it kept 3 against 18: 16 re-routes came in over the long edge of fine-pitch lands, and DRC reverted them for 4 new `solder_mask_bridge` errors. On dream it kept 74 against 78: 3 were reverted for one unconnected.
+- **Board by board:** D fixed more on 9 boards and fewer on 2. On cm4-carrier it kept 3 against 18: 16 long-edge re-routes into fine-pitch lands were reverted for 4 new `solder_mask_bridge` errors. On dream, 3 were reverted for one unconnected.
 - **DRC:** after the gate, no board worse in any error type. nekoink has one more `track_dangling` warning: a 0.1 mm stub where a tail was split at a tap that overlapped it 0.05 mm off its centreline (still connected).
 - **Track:** +36 mm against −65 mm for the edge rule, since D runs on to the centre line. No vias added.
 - **Physics** (rails as D routes them): 8 of 10 boards within 0.25 %, as with the edge rule. lenaschimmel improved 1.7 % (edge rule 1.5 %). aifryz got 5.1 % worse (S4/S7 supply peak 1.305 → 1.377 V); the edge rule cost 1.1 % there. D re-routes 8 segments of +BATT on aifryz that the edge rule did not touch. `--rails centre` leaves rail, ground and wide-track tails as they are under D too.
+
+### Tracks wider than the land (2026-11-04)
+
+Rule D tested only that a track's round end stayed inside the pad along its direction of travel. A 0.8 or 1.2 mm track into a 1.0 × 0.6 mm land got the axial entry, its sides 0.1–0.3 mm past both long edges: copper beside the land enlarges the joint (tombstoning, solder wicking; [dfm-fab-limits](../../topics/rules/dfm-fab-limits.md), [necks](kae-power-copper.md#necks-at-small-lands-tombstoning-and-manufacturability-2026-11-03)). The long-edge entry, which overhangs less, was dropped for its tip. A 1.0 mm track had no target on a 0.6 mm square land and kept its oblique centre-aimed tail.
+- **Overhang** (`pad_entry.overhang`). The final piece buffered by w/2, minus the pad and the pad's shadow toward the approach (the pad swept back along the piece). The shadow is what any track arriving that way needs (the approach, and shoulders at a round outline); what is left hangs past the land or out of its far side. At most 2·10⁻⁴ mm² is allowed (copper within 5 µm of the outline counts as on it). Measured against copper (the DSN export has no mask openings; copper beside a land is exposed land or a heat sink under mask).
+- **One rule for all candidates** (`centreline_targets`). A round end that pokes out is pulled back along the piece, at least 0.05 mm inside. A long-edge entry whose width hangs past the edge's ends slides toward the edge's middle. A 0.8 mm track into the 1.0 × 0.6 land now enters through the long edge.
+- **Neck** (`neck_width`, `pad_reroute._neck_or_wide`). When nothing fits, the last piece takes the widest width that does, in 0.01 mm steps. It is at most the land width (short side) and at least the board minimum and what the pad's current needs (`power_copper.current_need`, IPC-2221 at 3 × I, the floor of `neck_rule`). The wide copper ends neck_len + w/2 (0.5 mm + w/2) before the outline, and its route keeps that far from the land. The width steps at the wide track's round end (an obtuse corner). Pad currents: `power_copper.pad_currents` on the operating facts (`--operating` or `KAE_OPERATING`), by the neck's rules.
+- **Hazard.** If the current needs more than any entry allows (or than the land), the wide copper stays (rule D with the tip test alone) and the report gets `land_enlarged_by_track` (warn, assembly) in the [hazards](../../topics/architecture/hazards.md) schema of `decide-2611`, with pad, net, track, land and needed widths. The outcome counts `hazard`, `necked`, and `overhang_in` (square entries re-routed only because they overhang).
+
+On the same 12 boards, rule D before and after (per board in the [results](../../../bench/results/2026-11-04-pad-edge-entry-59caa02.md#5-tracks-wider-than-the-land)):
+
+| | Candidates | Kept | Oblique / acute | Overhanging entries (input 30) | Necks | Hazards | Track Δ mm | Time s |
+|---|---|---|---|---|---|---|---|---|
+| Rule D (75d1e2b) | 624 | 414 | 240 / 44 | 23 | – | – | +36.0 | 183 |
+| Rule D with the overhang test | 636 | 419 | 241 / 44 | 18 | 0 | 0 | +36.8 | 202 |
+
+- **No track on these boards is wider than its land.** The one entry whose track is wider than its land's short side enters one shape of a two-shape pad (lenaschimmel IC4), 0.4 mm wide merged. The overhangs here are round ends poking out of narrow IC lands, or corner crossings. So no neck was made and no hazard raised; tests cover both (a 1.0 mm track between two 0.6 mm lands is necked to 0.6 at both ends, every piece legal).
+- **Fixed:** 5 more entries kept (magtag +2, metro +1, redbot +2); 9 boards are byte-identical. The 18 left are on skipped lands or tails with no legal route. magtag has one more oblique entry: a new tail into IC4 pin 16 crosses the corner of pin 1 (same net); the grid search keeps only the target land out.
+- **DRC:** no board worse than before in any type. magtag reads 24 `solder_mask_bridge` against 25, KiCad's run-to-run noise on that board.
+- **Physics:** the three changed boards moved by at most 0.01 % against rule D before (redbot +0.25 → +0.26 %); the others, aifryz included (+5.07 %), are unchanged.
 
 ### Router A/B (in-router edge ends)
 
@@ -95,11 +109,11 @@ On the same 12 boards, both rules from the original outputs (per board in the [r
 
 ## Verdict
 
-- **Tail re-route with rule D: the pad-entry pass to use (the default).** It fixes the most entries (414 of 624), ends 3,016 of 3,385 entries on the centre line, and needs no rail special case. Since D ends on the centre line, no trim runs after it. A merit-size A/B still comes first. On boards with fine-pitch lands the long-edge approach can bridge solder mask; DRC catches it (cm4-carrier). Physics is unchanged on 8 boards. The exception is the supply peak on aifryz, where D re-routed rail tails (+5 %). Until that is understood, run D with `--rails centre` on boards with supply limits.
+- **Tail re-route with rule D: the pad-entry pass to use (the default).** It fixes the most entries (419 of 636), adds no copper past a land, and needs no rail special case or trim after it. A merit-size A/B still comes first; necks and land hazards still need boards whose tracks are wider than their lands (power-copper outputs). On boards with fine-pitch lands the long-edge approach can bridge solder mask; DRC catches it (cm4-carrier). Physics is unchanged on 8 boards. The exception is the supply peak on aifryz, where D re-routed rail tails (+5 %). Until that is understood, run D with `--rails centre` on boards with supply limits.
 - **Rail tails under the edge rule (`--target edge`): into the edge middle (`--rails middle`).** Leaving them at the centre gives up a third of the fixes (acute 46 → 75, oblique 249 → 365). The physics difference is not one-sided: lenaschimmel 1.5 % better, aifryz 1.1 % worse, the rest within 0.2 %. Use `--rails centre` where a supply term has no margin.
-- **End-only post-pass (`pad_trim`): worth running, not yet the default.** It never made DRC worse and cut 5.5 % of track; on one board it removed 7 errors. With rails left at the centre, physics did not move. It does little for what the user cares about most, acute entries (114 → 96 over 12 boards): those come from Freerouting's 45° runs, and re-ending them needs room for a turn outside the pad. Next steps: re-end along the chain of segments rather than one segment, and run it as the bridge's last stage in a merit-sized A/B.
-- **Rails in `pad_trim`: keep their centre ends (default `--rails centre`).** Cutting them a width deep only removes copper; rail drop and copper loss rose up to 1.4 %.
-- **In-router option (`pad_entry=edge`): keep off.** Freerouting completes most connections itself, so the grid router rarely ends a track. Where it does, Freerouting needs a DSN pin tie to see the joint. The one paired BGA run was worse (106 vs 67 open; noisy). Nothing here argues for it.
+- **End-only post-pass (`pad_trim`): worth running, not yet the default.** It never made DRC worse and cut 5.5 % of track, but does little for acute entries (114 → 96): those come from Freerouting's 45° runs, and re-ending them needs room for a turn outside the pad.
+- **Rails in `pad_trim`: keep their centre ends (default).** Cutting them a width deep raised rail drop and copper loss up to 1.4 %.
+- **In-router option (`pad_entry=edge`): keep off.** The grid router rarely ends a track, Freerouting then needs a DSN pin tie, and the one paired BGA run was worse (106 vs 67 open; noisy).
 - **Freerouting cannot be told to end at an edge.** Its pin connection is the pin centre by construction. Any edge entry for its copper has to be a post-pass.
 
-Code: `kae/src/kae/route/{pad_reroute,pad_entry,pad_trim}.py`, `critical_grid.GridRouter._edge_end`, `translate.tie_pins`; tests `kae/tests/test_route_pad_entry.py`; scripts `tools/research/routing/pad_edge_{smoke,ab}.sh`, `pad_edge_summary.py`, `pad_entry_compare.py`; per-board results in the [results](../../../bench/results/2026-11-04-pad-edge-entry-59caa02.md).
+Code: `kae/src/kae/route/{pad_reroute,pad_entry,pad_trim}.py`, `critical_grid.GridRouter._edge_end`, `translate.tie_pins`; tests `kae/tests/test_route_pad_entry.py`; scripts `tools/research/routing/pad_edge_{smoke,ab}.sh`, `pad_edge_summary.py`, `pad_entry_compare.py`, `pad_wide_summary.py`; per-board results in the [results](../../../bench/results/2026-11-04-pad-edge-entry-59caa02.md).
