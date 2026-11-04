@@ -720,7 +720,7 @@ def main():
         work["step_cache"] = dict({k_: round(v, 1) if isinstance(v, float) else v for k_, v in tot.items()},
                                   real_wall_s=round(work["wall_s"] - SC.offset(), 1))
     summary = dict(work, attempt_log=[{k_: (v["id"] if k_ == "cand" else v) for k_, v in d.items()
-                                       if k_ not in ("out", "t", "charge")}
+                                       if k_ not in ("out", "t", "charge", "dead_at")}
                                       for d in done])
     if sh is not None:
         summary["halving"] = sh.summary()
