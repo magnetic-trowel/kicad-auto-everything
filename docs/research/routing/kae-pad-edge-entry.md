@@ -128,18 +128,9 @@ Same 12 boards, from the original outputs. "trim" is `pad_trim` with rails at th
 
 The re-route changes rail tails too (edge middle, a width deep), so supply terms move by 0.1-0.5 %, mostly for the worse.
 
-### Router A/B (in-router edge ends, pin ties and trim together)
+### Router A/B (in-router edge ends)
 
-`tools/research/routing/pad_edge_ab.sh`: merge3-ab's bridge-final restart portfolio at this branch, `KAE_PAD_ENTRY` centre vs edge, on kaebench route tasks (harness e9889fd). Stopped after two boards when re-routing was ruled out for this study; one seed per arm on nekoink.
-
-| Board | Arm | Errors beyond input | Unconnected | Track mm | Centre/edge ends | Oblique / acute |
-|---|---|---|---|---|---|---|
-| chips-0123 (2 seeds) | centre | 0, 0 | 0, 0 | 136.5, 136.5 | 13/13 | 11/0 |
-| | edge | 0, 0 | 0, 0 | 138.2, 136.0 | 1/18 | 7/0 |
-| nekoink (1 seed) | centre | 0 | 67 | 3603 | 840/147 | 209/32 |
-| | edge | 0 | 106 | 3036 | 298/682 | 207/24 |
-
-nekoink's merit-500 output of the same method left 95 open, so one seed per arm does not separate the arms; the edge arm is at least not shown better, and its time to the clean chips board was 187 s vs 169 s.
+`tools/research/routing/pad_edge_ab.sh`: merge3-ab's bridge-final portfolio, `KAE_PAD_ENTRY` centre vs edge. It was stopped once re-routing was ruled out. On chips-0123 both arms came out clean on 2 seeds. On nekoink (1 seed per arm) the edge arm left 106 open against 67 for centre; the method's stored output left 95, so this is within the noise.
 
 ## Verdict
 
