@@ -600,8 +600,9 @@ class Taut:
         [] when the start is no pad end:
         - direct: the path runs straight to the nearest centre-line point (no tail; kept only when
           its crossing turns out square and adds no copper past the land, checked in tighten);
-        - pad_entry.centreline_targets (square through the long edge to the centre line, along the
-          axis through the short edge to the centre line's end, radially into a round end; the
+        - pad_entry.centreline_targets (straight in within 10 deg, square through the long edge to the
+          centre line, along the axis through the short edge to the centre line's end, radially into
+          a round end; the
           same overhang test as pad_reroute: no copper beside or beyond the land); the anchor is
           one track width outside the outline, the turn there becomes a tangent arc
           (_fillet_anchors). A track wider than every entry is necked to the widest that fits
@@ -646,10 +647,11 @@ class Taut:
         out = []
         tw = neck or w
         for a, end, kind in ts:
-            if kind == "straight" and not round_:
-                continue                 # the direct candidate below is the free version of it
-            if kind == "axial" and cur and neck is None:
-                # current-carrying copper along the axis: at least a width deep, where that still fits
+            # "straight" is kept beside the free direct candidate below: where it coincides with
+            # the axial or long target, pad_entry returns it alone, as "straight"
+            if kind in ("axial", "straight") and cur and neck is None:
+                # current-carrying copper: at least a width deep where that still fits (never past the
+                # centre's projection, so a straight entry through the long side stays on the centre line)
                 x = PE.crossing(pad, a, end)
                 dd = PE._unit(end[0] - a[0], end[1] - a[1])
                 if x is not None and dd is not None:
