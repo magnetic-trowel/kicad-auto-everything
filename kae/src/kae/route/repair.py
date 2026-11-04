@@ -914,7 +914,8 @@ def errors_no_worse(s_, ref, base):
 REGION_MIN_S = 120.0   # time a dense-window round needs at least: the negotiation, a reroute, a DRC
 REGION_RESERVE_MIN_FRAC = 0.1  # region_reserve auto: no reserve unless this share of the open connections
                                # touch a ball grid or a fine-pitch ring
-REGION_RESERVE_SHARE = 0.5     # ... then at most this share of the time after round 0, scaled by that share
+REGION_RESERVE_SHARE = 0.5     # ... then at most this share of the time after round 0 (region_reserve_frac),
+                               # scaled by that share
 
 
 def region_reserve(opts, info, report, avail):
@@ -925,9 +926,10 @@ def region_reserve(opts, info, report, avail):
     want = opts.get("region_reserve", "auto")
     if not opts.get("region", True) or not opts.get("last_mile") or want in (0, "0", None, False):
         return 0.0
+    cap = float(opts.get("region_reserve_frac", REGION_RESERVE_SHARE))   # the largest share it may take
     if want != "auto":
         try:
-            return max(0.0, min(float(want), 0.5 * avail))
+            return max(0.0, min(float(want), cap * avail))
         except (TypeError, ValueError):
             return 0.0
     items = report.get("unconnected_items") or []
@@ -942,7 +944,7 @@ def region_reserve(opts, info, report, avail):
     frac = sum(1 for u in items if refs(u) & dense) / len(items)
     if frac < REGION_RESERVE_MIN_FRAC:
         return 0.0
-    return min(REGION_RESERVE_SHARE * avail, max(REGION_MIN_S + 30.0, REGION_RESERVE_SHARE * frac * avail))
+    return min(cap * avail, max(REGION_MIN_S + 30.0, cap * frac * avail))
 REGION_SHARE = 0.5     # share of the time left that the dense windows may take (the last mile keeps the rest)
 REGION_WINDOWS = 3     # windows tried at most
 

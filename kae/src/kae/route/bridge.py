@@ -71,6 +71,8 @@ DEFAULT_OPTS = dict(
     region_share=0.5,        # with region: the share of the time left after the repair rounds it may take
     region_reserve="auto",   # time the repair rounds leave the region stage (repair.region_reserve): "auto" in
                              # proportion to the open connections at ball grids / fine-pitch rings, seconds, or 0
+    region_reserve_frac=0.5, # with region_reserve: the largest share of the time after round 0 it may take
+    region_windows=3,        # with region: dense windows tried at most
     region_final=False,      # region rounds in the post-route stage alone too (last_mile_only, the restart
                              # wrapper's --final): off, since the kept board's attempt already ran them and the
                              # window repair was measured (916 -> 729 open, 6 boards x 3 seeds) without --final,

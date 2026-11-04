@@ -132,3 +132,11 @@ def test_the_window_repair_gets_time_in_proportion_to_its_opens():
     assert R.region_reserve(dict(on, region_reserve=300), info, _opens(["U1"] * 5), 1000.0) == 300
     assert R.region_reserve(dict(on, region=False), info, _opens(["U1"] * 5), 1000.0) == 0
     assert R.region_reserve(on, dict(pads=_grid_info()["pads"][-2:]), _opens(["U1"] * 5), 1000.0) == 0
+
+
+def test_the_window_repair_reserve_cap_is_a_setting():
+    from kae.route import repair as R
+    info = _grid_info()
+    on = dict(region=True, last_mile=True, region_reserve_frac=0.8)
+    assert R.region_reserve(on, info, _opens(["U1"] * 10), 1000.0) == 800.0
+    assert R.region_reserve(dict(on, region_reserve=1e6), info, _opens(["U1"] * 5), 1000.0) == 800.0
