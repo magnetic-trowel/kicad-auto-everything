@@ -248,3 +248,113 @@ def approach_targets(pad, centre, release, width, overlap, current=False, stub=N
                 keep(e, u)
     out.sort(key=lambda x: x[0])
     return [x[1:] for x in out[:max_targets]]
+
+
+# ----------------------------------------------------------------------------- rule D: the long centre line
+ROUND_AREA = 0.93        # a pad covering less of its rectangle has round ends (stadium, circle)
+SQUARE_TOL = 0.10        # |w - h| <= this share of the longer side: the centre line is the centre point
+
+
+def pad_frame(pad):
+    """(c, u, v, w, h): the centre of the pad's smallest rotated rectangle, its long axis u, the
+    normal v, and its long and short sides (w >= h)."""
+    rect = pad.minimum_rotated_rectangle
+    pts = list(rect.exterior.coords)[:4] if rect.geom_type == "Polygon" else []
+    if len(pts) < 4:
+        c = pad.centroid
+        return (c.x, c.y), (1.0, 0.0), (0.0, 1.0), 0.0, 0.0
+    e1 = (pts[1][0] - pts[0][0], pts[1][1] - pts[0][1])
+    e2 = (pts[2][0] - pts[1][0], pts[2][1] - pts[1][1])
+    l1, l2 = math.hypot(*e1), math.hypot(*e2)
+    if l2 > l1:
+        e1, e2, l1, l2 = e2, e1, l2, l1
+    u = (e1[0] / l1, e1[1] / l1)
+    v = (-u[1], u[0])
+    c = (sum(p[0] for p in pts) / 4, sum(p[1] for p in pts) / 4)
+    return c, u, v, l1, l2
+
+
+def centreline(pad):
+    """The pad's long centre line (a, b): along the long axis, (w - h) / 2 either side of the centre
+    (an oval's end-circle centres); the centre point twice for square, round and near-square pads."""
+    c, u, v, w, h = pad_frame(pad)
+    half = (w - h) / 2 if w - h > SQUARE_TOL * w else 0.0
+    return (c[0] - half * u[0], c[1] - half * u[1]), (c[0] + half * u[0], c[1] + half * u[1])
+
+
+def _nearest_on(a, b, p):
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    L2 = dx * dx + dy * dy
+    t = 0.0 if L2 < 1e-18 else max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2))
+    return (a[0] + t * dx, a[1] + t * dy)
+
+
+def centreline_targets(pad, release, width, stub=None, max_deg=10.0):
+    """Rule D: where a re-routed tail from `release` ends and how it crosses the outline. The end
+    lies on the long centre line (so the track sits centred across the pad); the straight piece
+    that crosses the outline is within `max_deg` of the outline's normal there. [(a, end, kind)],
+    shortest first: the route reaches a, then runs straight to end.
+
+    - "straight": a on the line from the nearest centre-line point toward the release point, one
+      stub outside the outline, when that line already crosses within max_deg;
+    - "long": a one stub outside the long edge the release point faces, square above its foot on
+      the centre line, straight in along the edge normal;
+    - "axial": a one stub outside the short edge on the axis, straight in along the axis to the
+      centre line's end (radial through a stadium's rounded end);
+    - "radial": a on the ray from the nearer centre-line end toward the release point (a round
+      pad, or a stadium's rounded end), kept only where it crosses within max_deg.
+    Each end's round tip must stay inside the pad (no sliver beyond its far side)."""
+    from shapely.geometry import LineString as _L, Point as _P
+    stub = max(width, 0.1) if stub is None else stub
+    c, u, v, w, h = pad_frame(pad)
+    p0, p1 = centreline(pad)
+    fat = pad.buffer(1e-6)
+    out = []
+
+    def add(end, d, kind):
+        """d: unit direction the final piece runs (outside -> end)."""
+        x = None
+        far = (end[0] - d[0] * (w + h + stub + 1.0), end[1] - d[1] * (w + h + stub + 1.0))
+        seg = _L([far, end])
+        hit = seg.intersection(pad.exterior)
+        if hit.is_empty:
+            return
+        pts = [(q[0], q[1]) for g in getattr(hit, "geoms", [hit]) for q in g.coords]
+        x = min(pts, key=lambda q: math.dist(q, far))           # where the piece enters the pad
+        a = (x[0] - d[0] * stub, x[1] - d[1] * stub)
+        if pad.contains(_P(a)) or pad.distance(_P(a)) < 0.5 * stub:
+            return
+        ang = entry_angle(pad, a, end)
+        if ang is None or ang > max_deg + 1e-9:
+            return
+        tip = (end[0] + d[0] * width / 2, end[1] + d[1] * width / 2)
+        if not fat.contains(_P(tip)) or not fat.contains(_P(end)):
+            return
+        out.append((math.dist(release, a) + math.dist(a, end), a, end, kind))
+
+    q = _nearest_on(p0, p1, release)
+    d = _unit(q[0] - release[0], q[1] - release[1])
+    if d is not None and not pad.contains(_P(release)):
+        add(q, d, "straight")
+    if h > 0:
+        side = 1.0 if (release[0] - c[0]) * v[0] + (release[1] - c[1]) * v[1] >= 0 else -1.0
+        foot = _nearest_on(p0, p1, release)
+        add(foot, (-side * v[0], -side * v[1]), "long")
+        end_side = 1.0 if (release[0] - c[0]) * u[0] + (release[1] - c[1]) * u[1] >= 0 else -1.0
+        e = p1 if end_side > 0 else p0
+        add(e, (-end_side * u[0], -end_side * u[1]), "axial")
+    if w > 0 and h > 0 and pad.area < ROUND_AREA * w * h:
+        # round ends (a stadium, a round pad): radial through the end the release point faces
+        for e in {p0, p1}:
+            dd = _unit(e[0] - release[0], e[1] - release[1])
+            if dd is not None and math.dist(e, q) > 1e-9:   # (the nearest point is the straight case)
+                add(e, dd, "radial")
+    seen, res = set(), []
+    for L, a, end, kind in sorted(out, key=lambda t: (round(t[0], 6), t[3] != "straight")):
+        k = (round(a[0], 5), round(a[1], 5), round(end[0], 5), round(end[1], 5))
+        if k not in seen:
+            seen.add(k)
+            res.append((a, end, kind))
+    # the straight entry, when it qualifies, comes first: no corner
+    res.sort(key=lambda t: t[2] != "straight")
+    return res

@@ -42,7 +42,7 @@ import tempfile
 from pathlib import Path
 
 from shapely import STRtree
-from shapely.geometry import Point
+from shapely.geometry import LineString, Point
 
 from . import critical_write as W
 from . import pad_entry as PE
@@ -211,7 +211,7 @@ def stats(text, info, tol=1e-3):
             cs = [c for h, c, _ in lst if g.buffer(1e-6).contains(Point(c))]
             pads.setdefault(k, []).append((g, cs, None))
     segs = _segments(text)
-    st = dict(entries=0, at_centre=0, near_edge=0, perpendicular=0, oblique=0, acute=0,
+    st = dict(entries=0, at_centre=0, near_edge=0, on_centreline=0, perpendicular=0, oblique=0, acute=0,
               track_mm=round(sum(math.dist(s["a"], s["b"]) for s in segs), 3), vias=len(_vias(text)))
     for s in segs:
         for g, c, _ in pads.get((s["net"], s["layer"]), ()):
@@ -222,6 +222,9 @@ def stats(text, info, tol=1e-3):
             ang = PE.entry_angle(g, s["a"], s["b"])
             st["entries"] += 1
             st["at_centre" if any(math.dist(inside, x) <= tol for x in c) else "near_edge"] += 1
+            a0, b0 = PE.centreline(g)
+            if LineString([a0, b0]).distance(Point(inside)) <= 0.01 if math.dist(a0, b0) > 0 else math.dist(a0, inside) <= 0.01:
+                st["on_centreline"] += 1
             if ang is None:
                 continue
             st["perpendicular" if ang <= 10 else "oblique" if ang <= 45 else "acute"] += 1

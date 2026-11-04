@@ -154,7 +154,7 @@ def chain(segs_by_node, start_seg, pad_end, R, stop_nodes, at_pad=lambda q: Fals
         s, p = nxt[0], q
 
 
-def plan(text, info, sp, gr, overlap=0.05, log=print, deadline=None, rails="middle"):
+def plan(text, info, sp, gr, overlap=0.05, log=print, deadline=None, rails="middle", target="centreline"):
     """Re-routes [(change dict)] and per-entry outcomes {reason: count}. `sp` is a Space of the
     board (updated as changes are accepted), `gr` a GridRouter on it."""
     from .critical_grid import Anchor
@@ -217,7 +217,7 @@ def plan(text, info, sp, gr, overlap=0.05, log=print, deadline=None, rails="midd
                 note("skip_via")
                 break
             cur = PE.current_net(s["net"]) or w >= PT.CURRENT_W - 1e-9
-            if cur and rails == "centre":
+            if cur and rails == "centre" and target != "centreline":
                 note("skip_rail")
                 break
             got = None
@@ -235,10 +235,16 @@ def plan(text, info, sp, gr, overlap=0.05, log=print, deadline=None, rails="midd
                     why = "release_at_pad"
                     continue
                 old_len = sum(math.dist(p, q) for _, p, q in pieces)
-                tgts = PE.approach_targets(g, c, rel, w, overlap, current=cur)
+                if target == "centreline":
+                    # rule D: end on the long centre line, the crossing piece square to the outline;
+                    # every candidate is routed and the shortest legal one kept
+                    tgts = [(a, end, None, kind) for a, end, kind in PE.centreline_targets(g, rel, w)]
+                else:
+                    tgts = PE.approach_targets(g, c, rel, w, overlap, current=cur)
                 if not tgts:
                     why = "no_target"
                     continue
+                best = None
                 for a, end, u, facing in tgts:
                     rt = _route(gr, sp, Anchor, s["net"], s["layer"], w, rel, a, g)
                     if rt is None:
@@ -250,7 +256,7 @@ def plan(text, info, sp, gr, overlap=0.05, log=print, deadline=None, rails="midd
                                               for p, q in zip(pts[:-1], pts[1:])):
                             why = "style"
                             continue
-                    if any(c2["net"] == s["net"] and c2["layer"] == s["layer"] and not c2.get("joined")
+                    if target != "centreline" and any(c2["net"] == s["net"] and c2["layer"] == s["layer"] and not c2.get("joined")
                            and _key(c2["pts"][-2]) == _key(a) and _key(c2["pts"][-1]) == _key(end) for c2 in changes):
                         # a second track into the same land meets the first at its approach point
                         # (no doubled final piece)
@@ -271,10 +277,16 @@ def plan(text, info, sp, gr, overlap=0.05, log=print, deadline=None, rails="midd
                     if PE.entry_angle(g, pts[-2], end) is None or PE.entry_angle(g, pts[-2], end) > ENTRY_DEG:
                         why = "angle"
                         continue
-                    got = dict(id=s["uuid"], net=s["net"], layer=s["layer"], w=w, pieces=pieces, release=rel,
-                               kind=kind, pts=pts, old_len=old_len, new_len=new_len, angle_in=ang,
-                               current=cur)
-                    break
+                    cand = dict(id=s["uuid"], net=s["net"], layer=s["layer"], w=w, pieces=pieces, release=rel,
+                                kind=kind, pts=pts, old_len=old_len, new_len=new_len, angle_in=ang,
+                                current=cur, entry=facing if target == "centreline" else "edge")
+                    if target != "centreline":
+                        got = cand
+                        break
+                    if best is None or new_len < best["new_len"]:
+                        best = cand
+                if best is not None:
+                    got = best
                 if got is not None:
                     break
             if got is None:
@@ -386,7 +398,8 @@ def write(text, changes, skip=frozenset()):
     return W._insert(t, extra) if extra else t
 
 
-def run(input_path, output_path, overlap=None, workdir=None, timeout=3600, rails="middle", log=print):
+def run(input_path, output_path, overlap=None, workdir=None, timeout=3600, rails="middle", target="centreline",
+        log=print):
     """The DRC-gated pass. Returns a report: entries considered and their outcomes, the kept
     re-routes, DRC in and out, pad-entry counts in and out, seconds."""
     from kae.board.kicad_file import load
@@ -407,9 +420,10 @@ def run(input_path, output_path, overlap=None, workdir=None, timeout=3600, rails
     sp = Space(load(staged), info, sev=severities(staged))
     gr = GridRouter(sp, pad_entry="centre")
     t1 = time.monotonic()
-    changes, outcome, octo = plan(text, info, sp, gr, ovl, log=log, deadline=t0 + 0.6 * timeout, rails=rails)
+    changes, outcome, octo = plan(text, info, sp, gr, ovl, log=log, deadline=t0 + 0.6 * timeout, rails=rails,
+                                  target=target)
     t_plan = time.monotonic() - t1
-    rep = dict(board=str(inp), overlap=ovl, octilinear=octo, outcome=outcome, planned=len(changes),
+    rep = dict(board=str(inp), target=target, overlap=ovl, octilinear=octo, outcome=outcome, planned=len(changes),
                stats_in=PT.stats(text, info), setup_s=round(t1 - t0, 1), plan_s=round(t_plan, 1),
                len_old_mm=round(sum(c["old_len"] for c in changes), 3),
                len_new_mm=round(sum(c["new_len"] for c in changes), 3))
@@ -483,8 +497,11 @@ def main(argv=None):
     ap.add_argument("--timeout", type=int, default=3600)
     ap.add_argument("--rails", choices=("middle", "centre"), default="middle",
                     help="rails, grounds and wide tracks: re-route into the edge middle a width deep, or leave them")
+    ap.add_argument("--target", choices=("centreline", "edge"), default="centreline",
+                    help="rule D (default): end on the pad's long centre line, the crossing piece within 10 deg "
+                         "of the outline normal; edge: the approach-target rule (end overlap-deep past the facing edge)")
     a = ap.parse_args(argv)
-    rep = run(a.input, a.output, a.overlap, a.workdir, a.timeout, rails=a.rails)
+    rep = run(a.input, a.output, a.overlap, a.workdir, a.timeout, rails=a.rails, target=a.target)
     if a.report:
         Path(a.report).write_text(json.dumps(rep, indent=1))
     print(json.dumps({k: v for k, v in rep.items()}))

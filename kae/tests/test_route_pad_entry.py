@@ -355,3 +355,76 @@ def test_chain_releases_at_a_t_junction_mid_segment():
         by.setdefault(("N", "F.Cu", RR._key(p)), []).append(s1)
     pieces, rel, kind = RR.chain(by, s1, (0.0, 0.0), 3.0, set(), taps=[(0.0, 0.0), (4.0, 0.0), (1.2, 0.05)])
     assert kind == "split" and abs(rel[0] - 1.2) < 1e-9 and len(pieces) == 1
+
+
+# ----------------------------------------------------------------------------- rule D: the long centre line
+SOIC = box(-0.975, -0.3, 0.975, 0.3)          # SOIC-8 land 1.95 x 0.60: centre line x in [-0.675, 0.675]
+
+
+def _kinds(ts):
+    return [k for _, _, k in ts]
+
+
+def test_rule_d_centreline_of_long_round_square_and_stadium_pads():
+    a, b = PE.centreline(SOIC)
+    assert sorted([round(a[0], 6), round(b[0], 6)]) == [-0.675, 0.675] and abs(a[1]) < 1e-9
+    assert PE.centreline(Point(0, 0).buffer(0.85, 64))[0] == PE.centreline(Point(0, 0).buffer(0.85, 64))[1]
+    sq = box(-0.45, -0.475, 0.45, 0.475)                         # near square (0603): the centre point
+    a, b = PE.centreline(sq)
+    assert math.dist(a, b) < 1e-9 and math.dist(a, (0, 0)) < 1e-9
+    oval = LineString([(0, -0.45), (0, 0.45)]).buffer(0.85, 64)  # stadium 1.7 x 2.6: end-circle centres
+    a, b = PE.centreline(oval)
+    assert sorted(round(p[1], 3) for p in (a, b)) == [-0.45, 0.45]
+
+
+def test_rule_d_straight_case_has_no_corner():
+    (a, end, kind), *_ = PE.centreline_targets(SOIC, (0.35, 2.2), 0.25)
+    assert kind == "straight" and math.dist(end, (0.35, 0.0)) < 1e-9 and abs(a[0] - 0.35) < 1e-9
+    assert PE.entry_angle(SOIC, a, end) <= 10
+
+
+def test_rule_d_diagonal_past_the_end_takes_a_square_corner():
+    ts = PE.centreline_targets(SOIC, (2.6, 1.7), 0.25)
+    assert "straight" not in _kinds(ts)                          # the straight line would cross the corner
+    for a, end, kind in ts:
+        assert kind in ("axial", "long") and PE.entry_angle(SOIC, a, end) < 1e-6
+        assert abs(end[1]) < 1e-9 and abs(end[0] - 0.675) < 1e-9   # on the centre line's end
+    long = next(t for t in ts if t[2] == "long")
+    assert abs(long[0][1] - (0.3 + 0.25)) < 1e-9                 # one width outside the long edge
+    axial = next(t for t in ts if t[2] == "axial")
+    assert abs(axial[0][0] - (0.975 + 0.25)) < 1e-9 and abs(axial[0][1]) < 1e-9
+
+
+def test_rule_d_axial_approach_runs_straight_along_the_axis():
+    (a, end, kind), *_ = PE.centreline_targets(SOIC, (3.2, 0.25), 0.25)
+    assert kind == "straight" and math.dist(end, (0.675, 0.0)) < 1e-9
+    assert PE.entry_angle(SOIC, a, end) <= 10
+
+
+def test_rule_d_round_pad_is_radial_to_the_centre():
+    disc = Point(0, 0).buffer(0.85, 64)
+    (a, end, kind), *_ = PE.centreline_targets(disc, (2.4, 1.7), 0.3)
+    assert kind == "straight" and math.dist(end, (0, 0)) < 1e-9
+    assert PE.entry_angle(disc, a, end) < 1.0
+
+
+def test_rule_d_stadium_square_side_or_radial_end():
+    oval = LineString([(0, -0.45), (0, 0.45)]).buffer(0.85, 64)
+    (a, end, kind), *_ = PE.centreline_targets(oval, (2.3, 0.2), 0.3)   # beside the straight side
+    assert kind == "straight" and math.dist(end, (0.0, 0.2)) < 1e-9 and abs(a[1] - 0.2) < 1e-9
+    (a, end, kind), *_ = PE.centreline_targets(oval, (2.3, 2.6), 0.3)   # past the round end: radial
+    assert math.dist(end, (0.0, 0.45)) < 1e-9 and PE.entry_angle(oval, a, end) < 1.0
+
+
+def test_rule_d_square_pad_enters_through_an_edge_middle_to_the_centre():
+    sq = box(-0.45, -0.475, 0.45, 0.475)
+    ts = PE.centreline_targets(sq, (1.7, 1.4), 0.25)                     # diagonal: the corner is no entry
+    assert ts and "straight" not in _kinds(ts)
+    for a, end, kind in ts:
+        assert math.dist(end, (0, 0)) < 1e-9 and PE.entry_angle(sq, a, end) < 1e-6
+
+
+def test_rule_d_drops_ends_whose_tip_leaves_the_pad():
+    thin = box(-1.0, -0.1, 1.0, 0.1)
+    # a 0.4 mm track across a 0.2 mm land: its round end would stick out of the far side
+    assert all(k != "long" for _, _, k in PE.centreline_targets(thin, (0.0, 2.0), 0.4))
