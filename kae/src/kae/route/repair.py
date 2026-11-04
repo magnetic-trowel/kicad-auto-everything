@@ -618,6 +618,16 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
     best = drc.summary(best_rep)
     rounds.append(dict(round=0, **best))
     log(f"repair round 0: {best['errors']} errors {best['by_type']}, {best['unconnected']} unconnected")
+    # the dense-window repair's own time (kae.route.region, run in the last-mile stage): the rounds
+    # below stop early enough to leave it. Without it the rounds ran to the last mile's reserve and
+    # the window repair never started on the boards it is for (nekoink, 1,200 s: Freerouting 694 s,
+    # rounds until 90 s were left, the repair needs 120 s)
+    region_s = region_reserve(opts, info, best_rep, left() - reserve)
+    if region_s > 0:
+        reserve += region_s
+        opts = dict(opts, _region_budget_s=region_s)
+        rounds[-1]["region_reserve_s"] = round(region_s, 1)
+        log(f"repair: {region_s:.0f} s kept for the dense-window repair")
     level, fails, split_failed, region_tries = 0, 0, False, 0
     levels = LEVELS if opts.get("region_level") else tuple(x for x in LEVELS if x != "region")
     for k in range(1, max_rounds(opts) + 1):
@@ -902,6 +912,37 @@ def errors_no_worse(s_, ref, base):
 
 
 REGION_MIN_S = 120.0   # time a dense-window round needs at least: the negotiation, a reroute, a DRC
+REGION_RESERVE_MIN_FRAC = 0.1  # region_reserve auto: no reserve unless this share of the open connections
+                               # touch a ball grid or a fine-pitch ring
+REGION_RESERVE_SHARE = 0.5     # ... then at most this share of the time after round 0, scaled by that share
+
+
+def region_reserve(opts, info, report, avail):
+    """Seconds the repair rounds leave for the dense-window repair: region_reserve "auto" (default)
+    gives it time in proportion to the open connections at dense packages (escape.dense_refs) after
+    round 0, at least REGION_MIN_S + 30 when it gives any, at most half of what is left; a number is
+    taken as seconds; 0 (or region off, or no last mile) keeps none."""
+    want = opts.get("region_reserve", "auto")
+    if not opts.get("region", True) or not opts.get("last_mile") or want in (0, "0", None, False):
+        return 0.0
+    if want != "auto":
+        try:
+            return max(0.0, min(float(want), 0.5 * avail))
+        except (TypeError, ValueError):
+            return 0.0
+    items = report.get("unconnected_items") or []
+    if not items or avail < 2 * REGION_MIN_S:
+        return 0.0
+    from .escape import dense_refs
+    dense = dense_refs(info)
+    if not dense:
+        return 0.0
+    def refs(u):
+        return {m.group(1) for it in u.get("items") or [] for m in [re.search(r" of (\S+)", it.get("description") or "")] if m}
+    frac = sum(1 for u in items if refs(u) & dense) / len(items)
+    if frac < REGION_RESERVE_MIN_FRAC:
+        return 0.0
+    return min(REGION_RESERVE_SHARE * avail, max(REGION_MIN_S + 30.0, REGION_RESERVE_SHARE * frac * avail))
 REGION_SHARE = 0.5     # share of the time left that the dense windows may take (the last mile keeps the rest)
 REGION_WINDOWS = 3     # windows tried at most
 
@@ -921,7 +962,10 @@ def _region(input_path, output_path, wd, plan, info, opts, deadline, rounds, bes
     def left():
         return deadline - time.monotonic()
     sev = opts.get("severities") or {}
-    stop = time.monotonic() + float(opts.get("region_share", REGION_SHARE)) * left()
+    share = float(opts.get("region_share", REGION_SHARE)) * left()
+    budget = opts.get("_region_budget_s")
+    # with a reserve of its own (region_reserve) it may use all of it, the last mile keeping its minimum
+    stop = time.monotonic() + (max(share, min(float(budget), left() - LAST_MILE_MIN_S)) if budget else share)
     tried, kept = set(), False
     fixed = set(fixed)
     for k in range(1, int(opts.get("region_windows", REGION_WINDOWS)) + 1):

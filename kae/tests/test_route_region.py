@@ -101,3 +101,34 @@ def test_monotone_repair_joins_and_stays_legal(tmp_path):
             assert not sp.track_violations(it.net, next(iter(it.layers)), it.width, a, b, ignore=(it,))
     out = load(tmp_path / "out.kicad_pcb")
     assert len(out.tracks) == sum(1 for it in sp.routed + sp.existing if it.kind == "track")
+
+
+def _grid_info(ref="U1", n=6, pitch=0.8):
+    pads = [dict(ref=ref, fp_index=0, attr="smd", layers=["F.Cu"], pos=(i * pitch, j * pitch))
+            for i in range(n) for j in range(n)]
+    pads += [dict(ref="R1", fp_index=1, attr="smd", layers=["F.Cu"], pos=(20.0, 0.0)),
+             dict(ref="R1", fp_index=1, attr="smd", layers=["F.Cu"], pos=(21.0, 0.0))]
+    return dict(pads=pads)
+
+
+def _opens(refs):
+    return dict(unconnected_items=[dict(items=[dict(description=f"Pad 1 [N{k}] of {r} on F.Cu"),
+                                               dict(description=f"Pad 2 [N{k}] of R9 on F.Cu")])
+                                   for k, r in enumerate(refs)])
+
+
+def test_the_window_repair_gets_time_in_proportion_to_its_opens():
+    from kae.route import repair as R
+    from kae.route.escape import dense_refs
+    info = _grid_info()
+    assert dense_refs(info) == {"U1"}
+    on = dict(region=True, last_mile=True)
+    half = R.region_reserve(on, info, _opens(["U1"] * 5 + ["R1"] * 5), 1000.0)
+    assert half == max(R.REGION_MIN_S + 30, 0.5 * 0.5 * 1000)          # half the opens at the grid
+    assert R.region_reserve(on, info, _opens(["U1"] * 10), 1000.0) == 0.5 * 1000   # capped at half
+    assert R.region_reserve(on, info, _opens(["U1"] + ["R1"] * 19), 1000.0) == 0  # 5 %: none
+    assert R.region_reserve(on, info, _opens(["U1"] * 5), 200.0) == 0             # too little time
+    assert R.region_reserve(dict(on, region_reserve=0), info, _opens(["U1"] * 5), 1000.0) == 0
+    assert R.region_reserve(dict(on, region_reserve=300), info, _opens(["U1"] * 5), 1000.0) == 300
+    assert R.region_reserve(dict(on, region=False), info, _opens(["U1"] * 5), 1000.0) == 0
+    assert R.region_reserve(on, dict(pads=_grid_info()["pads"][-2:]), _opens(["U1"] * 5), 1000.0) == 0

@@ -299,6 +299,26 @@ def _grid(pts):
     return None if g is None else (g.pitch, g.ang, g.loc, g.rings)
 
 
+def dense_refs(info):
+    """References of the footprints that are ball grids or fine-pitch pad rings (at most RING_PITCH),
+    as has_grid tests them: the packages whose fields the BGA window repair works on."""
+    by, ref = {}, {}
+    for pd in info.get("pads") or []:
+        if pd.get("attr") == "smd" and len(pd.get("layers") or ()) == 1:
+            k = pd.get("fp_index", pd.get("ref"))
+            by.setdefault(k, []).append(tuple(pd["pos"]))
+            ref[k] = pd.get("ref")
+    out = set()
+    for k, pts in by.items():
+        if ball_grid(pts) is not None:
+            out.add(ref[k])
+        elif len(pts) >= MIN_RING:
+            nn = sorted(min(math.dist(a, b) for j, b in enumerate(pts) if j != i) for i, a in enumerate(pts))
+            if nn[len(nn) // 2] <= RING_PITCH + 1e-6:
+                out.add(ref[k])
+    return {r for r in out if r}
+
+
 def has_grid(info):
     """True when some footprint of the board's pads (pcbnew_io's records) is a ball grid or a
     fine-pitch pad ring (at most RING_PITCH), as find_packages sees them; cheap, so boards
