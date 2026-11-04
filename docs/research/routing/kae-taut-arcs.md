@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: CC-BY-4.0 -->
 # kae taut arcs: every connection pulled to its shortest path in its own topology, with true arcs
 
-**Status:** partial. 12 boards: DRC never worse, copper −2.7 %, corners −56 %; physics better on 8 of 11 boards with taut alone; the power-copper interaction is mixed. Not the default anywhere.
+**Status:** partial. 12 boards: DRC never worse, copper −2.7 %, corners −56 %; physics better on 9 of 11 boards with taut alone; the power-copper interaction is mixed. Not the default anywhere.
 **First published:** 2026-11-04, branch `arc-taut` (off `pad-edge-entry`).
 
 ## Design note (written before the code)
@@ -50,10 +50,10 @@
   - the input's own tail.
 
   Anchors sit one width outside the outline. The turn there becomes a tangent arc (1.5w, w or w/2), a Dubins-type start. Candidates rank by acute corners (never more than the branch had), then square entries, then length. Ball grids and via-in-pad keep their tails.
-- **Requirements** (`Taut.obstacles`). Where the input keeps a rule with under the 2.5 µm margin (a gap exactly one track wide), the branch may use the input's own distance, never less than the rule. A branch that already breaks a clearance stays: without this, cm4 gained 24 clearance errors.
+- **Requirements** (`Taut.obstacles`). Where the input keeps a rule with under the 2.5 µm margin, the branch may use the input's own distance, never less than the rule. A branch that already breaks a clearance stays: without this, cm4 gained 24 clearance errors.
 - **Geometry** (`taut_geom`). Topology polygons are inscribed, 12 segments per quarter, 3 µm inside the requirement. Co-circular vertex runs (round pads, roundrect corners) merge into one atom only when consecutive vertices are ≤ 30° apart, so a rectangle keeps four corner atoms.
 - **Pairs** (`tighten_pair`). A section at constant pitch D running parallel becomes one centreline, grown by D/2 for both nets' rules. Arcs at its ends keep the end headings. The legs are its exact offsets, arcs at r ∓ D/2. Skew is never worse; both legs are kept or reverted together.
-- **Output.** True KiCad `(arc start mid end)`; one shared point per joint. Arcs under 0.02 rad become checked chords.
+- **Output.** KiCad `(arc start mid end)`, one shared point per joint.
 - **Gate** (`run`, `set_kept`). The pass reverts nets that KiCad names or that lie within 1 mm, then 2.5 mm, of a violation. Otherwise it adds nets back batch by batch, keeping each batch that leaves the board no worse. Then it tries to recover the reverted nets. Nets in conflict with restored copper drop exactly.
 - **Power copper on arcs** (`PowerCopper._widen_arc`). The `Space` keeps arcs as two chords, so they are replaced by sampled arcs. Arcs are sampled every 0.1 mm along their length, with the same constraints, sharing and necks. Each run becomes a sub-arc of the same circle, checked exactly.
 - **Evaluator fix** (`kae.excite.dc._arc_frame`, separate commit). Track currents were sampled on the chord, which leaves an arc's copper; heat.track read zero for arcs.
@@ -77,9 +77,9 @@
 | sparkfun redbot | 133/0 → 133/0 → 133/0 | 1110 → 1055 | 414 → 58 | 4 → 4 | 299 | 180/27/11 → 189/21/10 | 32 | 18 |
 | zephray nekoink | 11/95 → 11/93 → 11/93 | 2361 → 2301 | 1338 → 653 | 26 → 24 | 684 | 715/205/25 → 787/141/19 | 150 | 70 |
 
-- **DRC never worse.** Errors stayed at 935 and unconnected went 114 → 112; on nekoink the taut copper now runs over a same-net pad. With power copper: 934 and 112. KiCad's counts move between runs of an unchanged board (magtag 50 or 51; cm4 mask bridges ±2).
+- **DRC never worse.** Errors stayed at 935 and unconnected went 114 → 112; on nekoink the taut copper now runs over a same-net pad. With power copper: 934 and 112.
 - **Length.** Signal −2.8 % (15.25 → 14.83 m), power −2.6 %, ground −2.2 %, all copper −2.7 %. Rule D keeps ends deep in the land. An earlier run that ended signals `pad_entry_overlap` inside the edge got −5.3 % and −4.4 %. The [topological-routing](../../topics/routing/topological-routing.md) estimate for straightening is about 5 %.
-- **Corners.** Corners fell 5,608 → 2,489 (−56 %); G1 joints are not counted, and 696 tail turns became arcs. Acute corners 85 → 71, acute entries 114 → 93, oblique 623 → 441, perpendicular 2,784 → 2,990. Ranking candidates by acute corners first came from redbot, where square tails into pads behind the path made 140-174° hairpins.
+- **Corners.** Corners fell 5,608 → 2,489 (−56 %); G1 joints are not counted, and 696 tail turns became arcs. Acute corners 85 → 71, acute entries 114 → 93, oblique 623 → 441, perpendicular 2,784 → 2,990. (Acute-first ranking: square tails into pads behind the path made 140-174° hairpins on redbot.)
 - **Optimality.** 1,724 branches carry the certificate: G1, positive wraps, window untouched. 50 needed an inserted atom.
 - **Convergence.** Pass 0 gave 593 of 599 mm and pass 1 0.001-2.9 mm per board. Ten boards stop after 3 passes, nekoink after 4. magtag oscillates at 1 µm per pass up to the 8-pass cap, below the 2 µm margin.
 - **Branches left as they were** (attempts, counted per pass):
@@ -89,7 +89,6 @@
   - 20 failed the solver or the final `Space` check.
 - **Diff pairs.** None of the 710 P/N branch pairs was coupled. Freerouting routes the legs independently: at most 17 % of a leg runs at constant pitch, except cm4's E0_TR1/TR2 at 96 %, which already break a clearance. On a synthetic pair (board test) the pass came out shorter at pitch 0.5 ± 0.02 mm, with skew not worse.
 - **Gate.** Nets reverted: magtag 17 of 64, ubertooth 8 of 52 (named clearances), lenaschimmel 5 of 42 (starved thermals, found batch by batch). The other boards passed on the first DRC run.
-- **Power copper on arcs.** 154 arc widenings were planned on 11 boards, each checked exactly.
 - **Pours.** `refill` (other nets' fills ignored) was shorter on 7 boards, by up to 3.3 % (secsense). On 3 boards the gate reverted 18-38 nets for starved thermals. Total 19.15 m vs 19.17 m, so `hold` stays the default.
 - **Runtime.** Taut took 6-150 s per board: setup 2-31 s, passes 0.1-93 s, the rest KiCad DRC. Power copper took 6-341 s.
 
@@ -101,7 +100,7 @@
 |---|---|---|---|---|
 | adafruit magtag | 26973 | 26748 | 19049 | 10069 |
 | adafruit metro-m7 | 7443 | 7037 | 6328 | 6683 |
-| aifryz sensor-hub | 47277 | AIFRYZ_T | AIFRYZ_TP | 40874 |
+| aifryz sensor-hub | 47277 | 46692 | 35463 | 40874 |
 | dream117er paicorea | 349 | 357 | 96 | 57 |
 | freetronics secsense | 15819 | 15832 | 5648 | 5645 |
 | greatscottgadgets ubertooth | 2204 | 2174 | 2136 | 2165 |
@@ -115,28 +114,28 @@ Median after/before ratio per observable (number of terms):
 
 | Observable | Taut | Taut + pc | Pc only |
 |---|---|---|---|
-| loss.copper | 0.982 (6) | 0.620 (6) | 0.566 (7) |
+| loss.copper | 0.979 (7) | 0.737 (7) | 0.566 (7) |
 | drop.rail | 0.977 (5) | 0.315 (5) | 0.317 (5) |
-| supply.peak | 0.972 (31) | 0.529 (31) | 0.621 (37) |
+| supply.peak | 0.979 (37) | 0.571 (37) | 0.621 (37) |
 | emission.cable_E | 0.999 (5) | 0.918 (5) | 0.965 (5) |
 | pickup.peak | 0.889 (3) | 0.920 (3) | 0.940 (3) |
 | heat.track | 1.000 (4) | 0.324 (4) | 0.324 (4) |
 
-- **Taut alone: total lower on 8 of 11 boards.**
+- **Taut alone: total lower on 9 of 11 boards** (chips-0123 has no intent).
   - Copper loss down by up to 6 % (redbot 997 → 940 mW), rail drop up to 3 % (cm4 D1 420 → 409 mV), supply peaks up to 12 % (metro S0 120 → 106 mV).
   - nekoink's −53 % comes from the 2 connections it closed (pickup E2 6.8 mV → 65 µV), not from tightening itself.
 - **Taut alone: worse on 3 boards.**
   - dream117er +2.5 % and redbot +0.02 %: the hottest track's heat.track doubled while loss and drop fell. The term's effective width is the raster cells, at 0.25 mm pitch, that a 0.25 mm track covers. It flips between 1 and 2 with position, and several unrelated corners doubled at once, so this is most likely raster noise [I].
   - secsense +0.08 % (copper loss +0.6 %).
 - **Taut + pc against pc alone.**
-  - Better on 5 boards: metro, cm4, lenaschimmel (2165 vs 2560), ubertooth, nekoink. Equal on 2.
+  - Better on 6 boards: metro, cm4, lenaschimmel (2165 vs 2560), ubertooth, nekoink, aifryz (35463 vs 40874; its +BATT S4 rises to 1.37 V against 1.54 V with power copper alone). Equal on 2.
   - Worse on 3. On magtag, the power-copper gate spent its 80 DRC runs chasing solder-mask-bridge counts that move from run to run, and kept 35 of 119 widenings (88 of 115 on the input). On redbot and dream117er, the cause is the heat.track rise above.
   - Signal terms are better with taut first: emission 0.918 vs 0.965, pickup 0.920 vs 0.940.
 
 ## Verdict
 
-- **Worth adopting as a post-pass before power copper.** DRC was never worse and 2 connections closed. Copper fell 2.7 % and corners 56 %, every rewritten branch is certified optimal for its homotopy class, and physics improved on 8 of 11 boards.
-- **Before power copper:** better than power copper alone on 5 boards, equal on 2 and worse on 3. Fix the power-copper gate's mask-bridge noise (magtag) before making taut + pc the default.
+- **Worth adopting as a post-pass before power copper.** DRC was never worse and 2 connections closed. Copper fell 2.7 % and corners 56 %, every rewritten branch is certified optimal for its homotopy class, and physics improved on 9 of 11 boards.
+- **Before power copper:** better than power copper alone on 6 boards, equal on 2 and worse on 3. Fix the power-copper gate's mask-bridge noise (magtag) before making taut + pc the default.
 - **Next:**
   - an A/B through the bridge's final stage (cp1/cpk, merit physics);
   - heat.track on a finer evaluator pitch, to settle the artefact;
