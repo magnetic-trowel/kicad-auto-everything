@@ -4,6 +4,7 @@ Routing paths we tried, with how they work, the numbers and the verdict. The pag
 
 | Path | Status | One-line result | Page | Code |
 |---|---|---|---|---|
+| Post-audit baselines (kae bridge, kae staged, joint loop, Freerouting on 213 merit boards at 21bc53d) | worked | On 196 load-stable boards kae staged 754 → 719 open, clean 64 → 66, physics 3.00 → 2.60; bridge on human placement unchanged; score v8 corrects 3 boards that scored as fully routed | [post-audit-baselines](post-audit-baselines.md) | `tools/kaeres/experiments/baseline-2611.sh` |
 | Constraint-complete KiCad → Freerouting bridge (rule port, DSN translation, no narrowing, hardened runner) | worked | Split C cp1 0.051 → 0.532, cpk 0.633, 0 errors besides 69 starved_thermal; merit method "kae bridge", 500-board results pending | [kae-freerouting-bridge](kae-freerouting-bridge.md) | `kae/src/kae/route/{bridge,cli,rules,constraints,translate,freerouting}.py` |
 | DRC-driven repair rounds | worked (enabler) | Every bridge result relies on it; no isolated ablation | [kae-repair-loop](kae-repair-loop.md) | `kae/src/kae/route/repair.py` |
 | Last mile: exact grid joins with negotiated rip-up | worked | A+B cp1 0.727 → 0.909, cpk 0.818 → 0.970, no physics cost | [kae-last-mile](kae-last-mile.md) | `kae/src/kae/route/lastmile.py` |
