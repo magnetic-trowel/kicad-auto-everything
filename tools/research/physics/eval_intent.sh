@@ -15,6 +15,7 @@ ulimit -v ${KAE_EVAL_VMEM_KB:-100000000}
 mkdir -p "$out"; w=$out/$tag.work; rm -rf "$w"; mkdir -p "$w"
 base=${board%.kicad_pcb}
 case "$board" in *.gz) zcat "$board" > "$w/board.kicad_pcb"; base=${board%.kicad_pcb.gz};; *) cp "$board" "$w/board.kicad_pcb";; esac
+[ -n "$KAE_RULES_FROM" ] && base=${KAE_RULES_FROM%.kicad_pcb}      # a run's output: the board's own rules
 for e in kicad_pro kicad_dru; do [ -f "$base.$e" ] && cp "$base.$e" "$w/board.$e"; done
 $KAE_KICAD_WRAP kicad-cli pcb upgrade --force "$w/board.kicad_pcb" >/dev/null 2>&1 || true
 t0=$(date +%s)

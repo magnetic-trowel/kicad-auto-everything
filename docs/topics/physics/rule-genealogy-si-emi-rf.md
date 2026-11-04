@@ -1,17 +1,18 @@
 # Rule genealogy: SI, differential pairs, EMC, RF, crystals, interfaces
 
-**TL;DR**
-- High-speed rules encode five quantities: **return-path inductance** (L), **propagation** (Z0, delay, loss, stubs: Z), **balance** (skew and mode conversion: Bal), **coupling** (M and Cm) and **common-mode voltage on cables and chassis** (Vcm). "Reference continuity" is the geometric cause behind most of them, not a quantity of its own.
-- Many millimetre and mil rules are exact physics *in disguise* only for one stackup family. The 3W rule gives the same ~2.8% NEXT bound for **every 50 Ω microstrip** (w fixes w/h ≈ 2), but 80% for 0.25 mm traces on a 1.6 mm two-layer board [C]. Re-express such rules in units of h.
-- Return-via distance enters inductance only through **ln(s/a)**; plane spacing d enters linearly. Moving a return via from 5 mm to 1.3 mm saves ~40%; halving d saves 50% [C].
-- The 90° corner is negligible until f ≈ 3–4 GHz·mm / h: 14–19 GHz at h = 0.2 mm, but **1.9–2.6 GHz on a 1.5 mm two-layer board** [C]. So it is a real rule for 2.4 GHz RF on thick substrates and a myth for 4-layer digital.
-- EMC rules (connector zoning, filters at the exit, no ferrite in ground) are all proxies for Vcm = jωL_ret·I between antenna parts. The MREMC closed form already replaces them; ~1 mV between cable references is the budget.
+Scope: origin, governing physics, verdict and replacement budget for rules S01–S55. Not here: one-line derivations -> [derivation-audit-table](derivation-audit-table.md); codes -> [legend](rule-genealogy-power-analog-thermal.md#legend); regime table -> [rule-basis-set](rule-basis-set.md#regime-selectors-when-does-a-rule-bind).
+Keys: S01-S55, return path, reference continuity, 3W, return via distance, stitching, skew, mode conversion, 90° corner RF, miter, MREMC, Vcm, connector zoning, crystal, antenna keep-out, dimensionless groups
 
-Legend as in [rule-genealogy-power-analog-thermal](rule-genealogy-power-analog-thermal.md): Origin Ph/Mf/Hb/Sp/Cg/Tl/Lg; Basis L, M, Cm, R, Z, Bal, Vcm, Res, Ins, Th, Mech, Fab ([rule-basis-set](rule-basis-set.md)); Verdict R/C/A/M/X/CT; Cost CF/2D/PEEC/FW/SP/TN/LU/GE. [C] sections refer to [rg_proxies.py](../../../tools/research/physics/rg_proxies.py), [rg_corners.py](../../../tools/research/physics/rg_corners.py) and [rg_fill_and_decaps.py](../../../tools/research/physics/rg_fill_and_decaps.py).
+**Results**
+- High-speed rules encode five quantities: **L** (return path), **Z** (Z0, delay, loss, stubs), **Bal** (skew, mode conversion), **M/Cm** (coupling), **Vcm** (common mode on cables and chassis). "Reference continuity" is the geometric cause behind most, not a quantity.
+- Many mm/mil rules are exact physics only for one stackup family: 3W bounds NEXT only because 50 Ω microstrip fixes w/h ≈ 2 (S15). Give every fast net a t_r and every layer an h before any SI rule fires; evaluate rules as dimensionless groups (l/(v·t_r), D/h, s/h, f·h).
+- Return-via distance enters L only through **ln(s/a)**; plane spacing d linearly. Return via 5 → 1.3 mm saves ~40%; halving d saves 50% [C]. Replace S03/S05/S07 with one return-transition budget in pH (RG11), S15/S24 with a K budget in h (RG5).
+- 90° corner negligible until f ≈ 3–4 GHz·mm / h: 14–19 GHz at h = 0.2 mm, **1.9–2.6 GHz on a 1.5 mm two-layer board** [C]: real for 2.4 GHz RF on thick substrates, myth for 4-layer digital. Replace S46/S47 with a corner Γ check scoped by f_max·h (RG12).
+- EMC rules (connector zoning, filters at the exit, no ferrite in ground) are proxies for Vcm = jωL_ret·I between antenna parts; budget ~1 mV between cable references. Use MREMC Vcm as the single EMC placement objective (S31–S36, S39); rank findings by mV, not rule count ([checkers-si-emi](../rules/checkers-si-emi.md) F). Keep CT rules (S37, S38, S53, S55) as selectors, resolved by a solver, not a vote.
 
-## Key facts
+[C] = [rg_proxies.py](../../../tools/research/physics/rg_proxies.py), [rg_corners.py](../../../tools/research/physics/rg_corners.py), [rg_fill_and_decaps.py](../../../tools/research/physics/rg_fill_and_decaps.py).
 
-### Return paths and reference planes ([si-fundamentals](../rules/si-fundamentals.md), [stackup](../rules/stackup.md))
+## Return paths and reference planes ([si-fundamentals](../rules/si-fundamentals.md), [stackup](../rules/stackup.md))
 
 | ID | Rule | Orig | Physics (basis: equation; binds when) | Verdict | Replacement [cost] |
 |---|---|---|---|---|---|
@@ -30,7 +31,7 @@ Legend as in [rule-genealogy-power-analog-thermal](rule-genealogy-power-analog-t
 | S13 | Via-count limits (≤2; 0 on some SoCs) | Sp | **Z**, **Res**, **L**: via = Z step + stub + return transition | M: count is a proxy; a backdrilled via with GND vias is cheap | per-via RL/loss budget [FW] |
 | S14 | Avoid power-pin corner ICs; paired P/G pins (Hartley) | Ph | **L** of package return | R | package L from IBIS [LU] |
 
-### Crosstalk and differential pairs ([diff-pairs](../rules/diff-pairs.md))
+## Crosstalk and differential pairs ([diff-pairs](../rules/diff-pairs.md))
 
 | ID | Rule | Orig | Physics | Verdict | Replacement [cost] |
 |---|---|---|---|---|---|
@@ -51,7 +52,7 @@ Legend as in [rule-genealogy-power-analog-thermal](rule-genealogy-power-analog-t
 | S29 | Vendor skew tables differing 5–25× | Hb+Lg | **Bal**/timing with different hidden margins | M | derive from UI and receiver spec [CF] |
 | S30 | DDR: match to <20% of each limit in layout | Sp | **Z**: timing margin reserve | C | IBIS across PVT [SP] |
 
-### EMC ([emc-placement](../rules/emc-placement.md))
+## EMC ([emc-placement](../rules/emc-placement.md))
 
 | ID | Rule | Orig | Physics | Verdict | Replacement [cost] |
 |---|---|---|---|---|---|
@@ -69,7 +70,7 @@ Legend as in [rule-genealogy-power-analog-thermal](rule-genealogy-power-analog-t
 | S42 | Spread-spectrum clocking | Lg+Ph | **Vcm**: 120 kHz receiver bandwidth sees lower peaks; energy unchanged | R (measurement artifact) | [LU] |
 | S43 | Optional footprints for filters, TVS, shields | Ph+Cg | **Vcm** uncertainty hedge | R | keep [GE] |
 
-### RF and crystals ([rf](../rules/rf.md), [crystals-clocks](../rules/crystals-clocks.md))
+## RF and crystals ([rf](../rules/rf.md), [crystals-clocks](../rules/crystals-clocks.md))
 
 | ID | Rule | Orig | Physics | Verdict | Replacement [cost] |
 |---|---|---|---|---|---|
@@ -86,13 +87,7 @@ Legend as in [rule-genealogy-power-analog-thermal](rule-genealogy-power-analog-t
 | S54 | I2C pull-up window from t_r and C_b | Ph | **Cm** of bus | R (already physics) | [CF] |
 | S55 | Ethernet PHY↔magnetics ≥25 mm vs <1 in | CT | **Vcm** coupling vs loss | M | [CF] |
 
-## Recommendations for our system
-- Give every fast net a t_r and every layer an h before any SI rule fires; all rules above then evaluate as dimensionless groups (l/(v·t_r), D/h, s/h, f·h). See the regime table in [rule-basis-set](rule-basis-set.md).
-- Replace S03/S05/S07 with one return-transition budget in pH (RG11). Replace S15/S24 with a K budget in h (RG5). Replace S46/S47 with a corner Γ check scoped by f_max·h (RG12).
-- Use MREMC Vcm as the single EMC placement objective (S31–S36, S39); rank findings by mV, not by rule count ([checkers-si-emi](../rules/checkers-si-emi.md) F).
-- Keep CT rules (S37, S38, S53, S55) as selectors; resolve them with a solver, not a vote.
-
-## Conflicts and open questions
+## Open questions
 - **S03 vs S07:** both are return-inductance rules; on a tight P/G pair (<0.1 mm) a power-plane reference costs little above a few hundred MHz. The selector is the P/G spacing and edge rate.
 - **S11 vs S25/S30:** "short" fights length matching; the budget is timing or skew, not length.
 - **S46:** Gupta and Kirschning capacitance agree within 3%; their bend-inductance formulas differ ~4×, so the "with L" column is soft. A 2-D/3-D check should calibrate.
@@ -105,4 +100,4 @@ Legend as in [rule-genealogy-power-analog-thermal](rule-genealogy-power-analog-t
 - Microstrip corner closed forms (Kirschning): https://qucs.sourceforge.net/tech/node76.html [S]; Gupta, Garg, Bahl, *Microstrip Lines and Slotlines* (bend C and L) [S]
 - Douville & James, IEEE T-MTT 26(3):175–182, 1978, via https://techdocs.altium.com/display/ADOH1/Chamfered+Routing [S]
 
-See also: [rule-basis-set](rule-basis-set.md), [rule-genealogy-power-analog-thermal](rule-genealogy-power-analog-thermal.md), [rule-genealogy-routing-style-dfm](rule-genealogy-routing-style-dfm.md), [../rules/myths-and-contested.md](../rules/myths-and-contested.md)
+See also: [myths-and-contested](../rules/myths-and-contested.md)

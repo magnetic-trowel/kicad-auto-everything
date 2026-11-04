@@ -79,7 +79,7 @@ def cmd_place(a):
     anneal = "anneal" in stages and not a.no_anneal
     anneal_args = json.loads(a.anneal_args) if a.anneal_args else None
     kw = dict(physics=not a.no_physics, workers=a.workers, log=_log, anneal=anneal, edge_mate=a.edge_mate,
-              anneal_args=anneal_args, angle_step=a.angles)
+              anneal_args=anneal_args, angle_step=a.angles, board_path=a.input)
     fix_classes = [c.strip() for c in (a.fix_class or "").split(",") if c.strip()]
     fix_refs = [r.strip() for r in (a.fix or "").split(",") if r.strip()]
     if fix_classes or fix_refs:
@@ -380,6 +380,11 @@ def main(argv=None):
     sb.add_argument("input")
     sb.add_argument("--out")
     sb.set_defaults(fn=cmd_brief)
+    sd = sub.add_parser("dru-check", help="check .kicad_dru custom rules (static, then KiCad's own parser); "
+                                          "KiCad silently drops the whole file on any error")
+    from kae.board import dru_check
+    dru_check.add_arguments(sd)
+    sd.set_defaults(fn=dru_check.run)
     a = ap.parse_args(argv)
     nc = _numba_cache()
     if nc:

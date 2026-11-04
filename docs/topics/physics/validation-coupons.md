@@ -1,17 +1,17 @@
 # Validation coupons: a panel chosen by decision value
 
-**TL;DR**
-- **Five coupons earn a place, out of about fifteen proposed.** Each separates competing predictions by more than its measurement error, and the answer changes a rule or an architecture choice. By value per cost [C]: return-current band (LM) ≫ stitching cut-off (FP) > short voids (SS) ≈ bonding (CM) > node-vs-loop coupling (NL). Via clusters (VC) ride free on the FP panel; the rest are dropped.
-- **The predictions differ by 13× to 28 dB.** A single boundary at f_x(h) puts the lane-B return transition 13× lower in frequency than lane A; ℓ_m(f) puts it within 10%. Symmetric node/loop duality predicts +43 dB of capacitive coupling for the thick dielectric; lens SY predicts +14.5 dB. The λ/20 stitching rule needs 2.9 mm pitch at 2.45 GHz; the wire medium says 10 mm already screens 36 dB.
-- **Most predictions are differential:** twins or variants on one panel cancel fab and probe offsets (lens IN, E2).
-- **Intervals cover input tolerances; model error is what the panel measures.**
-- **One panel costs about $200–500 [I] and 3 engineer-weeks** with NanoVNA-class tools, an audio lock-in and a DMM.
+Scope: the five-coupon measurement panel (LM, FP + VC, SS, NL, CM) chosen by decision value: common setup, ranking, geometry, method, registered predictions with intervals, competing predictions, pass rule. Not here: program, VAL-1, kill criteria -> [validation-program](validation-program.md); critic calibration -> [physics-critics-validation](physics-critics-validation.md).
+Keys: validation coupons, LM return band, ℓ_m(f), f_x(h), FP stitching cut-off, Belov f_p, wire medium, λ/20, VC via clusters, SS short voids, merged antipads, NL node vs loop, duality break, guard, CM board–world cut, heatsink bonding, Y-capacitor, pre-registration, JLC04161H-3313, val_lm_coupon.py, val_fp_coupon.py, val_coupling_coupon.py, val_slot_coupon.py, val_cm_coupon.py
+
+**Results:**
+- Five of ~15 proposed coupons earn a place: each separates competing predictions by more than its measurement error, and the answer changes a rule or an architecture choice; VC rides free on the FP panel; the rest are dropped.
+- Competing predictions differ by 13× to 28 dB (lane B transition vs ℓ_m(f) within 10%, node/loop duality, λ/20 vs wire medium).
+- Most predictions are differential: twins or variants on one panel cancel fab and probe offsets (lens IN, E2). Intervals cover input tolerances; model-form error is what the panel measures.
+- One panel ≈ $200–500 [I] and 3 engineer-weeks with NanoVNA-class tools, an audio lock-in and a DMM.
 
 Tags: [P] primary, [S] secondary, [I] inference, [C] computed by `val_*.py` in [`tools/research/physics/`](../../../tools/research/physics/): [val_lm_coupon.py](../../../tools/research/physics/val_lm_coupon.py), [val_fp_coupon.py](../../../tools/research/physics/val_fp_coupon.py), [val_coupling_coupon.py](../../../tools/research/physics/val_coupling_coupon.py), [val_slot_coupon.py](../../../tools/research/physics/val_slot_coupon.py), [val_cm_coupon.py](../../../tools/research/physics/val_cm_coupon.py), [val_voi_rank.py](../../../tools/research/physics/val_voi_rank.py). Program and first board: [validation-program](validation-program.md).
 
-## Key facts
-
-### 1. Common setup
+## 1. Common setup
 
 | Item | Choice |
 |---|---|
@@ -22,7 +22,7 @@ Tags: [P] primary, [S] secondary, [I] inference, [C] computed by `val_*.py` in [
 
 Intervals are corner or Monte Carlo ranges over stated tolerances, read as about 90% [I]. Model-form error is the unknown under test, not part of the interval.
 
-### 2. The panel, ranked
+## 2. The panel, ranked
 
 | Coupon | Dispute it settles | Decision it informs | Value per cost [C] |
 |---|---|---|---|
@@ -38,19 +38,11 @@ Value is Σ s × EVPI over the claims each coupon settles, in engineer-weeks (EW
 
 **In situ on VAL-1, not as coupons:** tuned vs textbook snubbers and edge rate (real, nonlinear C_oss), and |Z| at real pins. **Dropped:** hot-loop L vs h (anchored by AN-139, SNVA803, EPC; [lens-in](lens-in.md) §5); bridging caps (zero decision value); thermal spreaders (h_conv is a common factor); the DC cut law (exact; one notch on the R_s strip checks the fab).
 
-### 3. Coupon LM: where a return current flows at kHz
+## 3. Coupon LM: where a return current flows at kHz
 
-**Geometry.**
-- **Lanes.** Two 40 mm-wide plane lanes, 140 mm long and 20 mm apart, with no copper between them.
-  - Lane A: a 1.0 mm trace on L1 over the L2 plane, h = 0.0994 mm, 0.5 oz.
-  - Lane B: the same trace with L2 cleared from the lane, so the plane is L3 at h = 1.38 mm.
-- **Drive.** At the near end, between trace and plane; four vias short the trace to the plane at the far end.
-- **Kelvin pairs** at lateral offsets x = 1.5, 3, 6, 12 and 18 mm, 50 mm apart along the trace, at least 45 mm from either end.
-- **Sense traces** run 0.12 mm from the plane (L1 in lane A, L4 in lane B) and leave as a tight pair at right angles. An optional 1 oz-inner order tests R_s scaling.
+**Geometry:** two 40 mm-wide plane lanes, 140 mm long, 20 mm apart, no copper between. Lane A: 1.0 mm trace on L1 over L2, h = 0.0994 mm, 0.5 oz. Lane B: same trace with L2 cleared, plane = L3 at h = 1.38 mm. Drive at the near end between trace and plane; four vias short trace to plane at the far end. Kelvin pairs at lateral offsets x = 1.5, 3, 6, 12, 18 mm, 50 mm apart along the trace, ≥ 45 mm from either end; sense traces 0.12 mm from the plane (L1 in A, L4 in B), leaving as a tight pair at right angles. Optional 1 oz-inner order tests R_s scaling.
 
-**Method.**
-- Drive 0.5–1 A; a lock-in reads 100 Hz–80 kHz, a USB network analyser plus buffer 50–300 kHz.
-- The observable, |V(x, f)|/|V(x, DC)|, includes the sense loop's own pickup (2–5% at 100 kHz here [C]): a budget names its loop ([lens-ct](lens-ct.md), [lens-sy](lens-sy.md)).
+**Method:** drive 0.5–1 A; lock-in 100 Hz–80 kHz, USB network analyser + buffer 50–300 kHz. Observable |V(x, f)|/|V(x, DC)| includes the sense loop's own pickup (2–5% at 100 kHz [C]): a budget names its loop ([lens-ct](lens-ct.md), [lens-sy](lens-sy.md)).
 
 **Predictions** [C, val_lm_coupon]:
 - **DC.** 1.414 mV per A at every offset, which is R_s·Δz/W.
@@ -62,12 +54,9 @@ Value is Σ s × EVPI over the claims each coupon settles, in engineer-weeks (EW
 
 **Decision.** Below f_half(x), distance does not protect a precision node from a nearby return current; only topology does (a cut, Kelvin taps, a neck at a stagnation point, [lens-ct](lens-ct.md) D3), and prepreg thickness does not move that frequency. If the curves hold, closed forms suffice and no transition-band solver is needed ([research-gaps](research-gaps.md) gap 2). Reported "transition" frequencies differ by up to 10× with the observable ([verification-and-limits](verification-and-limits.md) §2); this coupon fixes one.
 
-### 4. Coupon FP: stitching cut-off, plus via clusters
+## 4. Coupon FP: stitching cut-off, plus via clusters
 
-**Geometry.**
-- L2 and L3 solid planes across the core (d = 1.265 mm).
-- Tiles of 60, 60, 80 and 90 mm, each with 0.3 mm vias on a square lattice of pitch 10, 15, 20 and 30 mm, and each with a twin tile without vias.
-- Two vertical SMAs per tile (centre pin to L3, body to L2), each midway between four posts, 30 mm apart (40 mm at 20 mm pitch).
+**Geometry:** L2 and L3 solid planes across the core (d = 1.265 mm); tiles 60, 60, 80, 90 mm with 0.3 mm vias on square lattices of pitch 10, 15, 20, 30 mm, each with a via-less twin; two vertical SMAs per tile (centre pin to L3, body to L2), each midway between four posts, 30 mm apart (40 mm at 20 mm pitch).
 
 **Method.** |S21| from 0.3 to 4 GHz (LiteVNA or NanoVNA V2). The registered features are the first transmission peak and the isolation relative to the twin. Both are insensitive to the SMA launch.
 
@@ -89,13 +78,9 @@ Value is Σ s × EVPI over the claims each coupon settles, in engineer-weeks (EW
   - L = 1.11, 0.78, 0.60, 0.57 and 0.81 nH, each ±12%.
   - Discriminator L(9 at 1 mm)/L(4 at 2 mm) = 0.96 (capacity, [lens-vp](lens-vp.md) D3); the count rule L₁/N gives 0.44.
 
-### 5. Coupon NL: does height cut capacitive coupling?
+## 5. Coupon NL: does height cut capacitive coupling?
 
-**Geometry.**
-- **Strips.** 60 mm strip pairs, centres 4 mm apart. Aggressor 2.0 mm; victim 2.0 mm (wide) or 0.2 mm (narrow).
-- **Heights.** On L1 over L2 (h = 0.0994 mm), or over L3 with L2 cleared (h = 1.38 mm).
-- **Guard.** Each pair with and without a 0.5 mm grounded guard, stitched every 2.5 mm.
-- **Ports.** An SMA at each near end; a 0 Ω link makes the far ends open (node mode) or shorted to the plane (loop mode).
+**Geometry:** 60 mm strip pairs, centres 4 mm apart; aggressor 2.0 mm, victim 2.0 mm (wide) or 0.2 mm (narrow); on L1 over L2 (h = 0.0994 mm) or over L3 with L2 cleared (h = 1.38 mm); each pair with and without a 0.5 mm grounded guard stitched every 2.5 mm; SMA at each near end; a 0 Ω link makes the far ends open (node mode) or shorted to the plane (loop mode).
 
 **Method.** S21 at 5–100 MHz, keeping |S21| above about −75 dB.
 
@@ -114,12 +99,9 @@ Value is Σ s × EVPI over the claims each coupon settles, in engineer-weeks (EW
   - h = 0.10 mm: C_m ×0.98 and L_m ×0.94, under 1 dB (unmeasurable);
   - h = 1.38 mm: ×0.47 and ×0.45, −6.6 and −6.9 dB.
 
-**Decision.**
-- Thin prepreg is a lever on loops, not nodes.
-- Guards cost routing space for nothing over thin dielectric.
-- Keep-outs for dv/dt copper are set by area and distance, not by h ([lens-sy](lens-sy.md) D1).
+**Decision:** thin prepreg is a lever on loops, not nodes; guards cost routing space for nothing over thin dielectric; keep-outs for dv/dt copper are set by area and distance, not h ([lens-sy](lens-sy.md) D1).
 
-### 6. Coupon SS: what a short void costs
+## 6. Coupon SS: what a short void costs
 
 **Geometry.**
 - Nine 20 mm traces, 50 Ω (0.19 mm on L1 over L2), each crossing one void at mid-length at right angles, plus three twins without a void.
@@ -147,19 +129,9 @@ Value is Σ s × EVPI over the claims each coupon settles, in engineer-weeks (EW
 - **The four EM models agree within about 1.5×.** The outlier is the Ott fit's knee, an extrapolation below his shortest (6 mm) slot. If ℓ0 scales with h (ℓ0 ≈ 1.4h, taking his board as 1.6 mm [I]), the fit matches PEEC: 0.12 vs 0.10 for the 2-to-10 mm voltage ratio.
 - **Decision.** A void matters for an edge-critical net when ΔL > 0.1 nH (3 mV at 30 mA/ns). That holds for every void here except separate antipads at low edge rates. Merging antipads triples the cost.
 
-### 7. Coupon CM: where the displacement current closes
+## 7. Coupon CM: where the displacement current closes
 
-**Geometry.**
-- **Board.** 80 × 60 mm, 4 layers, GND on L2, with a 10 × 10 mm switch-node pad on L1 fed by an SMA.
-- **Heatsink.** A 40 × 40 mm aluminium plate on 0.25 mm Kapton over the pad, about 12 pF.
-- **Chassis.** 6 mm standoffs (nylon or metal) over a 300 × 200 mm aluminium plate.
-- **Cable.** 1 m two-wire cable to a LISN bonded to the plate, with a clamp probe 50 mm from the board.
-- **Variants:**
-  - V1: heatsink floating;
-  - V2: heatsink strapped to the chassis;
-  - V3: heatsink strapped to board GND (10 mm wire);
-  - V4: V3 plus a 4.7 nF Y-capacitor from GND to the chassis at a mounting hole;
-  - V5: V1 with metal standoffs.
+**Geometry:** 80 × 60 mm, 4 layers, GND on L2, 10 × 10 mm switch-node pad on L1 fed by an SMA; heatsink = 40 × 40 mm aluminium plate on 0.25 mm Kapton over the pad (~12 pF); 6 mm standoffs (nylon or metal) over a 300 × 200 mm aluminium chassis plate; 1 m two-wire cable to a LISN bonded to the plate, clamp probe 50 mm from the board. Variants: V1 heatsink floating; V2 strapped to chassis; V3 strapped to board GND (10 mm wire); V4 = V3 + 4.7 nF Y-cap GND–chassis at a mounting hole; V5 = V1 with metal standoffs.
 
 **Method.** VNA S21 from the pad drive to the probe, 3–200 MHz, registered as ratios to V2. The probe transfer impedance cancels.
 
@@ -174,7 +146,7 @@ Value is Σ s × EVPI over the claims each coupon settles, in engineer-weeks (EW
 
 **Decision.** Bonding a heatsink only to the chassis gives the *most* cable CM current here; closing the displacement current locally (V3–V5) wins by 20–60 dB, less above ~100 MHz as the strap's ωL nears the cable's CM impedance. Values below about −60 dB register as "at floor".
 
-### 8. Pre-registration summary
+## 8. Pre-registration summary
 
 | ID | Observable | Registered value [interval] | Competing value | Script |
 |---|---|---|---|---|
@@ -194,14 +166,14 @@ Value is Σ s × EVPI over the claims each coupon settles, in engineer-weeks (EW
 
 **Pass rule.** At least 80% of registered values inside their intervals per coupon, with every discriminator on the registered side. A coupon whose measurement lands on the competing value refutes its claim. The kill criteria are in [validation-program](validation-program.md) §5.
 
-## Recommendations for our system
+## 9. Ordering and use
 
-1. **Order one panel now:** LM, FP with VC, SS, NL, plus the CM board and the common-factor strips. The geometries are fixed above; the scripts recompute the predictions from the final KiCad files.
-2. **Hash the predictions, the analysis script and the measurement order into git before ordering.** Fit nothing until the registered comparison has been read.
-3. **Assimilate common factors first** (R_s from the strips, ε_r and h from TDR), re-score, then attribute the residual to model lineage ([lens-in](lens-in.md) IN30).
-4. **Fold the outcomes into rules and critics:** LM into precision-node topology rules and the solver plan, FP into stitching pitch, SS into RET-COV severity and a merged-antipad DFM rule, CM into bonding advice, NL into guard and keep-out rules.
+1. Order one panel now: LM, FP with VC, SS, NL, plus the CM board and common-factor strips; scripts recompute predictions from the final KiCad files.
+2. Hash predictions, analysis script and measurement order into git before ordering; fit nothing until the registered comparison has been read.
+3. Assimilate common factors first (R_s from strips, ε_r and h from TDR), re-score, then attribute the residual to model lineage ([lens-in](lens-in.md) IN30).
+4. Fold outcomes into rules and critics: LM → precision-node topology rules and solver plan; FP → stitching pitch; SS → RET-COV severity and a merged-antipad DFM rule; CM → bonding advice; NL → guard and keep-out rules.
 
-## Conflicts and open questions
+## Open questions
 
 - **All predictions are quasi-static** (2-D cross-sections, cavity modal sums, plane PEEC, lumped graphs). Radiation from coupon edges and SMA launches is not modelled. FP's S21 levels above f_p are resonant and wide.
 - **Chassis-plate and cable resonances** dominate absolute CM levels, so only ratios are registered.
@@ -214,4 +186,4 @@ Value is Σ s × EVPI over the claims each coupon settles, in engineer-weeks (EW
 - Lenses: [lens-ls](lens-ls.md) (wire medium, ℓ_m), [lens-vp](lens-vp.md) (capacity, floors), [lens-sy](lens-sy.md) (duality), [lens-ct](lens-ct.md) (board–world cut), [lens-th](lens-th.md) (damping), [lens-in](lens-in.md) (VOI).
 - Reused scripts: vp_rl_band, fe_cavity, vp_floors, sy_duality_balance, fe_peec_plane, ct_cut_topology.
 
-See also: [validation-program](validation-program.md) · [verification-and-limits](verification-and-limits.md) · [research-gaps](research-gaps.md) · [physics-critics-validation](physics-critics-validation.md) · [solver-ladder](solver-ladder.md)
+- Related: [verification-and-limits](verification-and-limits.md), [research-gaps](research-gaps.md), [solver-ladder](solver-ladder.md).

@@ -86,19 +86,53 @@ def parts_table():
     return json.loads(PARTS_FILE.read_text()).get("parts", [])
 
 
+def match_rank(pattern, text, value=None):
+    """How well a part-table or datasheet-library pattern names a part: None when it does not match, else a
+    sortable key (it matched the value itself, the length of the match). A match must start at a word
+    boundary ('CM5' names a Compute Module 5, not the 'PCM5102' it sits inside), and the longest match is the
+    most specific ('AP2112K-1.8' beats a family-wide 'AP2112' that a 3.3 V variant's entry carries)."""
+    pat = re.sub(r"^\(\?i\)", "", pattern or "")
+    if not pat:
+        return None
+    try:
+        rx = re.compile(r"(?<![A-Za-z0-9])(?:" + pat + ")", re.I)
+    except re.error:
+        return None
+    for on_value, t in ((True, value), (False, text)):
+        m = rx.search(t or "") if t is not None else None
+        if m:
+            return (on_value, len(m.group(0)))
+    return None
+
+
+def best_match(entries, pattern_of, text, value=None, name_of=None):
+    """The entry whose pattern names the part best, or None: an entry whose own part number is the value
+    first (name_of), then match_rank; ties go to the earlier entry."""
+    norm = lambda x: re.sub(r"[^a-z0-9]", "", (x or "").lower())
+    best, key = None, None
+    for e in entries:
+        k = match_rank(pattern_of(e), text, value)
+        if k is not None:
+            k = (bool(value) and name_of is not None and norm(name_of(e)) == norm(value),) + k
+        if k is not None and (key is None or k > key):
+            best, key = e, k
+    return best
+
+
 def lookup(text):
-    """{name: (typ, lo, hi, source text)} for the first table entry whose regex matches the part text."""
-    for e in parts_table():
-        if re.search(e["match"], text or "", re.I):
-            out = {}
-            for k, v in e.get("data", {}).items():
-                if isinstance(v, list):
-                    lo, hi = float(v[0]), float(v[-1])
-                    out[k] = (math.sqrt(lo * hi) if lo > 0 else (lo + hi) / 2, lo, hi, e.get("source", ""))
-                else:
-                    out[k] = (float(v), float(v), float(v), e.get("source", ""))
-            return out
-    return {}
+    """{name: (typ, lo, hi, source text)} for the table entry whose regex names the part text best
+    (match_rank: from a word boundary, the most specific)."""
+    e = best_match(parts_table(), lambda e: e["match"], text)
+    if e is None:
+        return {}
+    out = {}
+    for k, v in e.get("data", {}).items():
+        if isinstance(v, list):
+            lo, hi = float(v[0]), float(v[-1])
+            out[k] = (math.sqrt(lo * hi) if lo > 0 else (lo + hi) / 2, lo, hi, e.get("source", ""))
+        else:
+            out[k] = (float(v), float(v), float(v), e.get("source", ""))
+    return out
 
 
 def intent_value(intent, section, key, name):

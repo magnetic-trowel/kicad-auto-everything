@@ -67,14 +67,14 @@ def _rects_of(P, item, v):
             out[1 - si].append((dx + a, dx + b, dy + c, dy + d))
         for (a, b, c, d) in (r.g_boards or (r.g_board,)):
             boards.append((dx + a, dx + b, dy + c, dy + d))
-    # one bounding box for the members that fit whole; the rest stay separate
-    whole = [b for b in boards]
-    if len(whole) > 1 and len(item.members) > 1:
-        bb = (min(b[0] for b in whole), max(b[1] for b in whole), min(b[2] for b in whole), max(b[3] for b in whole))
-        whole = [bb]
+    # each member's board rectangles separately (allowed_boxes intersects them): one bounding
+    # box over a macro had to fit in ONE cover rectangle, so on a non-rectangular outline a
+    # layout whose members each fit lost the variant (chips-0123's decap macro on a 7-rectangle
+    # cover: 6 of 12 variants feasible merged, 7 of 12 per member), and with every variant lost
+    # the macro was "infeasible" and left where it stood
     # an item's own rectangles may overlap each other (drilled pads and a back courtyard):
     # NoOverlap2D needs them as disjoint pieces
-    return {side: disjoint_union(rs) for side, rs in out.items()}, whole
+    return {side: disjoint_union(rs) for side, rs in out.items()}, boards
 
 
 def _boxes_one(P, bb):

@@ -373,3 +373,40 @@ def test_budget_sweep_replaces_the_loop_link_and_reaches_the_placer(tmp_path):
     assert apply(br, {sid: ok}) == [sid]
     st = next(s for s in Terms(b, br).structs if s.id == sid)
     assert st.alloc.value == 3.25 and st.alloc.basis == "simulated: test"
+
+
+def test_a_routed_deck_that_cannot_be_built_is_an_error_not_the_ideal_verdict(tmp_path, monkeypatch):
+    """When every routed deck fails to build (a testbench line naming an extracted net), the
+    requirement read the ideal circuit's 'pass': a layout passed without a routed simulation."""
+    from types import SimpleNamespace
+
+    from kae.sim import evaluate as EV
+    text = """*@test drop kind=custom
+*@nets +3V3
+Vs <C3.1> 0 DC 3.3
+.tran 10n 1u
+.meas tran v8 MIN v(<C3.1>) from=0.5u to=1u
+*@require v8 >= 3.2 src=prior:"test"
+*@end
+"""
+
+    def deck(t, mode, vals, ctx, net):
+        if mode == "routed":
+            raise ValueError("names an extracted net")
+        return "deck", None, set(), {}
+    monkeypatch.setattr(EV, "build_deck", deck)
+    monkeypatch.setattr(EV.ngspice, "run", lambda *a, **k: SimpleNamespace(meas={"v8": 3.3}, failed=False, problems=[]))
+    ctx = SimpleNamespace(rb=object(), workdir=tmp_path, network=lambda nets, profile: SimpleNamespace(groups={}, stats={}))
+    rep = EV.evaluate(TB.parse(text), ctx, jobs=1)
+    row = rep["tests"][0]["requirements"][0]
+    assert row["ideal_status"] == "pass" and row["routed_status"] == "error" and row["status"] == "error"
+
+
+def test_line_capacitance_uses_the_dielectric_under_its_layer():
+    from types import SimpleNamespace as NS
+    from kae.sim.extract import _er
+    st = NS(er=[3.0, 4.5, 6.0])                          # 4 copper layers, gaps top to bottom
+    rb = NS(board=NS(stackup=st), cu=["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"],
+            z={"F.Cu": 0.0, "In1.Cu": 0.2, "In2.Cu": 1.4, "B.Cu": 1.6}, er=3.0)
+    assert _er(rb, "F.Cu") == 3.0 and _er(rb, "B.Cu") == 6.0      # was 3.0 (the top prepreg) for both
+    assert _er(NS(board=NS(stackup=None), cu=[], z={}, er=4.3), "B.Cu") == 4.3

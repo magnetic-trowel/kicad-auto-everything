@@ -8,6 +8,13 @@ model is a class stand-in, recorded in `Board.assumptions`. The stand-ins set ho
 high-frequency current divides between parts; they never decide geometry rankings (an error in
 them scales a structure's price, see docs/topics/architecture/physics-driven-design.md §3).
 
+Ports: a connector, or a module (a board of its own soldered onto this one), is where the board's
+copper meets circuitry the board does not model. A port's pins carry what arrives from or leaves to
+that circuitry, returning through the port's own ground pin nearest to the pin (the cable's return, or
+the module's ground): a clock arriving or leaving there (kae.excite.sources), and a rail that only the
+port supplies (`_port_supplies`: the cable from the host's decoupling, or the module's own). A port is
+never modelled as an IC.
+
 Integrated circuits: every ground pin reaches one internal ground node, every supply pin of one
 rail an internal supply node, each through its package (1 nH, 5 mOhm); the die holds a
 decoupling capacitance between the two. Signal pins load the internal ground: outputs through a
@@ -39,6 +46,12 @@ R_ANALOG_IN = 10e6
 GND_FN = re.compile(r"^(A|D|P|S)?(GND|VSS|VEE|EP|EPAD|PAD|THERMAL|SGND|PGND|AGND|DGND|GNDA|GNDD|0V|COM)\d*([_-].*)?$")
 SUP_FN = re.compile(r"^(A|D|P)?(VDD|VCC|VIN|VBAT|VBUS|VS|VDDIO|VDDA|AVDD|DVDD|PVDD|VCCA|VCCIO|VDD\d|VCC\d|V\+|PVIN|VM)\w*$")
 SW_FN = re.compile(r"^(SW|LX|PH|PHASE|SWN?\d?)$")
+# a part the brief left unclassified, or called a jumper, that is a connector by its value or footprint:
+# an Eagle pin header (1X07, 2X05, with a JP refdes), a card holder, a display's FPC socket
+PORT_FN = re.compile(r"conn|header|socket|holder|receptacle|(?<![a-z])sim(?![a-z])|fpc|ffc|(?<![a-z0-9])\d{1,2}x\d{2}", re.I)
+L_CABLE = 50e-9                 # a rail supplied through a connector: the cable's loop to the host's decoupling,
+R_CABLE = 5.0                   # damped (wire, the host capacitor's ESR, the line's loss); stand-ins
+C_MODULE = 1e-6                 # a rail supplied by a module's pin: the module's own decoupling
 
 
 def _rl(R, L):
@@ -67,6 +80,18 @@ class Board:
     ic_nodes: dict = field(default_factory=dict)   # ref -> {"g": node, rail: node}
     pin_type: dict = field(default_factory=dict)   # pad -> the schematic's pin type ('' when absent)
     pad_xy: dict = field(default_factory=dict)     # pad -> (x, y) mm on the board
+    port: dict = field(default_factory=dict)       # ref -> "connector" | "module": where the copper meets
+    #                                                circuitry off this board's model
+
+
+def port_kind(kind, part, pads):
+    """"connector" or "module" when the part is a port (module docstring), else None. pads: its pad count."""
+    if kind in ("connector", "module"):
+        return kind
+    text = f"{part.value} {part.lib_id.split(':')[-1]}"
+    if kind == "jumper" and pads > 3 and PORT_FN.search(text) or kind == "unknown" and PORT_FN.search(text):
+        return "connector"
+    return None
 
 
 def build(board, brief=None):
@@ -105,12 +130,61 @@ def build(board, brief=None):
             bd.pin_type[tok] = p.ptype
             bd.pads_of.setdefault(p.net, []).append(tok)
         in_cell = uuid_of.get(ref) in cell_parts
+        pk = port_kind(kind, part, len(pins))
+        if pk:
+            bd.port[ref] = pk
+            if pk != kind:
+                bd.assumptions.append(f"{ref} ({kind} in the brief) is named '{part.value} {part.lib_id}': taken as a connector")
+            continue                 # no circuit inside the board: the world is outside
         _part(bd, ref, part, pins, kind, sub, role, rec, in_cell)
     from kae.board import transform
     for fp in board.footprints:
         for p in fp.pads:
             bd.pad_xy.setdefault(f"{fp.ref}.{p.number}", transform.pad_xy(fp, p))
+    _port_supplies(bd)
     return bd
+
+
+def nearest_ground(bd, ref, pad):
+    """The part's ground pin nearest to its pad (the return path of a signal it drives or receives)."""
+    import math
+    gs = [t for nt in bd.grounds for t in bd.pads_of.get(nt, []) if t.rsplit(".", 1)[0] == ref]
+    if not gs:
+        return None
+    x, y = bd.pad_xy.get(pad, (0.0, 0.0))
+    return min(gs, key=lambda t: math.dist(bd.pad_xy.get(t, (x, y)), (x, y)) if t in bd.pad_xy else math.inf)
+
+
+SINKS = ("pkg", "in", "die")    # elements that draw from a rail, but cannot supply its AC current
+
+
+def _port_supplies(bd):
+    """A rail whose only parts on the board draw from it (IC supply and input pins) is supplied, at AC as at
+    DC, by what feeds it through a port: the cable to the host's decoupling (a connector) or the module's
+    own decoupling. Each such port pin becomes that supply, to the port's nearest ground pin (a module's pins
+    only, when one is on the rail: a connector beside it exports the rail). A rail with
+    any other part on it (a capacitor, a regulator's output, a series part to another net) is supplied on
+    the board and keeps its model unchanged."""
+    c = bd.circuit
+    for net in bd.rails:
+        toks = bd.pads_of.get(net, [])
+        pins = [t for t in toks if bd.port.get(t.rsplit(".", 1)[0])]
+        mods = [t for t in pins if bd.port[t.rsplit(".", 1)[0]] == "module"]
+        pins = mods or pins          # a module on the rail is its supplier; the connectors beside it export it
+        if not pins or any(e.kind not in SINKS for e in c.elems if net in (e.a, e.b)):
+            continue
+        for t in pins:
+            ref = t.rsplit(".", 1)[0]
+            g = nearest_ground(bd, ref, t)
+            if g is None:
+                bd.assumptions.append(f"{net}: supplied through {t}, which has no ground pin beside it; left open")
+                continue
+            if bd.port[ref] == "module":
+                z, what = _rlc(0.01, PKG_L + ESL_DEFAULT, C_MODULE), f"the module's decoupling ({C_MODULE * 1e6:g} uF)"
+            else:
+                z, what = _rl(R_CABLE, L_CABLE), f"a cable of {L_CABLE * 1e9:g} nH to the host's decoupling"
+            c.z(f"{t}:supply", net, bd.net_of[g], z, t, g, "port")
+            bd.assumptions.append(f"{net}: nothing on the board supplies it but {t}: {what}, returning at {g}")
 
 
 def _two(pins):

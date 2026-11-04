@@ -1,5 +1,8 @@
 # kae board model and pcbnew bridge
 
+Scope: defensive publication of the pure-Python board model, KiCad reader, geometry, structural diff, pcbnew bridge, pose writers and edge-mate. Not here: frame-convention pitfalls -> [transform-math-pitfalls](../../topics/kicad/transform-math-pitfalls.md).
+Keys: Contract 1, board model, library frame, pose transform, RotatePoint, kicad_file.load, S-expression tokenizer, geom.py, ConvertOutlineToPolygon, sdiff.py, on_board, pcbnew bridge, KAE_KICAD_PYTHON, KAE_KICAD_WRAP, write_poses, verify, TransformTextToPolySet, KAE_PCBNEW_WORKER, sexpr writer, edge-mate, board_acceptance.py
+
 **Status:** worked (infrastructure); edge-mate not finished.
 **First published:** 2026-10-22, commit [39f8d17](https://github.com/magnetic-trowel/kicad-auto-everything/commit/39f8d1707be0300dfce0d6b81d33dd09b494c4f0) on branch `claude/vigilant-mayer-i91rrr`.
 

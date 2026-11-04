@@ -1,23 +1,11 @@
 # Open problems and limits of physics-first layout
 
-**TL;DR**
-- **The largest open problem is ground truth.** Every [C] number is model against model, and no open dataset ties a layout to measured physics. The value-of-information-ranked program in [validation-program](validation-program.md) is the plan.
-- **Open physics regimes:** slotted, perforated and finite planes, and DC to tens of kHz near precision analog. The R–L return band is a length, ℓ_m = R_s/(π·μ0·f), with closed forms for intact planes ([lens-ls](lens-ls.md)).
-- **Thinly covered physics:**
-  - immunity, ESD and nonlinear victims;
-  - large-signal transients;
-  - the system around the board (enclosure, cables, heatsink, mounting);
-  - environment and mission profile;
-  - lifetime reliability;
-  - platform noise into radios.
-- **Open method problems:** floors for couplings and EMI masks, continuum (not raster) bounds, robustness to variation, decisions made before routing (stackup, parts, frequencies) as optimization variables, and reviewability of physics-optimal geometry.
-- **Limits of the thesis:** sometimes the board should *be* a component, the schematic is not fixed, worst-case budgets compound pessimism, and near-optimality is provable only for self terms.
+Scope: ranked open problems of physics-first layout (Tier 1 blocking, Tier 2 thinly covered physics, Tier 3 method), limits of the thesis, next research order. Not here: measurement plan -> [validation-program](validation-program.md); verified claims and steelman -> [verification-and-limits](verification-and-limits.md); synergies -> [cross-workstream-synthesis](cross-workstream-synthesis.md).
+Keys: research gaps, gap 1 ground truth, gap 2 slotted planes, ℓ_m return band, f_x, floors beyond self terms, levers before routing, immunity, ESD, large-signal co-simulation, system around the board, mission profile, altitude convection, lifetime reliability, platform noise, precision analog, robustness, reviewability, LLM physics competence, certification probability, cost model, regression suite, limits of the thesis
 
-Tags: [P] primary, [S] secondary, [I] inference, [C] computed. The f_x table and the altitude estimate were computed for this doc with numpy (R_s = ρ_Cu/t; ISA air).
+Tags: [P] primary, [S] secondary, [I] inference, [C] computed. The f_x values and the altitude estimate here are numpy computations (R_s = ρ_Cu/t; ISA air). Gap ranking is a judgement [I], ordered by how many results each gap unblocks.
 
-## Key facts
-
-### Tier 1: blocking or highest leverage
+## Tier 1: blocking or highest leverage
 
 1. **Ground truth.** No open dataset links layouts to measured R, L, coupling, emissions or temperature. The common-mode and loop-radiation critics have no EMI ground truth. Two measurements anchor everything else ([validation-program](validation-program.md), [validation-coupons](validation-coupons.md)):
    - coupons placed only where rival predictions differ by 13× to 28 dB, led by the ℓ_m return-band coupon;
@@ -28,13 +16,7 @@ Tags: [P] primary, [S] secondary, [I] inference, [C] computed. The f_x table and
    - slotted, perforated and finite planes, which need a thin-sheet RL solver validated against meshed-plane PEEC;
    - DC to tens of kHz near precision analog, where star grounds pay only below ~6 kHz at 10 mm on 1 oz ([derivation-audit](derivation-audit.md)).
    
-   The table gives the frequency at which the band crosses ℓ = h:
-
-   | Plane copper | f_x at h = 0.075 / 0.1 / 0.2 / 1.6 mm |
-   |---|---|
-   | 0.5 oz (17.5 µm) | 1.66 / 1.25 / 0.62 MHz / 78 kHz |
-   | 1 oz (35 µm) | 830 / 622 / 311 / 39 kHz |
-   | 2 oz (70 µm) | 415 / 311 / 156 / 19 kHz |
+   Frequency where the band crosses ℓ = h, f_x = R_s/(2π·μ0·h): 1 oz 830 / 622 / 311 kHz / 39 kHz at h = 0.075 / 0.1 / 0.2 / 1.6 mm; full table (0.5–2 oz): [copper-shape-synthesis](copper-shape-synthesis.md#one-operator-three-physics) [C].
 
 3. **Floors and bounds beyond self terms.** Self terms (loss, loop L, thermal R) have certified floors from convex relaxation with dual certificates, on a given raster; the floor moves 2–13% between 0.2 and 0.1 mm grids ([lens-vp](lens-vp.md)) [C]. Open:
    - floors for couplings and EMI masks;
@@ -51,7 +33,7 @@ Tags: [P] primary, [S] secondary, [I] inference, [C] computed. The f_x table and
    - a KiCad → physics-graph exporter;
    - zone-arc support checked in KiCad 10/11.
 
-### Tier 2: physics covered thinly
+## Tier 2: physics covered thinly
 
 6. **Immunity, ESD and transients.** Reciprocity covers linear coupling, not nonlinear victims: resets, latch-up, TVS snapback, op-amp rectification ([schematic-to-physics](schematic-to-physics.md)). An ESD strike carries ~30 A/ns, so 1 nH of shared path is 30 V. ESD, EFT and surge paths are designed loops with budgets, from the cable shield to the chassis or return, never through logic ground. Radiated immunity needs field-to-trace coupling models (Taylor, Agrawal).
 7. **Large-signal co-simulation.** Linearized budgets fail for slow-edged bridges, and an undamped LC-step model gives near-100% overshoot almost regardless of L ([schematic-to-physics](schematic-to-physics.md), [physics-ir-examples](physics-ir-examples.md)). Needed:
@@ -64,7 +46,7 @@ Tags: [P] primary, [S] secondary, [I] inference, [C] computed. The f_x table and
 11. **Platform noise into radios.** The ground plane is part of the antenna. Needed: near-field coupling of digital and switching harmonics into the antenna port, per channel, as a placement objective.
 12. **Precision analog beyond distance.** DC plane gradients and thermal EMF dominate a 24-bit front end ([worked-thought-experiments](worked-thought-experiments.md)). Leakage, humidity, dielectric absorption, guard design, MLCC microphonics and inductor stray fields need measured libraries.
 
-### Tier 3: method problems
+## Tier 3: method problems
 
 13. **Robustness to variation.** Process (Dk, etch, registration), part tolerances, temperature, ageing, alternate parts and model σ. The ledger needs σ propagation; the optimizer needs chance constraints or worst-case corners.
 14. **Coupled physics and self-consistency.** Spectra depend on the layout (ringing sets GHz content), resistance depends on temperature, and warpage affects joints. Build a coupling-strength matrix, and iterate to a fixed point only where coupling is strong.
@@ -75,7 +57,7 @@ Tags: [P] primary, [S] secondary, [I] inference, [C] computed. The f_x table and
 19. **Cost model.** "Lowest manufacturing cost" needs a fab and assembly cost oracle covering layer count, dielectric, via types, minimum features and panel use.
 20. **Regression suite.** Every [C] number recomputed on each change, with overlapping scripts cross-checked, to the standard in [verification-and-limits](verification-and-limits.md).
 
-### Limits of the thesis
+## Limits of the thesis
 
 - **The board can be a component.** Embedded capacitance, planar magnetics, PCB antennas, copper heat spreaders, trace inductance in filters and fusible traces are designed bodies with specs. The vocabulary allows them, but they need their own design methods [I].
 - **The schematic is not fixed.** Edge rate, series R, heatsink bonding and frequency choice are often the strongest levers ([worked-thought-experiments](worked-thought-experiments.md)). The layout system proposes ECOs, with costs, to the circuit designer.
@@ -83,9 +65,7 @@ Tags: [P] primary, [S] secondary, [I] inference, [C] computed. The f_x table and
 - **Near-optimality is provable only for self terms**, on a given raster ([lens-vp](lens-vp.md)).
 - **Independent checks are required.** Critics and the faults that test them, and estimators and their references, must come from independent methods before any physics score becomes an optimization reward (RG40, V5).
 
-## Recommendations for our system
-
-Next research, in order:
+## Next research, in order
 
 | Work | Output | Why first |
 |---|---|---|
@@ -96,13 +76,12 @@ Next research, in order:
 | System and environment | Enclosure, cable, heatsink and mounting model; mission-profile regimes; lifetime budgets | Practice assumes sea-level lab conditions |
 | Bounds and duals | Floors for couplings, continuum bounds, duals with validity margins | Makes "near-optimal" and explanations exact |
 
-## Conflicts and open questions
+## Open questions
 
-- The altitude cooling figures are a rough model: laminar natural convection scaled by ρ^0.5, radiation to local air temperature, no sun and no forced flow. Real boards in a closed enclosure at altitude need a finite-volume run with measured h.
-- The gap ranking is a judgement [I], ordered by how many results each gap unblocks.
+- Altitude cooling figures are a rough model (laminar natural convection scaled by ρ^0.5, radiation to local air temperature, no sun, no forced flow); real boards in a closed enclosure at altitude need a finite-volume run with measured h.
 
 ## Sources
 
 The "Conflicts and open questions" sections of the physics-first topic docs (linked inline), and [verification-and-limits](verification-and-limits.md).
 
-See also: [physics/README](README.md) · [cross-workstream-synthesis](cross-workstream-synthesis.md) · [ideas catalog](../../ideas/physics-first/README.md)
+Related: [ideas catalog](../../ideas/physics-first/README.md).

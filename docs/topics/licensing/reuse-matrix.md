@@ -1,24 +1,29 @@
 # Reuse matrix for third-party code (our code is GPL-3.0-or-later)
 
-**TL;DR**
-- **Code is GPL-3.0-or-later** ([LICENSING.md](../../../LICENSING.md)). We may **import, vendor, fork, port and link** GPL-3.0(-only/-or-later), GPL-2.0-or-later, LGPL, MPL-2.0, Apache-2.0, MIT, BSD, ISC, Zlib, BSL-1.0 and PSF code in-process, keeping notices [P/I].
-  - That covers Freerouting, fastroute, KiCad's PNS router and DRC (incl. PCBWorld-Engine), SWIG `pcbnew`, kiutils, the POA MCP server (all versions), CGAL and openEMS bindings, Horizon and LibrePCB.
-- **Do not combine:** GPL-2.0-only code, non-commercial or unlicensed code, Shewchuk's Triangle, OptiMathSAT, or bundled Gurobi.
-- **AGPL-3.0 (Konnect) is reference only by default.** GPLv3 §13 allows combining, but the AGPL network clause then reaches our HTTP MCP server [P].
-- **Including GPL-3.0-only code** (e.g. Freerouting) makes that *combined* distribution GPL-3.0. Our own files keep "or later" [I].
-- **Earlier notes flagged several items for a permissive or MPL core.** Those flips are **reversed**: vendoring or forking Freerouting, adopting PCBWorld-Engine, using kiutils, and porting KiCad's transform code are all allowed again [I].
+Scope: licence and allowed action (IN/DEP/PROC/REF/AVOID) for every third-party component we might reuse; our code is GPL-3.0-or-later ([LICENSING.md](../../../LICENSING.md)). Not here: KiCad/GPL background -> [kicad-and-gpl-ecosystem-notes](kicad-and-gpl-ecosystem-notes.md); gates and notices -> [compliance-checklist](compliance-checklist.md); data licences -> [data-rulepacks-weights](data-rulepacks-weights.md).
+Keys: reuse matrix, IN, DEP, PROC, REF, AVOID, Freerouting GPL-3.0-only, POA mcp-server-kicad, Konnect AGPL, GPL-2.0-only, licence drift
 
-## Key facts
-Action key:
-- **IN**: may vendor, modify, port or link in-process, keeping notices.
-- **DEP**: fine as a dependency.
-- **PROC**: run as a separate process anyway, for technical reasons such as crash isolation, Java, or a cloud service.
-- **REF**: patterns only.
-- **AVOID**.
+## Summary rules
 
-Licenses were verified from LICENSE files by the licensing survey, 2026-10-20 [P].
+1. Allowed and incompatible licence families: [LICENSING.md](../../../LICENSING.md#rules-for-dependencies-and-reused-material); BSL-1.0 is also allowed [P/I]. AVOID rows below are the incompatible ones.
+2. AGPL-3.0 (Konnect, reference only): its network clause would reach our HTTP MCP server [P]. Reimplement its patterns (reliability contract, DRC sync, plan revisions) instead [I].
+3. Including GPL-3.0-only code (Freerouting) makes that *combined* distribution GPL-3.0; our own files keep "or later". Document that releases bundling Freerouting are GPL-3.0 as a whole [I].
+4. Earlier notes flagged items for a permissive or MPL core; those flips are **reversed**: vendoring or forking Freerouting, adopting PCBWorld-Engine, using kiutils, porting KiCad's transform code are allowed again [I].
+5. Technical merit, not licence, decides in-process vs subprocess for GPL engines; keep crash-prone or JVM pieces (SWIG, Freerouting, PCBWorld-Engine) in helper processes [I].
 
-### KiCad and its interfaces
+## Action key
+
+| Action | Meaning |
+|---|---|
+| **IN** | may vendor, modify, port or link in-process, keeping notices |
+| **DEP** | fine as a dependency |
+| **PROC** | run as a separate process anyway, for technical reasons (crash isolation, Java, cloud service) |
+| **REF** | patterns only |
+| **AVOID** | — |
+
+Licences verified from LICENSE files by the licensing survey, 2026-10-20 [P].
+
+## KiCad and its interfaces
 | Component | License | Action | Notes |
 |---|---|---|---|
 | KiCad C++ (PNS router, DRC engine, `trigo`, footprint transforms) | GPLv3+ ([LICENSE.README](https://gitlab.com/kicad/code/kicad/-/blob/master/LICENSE.README)) | IN | Porting or linking is fine; keep KiCad copyright headers |
@@ -31,7 +36,7 @@ Licenses were verified from LICENSE files by the licensing survey, 2026-10-20 [P
 | KiCad libraries (symbols, footprints, 3D) | CC-BY-SA-4.0 WITH KiCad-libraries-exception | data | See [data-rulepacks-weights.md](data-rulepacks-weights.md) |
 | KiCad demo projects | CC BY-SA 4.0 | data/fixtures | One-way compatible with GPLv3 ([FSF](https://www.gnu.org/licenses/license-list.html#ccbysa)) |
 
-### Routers, placers, agents, MCP servers
+## Routers, placers, agents, MCP servers
 | Component | License | Action | Notes |
 |---|---|---|---|
 | Freerouting (Java) | GPL-3.0 (no "or later" notice found); npm MCP package GPL-3.0-only | IN / PROC | Vendoring, forking or JVM bridging is allowed; the combination is distributed under GPL-3.0. Pass `-da` (analytics). Provenance is cloudy, so don't upstream Freerouting-derived code into KiCad |
@@ -64,7 +69,7 @@ Licenses were verified from LICENSE files by the licensing survey, 2026-10-20 [P
 | diodeinc/dsn | no license shown | AVOID | |
 | MCP SDKs (`mcp`, `@modelcontextprotocol/sdk`, pynng MIT; fastmcp Apache-2.0; protobuf BSD-3) | permissive | DEP | |
 
-### File tooling, solvers, geometry, simulation
+## File tooling, solvers, geometry, simulation
 | Component | License | Action |
 |---|---|---|
 | kiutils | GPL-3.0 | IN, but stale for KiCad 9/10 formats (last PyPI 2024-02-02) |
@@ -91,14 +96,12 @@ Licenses were verified from LICENSE files by the licensing survey, 2026-10-20 [P
 | ELK / elkjs | EPL-2.0 OR GPL-3.0-or-later | IN (take it under GPL) |
 | azonenberg/pcb-checklist | BSD-3 | IN (quote with notice) |
 
-## Recommendations for our system
-- **Let technical merit, not licence, decide in-process versus subprocess** for GPL engines. Keep crash-prone or JVM pieces (SWIG, Freerouting, PCBWorld-Engine) in helper processes for isolation [I].
-- **Konnect stays reference-only.** Reimplement its patterns (reliability contract, DRC sync, plan revisions) instead [I].
-- **Carry notices.** Keep upstream copyright headers when porting KiCad or Freerouting code, mark modified files, and generate `THIRD_PARTY_NOTICES.md` ([compliance-checklist.md](compliance-checklist.md)) [I].
-- **Freerouting is GPL-3.0-only:** document that releases bundling it are GPL-3.0 as a whole [I].
-- **Re-verify licenses each release.** Examples of drift: kipy GPL→MIT, libspatialindex LGPL→MIT, POA MIT→GPL, Topola's crate versus repo [P].
+## Reuse rules
 
-## Conflicts and open questions
+- Carry notices: keep upstream copyright headers when porting KiCad or Freerouting code, mark modified files, generate `THIRD_PARTY_NOTICES.md` ([compliance-checklist](compliance-checklist.md#notices-and-releases)) [I].
+- Re-verify licences each release. Drift examples: kipy GPL→MIT, libspatialindex LGPL→MIT, POA MIT→GPL, Topola's crate vs repo [P].
+
+## Open questions
 - Freerouting's Java codebase has no "or later" notice; only GPL-3.0 text and an npm `GPL-3.0-only`.
 - ReplicateLayout and PlaceFootprints: is it GPL-2.0-only or "or later"? Unverified.
 - The ngspice per-component license map was not built.
@@ -110,5 +113,3 @@ Licenses were verified from LICENSE files by the licensing survey, 2026-10-20 [P
   - [kicad_mcp_codebases.md § 5](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/kicad_mcp_codebases.md)
   - [existing_tools_and_apis.md § 4 Inferences, § 7](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/existing_tools_and_apis.md)
 - primary: [GPL FAQ](https://www.gnu.org/licenses/gpl-faq.html), [FSF license list](https://www.gnu.org/licenses/license-list.html), [MPL-2.0](https://www.mozilla.org/en-US/MPL/2.0/)
-
-See also: [kicad-and-gpl-ecosystem-notes.md](kicad-and-gpl-ecosystem-notes.md), [data-rulepacks-weights.md](data-rulepacks-weights.md), [compliance-checklist.md](compliance-checklist.md)

@@ -1,15 +1,15 @@
 # Rule basis set: the few physical quantities behind 160 layout rules
 
-**TL;DR**
-- The 160 rules audited in the three genealogy docs reduce to **12 physical quantities**: loop/partial inductance L, mutual and shared-path coupling M, node capacitance Cm, resistance and current density R, propagation Z (impedance, delay, loss), balance Bal, radiating common mode Vcm, distributed resonance Res, insulation Ins, thermal Th, mechanical strain Mech and process margin Fab. Two **non-physical axes** remain: review cost (Cog) and standards (Std).
-- Inductance dominates: it appears in 40 rules, then Cm 29, M 27, Z 23, Th 22, Vcm 20, R 17, Res 16, Fab 13, Ins 8, Bal 5, Mech 3 (counted from the tables). "Return-path continuity" and "loop area" are **not** basis quantities; they are geometric causes that show up in L, Z, Bal, Vcm and Res.
-- Most rules fail by **regime, not direction**. Physics-origin rules are about right in 80 of 91 cases; simplicity proxies are mixed in 16 of 23; habit/legacy rules are wrong in 10 of 15. Every rule record therefore needs a regime predicate, and about 14 dimensionless groups supply them.
-- Proxy words are overloaded. "Short" touches seven quantities, "keep away" six, and "wide" six, two of them for the worse (node capacitance on switching nodes, spacing with heavy copper). Most rule conflicts are two rules optimising different quantities, or one quantity in different regimes.
-- The physics is cheap to evaluate: 143 of 160 rules can be replaced by a closed form, lookup, 2-D solve, PEEC model, thermal network or SPICE run; only 8 strictly need full-wave or FEM. Rules stay useful as **priors for synthesis**, not as the judge.
+Scope: the 12 physical quantities (plus 2 non-physical axes) that the 160 genealogy rules encode, the rule-to-quantity index, proxy words, regime selectors, conflicts, origin vs verdict. Not here: per-rule rows -> genealogy docs ([P](rule-genealogy-power-analog-thermal.md), [S](rule-genealogy-si-emi-rf.md), [R](rule-genealogy-routing-style-dfm.md)); derivations -> [derivation-audit](derivation-audit.md); symbols -> [vocabulary](vocabulary.md#glossary).
+Keys: basis set, basis quantities, L, M, Cm, R, Z, Bal, Vcm, Res, Ins, Th, Mech, Fab, Cog, Std, proxy words, overloaded proxies, regime selectors, dimensionless groups, rule conflicts, PEEC primitives, four engines
 
-## Key facts
+**Results**
+- 160 rules reduce to **12 quantities** + 2 non-physical axes (Cog, Std); "return-path continuity" and "loop area" are geometric causes, not basis quantities.
+- Rules fail by **regime, not direction**: every rule record needs a regime predicate from a short list of dimensionless groups.
+- Proxy words are overloaded, some for the worse; most conflicts are two rules optimising different quantities, or one quantity in different regimes.
+- Cheap to evaluate: 143 of 160 rules are replaceable by closed form, lookup, 2-D solve, PEEC, thermal network or SPICE; only a few need full-wave or FEM. Rules stay useful as **priors for synthesis**, not as the judge.
 
-### The basis set
+## The basis set
 
 | Code | Quantity | Unit | Governing relation (examples) | Where the budget lives | Cheapest adequate solver | Rules |
 |---|---|---|---|---|---|---|
@@ -29,7 +29,7 @@
 
 Counts are rules that name the quantity in the "Physics" column of [power-analog-thermal](rule-genealogy-power-analog-thermal.md) (P01–P59), [si-emi-rf](rule-genealogy-si-emi-rf.md) (S01–S55) and [routing-style-dfm](rule-genealogy-routing-style-dfm.md) (R01–R46); 56 rules name two or more.
 
-### Rule-to-quantity index (the sparse matrix)
+## Rule-to-quantity index (the sparse matrix)
 
 | Code | Rules naming it |
 |---|---|
@@ -49,15 +49,16 @@ Counts are rules that name the quantity in the "Physics" column of [power-analog
 
 P20 (bootstrap ratio) and P27 (MLCC derating) are schematic and part-choice rules with no layout quantity; P33 encodes nothing.
 
-### Why these twelve and not others
+## Why these twelve and not others
 - **Independence.** For each quantity there are rules that bind on it alone: L (P01 hot loop), M (P11 single tie), Cm (P42 summing node), R (P36 Kelvin), Z (S12 stubs), Bal (S21 skew), Vcm (S31 connector edge), Res (P22 three values), Ins (P47 creepage), Th (P54 copper area), Mech (R39 MLCC near V-score), Fab (R19 annular ring). Two layouts can match in all others and differ in that one.
 - **Merged, not separate:** "crosstalk" = M + Cm (+ Z for saturation); "ground bounce" = L or M of a shared branch; "PDN impedance" = L + R + Res + capacitor data; "EMI" = Vcm (+ Res); "SI" = Z + Bal; "loop area" = L at fixed h, and Vcm only for DM emission (Hubing: radiation is not proportional to loop area for well-referenced lines).
 - **Rejected as quantities:** "reference continuity" (it is the cause of excess L, Z steps, mode conversion and Vcm, and is measured through them); "distance" (meaningful only through M, Cm, Th, Ins); "via count" (L, Z, Res, Fab); "neatness" (Cog).
 - **Finer structure** ([foundations](foundations.md), [derivation-audit](derivation-audit.md)): M has two parts, shared-edge coupling (removable by re-routing) and field coupling (never zero). Bal is a view of Vcm: mode conversion happens only where current division changes, V_cm = Δχ·V_dm ([lens-sy](lens-sy.md)); budgets may still be written in dB and ps. Three further quantities complete the basis: Q destination (where dissipation and damping go), life fraction (damage from extremes and accumulation) and τ_e (insulator charge relaxation).
-- **One step further down:** all electrical quantities except Ins are views of four solver primitives: the resistance matrix R, the partial-inductance matrix Lp, the capacitance (or potential-coefficient) matrix, and retardation τ. That is exactly a PEEC model; full-wave is PEEC with retardation kept. Thermal is a conductance network. So a physics-first checker needs about four engines, not 160 rules ([solver-ladder](solver-ladder.md)).
+- **One step further down:** all electrical quantities except Ins are views of four solver primitives: the resistance matrix R, the partial-inductance matrix Lp, the capacitance (or potential-coefficient) matrix, and retardation τ. That is a PEEC model; full-wave = PEEC with retardation kept; thermal = conductance network. Build four engines first: closed-form library, 2-D cross-section/sheet solver, PEEC-lite (R, Lp, C), thermal network; they cover ~89% of rules; add full-wave only for Res and Vcm sign-off ([solver-ladder](solver-ladder.md)).
+- **Type system.** Make the 12 codes the type system for budgets in the constraint IR ([constraint-ir](../architecture/constraint-ir.md), I1/I2 in [intent-and-why](../../ideas/original/intent-and-why.md)); every rule pack entry names its quantity, regime group and budget.
 
-### Proxy words decoded
-● = the word mainly targets this quantity; ○ = secondary effect; ▲ = the word makes this quantity *worse* (a hidden trade-off).
+## Proxy words decoded
+● = mainly targets this quantity; ○ = secondary effect; ▲ = makes it *worse* (hidden trade-off). Use as a lint: an LLM-authored constraint using a proxy word must resolve it to a column (RG10, [rule-replacements](../../ideas/physics-first/rule-replacements.md)).
 
 | Proxy word | L | M | Cm | R | Z | Bal | Vcm | Res | Ins | Th | Mech | Fab |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -77,7 +78,7 @@ P20 (bootstrap ratio) and P27 (MLCC derating) are schematic and part-choice rule
 | 45° / curves | | | | ○ | ○ (RF only) | | | | ○ (HV, ESD) | | ○ (flex) | ○ |
 | thermal relief | ▲ | | | ▲ | | | | | | ▲ | | ● |
 
-### Regime selectors: when does a rule bind?
+## Regime selectors: when does a rule bind?
 
 | Dimensionless group | Binds when | Gates rules |
 |---|---|---|
@@ -96,7 +97,7 @@ P20 (bootstrap ratio) and P27 (MLCC derating) are schematic and part-choice rule
 | Leakage V/(ρ_s·N□)/I_allow | >1: guard needed | P41 |
 | Corner f_max·h/(3 GHz·mm) | >~1 | R01, S46 |
 
-### Rule conflicts explained by physics
+## Rule conflicts explained by physics
 
 | Conflict | Rules | Type | Resolution |
 |---|---|---|---|
@@ -117,7 +118,9 @@ P20 (bootstrap ratio) and P27 (MLCC derating) are schematic and part-choice rule
 | Slow edges vs efficiency | S10 vs P01 | different (Vcm vs switching loss) | explicit EMI vs efficiency trade |
 | Microstrip vs stripline for fast pairs | stackup CT | different (Res of stubs vs Vcm, loss) | stub strategy decides |
 
-### Origin versus verdict (primary origin of each rule)
+Resolve conflicts by computing both rules' quantities on the actual geometry: same-quantity conflicts become regime lookups, different-quantity conflicts explicit Pareto choices for the user.
+
+## Origin versus verdict (primary origin of each rule)
 
 | Primary origin | Rules | About right | Mixed by regime | Conservative | Wrong | Anti-conservative / contested |
 |---|---|---|---|---|---|---|
@@ -127,19 +130,15 @@ P20 (bootstrap ratio) and P27 (MLCC derating) are schematic and part-choice rule
 | Habit / legacy | 15 | 0 | 4 | 0 | 10 | 1 |
 | Cognition / tool / legal / contested | 15 | 8 | 2 | 2 | 1 | 2 |
 
-### The working hypothesis, sharpened
+## The working hypothesis, sharpened
 - **Adopted:** rules are lossy encodings of these quantities, and decompressing them works. The loss is mostly **regime** (stackup h, t_r, frequency, power, process), so a rule record without its regime predicate is the defect.
 - **Sharpened:** "make the realisation invisible" is wrong for structures where the parasitic *is* the circuit: RF matching, snubber loops, Kelvin taps, spark gaps, heat spreaders, filters, antennas. There the goal is "designed and budgeted".
+- **Invisibility is relative to a victim in a band** [I]: Ott's source → path → receptor triple (*Electromagnetic Compatibility Engineering*, 2009) [S] becomes a Coupling with a margin in dB: threshold − (spectrum × transfer).
+- **The spectrum is partly a layout output** [I]: a clean 12 V, 2 ns trapezoid is 90 dB down at 2.45 GHz [C], but switch-node ringing at hundreds of MHz, set by loop L and C_oss, dominates the GHz content; back-annotate excitations from layout-aware simulation ([schematic-to-physics](schematic-to-physics.md)).
 - **Kept non-physical:** Std (creepage tables), Fab and Cog are real constraints with their own budgets; physics may tighten Std, never relax it.
 - **Attacked:** physics is simpler to *evaluate* than the rule corpus, but not to *synthesise*. Rules remain good warm starts and move generators for search; the basis quantities judge.
 
-## Recommendations for our system
-- Make the 12 codes the type system for budgets in the constraint IR ([constraint-ir](../architecture/constraint-ir.md), I1/I2 in [intent-and-why](../../ideas/original/intent-and-why.md)); every rule pack entry names its quantity, regime group and budget.
-- Build four engines first: closed-form library, 2-D cross-section/sheet solver, PEEC-lite (R, Lp, C), thermal network. They cover about 89% of the rules; add full-wave only for Res and Vcm sign-off.
-- Treat the proxy matrix as a lint: an LLM-authored constraint using a proxy word must resolve it to a column (RG10 in [rule-replacements](../../ideas/physics-first/rule-replacements.md)).
-- Resolve conflicts by computing both rules' quantities on the actual geometry; same-quantity conflicts become regime lookups, different-quantity conflicts become explicit Pareto choices for the user.
-
-## Conflicts and open questions
+## Open questions
 - The counts come from our own classification of 160 rules; another auditor would shift some rows between "about right" and "mixed". The ranking (L ≫ others) is robust.
 - Ins mixes field (physics) and table (Std). Splitting physics-insulation (leakage, migration, Paschen) from legal spacing may be cleaner.
 - Mech and Fab are thinly covered by the corpus; [thermal-hv-mfg](../../ideas/physics-first/thermal-hv-mfg.md) should extend them.
@@ -150,4 +149,4 @@ P20 (bootstrap ratio) and P27 (MLCC derating) are schematic and part-choice rule
 - LearnEMC, "the most important EMC design guidelines" (radiation vs loop area): https://learnemc.com/the-most-important-emc-design-guidelines [P]
 - Ruehli's PEEC formulation (R, Lp, P, τ) as the common substrate: A. E. Ruehli, "Equivalent circuit models for three-dimensional multiconductor systems", IEEE T-MTT 22(3), 1974 [S]
 
-See also: [vocabulary](vocabulary.md), [critics ideas](../../ideas/physics-first/critics.md), [solver-ladder](solver-ladder.md), [../rules/myths-and-contested.md](../rules/myths-and-contested.md), [../rules/rule-pack-format.md](../rules/rule-pack-format.md)
+See also: [critics ideas](../../ideas/physics-first/critics.md), [solver-ladder](solver-ladder.md), [../rules/myths-and-contested.md](../rules/myths-and-contested.md), [../rules/rule-pack-format.md](../rules/rule-pack-format.md)

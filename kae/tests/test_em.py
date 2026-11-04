@@ -113,3 +113,48 @@ def test_open_loop_is_an_error():
     m.port("p", "a", "b")
     with pytest.raises(ValueError, match="open loop"):
         S.solve(m, [INF])
+
+
+def test_physics_search_reaches_the_nearest_of_spread_out_destinations():
+    """The A* heuristic aims at the destination cells' bounding box, not their mean point: a mean
+    point between a near cell and a far block overestimated and returned 22 steps to the block
+    instead of 18 to the near cell."""
+    from kae.em.route import search_flat
+    nl, ny, nx = 1, 21, 61
+    base = np.ones((nl, ny, nx))
+    z = np.zeros_like(base)
+    dst = np.zeros(nl * ny * nx, bool)
+    dst[10 * nx + 0] = True
+    for j in range(ny):
+        dst[j * nx + 40: j * nx + 61] = True
+    p = search_flat(base, z, z, z, z, np.zeros(base.shape, bool), np.zeros(ny * nx, bool),
+                    np.array([10 * nx + 18], np.int64), dst, 1.0)
+    assert len(p) - 1 == 18 and int(p[-1]) == 10 * nx
+
+
+def test_pnr_prices_a_trunk_hop_with_every_island_beyond_it():
+    """Islands I0 - I1 - I2 on a line: the hop I1 -> I0 carries I1's and I2's current, so its
+    currents and DC price come from both (they came from I1's pads alone)."""
+    from types import SimpleNamespace
+
+    from kae.em.pnr import PhysRouter
+    xy = {"P0": (0.0, 0.0), "P1": (1.0, 0.0), "P2": (2.0, 0.0)}
+    r = object.__new__(PhysRouter)
+    calls = []
+    r.islands = {"N": [["P0"], ["P1"], ["P2"]]}
+    r.plain, r.policy, r.spec, r.lock = False, None, None, False
+    r.sp = SimpleNamespace(cu=["F.Cu"], width_limits=lambda n, l: (0.2, 0.25, None), clamp_width=lambda n, l, w: w)
+    r.router = SimpleNamespace(connect=lambda *a, **k: None)
+    r._pad_xy = lambda q: xy[q]
+    r._anchor = lambda q: q
+    r._zone_anchors = lambda n, g: []
+    r._end_plane = lambda g: None
+    r._commutation_share = lambda n, cur: 0.0
+    r.phys = lambda cur, width, ends: None
+    r.log = lambda *a: None
+    r.hop_currents = lambda n, a_pads, b_pads: calls.append(("cur", sorted(a_pads))) or {}
+    r._dc_per_ohm = lambda n, pads: calls.append(("dc", sorted(pads))) or (0.0, 0.0)
+    out = r._route_net("N")
+    assert len(out["failed"]) == 2
+    assert calls[:2] == [("cur", ["P1", "P2"]), ("dc", ["P1", "P2"])]
+    assert calls[2:] == [("cur", ["P2"]), ("dc", ["P2"])]

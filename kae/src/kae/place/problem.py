@@ -593,12 +593,17 @@ class Problem:
 
     def _rules(self, board):
         r = board.rules
-        clr = [r.clearance or 0.0] if r else [0.0]
+        # the setup's min_clearance is a floor under every netclass in KiCad's DRC (the exact
+        # check floors with it too, legalize._net_clr); taking the smaller of the two let a
+        # floor above a netclass *shrink* the pad inflation (0.15 -> 0.5 mm moved pads 0.1 mm
+        # closer), so grid-disjoint pads sat closer than the board allows
+        floor = float(r.clearance or 0.0) if r else 0.0
+        clr = [floor]
         if r:
             for nc in r.netclasses.values():
                 if nc.clearance:
-                    clr.append(float(nc.clearance))
-        self.clr_min = min([c for c in clr if c > 0] or [0.2])
+                    clr.append(max(floor, float(nc.clearance)))
+        self.clr_min = min(clr[1:] or [floor if floor > 0 else 0.2])
         self.clr_max = max(clr + [0.0])
         self.clearance = self.clr_max
         e = (r.edge_clearance if r else 0.0) or 0.0
@@ -634,7 +639,7 @@ class Problem:
         self.netclass_clr = {}
         if r:
             for name, nc in r.netclasses.items():
-                self.netclass_clr[name] = float(nc.clearance) if nc.clearance else self.clr_min
+                self.netclass_clr[name] = max(floor, float(nc.clearance)) if nc.clearance else self.clr_min
 
     def _domain(self, board, grid):
         polys = [p for p in board.outline if p.area > 0]
@@ -977,13 +982,16 @@ class Problem:
     def relax_bodies(self):
         """Footprints without a courtyard keep only their pads (plus the courtyard excess) as
         occupancy: KiCad does not check bodies, and on a full board a body standing above
-        others (a display on headers) must be allowed to. Returns the parts relaxed."""
+        others (a display on headers) must be allowed to. Surface-mount parts keep their body:
+        it sits on the board. Returns the parts relaxed."""
         out = []
         g = self.g
         fixed_relaxed = False
         for p in self.parts:
             if p.has_courtyard or getattr(p, "relaxed", False):
                 continue
+            if p.fp.pads and all(pd.kind in ("smd", "connect") for pd in p.fp.pads):
+                continue                 # a surface-mount body sits on the board: nothing goes under it
             if not p.movable:
                 fixed_relaxed = True     # a locked module's body (an Arduino under its shield)
             p.relaxed = True
@@ -1011,16 +1019,27 @@ class Problem:
         self.set_margin(self.margin)
 
     def utilization(self):
-        """Per side: occupancy-rectangle area of all parts on (or drilling through) the side
-        over the board area."""
+        """Per side: the area the parts on (or drilling through) the side occupy, over the
+        board area. A part's occupancy rectangles overlap (its body and its pad pieces), so
+        each part counts their union; a locked part counts only what lies on the board (a
+        castellated pad is half outside it). Summing the rectangles counted circuitmonkey
+        chips-0123 (a 6.3 mm electrolytic, its body and pads) 101 % full, so the placer took
+        the bodies of parts without a courtyard off and put a capacitor under the electrolytic."""
+        from shapely.affinity import translate
+        from shapely.geometry import box
+        from shapely.ops import unary_union
         area = max(1e-9, float(self.outline.area))
         u = [0.0, 0.0]
         for p in self.parts:
             r = p.rots[0]
             si = 0 if p.s > 0 else 1
-            u[si] += sum(rect_area(x) for x in (r.own_rects or (r.own,)))
-            for o in r.opp:
-                u[1 - si] += rect_area(o)
+            for side, rects in ((si, r.own_rects or (r.own,)), (1 - si, r.opp)):
+                if not rects:
+                    continue
+                g = unary_union([box(*x) for x in rects])
+                if not p.movable:
+                    g = translate(g, p.x0, p.y0).intersection(self.outline)
+                u[side] += g.area
         return [x / area for x in u]
 
     def auto_margin(self):
@@ -1044,6 +1063,8 @@ class Problem:
         r = self.board.rules
         track = (r.track_min if r and r.track_min else 0.2)
         edge_room = min(1.0, m / 0.5) * (track + self.clr_min) if m > 0 else 0.0
+        bands = getattr(self, "escape", {}) if getattr(self, "escape_on", False) else {}
+        fan = getattr(self, "fanout", {}) if getattr(self, "escape_on", False) else {}
         for p in self.parts:
             if not p.movable:
                 continue
@@ -1051,13 +1072,64 @@ class Problem:
             k = (int(round((m + esc) / 2 / g)) if m > 0 else 0) + extra.get(p.i, 0)
             kb = int(round((m / 2 + edge_room) / g)) if m > 0 else 0
             for r in p.rots:
+                kl, kt, kr, kd = self._band_cells(p, r) if p.i in bands else (0, 0, 0, 0)
                 a, b, c, d = r.g_own_exact
-                r.g_own = (a - k, b + k, c - k, d + k)
-                r.g_own_rects = tuple((a - k, b + k, c - k, d + k) for (a, b, c, d) in r.g_own_rects_exact)
+                r.g_own = (a - k - kl, b + k + kr, c - k - kt, d + k + kd)
+                r.g_own_rects = tuple((a - k - kl, b + k + kr, c - k - kt, d + k + kd)
+                                      for (a, b, c, d) in r.g_own_rects_exact)
+                if not hasattr(r, "g_opp_base"):
+                    r.g_opp_base = r.g_opp
+                r.g_opp = r.g_opp_base + (tuple(to_grid(rot_rect(x, r.rot, p.s), g) for x in fan[p.i])
+                                          if p.i in fan else ())
                 a, b, c, d = r.g_board_exact          # room to route between parts and the edge
                 r.g_board = (a - kb, b + kb, c - kb, d + kb)
                 r.g_boards = tuple((a - kb, b + kb, c - kb, d + kb) for (a, b, c, d) in r.g_boards_exact)
         return int(round(m / 2 / g)) if m > 0 else 0
+
+    def set_escape(self, bands, on=True, fanout=None):
+        """Escape bands (kae.place.escape_band): {part index: (left, top, right, bottom) mm, library
+        frame}. Movable packages carry them in their occupancy (set_margin); a locked one's become
+        fixed obstacles on its side. fanout: {part index: [library-frame via-site rectangles]}, kept
+        free on the package's other side the same way. on=False drops both (legality before wishes)."""
+        self.escape = dict(bands)
+        if fanout is not None:
+            self.fanout = {i: _cluster_rects(list(rs), max_n=64) for i, rs in fanout.items()}
+        self.escape_on = bool(on) and bool(bands or getattr(self, "fanout", None))
+        self.obstacles = [o for o in self.obstacles if not o.why.startswith("escape band")]
+        if self.escape_on:
+            self._band_obstacles()
+        self.set_margin(self.margin)
+
+    def _band_mm(self, p, r):
+        """Board-frame (left, top, right, bottom) growth of part p's band at rotation r."""
+        gl, gt, gr, gb = self.escape[p.i]
+        x0, y0, x1, y1 = rot_rect((-gl, -gt, gr, gb), r.rot, p.s)
+        return max(0.0, -x0), max(0.0, -y0), max(0.0, x1), max(0.0, y1)
+
+    def _band_cells(self, p, r):
+        g = self.g
+        return tuple(int(math.ceil(v / g - EPS)) if v > 0 else 0 for v in self._band_mm(p, r))
+
+    def _band_obstacles(self):
+        for i, rs in (getattr(self, "fanout", None) or {}).items():
+            p = self.parts[i]
+            if p.movable or (p.uuid in self.held and not p.fp.on_board):
+                continue
+            r = p.rots[0]
+            for x in rs:
+                self._add_obstacle(1 if p.s > 0 else 0, shift(rot_rect(x, r.rot, p.s), p.x0, p.y0),
+                                   f"escape band {p.ref} (dog-bone vias)")
+        for i, _ in self.escape.items():
+            p = self.parts[i]
+            if p.movable or (p.uuid in self.held and not p.fp.on_board):
+                continue
+            r = p.rots[0]
+            l, t, rr, b = self._band_mm(p, r)
+            x0, y0, x1, y1 = shift(r.own, p.x0, p.y0)
+            si = 0 if p.s > 0 else 1
+            for band in ((x0 - l, y0, x0, y1), (x1, y0, x1 + rr, y1), (x0, y0 - t, x1, y0), (x0, y1, x1, y1 + b)):
+                if band[2] - band[0] > 1e-6 and band[3] - band[1] > 1e-6:
+                    self._add_obstacle(si, band, f"escape band {p.ref}")
 
     def _fixed_obstacles(self, board):
         g = self.g
@@ -1084,6 +1156,8 @@ class Problem:
             for r in poly_cover_rects(ko.outline, g * 2):
                 for si in sides:
                     self._add_obstacle(si, r, f"keepout {ko.name or ko.uuid[:8]}")
+        if getattr(self, "escape_on", False):
+            self._band_obstacles()
         _ = g
 
     def _add_obstacle(self, side, rect, why):

@@ -112,11 +112,14 @@ def _supply_pins(ctx, u, net):
     return False
 
 
-def load_current(ctx, u, net, cells):
-    """E5 supply current (A) a part draws from rail `net` (see the module docstring)."""
+def load_current(ctx, u, net, cells, draws=None):
+    """E5 supply current (A) a part draws from rail `net` (see the module docstring). draws: the
+    caller's own verdict on whether an IC or module takes supply from `net` (None: its pads' types and
+    names decide, `_supply_pins`)."""
     p = ctx.parts.get(u) or {}
     kind, sub, role = p.get("kind"), p.get("subtype"), p.get("role")
-    if kind in ("ic", "module") and not (u in cells and cells[u].get("rail") == net) and not _supply_pins(ctx, u, net):
+    if kind in ("ic", "module") and not (u in cells and cells[u].get("rail") == net) and \
+            not (_supply_pins(ctx, u, net) if draws is None else draws):
         return 0.0
     v = ctx.volts(net) or 3.3
     if u in cells:                            # a converter's input: its output power / (eta V_in)
@@ -261,8 +264,10 @@ def rail_plan(ctx):
         rating = source_rating(ctx, src, net, cells)
         total = sum(loads.values())
         # the source's rating bounds the loads; the loads' E5 sum, with a 3x margin for
-        # its uncertainty, bounds what the rail must carry
-        design = min(rating, max(3.0 * total, total + 0.1)) if rating else total
+        # its uncertainty, bounds what the rail must carry (also when the source has no
+        # rating: a fuse, ferrite, diode or load switch; the margin was dropped there)
+        m = max(3.0 * total, total + 0.1)
+        design = min(rating, m) if rating else m
         rails.append(dict(net=net, src=src, loads=loads, rating=rating, design=design, parts=parts))
     rails.sort(key=lambda x: -x["design"])
     return rails

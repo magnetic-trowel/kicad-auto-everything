@@ -169,6 +169,7 @@ class Annealer:
         # routed board's congestion history; callable (x0, y0, b, nbx, nby) -> (nbx, nby)
         # array in Dp's units (track mm per bin; Congestion.S0 is a bin's empty-board supply)
         self.cong_history = None
+        self._cong_history_fn = cong_history          # evaluate() prices other states with it
         if cong_history is not None and self.cong is not None:
             c = self.cong
             extra = np.asarray(cong_history(c.x0, c.y0, c.b, c.nbx, c.nby), dtype=float)
@@ -651,7 +652,8 @@ class Annealer:
                      w_disp=self.w["disp"], w_cong=self.w["cong"], lam0=self.lam0, lam1=self.lam1,
                      wl_slack=self.wl_slack, wl_barrier=self.wl_barrier, cong_args=self.cong_args,
                      order=self.order, w_order=self.w["order"], order_margin=self.order_margin,
-                     labels=self.labels, w_label=self.w["label"], silk=self.silk, w_silk=self.w["silk"])
+                     labels=self.labels, w_label=self.w["label"], silk=self.silk, w_silk=self.w["silk"],
+                     cong_history=self._cong_history_fn)
         o.W0, o.A0, o.S0, o.nstruct = self.W0, self.A0, self.S0, self.nstruct
         o.Xs, o.Ys = self.Xs, self.Ys
         return o.cost(self.lam1), o.terms_report()
@@ -774,7 +776,10 @@ def make_annealer(P, st, **kw):
     KAE_NO_NUMBA is unset, else this module's Annealer; both take the same arguments and
     price the same cost."""
     import os
-    if not os.environ.get("KAE_NO_NUMBA"):
+    # the engine prices congestion only at beta 0 (no blockage term in its supply); with any
+    # other beta it would drop the term silently, so the reference annealer takes those
+    beta = float((kw.get("cong_args") or {}).get("beta", 0.0) or 0.0)
+    if not os.environ.get("KAE_NO_NUMBA") and beta == 0.0:
         try:
             from .engine import HAVE_NUMBA, FastAnnealer
             if HAVE_NUMBA:

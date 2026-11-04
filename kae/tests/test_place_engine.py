@@ -141,6 +141,27 @@ def test_engine_rebuild_keeps_totals_exact():
     assert abs(fa.wl - ref.wl) < 1e-6 * max(1.0, ref.wl)
 
 
+def test_engine_rebuild_recounts_legality_after_an_overflow():
+    """A full hash bucket drops a rectangle (I_OVERFLOW), so the moves priced since undercount
+    overlap. _rebuild copied that stale legality total over; it now counts it again. And a
+    Python-side move that overflows rebuilds too (a run with no fast parts never ran the
+    rebuild after a compiled batch)."""
+    b, P, st = _legal_state()
+    fa = engine.FastAnnealer(P, st.copy(), terms=None, seed=4, w_phys=0.0)
+    fa.run(cpu_s=60.0, max_moves=4000)
+    fa.E.tot[engine.T_LEG] += 12345                 # what a dropped rectangle leaves behind
+    fa._rebuild()
+    fa.write_back()
+    assert int(fa.E.tot[engine.T_LEG]) == Annealer(P, fa.st.copy(), terms=None, seed=0).total_leg()
+    fa.E = engine.build(fa.ann, hash_cap=1)         # every bucket full
+    assert fa.E.ip[engine.I_OVERFLOW]
+    i = fa.mov[0]
+    fa._try_python([i], [(int(fa.E.X[i]) + 1, int(fa.E.Y[i]), int(fa.E.K[i]))], 1e-9, fa.lam1, "shift")
+    assert not fa.E.ip[engine.I_OVERFLOW]
+    fa.write_back()
+    assert int(fa.E.tot[engine.T_LEG]) == Annealer(P, fa.st.copy(), terms=None, seed=0).total_leg()
+
+
 def test_congestion_history_hook_is_exact_in_both_engines():
     """cong_history (kae.joint's routing feedback) is static congestion demand: the compiled
     engine and the reference annealer price it the same, before and after a run."""

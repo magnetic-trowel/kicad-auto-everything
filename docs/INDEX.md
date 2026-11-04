@@ -1,92 +1,77 @@
 # Docs index
 
-Load the smallest doc that answers your question. Start from a digest
-(<= 800 words), follow its links to one topic doc, and only open the raw
-[research notes](../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/)
-when you need the underlying evidence. Authoring rules: [CONVENTIONS.md](CONVENTIONS.md).
+Scope: entry point: lookup, digests, task table, area maps. Not here: facts (linked docs hold them); authoring rules -> [CONVENTIONS.md](CONVENTIONS.md).
+Keys: docs index, entry point, where to start, digests, by task, topic areas, idea inventories, research map, SUBJECTS.md, IDS.md
 
-## Start here
+## How to look things up
 
-- [Executive report](../reports/LLM%20driven%20PCB%20placement%20and%20routing.md): conclusions, recommended architecture, roadmap.
-- [Hybrid architecture options](topics/architecture/hybrid-architecture-options.md)
-- [Original ideas](ideas/original/README.md): new ideas, top 10 to try first.
-- [Physics-first report](../reports/Physics-first%20PCB%20layout.md) and [system design](topics/architecture/system-design.md): the physics-first design behind `kae`; current state in [status 2026-10-25](topics/architecture/status-2026-10-25.md).
-- [Research](research/README.md): every method we built or planned, what worked and what did not, with numbers and code; untested ideas in [research/ideas](research/ideas.md).
+1. Term: `grep -i '<term>' docs/SUBJECTS.md`, open the first link (one section).
+2. Idea id (XD113, OP38, N7): `grep -w <id> docs/IDS.md`.
+3. Otherwise read one digest (one linked line per conclusion), then the one section it points to.
+4. Raw evidence: [research notes](../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/), only via a topic doc's `Sources`.
+
+Executive reports: [LLM-driven placement and routing](../reports/LLM%20driven%20PCB%20placement%20and%20routing.md), [physics-first layout](../reports/Physics-first%20PCB%20layout.md).
 
 ## Digests
 
 | Digest | Covers |
 |---|---|
-| [algorithms](digests/algorithms.md) | placement and routing algorithms, PCB placers, ML/RL, solvers, cross-domain transplants |
-| [llm-data-ux](digests/llm-data-ux.md) | what LLMs can and can't do in layout, interfaces, agent loops, design understanding, data, UX |
-| [ecosystem](digests/ecosystem.md) | KiCad API/CLI/DRC, routers and placers to reuse, MCP lessons, commercial tools, patents, licensing |
+| [algorithms](digests/algorithms.md) | placement and routing algorithms, ML/RL, solvers, transplants |
+| [llm-data-ux](digests/llm-data-ux.md) | LLM limits, interfaces, agent loops, design understanding, data, UX |
+| [ecosystem](digests/ecosystem.md) | KiCad API/CLI/DRC, reusable engines, MCP, commercial tools, patents, licensing |
 | [rules-hs-emi-interfaces](digests/rules-hs-emi-interfaces.md) | SI/EMC physics, stackup, diff pairs, per-interface rule packs, SI/EMI checkers |
-| [rules-power-rf-analog-dfm](digests/rules-power-rf-analog-dfm.md) | converters and hot loops, decoupling/PDN, RF, analog, isolation, thermal, DFM, power checkers |
-| [practice-evaluation](digests/practice-evaluation.md) | expert workflow, trust, review checklist, constraint IR, evaluation stack, benchmarks |
-| [physics-first](digests/physics-first.md) | physics-first placement and routing: physics models, critics, the kae placer and router, joint loop |
+| [rules-power-rf-analog-dfm](digests/rules-power-rf-analog-dfm.md) | hot loops, converters, PDN, RF, analog, isolation, thermal, DFM, power checkers |
+| [practice-evaluation](digests/practice-evaluation.md) | expert workflow, trust, review checklist, constraint IR, evaluation, benchmarks, harness |
+| [physics-first](digests/physics-first.md) | physics models, critics, kae physics engine, placer, router, joint loop, validation |
 
 ## By task
 
-| If you are... | Read |
+| Task | Read |
 |---|---|
-| Talking to a live KiCad board | [kicad/ipc-api-10-vs-11](topics/kicad/ipc-api-10-vs-11.md), [kicad/transform-math-pitfalls](topics/kicad/transform-math-pitfalls.md) |
-| Generating or parsing DRC rules/reports | [kicad/drc-rule-language-reference](topics/kicad/drc-rule-language-reference.md), [kicad/drc-report-and-repair-loop](topics/kicad/drc-report-and-repair-loop.md) |
-| Designing the constraint/intent format | [architecture/constraint-ir](topics/architecture/constraint-ir.md), [rules/rule-pack-format](topics/rules/rule-pack-format.md) |
-| Designing LLM tools or an MCP server | [llm/interfaces-relations-vs-coordinates](topics/llm/interfaces-relations-vs-coordinates.md), [kicad/mcp-tool-surface-spec](topics/kicad/mcp-tool-surface-spec.md), [llm/agent-loop-patterns](topics/llm/agent-loop-patterns.md) |
-| Building the placer | [placement/pcb-placers-2022-2026](topics/placement/pcb-placers-2022-2026.md), [placement/legalization](topics/placement/legalization.md), [solvers/recommended-stack](topics/solvers/recommended-stack.md) |
-| Integrating a router | [routing/freerouting](topics/routing/freerouting.md), [kicad/specctra-freerouting-integration](topics/kicad/specctra-freerouting-integration.md), [routing/kicad-pns-router](topics/routing/kicad-pns-router.md) |
-| Recognizing circuit blocks and net roles | [llm/design-understanding-pipeline](topics/llm/design-understanding-pipeline.md), [llm/net-role-classification](topics/llm/net-role-classification.md) |
-| Encoding rules for one interface or converter | `topics/rules/interfaces/<iface>.md`, `topics/rules/power/<topology>.md` (start at [power/hot-loops](topics/rules/power/hot-loops.md)) |
-| Writing a checker | [rules/checkers-si-emi](topics/rules/checkers-si-emi.md), [rules/checkers-power](topics/rules/checkers-power.md), [verification/critic-stack](topics/verification/critic-stack.md) |
-| Evaluating results | [verification/evaluation-stack](topics/verification/evaluation-stack.md), [verification/benchmarks](topics/verification/benchmarks.md), [verification/benchmark-plan](topics/verification/benchmark-plan.md) |
-| Planning placer/router development and evaluation | [verification/dev-eval-plan](topics/verification/dev-eval-plan.md), [routing/strategy-candidates](topics/routing/strategy-candidates.md), [placement/strategy-candidates](topics/placement/strategy-candidates.md) |
-| Seeing what we tried and how it went | [research](research/README.md) (per-area maps), [joint place-and-route scorecard](ideas/original/scorecard.md), dated result write-ups in [bench/results](../bench/results/) |
-| Building on kae's router | [routing/freerouting-constraint-bridge](topics/routing/freerouting-constraint-bridge.md), [routing/last-mile-and-restarts](topics/routing/last-mile-and-restarts.md), [routing/critical-net-routing](topics/routing/critical-net-routing.md) |
-| Routing BGAs and dense regions, or proving they can't be routed | [routing/bga-routing-ranked-ideas](topics/routing/bga-routing-ranked-ideas.md), [routing/routing-infeasibility-certificates](topics/routing/routing-infeasibility-certificates.md), [research/routing/kae-closing-open-connections](research/routing/kae-closing-open-connections.md) |
-| Building on kae's placer or joint loop | [placement/kae-place](topics/placement/kae-place.md), [architecture/joint-loop](topics/architecture/joint-loop.md), [placement/joint-pnr-experiments](topics/placement/joint-pnr-experiments.md) (pnr lab) |
-| Modelling the physics of a layout | [physics/README](topics/physics/README.md), [architecture/physics-engine-design](topics/architecture/physics-engine-design.md) ([details](topics/architecture/physics-engine-design-details.md)) |
-| Designing with physics end to end (formal problem, tiers, feasibility, build gates) | [architecture/physics-driven-design](topics/architecture/physics-driven-design.md) |
-| Covering DC to the quasi-static limit with one reduced model (bands vs projection, evidence, stages) | [architecture/physics-frequency-coverage](topics/architecture/physics-frequency-coverage.md) |
-| How the commander tells kae what "better" means: observables catalogue, intent with sections and exchange rates, status | [architecture/intent-driven-objectives](topics/architecture/intent-driven-objectives.md) |
-| Judging whether a routed board works (simulation, testbenches, intent) | [physics/functional-evaluation](topics/physics/functional-evaluation.md), [architecture/functional-evaluator](topics/architecture/functional-evaluator.md) (`kae.sim`), [architecture/intent-interchange](topics/architecture/intent-interchange.md) |
-| Generating schematics from a description | [synthesis/schematic-generation-landscape](topics/synthesis/schematic-generation-landscape.md), [synthesis/part-selection-and-verification](topics/synthesis/part-selection-and-verification.md), [research/llm-design](research/llm-design/README.md) |
-| Getting or using the local board corpus (~14k boards) | [data/local-board-corpus](topics/data/local-board-corpus.md) |
-| Running the benchmark harness | [bench/README](../bench/README.md), [verification/harness](topics/verification/harness.md), [data/open-board-sources](topics/data/open-board-sources.md), [data/wide-board-corpus](topics/data/wide-board-corpus.md) |
-| Planning the agent's workflow | [workflow/expert-state-machine](topics/workflow/expert-state-machine.md), [workflow/trust-requirements](topics/workflow/trust-requirements.md) |
-| Reusing third-party code or data | [licensing/reuse-matrix](topics/licensing/reuse-matrix.md), [data/licensing-tiers-and-contamination](topics/data/licensing-tiers-and-contamination.md) |
+| Talking to a live KiCad board | [ipc-api coverage](topics/kicad/ipc-api-10-vs-11.md#coverage-matrix), [transform math](topics/kicad/transform-math-pitfalls.md#kicad-local-to-board-formula-y-down) |
+| Generating or parsing DRC rules/reports | [rule language](topics/kicad/drc-rule-language-reference.md#grammar-and-evaluation), [report and repair loop](topics/kicad/drc-report-and-repair-loop.md#rule-name-protocol) |
+| Designing the constraint/intent format | [constraint-ir](topics/architecture/constraint-ir.md#ir-sketch), [rule-pack format](topics/rules/rule-pack-format.md#pack-schema-v0) |
+| Designing LLM tools or an MCP server | [relations vs coordinates](topics/llm/interfaces-relations-vs-coordinates.md#write-interface-rule), [MCP surface](topics/kicad/mcp-tool-surface-spec.md#tools), [agent loops](topics/llm/agent-loop-patterns.md#loop-design-for-our-system) |
+| Building the placer | [PCB placers](topics/placement/pcb-placers-2022-2026.md#methods-and-results), [legalization](topics/placement/legalization.md#legalizers), [engine stack](topics/solvers/recommended-stack.md#subproblem--tool-mapping) |
+| Integrating a router | [Freerouting](topics/routing/freerouting.md#use-in-kae), [DSN/SES](topics/kicad/specctra-freerouting-integration.md#pitfalls-seen-in-our-benchmark-kicad-1007-freerouting-250), [PNS](topics/routing/kicad-pns-router.md#pns-in-kae) |
+| Recognizing circuit blocks and net roles | [pipeline](topics/llm/design-understanding-pipeline.md#pipeline), [net roles](topics/llm/net-role-classification.md#layered-classifier) |
+| Encoding rules for one interface or converter | `topics/rules/interfaces/<iface>.md`, `topics/rules/power/<topology>.md`; start at [hot loops](topics/rules/power/hot-loops.md#hot-loop-rules-all-topologies) |
+| Writing a checker | [SI/EMI](topics/rules/checkers-si-emi.md#custom-checker-specifications), [power](topics/rules/checkers-power.md#checker-design-rules), [critic stack](topics/verification/critic-stack.md#critic-tiers) |
+| Evaluating results | [evaluation stack](topics/verification/evaluation-stack.md#tiers), [benchmarks](topics/verification/benchmarks.md#benchmark-conclusions), [benchmark plan](topics/verification/benchmark-plan.md#benchmark-tracks) |
+| Running the benchmark harness | [bench/README](../bench/README.md), [harness](topics/verification/harness.md#pipeline-stages), [kaeq queue](../tools/kaeq/README.md), [kaeres results](../tools/kaeres/README.md) |
+| Planning placer/router development and evaluation | [dev-eval plan](topics/verification/dev-eval-plan.md#plan-summary), [protocol](topics/verification/dev-eval-protocol.md#evaluation-protocol), [routing](topics/routing/strategy-candidates.md#strategy-table) and [placement](topics/placement/strategy-candidates.md#strategy-table) candidates |
+| Seeing what we tried and how it went | [research map](research/README.md#areas), [scorecard](ideas/original/scorecard.md), [bench/results](../bench/results/) |
+| Building on kae's router | [constraint bridge](topics/routing/freerouting-constraint-bridge.md#pipeline), [last mile](topics/routing/last-mile-and-restarts.md#last-mile-in-brief), [critical nets](topics/routing/critical-net-routing.md#what-is-routed), [routing research](research/routing/README.md#paths) |
+| Routing BGAs and dense regions, or proving they can't be routed | [ranked ideas](topics/routing/bga-routing-ranked-ideas.md#top-10-ideas-ranked-for-our-case), [certificates](topics/routing/routing-infeasibility-certificates.md#the-ladder-for-a-bga-region), [closing open connections](research/routing/kae-closing-open-connections.md) |
+| Building on kae's placer or joint loop | [kae-place](topics/placement/kae-place.md#pipeline), [joint loop](topics/architecture/joint-loop.md#the-loop), [pnr lab](topics/placement/joint-pnr-experiments.md#method-index), [joint research](research/joint/README.md#merit-list) |
+| Modelling the physics of a layout | [physics map](topics/physics/README.md#map), [engine design](topics/architecture/physics-engine-design.md#data-model) ([details](topics/architecture/physics-engine-design-details.md)), [solver ladder](topics/physics/solver-ladder.md#the-rungs) |
+| Using exact physics or physics prices inside kae | [exact physics](topics/physics/exact-physics-in-kae.md#3-using-it), [hop ports](topics/architecture/physics-hop-ports.md#2-the-model), [physics research](research/physics/README.md) |
+| Scoring physical rightness next to DRC | [physics critics](topics/physics/physics-critics.md#2-suite-architecture), [critics validation](topics/physics/physics-critics-validation.md), [suite results](topics/physics/suite-physics-results.md) |
+| Designing kae physics end to end: formal problem, DC-to-quasi-static model, what "better" means | [physics-driven design](topics/architecture/physics-driven-design.md#1-the-problem-formally), [frequency coverage](topics/architecture/physics-frequency-coverage.md#4-the-design), [intent objectives](topics/architecture/intent-driven-objectives.md#intent-document) |
+| Judging whether a routed board works | [functional evaluation](topics/physics/functional-evaluation.md#3-checks), [`kae.sim`](topics/architecture/functional-evaluator.md#1-modules), [intent interchange](topics/architecture/intent-interchange.md#formats-evaluated) |
+| Generating schematics from a description | [landscape](topics/synthesis/schematic-generation-landscape.md#papers-and-benchmarks-20242026), [part selection](topics/synthesis/part-selection-and-verification.md#schematic-verification-beyond-erc-q3), [kaesynth](research/llm-design/README.md) |
+| Getting or using board corpora | [local corpus (~14k boards)](topics/data/local-board-corpus.md#getting-the-corpus), [open sources](topics/data/open-board-sources.md#pointer-manifest), [wide corpus](topics/data/wide-board-corpus.md#corpus-at-a-glance), [corpus research](research/data/README.md) |
+| Planning the agent's workflow | [state machine](topics/workflow/expert-state-machine.md#state-table), [trust](topics/workflow/trust-requirements.md#the-11-trust-requirements-practitioners-words) |
+| Choosing the overall architecture | [system design](topics/architecture/system-design.md#packages), [hybrid options](topics/architecture/hybrid-architecture-options.md#comparison), [status 2026-10-25](topics/architecture/status-2026-10-25.md#results-at-handoff) |
+| Reusing third-party code or data | [reuse matrix](topics/licensing/reuse-matrix.md#summary-rules), [data licence tiers](topics/data/licensing-tiers-and-contamination.md#licence-tiers-i) |
 
 ## Topic areas
 
-`topics/` holds about 220 focused docs, each <= 3,000 words, in these areas:
-[architecture](topics/architecture/), [placement](topics/placement/),
-[routing](topics/routing/), [solvers](topics/solvers/), [llm](topics/llm/),
-[data](topics/data/), [ux](topics/ux/), [kicad](topics/kicad/),
-[landscape](topics/landscape/), [licensing](topics/licensing/),
-[rules](topics/rules/) (with `interfaces/` and `power/`),
-[workflow](topics/workflow/), [verification](topics/verification/),
-[physics](topics/physics/) (physics models, critics and their validation plan),
-[synthesis](topics/synthesis/) (schematic generation and part selection).
+- [architecture](topics/architecture/): system, IR, joint loop, physics engine -> [system design](topics/architecture/system-design.md).
+- [physics](topics/physics/) -> [area map](topics/physics/README.md).
+- [placement](topics/placement/), [routing](topics/routing/), [solvers](topics/solvers/) -> [algorithms digest](digests/algorithms.md).
+- [llm](topics/llm/), [data](topics/data/), [ux](topics/ux/), [synthesis](topics/synthesis/) -> [llm-data-ux digest](digests/llm-data-ux.md).
+- [kicad](topics/kicad/), [landscape](topics/landscape/), [licensing](topics/licensing/) -> [ecosystem digest](digests/ecosystem.md).
+- [rules](topics/rules/) (with `interfaces/`, `power/`) -> [high-speed](digests/rules-hs-emi-interfaces.md) and [power](digests/rules-power-rf-analog-dfm.md) digests.
+- [workflow](topics/workflow/), [verification](topics/verification/) -> [practice-evaluation digest](digests/practice-evaluation.md).
 
-Canonical docs where two areas overlap: PCBWorld →
-[routing/pcbworld](topics/routing/pcbworld.md); LLM-guided placers →
-[placement/llm-guided-placement](topics/placement/llm-guided-placement.md)
-(LLM-role view in [llm/llm-guided-placement-systems](topics/llm/llm-guided-placement-systems.md));
-LLM field reports → [ux/field-reports](topics/ux/field-reports.md)
-(forum-sourced views in [workflow/llm-field-reports](topics/workflow/llm-field-reports.md)).
+Canonical where areas overlap: PCBWorld -> [routing/pcbworld](topics/routing/pcbworld.md); LLM-guided placers -> [placement/llm-guided-placement](topics/placement/llm-guided-placement.md); LLM field reports -> [ux/field-reports](topics/ux/field-reports.md).
+
+## Research (our own methods)
+
+Map and status legend: [research/README](research/README.md). Areas: [routing](research/routing/README.md), [placement](research/placement/README.md), [joint place-and-route](research/joint/README.md), [physics](research/physics/README.md), [data](research/data/README.md), [LLM circuit design](research/llm-design/README.md); untested ideas: [research/ideas](research/ideas.md).
 
 ## Idea inventories
 
-Every approach found in the survey, one line each, linked to its topic doc:
-[algorithms](ideas/inventory-algorithms.md),
-[llm-data-ux](ideas/inventory-llm-data-ux.md),
-[ecosystem](ideas/inventory-ecosystem.md),
-[rules-hs-emi](ideas/inventory-rules-hs-emi.md),
-[rules-power](ideas/inventory-rules-power.md),
-[practice-evaluation](ideas/inventory-practice-evaluation.md),
-[cross-domain transplants (ranked)](ideas/cross-domain-transplants.md).
-
-Our own idea catalogs: [original ideas](ideas/original/README.md) (with
-[joint place-and-route](ideas/original/joint-pnr.md), [layer collapse](ideas/original/layer-collapse.md)
-and the [scorecard](ideas/original/scorecard.md) of what was tried) and the
-[physics-first catalog](ideas/physics-first/README.md). Untested ideas with their mechanisms:
-[research/ideas](research/ideas.md).
+Surveyed approaches, one line each: [algorithms](ideas/inventory-algorithms.md), [llm-data-ux](ideas/inventory-llm-data-ux.md), [ecosystem](ideas/inventory-ecosystem.md), [rules-hs-emi](ideas/inventory-rules-hs-emi.md), [rules-power](ideas/inventory-rules-power.md), [practice-evaluation](ideas/inventory-practice-evaluation.md), [cross-domain transplants (ranked)](ideas/cross-domain-transplants.md).
+Our catalogs: [original ideas](ideas/original/README.md) ([joint place-and-route](ideas/original/joint-pnr.md), [layer collapse](ideas/original/layer-collapse.md), [scorecard](ideas/original/scorecard.md)); [physics-first catalog](ideas/physics-first/README.md).

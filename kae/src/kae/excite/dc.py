@@ -47,6 +47,26 @@ LINEAR = ("regulator_linear", "charger", "load_switch", "battery_monitor", "usb_
 SWITCHING = ("regulator_switching", "pmic", "regulator_module")
 SUPPLY_PIN = re.compile(r"^(V(CC|DD|IN|BAT|BUS|S|M|PP|IO|CORE|DDA|DDIO|USB|SYS|P|\+)\w*|AVDD|DVDD|IOVDD|PVDD|PVIN|"
                         r"AVCC|DVCC|VIN\d*|PWR|POWER|\+V\w*|V\+|VREG_IN|IN)$", re.I)
+VOLT_PIN = re.compile(r"^\+?\d+V\d*$|^\+?\d+(\.\d+)?V$", re.I)     # '3V3', '5V', '+1.8V': a supply pin by its voltage
+
+
+def draws_from(pp, net, rails):
+    """Whether an IC or module with pads pp [(number, net, pintype, pinfunction)] takes supply current
+    from rail `net`: a pad on it typed power_in or named as a supply (VCC, VDD, 3V3...), or, on a board
+    whose pads carry neither name nor type (KiCad 5, Eagle and other imports: about half the corpus), a
+    pad on a net the brief classed as a rail or whose name says supply (kae.circuit.roles' rule)."""
+    from kae.circuit.roles import _unannotated_pin_sem
+    for _, nt, pt, fn in pp:
+        if nt != net:
+            continue
+        f = (fn or "").split("/")[0].strip()
+        if pt == "power_in" or (pt != "power_out" and (SUPPLY_PIN.match(f) or VOLT_PIN.match(f))):
+            return True
+        if not f and not pt and (net in rails or _unannotated_pin_sem(net) == "supply"):
+            return True
+    return False
+
+
 OUT_PIN = re.compile(r"^(V?OUT\w*|VO|VREG|LDO\w*|BAT\w*|VSYS|SYS|CHG\w*)$", re.I)
 K_IPC = {True: 0.048, False: 0.024}      # IPC-2221: I = k dT^0.44 A^0.725 (A in mil^2), external / internal
 
@@ -92,6 +112,12 @@ def plan(board, brief, bd, P, srcs, intent=None):
     pads = _pads(board)
     grounds = bd.grounds
     rails = {n for n, d in nets.items() if (d or {}).get("role") == "rail"}
+    # the intent's operating facts may name rails the brief did not classify, with their voltage and
+    # their regulator: nets.<rail> = {"source": ref, "from": input net, "kind": "linear"|"switching",
+    # "eta": [lo, hi], "V_V": volts}
+    facts = {n: d for n, d in ((intent or {}).get("nets") or {}).items() if isinstance(d, dict)}
+    pad_nets = {p.net for fp in board.footprints for p in fp.pads if p.net}
+    rails |= {n for n, d in facts.items() if d.get("source") and n in pad_nets and n not in grounds}
     req = (intent or {}).get("requirements") or {}
     pl.loss_share = float(req.get("copper_loss_share", LOSS_SHARE))
     pl.drop_share = float(req.get("drop_share", DROP_SHARE))
@@ -111,6 +137,9 @@ def plan(board, brief, bd, P, srcs, intent=None):
         return s or on(ref, net)
 
     def volts(net):
+        fv = (facts.get(net) or {}).get("V_V")
+        if isinstance(fv, (int, float)) and fv > 0:
+            return float(fv)
         v = (nets.get(net) or {}).get("volts")
         return abs(float(v)) if v else None
 
@@ -147,15 +176,25 @@ def plan(board, brief, bd, P, srcs, intent=None):
         kind, sub = (parts.get(uuid_of.get(src_ref)) or {}).get("kind"), (parts.get(uuid_of.get(src_ref)) or {}).get("subtype")
         ins = [(n, net) for n, net, pt, fn in pads[src_ref] if net in rails and net != r and
                (pt == "power_in" or SUPPLY_PIN.match(fn))] if kind in ("ic", "module") else []
+        fr = (facts.get(r) or {}).get("from")
+        if kind in ("ic", "module") and fr and fr != r and any(net == fr for _, net, _, _ in pads[src_ref]):
+            ins = [(n, net) for n, net, _, _ in pads[src_ref] if net == fr]      # the facts' input net
         if kind in ("ic", "module") and ins:
             # an IC that supplies this rail from another one converts: switching by its class, else linear
             rin = ins[0][1]
             outs = on(src_ref, r, lambda pt, fn: pt == "power_out" or OUT_PIN.match(fn)) or on(src_ref, r)
-            f = dict(kind="switching" if sub in SWITCHING else "linear", ref=src_ref, rin=rin, out=outs,
+            fk = (facts.get(r) or {}).get("kind")
+            f = dict(kind=fk if fk in ("linear", "switching") else ("switching" if sub in SWITCHING else "linear"),
+                     ref=src_ref, rin=rin, out=outs,
                      inp=tok(src_ref, [n for n, net in ins if net == rin]), gnd=gnd_pads(src_ref))
             if f["kind"] == "switching":
-                f["eta"] = Param(f"dc:{src_ref}", "eta", ETA[1], ETA[0], ETA[2], "", "prior",
-                                 "efficiency of a switching regulator without a cell model (class range)")
+                fe = (facts.get(r) or {}).get("eta")
+                if isinstance(fe, list) and len(fe) == 2 and 0 < min(fe) <= max(fe) <= 1:
+                    f["eta"] = Param(f"dc:{src_ref}", "eta", (fe[0] + fe[1]) / 2, fe[0], fe[1], "", "intent",
+                                     "the intent file")
+                else:
+                    f["eta"] = Param(f"dc:{src_ref}", "eta", ETA[1], ETA[0], ETA[2], "", "prior",
+                                     "efficiency of a switching regulator without a cell model (class range)")
                 pl.params.append(f["eta"])
             pl.feeds[r] = f
         elif kind in ("diode", "inductor", "ferrite", "resistor", "jumper"):
@@ -169,12 +208,19 @@ def plan(board, brief, bd, P, srcs, intent=None):
             if kind in ("ic", "module"):
                 pl.notes.append(f"{r}: source {src_ref} has no supply pin on another rail; taken as the board's input")
             pl.feeds[r] = dict(kind="external", ref=src_ref, out=on(src_ref, r), gnd=gnd_pads(src_ref))
+    # a regulator whose input net has no feed of its own: the DC flow enters the board at it (its input
+    # current has nowhere to come from in the copper); its loss still comes from its input's voltage
+    for r, f in pl.feeds.items():
+        if f["kind"] in ("linear", "switching") and f.get("rin") not in pl.feeds:
+            f["flow_external"] = True
+            f["gnd"] = f.get("gnd") or gnd_pads(f["ref"])
+            pl.notes.append(f"{r}: {f['ref']}'s input {f.get('rin')} has no feed; the DC flow enters at {f['ref']}")
     # an external feed returns at its own ground pads, else at the connectors' (the board's way out)
     conn_g = [t for ref, pp in pads.items() if (parts.get(uuid_of.get(ref)) or {}).get("kind") == "connector"
               for t in tok(ref, [n for n, net, _, _ in pp if net in grounds])]
     for r in list(pl.feeds):
         f = pl.feeds[r]
-        if f["kind"] == "external" and not f["gnd"]:
+        if (f["kind"] == "external" or f.get("flow_external")) and not f["gnd"]:
             if conn_g:
                 f["gnd"] = conn_g
                 pl.notes.append(f"{r}: source {f['ref']} has no ground pad; its return is taken at the connectors' ground")
@@ -186,6 +232,12 @@ def plan(board, brief, bd, P, srcs, intent=None):
         if f["kind"] != "cell":
             f["rating"] = source_rating(ctx, uuid_of.get(f["ref"]), r, {})
     feeders = {f["ref"] for f in pl.feeds.values()}
+
+    def part_share(ref, r):
+        """Rail r's share of part ref's supply pads over the fed rails it draws from (not one it feeds)."""
+        n = {r2: len(supply(ref, r2)) for r2 in pl.feeds if pl.feeds[r2].get("ref") != ref
+             and any(net == r2 for _, net, _, _ in pads.get(ref, []))}
+        return n.get(r, 0) / sum(n.values()) if sum(n.values()) else 1.0
     # loads: parts that draw from a rail and return at their own ground
     shares = {}
     for r in sorted(pl.feeds):
@@ -202,19 +254,24 @@ def plan(board, brief, bd, P, srcs, intent=None):
             g = gnd_pads(ref)
             if not g:
                 continue
-            a = load_current(ctx, u, r, {})
+            a = load_current(ctx, u, r, {}, draws=draws_from(pp, r, rails) if kind in ("ic", "module") else None)
             if kind == "connector":
                 a = 0.1 * a                          # an export: a tenth of its rating, typically
             if a <= 0:
                 continue
             ld = dict(ref=ref, rail=r, sup=supply(ref, r), gnd=g, prior=a)
             iv = ((intent or {}).get("parts") or {}).get(ref, {}).get("I_A")
+            # the intent states a part's whole current: on several rails it is split by their share of the part's
+            # supply pads (an MCU's 3V3 pins carry its current, not its VBUS-detect pin as well)
+            ld["part_share"] = share = part_share(ref, r)
             if pl.feeds[r]["kind"] == "cell":
                 shares.setdefault(r, []).append(ld)
             else:
                 if iv is not None:
                     lo, hi = (iv if isinstance(iv, list) else [iv, iv])
-                    p = Param(f"dc:{ref}@{r}", "I_A", math.sqrt(lo * hi) if lo > 0 else hi, lo, hi, "A", "intent", "the intent file")
+                    lo, hi = lo * share, hi * share
+                    p = Param(f"dc:{ref}@{r}", "I_A", math.sqrt(lo * hi) if lo > 0 else hi, lo, hi, "A", "intent",
+                              "the intent file" + (f" ({share:.0%} of the part's current: its share of supply pads)" if share < 1 else ""))
                 else:
                     lo, hi = (a / 10, 5 * a) if kind == "connector" else (a / 3, 3 * a)
                     p = Param(f"dc:{ref}@{r}", "I_A", a, lo, hi, "A", "prior",
@@ -325,6 +382,10 @@ def injections(pl, cv):
         if f is None or depth > 8 or x == 0:
             return
         k = f["kind"]
+        if f.get("flow_external"):
+            _add(inj, f["out"], x)
+            _add(inj, f["gnd"], -x)
+            return
         if k == "external":
             _add(inj, f["out"], x)
             _add(inj, f["gnd"], -x)
@@ -382,7 +443,9 @@ def observe(pl, cv, V, info, tracks=None):
     P_l = float(np.sum(np.abs(Il) ** 2 * np.real(sysm.zdiag[lo:net.n_br]))) if len(Il) else 0.0
     P_cu = max(P_all - P_l, 0.0)
     xs = load_currents(pl, cv)
-    P_del = sum(xk * (pl.volts.get(ld["rail"]) or 0.0) for ld, xk in zip(pl.loads, xs))
+    # a rail without a known voltage at the drop check's 3.3 V: at 0 V the budget was 0 and the loss u 0
+    # (perfect) whatever the copper lost, or P_cu of every rail was divided by the known rails' budget
+    P_del = sum(xk * (pl.volts.get(ld["rail"]) or 3.3) for ld, xk in zip(pl.loads, xs))
     budget = pl.loss_share * P_del
     out = dict(loss=(P_cu / budget if budget > 0 else 0.0, P_cu, budget), drops=[], heat=[])
     for ld, xk in zip(pl.loads, xs):

@@ -31,7 +31,7 @@ from kae.physics import priors as PR
 from kae.physics.boardview import body_z
 
 from .critical_grid import Anchor
-from .critical_physics import INF, Loop, ipc2221_width, trace_capacitance_pf
+from .critical_physics import INF, Loop, dielectric_er, ipc2221_width, trace_capacitance_pf
 from kae.physics.kernels import lprime_hj
 
 GND_RE = re.compile(r'(^|[^A-Z])(A|D|P|S|C)?GND|^/?VSS|^0V$|GROUND|EARTH', re.I)
@@ -1268,7 +1268,7 @@ def _crystal_value(ctx, m):
             if it.kind == "track" and it.net == net and it.owner and it.owner[0] == m.id:
                 l = next(iter(it.layers))
                 h, pl, _ = ctx.plane(l, it.geom.centroid.x, it.geom.centroid.y, gnd=False)
-                er = ctx.sp.er[0] if ctx.sp.er else 4.3
+                er = dielectric_er(ctx.sp.cu, ctx.sp.z, ctx.sp.er, l, pl)
                 C += trace_capacitance_pf(it.geom.length, 2 * it.r, h if h != INF else ctx.sp.thickness, er)
     # each net's trace C adds to one load capacitor; C_L = C1 C2 / (C1 + C2) moves by a
     # quarter of it at C1 = C2 (place terms' CrystalComp)

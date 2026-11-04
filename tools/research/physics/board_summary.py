@@ -28,14 +28,23 @@ def summarize(path, row=None, pintypes=None):
                 if pin and not pad.pintype and not pad.pinfunction:
                     pad.pintype, pad.pinfunction = pin.get("type") or "", pin.get("name") or ""
     br = BR.build(b)
+    pads_by_ref = {}
+    for fp in b.footprints:
+        nets = {}
+        for pad in fp.pads:
+            if pad.net:
+                nets[pad.net] = nets.get(pad.net, 0) + 1
+        pads_by_ref[fp.ref] = nets
     parts, passives = [], {}
     for p in br["parts"].values():
         kind = p.get("kind") or ""
         if kind in PASSIVE and not p.get("structures"):
             passives[kind] = passives.get(kind, 0) + 1
             continue
+        nets = pads_by_ref.get(p["ref"]) or {}
         parts.append(dict(ref=p["ref"], kind=kind, role=p.get("role"), value=p.get("value"),
-                          lib_id=p.get("lib_id"), external=p.get("external") or None))
+                          lib_id=p.get("lib_id"), external=p.get("external") or None,
+                          nets=dict(sorted(nets.items(), key=lambda kv: -kv[1]))))   # net -> pads on it
     nets = br.get("nets") or {}
     rails = {n: dict(role=v.get("role"), volts=v.get("volts")) for n, v in nets.items()
              if v.get("role") in ("power", "rail", "supply") or v.get("volts")}

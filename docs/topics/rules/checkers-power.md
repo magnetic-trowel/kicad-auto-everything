@@ -1,18 +1,20 @@
 # Power/RF/analog checkers: role detectors, loop-inductance estimator, creepage engine, thermal/PDN screening, criticality map
 
-**TL;DR**
-- **Highest-value automation:** recognise circuit roles (CIN_HF, SW, L, COUT, FB divider, BOOT, RSENSE, crystal, RF match, ADC AGND/DGND) from netlist + pin names + datasheet text, then instantiate per-topology templates and typed constraints.
-- **Division of labour:** the LLM extracts, classifies and templates. Deterministic code over the KiCad board model does every check. A human confirms safety classes and the criticality map.
-- **First-class metrics:**
-  - a loop-inductance estimator, which makes "as close as possible" numeric;
-  - a safety-spacing engine (lookup + surface-geodesic creepage + 3-D clearance);
-  - thermal and PDN screeners cheap enough for the placement loop.
-- **Constraints DRC cannot express** emit KiCad-style marker reports, which the LLM reads to repair the board iteratively.
-- **Gap and opportunity:** no published system extracts hot loops from netlists, and no open-source KiCad plugin implements these backends.
+Scope: canonical home for power/RF/analog checker design: role detectors, constraint schema, loop-inductance estimator, safety-spacing engine, thermal/PDN screeners, deterministic checks, KiCad encoding, criticality map. Not here: the rules themselves -> [power/](power/hot-loops.md), [decoupling-pdn.md](decoupling-pdn.md), [isolation-creepage.md](isolation-creepage.md), [thermal.md](thermal.md); pack contract -> [datasheet-to-constraints.md](datasheet-to-constraints.md).
+Keys: role detector, topology classifier, CIN_HF, RSENSE, loop-inductance estimator, L_est, shoelace area, safety-spacing engine, creepage, thermal screener, PDN screener, net classes PWR_HOT SW SENSITIVE RF50 HV, kicad_dru, intersectsArea, net tie, criticality map, Pease, marker report
 
-## Key facts
+## Checker design rules
+1. Highest-value automation: recognise circuit roles (CIN_HF, SW, L, COUT, FB divider, BOOT, RSENSE, crystal, RF match, ADC AGND/DGND) from netlist + pin names + datasheet text, then instantiate per-topology templates and typed constraints.
+2. Division of labour: the LLM extracts, classifies and templates; deterministic code over the KiCad board model does every check; a human confirms safety classes and the criticality map.
+3. First-class metrics: loop-inductance estimator (makes "as close as possible" numeric); safety-spacing engine (lookup + surface-geodesic creepage + 3-D clearance); thermal and PDN screeners cheap enough for the placement loop.
+4. Constraints DRC cannot express emit KiCad-style marker reports the LLM reads to repair iteratively.
+5. Build order: converter detector + hot-loop polygon + loop-inductance estimator first (cover the rules sources rank highest). Validate detectors on open-source KiCad boards with known regulators; calibrate thresholds on TI, ADI, Espressif eval-board layouts.
+6. Low-authority numbers are soft objectives; keep provenance (URL, tag) on every emitted constraint.
+7. Context-dependence flags against over-application: corner rules only on RF, ESD, diff-pair and ≥10 Gb/s nets (90° corners are a myth for single-ended nets below ~2 Gb/s); split ground only on datasheet mandate (single bridge); "smallest closest" = lowest mounting L; copper under inductors follows the datasheet; ferrite beads only on requirement, always with a resonance check.
+8. Gap: no published system extracts hot loops from netlists; no open-source KiCad plugin implements these backends.
 
-**Role detectors** (RPA §20) [I]:
+## Role detectors
+RPA §20 [I].
 
 | Circuit | Netlist pattern | Roles → constraints |
 |---|---|---|
@@ -29,7 +31,8 @@
 | Crystal | OSC_IN/XTAL1/XIN + OSC_OUT pins + crystal + caps to GND | See [crystals-clocks.md](crystals-clocks.md) |
 | LDO | IN/OUT/GND, no SW | [power/ldo.md](power/ldo.md) |
 
-**Constraint schema example** (RPA §20B):
+## Constraint schema example
+RPA §20B.
 ```yaml
 - {id: U3.hotloop, type: loop_area, members: [C12.pad1, U3.PVIN, U3.PGND, C12.pad2],
    same_layer: true, severity: S1, source: "SLYT614 step 1"}   # hard part: CIN on the IC layer (integrated converter)
@@ -46,31 +49,30 @@
 ```
 Full rule-pack contract: [datasheet-to-constraints.md](datasheet-to-constraints.md).
 
-**Loop-inductance estimator** [I]:
+## Loop-inductance estimator
+[I]
 - **Area:** shoelace area of ordered pad centroids, plus a routed-path-aware variant (through pads and tracks, area += via count × a board-thickness term).
 - **Inductance:** L ≈ µ0·h·length/width over a plane, or rank ordering when uncalibrated.
 - **Inputs:** pad gap, trace W/L, via count and length to the reference plane, plane depth (deeper = higher L, per Archambeault). Via L ≈ (h/5)(ln(4h/d)+1) nH (Rohm/Johnson).
-- **Calibration anchors:**
-  - Axotron 0402: 0.44–0.63 nH top;
-  - Archambeault: 0.9 → 3.2 nH at 10 → 100 mil depth;
-  - AN-139 table (10 × 10 cm test loop at 27 MHz: plane-distance trend only, not absolute nH);
-  - SNVA803: 20 mm² >1 nH, 2 mm² <0.5 nH;
-  - EPC: 0.4–2.9 nH.
+- **Calibration anchors:** decap mounting (Axotron 0402, Archambeault plane depth) -> [decoupling-pdn](decoupling-pdn.md#mounting-inductance-data); loops (SNVA803 and EPC for absolute nH, AN-139 for the plane-distance trend only) -> [hot-loops](power/hot-loops.md#lateral-vs-vertical-loops), [AN-139 table](power/hot-loops.md#measured-loop-inductance-vs-plane-distance).
 - **Budgets to judge against:** SLAA896 per-pin pH totals (750–1150 pH; pin-to-pin 250–650 pH) ([power/class-d-audio.md](power/class-d-audio.md)); EPC overshoot/efficiency data.
 - **Outputs:** nH; overshoot = L·di/dt (warn >0.2 × V_DS,max); efficiency impact.
 
-**Safety-spacing engine** [I] ([isolation-creepage.md](isolation-creepage.md)):
+## Safety-spacing engine
+[I] ([isolation-creepage.md](isolation-creepage.md)):
 - Lookup: (V_RMS, V_impulse from OVC, PD, MG/CTI, altitude, grade) → (creepage, clearance).
 - Surface creepage: KiCad 10.0's native `creepage` constraint where it suffices ([drc-rule-language-reference.md](../kicad/drc-rule-language-reference.md)); otherwise a 2-D surface-geodesic check, routed around slots ≥ the PD minimum width only.
 - 3-D straight-line clearance across slots and bodies.
 - All-layer barrier keep-out check.
 - The LLM classifies nets and grades; a human confirms.
 
-**Thermal screener** ([thermal.md](thermal.md)): power per part → zone-graph flood-fill spreading → network (θ_JC/Ψ_JB + 261 °C/W ÷ N + lateral + convection) → superposition → T_J and sensitive-part ΔT.
+## Thermal and PDN screeners
+- Thermal ([thermal.md](thermal.md)): power per part → zone-graph flood-fill spreading → network (θ_JC/Ψ_JB + 261 °C/W ÷ N + lateral + convection) → superposition → T_J and sensitive-part ΔT.
 
-**PDN screener** ([decoupling-pdn.md](decoupling-pdn.md)): per rail, Z_t + lumped RLC with derated MLCCs and geometric mounting L → peaks ≤1.57× / 3× Z_t (S2 warnings), Q, rogue-wave warning, cavity modes vs clocks.
+- PDN ([decoupling-pdn.md](decoupling-pdn.md)): per rail, Z_t + lumped RLC with derated MLCCs and geometric mounting L → peaks ≤1.57× / 3× Z_t (S2 warnings), Q, rogue-wave warning, cavity modes vs clocks.
 
-**Deterministic checks** (pcbnew Python / IPC API) [I]:
+## Deterministic checks
+pcbnew Python / IPC API [I].
 - **Adjacency and proximity:** pad-edge distances; same-side test; via count on the shortest copper path (graph search over tracks and vias).
 - **Reference-plane integrity:** rasterise zones on the adjacent layer under a region or along each critical track; flag voids, slots, foreign nets, split crossings (Ott), except voids the part's datasheet mandates (U.FL pad, RF matching network).
 - **Coupling:** parallel-run length and minimum distance, victim vs aggressor, same layer and ±1 layer.
@@ -86,14 +88,16 @@ Full rule-pack contract: [datasheet-to-constraints.md](datasheet-to-constraints.
   - mirror symmetry (AMS-07); TC± symmetry (SEN-01); IN− copper (SEN-04/05); Kelvin tap inside the pad (PWR-14);
   - comparative distances (filter nearer the IC than the shunt).
 
-**KiCad encoding** (verify syntax on the installed KiCad) [I]:
+## KiCad encoding
+Verify syntax on the installed KiCad [I].
 - **Net classes per role:** `PWR_HOT`, `SW`, `SENSITIVE` (FB/COMP/RT/SS/REF/crystal), `RF50`, `HV`, `ANALOG`, `DIGITAL`; widths and clearances generated from IPC and fab limits.
 - **`.kicad_dru` rules** on `A.NetClass` / `B.NetClass`, `A.intersectsArea('…')` (`insideArea` is deprecated in 10.0) and layer, e.g. SENSITIVE↔SW ≥1 mm with `(severity warning)`, since that distance is a heuristic.
 - **Rule areas** from module, antenna and barrier keep-outs (disallow tracks, vias and zones on all layers); courtyard and edge rules by part class (MLCC near V-score).
 - **Net ties** to enforce Kelvin and single-point ties, proposed as schematic changes (symbol + `net_tie_pad_groups` footprint). A board-only footprint is an `extra_footprint` parity error.
 - **Everything else** (loop area, Kelvin tap point, solid-reference coverage, via-fence pitch, tombstone symmetry, creepage beyond the native `creepage` constraint) is a custom Python check emitting KiCad-style markers.
 
-**Criticality map** (Pease) [I]. Before placement, the LLM emits a reviewable list, each item with severity and provenance:
+## Criticality map
+Pease [I]. Before placement, the LLM emits a reviewable list, each item with severity and provenance:
 - hot loops;
 - high-Z and summing nodes;
 - matched pairs (symmetry constraints);
@@ -103,22 +107,11 @@ Full rule-pack contract: [datasheet-to-constraints.md](datasheet-to-constraints.
 
 A human corrects it before any geometry is generated, and the deterministic checks consume it.
 
-## Recommendations for our system
-- **Build the converter detector + hot-loop polygon + loop-inductance estimator first.** They cover the rules sources rank highest.
-- **Treat low-authority numbers as soft objectives** and keep provenance (URL, tag) on every emitted constraint, so humans can audit and override.
-- **Context-dependence flags** stop over-application:
-  - corner rules on RF, ESD, differential-pair and ≥10 Gb/s nets (90° corners are a myth for single-ended nets below about 2 Gb/s);
-  - split ground only on datasheet mandate (single bridge);
-  - "smallest closest" means lowest mounting L;
-  - copper under inductors follows the datasheet;
-  - ferrite beads only on requirement, always with a resonance check.
-- **Validate detectors on a corpus** of open-source KiCad boards with known regulators. Calibrate thresholds on TI, ADI and Espressif eval-board layouts.
-
-## Conflicts and open questions
+## Open questions
 - **Default thresholds** (pad gaps, loop-area caps, keep-out distances) are uncalibrated heuristics.
 - **KiCad custom-rule syntax**, including the native `creepage` constraint, is documented for 10.0 in [drc-rule-language-reference.md](../kicad/drc-rule-language-reference.md). How `creepage` treats slots and the PD minimum slot width is still to be tested.
 
 ## Sources
-- research notes: [rules_power_rf_analog_dfm.md § 8, § 9, § 17, § 18, § 19, § 20](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_power_rf_analog_dfm.md); [verification_rules.md § 3](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md); [interface_rule_packs.md § 8, § 11](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/interface_rule_packs.md)
+- [rules_power_rf_analog_dfm.md § 8, § 9, § 17, § 18, § 19, § 20](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_power_rf_analog_dfm.md); [verification_rules.md § 3](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md); [interface_rule_packs.md § 8, § 11](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/interface_rule_packs.md)
 
 See also: [datasheet-to-constraints.md](datasheet-to-constraints.md), [power/hot-loops.md](power/hot-loops.md), [isolation-creepage.md](isolation-creepage.md), [thermal.md](thermal.md), [decoupling-pdn.md](decoupling-pdn.md)

@@ -1,70 +1,51 @@
 # Digest: LLM interfaces, agent loops, design understanding, data and UX
 
-Executive statements; detail is in the linked topic docs and every idea in [the inventory](../ideas/inventory-llm-data-ux.md).
+Scope: what LLMs can do in layout; interfaces, agent loops, design understanding, data, UX. Not here: algorithms -> [algorithms](algorithms.md); KiCad, MCP, tools -> [ecosystem](ecosystem.md); expert workflow, evaluation -> [practice-evaluation](practice-evaluation.md). Ideas: [inventory](../ideas/inventory-llm-data-ux.md).
+Keys: LLM limits, coupled relations, RAC, relation bundle, ordinal magnitude, read state, vision feedback, DRC-Aid, bounded action space, design understanding, NetlistBench, net roles, staged datasheet extraction, PCBench licences, measured priors, field failure modes, intent record
 
 ## What LLMs can and cannot do
-- **LLMs fail at emitting geometry and succeed at semantic choices made for a solver.**
-  - OmniRouting: best model 12.6% of nets DRC-clean (28.0% agentic) vs 56.2% for an open router and 93.6% for humans.
-  - Every legal or DRC-clean PCB win for an LLM system keeps geometry in a solver.
-
-  → [spatial-reasoning-limits](../topics/llm/spatial-reasoning-limits.md), [pcb-llm-benchmarks](../topics/llm/pcb-llm-benchmarks.md)
-- **Corrected:** LLM placement is connectivity-aware but illegal. Frontier models beat academic placers on routability (0.90–0.95, legality gating unstated) but about 80% of outputs have pad overlaps. → [pcb-llm-benchmarks](../topics/llm/pcb-llm-benchmarks.md)
-- **Difficulty scales with coupled relations; tools fix arithmetic, not planning.** → [spatial-reasoning-limits](../topics/llm/spatial-reasoning-limits.md)
-- **Corrected:** PCBWorld's LLM routers ran without DRC feedback (0.65 clean-pass is a floor), yet 0.4–1.9M tokens per board rules out per-segment LLM routing. → [routing/pcbworld](../topics/routing/pcbworld.md), [agent-loop-patterns](../topics/llm/agent-loop-patterns.md)
+- LLMs fail at emitting copper: OmniRouting best LMM 12.60% NRR zero-shot, 27.98% agentic, vs PcbRouter 56.20%, humans 93.58%. → [OmniRouting](../topics/routing/llm-routing-evidence.md#omnirouting)
+- LLM placement is connectivity-aware but illegal: frontier routability beats academic placers, yet 79.82% of outputs have a pad overlap. → [results](../topics/llm/pcb-llm-benchmarks.md#results)
+- Difficulty scales with coupled relations, not objects; tools fix arithmetic, not planning (Python lowered RAC coordinate clean-pass 23.2% -> 21.0%). → [limits](../topics/llm/spatial-reasoning-limits.md#limits)
+- PCBWorld LLM numbers are a lower bound, yet ~425k (D3-A) to ~1.92M (D3-B) tokens per episode rules out per-segment LLM routing. → [LLM agents](../topics/routing/pcbworld.md#llm-agents)
 
 ## Interfaces and representations
-- **The write interface matters more than the model.** On RAC, relation bundles reach 90.9% clean-pass against 23.2% for coordinates (21.0% with Python) and 62.4% for sequential relations. Use ordinal magnitudes and relaxation feedback. → [interfaces-relations-vs-coordinates](../topics/llm/interfaces-relations-vs-coordinates.md)
-- **Persist relations as intent.** Re-solving after resizes passes 89.5%, against 65.6% for coordinate reuse. → [interfaces-relations-vs-coordinates](../topics/llm/interfaces-relations-vs-coordinates.md), [design-rationale-and-intent-record](../topics/ux/design-rationale-and-intent-record.md)
-- **Read side:** incident-list netlists, compact JSON plus query tools (0.88 vs 0.43 for PDF), relative pin-name code (82% vs 32.5% for raw KiCad). → [read-representations](../topics/llm/read-representations.md)
-- **Structured feedback beats images on DRC:** scoring cut DRC 77.1%, visuals less; neither clearly lifted routability. Images are a gestalt channel only. → [vision-feedback](../topics/llm/vision-feedback.md)
+- The write interface matters more than the model: RAC bundles 90.9% clean-pass vs 23.2% for coordinates; relations carry ordinal magnitudes, never coordinates. → [RAC](../topics/llm/interfaces-relations-vs-coordinates.md#rac-relational-agent-contract)
+- Persist relations as intent: re-solving after geometry changes passes 89.5% vs 65.6% for the best coordinate-reuse control. → [RAC](../topics/llm/interfaces-relations-vs-coordinates.md#rac-relational-agent-contract)
+- Read side: incident-list netlist; hierarchical JSON 0.88 vs 0.43 for KiCad PDF; raw KiCad files 32.5% in SchGen. → [read state](../topics/llm/read-representations.md#read-state-design), [PCB-QA](../topics/llm/read-representations.md#pcb-qa-input-formats), [SchGen](../topics/llm/read-representations.md#schgen-relative-code-vs-raw-kicad)
+- Structured feedback beats images (Score tool: DRC −77.1%); renders are a gestalt channel. → [evidence](../topics/llm/vision-feedback.md#evidence)
 
 ## Agent loops
-- **Bounded menus plus deterministic realization plus independent checks win** (DRC-Aid 92.5% vs 6.6% for static prompting). Default to a mid-tier model; budget iterations. → [agent-loop-patterns](../topics/llm/agent-loop-patterns.md)
-- **Placement roles that worked:**
-  - grouping plus MILP legalization (Li DAC'26: −15%/−13% WL/vias vs Quilter);
-  - fine-tuned constraint graphs (ModuPlace);
-  - weak VLM anchors (VeoPlace);
-  - place-one-replicate for repeated channels.
-
-  → [llm-guided-placement-systems](../topics/llm/llm-guided-placement-systems.md), [placement/llm-guided-placement](../topics/placement/llm-guided-placement.md)
-- **Offline LLM evolution** of placer and router code works through restricted, gradient-checked interfaces; generalized gains are small (0.5–2.9%). → [code-and-objective-evolution](../topics/llm/code-and-objective-evolution.md)
+- Bounded menus + deterministic realization + independent checks win (DRC-Aid 92.5% clean vs 6.6% static prompting). → [pattern](../topics/llm/agent-loop-patterns.md#bounded-action-space-deterministic-realization-independent-check)
+- Default to a mid-tier model; escalate on verified failure (evidence: analog IC repair). → [loop design](../topics/llm/agent-loop-patterns.md#loop-design-for-our-system)
+- LLM placement roles that worked: grouping + MILP legalization (Li DAC'26: 15%/13% WL/vias vs Quilter, 6 boards, [S]), fine-tuned constraint graphs (ModuPlace), weak VLM anchors (VeoPlace). → [roles](../topics/llm/llm-guided-placement-systems.md#llm-roles-across-systems), [systems](../topics/placement/llm-guided-placement.md#methods-and-results)
+- Offline LLM evolution of placer code: generalized gains small (EvoPlace 0.509–2.85%), unreplicated. → [systems](../topics/llm/code-and-objective-evolution.md#systems)
 
 ## Design understanding and datasheets
-- **Pipeline:** deterministic graph → VF2 and rule recognition → LLM via tools (adjudication, detector code) → user validation → KiCad-native intent (implicit net classes, component classes, generated rule areas, `.kicad_dru`) → per-constraint checks. → [design-understanding-pipeline](../topics/llm/design-understanding-pipeline.md)
-- **LLMs can't trace raw netlists** (terminal-neighbour accuracy 2–97%) or form stage-level groups (F1 0.31). They can write detector code. → [block-recognition](../topics/llm/block-recognition.md)
-- **Net roles:** layered evidence (intent → IBIS/datasheet → topology → names → LLM). IBIS `[Diff Pin]` and `[Ramp]` are an unused source for layout classification. → [net-role-classification](../topics/llm/net-role-classification.md)
-- **Recipes are data:** each constraint carries its own check; vendor conflicts are surfaced. → [function-to-recipe-mapping](../topics/llm/function-to-recipe-mapping.md)
-- **Staged, provenance-preserving extraction** reaches 98.8% faithfulness vs 76.1% one-shot. Naive PDF Q&A fails (30.7%); tool-call audits catch faked reads. → [datasheet-extraction](../topics/llm/datasheet-extraction.md), [part-layout-card](../topics/llm/part-layout-card.md)
+- Pipeline: deterministic graph → VF2/rules → LLM via tools (adjudication, detector code) → user validation → KiCad-native intent → per-constraint checks. → [pipeline](../topics/llm/design-understanding-pipeline.md#pipeline)
+- LLMs cannot trace raw netlists (NetlistBench terminal-neighbour 2–97%) or form stage-level groups (HL3 F1 0.31). → [benchmarks](../topics/llm/block-recognition.md#llm-netlist-reading-benchmarks), [order](../topics/llm/block-recognition.md#recognition-order)
+- Net roles from layered evidence (intent → IBIS/datasheet → topology → names → LLM). → [classifier](../topics/llm/net-role-classification.md#layered-classifier)
+- Recipes are data: recognizer → constraints → per-constraint check; vendor conflicts are recorded. → [recipes](../topics/llm/function-to-recipe-mapping.md#recipe--recognizer--constraints--checks)
+- Staged, provenance-keeping extraction reaches 98.8% faithfulness vs 76.1% one-shot; naive PDF Q&A fails (GDP.pdf best 30.7%). → [pipelines](../topics/llm/datasheet-extraction.md#pipelines-and-reliability)
+- Our kaesynth typed IR builds clean schematics, but independent LLM review rated every design "not ready". → [kaesynth](../research/llm-design/kaesynth.md#results)
 
 ## Data
-- **Usable data is scarce:**
-  - PCBench is 62% unlicensed with only 23 KiCad 6+ boards;
-  - only 33% of licensed human boards pass their own DRC;
-  - expect low thousands of usable boards.
-
-  → [corpora-and-yield](../topics/data/corpora-and-yield.md)
-- **Licence tiers A/B/C:** only permissive sources feed our CDLA-Permissive data. GPL-3.0-or-later code lets GPL engines run in-process; data tiers are unchanged. Use time and cluster splits against contamination. → [licensing-tiers-and-contamination](../topics/data/licensing-tiers-and-contamination.md)
-- **The learnable signal is relational and per-package:** 0402 decap median 2.5 mm; 4-layer p90 7.7 mm vs 26 mm on 2-layer; power/signal width 1.88. Ship these as soft priors now. → [measured-priors](../topics/data/measured-priors.md)
-- **Coarse hints from human placements barely help** (0.19–0.21 vs designer 0.63), so retrieval must transfer fine relative geometry. → [layout-retrieval-and-reuse](../topics/data/layout-retrieval-and-reuse.md)
-- **Designer placements route clean 0.56 vs 0.12–0.16 for auto-placers.** Learned rankers rarely beat HPWL on small corpora; gate on a bounded real route. → [imitation-and-learned-scores](../topics/data/imitation-and-learned-scores.md)
-- **Training order:** priors and retrieval, then a pose and assignment model, then round-trip-verified constraint SFT, then GRPO with tiered rewards, with DPO if hacking appears. → [training-recipes](../topics/data/training-recipes.md), [data-pipeline-plan](../topics/data/data-pipeline-plan.md)
+- Usable data is scarce: PCBench has no or unclear licence on 62.1% of per-board `metadata.json` files (54.3% by `master_metadata.json`); 33% of licensed routed human boards pass their own DRC; expect low thousands usable. → [PCBench](../topics/data/corpora-and-yield.md#pcbench-source-pool-of-pcbworld-d3), [yield](../topics/data/corpora-and-yield.md#supply-vs-usable-yield)
+- Our corpus: 14,318 boards from 8,757 repos, 17% DRC-clean as committed under their own rules. → [board corpus](../research/data/board-corpus.md#results)
+- Only licence tier A feeds our CDLA-Permissive-2.0 data; GPL-3.0-or-later code does not change data tiers; time/cluster splits against contamination. → [tiers](../topics/data/licensing-tiers-and-contamination.md#licence-tiers-i), [contamination](../topics/data/licensing-tiers-and-contamination.md#contamination)
+- The learnable signal is relational and per-package (0402 decap median 2.51 mm; 4-layer p90 7.7 mm vs 26 mm all-board tail; power/signal width 1.88): ship as soft priors. → [decap](../topics/data/measured-priors.md#decoupling-distance-priors), [style](../topics/data/measured-priors.md#routing-style-priors-same-128-boards)
+- Coarse human-derived hints barely help (clean route 0.19–0.21 vs designer 0.63): retrieval must transfer fine relative geometry. → [transfer](../topics/data/layout-retrieval-and-reuse.md#how-much-do-coarse-human-derived-constraints-transfer)
+- Designer placements route clean 0.56 vs 0.12–0.16 for auto-placers; fitted rankers never beat the best fixed signal: gate on a bounded real route. → [measures](../topics/data/imitation-and-learned-scores.md#which-placement-measures-predict-a-clean-route), [calibration](../topics/data/imitation-and-learned-scores.md#kicad-tools-calibration-studies)
+- Training order: retrieval + priors → pose/assignment model → constraint SFT → GRPO with tiered reward → DPO if hacking appears. → [plan](../topics/data/data-pipeline-plan.md#5-train-in-order)
 
 ## Field reports and UX
-- **Working boards share one pattern:** the LLM orchestrates engines, KiCad or the fab gives the verdict, writes are read back, a human gates. → [field-reports](../topics/ux/field-reports.md)
-- **The costliest failures are invisible to DRC:** footprint variants, library aliasing, label shorts, muted or silently skipped checks. → [field-failure-modes](../topics/ux/field-failure-modes.md)
-- **Reliability comes from:**
-  - live-board verdicts;
-  - observed diffs;
-  - refusals;
-  - one commit per step with a human-only apply;
-  - per-net monotone acceptance;
-  - a deterministic move library with diagnostics.
-
-  → [agent-tooling-reliability-patterns](../topics/ux/agent-tooling-reliability-patterns.md)
-- **Designers want real-time error detection, auditability, house style and locks.** → [designer-demand-and-trust](../topics/ux/designer-demand-and-trust.md)
-- **Explain "why" by re-solving under the implied constraint** and showing measured deltas. Offer 2–4 alternatives; tag claims by provenance; make explanations cut verification cost. → [explanations-and-alternatives](../topics/ux/explanations-and-alternatives.md)
-- **The relation bundle is the "why" record,** linked source → diagnosis → verdict, logged at decision time. → [design-rationale-and-intent-record](../topics/ux/design-rationale-and-intent-record.md)
+- Working boards: LLM orchestrates engines, KiCad or the fab gives the verdict, writes are read back, a human gates. → [implications](../topics/ux/field-reports.md#design-implications)
+- The costliest failures are invisible to DRC: package variants, library aliasing, label shorts, muted checks. → [taxonomy](../topics/ux/field-failure-modes.md#failure-categories)
+- Reliability: read-back, refusals, one commit per change, keep only if counts don't worsen. → [ingredients](../topics/ux/agent-tooling-reliability-patterns.md#reliability-ingredients-seen-in-the-field)
+- Designers want a real-time, auditable co-pilot that learns house style and honours locks. → [implications](../topics/ux/designer-demand-and-trust.md#design-implications-i)
+- Explain "why" by re-solving under the implied constraint; offer 2–4 alternatives; tag claims by provenance. → [co-pilot](../topics/ux/explanations-and-alternatives.md#design-implications-for-a-pcb-co-pilot-i)
+- The committed relation bundle is the "why" record, logged at decision time. → [sidecar](../topics/ux/design-rationale-and-intent-record.md#intent-sidecar-design-i)
 
 ## Open questions
-- Does RAC hold on real boards with a KiCad backend? How should tight/close/loose be calibrated? → [interfaces-relations-vs-coordinates](../topics/llm/interfaces-relations-vs-coordinates.md)
-- No layout-guideline benchmark, board-level recognition accuracy, or PCB designer-trust study exists. → [datasheet-extraction](../topics/llm/datasheet-extraction.md), [block-recognition](../topics/llm/block-recognition.md), [explanations-and-alternatives](../topics/ux/explanations-and-alternatives.md)
+- Does RAC hold on full real boards with a KiCad backend; how are tight/close/loose calibrated? → [RAC](../topics/llm/interfaces-relations-vs-coordinates.md#open-questions)
+- No layout-guideline extraction benchmark, board-level recognition accuracy, or PCB designer co-pilot study exists. → [extraction](../topics/llm/datasheet-extraction.md#open-questions), [recognition](../topics/llm/block-recognition.md#open-questions), [HCI](../topics/ux/explanations-and-alternatives.md#open-questions)

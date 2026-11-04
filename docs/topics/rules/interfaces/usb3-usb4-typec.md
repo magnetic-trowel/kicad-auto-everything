@@ -1,30 +1,16 @@
 # USB 3.x SuperSpeed, USB4 and USB Type-C (CC, SBU, protection, orientation mux)
 
-*Tags:*
-- [P] primary source read
-- [S] snippet only
-- [I] our inference
+Scope: SuperSpeed/USB4 pairs, AC caps, chain order, loss budget; Type-C CC/SBU, protection, mux. Not here: USB2 -> [usb2.md](usb2.md); shared interface rules -> [common.md](common.md).
+Keys: USB3, SuperSpeed, Gen1, Gen2, USB4, Type-C, CC, VCONN, SBU, orientation mux, redriver, TUSB1046, TUSB9261, TPD6S300A, SLVA888C, Heck, chain order, AC cap 265 nF
+Tags: [P] primary, [S] snippet, [I] inference.
 
-**TL;DR**
-- **Intra-pair skew is where vendors diverge most:**
-  - 2–2.5 mil (TUSB1046, TUSB9261);
-  - 5 mil (TI SPRAAR7J, Microchip, SLLU149E);
-  - 5 ps ≈ 0.7 mm (Qualcomm), about 6× looser.
-  
-  Default to 5 mil, override by vendor profile, and keep Qualcomm's figure as the "physics-justified relaxed" option.
-- **Common ground across vendors:**
-  - ≤2 vias per trace, with GND return vias at each layer change;
-  - 75–265 nF TX AC caps (75–200 nF for Gen1), 0402 or smaller, symmetric, with a reference-plane void under the pads;
-  - chain order **connector → ESD → CMC → AC cap → PHY**.
-- **Use loss budgets, not lengths.** Connector-to-PHY: Gen1 −5.5 dB at 2.5 GHz, Gen2 −7 dB at 5 GHz (Qualcomm). Each via costs about 1 in of routing, and ESD+CMC costs about 1 in (Heck).
-- **Type-C CC:**
-  - traces ≥8 mil (VCONN up to 600 mA);
-  - total capacitance 200–600 pF;
-  - **no passives** between the PD controller and the receptacle [S];
-  - protection at the receptacle, with no via between the connector and the TVS pin.
-- **USB4 has no primary PCB numbers**; only snippets exist.
+## USB3 policy
+1. Skew: default 5 mil; override by PHY/redriver vendor profile; keep Qualcomm 5 ps ≈ 0.7 mm as the "physics-justified relaxed" option (~6× looser). Emit `skew` in ps (KiCad 10) where the vendor specifies time.
+2. Chain order connector → ESD → CMC → AC cap → PHY is a hard path-order intent; caps symmetric, void under pads, GND return vias at each transition.
+3. Use loss budgets, not lengths. Placer cost: ~25 mm equivalent length per via and ~25 mm for ESD+CMC on SerDes channels [I] (Heck: ~1 in each); check budget with per-material dB/in.
+4. Type-C: CC width class ≥0.2 mm; BOM check for CC capacitance window and no series parts on CC.
 
-## Key facts
+## USB3/USB4 rules table
 | Param | Default | Variants / **conflicts** | Check |
 |---|---|---|---|
 | Rates | Gen1 5 Gb/s (2.5 GHz), Gen2 10 Gb/s (5 GHz), USB4 Gen3 20 Gb/s NRZ (10 GHz), Gen4 40 Gb/s PAM3 (25.6 GBd, so 12.8 GHz Nyquist, not the note's 20 GHz [I; USB4 v2.0 spec]). AC caps required on TX, optional on RX; SSTX/SSRX polarity reversal allowed; 3 m cable ([SLLA414A](https://www.ti.com/lit/pdf/slla414) [P]) | — | — |
@@ -44,7 +30,7 @@
 | Adjacent layers | Route at a 90° offset (HD3SS3220) | — | G |
 | USB4 | [S] only: 85 Ω ±7%, skew <3 mil, ~60 mm. Link-partner budget 8.5 → 5.5 dB at 10G. A Gen2 8.5 dB host budget ≈ 5 in of trace | No primary source found | low confidence |
 
-### Type-C specifics
+## Type-C rules
 | Item | Rule | Source |
 |---|---|---|
 | CC width | ≥8 mil (0.2 mm) for VCONN, up to 600 mA with Ra present. TPS65988DK minimums: CC1/CC2/PP_CABLE 8 mil, VIN_3V3/LDO 6, component GND 10, GPIO 4; capacitor GND pin 16 mil where possible | TI TPS65987D/88DK [S] |
@@ -54,27 +40,15 @@
 | ESD physics | 8 kV → 4×10¹⁰ A/s, so 0.25 nH adds 10 V. No via between the source and the TVS. GND via immediately adjacent to the TVS GND. Corners ≤45° (arcs below ~2.6 mm radius) | [SLVA680A](https://www.ti.com/lit/pdf/slva680) [P; VERIFIED topology] |
 | Orientation mux | TUSB1046 layout example: connector → AC caps → redriver for the SS lanes. Vendor blogs disagree on whether the CMC precedes the mux. No numeric mux-to-receptacle distance | [TUSB1046 Fig. 10-1](https://www.ti.com/lit/ds/symlink/tusb1046-dci.pdf) [P]; blog [S] |
 
-## Recommendations for our system
-- **Skew.** Default to 5 mil, override by the PHY/redriver vendor profile, and keep the 5 ps option as relaxed. Emit `skew` in ps (KiCad 10) where the vendor specifies time.
-- **Placer cost.** Add about 25 mm of equivalent length per via and about 25 mm for ESD+CMC on SerDes channels [I] (from Heck). Check the loss budget with per-material dB/in.
-- **Chain order.** Enforce connector → ESD → CMC → AC cap → PHY as a hard path-order intent. Also require symmetric caps, a void under the pads, and GND return vias at each transition.
-- **Type-C.** CC width class ≥0.2 mm; BOM check for the capacitance window and for no series parts on CC.
-
-## Conflicts and open questions
-- **Intra-pair skew:** up to 14× vendor spread.
-- **Pad-void depth:** 100% vs 60%.
-- **Inner-layer (Qualcomm) vs outer-layer (TI) routing.**
-- **CMC-before-mux.**
-- **Missing primary sources:** no USB-IF/USB4 primary channel budgets and no SBU numeric rule were found.
+## Open questions
+- Intra-pair skew: up to 14× vendor spread.
+- Pad-void depth: 100% vs 60%.
+- Inner-layer (Qualcomm) vs outer-layer (TI) routing.
+- CMC-before-mux.
+- No USB-IF/USB4 primary channel budgets and no SBU numeric rule found.
 
 ## Sources
-- Research notes:
-  - [interface_rule_packs.md § 1](../../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/interface_rule_packs.md)
-  - [verification_rules.md § 1A DP-2, DP-5, DP-6](../../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md)
+- [interface_rule_packs.md § 1](../../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/interface_rule_packs.md); [verification_rules.md § 1A DP-2, DP-5, DP-6](../../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md)
 - Heck, USB-IF DevCon (partly legible): https://community.infineon.com/gfawx74859/attachments/gfawx74859/usb-superspeed-peripherals/18243/1/2-4_SSUSB_DevCon_DesignGuidelines_Heck.pdf
 
-See also:
-- [usb2.md](usb2.md)
-- [hdmi-dp.md](hdmi-dp.md)
-- [../diff-pairs.md](../diff-pairs.md)
-- [../emc-placement.md](../emc-placement.md)
+- See also [hdmi-dp.md](hdmi-dp.md), [../diff-pairs.md](../diff-pairs.md), [../emc-placement.md](../emc-placement.md).

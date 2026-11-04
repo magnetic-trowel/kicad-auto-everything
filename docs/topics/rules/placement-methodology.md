@@ -1,15 +1,19 @@
 # Expert placement methodology (power/RF/analog perspective) and practitioner input
 
-**TL;DR**
-- **Experts place in order of constraint rigidity:** mechanical → stack-up and plane plan → anchor ICs → critical sub-circuits as rigid templates → decoupling → signal flow → DFM pass → route critical nets first.
-- **Template-first, then global.** Locally optimised macros for critical blocks, then a global placer with cost = ratsnest + crossings + severity-weighted violations (S1 ≫ S2 ≫ S3).
-- **Score placement before routing** (ratsnest length, crossings, congestion, violation counts), so iteration is cheap. Altium's "90% placement, 10% routing" is self-described as debatable.
-- **Knowing which circuits are critical is tacit expertise (Pease).** The LLM's highest-value job is producing a reviewable criticality map.
-- **Following rules blindly is itself a failure mode (Hubing).** Every rule needs scope and rationale.
+Scope: expert placement order of operations, region partitioning, route order, practitioner methods (Feranec, Phil's Lab, Pease, Williams). Not here: EMC placement priority -> [emc-placement.md](emc-placement.md#placement-priority-order); criticality map format -> [checkers-power.md](checkers-power.md#criticality-map).
+Keys: placement methodology, order of operations, template-first, rigid template, anchor IC, BGA fan-out, dog-bone, via-in-pad, region partitioning, route order, criticality map, Feranec, FEDEVEL, Phil's Lab, Pease, Williams AN47, 90% placement
 
-## Key facts
+## Placement methodology rules
+1. Place in order of constraint rigidity (8 steps below) and implement that order as the agent's state machine; lock mechanical parts.
+2. Template-first, then global: locally optimised macros for critical blocks, then a global placer with cost = ratsnest + crossings + severity-weighted violations (S1 ≫ S2 ≫ S3).
+3. Score placement before routing (ratsnest length, crossings, congestion, violation counts) so iteration is cheap. Altium's "90% placement, 10% routing" is self-described as debatable.
+4. Region partitioning: each schematic block gets a region (power, analog, digital, RF, HV); penalise cross-region nets except at designated boundary parts (ADCs, isolators, connectors); hot loops a soft distance from RF and analog regions.
+5. Route critical nets first and freeze them (hot loops, SW, RF, Kelvin sense, crystal); then general routing; then pours, stitching, fences; re-run all checks.
+6. Knowing which circuits are critical is tacit expertise (Pease): generate the criticality map before any geometry ([checkers-power.md](checkers-power.md#criticality-map)). Following rules blindly is itself a failure mode (Hubing): every rule needs scope and rationale.
+7. Feranec's fan-out rules become generator constraints (one via per power pad, never shared; DDR inner pads first). 20H is optional/soft, not a default ([myths-and-contested.md](myths-and-contested.md)).
 
-**Order of operations** (RPA §7 synthesis of [EMA](https://www.ema-eda.com/ema-resources/blog/best-practices-for-pcb-component-placement-emd/), [Sierra](https://www.protoexpress.com/kb/pcb-component-placement-rules/), SLYT614) [S]/[I]:
+## Order of operations
+RPA §7 synthesis of [EMA](https://www.ema-eda.com/ema-resources/blog/best-practices-for-pcb-component-placement-emd/), [Sierra](https://www.protoexpress.com/kb/pcb-component-placement-rules/), SLYT614) [S]/[I]:
 1. **Board and mechanical:** outline, mounting holes and keep-outs, connectors at fixed edge coordinates, user-facing parts (buttons, LEDs, displays), height zones, antenna/module edge placement + keep-out polygons. Lock them.
 2. **Stack-up and plane plan:** GND plane under all critical circuits; which rails become planes or pours; analog/digital/RF/power regions, with connectors feeding their own regions (I/O near connectors, Ott-style partitioning).
 3. **Anchor ICs:** main MCU/SoC/FPGA, oriented so pin groups face their peripherals (fewer ratsnest crossings); reserve the fan-out area.
@@ -21,9 +25,10 @@
 7. **DFM pass:** orientation normalisation, courtyards, fiducials, test points, silk ([dfm-fab-limits.md](dfm-fab-limits.md)).
 8. **Route order:** power hot loops and RF (manual quality, frozen) → sensitive analog/feedback → clocks and HS pairs → general signals → pours, stitching, fences → DRC + custom checks.
 
-Converter micro-order (generalises): IC → CIN (route immediately) → L/SW (+snubber) → COUT/VOS → small-signal → ground tie (SLYT614).
+Converter micro-order (generalises; SLYT614) -> [power/buck.md](power/buck.md#buck-rules).
 
-**Practitioners** (RPA §19):
+## Practitioner methods
+RPA §19.
 - **Feranec** (FEDEVEL Advanced PCB Layout, via a [student review](https://helentronica.com/2017/05/03/advanced-pcb-layout-course-by-fedevel-academy/)) [S]:
   - "Put big components first, leave some room between MPU and DDRs, put the high current components as far as" possible.
   - Decoupling under the BGA, iterated with fan-out. Termination resistors at the main component; EMI and ESD parts at the connectors. Use 3-D models.
@@ -48,20 +53,13 @@ Converter micro-order (generalises): IC → CIN (route immediately) → L/SW (+s
   - Single-point critical components (comparator inputs) into the plane where common potential matters.
   - Keep traces short.
   - Probe ground leads ≤1 in; coaxial board-mounted probe points are best.
-- **Hubing** (2019, [slides](https://r6.ieee.org/scv-emcs/wp-content/uploads/sites/111/022019ToddHubing.pdf)) [P], seven common errors: blindly following guidelines; uncontrolled transition times; not following currents; not identifying critical traces; more than one "ground"; improper decoupling; inadvertently bypassing filters.
+- **Hubing** (2019, [slides](https://r6.ieee.org/scv-emcs/wp-content/uploads/sites/111/022019ToddHubing.pdf)) [P]: seven common errors -> [emc-placement.md](emc-placement.md#pre-compliance-practice).
 
-## Recommendations for our system
-- **Implement the 8-step order as the agent's state machine.** Lock mechanical parts; emit templates for critical blocks; run a global placer with severity-weighted penalties.
-- **Region partitioning:** each schematic block gets a region (power, analog, digital, RF, HV). Penalise cross-region nets except at designated boundary parts (ADCs, isolators, connectors). Keep hot loops a soft distance from RF and analog regions.
-- **Route critical nets first and freeze them** (hot loops, SW, RF, Kelvin sense, crystal). Then general routing, then pours, stitching and fences, then re-run all checks.
-- **Generate the criticality map before any geometry** ([checkers-power.md](checkers-power.md)).
-- **Feranec's fan-out rules become generator constraints** (one via per power pad, never shared; DDR inner pads first). 20H is optional/soft, not a default ([datasheet-to-constraints.md](datasheet-to-constraints.md)).
-
-## Conflicts and open questions
+## Open questions
 - **Feranec's method** is known only through a student review and blog snippets. No Phil's Lab transcripts were read. Pease's common-centroid column was not retrieved.
-- **The 20H rule** is contested (Montrose vs Shim/Hubing).
+- 20H rule contested (Montrose vs Shim/Hubing) -> [myths-and-contested.md](myths-and-contested.md).
 
 ## Sources
-- research notes: [rules_power_rf_analog_dfm.md § 7, § 19, § 20](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_power_rf_analog_dfm.md); [verification_rules.md § 2, § 3](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md)
+- [rules_power_rf_analog_dfm.md § 7, § 19, § 20](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_power_rf_analog_dfm.md); [verification_rules.md § 2, § 3](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md)
 
 See also: [checkers-power.md](checkers-power.md), [datasheet-to-constraints.md](datasheet-to-constraints.md), [power/buck.md](power/buck.md)

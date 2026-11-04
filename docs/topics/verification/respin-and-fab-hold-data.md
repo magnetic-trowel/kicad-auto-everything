@@ -1,17 +1,15 @@
 # Respin and fab-hold statistics: what actually goes wrong
 
-**TL;DR**
-- No rigorous, public root-cause breakdown of PCB respins exists; all quantitative data comes via vendors or surveys.
-- Even experienced designers respin routinely: about 2.8–2.9 respins per project (Lifecycle Insights, via vendors), and nearly 60% of designers produce 1–5 respins a year.
-- Only "less than 2–20%" of designs reach manufacturing without technical queries (Dana Korf).
-- One vendor's self-reported hold data (AtlasPCB [V]) puts stackup, impedance and fab-note ambiguity at the top, ahead of geometry violations. The other vendor dataset (dev.to [V]) ranks geometry first, and holds measure order delays, not respins.
-- So critics should be ordered: documentation/spec completeness → geometry rules → physics.
-
-## Key facts
-
+Scope: respin counts and costs, DFM/fab-hold statistics, qualitative failure causes, and the critic order they imply. Not here: critic implementation -> [critic-stack.md](critic-stack.md); checklist -> [review-checklist.md](review-checklist.md).
+Keys: respin, re-spin, fab hold, technical query, TQ, DFM issue rate, Lifecycle Insights, Aberdeen, Dana Korf, AtlasPCB, dev.to vendor, PCB Power, escaped error, failure log, SOT-23
 Tags: [P] primary read; [S] snippet/secondary; [V] vendor self-report; [I] inference.
 
-### Respin counts and costs
+## Respin conclusions
+1. No rigorous public root-cause breakdown of PCB respins exists; all quantitative data comes via vendors or surveys. Experienced designers respin routinely (~2.8–2.9 per project; nearly 60% produce 1–5 a year); only "less than 2–20%" of designs reach manufacturing without TQs (Korf).
+2. Critic order: documentation and specification completeness (stackup, impedance table, fab notes, output formats) → geometry rules → physics: catches the cheapest and most common failures first ([critic-stack.md](critic-stack.md)) [I]. Basis: one vendor's hold data (AtlasPCB [V]) ranks stackup, impedance and fab-note ambiguity first; the other (dev.to [V]) ranks geometry first; holds measure order delays, not respins.
+3. Footprint/pinout and connector-orientation checks are high-value pre-fab critics [I].
+4. Keep an escaped-error log that adds checklist items, as practitioners do [I].
+## Respin counts and costs
 
 | Source | Figure | Tag |
 |---|---|---|
@@ -20,7 +18,7 @@ Tags: [P] primary read; [S] snippet/secondary; [V] vendor self-report; [I] infer
 | Aberdeen (Feb 2010) via Siemens | Prototypes were "31% of the overall product cost"; "14.1 physical prototypes" in a non-integrated flow vs 3.8 for best-in-class ([Siemens](https://blogs.sw.siemens.com/electronic-systems-design/2014/02/27/less-is-more-fewer-prototypes-equals-more-savings/)) | [P, vendor context] |
 | PCD&F/Circuits Assembly survey (2025-09-30) | "Nearly 60% produce just 1–5 respins a year, and 81% say that hasn't increased in the past 12 to 18 months"; 29% of respondents have >30 years' experience; 83% handle 4–6 layers; 55% HDI; 55% high-speed; 54% BGAs ([Circuits Assembly](https://www.circuitsassembly.com/ca/editorial/menu-features/42616-among-pcb-design-raises-are-up-benefits-are-down-and-deadlines-don-t-budge.html)) | [P] |
 
-### DFM and fab holds
+## DFM and fab holds
 
 | Source | Figure | Tag |
 |---|---|---|
@@ -29,7 +27,7 @@ Tags: [P] primary read; [S] snippet/secondary; [V] vendor self-report; [I] infer
 | dev.to vendor (~200 designs/month) | "Over 60% have at least one DFM issue": trace/space 45%, annular ring 38%, drill-to-copper 32%, mask dam 28%, acid traps 22%, copper balance 20%, outline-to-copper 18%, via aspect ratio 15%, silk over pad 12%, thermal relief 10%, panel tabs 8%, impedance feasibility 8% ([dev.to](https://dev.to/abc_8b09c7009ee0029b85665/pcb-dfm-check-12-point-verification-before-ordering-with-failure-rates-from-200-monthly-reviews-1n9f)). Anonymous, low confidence | [V] |
 | PCB Power | ⚠ items are "the most common causes of production holds, rejections, and respins": RS-274X, separate PTH/NPTH, 1:1 scale, consistent units/offsets, Gerber viewed before submission, no chained-drill slots, annular rings, trace/space, copper from edge, slivers, stackup drawing, symmetric copper, mask openings/dams, legend height and polarity marks ([PDF](https://www.pcbpower.com/static/base/images/resources/DFM_Checklist.pdf)) | [P] |
 
-### Qualitative causes
+## Qualitative causes
 
 - **Sierra:** "tombstoning, solder bridging, component misalignment, and wrong polarity markings are among the most common challenges faced during assembly" [P].
 - **Flux:** "Most PCB design mistakes come from poor component placement, incorrect routing, and weak grounding"; return-path errors are "the source of a disproportionate share of EMI failures" [P].
@@ -46,13 +44,7 @@ Tags: [P] primary read; [S] snippet/secondary; [V] vendor self-report; [I] infer
   - Tanner: "Update this list as fails occurs".
   - henrikh: "Has the correct/latest files been uploaded? Yes, this does happen" [P].
 
-## Recommendations for our system
-
-- **Critic priority**: documentation and specification completeness (stackup, impedance table, fab notes, output formats) → geometry rules → physics. This catches the cheapest and most common failures first ([critic-stack.md](critic-stack.md)) [I].
-- **Footprint/pinout and connector-orientation checks** are high-value pre-fab critics [I].
-- **Keep an escaped-error log** that adds checklist items, as practitioners do [I].
-
-## Conflicts and open questions
+## Open questions
 
 - Secondary citations of Lifecycle Insights conflict on per-respin cost ($28.5k / $44k / $46k) and count (2.8 vs 2.9). The original report was not found, and every citation is from a vendor marketing context.
 - The per-respin and per-project figures are mutually inconsistent: 2.9 × 8.5 days ≈ 24.7 days (not 16), and 2.9 × $44k ≈ $128k (not $82k). iCD's $28,482 equals $82,598 / 2.9, so it is derived, not an independent figure [I, arithmetic].
@@ -61,6 +53,5 @@ Tags: [P] primary read; [S] snippet/secondary; [V] vendor self-report; [I] infer
 
 ## Sources
 
-- research notes: [expert_workflow_and_checklists.md § Q5](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/expert_workflow_and_checklists.md)
+- [expert_workflow_and_checklists.md § Q5](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/expert_workflow_and_checklists.md)
 
-See also: [review-checklist.md](review-checklist.md), [critic-stack.md](critic-stack.md)

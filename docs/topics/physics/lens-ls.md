@@ -1,17 +1,18 @@
 # Lens LS: locality, causality, scales and the circuit limit
 
-**TL;DR**
-- **A circuit is Maxwell at zeroth order inside a window with four edges:** θ = ωℓ/v, Z/Z0, ℓ_m/ℓ (plane resolution) and ωτ_e (insulator relaxation). On a PCB the window is huge (η0/R_s ≈ 7.7×10⁵ for 1 oz), and layout is where structures approach an edge. Both first-order corrections are θ·(Z0/Z)^±1. Their product θ² depends only on length. With resistive terminations each first-order term is already a pure delay; Z0 = Z removes the second-order amplitude error −(θ²/8)(m − 1/m)² and the excess delay [C, [rt_impedance_match](../../../tools/research/physics/rt_impedance_match.py)]. It derives PW2, "only length lowers all three" and node/loop duality, and explains t_r/6 vs t_r/2 for capacitive loads [C].
-- **A copper plane is a spatial low-pass filter.** It mirrors patterns larger than ℓ_m(f) = R_s/(πμ0f) = δ²/t, and in the time domain it is an image receding at 2R_s/μ0 (782 m/s for 1 oz). f_x and the loop-mirror onset are two ends of one band. On intact planes, 4–6 complex images fall within 0.5–3.5% of the exact result, where the perfect image is up to 79% off [C]. That closes gap 2 for intact, thin, infinite planes (images tuned on two cases); slotted, perforated and finite planes stay open.
-- **Decap fields and stitching lattices are one wire medium:** ω² = ω_p² + v²k², with ω_p² = n/(L_post·C′). It screens below ω_p (decap reach, stitching attenuation), puts the PDN anti-resonance at ω_p (k = 0), and moves modes to √(f_mn² + f_p²). A lattice check agrees within 0–3% [C].
-- **Every interaction has a decay class and a natural length** (about 20 lengths from 1 µm to 5 m). Measure distance as r/ℓ_q, and above cut-off use position on the mode shapes instead.
-- **"Circuit + parasitics" is a perturbation series.** It diverges where a small parameter meets a Q, a diffusion kernel, radiation or a field singularity. There the representation must switch. The order a victim needs is n* ≈ ln(B/S)/ln ε: 1 for digital, 3 for 16-bit and 4 for 24-bit at ε = 0.01.
+Scope: the four edges of the circuit window (θ, Z/Z0, ℓ_m/ℓ, ωτ_e), impedance split, the plane as a spatial filter and complex images, decaps and stitching as one wire medium, board scales, regime map, critical length, Kramers–Kronig. Not here: window table and T1 statement -> [foundations](foundations.md#the-circuit-is-the-zeroth-order); symbols -> [vocabulary](vocabulary.md#glossary).
+Keys: quasi-static limit, θ = ωℓ/v, impedance split ε_L ε_C, ℓ_m = δ²/t, receding image, complex images, Gauss–Laguerre images, DCIM, Carson, mirror window, wire medium, plasma frequency f_p, ω_p, decap reach, screening length, critical length t_r/6 t_r/2, Kramers–Kronig, loss length, decay class, perturbation order n*, RB4, LS1-LS31
 
-Tags as usual; [C] numbers come from [ls_thin_sheet.py](../../../tools/research/physics/ls_thin_sheet.py), [ls_post_lattice.py](../../../tools/research/physics/ls_post_lattice.py) and [ls_regime_map.py](../../../tools/research/physics/ls_regime_map.py). LS ids are in the [lens-ls ideas](../../ideas/physics-first/lens-ls.md).
+**Results**
+- Both first-order corrections are θ·(Z0/Z)^±1, their product θ² depends only on length; Z0 = Z removes the second-order amplitude error and excess delay [C, [rt_impedance_match](../../../tools/research/physics/rt_impedance_match.py)] (§2): derives PW2, "only length lowers all three", node/loop duality; explains t_r/6 vs t_r/2 for capacitive loads (§6) [C].
+- A copper plane is a spatial low-pass filter (§3): 4–6 complex images replace the perfect image; closes gap 2 for intact, thin, infinite planes (images tuned on two cases); slotted, perforated, finite planes stay open.
+- Decap fields and stitching lattices are one wire medium (§4).
+- Every interaction has a decay class and natural length (about 20 lengths from 1 µm to 5 m, §5): measure distance as r/ℓ_q; above cut-off use mode-shape position.
+- "Circuit + parasitics" diverges where a small parameter meets a Q, diffusion kernel, radiation or field singularity; order a victim needs n* ≈ ln(B/S)/ln ε: 1 digital, 3 for 16-bit, 4 for 24-bit at ε = 0.01.
 
-## Key facts
+[C] = [ls_thin_sheet.py](../../../tools/research/physics/ls_thin_sheet.py), [ls_post_lattice.py](../../../tools/research/physics/ls_post_lattice.py), [ls_regime_map.py](../../../tools/research/physics/ls_regime_map.py). LS ids: [lens-ls ideas](../../ideas/physics-first/lens-ls.md).
 
-### 1. Principles
+## 1. Principles
 
 - **P1 Quasi-static limit.** θ = ωℓ/v ≪ 1 gives EQS or MQS ([Haus & Melcher §3.3](https://ocw.mit.edu/courses/res-6-001-electromagnetic-fields-and-energy-spring-2008/pages/chapter-3/) [S]). KCL and KVL are order 0, exact with displacement and flux edges ([lens-ct](lens-ct.md)). τ_e·τ_m = (ℓ/v)² [I].
 - **P2 Impedance-level split.** For Z0 = √(L′/C′) and circuit level Z = V/I: ε_L = θ·Z0/Z breaks KVL, ε_C = θ·Z/Z0 breaks KCL (CT26's K_L, K_C). ε_L·ε_C = θ² for uniform pieces (≥ θ² otherwise) and ε_L + ε_C ≥ 2θ, with equality at Z0 = Z.
@@ -21,7 +22,7 @@ Tags as usual; [C] numbers come from [ls_thin_sheet.py](../../../tools/research/
 - **P6 Causality.** Delay is ℓ/v and f_knee ≈ 0.35/t_r. Kramers–Kronig: dε′/d ln ω = −(2/π)·ε″.
 - **P7 Scale separation.** Homogenize when pitch ≪ field length; average when τ_fast ≪ τ_slow. A model's error is its first neglected term.
 
-### 2. Derivation A: the impedance split
+## 2. Derivation A: the impedance split
 
 L = Z0·ℓ/v and C = ℓ/(Z0·v), so ωLI/V = θ·Z0/Z and ωCV/I = θ·Z/Z0. For a short line between equal terminations Z, with m = Z0/Z:
 - the transfer is H = 1/(2cos θ + j sin θ·(m + 1/m));
@@ -34,7 +35,7 @@ L = Z0·ℓ/v and C = ℓ/(Z0·v), so ωLI/V = θ·Z0/Z and ωCV/I = θ·Z/Z0. F
 - PCB Z0 spans 0.4–0.6 Ω (30–50 mm plane pair at 0.1 mm) to ~170 Ω; circuits span mΩ to GΩ: PDN plane pairs; voids under high-Z inputs (LA36); move Z0 toward Z.
 - A series-matched line is a pure delay at any length: 0% overshoot [C]: "Series-terminate"; the critical-length family (§6).
 
-### 3. Derivation B: the plane as a spatial filter
+## 3. Derivation B: the plane as a spatial filter
 
 K = σ_s·E and A = μ0K/(2|k|) give K(k) = −I·F(k)·e^{−kh}·Γ(k), with Γ = 1/(1 + kp) and p = 2R_s/(jωμ0) [I; thin-sheet Dodd–Deeds]. Patterns larger than ℓ_m are mirrored; finer ones are blurred.
 - **One law, three crossovers.**
@@ -58,7 +59,7 @@ K = σ_s·E and A = μ0K/(2|k|) give K(k) = −I·F(k)·e^{−kh}·Γ(k), with �
 - **Thin-sheet Carson law.** For h ≪ ℓ_m ≪ W the plane's return resistance tends to ωμ0/4, about 2 mΩ/mm per MHz, whatever the copper weight (0.98–0.99 of it at 1 kHz) [C]. Thicker copper localizes the return but does not cut its loss.
 - **The mirror window.** ℓ_m and λ/10 both scale as 1/f, with ratio πη0/(10√εr·R_s) ≈ 1.2×10⁵: a 10 mm structure is mirrored and lumped from 12 kHz to 1.45 GHz. A 1 oz plane holds a 5 mm loop's image for 6.4 µs.
 
-### 4. Derivation C: decaps and stitching vias are one wire medium
+## 4. Derivation C: decaps and stitching vias are one wire medium
 
 For a plane pair, Z_s = 2R_s + jωμ0d per square and Y_p = jωC′ + n/Z_post. With inductive posts this gives γ² = (ω_p² − ω²)/v², ω_p² = n/(L_post·C′):
 
@@ -78,7 +79,7 @@ Lattice checks [C]:
 
 On RB4, 10 mm stitching gives f_p = 3.39 GHz; ≤ 12 mm keeps the GND/GND cavity screened at 2.45 GHz.
 
-### 5. Scales of a board (RB4: 60 × 40 mm, 4 layers, 0.1 mm prepreg, 0.5 oz planes) [C]
+## 5. Scales of a board (RB4: 60 × 40 mm, 4 layers, 0.1 mm prepreg, 0.5 oz planes) [C]
 
 | Length | Value | Time | Value |
 |---|---|---|---|
@@ -94,7 +95,7 @@ On RB4, 10 mm stitching gives f_p = 3.39 GHz; ≤ 12 mm keeps the GND/GND cavity
 | thermal λ; λ_d/2 at 1 GHz | 46; 72 mm | | |
 | loss length (100 / 35 ps); λ/2π at 30 MHz; ℓ_m at 50 Hz | 235 / 82 mm; 1.6 m; 5 m | | |
 
-### 6. Regime map and causality [C]
+## 6. Regime map and causality [C]
 
 | RB4 structure | Small parameters | Representation |
 |---|---|---|
@@ -120,7 +121,7 @@ t_r/6 (Johnson) is a ~10% budget with typical drivers; t_r/2 (LearnEMC) is ≥20
 
 **Kramers–Kronig.** A causal wideband-Debye FR-4 fitted at 1 GHz (Dk 4.3, Df 0.02; Djordjevic et al. 2001 [S]) gives Dk 4.68 at 1 MHz and 4.17 at 10 GHz. That is −2.93% per decade, equal to −(2/π)·tanδ·ln 10. Between 1 MHz and 5 GHz, stripline Z0 moves +5.4% and delay −5.1%. Beyond the loss length c·t_r/(3.08√εr·tanδ), a line sets its own edge.
 
-### 7. Derivation map
+## 7. Derivation map
 
 - "δ > t, so the plane cannot shield" is wrong: P3: ℓ_m = δ²/t ≪ δ.
 - Star ground vs plane (RG19, PW21, P45 vs S39): P3: the victim band vs f(ℓ_m = W), f(ℓ_m = 2h).
@@ -132,7 +133,7 @@ t_r/6 (Johnson) is a ~10% budget with typical drivers; t_r/2 (LearnEMC) is ≥20
 - Topology beats tweaks by 20–40 dB (one case; the 40 dB is an assumed input): P5: far fields see low-order moments [I].
 - Cells closing their fast currents (DR42): P3: below f(ℓ_m = cell) no layout closes current inside a cell, so locality is per band; DC isolation comes from topology ([lens-ct](lens-ct.md)).
 
-### 8. Convergences and synergies
+## 8. Convergences and synergies
 
 - **One dispersion law, four workstreams.** Decap reach (XD), stitching cut-off (FE), the anti-resonance (rules) and post-raised modes are one law. f_p becomes one knob for the frequency plan (S8, DR36).
 - **One length, five findings.** f_x, PW24, RG19, PW21's 0.39 → 0.068 nH/mm and the slot-law switch (XD2 vs FE) are each ℓ_m against a scale. A 20 mm slot turns inductive above ≈ 6 kHz [I].
@@ -141,7 +142,7 @@ t_r/6 (Johnson) is a ~10% budget with typical drivers; t_r/2 (LearnEMC) is ≥20
 - **One selector.** RG2's 14 groups, SIM4 and the band table reduce to θ, Z/Z0, ℓ_m/ℓ and ωτ_e, plus budget scaling.
 - **One sheet operator.** The screened Laplace operator and cavity eigenmodes (objects 1 and 6 of [cross-workstream-synthesis](cross-workstream-synthesis.md)) are one complex-γ² operator (P5), plus the non-local |k| kernel of magnetic sheets.
 
-### 9. Transfers
+## 9. Transfers
 
 - Wire-medium metamaterials → Decap and stitching design by f_p (LS8, LS9).
 - Earth-return complex images; Carson's ωμ0/8 → Transition-band plane returns (LS1, LS4).
@@ -150,7 +151,7 @@ t_r/6 (Johnson) is a ~10% budget with typical drivers; t_r/2 (LearnEMC) is ≥20
 - SI causal fitting → Coupon calibration; TM35 tolerances (LS16).
 - Homogenization, multigrid, two-timescale SA → Optimizer levels, JPR50 step ratios (LS22–LS27).
 
-### 10. What each conductor is doing, across scales
+## 10. What each conductor is doing, across scales
 
 A conductor's job depends on the frequency and on the length scale of the question. Its own dimensions set the switch points: mirror at R_s/(πμ0a), localized return at R_s/(2πμ0h), skin at ρ/(πμ0t²), line at v/(10ℓ), resonance at v/(2ℓ), and radiation growing as (ka)³.
 
@@ -163,17 +164,17 @@ A conductor's job depends on the frequency and on the length scale of the questi
 
 [lens-cd](lens-cd.md)'s passport should therefore hold job(f, ℓ), evaluated at each budget's observable scale (LS28, LS29).
 
-## Recommendations for our system
+## Use in kae
 
-1. **Give each structure θ, Z/Z0, ε_L and ε_C per band.** Switch to co-simulation or modes when the edit's (or back-annotation's) Woodbury radius r reaches 1; ε·Q ≥ 1 is its modal estimate (LS5, LS15; [physics-core-v2](physics-core-v2.md) §4).
-2. **Put 4–6 complex images into the PEEC core (SIM16, SIM46).** Mesh only slots and edges (LS1–LS4).
-3. **One wire-medium module** for reach, anti-resonance and mode shifts; f_p becomes a plan variable (LS8–LS11).
-4. **The ℓ–f regime plane as regime selector,** with truncation σ and n* (LS12–LS14). Band edges are scale ratios, so the Regime atom carries a scale (LA11).
-5. **A causal stackup model, a loss-length gate, surface τ_e** in the basis quantity Ins (LS16–LS19).
-6. **Placer kernels by decay class,** mode-shape coordinates above cut-off, decisions ordered by spatial scale, then by τ (LS20–LS27).
-7. **Add ℓ_m and f_p coupons** to the calibration panel (LS30, LS31; [validation-coupons](validation-coupons.md)). On a finite plane, far-offset features are set by the plane width: use sense offsets x ≤ W/6 and name the sense loop.
+1. Give each structure θ, Z/Z0, ε_L, ε_C per band; switch to co-simulation or modes when the edit's (or back-annotation's) Woodbury radius r reaches 1; ε·Q ≥ 1 is its modal estimate (LS5, LS15; [physics-core-v2](physics-core-v2.md) §4).
+2. Put 4–6 complex images into the PEEC core (SIM16, SIM46); mesh only slots and edges (LS1–LS4).
+3. One wire-medium module for reach, anti-resonance and mode shifts; f_p becomes a plan variable (LS8–LS11).
+4. The ℓ–f regime plane as regime selector, with truncation σ and n* (LS12–LS14); band edges are scale ratios, so the Regime atom carries a scale (LA11).
+5. Causal stackup model, loss-length gate, surface τ_e in basis quantity Ins (LS16–LS19).
+6. Placer kernels by decay class, mode-shape coordinates above cut-off, decisions ordered by spatial scale, then by τ (LS20–LS27).
+7. Add ℓ_m and f_p coupons to the calibration panel (LS30, LS31; [validation-coupons](validation-coupons.md)). On a finite plane far-offset features are set by the plane width: use sense offsets x ≤ W/6 and name the sense loop.
 
-## Conflicts and open questions
+## Open questions
 
 - **Complex images.** They are checked only on infinite, intact, thin planes (2-D and axisymmetric 3-D), and the (φ, β) parameters were tuned on two cases.
 - **Lattice checks are model against model,** with lumped posts.
@@ -189,4 +190,4 @@ A conductor's job depends on the frequency and on the length scale of the questi
 - Belov wire medium via [fields-si-emi](fields-si-emi.md) [S]; Dodd–Deeds via [pw_eddy.py](../../../tools/research/physics/pw_eddy.py) [S].
 - Scripts: [ls_thin_sheet.py](../../../tools/research/physics/ls_thin_sheet.py) (reuses pw_eddy and pw_xsec), [ls_post_lattice.py](../../../tools/research/physics/ls_post_lattice.py) (extends xd_lengths), [ls_regime_map.py](../../../tools/research/physics/ls_regime_map.py).
 
-See also: [README](README.md) · [cross-workstream-synthesis](cross-workstream-synthesis.md) · [research-gaps](research-gaps.md) · [lens-vp](lens-vp.md) · [lens-ct](lens-ct.md) · [lens-sy](lens-sy.md) · [lens-th](lens-th.md) · [lens-in](lens-in.md) · [lens-cd](lens-cd.md) · [lens-ls ideas](../../ideas/physics-first/lens-ls.md)
+See also: [README](README.md) · [cross-workstream-synthesis](cross-workstream-synthesis.md) · [research-gaps](research-gaps.md) · [lens-vp](lens-vp.md) · [lens-ct](lens-ct.md) · [lens-sy](lens-sy.md) · [lens-th](lens-th.md) · [lens-in](lens-in.md) · [lens-cd](lens-cd.md)

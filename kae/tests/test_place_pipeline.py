@@ -120,6 +120,23 @@ def test_local_replace_moves_only_the_subset_inside_its_window(tmp_path):
     assert {b.by_uuid()[u].ref for u in out.poses} == set(sub)
 
 
+def test_local_replace_holds_the_other_parts_where_the_board_has_them():
+    """local_replace left every other movable part movable, modeled snapped to the grid and to
+    a right angle (a part at 45 deg as 0 deg), and judged the re-placed parts against those
+    stand-ins. The others are now locked at their real poses (as joint.replace does)."""
+    from kae.place.pipeline import local_replace
+    b = kicad_file.load(FIXTURE)
+    movable = [fp for fp in b.footprints if not fp.locked and fp.on_board]
+    sub, other = [fp.ref for fp in movable[:2]], movable[2]
+    other.rot = 45.0
+    out = local_replace(b, sub, time_s=5.0, seed=0, physics=False, moves_per_part=50)
+    P = out.problem
+    assert {P.parts[i].ref for i in P.mov} == set(sub)
+    q = next(p for p in P.parts if p.uuid == other.uuid)
+    assert not q.movable and q.fp.rot == 45.0 and (q.fp.x, q.fp.y) == (other.x, other.y)
+    assert not b.by_uuid()[other.uuid].locked            # the caller's board is untouched
+
+
 def test_local_replace_takes_net_weights_from_routing_feedback():
     """kae.joint's call: net_weights scale wirelength weights (an unrouted net pulls its pins
     together); the result is exactly legal for the moved parts and nothing else moves."""

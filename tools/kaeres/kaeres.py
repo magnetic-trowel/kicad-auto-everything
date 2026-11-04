@@ -421,6 +421,23 @@ def corpus_rows():
 
 
 INPUT_KIND = {"joint": "place", "joint-fixed": "place-fixed"}  # task kind -> the input it runs on
+PLACE_KINDS = ("place", "place-fixed")
+
+
+def routed_board(kind, aj, adir):
+    """The routed board of an attempt (kaebench attempt dir adir, attempt.json aj) that physics
+    evaluates, None if there is none. Route tasks score score/board.kicad_pcb; joint tasks score the
+    placement and the routing separately, the routed board is score/routing/board.kicad_pcb. A place
+    task's score/board.kicad_pcb is the placement without copper (physics read every module as open
+    or missing: 0xpolybit center-tap-rectifier 2 of 2 missing with its probe clean), so its routed
+    board is the probe's, and a place run without a routed probe has none."""
+    if aj.get("status") != "ok":
+        return None
+    if kind in PLACE_KINDS:
+        sbs = (adir / "probe" / "score" / "board.kicad_pcb",) if (aj.get("probe") or {}).get("status") == "ok" else ()
+    else:
+        sbs = (adir / "score" / "board.kicad_pcb", adir / "score" / "routing" / "board.kicad_pcb")
+    return next((sb for sb in sbs if sb.exists()), None)
 
 LARGE_MB = 10  # board files above this are the slow, memory-heavy jobs
 
@@ -513,6 +530,16 @@ def cmd_exp_create(a):
         if hc:
             ensure_harness(hc)
         ensure_method_code(m)
+    # a method prepares its boards with its own harness: on another task spec its runs land on another
+    # task and never count here (baseline-2611: freerouting 2.5.0 pinned to a spec-8 harness ran 552 s
+    # per board and wrote no run)
+    want = harness_task_spec(harness)
+    off = [(m["name"], m["id"], harness_task_spec(hc)) for m in ms
+           for hc in [(m["code"].get("harness") or {}).get("commit")] if hc and harness_task_spec(hc) != want]
+    if off:
+        raise SystemExit(f"methods prepared with a harness of another task spec than {harness[:7]}'s ({want}): "
+                         + "; ".join(f"{n} {i} (spec {s})" for n, i, s in off)
+                         + ". Register them again with --harness at this experiment's harness.")
     kicad = kicad_version()
     evs = evaluators_for(harness, kae, kicad)
     e = dict(schema=SCHEMA, name=a.name, description=a.description or "", created=now(),
@@ -528,12 +555,39 @@ def cmd_exp_create(a):
     print(json.dumps(e, indent=1))
 
 
+_TASK_SPECS, _BOARD_SHAS = {}, {}
+
+
+def harness_task_spec(commit):
+    """kaebench's TASK_SPEC at a frozen harness commit (None if its code is not here)."""
+    if commit not in _TASK_SPECS:
+        p = code_dir(commit) / "bench" / "src" / "kaebench" / "prepare.py"
+        m = re.search(r"^TASK_SPEC = (\d+)", p.read_text(), re.M) if p.exists() else None
+        _TASK_SPECS[commit] = int(m.group(1)) if m else None
+    return _TASK_SPECS[commit]
+
+
+def exp_task_id(e, bid, kind):
+    """The id of the task an experiment's harness prepares for a board and task kind, as _job_group
+    names it (the corpus board file's sha256, the harness's TASK_SPEC, the kind, KiCad); None when the
+    harness code or the board is not here, and then any task matches (as before task ids were checked)."""
+    spec = harness_task_spec(e["harness"]["commit"])
+    if bid not in _BOARD_SHAS:
+        row = corpus_rows().get(bid)
+        p = CORPUS / row["path"] / "board.kicad_pcb" if row else None
+        _BOARD_SHAS[bid] = sha256_file(p) if p and p.exists() else None
+    if spec is None or _BOARD_SHAS[bid] is None:
+        return None
+    return ident(dict(board_sha256=_BOARD_SHAS[bid], task_spec=spec, kind=kind, kicad=e["kicad"]))
+
+
 def missing(e, bid):
-    """Methods of the experiment without a finished run on this board (any task)."""
+    """Methods of the experiment without a finished run on this board's task of the experiment (a run
+    on an older board file, task spec or KiCad does not count: it is not comparable)."""
     out = []
     for a_ in range(e["attempts"]):
         for m in e["methods"]:
-            d, r = find_run(bid, m["id"], a_)
+            d, r = find_run(bid, m["id"], a_, exp_task_id(e, bid, _run_kind(dict(method_id=m["id"]))))
             if d is None:
                 out.append((m["id"], a_))
     return out
@@ -642,6 +696,14 @@ class Bugs:
                                detail=str(detail)[:4000], evidence=list(evidence), **extra))
 
 
+def _pintypes_args(physics_board, pt):
+    """--pintypes only for a physics_board.py that takes it: an experiment's older harness
+    exits 2 on the flag, and boards gained pintypes.json after their first evaluation."""
+    if not pt.exists() or "--pintypes" not in Path(physics_board).read_text(errors="ignore"):
+        return []
+    return ["--pintypes", pt]
+
+
 def cmd_job(a):
     """One board: prepare the task, run every missing method, evaluate, archive under the board."""
     e = load_exp(a.experiment) if a.experiment else None
@@ -744,6 +806,8 @@ def _job_group(bid, row, hc, kae, items, human, ws, env, log, kicad, a, size):
     tids = {}  # one task per kind; the route task keeps the id it had before other kinds existed
     for kind in kinds:
         task_recipe = dict(board_sha256=record.get("pcb_sha256"), task_spec=record.get("task_spec"), kind=kind, kicad=kicad)
+        if row.get("dru_fix"):  # rules file repaired in the corpus (dru_fixes.py): a different task
+            task_recipe["dru_fix"] = row["dru_fix"]["sha256_after"] or "removed"
         tids[kind] = ident(task_recipe)
         tdir = board_dir(bid) / "tasks" / tids[kind]
         if not (tdir / "task.json").exists():
@@ -814,24 +878,23 @@ def _job_group(bid, row, hc, kae, items, human, ws, env, log, kicad, a, size):
 
     # routed physics of every new run's scored board (and the human board), one brief from the task input
     boards = {}
+    kind_of = {m["id"]: m["recipe"]["kind"] for m, _ in todo}
     for (mid, att), adir in adirs.items():
         aj = read_json(adir / "attempt.json") or {}
-        # route and place tasks score score/board.kicad_pcb; joint tasks score the placement and the
-        # routing separately, and the routed board is score/routing/board.kicad_pcb
-        for sb in (adir / "score" / "board.kicad_pcb", adir / "score" / "routing" / "board.kicad_pcb"):
-            if aj.get("status") == "ok" and sb.exists():
-                boards[f"{mid}.{att}"] = sb
-                break
+        sb = routed_board(kind_of.get(mid), aj, adir)
+        if sb is not None:
+            boards[f"{mid}.{att}"] = sb
     phys = {}
     if boards:
         kd, kv = code_dir(kae), code_dir(kae).with_name(code_dir(kae).name + ".venv-kae")
         pout = ws / f"physics-{hc[:8]}.json"
         with Step("physics", steps):
             pt = board_dir(bid) / "pintypes.json"  # the schematic's pin types, as re-evaluation passes them
-            rc, to = run_logged([kv / "bin" / "python", d / "tools" / "kaeres" / "physics_board.py",
+            pb = d / "tools" / "kaeres" / "physics_board.py"
+            rc, to = run_logged([kv / "bin" / "python", pb,
                                  "--input", task / "route" / "input" / "board.kicad_pcb",
                                  *[x for n, p in boards.items() for x in ("--board", f"{n}={p}")], "--out", pout,
-                                 *(["--pintypes", pt] if pt.exists() else [])],
+                                 *_pintypes_args(pb, pt)],
                                 log, genv, timeout=int(1800 + 120 * size))
         phys = read_json(pout) or dict(error=f"physics step {'timed out' if to else f'failed rc={rc}'}")
         if phys.get("error"):
@@ -1025,13 +1088,16 @@ def run_view(bid, d, r, evs, human_phys=None):
     s = (ed.get(evs.get("drc")) or {}).get("score") or {}
     pr = ((ed.get(evs.get("drc")) or {}).get("probe") or {}).get("score")
     if pr and "clean" not in s:  # a place task: the routing numbers are the probe's route of the placement
-        s = dict(pr, valid=bool(s.get("valid") and pr.get("valid")))
+        # clean also needs a legal placement: parts left off the outline are no DRC error, so a probe can
+        # route an illegal placement clean (kaebench's joint clean is legal and routed clean, too)
+        s = dict(pr, valid=bool(s.get("valid") and pr.get("valid")), legal=s.get("legal"),
+                 clean=bool(pr.get("clean") and s.get("legal")))
     ph = ((ed.get(evs.get("physics")) or {}).get("physics")) or {}
     meta = r.get("adapter_meta") or {}
     rep = meta.get("router_report") or {}
     mu = r.get("method_usage") or {}
     row = dict(board=bid, method=r["method_name"], method_id=r["method_id"], run=r["run"], attempt=r["attempt"],
-               task_id=r["task_id"], status=r["status"], valid=s.get("valid"), clean=s.get("clean"),
+               task_id=r["task_id"], status=r["status"], valid=s.get("valid"), legal=s.get("legal"), clean=s.get("clean"),
                completion=s.get("completion"), start_unconnected=s.get("start_unconnected"), unconnected=s.get("unconnected"),
                errors=s.get("errors"), warnings=s.get("warnings"), errors_by_type=json.dumps(s.get("errors_by_type") or {}, sort_keys=True),
                track_length_mm=s.get("track_length_mm"), vias=s.get("vias"), wl_ratio=s.get("wl_ratio"), via_delta=s.get("via_delta"),
@@ -1132,12 +1198,13 @@ def cmd_rerun(a):
 
 # ------------------------------------------------------------------ experiment reports
 def exp_rows(e):
-    """(rows, bugs, prepare failures) of an experiment: each method's run on each board, viewed through
+    """(rows, bugs, prepare failures) of an experiment: each method's run on each board's task of the
+    experiment (exp_task_id; a run on another task is not comparable and is left out), viewed through
     the experiment's evaluators (falling back to the run's newest evaluation of the same type)."""
     boards = (exp_dir(e["name"]) / "boards.txt").read_text().split()
     human = next((m for m in methods().values() if m["recipe"]["runner"]["type"] == "reference"), None)
     want = ([dict(id=human["id"], name=human["name"])] if human else []) + [m for m in e["methods"] if not human or m["id"] != human["id"]]
-    rows, bugs, fails = [], [], []
+    rows, bugs, fails, stale = [], [], [], 0
     evs = e["evaluators"]
     for bid in boards:
         bd = board_dir(bid)
@@ -1147,8 +1214,9 @@ def exp_rows(e):
             fails.append(read_json(p))
         task_meta = None
         for m in want:
-            d, r = find_run(bid, m["id"], 0)
+            d, r = find_run(bid, m["id"], 0, exp_task_id(e, bid, _run_kind(dict(method_id=m["id"]))))
             if d is None:
+                stale += find_run(bid, m["id"], 0)[0] is not None
                 continue
             if task_meta is None:
                 task_meta = (read_json(bd / "tasks" / r["task_id"] / "task.json") or {}).get("record") or {}
@@ -1167,6 +1235,9 @@ def exp_rows(e):
                      layers=b.get("layers"), footprints=b.get("footprints"), collection=b.get("collection"), license_tier=b.get("license_tier"))
             rows.append(v)
             bugs += read_json(d / "bugs.json", [])
+    if stale:
+        print(f"{stale} runs left out: made on another task (board file, task spec or KiCad) than this experiment's",
+              file=sys.stderr)
     return rows, bugs, fails
 
 
@@ -1191,27 +1262,45 @@ def _f(x, nd=3):
     return f"{x:.{nd}f}" if isinstance(x, float) else str(x)
 
 
+def _common(rows, names, key):
+    """Boards on which every method of `names` that has rows here has a value of `key` on an ok run."""
+    sets = [{r["board"] for r in rows if r["method"] == n and r["status"] == "ok" and r[key] is not None}
+            for n in names if any(r["method"] == n for r in rows)]
+    return set.intersection(*sets) if sets else set()
+
+
 def method_table(rows, names, title):
-    out = [f"### {title}", "", "| method | boards | ok | cp1 (clean) | completion | not closed | DRC errors / board | "
+    """Per-method table. DRC errors and physics are averaged over the ok runs that have a value, which
+    differ by method (a board with no output drops out instead of counting as worst, which favours
+    methods that fail on hard boards): each is shown with its board count, and again over the boards
+    on which every method has a value, the comparable number."""
+    ce, cp = _common(rows, names, "errors"), _common(rows, names, "physics_total")
+    out = [f"### {title}", "", "| method | boards | ok | cp1 (clean) | completion | not closed | DRC errors / board (boards) | "
+           f"DRC errors / board, {len(ce)} common boards | "
            "timeouts | no output | errors | CPU s median / p90 / total h | restarts median / p90 | wall s median | "
-           "physics Σu | Σu vs human (median) | module ratio (median) |",
-           "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+           f"physics Σu (boards) | physics Σu, {len(cp)} common boards | Σu vs human (median) | module ratio (median) |",
+           "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for n in names:
         rs = [r for r in rows if r["method"] == n]
         if not rs:
             continue
         ok = [r for r in rs if r["status"] == "ok"]
         cpu = [r["cpu_s"] for r in rs]
+        errs = [r["errors"] for r in ok if r["errors"] is not None]
+        phys = [r["physics_total"] for r in rs if r["physics_total"] is not None]
         out.append("| " + " | ".join([
             n, str(len(rs)), str(len(ok)), _f(_mean([1.0 if r["clean"] else 0.0 for r in rs])),
             _f(_mean([r["completion"] if r["completion"] is not None else 0.0 for r in rs])),
-            str(sum(1 for r in ok if (r["unconnected"] or 0) > 0)), _f(_mean([r["errors"] for r in ok]), 2),
+            str(sum(1 for r in ok if (r["unconnected"] or 0) > 0)), f"{_f(_mean(errs), 2)} ({len(errs)})",
+            _f(_mean([r["errors"] for r in ok if r["board"] in ce]), 2),
             str(sum(1 for r in rs if r["timed_out"] or r["partial"])), str(sum(1 for r in rs if r["status"] == "no_output")),
             str(sum(1 for r in rs if r["status"] in ("adapter_error", "score_error"))),
             f"{_f(_med(cpu), 1)} / {_f(_q(cpu, 0.9), 1)} / {_f(sum(x or 0 for x in cpu) / 3600, 1)}",
             f"{_f(_med([r.get('attempts') for r in rs]), 0)} / {_f(_q([r.get('attempts') for r in rs], 0.9), 0)}",
             _f(_med([r["runtime_s"] for r in rs]), 0),
-            _f(_mean([r["physics_total"] for r in rs]), 3), _f(_med([r["physics_vs_human"] for r in rs]), 3),
+            f"{_f(_mean(phys), 3)} ({len(phys)})",
+            _f(_mean([r["physics_total"] for r in ok if r["board"] in cp]), 3),
+            _f(_med([r["physics_vs_human"] for r in rs]), 3),
             _f(_med([r["module_ratio_median"] for r in rs]), 3)]) + " |")
     return out + [""]
 
@@ -1341,7 +1430,7 @@ def _rephysics_todo(bid, method_ids, pid):
     Place tasks are left out: their routed board is the probe's, which is not stored."""
     return [(d, r) for d, r in board_runs(bid) if r["method_id"] in method_ids and r.get("status") == "ok"
             and (d / "output.kicad_pcb.gz").exists() and not (d / "evals" / f"{pid}.json").exists()
-            and _run_kind(r) not in ("place", "place-fixed")]
+            and _run_kind(r) not in PLACE_KINDS]
 
 
 _KINDS = {}
@@ -1468,7 +1557,10 @@ def cmd_rephysics_job(a):
     for hc, items in groups.items():  # rebuild with the harness that scored the runs
         hv = code_dir(hc).with_name(code_dir(hc).name + ".venv")
         man_p = ws / f"rebuild-{hc[:8]}.json"
-        rc, to = run_logged([hv / "bin" / "python", cd / "tools" / "kaeres" / "rebuild_boards.py",
+        rb_py = cd / "tools" / "kaeres" / "rebuild_boards.py"
+        if not rb_py.exists():  # harness older than rebuild_boards.py: this kaeres' copy rebuilds the same way
+            rb_py = Path(__file__).resolve().with_name("rebuild_boards.py")
+        rc, to = run_logged([hv / "bin" / "python", rb_py,
                              "--board-dir", CORPUS / row["path"], "--work", ws / f"rb-{hc[:8]}",
                              *[x for d, r in items for x in ("--run", f"{r['run']}={d / 'output.kicad_pcb.gz'}")],
                              *[x for d, r in items if _run_kind(r) in ("joint", "joint-fixed") for x in ("--joint", r["run"])],
@@ -1489,9 +1581,10 @@ def cmd_rephysics_job(a):
         if not boards:
             continue
         pout = ws / f"physics-{hc[:8]}.json"
-        run_logged([kv / "bin" / "python", cd / "tools" / "kaeres" / "physics_board.py", "--input", man["input"],
+        pb = cd / "tools" / "kaeres" / "physics_board.py"
+        run_logged([kv / "bin" / "python", pb, "--input", man["input"],
                     *[x for n, p in boards.items() for x in ("--board", f"{n}={p}")], "--out", pout,
-                    *(["--pintypes", pt] if pt.exists() else [])], log, env, timeout=int(1800 + 120 * size))
+                    *_pintypes_args(pb, pt)], log, env, timeout=int(1800 + 120 * size))
         phys = read_json(pout) or dict(error="physics step failed", log=tail(log, 30))
         for d, r in items:
             if r["run"] not in boards:
