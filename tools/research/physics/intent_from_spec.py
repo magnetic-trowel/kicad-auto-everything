@@ -3,8 +3,9 @@
 """A board's two structured inputs from its spec (numbers a model or a designer states about the board):
 
   OPERATING  kae.excite.evaluate --intent: what the board does electrically. cells.<cell id>.{V_V,
-             f_sw_Hz, I_A, t_i_s}, parts.<ref>.I_A (loads and output connectors), nets.<rail>.source,
-             requirements.thermal.T_amb_C. Each replaces one of the evaluator's priors.
+             f_sw_Hz, I_A, t_i_s}, parts.<ref>.{I_A, I_sustained_A} (loads and output connectors; the sustained draw sets temperatures), nets.<rail>.source,
+             requirements.thermal.{T_amb_C, airflow_h_W_m2K, heatsinks}, requirements.assembly.{process,
+             hand_solder_ok, reflow_only_parts}. Each replaces one of the evaluator's priors.
   INTENT     kae.intent: what matters. Standing priorities on every board (copper loss = power loss and
              efficiency; ripple), the spec's limits (rail tolerance -> drop.rail, rail and IC ripple ->
              supply.peak, sensitive pins -> pickup.peak, switch ratings -> overshoot.peak hard, track heat),
@@ -21,17 +22,94 @@ import json
 import math
 import sys
 
-STANDING = "standing benchmark priority: power loss, efficiency and ripple on every board; EMI on boards with a radio or GNSS"
+STANDING = "standing benchmark priority: power loss, efficiency (copper, parts, hot loops), ripple and thermals on every board; EMI on boards with a radio or GNSS"
 BASES = ("datasheet", "typical", "guess")
 # plausible ranges per field: (lo, hi) in SI units
 BOUNDS = {"V": (0.3, 1000.0), "pct": (0.05, 50.0), "mV": (0.01, 5000.0), "A": (1e-9, 200.0), "Hz": (1e3, 1e8),
-          "s": (1e-10, 1e-5), "C": (-55.0, 150.0), "K": (1.0, 200.0), "m": (0.01, 50.0)}
+          "s": (1e-10, 1e-5), "C": (-55.0, 150.0), "K": (1.0, 200.0), "m": (0.01, 50.0), "K/W": (0.01, 500.0),
+          "W/m2K": (5.0, 20000.0), "mm": (0.0, 2000.0)}
+ASSEMBLY = ("reflow", "hot_plate", "vapor_phase", "hand", "wave", "unknown")
 RATE = {"guess": 1.0, "typical": 1.0, "datasheet": 1.0}   # one rate scale: the basis is recorded, not weighted
+
+
+_LIB = None
+
+
+def library():
+    """The datasheet library's identified parts (datasheet_prompt.md), as (compiled match, facts)."""
+    global _LIB
+    if _LIB is None:
+        import glob
+        import os
+        import re
+        d = os.path.expanduser(os.environ.get("KAE_DATASHEETS", "~/kae-datasheets"))
+        _LIB = []
+        for p in sorted(glob.glob(f"{d}/facts/*.json")):
+            try:
+                f = json.load(open(p))
+                pat = re.sub(r"\$$", r"\\b", f.get("match") or re.escape(f.get("part") or f.get("query") or ""))
+                if f.get("identified") and pat:
+                    _LIB.append((re.compile(pat, re.I), f))
+            except (ValueError, OSError, re.error):
+                continue
+    return _LIB
+
+
+def datasheet(part):
+    """The library facts for a board part: the entry whose match names its value (else value + lib_id) best,
+    from a word boundary and the most specific first (kae.excite.beliefs.match_rank)."""
+    from kae.excite.beliefs import best_match
+    text = f"{part.get('value') or ''} {part.get('lib_id') or ''}"
+    e = best_match(library(), lambda e: e[0].pattern, text, part.get("value") or "", name_of=lambda e: e[1].get("part"))
+    return e[1] if e else None
+
+
+def verified(f, name):
+    """(typ, max, cite) of a verified datasheet value, or None."""
+    v = ((f or {}).get("values") or {}).get(name)
+    if not isinstance(v, dict) or not v.get("verified"):
+        return None
+    typ = v.get("typ") if isinstance(v.get("typ"), (int, float)) else None
+    mx = v.get("max") if isinstance(v.get("max"), (int, float)) else None
+    if typ is None and mx is None:
+        return None
+    return typ, mx, f"{f.get('part') or f.get('query')} datasheet p.{v.get('page')}"
+
+
+AMPS_PER_PAD = 3.0      # A a connector pin carries at most, generously (0.1" headers ~3 A)
+AMPS_BY_KIND = ((r"screw|terminal|\bTB\d|barrel|jack|DCJ|XT\d\d|anderson|mini.?fit|micro.?fit|power", 15.0),
+                (r"JST.?(SH|GH|ZH)|SM\d\dB.?SR|picoblade", 1.0))
+
+
+def amps_per_pad(part):
+    """A per pad for a connector by its library and value (power connectors carry far more than headers)."""
+    import re
+    text = f"{part.get('lib_id') or ''} {part.get('value') or ''}"
+    for pat, a in AMPS_BY_KIND:
+        if re.search(pat, text, re.I):
+            return a
+    return AMPS_PER_PAD
+
+
+def infer_input(summary, spec, src, out, v_out):
+    """A regulator's input rail from its own pads: the one other supply rail it touches (higher than the
+    output for a linear or buck regulator; a boost's is lower, so any other rail when v_out is unknown)."""
+    nets = next((p.get("nets") or {} for p in summary.get("parts") or [] if p["ref"] == src), {})
+    grounds = set(summary.get("ground_nets") or [])
+    volts = {r["net"]: r.get("V_nom") for r in spec.get("rails") or [] if r.get("net")}
+    for n, d in (summary.get("rails") or {}).items():
+        volts.setdefault(n, (d or {}).get("volts"))
+    cands = [n for n in nets if n != out and n not in grounds and n in volts]
+    hi = [n for n in cands if v_out and volts.get(n) and volts[n] > v_out]
+    pick = hi if len(hi) == 1 else (cands if len(cands) == 1 else [])
+    return pick[0] if pick else None
 
 
 class Spec:
     def __init__(self, spec, summary):
         self.s, self.sum = spec, summary
+        self.pads = {p["ref"]: p.get("nets") or {} for p in summary.get("parts") or []}
+        self.part = {p["ref"]: p for p in summary.get("parts") or []}
         self.refs = {p["ref"] for p in summary.get("parts") or []} | {r for x in summary.get("sections") or [] for r in x.get("parts") or []}
         self.nets = set(summary.get("rails") or {}) | set(summary.get("ground_nets") or []) | {n for x in summary.get("sections") or [] for n in x.get("nets") or []}
         self.sections = {x["id"]: x for x in summary.get("sections") or []}
@@ -75,6 +153,14 @@ def compile_spec(spec, summary):
     opwhy = {}
     terms = [dict(id="P1", tier="cost", obs="loss.copper", rate="1 mW_eq/mW", agg="cvar20",
                   why=f"power loss and efficiency: every mW the copper burns. {STANDING}"),
+             dict(id="P2", tier="cost", obs="loss.part", rate="1 mW_eq/mW", agg="cvar20",
+                  why=f"efficiency: switch, rectifier and regulator losses the layout's currents and voltages set. {STANDING}"),
+             dict(id="P3", tier="cost", obs="loss.loop", rate="1 mW_eq/mW", agg="cvar20",
+                  why=f"efficiency: the hot loops' inductance energy dumped into the switches, 1/2 L I^2 f_sw. {STANDING}"),
+             dict(id="P4", tier="cost", obs="loss.loop_ac", rate="1 mW_eq/mW", agg="cvar20",
+                  why=f"efficiency: the hot loops' AC copper resistance carrying their pulsed current. {STANDING}"),
+             dict(id="P5", tier="cost", obs="loss.swnode", rate="1 mW_eq/mW", agg="cvar20",
+                  why=f"efficiency: switch-node copper capacitance charged through the switch, 1/2 C V^2 f_sw. {STANDING}"),
              dict(id="R0", tier="cost", obs="supply.peak", rate="0.1 mW_eq/mV", agg="cvar20",
                   why=f"ripple on every IC supply pin, at a low base rate under the per-rail limits below. {STANDING}")]
     # rails: tolerance -> drop limit; ripple -> supply.peak limit; source -> who feeds it
@@ -98,18 +184,55 @@ def compile_spec(spec, summary):
                               max=f"{rip:g} mV", rate=f"{rate} mW_eq/mV", source=f"{n}: ripple limit {rip:g} mV",
                               why=why(r, "ripple on the rail's loads")))
         src = r.get("source_ref")
+        mine = S.pads.get(src) or {}
+        if src and mine and n not in mine:
+            S.rejected.append(f"{w}.source_ref={src}: it has no pad on {n} (its nets: {', '.join(list(mine)[:6])})")
+            src = None
         if src and S.ref(src, w + ".source_ref"):
-            op["nets"][n] = {"source": src}
-            opwhy[f"nets.{n}.source"] = why(r, "rail source")
+            fact = {"source": src}
+            is_conn = (S.part.get(src) or {}).get("kind") == "connector"
+            if is_conn and r.get("regulator") in ("linear", "switching"):
+                S.rejected.append(f"{w}.regulator={r.get('regulator')}: {src} is a connector, not a regulator")
+                r = dict(r, regulator="none", from_net=None)
+            if r.get("from_net") and mine and r["from_net"] not in mine:
+                S.rejected.append(f"{w}.from_net={r['from_net']}: not on {src}'s pads; inferring it instead")
+                r = dict(r, from_net=None)
+            if V:
+                fact["V_V"] = V
+            fr = r.get("from_net")
+            if fr and S.net(fr, w + ".from_net"):
+                fact["from"] = fr                               # the regulator's input rail
+            elif r.get("regulator") in ("linear", "switching"):
+                inf = infer_input(summary, spec, src, n, V)
+                if inf:
+                    fact["from"] = inf
+                    opwhy[f"nets.{n}.from"] = f"inferred from {src}'s own pads: its only other supply rail ({inf})"
+            if r.get("regulator") in ("linear", "switching"):
+                fact["kind"] = r["regulator"]
+            eta = r.get("eta")
+            if fact.get("kind") == "switching" and isinstance(eta, list) and len(eta) == 2 and \
+                    all(isinstance(x, (int, float)) for x in eta) and 0.3 <= min(eta) <= max(eta) <= 0.99:
+                fact["eta"] = [float(min(eta)), float(max(eta))]
+            op["nets"][n] = fact
+            opwhy[f"nets.{n}"] = why(r, "rail source and its regulator")
     # loads: current per IC / module on a rail
     for i, l in enumerate(spec.get("loads") or []):
         w = f"loads[{i}]"
         r = S.ref(l.get("ref"), w)
         typ, mx = S.num(l, "I_typ_A", "A", w), S.num(l, "I_max_A", "A", w)
+        ds = verified(datasheet(S.part.get(r) or {}), "I_supply_typ_A") if r else None
+        dm = verified(datasheet(S.part.get(r) or {}), "I_supply_max_A") if r else None
+        if ds or dm:                                   # the datasheet's current replaces the model's estimate
+            typ = (ds[0] if ds and ds[0] is not None else (ds[1] if ds else None)) or typ
+            mx = (dm[1] if dm and dm[1] is not None else (dm[0] if dm else None)) or mx
+            l = dict(l, basis="datasheet", why=f"{(ds or dm)[2]}" + (f"; max {dm[2]}" if dm else ""))
         if r and (typ or mx):
             lo, hi = (typ or mx) * (0.5 if typ else 0.3), (mx or typ * 2)
             op["parts"][r] = {"I_A": [round(min(lo, hi), 6), round(max(lo, hi), 6)]}
             opwhy[f"parts.{r}.I_A"] = why(l, "load current")
+            if typ:                                    # what heats the part: its typical draw, not the peak
+                op["parts"][r]["I_sustained_A"] = round(min(typ, max(lo, hi)), 6)
+                opwhy[f"parts.{r}.I_sustained_A"] = why(l, "sustained (typical) load current, for temperatures")
     # converters: the brief's switching cells
     for i, c in enumerate(spec.get("converters") or []):
         w = f"converters[{i}]"
@@ -165,8 +288,16 @@ def compile_spec(spec, summary):
         if not ref:
             continue
         I = S.num(c, "I_A", "A", w)
+        if I:
+            npads = ((S.pads.get(ref) or {}).get(c.get("rail")) or 0) if c.get("rail") else 0
+            app = amps_per_pad(S.part.get(ref) or {})
+            cap = app * npads if npads else None
+            if cap and I > cap:
+                S.rejected.append(f"{w}.I_A={I:g} A capped at {cap:g} A: {ref} has {npads} pad(s) on {c.get('rail')} "
+                                  f"({app:g} A per pad)")
+                I = cap
         if c.get("direction") == "output" and I:
-            op["parts"][ref] = {"I_A": [round(0.5 * I, 6), round(1.5 * I, 6)]}
+            op["parts"][ref] = {"I_A": [round(0.5 * I, 6), round(1.5 * I, 6)], "I_sustained_A": round(I, 6)}
             opwhy[f"parts.{ref}.I_A"] = why(c, f"export current ({c.get('function') or 'output'})")
         L = S.num(c, "cable_length_m", "m", w)
         if L:
@@ -187,11 +318,150 @@ def compile_spec(spec, summary):
     hk = S.num(spec.get("thermal") or {}, "track_rise_max_K", "K", "thermal")
     if hk:
         terms.append(dict(id="H1", tier="limit", obs="heat.track", max=f"{hk:g} K", rate="5 mW_eq/K", why=why(spec["thermal"], "track heating")))
+    # thermals: nothing may overheat. A part's own rating (a load's T_max_C) or its class rating is hard;
+    # 20 K below it is a priced margin
+    from kae.excite.heat import T_MAX
+    own = {}
+    for i, l in enumerate(spec.get("loads") or []):
+        t = l.get("T_max_C")
+        if l.get("ref") in S.refs and isinstance(t, (int, float)) and 40 <= t <= 200:
+            own[l["ref"]] = float(t)
+    for p in summary.get("parts") or []:                 # datasheet junction ratings, any part with a sheet
+        tj = verified(datasheet(p), "T_j_max_C")
+        t = (tj[1] if tj and tj[1] is not None else (tj[0] if tj else None))
+        if isinstance(t, (int, float)) and 40 <= t <= 200:
+            own[p["ref"]] = float(t)
+    by_kind = {}
+    for p in summary.get("parts") or []:
+        if p["ref"] not in own and p.get("kind") in T_MAX:
+            by_kind.setdefault(p["kind"], []).append(p["ref"])
+    groups = [(f"part {r}", [r], t, "the spec's rating") for r, t in sorted(own.items())] + \
+             [(f"{k} parts", sorted(refs), T_MAX[k], f"{k} class rating") for k, refs in sorted(by_kind.items())]
+    for j, (what, refs, tmax, basis_) in enumerate(groups):
+        terms.append(dict(id=f"T{j}", tier="hard", obs="temp.junction", where={"part": refs}, max=f"{tmax:g} C",
+                          source=f"{what}: {basis_} {tmax:g} C", why=f"thermals: nothing may overheat. {STANDING}"))
+        terms.append(dict(id=f"M{j}", tier="limit", obs="temp.junction", where={"part": refs}, max=f"{tmax - 20:g} C",
+                          rate="2 mW_eq/C", source=f"{what}: 20 K margin below {tmax:g} C",
+                          why="thermals: keep a margin below the rating (ambient and cooling are uncertain)"))
+    # junction-to-board thermal resistance (the heat model adds theta_jb P to the board under the part):
+    # the datasheet's own RthetaJB / psiJB; else between theta_JC and theta_JA (the JEDEC board's own path
+    # to air is in theta_JA), typical at their geometric mean; else a share of theta_JA
+    for p in summary.get("parts") or []:
+        f = datasheet(p)
+        jb, jc, ja = (verified(f, k) for k in ("theta_jb_C_W", "theta_jc_C_W", "theta_ja_C_W"))
+        pick = lambda v: (v[0] if v[0] is not None else v[1]) if v else None
+        jb_, jc_, ja_ = pick(jb), pick(jc), pick(ja)
+        rng = rule = None
+        if jb_ and 0.1 <= jb_ <= 500:
+            rng, rule = [jb_, jb_], f"theta_JB from {jb[2]}"
+        elif jc_ and ja_ and 0 < jc_ < ja_ <= 1000:
+            rng, rule = [jc_, ja_], f"between theta_JC ({jc[2]}) and theta_JA ({ja[2]})"
+        elif ja_ and 1 <= ja_ <= 1000:
+            rng, rule = [0.3 * ja_, 0.8 * ja_], f"0.3-0.8 x theta_JA ({ja[2]}): no theta_JB or theta_JC stated"
+        if rng:
+            typ = (rng[0] * rng[1]) ** 0.5
+            op["parts"].setdefault(p["ref"], {})["theta_jb_C_W"] = [round(rng[0], 3), round(rng[1], 3)] if rng[0] != rng[1] else round(typ, 3)
+            opwhy[f"parts.{p['ref']}.theta_jb_C_W"] = f"junction to board: {rule}"
+    # a module's own board cools it (kae.excite.heat): its outline from its datasheet
+    for p in summary.get("parts") or []:
+        f = datasheet(p)
+        bw, bl = verified(f, "body_w_mm"), verified(f, "body_l_mm")
+        if bw and bl and (bw[0] or bw[1]) and (bl[0] or bl[1]):
+            a = (bw[0] or bw[1]) * (bl[0] or bl[1])
+            if 1 <= a <= 1e5:
+                op["parts"].setdefault(p["ref"], {})["body_mm2"] = round(a, 1)
+                opwhy[f"parts.{p['ref']}.body_mm2"] = f"body outline from {bw[2]}"
     th = spec.get("thermal") or {}
     ta = th.get("T_amb_C")
     if isinstance(ta, list) and len(ta) == 2 and all(isinstance(x, (int, float)) for x in ta) and -55 <= min(ta) <= max(ta) <= 150:
         op["requirements"]["thermal"] = {"T_amb_C": [float(min(ta)), float(max(ta))]}
         opwhy["requirements.thermal.T_amb_C"] = why(th, "ambient")
+    # cooling beyond still air: forced air, and heat sinks on parts or under the board (kae.excite.heat)
+    air = S.num(th, "airflow_h_W_m2K", "W/m2K", "thermal")
+    if air:
+        op["requirements"].setdefault("thermal", {})["airflow_h_W_m2K"] = air
+        opwhy["requirements.thermal.airflow_h_W_m2K"] = why(th, "forced air")
+    sinks = []
+    for i, hs in enumerate(th.get("heatsinks") or []):
+        w = f"thermal.heatsinks[{i}]"
+        if not isinstance(hs, dict):
+            continue
+        if hs.get("part"):
+            r = S.ref(hs.get("part"), w)
+            if not r:
+                continue
+            sa, cite = S.num(hs, "theta_sa_C_W", "K/W", w), None
+            if sa is None and hs.get("sink_part"):             # the sink's own datasheet, from the library
+                v = verified(datasheet({"value": hs["sink_part"]}), "theta_sa_C_W")
+                sa, cite = (v[0] if v[0] is not None else v[1], v[2]) if v else (None, None)
+            if sa is None:
+                S.rejected.append(f"{w}: heat sink on {r} without theta_sa_C_W (nor a library datasheet for its sink_part)")
+                continue
+            e = {"part": r, "theta_sa_C_W": sa}
+            # the sink's body, for the placer's keepout: outline seen from above (centred on the part unless offset,
+            # in the part's own frame) and height
+            for k, n in (("outline_mm", 2), ("offset_mm", 2)):
+                v = hs.get(k)
+                if isinstance(v, list) and len(v) == n and all(isinstance(x, (int, float)) and abs(x) <= 500 for x in v) \
+                        and (k == "offset_mm" or min(v) > 0):
+                    e[k] = [float(x) for x in v]
+                elif v is not None:
+                    S.rejected.append(f"{w}.{k}={v!r}: not [{', '.join(['mm'] * n)}]")
+            hm = S.num(hs, "height_mm", "mm", w)
+            if hm:
+                e["height_mm"] = hm
+            cs = S.num(hs, "theta_cs_C_W", "K/W", w)
+            if cs:
+                e["theta_cs_C_W"] = cs
+            jc = S.num(hs, "theta_jc_C_W", "K/W", w)
+            v = None if jc else verified(datasheet(S.part.get(r) or {}), "theta_jc_C_W")
+            if jc or v:
+                e["theta_jc_C_W"] = jc or (v[0] if v[0] is not None else v[1])
+            e["why"] = "; ".join(x for x in (why(hs, "heat sink"), cite and f"theta_SA from {cite}",
+                                               v and f"theta_JC from {v[2]}") if x)
+        else:
+            side = str(hs.get("side") or "").lower()
+            if side not in ("top", "bottom"):
+                S.rejected.append(f"{w}: side {hs.get('side')!r} is not top or bottom")
+                continue
+            reg = hs.get("region", "board")
+            if not (reg == "board" or (isinstance(reg, list) and len(reg) == 4 and
+                                       all(S.num({"x": x}, "x", "mm", w) is not None for x in reg))):
+                S.rejected.append(f"{w}: region {reg!r} is neither 'board' nor [x0, y0, x1, y1] in mm")
+                continue
+            e = {"side": side, "region": reg}
+            t, h = S.num(hs, "theta_C_W", "K/W", w), S.num(hs, "h_W_m2K", "W/m2K", w)
+            if t:
+                e["theta_C_W"] = t
+            elif h:
+                e["h_W_m2K"] = h
+            else:
+                S.rejected.append(f"{w}: a region heat sink needs theta_C_W or h_W_m2K")
+                continue
+            tc = S.num(hs, "T_C", "C", w)
+            if tc is not None:
+                e["T_C"] = tc
+            e["why"] = why(hs, "heat sink")
+        sinks.append(e)
+    if sinks:
+        op["requirements"].setdefault("thermal", {})["heatsinks"] = sinks
+        opwhy["requirements.thermal.heatsinks"] = f"{len(sinks)} heat sink(s) from the spec"
+    # how the board is assembled (the router keeps or drops thermal reliefs by it): the spec's statement, beside the
+    # board's own evidence (packages that need reflow: leadless or ball-grid ones)
+    asm = spec.get("assembly") or {}
+    proc = str(asm.get("process") or "unknown").lower()
+    if proc not in ASSEMBLY:
+        S.rejected.append(f"assembly.process={asm.get('process')!r}: not one of {', '.join(ASSEMBLY)}")
+        proc = "unknown"
+    import re as _re
+    reflow_only = sorted(p["ref"] for p in summary.get("parts") or []
+                         if _re.search(r"QFN|DFN|BGA|LGA|CSP|\bW?SON\b|\dEP(?![A-Za-z])|ThermalVias", p.get("lib_id") or "", _re.I))
+    a = {"process": proc, "reflow_only_parts": reflow_only[:50], "n_reflow_only_parts": len(reflow_only)}
+    if isinstance(asm.get("hand_solder_ok"), bool):
+        a["hand_solder_ok"] = asm["hand_solder_ok"]
+    op["requirements"]["assembly"] = a
+    opwhy["requirements.assembly"] = why(asm, "assembly") + (f"; the board has {len(reflow_only)} leadless or ball-grid "
+                                                             f"part(s), which need reflow" if reflow_only else "")
     intent = {"schema": "kae.intent/1", "generation": 1, "currency": "mW_eq", "defaults": "neutral/1",
               "environment": {"enclosure": {"kind": th.get("enclosure") or "unknown", "why": why(th, "enclosure")},
                               "cables": cables if radios else []},

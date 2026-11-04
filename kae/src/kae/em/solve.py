@@ -19,6 +19,7 @@ f = inf solves the inductive limit (R = 0): L = Im Z.
 from __future__ import annotations
 
 import time
+from types import SimpleNamespace
 
 import numpy as np
 import scipy.fft as sfft
@@ -61,7 +62,7 @@ except ImportError:                                   # pragma: no cover
 
 # relative residual of the iterative solves: port quantities are variational (their error is second
 # order), so 1e-5 gives them to ~3e-7 in about two thirds of the iterations 1e-8 takes
-TOL = 1e-5
+TOL = float(os.environ.get("KAE_EM_TOL", "1e-5"))   # COCG relative residual (KAE_EM_TOL overrides)
 BATCH = 8               # right-hand sides solved together (memory: FFT arrays per batch)
 PATCH = 2               # preconditioner blocks: all filaments of one orientation in PATCH x PATCH cells
 
@@ -199,7 +200,7 @@ class System:
         first = np.full(net.ncomp, -1)
         uc, fi = np.unique(net.comp, return_index=True)
         first[uc] = fi
-        g = np.array([ground.get(c, first[c]) for c in range(net.ncomp)])
+        g = np.array([ground.get(c, first[c]) for c in range(net.ncomp)], dtype=np.int64)   # empty: no components
         free = np.ones(net.n_nodes, bool)
         free[g] = False
         self.free_idx = -np.ones(net.n_nodes, np.int64)
@@ -490,12 +491,18 @@ def open_islands(net, injections, open_):
     return sorted(out, key=lambda d: -abs(d["current"]))
 
 
-def potentials_many(mesh, inj_list, f, read=None, tol=TOL, net=None, op=None, warm=None):
+def potentials_many(mesh, inj_list, f, read=None, tol=TOL, net=None, op=None, warm=None, light=False, system=None,
+                    x0=None):
     """potentials() for several injection sets at once (one batched COCG). Returns a list of
-    ({terminal: V}, info) in the order given; an unbalanced set returns (None, info)."""
+    ({terminal: V}, info) in the order given; an unbalanced set returns (None, info). light: the infos keep
+    only the system's diagonal (info["sys"].zdiag), not the system with its factorization, and no warm-start
+    state: a caller that keeps many results (kae.excite.evaluate) would otherwise hold every frequency's
+    factorization (about 1 GB each on a mid-size board) to the end. system: a System(op, f) built already
+    (two callers solving the same frequency on the same network share one factorization). x0: per injection set,
+    a starting solution on this same network (or None), e.g. the same source solved at another frequency."""
     net = net or Network(mesh)
     op = op or Operator(net)
-    sysm = System(op, f)
+    sysm = system if system is not None else System(op, f)
     cols, infos = [], []
     for injections in inj_list:
         bal = {}
@@ -524,6 +531,10 @@ def potentials_many(mesh, inj_list, f, read=None, tol=TOL, net=None, op=None, wa
         X0 = None
         if warm is not None and any(w is not None for w in warm[k:k + BATCH]):
             X0 = sysm.warm(list(warm[k:k + BATCH]))
+        elif x0 is not None and any(v is not None for v in x0[k:k + BATCH]):
+            # a zero column starts where a cold one does (X0 + psolve(rhs - A X0) = psolve(rhs))
+            n = net.n_br + sysm.nfree
+            X0 = np.stack([np.zeros(n, complex) if v is None else np.asarray(v, complex) for v in x0[k:k + BATCH]], axis=1)
         Xk, ik = sysm.solve_many(np.stack(cols[k:k + BATCH], axis=1), tol=tol, X0=X0)
         Xs.append(Xk)
         itss.append(ik)
@@ -531,7 +542,11 @@ def potentials_many(mesh, inj_list, f, read=None, tol=TOL, net=None, op=None, wa
     out = []
     for q, info in enumerate(infos):
         x = X[:, q]
-        info.update(iters=int(its[q]), net=net, op=op, sys=sysm, x=x, I=x[:net.n_br], state=sysm.state_of(x))
+        info["t_factor"] = sysm.t_factor
+        if light:
+            info.update(iters=int(its[q]), net=net, op=op, sys=SimpleNamespace(zdiag=sysm.zdiag), x=x, I=x[:net.n_br])
+        else:
+            info.update(iters=int(its[q]), net=net, op=op, sys=sysm, x=x, I=x[:net.n_br], state=sysm.state_of(x))
         if info["unbalanced"]:
             out.append((None, info))
             continue

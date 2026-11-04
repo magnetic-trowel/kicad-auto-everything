@@ -14,6 +14,9 @@ operating corner, each with its scope) are matched by the intent's terms:
 - tier "limit": met costs nothing; beyond it, rate x the excess (in the limit's own unit).
 - tier "cost": rate x the value, summed.
 - tier "report": listed, unpriced; "ignore": dropped from the report.
+- an observation the evaluator flags `implausible` (noise beyond half its rail) is priced at that cap (its
+  values clipped to it), the same for every layout: left unpriced, it let the worse of two layouts escape
+  its term whenever only that one crossed the cap. The status lists them under "implausible", with the reason.
 - where: scope filters (glob patterns): section, from, to (a boundary: from a section's sources into
   another section's observers), observer, source, kind, rail, load, net, part, connector.
 - agg over corners: worst (default for hard and limit), cvar20 (mean of the worst fifth; default for cost), typ.
@@ -29,6 +32,7 @@ from __future__ import annotations
 import fnmatch
 import json
 import math
+import re
 from pathlib import Path
 
 from . import sections as SE
@@ -53,6 +57,18 @@ KINDS = {
     "cable_cm.v": ("V", "Common-mode voltage between two connectors' grounds at its worst harmonic (f_Hz per "
                    "corner), driven by an aggressor through shared ground copper. It radiates only if cables "
                    "are attached: declare them in environment.cables to get emission.cable_E."),
+    "loss.part": ("W", "A part's own dissipation at the DC operating point: a switch's conduction and switching "
+                  "loss, a rectifier's forward loss, a linear regulator's drop times its current, a converter "
+                  "without a cell model at its efficiency. Loads' own consumption is not a loss and is left out."),
+    "loss.loop": ("W", "Energy a switching cell's commutation loop inductance (the copper's share) dumps into the "
+                  "switch at every turn-off, 1/2 L_loop I^2 f_sw: the hot loop's layout cost in efficiency."),
+    "loss.loop_ac": ("W", "A switching cell's hot loop's copper resistance at the switching frequency (the layout's "
+                     "share) carrying the loop's pulsed current, I^2 D (1 - D) R: a lower bound above a few MHz "
+                     "(no skin or proximity effect in the raster)."),
+    "loss.swnode": ("W", "The layout's capacitance of a switch node (its copper to every other net and the world, "
+                    "in the board's stackup) charged through the switch every cycle, 1/2 C V^2 f_sw."),
+    "temp.junction": ("C", "A dissipating part's junction temperature: the board's heat flow (copper I^2 R, every "
+                      "part's heat, face cooling) at its pads plus theta_jb times its power, at each corner."),
     "emission.cable_E": ("dBuV/m", "Field at 10 m from a declared cable driven by cable_cm.v (Ott 12-7: "
                          "E = 1.26e-6 f l I / r, I = V / 150 Ohm), per connector pair with a declared cable."),
 }
@@ -160,19 +176,27 @@ def _match(t, ob, secs):
     return True
 
 
-def _agg(vals, how):
+def _agg(vals, how, side=None):
+    """The corners' values aggregated: typical, worst, or the mean of the worst CVAR_SHARE. For a
+    'min' bound the worst corners are the smallest (max judged it at its best corner)."""
     if how == "typ":
         return vals[0]
+    lo = side == "min"
     if how == "worst":
-        return max(vals)
+        return min(vals) if lo else max(vals)
     k = max(1, math.ceil(CVAR_SHARE * len(vals)))
-    return sum(sorted(vals)[-k:]) / k
+    return sum(sorted(vals)[:k] if lo else sorted(vals)[-k:]) / k
 
 
 def _in(ob, dim):
-    """The observation's per-corner values in the term's dimension (a log unit converts from SI)."""
+    """The observation's per-corner values in the term's dimension (a log unit converts from SI; a dB
+    limit on a log-unit observation compares its values as they are)."""
+    if dim == "dB" and ob["unit"] in U.LOG:
+        return ob["values"]
     if dim in U.LOG and ob["unit"] != dim:
         return [U.to_log(v, dim) for v in ob["values"]]
+    if ob["unit"] == "C" and dim == "K":
+        return ob["values"]                     # temperatures in C against limits in C (or K steps)
     if dim not in ("", ob["unit"]) and not (dim == "dB" and ob["unit"] in U.LOG):
         raise IntentError(f"{ob['id']} is in {ob['unit']}; a limit in {dim} cannot be compared with it")
     return ob["values"]
@@ -198,15 +222,24 @@ def evaluate(ev, intent=None, brief=None):
     obs = observations(ev, intent)
     cur = intent["currency"]
     complete = (ev.get("total") or {}).get("complete", True)
+    missing = list((ev.get("total") or {}).get("not_computed") or []) if not complete else []
     status = dict(schema="kae.status/1", observedGeneration=intent["generation"], board=ev.get("board"),
                   complete=complete, currency=cur, defaults=intent["defaults"], terms=[], unclaimed=[],
-                  questions=[], sections=sorted(secs))
-    if not complete:
-        status["tiers"] = None
-        status["why_incomplete"] = f"copper open for {(ev.get('total') or {}).get('not_computed')}: no score"
-        return status
+                  questions=[], sections=sorted(secs), not_computed=missing)
     if intent["defaults"] == "legacy/u":
+        if not complete:
+            status["tiers"] = None
+            status["why_incomplete"] = f"copper open for {missing}: no legacy total"
+            return status
         return _legacy(ev, status)
+    if not obs:
+        # nothing observed (kae.excite.wideband emits no observations): every term would match nothing and
+        # the board rank as perfect (0, 0); missing data is no score
+        status["tiers"] = None
+        status["complete"] = False
+        status["why_incomplete"] = "the evaluation has no observations: no score"
+        return status
+    obs = [_capped(ob) for ob in obs]
     terms = list(intent.get("terms", [])) + _defaults(intent, obs, intent.get("terms", []))
     claimed = set()
     hard = limit = cost = 0.0
@@ -233,11 +266,17 @@ def evaluate(ev, intent=None, brief=None):
         for i in hit:
             ob = obs[i]
             vals = _in(ob, dim) if dim else ob["values"]
-            inst.append((_agg(vals, agg), ob))
+            inst.append((_agg(vals, agg, side_), ob))
         row = dict(id=t["id"], tier=tier, obs=t["obs"], where=t.get("where"), matched=len(hit), agg=agg,
                    why=t.get("why"), source=t.get("source"))
+        gap = _gap(t, missing)
+        if gap:
+            # a source this term could see was not computed (open copper): the value below covers only the
+            # sources that were; it is reported, never priced, and never read as zero
+            row.update(incomplete=True, not_computed=gap)
         if not inst:
-            row.update(note="matched no observation on this board")
+            row.update(note="matched no observation on this board" + ("" if not gap else
+                                                                      " (its sources were not computed)"))
             rows.append(row)
             continue
         unit_ = dim or inst[0][1]["unit"]
@@ -249,7 +288,8 @@ def evaluate(ev, intent=None, brief=None):
         else:
             dom = (max if side_ != "min" else min)(inst, key=lambda x: x[0])
             val = dom[0]
-        row.update(value=U.fmt(val, unit_), dominant=dom[1].get("label"), rests_on=_rests(dom[1], ev))
+        shown = (lambda x: f"{x:.4g} C") if inst[0][1]["unit"] == "C" else (lambda x: U.fmt(x, unit_))
+        row.update(value=shown(val), dominant=dom[1].get("label"), rests_on=_rests(dom[1], ev))
         if dom[1].get("f_Hz"):
             row["f_MHz"] = round(max(dom[1]["f_Hz"]) / 1e6, 1)
         contrib = 0.0
@@ -261,22 +301,31 @@ def evaluate(ev, intent=None, brief=None):
             row.update(limit=f"{side_} {t[side_]}", met=all(o <= 0 for o in over),
                        margin=U.fmt(-max(excess), unit_))
             if tier == "hard":
-                hard += sum(o / max(abs(bound), 1e-30) for o in over)
+                h = sum(o / max(abs(bound), 1e-30) for o in over)
+                row["hard"] = round(h, 6)
+                hard += 0.0 if gap else h
             elif tier == "limit":
                 contrib = r * sum(over)
-                limit += contrib
         if tier == "cost":
             contrib = r * val
-            cost += contrib
         if tier in ("limit", "cost"):
             row["contribution"] = round(contrib, 4)
+            if not gap:
+                if tier == "limit":
+                    limit += contrib
+                else:
+                    cost += contrib
         rows.append(row)
     total = limit + cost
     for row in rows:
-        if "contribution" in row:
+        if "contribution" in row and not row.get("incomplete"):
             row["share"] = round(row["contribution"] / total, 3) if total > 0 else 0.0
     status["tiers"] = dict(hard=round(hard, 6), limit=round(limit, 4), cost=round(cost, 4))
     status["terms"] = rows
+    status["incomplete_terms"] = [r["id"] for r in rows if r.get("incomplete")]
+    if missing:
+        status["why_incomplete"] = (f"copper open for {missing}: the tiers count only the terms none of those "
+                                    f"sources could feed; {status['incomplete_terms']} are reported, not priced")
     # what nobody asked about, largest against its old reference first
     un = []
     for i, ob in enumerate(obs):
@@ -287,8 +336,14 @@ def evaluate(ev, intent=None, brief=None):
         un.append(dict(obs=ob["id"], label=ob.get("label"), worst=U.fmt(w, ob["unit"]),
                        reference=U.fmt(ref, ob["unit"]) if ref else None,
                        ratio=round(w / ref, 3) if ref else None, basis=(ob.get("reference") or {}).get("basis")))
-    un.sort(key=lambda x: -(x["ratio"] or 0))
+        if ob.get("implausible"):
+            un[-1]["implausible"] = ob["implausible"]
+    un.sort(key=lambda x: (not x.get("implausible"), -(x["ratio"] or 0)))
     status["unclaimed"] = un
+    # observations priced at their cap (implausible: noise beyond half the rail), with why
+    status["implausible"] = [dict(label=ob.get("label"), id=ob.get("id"), capped_at=ob.get("capped_at"),
+                                  worst=max((v for v in ob.get("values") or []), default=None), why=ob["implausible"])
+                             for ob in obs if ob.get("implausible")]
     status["questions"] = _questions(ev, intent, obs, rows)
     return status
 
@@ -327,9 +382,52 @@ def _legacy(ev, status):
     return status
 
 
-def key(status):
-    """The ranking key: hard violations first, then limit cost plus cost (smaller is better)."""
+DC_KINDS = ("loss.copper", "drop.rail", "heat.track", "loss.part", "temp.junction")      # the DC band's observations
+
+
+def _gap(t, missing):
+    """The uncomputed sources ("dc" for the DC band, else an aggressor's name) this term could have seen."""
+    if not missing:
+        return []
+    kinds = [k for k in KINDS if fnmatch.fnmatch(k, t["obs"])]
+    out = []
+    if "dc" in missing and any(k in DC_KINDS for k in kinds):
+        out.append("dc")
+    ac = [s for s in missing if s != "dc"]
+    if ac and any(k not in DC_KINDS for k in kinds):
+        pat = (t.get("where") or {}).get("source")
+        pats = (pat if isinstance(pat, list) else [pat]) if pat else None
+        out += [s for s in ac if pats is None or any(fnmatch.fnmatch(s, p) for p in pats)]
+    return out
+
+
+def _capped(ob):
+    """An implausible observation (kae.excite.observe.implausible) with its values clipped at its cap:
+    cap_V, or for an evaluation from before that field, half the rail its reason names."""
+    if not ob.get("implausible"):
+        return ob
+    cap = ob.get("cap_V")
+    if cap is None:
+        m = re.search(r"exceeds (\d+)% of its ([0-9.eE+-]+) V rail", ob["implausible"])
+        cap = float(m.group(1)) / 100 * float(m.group(2)) if m else None
+    if cap is None:
+        return ob
+    return dict(ob, values=[min(v, cap) for v in ob.get("values") or []], capped_at=cap)
+
+
+def key(status, terms=None):
+    """The ranking key: hard violations first, then limit cost plus cost (smaller is better). With `terms`
+    (ids), only those terms count: comparing layouts of one board on the terms complete for all of them."""
     t = status.get("tiers")
     if t is None:
         return (math.inf, math.inf)
-    return (t["hard"], t["limit"] + t["cost"])
+    if terms is None:
+        return (t["hard"], t["limit"] + t["cost"])
+    rows = [r for r in status.get("terms") or [] if r["id"] in terms]
+    return (sum(r.get("hard", 0.0) for r in rows), sum(r.get("contribution", 0.0) for r in rows))
+
+
+def common_terms(statuses):
+    """The term ids complete in every status (a term one layout could not compute is left out for all)."""
+    ids = [{r["id"] for r in s.get("terms") or [] if not r.get("incomplete")} for s in statuses]
+    return set.intersection(*ids) if ids else set()

@@ -230,3 +230,24 @@ def trace_capacitance_pf(length_mm, w, h, er):
     if h == INF or length_mm <= 0:
         return 0.0
     return cprime_hj(w, h, er) * length_mm
+
+
+def dielectric_er(cu, z, er, layer, plane=None):
+    """Relative permittivity under a trace on copper `layer` (cu: names top to bottom, z: {name:
+    height}, er: per gap): the gaps between it and its `plane` layer, weighted by thickness; without
+    a plane, the gap on its inner side (an inner layer: both). er[0] for every layer priced a
+    bottom-side crystal with the top prepreg."""
+    if not er:
+        return 4.3
+    if len(er) != len(cu) - 1 or layer not in cu:
+        return er[0]
+    i = cu.index(layer)
+    if plane in cu and plane != layer:
+        a, b = sorted((i, cu.index(plane)))
+        ws = [abs(z[cu[k + 1]] - z[cu[k]]) for k in range(a, b)]
+        return sum(er[k] * w for k, w in zip(range(a, b), ws)) / sum(ws) if sum(ws) > 0 else er[a]
+    if i == 0:
+        return er[0]
+    if i == len(cu) - 1:
+        return er[-1]
+    return 0.5 * (er[i - 1] + er[i])

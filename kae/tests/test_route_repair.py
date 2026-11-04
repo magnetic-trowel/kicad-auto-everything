@@ -124,6 +124,26 @@ def test_spoke_tracks_land_in_fill_and_keep_clear_of_other_nets():
         assert LineString([s["a"], s["b"]]).buffer(0.1).distance(m) >= 0.2 - 1e-6
 
 
+def test_spoke_tracks_lie_in_the_rotated_pads_frame_y_down():
+    """Spokes at the pad's orientation, y down like thermal_corridors: a pad at 33.75 degrees
+    whose only fill is a narrow wedge at 33.75 degrees (up and right on screen) gets a spoke
+    into it; `+ sin` mirrored the candidates 7.5 degrees off either side of it."""
+    import math
+    from shapely.geometry import Polygon
+    pad = dict(_pad("p1", "N", 0, 0), orient=33.75)
+    info = dict(pads=[pad], graphics=[])
+    a, h = math.radians(33.75), math.radians(4.0)
+    wedge = Polygon([(0, 0), (10 * math.cos(a - h), -10 * math.sin(a - h)),
+                     (10 * math.cos(a + h), -10 * math.sin(a + h))]).difference(Point(0, 0).buffer(1.0))
+    zone = dict(uuid="z", net="N", layers={"F.Cu": [_ring(wedge)]})
+    plan = SimpleNamespace(net_class={"N": "kae_A"}, classes={"kae_A": SimpleNamespace(widths={"F.Cu": 0.2})},
+                           matrix={}, pin_class={}, obstacle_classes={}, obstacles=[])
+    got = repair.spoke_tracks(pad, zone, "F.Cu", 1, plan, repair._Space({}, info, plan))
+    assert len(got) == 1
+    bx, by = got[0]["b"]
+    assert bx > 0 and by < 0 and abs(math.degrees(math.atan2(-by, bx)) - 33.75) < 1e-3
+
+
 def test_pad_cut_off_from_its_zone_gets_a_spoke_into_the_rest_of_the_net():
     """A pad in its own island of fill is joined to the net's other piece, not to its island
     (a spoke into its own island joins nothing)."""
@@ -243,3 +263,31 @@ def test_excess_counts_only_errors_beyond_the_input():
     assert drc.excess(s, base) == 1          # the clearance error is the router's
     assert drc.excess(s, {}) == 7            # no baseline: every error counts, as before
     assert drc.excess(dict(by_type={}), base) == 0
+
+
+def test_planes_on_renamed_layers_are_dropped():
+    """analyse() names the open layers canonically (In1.Cu); KiCad writes the DSN plane on the
+    layer's user name (GND_PLANE), and the plane was never dropped."""
+    dsn = ('(pcb x (structure (layer F.Cu (type signal)) (layer GND_PLANE (type power)) '
+           '(layer In2.Cu (type signal)) (layer B.Cu (type signal))'
+           ' (plane GND (polygon GND_PLANE 0 0 0 100 0 100 100 0 100))'
+           ' (plane VCC (polygon In2.Cu 0 0 0 100 0 100 100 0 100))))')
+    lmap, _ = repair.layer_names(S.parse(dsn), ["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"])
+    t = S.parse(dsn)
+    assert repair._drop_planes(t, {"GND": {"In1.Cu"}, "VCC": {"B.Cu"}}, lmap) == 1
+    assert [str(p[1]) for p in S.findall(S.find(t, "structure"), "plane")] == ["VCC"]
+
+
+def test_thermal_all_keeps_every_pads_corridors_after_a_starved_thermal(monkeypatch):
+    """A repair round that finds a starved pad re-plans with the starved pads' corridors; under
+    --thermal-all that dropped every other pad's corridors."""
+    calls = []
+
+    def fake_plan(info, path, opts):
+        calls.append(opts["thermal_pads"])
+        return SimpleNamespace()
+    monkeypatch.setattr(repair.constraints, "plan", fake_plan)
+    base = SimpleNamespace(plane_policy="keep")
+    assert repair._thermal_plan(base, {}, "b.kicad_pcb", {"thermal_pads": "all"}, {}, {"p1"}) is base
+    got = repair._thermal_plan(base, {}, "b.kicad_pcb", {"thermal_pads": ["p0"]}, {}, {"p0", "p1"})
+    assert calls == [["p0", "p1"]] and got.plane_policy == "keep"

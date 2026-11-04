@@ -80,3 +80,20 @@ def test_escape_bound_proves_too_wide_tracks_cannot_escape(tmp_path):
     assert escape.fit(PITCH - 0.4, 2.0, 0.2) == 0 and escape.fit(2 * PITCH - 0.6, 2.0, 0.2) == 0
     low, meta, duals = escape.bound(sp, pkg, info, override=dict(w=2.0))
     assert low <= 64 - 16 + 1e-6 and duals
+
+
+def test_an_unsolved_bound_neither_certifies_nor_throws_away_the_plan(tmp_path, monkeypatch):
+    """bound() returns (None, ctx, {}) when the LP relaxation does not solve; certificate()
+    did `None + 1e-6`, and the TypeError in run() dropped the plan already computed."""
+    monkeypatch.setenv("KAE_ESCAPE_CACHE", str(tmp_path / "cache"))
+    sp, info = _space(tmp_path)
+    (pkg,) = [p for p in escape.find_packages(sp) if p["kind"] == "grid"]
+    monkeypatch.setattr(escape, "bound", lambda *a, **k: (None, {"sig": [1, 2, 3]}, {}))
+    assert escape.certificate(sp, pkg, info, log=lambda m: None) is None
+
+    def boom(*a, **k):
+        raise RuntimeError("proof failed")
+    monkeypatch.setattr(escape, "certificate", boom)
+    out = escape.run(sp, info, {}, log=lambda m: None)
+    (pk,) = out["packages"]
+    assert "error" not in pk and pk["planned"] == 64 and pk["laid"] >= 44 and not out["blocked"]

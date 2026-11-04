@@ -91,6 +91,56 @@ def test_space_uses_the_bridges_effective_rules(tmp_path):
     assert sp.need(pad, "+3V3", "track", "F.Cu") is None          # same net: no clearance
 
 
+def test_same_net_vias_keep_hole_to_hole_through_both_drills(tmp_path):
+    """A second via of the net 1.5 um inside the pitch was accepted (`pitch - TOL`), and an
+    existing via with a larger drill was held to the class drill's pitch."""
+    from kae.route.critical_grid import Grid
+    s = F.session(tmp_path)
+    sp, gr = s.space, s.router
+    net = "+3V3"
+    D, d = sp.via_size(net)
+    pitch = sp.same_net_via_pitch(net)
+    x, y = next((x, y) for x in range(101, 140) for y in range(101, 130)
+                if not any(sp.via_violations(net, x + dx, y) for dx in (0.0, pitch + 0.01, pitch + 0.2)))
+    v = sp.add_via(net, x, y)
+    assert sp.via_violations(net, x + pitch - 0.0015, y, ignore=()) and not sp.via_violations(net, x + pitch + 0.01, y)
+    sp.remove([v])
+    big = sp.add_via(net, x, y, size=D + 0.2, drill=d + 0.2)
+    assert sp.via_violations(net, x + pitch + 0.05, y)            # 0.1 mm more drill: 0.1 mm further
+    assert not sp.via_violations(net, x + pitch + 0.11, y)
+    g = Grid(x - 1.0, y - 0.025, x + 1.0, y + 0.025, 0.05)
+    ok = gr.via_allowed(g, net, sp.cu)
+    for i in range(g.nx):
+        cx, cy = g.xy(i, 0)
+        if abs(cy - y) < 1e-6 and ok[0, i]:
+            assert math.dist((cx, cy), (x, y)) - big.drill / 2 - d / 2 >= pitch - d
+
+
+def test_set_pose_moves_the_bare_layer_barrels_of_pth_pads(tmp_path):
+    """A PTH pad with no ring on B.Cu (remove_unused_layers) is a barrel obstacle there; it
+    stayed at the old pose when a joint move set the part's pose."""
+    from kae.board.kicad_file import load
+    from kae.route import constraints as CN
+    from kae.route.critical_space import Space
+    p = F.write_board(tmp_path)
+    b = load(p)
+    info = F.synth_info(b)
+    for pd in info["pads"]:
+        if pd["ref"] == "J1":
+            pd["layers"] = ["F.Cu"]
+    sp = Space(load(p), info, plan=CN.plan(info, p, {}))
+    j1 = next(f for f in sp.board.footprints if f.ref == "J1")
+    barrels = [it for it in sp.items["B.Cu"] if it.owner and it.owner[0] == "J1"]
+    assert len(barrels) == 2
+    x0 = [it.geom.centroid.x for it in barrels]
+    old = (j1.x, j1.y, j1.rot, j1.side)
+    sp.set_pose(j1.uuid, old, (j1.x + 3.0, j1.y, j1.rot, j1.side))
+    for it, x in zip(barrels, x0):
+        assert abs(it.geom.centroid.x - x - 3.0) < 1e-6 and abs(it.hole[0].x - it.pos[0]) < 1e-6
+    hit = sp.query("B.Cu", (j1.x + 3.0, j1.y - 1.0, j1.x + 3.0, j1.y - 1.0), 0.1)
+    assert any(it in barrels for it in hit)
+
+
 def test_grid_route_is_exactly_legal(tmp_path):
     s = F.session(tmp_path)
     sp, gr = s.space, s.router
@@ -220,6 +270,29 @@ def test_joint_moves_are_legal_and_improve_the_routed_loop(tmp_path):
     for u, pose in poses.items():
         assert pose[3] == next(f.side for f in b.footprints if f.uuid == u)
     assert copper
+
+
+@pytest.mark.parametrize("kind", ["hole", "pad_nopin"])
+def test_joint_moves_keep_hole_clearance_to_holes_and_keepout_pads(tmp_path, kind):
+    """A pad 0.05 mm from an NPTH hole (or a keepout pad of another part) passed the joint
+    move's legality: holes were tested for overlap only, keepout pads not at all."""
+    from shapely.geometry import Point
+    from kae.route.critical_joint import Legality
+    from kae.route.critical_space import Item
+    s = F.session(tmp_path)
+    sp = s.space
+    leg = Legality(s)
+    f = next(fp for fp in s.board.footprints if fp.ref == "C3")
+    from shapely.ops import unary_union
+    assert leg.ok(f.uuid, leg.poses[f.uuid]) == (True, "")
+    x0, y0, x1, y1 = unary_union([it.geom for it in sp.pads_by_fp[f.uuid] if it.kind == "pad"]).bounds
+    ob = Item(kind, None, list(sp.cu), Point(x1 + 0.05 + 0.4, (y0 + y1) / 2), 0.4, None, owner="H1")
+    ob.hole = (ob.geom, 0.4)
+    for l in sp.cu:
+        sp.items[l].append(ob)
+    sp.invalidate()
+    good, why = leg.ok(f.uuid, leg.poses[f.uuid])
+    assert not good and kind in why
 
 
 def test_heatsink_mount_keeps_right_angles(tmp_path):
@@ -985,3 +1058,59 @@ def test_writer_edits_kicad6_files_with_spaces_and_tstamps(tmp_path):
     W.edit(src, dst, remove=["11111111-1111-1111-1111-111111111111", "33333333-3333-3333-3333-333333333333"])
     text = dst.read_text()
     assert "1111" not in text and "3333" not in text and "2222" in text and "(arc (start 1 1)" in text
+
+
+def test_recheck_pairs_an_unpaired_decap_with_its_nearest_power_pin(routed, tmp_path):
+    """A nearest_pin decap's capacitor is priced at the IC power pin nearest it, as the
+    module stage and the place terms pair it, not at power_pins[0] (helios U4: caps 0.9 mm
+    from their pins were priced at pin 1, 6-8 mm away)."""
+    from kae.board.kicad_file import load
+    from kae.route import critical_recheck as R
+    dst = tmp_path / "b.kicad_pcb"
+    routed.write(dst)
+    b = load(dst)
+    rb = R.RoutedBoard(b, fills=None, brief=routed.brief)
+    uid = {f.ref: f.uuid for f in b.footprints}
+    s = dict(kind="decap", ic=uid["U2"], rail="+3V3", ground="GND", power_pins=["4", "8"], caps=[uid["C3"]],
+             pairing="nearest_pin", pin_caps={})
+    pairs, _ = R.decap_pairs(rb, s)
+    assert [(p, c) for p, c, _ in pairs] == [("8", uid["C3"])]
+
+
+def test_crystal_trace_capacitance_uses_the_dielectric_under_the_trace():
+    """A bottom-side crystal trace is priced with the dielectric between it and its plane, not the
+    top prepreg (er[0] for every layer)."""
+    from kae.route.critical_physics import dielectric_er
+    cu = ["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"]
+    z = {"F.Cu": 0.0, "In1.Cu": 0.2, "In2.Cu": 1.4, "B.Cu": 1.6}
+    er = [3.7, 4.6, 4.0]
+    assert dielectric_er(cu, z, er, "F.Cu", "In1.Cu") == 3.7
+    assert dielectric_er(cu, z, er, "B.Cu", "In2.Cu") == 4.0
+    assert dielectric_er(cu, z, er, "B.Cu", None) == 4.0
+    assert dielectric_er(cu, z, er, "F.Cu", "In2.Cu") == pytest.approx((3.7 * 0.2 + 4.6 * 1.2) / 1.4)
+    assert dielectric_er(cu, z, [], "B.Cu", None) == 4.3
+
+
+def test_rail_design_current_keeps_its_margin_without_a_source_rating(tmp_path, monkeypatch):
+    """The design current is the loads' sum with a 3x margin, capped by the source's rating; a
+    source without a rating (fuse, ferrite, diode) dropped the margin."""
+    from kae.route import critical_rails as CR
+    s = F.session(tmp_path)
+    monkeypatch.setattr(CR, "source_rating", lambda *a, **k: None)
+    plan = CR.rail_plan(s.ctx)
+    assert plan
+    for r in plan:
+        total = sum(r["loads"].values())
+        assert r["design"] == pytest.approx(max(3.0 * total, total + 0.1))
+
+
+def test_board_physics_names_a_module_kind_without_a_routed_value(monkeypatch):
+    from types import SimpleNamespace as NS
+    from kae.route import critical_recheck as CR
+    from kae.route import critical_modules as CM
+    from kae.board.kicad_file import load
+    from pathlib import Path
+    b = load(Path(__file__).parent / "data" / "board" / "fixture.kicad_pcb")
+    monkeypatch.setattr(CM, "modules_from_brief", lambda brief, kinds: [NS(id="g1", kind="rgroup", spec={})])
+    out = CR.board_physics(b, brief={"nets": {}, "parts": {}}, fills=None, terms={}, rails=False)
+    assert out["g1"]["error"] == "no routed value for kind 'rgroup'"

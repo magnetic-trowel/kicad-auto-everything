@@ -21,7 +21,7 @@ import shutil
 from pathlib import Path
 
 from . import score, tools
-from .boardfiles import STEM, board_path, install_rules
+from .boardfiles import STEM, board_path, install_rules, unconnected_ignored
 
 TASK_KINDS = ("route", "place", "place-fixed")
 # 2: place tasks keep locked footprints in place (1 moved them off-board, so boards with
@@ -41,9 +41,11 @@ TASK_KINDS = ("route", "place", "place-fixed")
 #    of earlier specs stay valid
 # 7: place-fixed tasks (and joint-fixed from their input); route and place tasks unchanged
 # 8: place-fixed classifier rules 4 (the user's judgement calls); other kinds unchanged
-TASK_SPEC = 8
+# 9: place-fixed classifier rules 5: castellated edge pads and 4UCONN connectors are connectors
+#    (14 parts on 4 of the 213 merit boards changed class); other kinds unchanged
+TASK_SPEC = 9
 # Oldest spec each task kind is still valid under (spec 5 changed only place tasks).
-MIN_TASK_SPEC = {"route": 4, "place": 5, "joint": 5, "place-fixed": 8, "joint-fixed": 8}
+MIN_TASK_SPEC = {"route": 4, "place": 5, "joint": 5, "place-fixed": 9, "joint-fixed": 9}
 # The task input each kind starts from (joint = place and route, from the place task's input).
 INPUT_KIND = {"route": "route", "place": "place", "joint": "place",
               "place-fixed": "place-fixed", "joint-fixed": "place-fixed"}
@@ -104,6 +106,16 @@ def _fixed_mech(ref, pf, overrides):
                       fixed_mech=[{k if k != "cls" else "class": v for k, v in r.items()} for r in fixed])
 
 
+def _drc(board, out_json):
+    """summarize_drc of the board, its unconnected count from pcbnew where the project ignores
+    that check (DRC then reports none: a human layout would qualify, and a task start read 0,
+    without any check of connectivity; score._uncapped counts outputs the same way)."""
+    drc = tools.summarize_drc(tools.run_drc(board, out_json))
+    if unconnected_ignored(board):
+        drc.update(unconnected=score._uncapped(board, drc["unconnected"])[0], unconnected_by="pcbnew")
+    return drc
+
+
 def prepare_board(entry, fetched, tasks_dir, kinds=TASK_KINDS, keep_locked=False, force=False,
                   fixed_overrides=None):
     """Create tasks_dir/<id>/{reference,route,place,place-fixed}/ and task.json. Returns the task
@@ -122,7 +134,7 @@ def prepare_board(entry, fetched, tasks_dir, kinds=TASK_KINDS, keep_locked=False
     # Converting writes the current KiCad format; rules stay in the project files.
     conv = tools.run_ops("convert", fetched["kicad_pcb"], board_path(ref))
     ref_stats = tools.run_ops("stats", board_path(ref))
-    ref_drc = tools.summarize_drc(tools.run_drc(board_path(ref), ref / "drc.json"))
+    ref_drc = _drc(board_path(ref), ref / "drc.json")
     human_clean = ref_drc["unconnected"] == 0 and ref_drc["errors"] == 0
     record = dict(
         id=entry["id"], license=entry.get("license"), license_tier=entry.get("license_tier"),
@@ -151,7 +163,7 @@ def prepare_board(entry, fetched, tasks_dir, kinds=TASK_KINDS, keep_locked=False
         else:
             moved = tools.run_ops("strip-placement", board_path(ref), board_path(kdir)).get("moved")
         st = tools.run_ops("stats", board_path(kdir))
-        drc = tools.summarize_drc(tools.run_drc(board_path(kdir), kdir / "drc.json"))
+        drc = _drc(board_path(kdir), kdir / "drc.json")
         record["tasks"][kind] = dict(input_stats=_strip_stats(st), input_drc=drc,
                                      keep_locked=keep_locked if kind == "route" else "footprints")
         if kind in PLACE_INPUTS:  # footprints a placer may move (all others are anchored)

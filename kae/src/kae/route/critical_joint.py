@@ -148,13 +148,17 @@ class Legality:
                             continue
                         if it.geom.intersects(o.geom):
                             return False, f"pad {it.owner} on the spokes of {o.owner}"
-                    elif o.kind in ("hole", "shape", "keepout"):
+                    elif o.kind in ("hole", "shape", "keepout", "pad_nopin"):
                         if o.kind == "keepout":
                             if it.geom.intersects(o.geom):
                                 return False, f"pad {it.owner} in a rule area"
                             continue
-                        if it.geom.distance(o.geom) - o.r < 0.0:
-                            return False, f"pad {it.owner} on {o.kind}"
+                        # the obstacle's class requirement (hole clearance to an NPTH hole or
+                        # a keepout pad), not only overlap: a moved part could sit closer to
+                        # a hole than KiCad's hole_clearance and keep that pose
+                        nd = sp.need(o, it.net, "track", layer) or 0.0
+                        if it.geom.distance(o.geom) - o.r < nd - 1e-4:
+                            return False, f"pad {it.owner} near {o.kind} {o.owner}"
         return True, ""
 
     def commit(self, u, pose):

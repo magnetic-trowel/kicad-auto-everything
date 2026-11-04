@@ -3,6 +3,8 @@
 """kae.route.blocked: why open connections are open, on the synthetic board (no KiCad).
 Its rules: clearance 0.2 mm (net class Default), track width 0.25 mm (class) and at least 0.15 mm
 (board setup)."""
+import pytest
+
 from kae.board.kicad_file import load
 from kae.route import blocked as B
 from kae.route import constraints as CN
@@ -95,3 +97,19 @@ def test_rule_sources():
     assert B._source("my_bga_rule (inside its area)")[1] == ".kicad_dru rule 'my_bga_rule'"
     k = B._source("clearance not checked on this board (floor 0.1 mm)")
     assert k[0] == "kae" and "KAE_IGNORED_CLEARANCE_FLOOR" in k[2]
+
+
+def test_hole_clearance_of_a_routed_via_counts_its_own_ring(tmp_path):
+    """Hole clearance is from the drill: a 0.6/0.3 mm via at 0.25 mm hole clearance needs
+    0.10 mm of copper gap to a track. With the via the item being routed, the report said
+    0.25 (only the other item's ring was taken off)."""
+    from shapely.geometry import LineString
+    from kae.route.critical_space import Item
+    sp = F.session(tmp_path).space
+    t = Item("track", "GND", ["F.Cu"], LineString([(110, 105), (115, 105)]), 0.125, None)
+    t.width = 0.25
+    hc = [v for v, c, *_ in B._terms(sp, t, "+3V3", "via", "F.Cu", None) if c == "hole_clearance"]
+    assert hc == [pytest.approx(0.25 - (0.6 - 0.3) / 2)]
+    v = sp.add_via("GND", 110, 105)
+    hc = [v_ for v_, c, *_ in B._terms(sp, v, "+3V3", "via", "F.Cu", None) if c == "hole_clearance"]
+    assert hc == [pytest.approx(0.10)]

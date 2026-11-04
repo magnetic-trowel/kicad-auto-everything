@@ -173,6 +173,7 @@ def evaluate(path, pitch=0.25, nsub=2, intent=None, n_corners=16, seed=0, log=pr
     U = {}                                          # (observer, source) -> [u per corner]
     worst_f = {}
     ac_cu = np.zeros(ncp)
+    above = set()
     parts = {}
     left = {}
     t1 = time.time()
@@ -183,6 +184,7 @@ def evaluate(path, pitch=0.25, nsub=2, intent=None, n_corners=16, seed=0, log=pr
             val = {k[1]: v for k, v in cps[s.name][c].items()}
             I, D, tr, fsw = _wave_params(P, s, val)
             if f_max < fsw:
+                above.add(s.name)             # no harmonic inside the model's band: its harms are not computed
                 continue
             r = SP.totals(model, j, rows, I, D, tr, fsw, f_max, ideal=lambda f, s=s: _ideal(bd, s, obs, f))
             ac_cu[c] += r["copper"]
@@ -276,7 +278,10 @@ def evaluate(path, pitch=0.25, nsub=2, intent=None, n_corners=16, seed=0, log=pr
     from .evaluate import totals
     # the AC model carries the copper as it is (an open connection is physics here: a floating pad, or an
     # open loop that rings without bound), so only the DC band, which skips an open flow, voids the score
-    unc = ["dc"] if any(n.startswith("DC: copper open") for n in notes) else []
+    from .evaluate import DC_VOID
+    unc = (["dc"] if any(n.startswith(DC_VOID) for n in notes) else []) + sorted(above)
+    if above:
+        notes.append(f"switching above the model's f_max {f_max / 1e6:.0f} MHz: {sorted(above)}: their harms are not computed")
     if unrouted:
         notes.insert(0, f"unrouted: {len(unrouted)} nets have pads on separate copper islands ({', '.join(sorted(unrouted)[:8])}); "
                         f"their harms are of the board as it stands, so compare only boards with the same open connections")

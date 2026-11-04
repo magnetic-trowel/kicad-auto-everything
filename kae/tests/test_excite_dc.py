@@ -69,3 +69,136 @@ def test_synchronous_boost_balances_and_the_ldo_rating_caps_its_load():
     sums = _net_sums(pl, inj, [{"VBUS", "SW"}])
     assert all(abs(v) < 1e-12 for v in sums.values()), sums
     assert inj["U2.1"] == pytest.approx(-0.5)                # the LDO delivers at most its 0.5 A rating
+
+
+def test_ics_on_boards_without_pin_data_draw_from_their_rails():
+    """A pad typed power_in or named as a supply draws; on a board whose pads carry neither name nor
+    type (an Eagle or KiCad 5 import), a pad on a rail or a supply-named net draws; a pad typed or
+    named otherwise, or on a signal net, does not."""
+    rails = {"VBAT", "+3V3"}
+    assert DC.draws_from([("1", "+3V3", "power_in", "")], "+3V3", rails)
+    assert DC.draws_from([("2", "+3V3", "passive", "3V3")], "+3V3", rails)           # named by its voltage
+    assert DC.draws_from([("1", "VBAT", "", ""), ("2", "GND", "", "")], "VBAT", rails)  # unannotated, on a rail
+    assert DC.draws_from([("1", "VCC_IO", "", "")], "VCC_IO", set())                 # unannotated, supply name
+    assert not DC.draws_from([("1", "+3V3", "input", "EN")], "+3V3", rails)          # an enable tied high
+    assert not DC.draws_from([("1", "+3V3", "power_out", "3V3")], "+3V3", rails)     # its output, not a draw
+    assert not DC.draws_from([("1", "PWRSTAT", "", "")], "PWRSTAT", set())           # a status line
+    assert not DC.draws_from([("1", "VBAT", "", "")], "+3V3", rails)                 # no pad on that rail
+
+
+def test_a_charger_drawing_from_a_rail_is_not_heated_by_what_it_passes_on():
+    """An MCU's draw is its heat; a charger's or regulator's draw goes on to a battery or another
+    rail, so it adds no V*I heat as a load (its own loss is a feed's conversion loss)."""
+    from types import SimpleNamespace
+    from kae.excite import heat as HT
+    pl = DC.Plan()
+    pl.loads = [dict(ref="U1", rail="VBUS", key=("dc:U1@VBUS", "I_A")), dict(ref="U2", rail="VBUS", key=("dc:U2@VBUS", "I_A"))]
+    pl.volts = {"VBUS": 5.0}
+    bd = SimpleNamespace(part_kind={"U1": ("ic", "mcu", "mcu"), "U2": ("ic", "charger", "charger")})
+    heat = HT.part_heat(bd, pl, {("dc:U1@VBUS", "I_A"): 0.1, ("dc:U2@VBUS", "I_A"): 0.5}, {}, {})
+    assert heat == {"U1": pytest.approx(0.5)}
+
+
+def test_a_rails_demand_follows_its_loads_through_regulators():
+    """What a converter's output must deliver: its loads, plus an LDO's load passed through it."""
+    from kae.excite import heat as HT
+    pl = DC.Plan()
+    pl.volts = {"VIN": 12.0, "5V": 5.0, "3V3": 3.3}
+    pl.feeds = {"5V": dict(kind="cell", ref="U1", cell=dict(src="cell:c", cls="buck", vin="VIN", vout="5V")),
+                "3V3": dict(kind="linear", ref="U2", rin="5V")}
+    pl.loads = [dict(ref="U3", rail="5V", key=("dc:U3@5V", "I_A")), dict(ref="U4", rail="3V3", key=("dc:U4@3V3", "I_A"))]
+    amps = {("dc:U3@5V", "I_A"): 0.2, ("dc:U4@3V3", "I_A"): 0.05}
+    assert HT.rail_demand(pl, "5V", lambda ld: amps[ld["key"]]) == pytest.approx(0.25)
+    # the 12 V input carries the buck's output power over 88% efficiency
+    assert HT.rail_demand(pl, "VIN", lambda ld: amps[ld["key"]]) == pytest.approx(0.25 * 5 / (0.88 * 12))
+
+
+def test_part_patterns_match_from_a_word_boundary_and_the_most_specific_wins():
+    from kae.excite.beliefs import best_match, match_rank
+    assert match_rank("(?i)(ComputeModule5|CM5)", "PCM5102 Package_SO:TSSOP-20") is None
+    assert match_rank("(?i)(ComputeModule5|CM5)", "ComputeModule5-CM5") is not None
+    entries = [("3.3", r"(?i)^AP2112"), ("1.8", r"(?i)^AP2112K?-?1\.8")]
+    assert best_match(entries, lambda e: e[1], "AP2112K-1.8 Package_TO_SOT_SMD:SOT-23-5", "AP2112K-1.8")[0] == "1.8"
+    assert best_match(entries, lambda e: e[1], "AP2112K-3.3", "AP2112K-3.3")[0] == "3.3"
+
+
+def test_heat_accounts_every_dc_loss_vias_and_lumped_parts():
+    """The thermal band's heat is the DC flow's whole I^2 R: bars, via barrels (half to each landing)
+    and the lumped parts' own loss (an inductor's winding, a ferrite, a shunt) at their pads. Vias
+    and lumped branches were left out (a buck inductor's DCR loss never heated its neighbours)."""
+    import numpy as np
+
+    from kae.em import solve as ES
+    from kae.em.mesh import Layer, Mesh
+    from kae.excite import heat as H
+    m = Mesh.over(0, 0, 10, 1, 0.25, [Layer("F", 1.6, 0.035, 1), Layer("B", 0, 0.035, 1)])
+    m.rect(0, "A", 0, 0, 4.5, 1)
+    m.rect(1, "B", 5.5, 0, 10, 1)
+    m.rect(0, "B", 8.5, 0, 10, 1)
+    m.via(9.0, 0.5, [0, 1], "B", drill=0.3)
+    X, _ = m.centres()
+    m.terminal("a", 0, mask=X < 0.25)
+    m.terminal("m1", 0, mask=(X > 4.25) & (X < 4.5))
+    m.terminal("m2", 1, mask=(X > 5.5) & (X < 5.75))
+    m.terminal("b", 0, mask=X > 9.75)
+    m.part("m1", "m2", R=0.05, name="L1")
+    net = ES.Network(m)
+    assert len(net.vseg) == 1 and len(net.lump) == 1
+    (V, info), = ES.potentials_many(m, [{"a": 2.0, "b": -2.0}], 0.0, net=net)
+    P = 2.0 * float(np.real(V["a"] - V["b"]))
+    Q = H.copper_heat(info["net"], info["x"], m.lab.shape)
+    lump = H.lumped_heat(info["net"], info["x"], {"L1": "L"})
+    assert lump["L1"] > 0.19                                  # 2 A through 50 mOhm
+    assert Q.sum() + sum(lump.values()) == pytest.approx(P, rel=1e-3)
+    assert H.lumped_heat(info["net"], info["x"], {"L1": "D_on"}) == {}     # a diode's loss is V_f I in part_heat
+
+
+def test_copper_loss_budget_and_drop_share_the_unknown_rail_fallback():
+    """With no rail voltage known, the loss budget was 0 and the loss u 0 (perfect) whatever the copper
+    lost; it now takes the drop check's 3.3 V. A negative drop is no credit (phi clamps at 0)."""
+    from types import SimpleNamespace
+
+    import numpy as np
+
+    from kae.excite import harm as HA
+    pl = _plan()
+    pl.volts = {}
+    pl.loss_share, pl.drop_share, pl.dT_max = DC.LOSS_SHARE, DC.DROP_SHARE, DC.DT_MAX
+    cv = {("dc:U2", "I_A"): 0.2, "cell:c": {"I_A": 1.0, "D": 0.6}}
+    inj = DC.injections(pl, cv)
+    V = {t: (0.01 if a > 0 else 0.0) for t, a in inj.items()}          # 10 mV across the copper per source
+    info = dict(net=SimpleNamespace(off={"l": 0}, n_br=0), x=np.zeros(0), sys=SimpleNamespace(zdiag=np.zeros(0)))
+    u, P_cu, budget = DC.observe(pl, cv, V, info)["loss"]
+    assert P_cu > 0 and budget > 0 and u == pytest.approx(P_cu / budget)
+    assert HA.phi(-0.5) == 0.0 and HA.phi(0.5) == 0.5
+
+
+def test_dc_currents_left_out_of_the_copper_void_the_score():
+    """Load and source currents at pads outside the copper model were dropped with a note while the
+    total stayed 'complete'; that note now voids the DC band (evaluate/wideband mark it uncomputed)."""
+    from types import SimpleNamespace
+
+    from kae.excite import evaluate as E
+    pl = _plan()
+    pl.params = []
+    notes = []
+    bm = SimpleNamespace(m=SimpleNamespace(terminals={}))
+    b = SimpleNamespace(footprints=[], tracks=[])
+    assert E._dc_harms(pl, bm, b, None, None, {}, [], 1, 0, [0.0] * 4, notes, lambda *a: None) == []
+    assert any(n.startswith(E.DC_VOID) for n in notes)
+    assert E.totals([0.0] * 4, ["dc"])["complete"] is False
+
+
+def test_a_dc_band_that_solves_nothing_builds_no_system():
+    """The DC system the DC and heat bands share is built on first use: a band with nothing to solve builds
+    none (eagerly built, it failed on boards whose DC network has no components)."""
+    from types import SimpleNamespace
+
+    from kae.excite import evaluate as E
+    pl = _plan()
+    pl.params = []
+    holder = {}
+    bm = SimpleNamespace(m=SimpleNamespace(terminals={}))
+    b = SimpleNamespace(footprints=[], tracks=[])
+    E._dc_harms(pl, bm, b, None, None, {}, [], 1, 0, [0.0] * 4, [], lambda *a: None, system=holder)
+    assert holder == {}

@@ -326,3 +326,40 @@ def test_thermal_fv_matches_ex_exact_and_caches_source_fields(research):
     mine.rise()                                         # nothing moved: every field is cached
     assert mine.solves == n
     assert mine.cost() == pytest.approx(EE.thermal_cost(T, r0, m0), rel=1e-9)
+
+
+def test_via_return_is_two_vias_with_their_images_over_the_plane():
+    """The second via's image spans [-h, 0] like the first's (it sat at [-2h, -h]): via_return is
+    ties(h, r, d, 0), the same physics."""
+    from kae.physics.jit import PY
+    for h, d in ((1.5, 2.0), (0.2, 1.0)):
+        assert PY.via_return(h, d, 0.15) == pytest.approx(PY.ties(h, 0.15, d, 0.0), rel=1e-12)
+    assert PY.via_return(1.5, 2.0, 0.15) == pytest.approx(1.276, abs=2e-3)
+
+
+def test_side_change_vias_pair_by_direction():
+    """Vias carrying current the same way add 2 M, opposite ways subtract it (all pairs were
+    subtracted: four side changes underestimated the loop by 4 M per same-way pair)."""
+    from kae.physics.jit import PY
+    t, r = 1.6, 0.15
+    px, py = np.array([0.0, 1.0, 1.0, 0.0]), np.array([0.0, 0.0, 1.0, 1.0])
+    ti = np.arange(4)
+    body = np.zeros(4, np.bool_)
+    M = lambda d: PY.m_par(t, t, 0.0, d)
+    S = PY.m_self(t, r)
+    # F F B B: two side changes, F->B (into point 2) and B->F (into point 0): antiparallel
+    two = PY.side_vias(np.array([1.0, 1.0, -1.0, -1.0]), ti, body, px, py, 4, t, r)
+    assert two == pytest.approx(2 * S - 2 * M(math.hypot(1.0, 1.0)))
+    # F B F B: four side changes; vias into points 1 and 3 run F->B, into 2 and 0 run B->F
+    four = PY.side_vias(np.array([1.0, -1.0, 1.0, -1.0]), ti, body, px, py, 4, t, r)
+    d = lambda a, b: math.hypot(px[a] - px[b], py[a] - py[b])
+    want = 4 * S + 2 * (M(d(1, 3)) + M(d(2, 0))) - 2 * (M(d(1, 2)) + M(d(1, 0)) + M(d(2, 3)) + M(d(3, 0)))
+    assert four == pytest.approx(want)
+
+
+def test_hot_loop_budget_matches_its_docstring_examples():
+    from kae.physics import priors as PR
+    assert PR.hot_loop_budget("buck", 12.0, 120.0, 1.5).value == pytest.approx(0.78, abs=0.01)
+    a = (0.85 * 20.0 - 13.2) / 13.2                       # the research case's rating and input
+    s = 1.5 / 2.563
+    assert s * s / (2 * 0.12 * math.log(1 / (a * math.exp(math.pi / 16)))) == pytest.approx(1.36, abs=0.01)

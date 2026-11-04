@@ -637,7 +637,9 @@ class ExactModel:
                     continue
                 ga = np.array([g for g, _, _ in pa], dtype=object)
                 gb = np.array([g for g, _, _ in pb], dtype=object)
-                reach = max(mmi + mmj) + web if (mmi and mmj) else web
+                # a bridge is d < mi + mj + web, so the prefilter needs both margins (`mmi + mmj`
+                # concatenated the lists: max of one margin missed pads 0.15 mm apart at 0.1 + 0.1)
+                reach = max(0.0, max(mmi) + max(mmj)) + web if (mmi and mmj) else web
                 near = shapely.dwithin(ga[:, None], gb[None, :], reach)
                 for a, b in zip(*np.nonzero(near)):
                     (_, ka, da), (_, kb, db) = pa[a], pb[b]

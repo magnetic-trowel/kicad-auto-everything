@@ -195,3 +195,24 @@ def test_commutation_cell_takes_its_snubber_and_bootstrap_parts():
     w_snub = max(w for (ia, _), _, w in s.segs if ia == ref["R1"].i)
     w_boot = max(w for (ia, _), _, w in s.segs if ia == ref["U5"].i)
     assert w_snub > w_boot
+
+
+def test_macro_members_may_sit_in_different_cover_rectangles():
+    """Regression (circuitmonkey-chips-0123): a macro's board rectangles were merged into one
+    bounding box that had to fit inside ONE cover rectangle, so on a non-rectangular outline a
+    layout whose members each fit lost the variant (and with all lost, the macro was called
+    infeasible). Members are checked one by one."""
+    from types import SimpleNamespace as NS
+    from kae.place.cpsat import Item, _rects_of, allowed_boxes
+
+    def part(w, h):
+        r = NS(g_own_rects=((0, w, 0, h),), g_own=(0, w, 0, h), g_opp=(), g_boards=((0, w, 0, h),),
+               g_board=(0, w, 0, h))
+        return NS(rots=[r], s=1)
+    # an L: a wide bottom bar and a tall left bar (cover rectangles i0, i1, j0, j1)
+    P = NS(parts=[part(4, 4), part(4, 4)], cover=[(0, 40, 0, 10), (0, 10, 0, 40)])
+    # one member at the far right of the bar, one high up the left leg: their bounding box
+    # covers the empty corner of the L, but each member fits
+    it = Item(members=[0, 1], variants=[{0: (25, 0, 0), 1: (0, 25, 0)}])
+    _, boards = _rects_of(P, it, 0)
+    assert allowed_boxes(P, boards)
