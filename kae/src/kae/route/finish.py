@@ -260,7 +260,8 @@ def _run(inp, out, project, o, workdir, time_s, base_report, drc_s, log):
                 r2["parts"].append(part)
                 cur2 = dst
             if jr2.entries:
-                g2 = J.gate(cur2, project, jr2, wd / "gate2", base_report=g["report"], budget=int(o["drc_budget"]),
+                g2 = J.gate(cur2, project, jr2, wd / "gate2", base_report=g["report"],
+                            budget=max(6, int(o["drc_budget"]) - int(g.get("probes") or 0)),
                             deadline=deadline, log=log, recover=int(o["recover"]), known_noise=g["noise"])
                 kept2 = g2["kept"]
                 J.write(g2["text"], out, project)

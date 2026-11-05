@@ -47,6 +47,7 @@ from . import critical_write as W
 
 HEADS = ("segment", "arc", "via", "zone")
 ERROR_LIMIT = 199      # KiCad 10 drc_engine: violations reported per check at most (clearance and opens: more)
+INPUT_SAMPLES = 4      # DRC runs of the input at most, to bound a noisy check's count
 BUCKET = 0.5           # mm: position bucket of a violation (neighbouring buckets match too)
 MARGIN = 0.5           # mm: new copper this close to another net's removed copper builds on its removal
                        # (finish passes the project's largest clearance, clearance_margin)
@@ -570,6 +571,11 @@ def gate(input_board, project_board, jr, workdir, base_report=None, budget=24, d
             rounds.append(dict(tag=tag + "-again", kept=len(kept), summary=drc.summary(rep2), worse=w2))
             if sum(w2.values()) < sum(worse.values()):
                 rep, worse = rep2, w2
+            while worse and set(worse) <= set(res["noise"]) and len(base) < INPUT_SAMPLES:
+                # and the input may read that high too: one more sample of it (its spread is the bound)
+                base.append(check(reordered(jr.input), f"in{len(base) + 1}", fresh=True))
+                worse = judge(base, rep, jr.ancestry(kept), noise)
+                rounds.append(dict(tag=tag + f"-in{len(base)}", kept=len(kept), summary=drc.summary(rep), worse=worse))
         return rep, worse
 
     def addback(accepted, cands, limit, tag):
@@ -726,7 +732,7 @@ def gate(input_board, project_board, jr, workdir, base_report=None, budget=24, d
             res["recovery"] = dict(reverted=len(allids - best["kept"]), far=len(far), near=len(near_))
             best = readmit(set(best["kept"]), [far, near_], min(budget, probes[0] + recover), "rec") or best
     kept = best["kept"]
-    res.update(kept=kept, text=jr.text(kept) if kept else jr.input, drc_out=drc.summary(best["rep"]), report=best["rep"],
+    res.update(kept=kept, text=jr.text(kept) if kept else jr.input, drc_out=drc.summary(best["rep"]), report=best["rep"], probes=probes[0],
                drc_runs=runs[0], seconds=round(time.monotonic() - t0, 1))
     return res
 

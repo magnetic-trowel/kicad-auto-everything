@@ -381,3 +381,23 @@ def test_finish_replans_later_stages_around_reverted_earlier_ones(tmp_path, monk
     assert set(out) == {"A", "B", "W"}
     assert rep["replan"]["parts"] == ["power"] and rep["stages"]["power"]["replan_kept"] == 1
     assert rep["drc_out"]["errors"] == 0
+
+
+def test_noisy_check_bound_is_the_inputs_observed_maximum(tmp_path):
+    """The input reads 1 or 2 mask bridges, the output always 2: more input samples, then kept."""
+    jr, (t0, *_rest) = _chain()
+    src = tmp_path / "in" / "board.kicad_pcb"
+    src.parent.mkdir()
+    src.write_text(t0)
+    n = [0]
+
+    def rules(text, k):
+        changed = '"A2"' in text
+        if not changed:
+            n[0] += 1
+        many = changed or n[0] >= 3                     # the input's third run reads 2
+        return [("solder_mask_bridge", [(f"M{k}", 1.0 * k, 9.0)])] + (
+            [("solder_mask_bridge", [(f"N{k}", 1.0 * k, 19.0)])] if many else [])
+    run, calls = _fake_drc(rules)
+    g = J.gate(src, src, jr, tmp_path / "g", drc_run=run, log=lambda *a: None)
+    assert g["noise"] == ["solder_mask_bridge"] and g["kept"] == set(jr.by_id)
