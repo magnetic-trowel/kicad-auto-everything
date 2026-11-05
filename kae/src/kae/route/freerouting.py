@@ -195,6 +195,7 @@ def route(dsn, ses, workdir, *, passes=0, settings=None, budget_s=600.0, margin_
     GRACE_S), also counted from the call. Returns a Run (ses None when nothing was written)."""
     workdir = Path(workdir).resolve()
     dsn, ses = Path(dsn).resolve(), Path(ses).resolve()
+    settings = fork_settings(dsn, settings)
     user = workdir / "fr-user"
     user.mkdir(parents=True, exist_ok=True)
     result = workdir / f"{ses.stem}.result.json"
@@ -251,6 +252,40 @@ def route(dsn, ses, workdir, *, passes=0, settings=None, budget_s=600.0, margin_
                report=dict(_summary(report, out or ""), slot_wait_s=slot.waited, job_timeout_s=round(job_s, 1),
                           **({"slot_gave_up": True} if slot.gave_up else {})),
                argv=argv)
+
+
+def fork_settings(dsn, settings):
+    """`settings` plus what a DSN written for the fork asks: `kae_pin_entries` when the DSN holds
+    the fr_entry scope (rule D tails and class width floors; other builds ignore the setting and
+    skip the scope)."""
+    s = dict(settings or {})
+    try:
+        with open(dsn, "rb") as f:
+            f.seek(0, 2)
+            n = f.tell()
+            f.seek(max(0, n - (8 << 20)))
+            tail = f.read()
+    except OSError:
+        return s
+    if b"(kae_pin_entries" in tail:
+        s.setdefault("kae_pin_entries", "true")
+    return s
+
+
+def pin_entry_stats(log):
+    """The fork's summary line of rule D tails (`kae_pin_entries: k=v ...`), as a dict, or {}."""
+    out = {}
+    for line in (log or "").splitlines():
+        i = line.find("kae_pin_entries:")
+        if i >= 0:
+            out = {}
+            for kv in line[i + len("kae_pin_entries:"):].split():
+                k, _, v = kv.partition("=")
+                try:
+                    out[k] = int(v)
+                except ValueError:
+                    out[k] = v
+    return out
 
 
 def _argv(dsn, ses, user, result, job_s, passes, settings):
@@ -379,4 +414,5 @@ def _summary(d, log=""):
     return dict(final_state=d.get("final_state"), router_score=d.get("normalized_score"),
                 optimizer_score=d.get("optimizer_score"), cpu_s=use.get("cpu_time"),
                 peak_mb=use.get("peak_memory"), app_version=d.get("app_version"),
-                autorouter_stop=ar_stop, optimizer_stop=_optimizer_stop(log))
+                autorouter_stop=ar_stop, optimizer_stop=_optimizer_stop(log),
+                **({"pin_entries": pe} if (pe := pin_entry_stats(log)) else {}))
