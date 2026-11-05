@@ -242,3 +242,29 @@ def test_entries_of_one_pass_in_conflict_are_merged():
     big = next(e for e in jr.entries if "|" in e.net)
     assert big.net == "N1|N2" and set(big.after) == {"A2", "B2"} and sorted(big.meta["merged"])
     assert set(J.items(jr.text({big.id}))) == {"A2", "B2", "C"}
+
+
+def test_reordered_board_has_the_same_items():
+    jr, (t0, *_rest) = _chain()
+    r = J.reordered(t0)
+    assert {u: b for u, (h, b) in J.items(r).items()} == {u: b for u, (h, b) in J.items(t0).items()}
+
+
+def test_gate_attributes_a_new_open(tmp_path):
+    jr, (t0, *_rest) = _chain()
+    src = tmp_path / "in" / "board.kicad_pcb"
+    src.parent.mkdir()
+    src.write_text(t0)
+    calls = []
+
+    def run(board, out_json, timeout=900, cache=True):
+        text = Path(board).read_text()
+        calls.append(1)
+        rep = _rep()
+        if "(width 0.6)" in text:      # the widened B leaves a pad open (reported on the pad, near B)
+            rep["unconnected_items"] = [dict(items=[dict(uuid="PAD1", pos=dict(x=2.0, y=5.3))])]
+        Path(out_json).write_text(json.dumps(rep))
+        return rep
+    g = J.gate(src, src, jr, tmp_path / "g", drc_run=run, log=lambda *a: None, recover=0)
+    assert g["kept"] == {"tails:a", "taut:net:N1", "power:V"} and g["drc_out"]["unconnected"] == 0
+    assert len(calls) == 3        # input, output, attributed board (an open alone needs no noise run)

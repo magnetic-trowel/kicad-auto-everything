@@ -335,6 +335,29 @@ def violations(report):
     return out
 
 
+def reordered(text):
+    """The board with its routing items and zones moved to the end, in their order: the same board."""
+    blocks, out, pos = [], [], 0
+    for head, a, b in W._blocks(text, HEADS):
+        blocks.append(text[a:b] + "\n")
+        out.append(text[pos:a])
+        pos = W._eat_newline(text, b)
+    out.append(text[pos:])
+    return W._insert("".join(out), blocks) if blocks else text
+
+
+def unconnected(report):
+    """[('unconnected', [(uuid, pos)])] of a report's unconnected items."""
+    out = []
+    for v in report.get("unconnected_items") or []:
+        its = []
+        for it in v.get("items") or []:
+            p = it.get("pos")
+            its.append((it.get("uuid") or it.get("description") or "", (p["x"], p["y"]) if p else None))
+        out.append(("unconnected", its))
+    return out
+
+
 def _bucket(p):
     return (math.floor(p[0] / BUCKET), math.floor(p[1] / BUCKET)) if p else None
 
@@ -546,8 +569,10 @@ def gate(input_board, project_board, jr, workdir, base_report=None, budget=24, d
     rep, worse = judged(allids, "out")
     res["worse_full"] = dict(worse)
     if worse and any(t != "unconnected" for t in worse) and not (left() <= 30 and res.setdefault("time_limited", True)):
-        # a type looks worse: is it noise? (a second run of the unchanged input, no cache)
-        base.append(check(None, "in2", fresh=True))
+        # a type looks worse: is it noise? A second run of the input, no cache, with its routing items
+        # moved to the end of the file as every output has them: a check KiCad stops at its error limit
+        # (199) reports a different subset when the items come in another order (cm4-carrier's track_width)
+        base.append(check(reordered(jr.input), "in2", fresh=True))
         noise = noise_types(base[0], base[1])
         res["noise"] = noise
         if noise:
@@ -565,6 +590,10 @@ def gate(input_board, project_board, jr, workdir, base_report=None, budget=24, d
                     res["time_limited"] = True
                 break
             new = diff(base[0], rep, jr.ancestry(kept), noise)
+            if "unconnected" in worse:
+                # opens are not errors: the new ones by their items' identity, for their positions
+                had = {frozenset(u for u, _ in its) for _, its in unconnected(base[0])}
+                new += [v for v in unconnected(rep) if frozenset(u for u, _ in v[1]) not in had]
             bad = _culprits(jr, kept, rep, new, near)
             if not bad:
                 continue
