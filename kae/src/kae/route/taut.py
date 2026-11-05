@@ -1474,7 +1474,10 @@ def board_stats(board_path, info=None, power=None, ground=None):
 
 
 # ----------------------------------------------------------------------------- DRC-gated run
-def run(input_path, output_path, opts=None, workdir=None, timeout=1800, log=print):
+def run(input_path, output_path, opts=None, workdir=None, timeout=1800, log=print, gate=True):
+    """The DRC-gated pass (module docstring). `gate=False` (kae.route.finish): no DRC; every net's
+    tightened copper is written and returned as kae.route.journal entries (one per net) in
+    rep["_entries"]."""
     from . import power_copper as PC
     t0 = time.monotonic()
     o = {**DEFAULTS, **(opts or {})}
@@ -1485,6 +1488,23 @@ def run(input_path, output_path, opts=None, workdir=None, timeout=1800, log=prin
     tt = Taut(staged, o, log=log)
     tt.run_passes()
     t_plan = time.monotonic() - t0
+    if not gate:
+        from . import journal as J
+        out = Path(output_path)
+        tt.write(out)
+        J.write(out.read_text(encoding="utf-8"), out, inp)
+        nets = sorted(tt.changed_nets)
+        rep = dict(board=str(inp), stats=tt.stats, nets_changed=nets, nets_reverted=[], fixed=tt._count_why(),
+                   plan_s=round(t_plan, 2), setup_s=round(tt.t_setup, 2),
+                   passes_s=round(getattr(tt, "t_passes", 0.0), 2),
+                   necks=sum(tt.necks.get(n, 0) for n in nets),
+                   overhang_fixed=sum(tt.over_fixed.get(n, 0) for n in nets), hazards=list(tt.hazards), gate=False,
+                   total_s=round(time.monotonic() - t0, 2))
+        rep["stats"]["hazards"] = len(tt.hazards)
+        pairs = {n: "pair:" + "|".join(sorted((n, m))) for n, m in (getattr(tt, "pair_of", None) or {}).items()}
+        rep["_entries"] = J.diff_entries("taut", staged.read_text(encoding="utf-8"), out.read_text(encoding="utf-8"),
+                                         net_keys=pairs)
+        return rep
     base_rep, base = PC._drc(staged, wd / "in.drc.json", timeout)
     cand = wd / "out" / "board.kicad_pcb"
     cand.parent.mkdir(parents=True, exist_ok=True)

@@ -122,7 +122,25 @@ On the physics set (213 boards with compiled intents), restart portfolio, same b
 
 Reported per arm: cp1 and cpk, completion, errors by type, `clean_strict`, oblique and acute pad entries, overhanging entries, copper length, corners, physics per term against A and against the human layout, hazards raised, and run time per stage. B against A isolates finish; C against B isolates born-right copper and early tightening; D and E answer the two placement-of-work questions.
 
-## 7. Open choices
+## 7. As built (`kae.route.finish`, `kae.route.journal`): where the code differs
+
+| Design | Built | Why |
+|---|---|---|
+| (a) rule D tails "on Freerouting copper" | On every unlocked segment whose pad entry breaks rule D (oblique, sliver-prone or overhanging) | kae's grid copper is not marked as such on the board. Born-right copper meets rule D, so it is never a candidate: the effect is the same |
+| Journal dependencies: "the entries it built on" | Two kinds: an entry removes an item an earlier entry wrote (taut on a tail, widening on a tightened track), or its new copper lies within 0.5 mm of another net's copper an earlier entry removed (it used the room that change freed) | Without the second, reverting a tail restores copper that a later widening or via now overlaps |
+| Identity = (type, items, position bucket) | An output item stands for the input items its entry replaced. Three matching passes, one to one: neighbouring bucket with all items covered; any position with all items covered; neighbouring bucket sharing one item | A pre-existing violation moves with the track a pass rewrote, and KiCad names one of an item's several partners, chosen by file order (cm4-carrier: a via too close to two pads). With buckets alone the gate reverted 58 of 61 changes on cm4 at unchanged counts |
+| Noise: two runs of the same board | The second input run has its routing items moved to the end of the file, as every output has them | KiCad stops a check at its error limit (199), so the subset it reports depends on item order |
+| A noisy type "is excluded" | Excluded from the identity diff, judged by count against the largest input reading; an output above it is read once more, and the input up to 4 times | magtag's mask bridges read 24 or 25 on one board; two samples of each side were not enough | Excluding it entirely would let a real increase through; the never-worse rule still holds by count |
+| ddmin only when the output is worse | Attribution (entries the new violations name; for violations that name none, entries within 1 mm, then 2.5 mm), then re-admission of what it reverted: entries clear of every named item first, a failing batch split by what KiCad names (or, naming nothing, by distance) before halving; ddmin (stages, net halves, entry halves, breadth first) only when attribution fails | Attribution reverts whole neighbourhoods (dream117er kept 124 of 164 without re-admission) |
+| One gate on stage 7's journal | Then a re-plan: the stages after the earliest one with reverts run again on the gated board, behind a second gate whose input DRC is the first gate's last (32 DRC runs for both) | A revert takes what built on it; the chained passes plan power copper around taut's gated result instead (lenaschimmel power 45 kept without, 118 with; the chain 87) |
+| Zones above 5 A | Power copper's vector mode written as zones, only for nets whose operating current (operating facts) exceeds `zone_above_a`; their tracks stay | Without operating facts no net has a current, so no board gets a zone |
+| Final pass: last mile then finish | `restart.py --final` (last mile, kept when better) then `--finish` (kept when no worse, clean boards too), each reserved from the start; the finish's `@DRC@` is the judge's report of the kept board | Finishing does not aim to change the rank, so "better" would never keep it; a clean board still gets its shapes |
+| One attempt runs finish when time is left | `bridge.route` opts `finish` (default off) reuses the repair loop's DRC of the board; `power_copper` and `pad_trim` now run through finish | The portfolio finishes once on the kept board (P6) |
+| Arm D on "each import" | In `repair.loop` rounds only (opts `import_tails`); the first import's copper is finished by stage 7 | The first import has no round DRC of its own to judge the tails against |
+
+The finish result is cached (`stepcache.board_key`: input board and project files, options and the operating facts' content, code, KiCad version), unless a part was skipped or the gate stopped for time.
+
+## 8. Open choices
 
 - **Arcs on 45/90 boards.** `rule-genealogy-routing-style-dfm` R02/R03 keeps 45° for editability. That is an editing reason, not physics or fab. Default: arcs. A plan setting (`arc_policy=keep45`) lets the commanding LLM keep the board's style. Taut has no segment-only mode, so with keep45 stage 2 does not tighten at all and says so in its report. Until the plan carries the setting, it is a `kae.route.critical` option.
 - **Via sliding** in taut is not built; vias stay where the router put them.

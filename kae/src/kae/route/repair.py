@@ -765,6 +765,10 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
                     break
                 continue
             pcbnew_io.edit_routing(cand, cand, unlock_all=True, keep_locked=fixed)
+            if opts.get("import_tails") and left() > 60:
+                tails = import_tails(cand, input_path, imp, rdir / "tails", log=log,
+                                     timeout=max(10.0, min(60.0, 0.1 * (left() - reserve))))
+                rec["tails"] = {k: v for k, v in tails.items() if not k.startswith("_")}
         else:
             pcbnew_io.edit_routing(fixed_board, cand, unlock_all=True, keep_locked=fixed)
         if left() < 10:
@@ -772,6 +776,8 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
             break
         try:
             rep = check(cand, rdir / "drc")
+            if rec.get("tails", {}).get("kept"):
+                rep = revert_tails(tails, cand, rep, lambda: check(cand, rdir / "drc_tails"), rec["tails"], log)
         except drc.DrcError as e:
             rec["drc_error"] = str(e)
             break
@@ -816,6 +822,58 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
                 hazards=hazards,
                 drc_dir=None if opts.get("last_mile") else str(best_dir),   # the DRC of the board kept
                 _report=best_rep)   # its DRC report (for kae.route.blocked; the bridge takes it out)
+
+
+def import_tails(cand, input_path, imp, wd, log=print, timeout=60.0):
+    """Arm D of docs/topics/routing/routing-stages.md (opts import_tails, off by default): rule D
+    tails (pad_reroute, exact checks only, no DRC) on the tracks this round's session import added
+    to `cand`, written into `cand` in place. Returns a record with the journal (`_journal`, the raw
+    board as its input) so a violation on a finished tail can revert it to its raw shape."""
+    from . import journal as J
+    from . import pad_reroute
+    kept = set(imp.get("kept") or ())
+    new = {r["uuid"] for r in imp.get("routing") or () if r.get("kind") == "track" and r["uuid"] not in kept}
+    rec = dict(new_tracks=len(new), kept=0)
+    if not new:
+        return rec
+    wd = Path(wd)
+    wd.mkdir(parents=True, exist_ok=True)
+    staged = drc.stage_board(cand, input_path, wd / "raw")
+    t0 = time.monotonic()
+    try:
+        r = pad_reroute.run(staged, wd / "out.kicad_pcb", workdir=wd / "work", timeout=timeout, log=log, gate=False,
+                            only=new)
+    except Exception as e:      # noqa: BLE001 - finishing tails never costs the round
+        rec["error"] = f"{type(e).__name__}: {e}"[:200]
+        return rec
+    entries = r.pop("_entries", [])
+    rec.update(kept=len(entries), outcome=r.get("outcome"), seconds=round(time.monotonic() - t0, 1))
+    if entries:
+        jr = J.Journal(staged.read_text(encoding="utf-8")).add(entries)
+        Path(cand).write_text(jr.text(), encoding="utf-8")
+        rec["_journal"] = jr
+    log(f"tails on the import: {len(entries)} of {len(new)} new tracks' entries finished ({rec['seconds']} s)")
+    return rec
+
+
+def revert_tails(tails, cand, rep, recheck, rec, log=print):
+    """When the round's DRC (`rep`) names copper of a finished tail, put that tail (and what built on
+    it) back to its raw shape in `cand` and run `recheck` once, before anything is ripped. Returns
+    the report the round goes on with."""
+    from . import journal as J
+    jr = tails.get("_journal")
+    if jr is None:
+        return rep
+    kept = set(jr.by_id)
+    named = {u for _t, its in J.violations(rep) for u, _p in its}
+    bad = jr.dependants({e.id for e in jr.entries if named & set(e.after)})
+    if not bad:
+        return rep
+    keep = jr.closed(kept - bad)
+    Path(cand).write_text(jr.text(keep), encoding="utf-8")
+    rec.update(reverted=len(kept) - len(keep), kept=len(keep))
+    log(f"tails on the import: {len(kept) - len(keep)} reverted to their raw shape (DRC named them)")
+    return recheck()
 
 
 RIP_ERROR_TYPES = ("clearance", "hole_clearance", "track_width", "copper_edge_clearance", "shorting_items",

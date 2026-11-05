@@ -67,6 +67,9 @@ DEFAULTS = dict(
                               # (one KiCad zone per piece, priority above the layer's zones, solid pad
                               # connection; thermal reliefs when hand soldered; KiCad's refill sets the
                               # exact clearance)
+    zone_above_a=None,        # A: a power/ground net whose operating current is above this gets vector copper
+                              # written as zones (pours) instead of widened tracks; kae.route.finish passes 5
+                              # (pours, not tracks, above ~5 A: critical_rails' rail_max_mm); None: never
     vector_strip=0.5,         # mm: strip width of the vector fill (pitch 0.8 x that)
     vector_min_gain=0.5,      # mm^2: a vector piece adding less copper than this is dropped
     into_pours=False,         # vector: may grow into other nets' zone fills (False: those fills are obstacles,
@@ -550,6 +553,9 @@ class PowerCopper:
         self.hand_solder = bool(asm.get("hand_solder_ok")) or asm.get("process") == "hand"
         self.process = process_of(asm)
         self.necks = self._necks() if self.o.get("neck", True) else {}
+        za = self.o.get("zone_above_a")
+        self.zone_nets = ({n for n in self.power | self.ground if self.current.get(n, 0.0) > float(za)}
+                          if za is not None else set())
         self.vector = []       # (net, layer, [(a, b, w, uuid)]) strips of the vector mode, one group each
         self.zones = []        # (net, layer, polygon, uuid) pieces of the vector mode written as zones
         self.edits = {}        # orig track uuid -> [(a, b, w)]
@@ -668,7 +674,7 @@ class PowerCopper:
         ladder = self.o["ladder"]
         order = sorted(self.board.tracks, key=lambda t: (-self.current.get(t.net, 0.0), t.net in self.ground))
         for t in order:
-            if t.net not in nets or t.layer not in sp.items:
+            if t.net not in nets or t.net in self.zone_nets or t.layer not in sp.items:
                 continue
             if t.mid is not None:
                 self._widen_arc(t, by_uuid.get(t.uuid), ladder)
@@ -799,7 +805,7 @@ class PowerCopper:
         self.stats["widened_mm"] += sum(abs(rad * sw * (x1 - x0) / L) for x0, x1, w in merged if w > t.width + 1e-9)
 
     # ---------------------------------------------------------------- 1b. vector growth
-    def grow_vector(self):
+    def grow_vector(self, nets=None, out=None):
         """Vector mode: per power/ground net and layer, the free region around the net's copper
         (the layer minus every foreign item grown by its required gap, the board edge, and other
         nets' fills unless into_pours), clipped to a corridor max_width/2 around the net's tracks
@@ -808,7 +814,8 @@ class PowerCopper:
         repeated buffering), keeping the board clearance between them; the boundary sits where
         d_i/I_i = d_j/I_j, so widths come out proportional to current (least sum I^2 R). Each
         connected piece that touches the net's copper and adds at least vector_min_gain mm2 is
-        filled with overlapping track strips."""
+        filled with overlapping track strips (or written as one zone: vector_out, or `out`). `nets`:
+        the nets grown (default every power and ground net)."""
         sp = self.sp
         reach = self.o["victim_gap_max"] + self.o["antenna_gap"] + sp.max_need + 0.1
         n_strips = 0
@@ -816,7 +823,7 @@ class PowerCopper:
         self.vector_share = {}
         for layer in sp.cu:
             cand = {}
-            for net in sorted(self.power | self.ground):
+            for net in sorted(nets if nets is not None else self.power | self.ground):
                 own = [it for it in sp.items[layer] if it.net == net and it.kind in ("track", "pad")]
                 if not any(it.kind == "track" for it in own):
                     continue
@@ -863,7 +870,7 @@ class PowerCopper:
                     if gain.area < self.o["vector_min_gain"]:
                         continue
                     piece = piece.simplify(0.01)
-                    if self.o["vector_out"] == "zones":
+                    if (out or self.o["vector_out"]) == "zones":
                         gid = W.new_uuid()
                         self.zones.append((net, layer, piece, gid))
                         sp.add_track(net, layer, 0.0, *_any_segment(piece), owner=("pc-vector", gid))
@@ -1129,7 +1136,14 @@ class PowerCopper:
         return land_necks(lands, self.power, self.ground, self.current, self.process, self.o["current_margin"])[0]
 
     def vector_or_widen(self):
-        return self.grow_vector() if self.o.get("mode") == "vector" else self.widen()
+        if self.o.get("mode") == "vector":
+            return self.grow_vector()
+        n = self.widen()
+        if self.zone_nets:
+            # rails above zone_above_a: pours, not tracks (their tracks stay as routed, the zone joins them)
+            n += self.grow_vector(nets=self.zone_nets, out="zones")
+            self.stats["zone_nets"] = sorted(self.zone_nets)
+        return n
 
     def board_zone_priorities(self):
         """[(layer, priority)] of the input's zones."""
@@ -1251,8 +1265,31 @@ def _culprits(rep, base_rep, groups, geoms, near=1.0):
     return bad
 
 
-def run(input_path, output_path, opts=None, workdir=None, timeout=1800, log=print):
-    """The DRC-gated pass: plan, write, check, revert what made DRC worse. Returns a report."""
+def journal_keys(pc, kinds):
+    """{uuid: group} of every item the plan writes or replaces, by kae.route.journal's grouping:
+    a widened track's pieces under the track, a via with its pad-to-via track, a strip or zone alone."""
+    keys = {}
+    for u, pieces in pc.edits.items():
+        keys[u] = u
+        for pc_ in pieces:
+            keys[pc_[3]] = u
+    for net, layer, kept, gid in pc.vector:
+        for a, b, w, u in kept:
+            keys[u] = u
+    for z in pc.zones:
+        keys[z[3]] = z[3]
+    for v in pc.vias:
+        keys[v[5]] = v[5]
+    for net, layer, w, a, b, u, owner in pc.tracks:
+        keys[u] = owner
+    return keys
+
+
+def run(input_path, output_path, opts=None, workdir=None, timeout=1800, log=print, gate=True):
+    """The DRC-gated pass: plan, write, check, revert what made DRC worse. Returns a report.
+    `gate=False` (kae.route.finish): no DRC; the whole plan is written and returned as
+    kae.route.journal entries in rep["_entries"] (one per group: a widened track, a via with its
+    track, a strip, a zone)."""
     t0 = time.monotonic()
     o = {**DEFAULTS, **(opts or {})}
     inp = Path(input_path).resolve()
@@ -1268,9 +1305,23 @@ def run(input_path, output_path, opts=None, workdir=None, timeout=1800, log=prin
             log(f"[power-copper] {k}: {time.monotonic() - t1:.1f}s")
     t_plan = time.monotonic() - t0
     log(f"[power-copper] planned {pc.stats} in {t_plan:.1f}s")
+    kinds = ["vector" if vec else "widen", "pad", "stitch"] + (["vector"] if pc.zone_nets and not vec else [])
+    if not gate:
+        from . import journal as J
+        out = Path(output_path)
+        groups = pc.write(out, kinds=tuple(kinds))
+        J.write(out.read_text(encoding="utf-8"), out, inp)
+        kind_of = {}
+        for u in set(groups.values()):
+            kind_of[u] = dict(kind=pc.group_kind(u) or ("zone" if any(z[3] == u for z in pc.zones) else "vector"))
+        return dict(board=str(inp), planned=pc.stats, kept=dict(pc.stats), kinds=kinds, reverted=0, gate=False,
+                    nets=dict(power=sorted(pc.power), ground=sorted(pc.ground), switch=sorted(pc.switch),
+                              victims=sorted(pc.victims), zones=sorted(pc.zone_nets)),
+                    plan_s=round(t_plan, 2), total_s=round(time.monotonic() - t0, 2),
+                    _entries=J.diff_entries("power", staged.read_text(encoding="utf-8"),
+                                            out.read_text(encoding="utf-8"), journal_keys(pc, kinds), kind_of))
     base_rep, base = _drc(staged, wd / "in.drc.json", timeout)
     skip = set()
-    kinds = ["vector" if vec else "widen", "pad", "stitch"]
     rounds = []
     cand = wd / "out" / "board.kicad_pcb"
     cand.parent.mkdir(parents=True, exist_ok=True)

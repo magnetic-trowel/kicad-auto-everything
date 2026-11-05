@@ -6,8 +6,10 @@
                                                [--no-repair] [--fanout | --fanout-first] [--no-thermal]
                                                [--passes N] [--rounds N|auto] [--router-share F|auto]
                                                [--planes cost|keep|strict|allow] [--pad-shapes kicad|outside]
-                                               [--[no-]last-mile] [--[no-]blocked] [--report FILE]
+                                               [--[no-]last-mile] [--[no-]blocked] [--[no-]finish] [--report FILE]
     python -m kae.route.cli lastmile INPUT BOARD OUTPUT [--seed N] [--time S] [--workdir DIR] [--keep]
+                                               [--set KEY=VALUE] [--report FILE]
+    python -m kae.route.cli finish INPUT BOARD OUTPUT [--time S] [--parts tails,taut,power] [--input-drc FILE]
                                                [--set KEY=VALUE] [--report FILE]
 
 INPUT is a .kicad_pcb with its project files (.kicad_pro, .kicad_dru) beside it; OUTPUT is
@@ -28,6 +30,10 @@ diagnosis alone on any routed board.
 
 `lastmile` is the post-route stage alone (bridge.last_mile_only): BOARD, routed from the task
 INPUT, gets the last mile with INPUT's rules; OUTPUT is BOARD or a round KiCad's DRC finds better.
+
+`finish` is stage 7 alone (kae.route.finish): BOARD gets rule D tails, taut arcs and power copper
+behind one journaled KiCad DRC gate with INPUT's rules; OUTPUT is never worse than BOARD. --set
+takes finish options (zone_above_a, drc_budget, ...); --input-drc a DRC report of BOARD to reuse.
 
 The report ends with "hazards" and "hazard_summary" (kae.hazards): among them a recheck of
 OUTPUT with the safety checks forced on whatever the project's severities say (--recheck,
@@ -77,6 +83,9 @@ def main(argv=None):
     r.add_argument("--blocked", action=argparse.BooleanOptionalAction, default=True,
                    help="at the end, diagnose the connections still open: the report's \"blocked\" names the "
                         "board rule (or kae default) that makes each impossible (kae.route.blocked)")
+    r.add_argument("--finish", action=argparse.BooleanOptionalAction, default=False,
+                   help="at the end, when time is left: the finish stage (rule D tails, taut arcs, power copper, "
+                        "one journaled DRC gate; kae.route.finish)")
     r.add_argument("--neckdown", action=argparse.BooleanOptionalAction, default=False,
                    help="Freerouting's neck-down at pins, floored at the board's legal minimum width")
     r.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
@@ -96,8 +105,29 @@ def main(argv=None):
     m.add_argument("--set", action="append", default=[], metavar="KEY=VALUE")
     m.add_argument("--report")
     recheck_args(m)
+    f = sub.add_parser("finish", help="the finish stage alone on a routed board (with the task input's rules)")
+    f.add_argument("input")
+    f.add_argument("board")
+    f.add_argument("output")
+    f.add_argument("--time", type=float, default=600.0)
+    f.add_argument("--parts", default="tails,taut,power", help="comma list of tails, taut, power, trim")
+    f.add_argument("--input-drc", help="KiCad DRC JSON of BOARD with INPUT's rules (the gate reuses it)")
+    f.add_argument("--drc-s", type=float, help="seconds one DRC of BOARD takes (for the estimates)")
+    f.add_argument("--workdir")
+    f.add_argument("--set", action="append", default=[], metavar="KEY=VALUE")
+    f.add_argument("--report")
+    recheck_args(f)
     a = ap.parse_args(argv)
     from kae.route import bridge
+    if a.cmd == "finish":
+        from kae.route import finish
+
+        def run_finish(opts):
+            rep = finish.run(a.board, a.output, project=a.input, opts=opts, workdir=a.workdir, time_s=a.time,
+                             base_report=a.input_drc or None, drc_s=a.drc_s)
+            rep["status"] = "finished"
+            return rep
+        return _finish(a, run_finish, dict(parts=tuple(p for p in a.parts.split(",") if p)))
     if a.cmd == "lastmile":
         return _finish(a, lambda opts: bridge.last_mile_only(a.input, a.board, a.output, time_s=a.time, seed=a.seed,
                                                              workdir=a.workdir, opts=opts),
@@ -107,7 +137,7 @@ def main(argv=None):
                 passes=a.passes, rounds=a.rounds if a.rounds == "auto" else int(a.rounds), keep=a.keep,
                 planes=a.planes, pad_shapes=a.pad_shapes,
                 router_share=a.router_share if a.router_share == "auto" else float(a.router_share),
-                last_mile=a.last_mile, neckdown=a.neckdown, blocked=a.blocked)
+                last_mile=a.last_mile, neckdown=a.neckdown, blocked=a.blocked, finish=a.finish)
     if a.thermal_all:
         opts["thermal_pads"] = "all"
     return _finish(a, lambda o: bridge.route(a.input, a.output, seed=a.seed, time_s=a.time, workdir=a.workdir,
@@ -136,7 +166,7 @@ def _finish(a, run, opts):
         with open(a.report, "w") as f:
             f.write(text + "\n")
     print(text, flush=True)
-    return 0 if rep.get("status") in ("routed", "repaired") else 2
+    return 0 if rep.get("status") in ("routed", "repaired", "finished") else 2
 
 
 if __name__ == "__main__":

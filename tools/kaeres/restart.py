@@ -23,6 +23,14 @@ input's project files), @OUT@, @SEED@ and @TIME@ replaced, its time reserved fro
 Its board replaces the kept one only when KiCad's DRC ranks it better. For a router this is the
 last mile alone (kae.route.cli lastmile): an attempt that ended late is not punished for it.
 
+With --finish COMMAND, the board kept after that (clean or not) gets the finish stage (for kae,
+`python -m kae.route.finish @BEST@ @OUT@ --project @IN@ --time @TIME@ --input-drc @DRC@ --drc-s @DRC_S@`,
+docs/topics/routing/routing-stages.md stage 7): @DRC@ is the judge's DRC report of @BEST@, so the
+finish's gate need not run the input again. Its time is reserved from the start too
+(finish_estimate: --finish-s, or an estimate from the input's pad count plus two DRCs), and its
+board replaces the kept one when KiCad ranks it no worse. summary.json's "finish" says which parts
+ran and which were skipped for time.
+
 With --history, every judged attempt adds the nets KiCad found open on its board to a failure
 history (restarts/history.json, {net: attempts that left it open}; record_open), and every attempt
 gets its path in KAE_ROUTE_HISTORY: a router may route those nets first (kae.route.bridge does).
@@ -375,23 +383,61 @@ def charge_env(info):
     return {"KAE_CHARGE_FILE": info["charge"]} if info.get("charge") else {}
 
 
-def final_reserve(a, judge_est):
-    """Seconds kept free from the start for the final pass: its command (--final-s, else
-    FINAL_MIN_S plus one DRC of the board, as long as the slowest judgement so far) and the
-    judgement of its board. 0 without --final."""
-    if not a.final:
+# kae.route.finish's estimate from the board's size (finish.COEF and DRC_COEF, duplicated here since
+# this file is stdlib only): its parts (rule D tails, taut, power copper) and the gate's two DRCs
+FINISH_COEF = (15.0, 0.17)      # seconds: fixed, per pad (tails 5+0.02, taut 5+0.12, power 5+0.03)
+FINISH_MIN_S = 30.0
+_PADS = {}          # input board -> pad count (read once: deadline() asks every second)
+
+
+def finish_estimate(a, inp, judge_est):
+    """Seconds the finish pass gets: --finish-s, else its estimate from the input's pad count plus
+    two DRCs (the gate's output DRC and one more) as long as the slowest judgement so far."""
+    if not a.finish:
         return 0.0
-    return (a.final_s or FINAL_MIN_S + judge_est) + judge_est + 10.0
+    if a.finish_s:
+        return a.finish_s
+    if inp not in _PADS:
+        try:
+            _PADS[inp] = Path(inp).read_text(encoding="utf-8", errors="replace").count("(pad ")
+        except (OSError, TypeError):
+            _PADS[inp] = 0
+    pads = _PADS[inp]
+    return max(FINISH_MIN_S, FINISH_COEF[0] + FINISH_COEF[1] * pads + 2 * judge_est + 5.0)
 
 
-def final_pass(a, best, inp, base, wd, end, judge_est, meter, stop, cpu_s, base_pairs=()):
-    """One more pass of --final on the board kept, whenever its attempt ended: the time left up to
-    the end (at least what final_reserve kept free) less one judgement. Returns its record (kept:
-    whether KiCad's DRC ranks its board better than the kept one), None when there is nothing to
-    do (no board, or a clean one)."""
-    if best is None or best.get("rank") is None or best["rank"][:2] == (0, 0):
-        return None
-    d = wd / "final"
+def final_reserve(a, judge_est, inp=None):
+    """Seconds kept free from the start for the final passes: the last mile (--final; --final-s,
+    else FINAL_MIN_S plus one DRC of the board, as long as the slowest judgement so far) and the
+    finish (--finish: finish_estimate), each with the judgement of its board. 0 without either."""
+    r = 0.0
+    if a.final:
+        r += (a.final_s or FINAL_MIN_S + judge_est) + judge_est + 10.0
+    if a.finish:
+        r += finish_estimate(a, inp, judge_est) + judge_est + 10.0
+    return r
+
+
+def _last_json(path):
+    """The last JSON object line of a log (a kae command's report), {} when there is none."""
+    try:
+        lines = Path(path).read_text(errors="replace").splitlines()
+    except OSError:
+        return {}
+    for line in reversed(lines):
+        if line.startswith("{"):
+            try:
+                r = json.loads(line)
+                return r if isinstance(r, dict) else {}
+            except ValueError:
+                continue
+    return {}
+
+
+def _one_pass(a, kind, command, best, inp, base, wd, end, b, judge_est, meter, stop, cpu_s, base_pairs, keep_equal):
+    """Run `command` once on the kept board (in wd/kind) with `b` seconds, judge its board and say
+    whether it replaces the kept one: when KiCad ranks it better, or (keep_equal) no worse."""
+    d = wd / kind
     d.mkdir(exist_ok=True)
     src, o = d / "best_in.kicad_pcb", d / "board.kicad_pcb"
     shutil.copy2(best["out"], src)
@@ -399,12 +445,14 @@ def final_pass(a, best, inp, base, wd, end, judge_est, meter, stop, cpu_s, base_
         if inp.with_suffix(ext).exists():
             shutil.copy2(inp.with_suffix(ext), src.with_suffix(ext))
     t = time.monotonic()
-    b = max(20.0, end - t - judge_est - 10.0)
     seed = a.seed * 1000 + 999
-    c = a.final.replace("@IN@", shlex.quote(str(inp))).replace("@OUT@", shlex.quote(str(o)))
+    drc_json = Path(best["out"]).with_name("drc.json")      # the judge's DRC of the kept board
+    c = command.replace("@IN@", shlex.quote(str(inp))).replace("@OUT@", shlex.quote(str(o)))
     c = c.replace("@BEST@", shlex.quote(str(src))).replace("@SEED@", str(seed)).replace("@TIME@", str(int(b)))
-    log(f"final pass on #{best['k']}'s board: {b:.0f}s")
-    info = dict(k="final", seed=seed, budget=round(b), out=o, t=t, resumed_from=best["k"])
+    c = c.replace("@DRC@", shlex.quote(str(drc_json)) if drc_json.exists() else "''")
+    c = c.replace("@DRC_S@", str(round(judge_est, 1)))
+    log(f"{kind} pass on #{best['k']}'s board: {b:.0f}s")
+    info = dict(k=kind, seed=seed, budget=round(b), out=o, t=t, resumed_from=best["k"])
     if SC:
         info["charge"] = str(d / "charge.jsonl")
     p = subprocess.Popen(["sh", "-c", c], cwd=d, stdout=open(d / "log", "w"), stderr=subprocess.STDOUT,
@@ -424,8 +472,40 @@ def final_pass(a, best, inp, base, wd, end, judge_est, meter, stop, cpu_s, base_
     c0, w0 = child_cpu(), time.monotonic()
     rank = judge(o, inp, base, max(10.0, end - w0 - 5), a.check_placement, base_pairs)
     info.update(rank=rank, judge_cpu_s=child_cpu() - c0, judge_wall_s=time.monotonic() - w0)
-    info["kept"] = rank is not None and rank < best["rank"]
-    log(f"final pass rc {p.returncode} {rank}: {'kept' if info['kept'] else 'not better'}")
+    info["kept"] = rank is not None and (rank <= tuple(best["rank"]) if keep_equal else rank < tuple(best["rank"]))
+    log(f"{kind} pass rc {p.returncode} {rank}: {'kept' if info['kept'] else 'not better'}")
+    return info
+
+
+def final_pass(a, best, inp, base, wd, end, judge_est, meter, stop, cpu_s, base_pairs=()):
+    """One more pass of --final on the board kept, whenever its attempt ended: the time left up to
+    the end (at least what final_reserve kept free) less one judgement and the finish's reserve.
+    Returns its record (kept: whether KiCad's DRC ranks its board better than the kept one), None
+    when there is nothing to do (no board, or a clean one)."""
+    if best is None or best.get("rank") is None or best["rank"][:2] == (0, 0):
+        return None
+    fin_res = (finish_estimate(a, inp, judge_est) + judge_est + 10.0) if a.finish else 0.0
+    b = max(20.0, end - time.monotonic() - judge_est - 10.0 - fin_res)
+    return _one_pass(a, "final", a.final, best, inp, base, wd, end, b, judge_est, meter, stop, cpu_s, base_pairs,
+                     keep_equal=False)
+
+
+def finish_pass(a, best, inp, base, wd, end, judge_est, meter, stop, cpu_s, base_pairs=()):
+    """--finish on the board kept (after --final), clean or not: the time left less one judgement.
+    Its board replaces the kept one when KiCad ranks it no worse (finishing shapes copper; it does
+    not aim to change the rank). The record carries the finish's own report summary (which parts
+    ran, were skipped or failed; its DRC runs). None without a board."""
+    if best is None or best.get("rank") is None:
+        return None
+    b = max(20.0, end - time.monotonic() - judge_est - 10.0)
+    info = _one_pass(a, "finish", a.finish, best, inp, base, wd, end, b, judge_est, meter, stop, cpu_s, base_pairs,
+                     keep_equal=True)
+    rep = _last_json(wd / "finish" / "log")
+    if rep:
+        info["finish"] = dict(parts=rep.get("parts"), drc_runs=rep.get("drc_runs"),
+                              drc_in_reused=rep.get("drc_in_reused"), entries=rep.get("entries"),
+                              kept_entries=rep.get("kept"), noise=rep.get("noise"), seconds=rep.get("seconds"),
+                              step_cache=rep.get("step_cache"))
     return info
 
 
@@ -532,6 +612,12 @@ def main():
                          "its time reserved from the start; kept only when KiCad ranks it better")
     ap.add_argument("--final-s", type=float, default=0.0,
                     help="seconds for the final pass; 0 = FINAL_MIN_S plus one DRC of the board")
+    ap.add_argument("--finish", default="",
+                    help="command for the finish stage on the kept board after --final (@IN@, @BEST@, @OUT@, @SEED@, "
+                         "@TIME@, @DRC@: the judge's DRC report of @BEST@, @DRC_S@: one judgement's seconds), "
+                         "its time reserved from the start; kept when KiCad ranks it no worse, clean boards too")
+    ap.add_argument("--finish-s", type=float, default=0.0,
+                    help="seconds for the finish pass; 0 = an estimate from the input's pad count plus two DRCs")
     ap.add_argument("--history", action="store_true",
                     help="keep a history of the nets judged attempts left open (restarts/history.json) and pass "
                          "its path to every attempt in KAE_ROUTE_HISTORY")
@@ -566,7 +652,7 @@ def main():
         # (seniordesign hdmi2rgb: a DRC takes ~60 s; a fixed reserve let the wrapper run 88 s
         # past its time, the harness killed it and kept nothing)
         return end - max(min(0.25 * a.time, 60 + 0.05 * a.time), a.parallel * judge_est + GRACE_S + 15) \
-            - final_reserve(a, judge_est)
+            - final_reserve(a, judge_est, inp)
     base = (b0 or {}).get("types", {})
     history = {}
     if a.history:
@@ -731,13 +817,25 @@ def main():
             best = fin
             out.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(best["out"], out)
+    fz = finish_pass(a, best, inp, base, wd, end, judge_est, meter, stop, cpu_s,
+                     (b0 or {}).get("overlaps", ())) if a.finish else None
+    carry = best["out"].parent if best else None   # the routed board's own report (blocked, hazards)
+    if fz is not None:
+        judge_cpu += fz.pop("judge_cpu_s", 0.0)
+        judge_wall += fz.pop("judge_wall_s", 0.0)
+        done.append(fz)
+        if fz.get("kept"):
+            best = fz
+            out.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(best["out"], out)
     work = dict(attempts=len(done), clean_found=bool(best and best["rank"][:2] == (0, 0)),
                 best_attempt=best and best["k"], best_seed=best and best["seed"], best_rank=best and list(best["rank"]),
                 cpu_s=round(sum(d.get("cpu_s", 0) for d in done) + judge_cpu, 1),
                 method_cpu_s=round(sum(d.get("cpu_s", 0) for d in done), 1), judge_cpu_s=round(judge_cpu, 1),
                 judge_wall_s=round(judge_wall, 1), wall_s=round(time.monotonic() - t0, 1), budget_s=a.time,
                 parallel=a.parallel, peak_rss_mb=max([d.get("peak_rss_mb", 0) for d in done] + [0]),
-                wall_to_best_s=best and round(best["t"] + best["wall_s"] - t0, 1))
+                wall_to_best_s=best and round(best["t"] + best["wall_s"] - t0, 1),
+                finish=(fz or {}).get("finish") if a.finish else None)
     if SC:   # wall_s and the attempts' times above are charged time; real_wall_s is what passed
         tot = dict(hits=SC.STATS["hits"], misses=SC.STATS["misses"], uncacheable=SC.STATS["uncacheable"],
                    charged_s=SC.STATS["charged_s"], saved_s=SC.STATS["saved_s"])
@@ -759,7 +857,7 @@ def main():
     out.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(best["out"], out)
     log(f"kept #{best['k']} (seed {best['seed']}): {best['rank']}")
-    carry_report(best["out"].parent, wd)
+    carry_report(carry or best["out"].parent, wd)
     return 0
 
 
