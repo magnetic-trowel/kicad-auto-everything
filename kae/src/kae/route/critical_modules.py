@@ -324,8 +324,10 @@ def route_hop(ctx, m, tag, net, sources, targets, widths, layers, via=False, via
         w = ctx.sp.clamp_width(net, layers[0], w)
         avoid = []
         for _ in range(3):
+            # a module hop's physics prices its length: rule D only where it costs no length
+            # (GridRouter entry "physics": the shortest of rule D and the old entry, never acute)
             rt = ctx.gr.connect(net, sources, targets, w, layers, via=via, via_cost=via_cost,
-                                layer_factor=layer_factor, max_len=max_len, avoid=avoid)
+                                layer_factor=layer_factor, max_len=max_len, avoid=avoid, entry="physics")
             if rt is None:
                 break
             boxed = ctx.gr.boxes_in(rt) if ctx.opts.get("keep_escapes", True) else []

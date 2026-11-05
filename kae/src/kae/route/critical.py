@@ -282,8 +282,9 @@ class Session:
         from shapely.geometry import Point as _Pt
         sp = self.space
         mods = {m.id: m for m in list(self.modules) + list(getattr(self.ctx, "rail_modules", []) or [])}
-        out = dict(necks=0, splits=0, left=0)
+        out = dict(necks=0, splits=0, left=0, pin_ties=0)
         tol = 1e-4
+        ruled = getattr(sp, "pad_entry", "centre") != "centre"
 
         def add_piece(net, layer, w0, a, b, owner):
             mn = sp.width_limits(net, layer)[0] or 0.0
@@ -329,6 +330,12 @@ class Session:
                             break
                     if centre is None:
                         body = next((x for x in same if x.kind == "track" and x.geom.distance(pe) < x.r + 1e-9), None)
+                    if centre is not None and x.kind == "pad" and ruled:
+                        # a rule-D end on the land's centre line: KiCad (and the scorer) connect any
+                        # overlap, and Freerouting gets a DSN pin tie (translate.tie_pins), so no
+                        # copper is added on the board
+                        out["pin_ties"] += 1
+                        continue
                     if centre is not None:
                         if add_piece(t.net, layer, t.width, e, centre, t.owner) is not None:
                             out["necks"] += 1

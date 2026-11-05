@@ -1301,10 +1301,50 @@ class _MaskIndex:
         return (out, self.web) if out else None
 
 
+_ROLES = {}
+
+
+def _roles(board_path, nets, opts):
+    """(power, ground) net sets: opts "power" / "ground" when given; else the physics brief's rails
+    and grounds (kae.circuit.brief, as power_copper.classify; cached per board content) together with
+    the nets pad_entry.current_net names a rail or ground (on the 12 pad-entry boards the brief
+    finds 24 rails the names miss, V_BATT, PWRIN, IPSOUT..., and misses 2 they find, secsense 3V3
+    and VIN); switch nodes never. Names alone when no brief can be built."""
+    from . import pad_entry as PE
+    from . import power_copper as PC
+    g_n = {n for n in nets if PE.GND_RE.search(n.rsplit("/", 1)[-1])}
+    p_n = {n for n in nets if n not in g_n and PE.current_net(n)}
+    p_b, g_b, sw = set(), set(), set()
+    brief = opts.get("brief")
+    if brief is None and board_path:
+        try:
+            import hashlib
+            key = hashlib.sha1(Path(board_path).read_bytes()).hexdigest()      # staged copies share it
+        except OSError:
+            key = None
+        if key is not None and key not in _ROLES:
+            try:
+                from kae.board.kicad_file import load
+                from kae.circuit.brief import build
+                b = load(board_path)
+                _ROLES.clear() if len(_ROLES) > 64 else None
+                _ROLES[key] = (build(b),)
+            except Exception:                       # noqa: BLE001 - names are the fallback
+                _ROLES[key] = None
+        hit = _ROLES.get(key) if key is not None else None
+        if hit is not None:
+            brief = hit[0]
+    if brief is not None:
+        p_b, g_b, sw, _v = PC.classify(brief, nets)
+    ground = set(opts["ground"]) if opts.get("ground") is not None else (g_n | g_b)
+    power = set(opts["power"]) if opts.get("power") is not None else ((p_n | p_b) - ground - set(sw))
+    return power, ground
+
+
 def _pad_rules(info, p, board_path, opts, sev):
-    """Fill p.pad_rules, p.process and p.hazards (see PadRule). Rails and grounds by name
-    (pad_entry.current_net; opts "power" / "ground" override), currents from the operating facts
-    (opts "operating", else the project's KAE_OPERATING, as power_copper)."""
+    """Fill p.pad_rules, p.process and p.hazards (see PadRule). Rails and grounds from the brief and
+    the names (_roles), currents from the operating facts (opts "operating", else the project's
+    KAE_OPERATING, as power_copper)."""
     from . import pad_entry as PE
     from . import power_copper as PC
     pads = info.get("pads") or []
@@ -1313,10 +1353,7 @@ def _pad_rules(info, p, board_path, opts, sev):
             p.pad_rules[i] = PadRule(i, pad, p)
     p.mask = _MaskIndex(info, p, sev)
     nets = {r.net for r in p.pad_rules.values()}
-    ground = set(opts["ground"]) if opts.get("ground") is not None else \
-        {n for n in nets if PE.GND_RE.search(n.rsplit("/", 1)[-1])}
-    power = set(opts["power"]) if opts.get("power") is not None else \
-        {n for n in nets if n not in ground and PE.current_net(n)}
+    power, ground = _roles(board_path, nets, opts)
     op = PC._operating(board_path, opts.get("operating")) if board_path else None
     asm = ((op or {}).get("requirements") or {}).get("assembly") or {}
     p.process = PC.process_of(asm)

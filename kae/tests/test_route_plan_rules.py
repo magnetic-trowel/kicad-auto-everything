@@ -241,3 +241,79 @@ def test_arm_e_lays_power_coppers_ground_vias_before_routing(tmp_path):
         pad = next(x for x in pads if x.uuid == t.owner[1])
         nk = plan.pad_rule(pad.idx).neck
         assert nk is None or t.width <= nk + 1e-9
+
+
+def test_arm_e_vias_are_written_locked(tmp_path):
+    """plane_escapes with escape_ground_vias: the ground vias and their tracks are fixed wiring
+    (locked), so Freerouting keeps the site and the repair loop never rips or unlocks them."""
+    from kae.route import critical_write as W
+    from kae.route import lastmile as LM
+    p, info, plan, sp = _plan(tmp_path, [])
+    b = load(p)
+    fills = [dict(net="GND", layers={"B.Cu": [[[list(c) for c in z.outline.exterior.coords]]]})
+             for z in b.zones if z.net == "GND"]
+    out = tmp_path / "esc.kicad_pcb"
+    rep = LM.plane_escapes(p, info, plan, fills, out, balls=False, log=lambda *a: None,
+                           escape_opts={"escape_ground_vias": 1})
+    assert rep["ground_vias"] >= 2
+    items = W.routing(out)
+    vias = [r for r in items if r["kind"] == "via"]
+    assert len(vias) >= rep["ground_vias"] and sum(r["locked"] for r in vias) == rep["ground_vias"]
+
+
+def test_route_keeps_off_other_lands_of_its_net(tmp_path):
+    """Q3, a land of the same net between Q1 and Q2, is passed around, not crossed."""
+    p, info, plan, sp = _plan(tmp_path, [_part("Q1", 137.0, 104.0), _part("Q2", 137.0, 112.0),
+                                         _part("Q3", 137.0, 108.0)])
+    a, b, q3 = _pad(sp, "Q1"), _pad(sp, "Q2"), _pad(sp, "Q3")
+    gr, rt = _connect(sp, "FA", a, b)
+    _check_rule_d(sp, "FA", rt, (a, b))
+    assert all(q3.geom.distance(LineString([u, v])) >= 0.125 - 1e-6 for _, u, v in rt.segs)
+    assert gr.stats["lands_kept_out"] >= 1 and gr.stats["fallback_crossing"] == 0
+    # boxed in by its own net's land with no way round: crossing it is the fallback, not a failure
+    _, rc = _connect(sp, "FA", a, b, mode="centre")
+    assert rc is not None
+
+
+def test_a_necked_land_with_copper_stays_a_leaf(tmp_path):
+    """A route of the net does not leave from a necked land that already has its track (the neck
+    carries that land's current only); it joins the track instead."""
+    cap = ("C9", "100n", "x:C_0603", 118.0, 112.0, 0.0,
+           [("1", "FA", -0.8, 0.0, 0.8, 0.95, "smd", 0.0, "", "passive"),
+            ("2", "FB", 0.8, 0.0, 0.8, 0.95, "smd", 0.0, "", "passive")], (1.5, 0.8))
+    p, info, plan, sp = _plan(tmp_path, [_part("Q1", 110.0, 112.0), cap, _part("Q2", 117.2, 118.0)])
+    c9 = _pad(sp, "C9", "1")
+    gr, rt = _connect(sp, "FA", _pad(sp, "Q1"), c9, w=0.5)
+    from kae.route import lastmile as LM
+    new = LM._commit(sp, rt)
+    tracks = [Anchor(it.geom, tuple(it.layers), None, grow=it.r * 0.8, kind="track") for it in new if it.kind == "track"]
+    gr2 = GridRouter(sp)
+    rt2 = gr2.connect("FA", [_anchor(c9)] + tracks, [_anchor(_pad(sp, "Q2"))], 0.5, ["F.Cu"], via=False)
+    assert rt2 is not None and gr2.stats["neck_leaf"] == 1
+    assert all(c9.geom.distance(LineString([u, v])) >= 0.25 - 1e-6 for _, u, v in rt2.segs)
+
+
+def test_physics_entry_never_longer_than_rule_d_and_never_acute(tmp_path):
+    p, info, plan, sp = _plan(tmp_path, [_part("Q1", 110.0, 110.0), _part("Q2", 116.0, 114.0)])
+    a, b = _pad(sp, "Q1"), _pad(sp, "Q2")
+    _, rd = _connect(sp, "FA", a, b)
+    gr = GridRouter(sp)
+    rp = gr.connect("FA", [_anchor(a)], [_anchor(b)], 0.25, ["F.Cu"], via=False, entry="physics")
+    assert rp is not None and rp.length <= rd.length + 0.3
+    assert "centre_acute" not in rp.entries
+    for (u, v), pad in (((rp.segs[0][2], rp.segs[0][1]), a), ((rp.segs[-1][1], rp.segs[-1][2]), b)):
+        ang = PE.entry_angle(pad.geom, u, v)
+        assert ang is None or ang <= 45.0
+
+
+def test_join_at_corners_adds_no_copper_at_rule_d_pad_ends(tmp_path):
+    """KiCad joins any overlap; Freerouting gets a DSN pin tie. A rule-D end off the pad centre
+    gets no extra piece to the centre on the board."""
+    s = F.session(tmp_path, corner_joins=False).route()
+    sp = s.space
+    before = {id(it) for it in sp.routed}
+    rep = s.join_at_corners()
+    assert rep["pin_ties"] >= 1
+    centres = {(round(p.pos[0], 6), round(p.pos[1], 6)) for p in sp.pads if p.kind == "pad" and p.pos is not None}
+    for t in (it for it in sp.routed if it.kind == "track" and id(it) not in before):
+        assert not any((round(q[0], 6), round(q[1], 6)) in centres for q in (t.geom.coords[0], t.geom.coords[-1]))
