@@ -205,6 +205,29 @@ def current_need(current_a, margin=DEFAULTS["current_margin"]):
     return ipc_width(margin * current_a) if current_a else 0.0
 
 
+def land_necks(lands, power, ground, current, process, margin=DEFAULTS["current_margin"]):
+    """The neck rule over a board's parts: ({key: neck width}, {key: series current A}) for the
+    lands of two-terminal SMD parts. `lands`: {part: [(key, smd, net, land width)]}, one entry per
+    copper pad; `current`: {net: A} (net_currents). A part with no ground pad and a power pad is in
+    series with a rail (fuse, ferrite, shunt, jumper) and carries the rail's current; a land whose
+    neck_rule is None (wave, 1206+ in reflow, or a series current that needs more than the land)
+    gets no neck. The one implementation PowerCopper._necks and constraints.plan both use."""
+    necks, series_a = {}, {}
+    for _part, cu in lands.items():
+        if len(cu) != 2 or not all(smd for _k, smd, _n, _w in cu):
+            continue
+        nets = {n for _k, _s, n, _w in cu}
+        series = 0.0
+        if not nets & set(ground) and nets & set(power):
+            series = max(current.get(n, 0.0) for n in nets)
+        for key, _smd, _net, land_w in cu:
+            series_a[key] = series
+            w = neck_rule(land_w, process, series, margin)
+            if w is not None:
+                necks[key] = w
+    return necks, series_a
+
+
 def pad_currents(operating, pads, power, ground):
     """{(ref, net): A} through each pad, from operating facts, by the rules of the neck: a part's own
     current (I_A's upper end, else I_sustained_A) on its power and (when it has a power pad) ground
@@ -380,6 +403,109 @@ def classify(brief, board_nets):
     power -= switch | ground
     victims -= power | ground
     return power & set(board_nets), ground & set(board_nets), switch, victims
+
+
+# ----------------------------------------------------------------------------- ground vias (also kae.route.lastmile's arm E)
+def ground_fill(fills, cache, net, layer, r):
+    """The fill of `net` on `layer` shrunk by r (where a via of radius r lies wholly inside),
+    prepared; cached in `cache`."""
+    key = (net, layer, r)
+    if key not in cache:
+        g = unary_union((fills.get(net) or {}).get(layer) or [])
+        if not g.is_empty:
+            g = g.buffer(-r)
+            shapely.prepare(g)
+        cache[key] = g
+    return cache[key]
+
+
+def barrels_near(sp, net, geom, reach):
+    """Whether a via or plated hole of `net` lies within `reach` of `geom`."""
+    x0, y0, x1, y1 = geom.bounds
+    for l in sp.cu:
+        for it in sp.query(l, (x0, y0, x1, y1), reach + 1.0):
+            if it.net != net:
+                continue
+            if it.kind == "via" and it.geom.distance(geom) <= reach:
+                return True
+            if it.kind == "pad" and it.hole is not None and it.geom.distance(geom) <= reach:
+                return True
+    return False
+
+
+def ground_via_pads(sp, brief, ground):
+    """SMD ground pads (Space items) of capacitors and of decoupled ICs' ground pins: the pads
+    that get a ground via (PDN-01, docs/topics/rules/decoupling-pdn.md)."""
+    parts = brief.get("parts") or {}
+    want = set()
+    for s in brief.get("structures") or []:
+        if s.get("kind") == "decap" and s.get("ic"):
+            for p in s.get("ground_pins") or []:
+                want.add((s["ic"], str(p)))
+    out = []
+    for it in sp.pads:
+        if it.kind != "pad" or not it.smd or it.net not in ground or not it.fp:
+            continue
+        kind = (parts.get(it.fp) or {}).get("kind")
+        num = str(it.owner[1]) if it.owner else ""
+        if kind == "capacitor" or (it.fp, num) in want:
+            out.append(it)
+    return out
+
+
+def lay_ground_vias(sp, pads, fills, necks, o, cache=None, owner="pc-via"):
+    """One through via per pad of `pads` (ground_via_pads) with no ground barrel within
+    o["via_reach"], as close as is legal, where the same ground has fill on another layer, with
+    a pad-to-via track no wider than o["via_track_max"], the land and its neck (`necks`: {id(pad
+    Item): width}; a necked land's via keeps o["neck_via_gap"] from it, or with neck_via "track"
+    sits on the land's routed track). Committed to `sp` as found. Yields (pad, (x, y), D, d,
+    track) with track (layer, width, a, b) or None."""
+    cache = {} if cache is None else cache
+    for pad in pads:
+        net = pad.net
+        if barrels_near(sp, net, pad.geom, o["via_reach"]):
+            continue
+        D, d = sp.via_size(net)
+        rv = D / 2
+        layer = next(iter(sorted(pad.layers, key=sp.cu.index)), None)
+        others = [l for l in sp.cu if l != layer]
+        fl = [ground_fill(fills, cache, net, l, rv) for l in others]
+        fl = [f for f in fl if not f.is_empty]
+        if not fl:
+            continue
+        own = ground_fill(fills, cache, net, layer, rv)
+        pos = pad.pos or (pad.geom.centroid.x, pad.geom.centroid.y)
+        wt = sp.clamp_width(net, layer, min(o["via_track_max"], _short_side(pad.geom), necks.get(id(pad), math.inf)))
+        entries = []
+        if id(pad) in necks and o["neck_via"] == "track":
+            # a necked land keeps one entry (balance with its sister land): the via sits on the
+            # land's own routed track, at least neck_len from the land, and no second track enters
+            entries = [it for it in sp.items[layer] if it.kind == "track" and it.net == net
+                       and it.geom.distance(pad.geom) <= it.r + 1e-6]
+            if not entries:
+                continue
+            cands = _via_on_tracks(entries, pad.geom, rv, o["neck_len"], o["via_reach"])
+        elif id(pad) in necks:
+            cands = [c for c in ring_candidates(pad.geom, rv, o["via_reach"])
+                     if c[0] >= rv + o["neck_via_gap"] - 1e-9]
+        else:
+            cands = ring_candidates(pad.geom, rv, o["via_reach"])
+        for dist, x, y in cands:
+            p = Point(x, y)
+            if not any(f.contains(p) for f in fl):
+                continue
+            if sp.via_violations(net, x, y, first=True):
+                continue
+            track_ok = not entries and not sp.track_violations(net, layer, wt, pos, (x, y), first=True)
+            if not entries and not track_ok and not (not own.is_empty and own.contains(p)):
+                continue
+            sp.add_via(net, x, y, owner=(owner, pad.uuid))
+            track = None
+            if track_ok:
+                sp.add_track(net, layer, wt, pos, (x, y), owner=(owner, pad.uuid))
+                track = (layer, wt, pos, (x, y))
+            yield pad, (x, y), D, d, track
+            break
 
 
 # ----------------------------------------------------------------------------- the pass
@@ -812,97 +938,27 @@ class PowerCopper:
 
     # ---------------------------------------------------------------- 2. ground vias at pads
     def _ground_fill(self, net, layer, r):
-        key = (net, layer, r)
         c = getattr(self, "_gf", {})
         self._gf = c
-        if key not in c:
-            g = unary_union((self.fills.get(net) or {}).get(layer) or [])
-            if not g.is_empty:
-                g = g.buffer(-r)
-                shapely.prepare(g)
-            c[key] = g
-        return c[key]
+        return ground_fill(self.fills, c, net, layer, r)
 
     def _barrels_near(self, net, geom, reach):
-        sp = self.sp
-        x0, y0, x1, y1 = geom.bounds
-        for l in sp.cu:
-            for it in sp.query(l, (x0, y0, x1, y1), reach + 1.0):
-                if it.net != net:
-                    continue
-                if it.kind == "via" and it.geom.distance(geom) <= reach:
-                    return True
-                if it.kind == "pad" and it.hole is not None and it.geom.distance(geom) <= reach:
-                    return True
-        return False
+        return barrels_near(self.sp, net, geom, reach)
 
     def _target_pads(self):
-        """SMD ground pads of capacitors and of decoupled ICs' ground pins."""
-        parts = self.brief.get("parts") or {}
-        want = set()
-        for s in self.brief.get("structures") or []:
-            if s.get("kind") == "decap" and s.get("ic"):
-                for p in s.get("ground_pins") or []:
-                    want.add((s["ic"], str(p)))
-        out = []
-        for it in self.sp.pads:
-            if it.kind != "pad" or not it.smd or it.net not in self.ground or not it.fp:
-                continue
-            kind = (parts.get(it.fp) or {}).get("kind")
-            num = str(it.owner[1]) if it.owner else ""
-            if kind == "capacitor" or (it.fp, num) in want:
-                out.append(it)
-        return out
+        return ground_via_pads(self.sp, self.brief, self.ground)
 
     def ground_vias(self):
-        sp = self.sp
+        cache = getattr(self, "_gf", {})
+        self._gf = cache
         n = 0
-        for pad in self._target_pads():
-            net = pad.net
-            if self._barrels_near(net, pad.geom, self.o["via_reach"]):
-                continue
-            D, d = sp.via_size(net)
-            rv = D / 2
-            layer = next(iter(sorted(pad.layers, key=sp.cu.index)), None)
-            others = [l for l in sp.cu if l != layer]
-            fills = [self._ground_fill(net, l, rv) for l in others]
-            fills = [f for f in fills if not f.is_empty]
-            if not fills:
-                continue
-            own = self._ground_fill(net, layer, rv)
-            pos = pad.pos or (pad.geom.centroid.x, pad.geom.centroid.y)
-            wt = sp.clamp_width(net, layer, min(self.o["via_track_max"], _short_side(pad.geom),
-                                                self.necks.get(id(pad), math.inf)))
-            entries = []
-            if id(pad) in self.necks and self.o["neck_via"] == "track":
-                # a necked land keeps one entry (balance with its sister land): the via sits on the
-                # land's own routed track, at least neck_len from the land, and no second track enters
-                entries = [it for it in sp.items[layer] if it.kind == "track" and it.net == net
-                           and it.geom.distance(pad.geom) <= it.r + 1e-6]
-                if not entries:
-                    continue
-                cands = _via_on_tracks(entries, pad.geom, rv, self.o["neck_len"], self.o["via_reach"])
-            elif id(pad) in self.necks:
-                cands = [c for c in ring_candidates(pad.geom, rv, self.o["via_reach"])
-                         if c[0] >= rv + self.o["neck_via_gap"] - 1e-9]
-            else:
-                cands = ring_candidates(pad.geom, rv, self.o["via_reach"])
-            for dist, x, y in cands:
-                p = Point(x, y)
-                if not any(f.contains(p) for f in fills):
-                    continue
-                if sp.via_violations(net, x, y, first=True):
-                    continue
-                track_ok = not entries and not sp.track_violations(net, layer, wt, pos, (x, y), first=True)
-                if not entries and not track_ok and not (not own.is_empty and own.contains(p)):
-                    continue
-                v = sp.add_via(net, x, y, owner=("pc-via", pad.uuid))
-                self.vias.append((net, x, y, D, d, W.new_uuid(), "pad"))
-                if track_ok:
-                    sp.add_track(net, layer, wt, pos, (x, y), owner=("pc-via", pad.uuid))
-                    self.tracks.append((net, layer, wt, pos, (x, y), W.new_uuid(), self.vias[-1][5]))
-                n += 1
-                break
+        for pad, (x, y), D, d, track in lay_ground_vias(self.sp, self._target_pads(), self.fills, self.necks, self.o,
+                                                        cache=cache):
+            self.vias.append((pad.net, x, y, D, d, W.new_uuid(), "pad"))
+            if track is not None:
+                layer, wt, a, b = track
+                self.tracks.append((pad.net, layer, wt, a, b, W.new_uuid(), self.vias[-1][5]))
+            n += 1
         self.stats["ground_vias"] = n
         return n
 
@@ -1066,23 +1122,11 @@ class PowerCopper:
         return out
 
     def _necks(self):
-        """{id(pad Item): neck width} for the lands of two-terminal SMD parts the process necks."""
-        parts = self.brief.get("parts") or {}
-        out = {}
-        for fp, pads in self.sp.pads_by_fp.items():
-            cu = [p for p in pads if p.kind == "pad"]
-            if len(cu) != 2 or not all(p.smd for p in cu):
-                continue
-            nets = {p.net for p in cu}
-            series = 0.0
-            if not nets & self.ground and nets & self.power:
-                # in series with a rail (fuse, ferrite, shunt, jumper): its current flows through it
-                series = max(self.current.get(n, 0.0) for n in nets)
-            for p in cu:
-                w = neck_rule(_short_side(p.geom), self.process, series, self.o["current_margin"])
-                if w is not None:
-                    out[id(p)] = w
-        return out
+        """{id(pad Item): neck width} for the lands of two-terminal SMD parts the process necks
+        (land_necks)."""
+        lands = {fp: [(id(p), p.smd, p.net, _short_side(p.geom)) for p in pads if p.kind == "pad"]
+                 for fp, pads in self.sp.pads_by_fp.items()}
+        return land_necks(lands, self.power, self.ground, self.current, self.process, self.o["current_margin"])[0]
 
     def vector_or_widen(self):
         return self.grow_vector() if self.o.get("mode") == "vector" else self.widen()

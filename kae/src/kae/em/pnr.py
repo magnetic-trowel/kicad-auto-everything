@@ -1046,9 +1046,9 @@ class PhysRouter:
                             rt.search = (grid, lay, path, ph)
                         self.log(f"pnr:   hop {n} {b_[0]}->{a[0]} {'plain' if plain else 'phys'}: "
                                  f"{self.explain(rt)} len {rt.length:.1f} vias {len(rt.vias)}")
-                    for l, p0, p1 in rt.segs:
-                        out["items"].append(self.sp.add_track(n, l, rt.width, p0, p1, owner=("pnr", n)))
-                        t = (n, l, rt.width, p0, p1, "", self.lock)
+                    for i_, (l, p0, p1) in enumerate(rt.segs):
+                        out["items"].append(self.sp.add_track(n, l, rt.seg_w(i_), p0, p1, owner=("pnr", n)))
+                        t = (n, l, rt.seg_w(i_), p0, p1, "", self.lock)
                         self.tracks.append(t)
                         out["tracks"].append(t)
                     if not plain or self.spec is not None:     # (spectral: plain candidates are predicted too)

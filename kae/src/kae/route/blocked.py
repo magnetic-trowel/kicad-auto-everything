@@ -120,7 +120,7 @@ class _RelaxedRouter(GridRouter):
             return super().via_allowed(grid, net, layers_all)
         return self._real(lambda: GridRouter.via_allowed(self, grid, net, layers_all))
 
-    def _pull(self, net, layer, w, pts, tol=None):
+    def _pull(self, net, layer, w, pts, tol=None, keep=()):
         return pts
 
 

@@ -362,7 +362,29 @@ def _fit_depth(pad, a, x, d, t_full, w, min_depth=MIN_DEPTH):
     return lo - OVER_TOL if lo - OVER_TOL >= min(min_depth, t_full) else lo
 
 
-def centreline_targets(pad, release, width, stub=None, max_deg=10.0, check_overhang=True):
+def mask_ok(pad, a, end, w, mask):
+    """Whether the piece a -> end of width w leaves the solder-mask web: `mask` = (apertures, web),
+    the openings near the land that expose other nets' copper (constraints.PadRule.mask_on). The
+    piece's copper beside or beyond the land may not lie in such an opening (KiCad's
+    solder_mask_bridge: one opening exposing two nets), nor come closer to it than the web, or
+    than the land itself already is (a land closer than the web to its neighbour is the
+    footprint's doing, not the entry's). None or no apertures: True."""
+    if not mask or not mask[0]:
+        return True
+    aps, web = mask
+    cu = LineString([a, end]).buffer(w / 2, quad_segs=8).difference(pad.buffer(OVER_TOL))
+    if cu.is_empty or cu.area <= OVER_AREA:
+        return True
+    for ap in aps:
+        if cu.intersection(ap).area > OVER_AREA:
+            return False
+        lim = min(web, pad.distance(ap))
+        if lim > 0 and cu.distance(ap) < lim - 1e-6:
+            return False
+    return True
+
+
+def centreline_targets(pad, release, width, stub=None, max_deg=10.0, check_overhang=True, mask=None):
     """Rule D: where a re-routed tail from `release` ends and how it crosses the outline. The end
     lies on the long centre line (so the track sits centred across the pad); the straight piece
     that crosses the outline is within `max_deg` of the outline's normal there. [(a, end, kind)],
@@ -382,7 +404,9 @@ def centreline_targets(pad, release, width, stub=None, max_deg=10.0, check_overh
     piece (at least MIN_DEPTH inside the outline); a long-edge entry whose width hangs past the
     edge's ends slides toward the edge's middle. A track wider than the land along the piece has
     no target here (see neck_targets). `check_overhang=False`: the tip test alone (the end and its
-    round tip inside the pad), for copper that must stay wide."""
+    round tip inside the pad), for copper that must stay wide. `mask` (apertures, web): no final
+    piece may leave less than the solder-mask web to another net's opening (mask_ok; cm4-carrier
+    lost 16 long-edge entries into fine-pitch lands to solder_mask_bridge at the DRC gate)."""
     from shapely.geometry import LineString as _L, Point as _P
     stub = max(width, 0.1) if stub is None else stub
     c, u, v, w, h = pad_frame(pad)
@@ -413,6 +437,8 @@ def centreline_targets(pad, release, width, stub=None, max_deg=10.0, check_overh
             tip = (end[0] + d[0] * width / 2, end[1] + d[1] * width / 2)
             if not fat.contains(_P(tip)):
                 return None
+        if mask is not None and not mask_ok(pad, a, end, width, mask):
+            return None
         return (math.dist(release, a) + math.dist(a, end), a, end, kind)
 
     def add(end, d, kind):

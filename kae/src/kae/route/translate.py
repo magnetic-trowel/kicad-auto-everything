@@ -593,7 +593,8 @@ def apply(tree, plan, info):
     def lname(l):
         return names_of.get(l, l)
     summary["layer_names"] = {c: d for c, d in names_of.items() if c != d}
-    if getattr(plan, "pad_entry", "centre") == "edge":
+    if getattr(plan, "pad_entry", "centre") != "centre":
+        # rule D ends kae's grid copper on a land's long centre line, off the pin centre
         summary["pin_ties"] = tie_pins(tree, info, names_of)
     # all-power boards get signal layers
     kinds = [find(l, "type") for l in layers]

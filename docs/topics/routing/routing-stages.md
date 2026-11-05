@@ -44,6 +44,19 @@ Keys: pipeline, stage order, pad entry, taut arcs, power copper, necks, DRC gate
 
 **Where the portfolio runs it.** Attempts run stages 1–6. The restart wrapper's final pass (`--final`) on the kept board runs the last mile, then stage 7, with its time reserved from the start (`final_reserve`). A single attempt (`kae.route.cli route`) runs stage 7 at its end when time is left.
 
+### As built (stages 1, 2, 3, 5, 6; branch `rf-plan`)
+
+Where the code differs from the table above, and why [I]:
+- **Per pad, not per rail branch.** The plan's rule is `constraints.PadRule`, one per pad routing may end on (`plan.pad_rules`, by DSN pad index): the rule-D call, the neck (`power_copper.land_necks`, the code `PowerCopper._necks` now calls too), the pad's current and `current_need`. A rail branch's width stays with the critical rails, which know its current; the pad's need is the floor of any neck.
+- **Rails and grounds by name** (`pad_entry.current_net`, as `pad_reroute`), not by the physics brief: the plan is built without one. Currents come from the operating facts, as power copper reads them.
+- **The land hazard is raised for two-terminal lands in series with a rail only** (the case `neck_rule` drops the neck for). IC pins whose current needs more than their land would flag nearly every regulator pin; `pad_reroute` and taut still raise it where they keep a wide track.
+- **Mask web.** cm4-carrier's 16 reverts were not pad apertures but drawn mask openings over solder jumpers (`Segment of JP1 on B.Mask`): the plan's apertures are other nets' pad openings (pad grown by its mask expansion) and the drawn openings that expose this net and another (`plan.bridging_openings`). A final piece may not put copper beside the land inside one, nor come closer to one than the minimum web or than the land itself already is (`pad_entry.mask_ok`).
+- **Goals, then the old entry.** `GridRouter` searches to rule-D approach anchors computed from release points all round the land; the land and a w/2 band cost 2 mm extra, so the old entry (a pad cell, then the centre snap) is taken only where no anchor is free or after 3 anchors fail to verify. Born right is therefore "where the router can", not "always"; `rt.entries` and `router.stats["entries"]` count which.
+- **Commit sites carry the neck.** A `Route` holds per-segment necks (`Route.necks`, `seg_w`); `critical_modules.commit`, its re-width, `lastmile._commit` and `em.pnr` write them. Critical copper's `join_at_corners` still adds a piece from an off-centre rule-D end to the pad centre (inside the land) for Freerouting; `translate.tie_pins` now runs whenever `pad_entry` is not "centre".
+- **Unchanged users.** `pad_reroute` routes between track anchors (its rule D is its own targets), and the escape stage's dog-bones stay pinned to the centre.
+- **Arm E** (`escape_ground_vias`, default 0; `KAE_ESCAPE_GROUND_VIAS`) calls power copper's selection and placement (`ground_via_pads`, `lay_ground_vias`) in `lastmile.plane_escapes`. The vias are written unlocked, like the stubs, so Freerouting may still move them.
+- **Settings.** `pad_entry` "centreline" (default) or "centre"; the old "edge" reads as "centreline". `arc_policy` "arcs" or "keep45" sits in the plan (`plan.arc_policy`) for taut and finish to read.
+
 ## 3. Why this order, step by step
 
 **Rule D before taut.** Taut keeps each path's homotopy and its fixed end points. The pad entry decides the end point and the last piece, so it has to come first, and taut then tightens up to the approach anchor; its tangent arc replaces the corner D leaves. Both use `pad_entry.centreline_targets` (P3).

@@ -788,7 +788,7 @@ def test_wide_loop_hops_are_trimmed_within_the_tolerance(tmp_path):
             assert rt.width >= (m.spec.get("_floor") or {}).get(k, 0.0) - 1e-9 or rt.width == w0[(m.id, k)]
             narrowed += rt.width < w0[(m.id, k)] - 1e-6
             tracks = [it for it in m.copper if it.kind == "track" and it.owner == (m.id, k)]
-            assert tracks and all(abs(it.width - rt.width) < 1e-9 for it in tracks)
+            assert tracks and {round(it.width, 9) for it in tracks} == {round(rt.seg_w(i), 9) for i in range(len(rt.segs))}
     assert narrowed >= 1
     for it in sp.routed:
         if it.kind == "track":

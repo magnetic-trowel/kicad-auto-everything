@@ -543,6 +543,7 @@ class Session:
         """Every module's and rail's hazards (docs: the shared hazard schema), blocks first."""
         out = [h for m in self.modules for h in getattr(m, "hazards", [])]
         out += [h for r in self.rails or [] for h in r.get("hazards", [])]
+        out += list(getattr(self.space.plan, "hazards", None) or [])      # the plan's (land_enlarged_by_track)
         order = {"block": 0, "warn": 1, "info": 2}
         return sorted(out, key=lambda h: order.get(h.get("severity"), 3))
 

@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Pad-edge entry (kae.route.pad_entry; GridRouter pad_entry="edge"; translate.tie_pins;
+"""Pad-edge entry (kae.route.pad_entry; GridRouter pad_entry="centre"; translate.tie_pins;
 pad_trim): a track ends at the edge of the pad it approaches, perpendicular, at least
 pad_entry_overlap inside, with no sliver beyond the pad, and on rails at least its width in."""
 import math
@@ -113,25 +113,6 @@ def _route(tmp_path, mode):
     return sp, a, b, rt
 
 
-def test_grid_router_edge_mode_ends_on_the_edges(tmp_path):
-    sp, a, b, rt = _route(tmp_path, "edge")
-    assert rt is not None and rt.segs
-    ovl = sp.pad_overlap
-    (_, s0, e0), (_, s1, e1) = rt.segs[0], rt.segs[-1]
-    for pad, (u, v) in ((a, (e0, s0)), (b, (s1, e1))):
-        g = pad.geom
-        assert g.contains(Point(v)) and math.dist(v, pad.pos) > 0.1         # in the pad, not at its centre
-        assert _depth(g, u, v) >= ovl - 1e-6                                # overlap along the axis
-        assert PE.entry_angle(g, u, v) < 1.0                                # perpendicular
-        # no copper sliver beyond the pad on the far side: the round end stays inside
-        d = ((v[0] - u[0]) / math.dist(u, v), (v[1] - u[1]) / math.dist(u, v))
-        assert g.buffer(1e-6).contains(Point(v[0] + 0.125 * d[0], v[1] + 0.125 * d[1]))
-    for l, s, e in rt.segs:
-        assert not sp.track_violations("FA", l, 0.25, s, e, tol=TOL)
-    _, _, _, rc = _route(tmp_path / "c", "centre")
-    assert rc.length > rt.length - 1e-6                                     # an edge end never costs length here
-
-
 def test_grid_router_centre_mode_unchanged(tmp_path):
     sp, a, b, rt = _route(tmp_path, "centre")
     assert math.dist(rt.segs[0][1], a.pos) < 1e-9 and math.dist(rt.segs[-1][2], b.pos) < 1e-9
@@ -139,12 +120,13 @@ def test_grid_router_centre_mode_unchanged(tmp_path):
 
 def test_setting_and_env(tmp_path, monkeypatch):
     p = F.write_board(tmp_path)
+    assert CN.pad_entry_mode(p, {}) == "centreline"                   # rule D by default
+    assert CN.pad_entry_mode(p, {"pad_entry": "centre"}) == "centre"
+    assert CN.pad_entry_mode(p, {"pad_entry": "edge"}) == "centreline"   # the superseded edge rule
+    monkeypatch.setenv("KAE_PAD_ENTRY", "centre")
     assert CN.pad_entry_mode(p, {}) == "centre"
-    assert CN.pad_entry_mode(p, {"pad_entry": "edge"}) == "edge"
-    monkeypatch.setenv("KAE_PAD_ENTRY", "edge")
-    assert CN.pad_entry_mode(p, {}) == "edge"
     monkeypatch.setenv("KAE_PAD_ENTRY", "bogus")
-    assert CN.pad_entry_mode(p, {}) == "centre"
+    assert CN.pad_entry_mode(p, {}) == "centreline"
 
 
 # ----------------------------------------------------------------------------- Freerouting output trim

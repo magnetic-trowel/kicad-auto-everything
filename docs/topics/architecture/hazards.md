@@ -35,7 +35,7 @@
 |---|---|
 | `kae place` | static project hazards; recheck of OUTPUT (opens and dangling copper left out: a placement is not routed); `body_overlap`/`body_relaxed`; `connector_off_edge`; writer checks; `dru_rejected` |
 | `kae.route.cli route`, `lastmile` | static; recheck of OUTPUT; BGA `escape_infeasible`; else the bridge's final DRC counts |
-| `kae.route.critical_cli route` | static; recheck; `copper_below_ipc_width`, `rail_left_narrow`, `vias_below_current` (heat of the copper drawn, [critical-net-routing](../routing/critical-net-routing.md)); `class_max_below_ipc` module flags; `crystal_ground_no_plane` |
+| `kae.route.critical_cli route` | static; recheck; `copper_below_ipc_width`, `rail_left_narrow`, `vias_below_current` (heat of the copper drawn, [critical-net-routing](../routing/critical-net-routing.md)); `class_max_below_ipc` module flags; `crystal_ground_no_plane`; the plan's `land_enlarged_by_track` (a two-terminal land in series with a rail whose current needs more than the land, `constraints.PadRule`) |
 | `kae.route.critical_cli physics` | `physics_over_budget` (u > 1), `physics_unmeasured`; static |
 | `kae.joint.cli run` | static; recheck; everything nested in iterations; `check_not_run` and `physics_over_budget` of the final card; KiCad's writer checks of every pose write, once per code (`kicad_format_upgraded`, ...) |
 | `kae brief` | static project hazards with the brief's net voltages (route and joint reports have no brief at hand, so `hv_clearance_below_ipc` and `capacitor_over_voltage` come from `kae brief` and `kae place`) |

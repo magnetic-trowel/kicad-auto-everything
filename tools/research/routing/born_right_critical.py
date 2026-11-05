@@ -1,0 +1,65 @@
+# SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Critical copper with the old pad entry against born-right rule D (routing-stages.md stage 2).
+
+    python born_right_critical.py BOARD.kicad_pcb OUTDIR [--modes centre,centreline]
+
+For each mode, kae.route.critical.route_critical on a copy of BOARD (an unrouted, placed board
+with its .kicad_pro) with pad_entry=<mode>, then KiCad's DRC on the output. Writes
+OUTDIR/<mode>/board.kicad_pcb and OUTDIR/<mode>.json: route time, the router's entries by kind,
+necks and goal retries, pad-entry counts of the critical copper (pad_trim.stats: perpendicular /
+oblique / acute, on the centre line, overhanging), track length, and DRC by type (errors and
+unconnected, input and output). Run it under ulimit -v and the queue (tools/kaeq)."""
+import argparse
+import json
+import shutil
+import sys
+import time
+from pathlib import Path
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser()
+    ap.add_argument("board")
+    ap.add_argument("out")
+    ap.add_argument("--modes", default="centre,centreline")
+    a = ap.parse_args(argv)
+    from kae.route import critical, drc
+    from kae.route import pad_trim as PT
+    src = Path(a.board).resolve()
+    out = Path(a.out)
+    out.mkdir(parents=True, exist_ok=True)
+    base = drc.summary(drc.run(src, out / "in.drc.json"))
+    for mode in a.modes.split(","):
+        d = out / mode
+        d.mkdir(exist_ok=True)
+        inp = d / "in" / "board.kicad_pcb"
+        inp.parent.mkdir(exist_ok=True)
+        shutil.copy2(src, inp)
+        for ext in (".kicad_pro", ".kicad_dru"):
+            if src.with_suffix(ext).exists():
+                shutil.copy2(src.with_suffix(ext), inp.with_suffix(ext))
+        dst = d / "board.kicad_pcb"
+        t0 = time.monotonic()
+        rep, s = critical.route_critical(inp, dst, opts=dict(pad_entry=mode), log=lambda *x: None)
+        t = time.monotonic() - t0
+        for ext in (".kicad_pro", ".kicad_dru"):
+            if inp.with_suffix(ext).exists():
+                shutil.copy2(inp.with_suffix(ext), dst.with_suffix(ext))
+        st = PT.stats(dst.read_text(encoding="utf-8"), s.info)
+        dr = drc.summary(drc.run(dst, d / "drc.json"))
+        res = dict(board=src.parent.parent.parent.name if src.parent.name == "input" else src.stem, mode=mode,
+                   route_s=round(t, 1), tracks=rep["tracks"], vias=rep["vias"], track_mm=rep["track_mm"],
+                   router=rep["router"], entries=st, drc_in=base, drc_out=dr,
+                   hazards=[h["code"] for h in rep.get("hazards") or []])
+        (out / f"{mode}.json").write_text(json.dumps(res, indent=1))
+        print(json.dumps(dict(mode=mode, route_s=res["route_s"], track_mm=res["track_mm"],
+                              router_entries=rep["router"].get("entries"), necks=rep["router"].get("necks"),
+                              stats={k: st[k] for k in ("entries", "on_centreline", "perpendicular", "oblique",
+                                                        "acute", "overhanging")},
+                              drc=dr.get("by_type"), unconnected=dr.get("unconnected"))), flush=True)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

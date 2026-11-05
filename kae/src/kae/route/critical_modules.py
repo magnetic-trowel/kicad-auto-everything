@@ -175,8 +175,8 @@ class Ctx:
     # ---- copper
     def commit(self, m, rt, tag):
         items = []
-        for l, a, b in rt.segs:
-            items.append(self.sp.add_track(rt.net, l, rt.width, a, b, owner=(m.id, tag)))
+        for i, (l, a, b) in enumerate(rt.segs):
+            items.append(self.sp.add_track(rt.net, l, rt.seg_w(i), a, b, owner=(m.id, tag)))
         for (x, y) in rt.vias:
             items.append(self.sp.add_via(rt.net, x, y, owner=(m.id, tag)))
         m.copper += items
@@ -1523,8 +1523,8 @@ def _rewidth(ctx, m, tag, rt, w):
     gone = {id(it) for it in old}
     m.copper = [it for it in m.copper if id(it) not in gone]
     rt.width = w
-    for l, a, b in rt.segs:
-        m.copper.append(ctx.sp.add_track(rt.net, l, w, a, b, owner=(m.id, tag)))
+    for i, (l, a, b) in enumerate(rt.segs):
+        m.copper.append(ctx.sp.add_track(rt.net, l, rt.seg_w(i), a, b, owner=(m.id, tag)))
 
 
 def trim_widths(ctx, m, tol=None):
