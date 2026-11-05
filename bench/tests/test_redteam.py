@@ -398,3 +398,42 @@ def test_sandbox_keeps_the_harness_python(tmp_path):
     argv = adapters.Sandbox().wrap([sys.executable, "-c", "import sys, pytest; print(sys.prefix)"], tmp_path)
     r = subprocess.run(argv, capture_output=True, text=True, cwd=tmp_path)
     assert r.returncode == 0 and r.stdout.strip() == sys.prefix, r.stderr
+
+
+DUP_LINE = '\t(gr_line (start 102 101.5) (end 106 101.5) (stroke (width 0.12) (type solid)) (layer "Dwgs.User") ' \
+           '(uuid "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1"))\n'
+
+
+@pytest.fixture(scope="module")
+def rt_dup(tmp_path_factory):
+    """The red-team board with a second graphic under the B.Cu line's uuid, as copy-paste in older
+    KiCad versions leaves it: the task input itself repeats a (kind, uuid) key."""
+    root = tmp_path_factory.mktemp("redteam-dup")
+    src = root / "src"
+    src.mkdir()
+    text = FIXTURE.read_text()
+    i = text.index("\t(gr_rect (start 100 100)")
+    (src / "redteam.kicad_pcb").write_text(text[:i] + DUP_LINE + text[i:])
+    shutil.copy2(PROJECT, src / "redteam.kicad_pro")
+    entry = dict(id="redteam", repo="https://example.invalid/r", commit="0" * 40,
+                 pcb_path="redteam.kicad_pcb", license="GPL-3.0-or-later", tags=["2layer"])
+    rec = prepare.prepare_board(entry, {"kicad_pcb": str(src / "redteam.kicad_pcb"), "pcb_sha256": "x",
+                                        "kicad_pro": str(src / "redteam.kicad_pro")}, root / "tasks")
+    assert rec["qualified"], rec["reference"]["drc"]
+    assert set(rec["roundtrip"]) == {"route", "place", "place-fixed"}, rec["roundtrip"]
+    inp = board_path(root / "tasks" / "redteam" / "route" / "input").read_text()
+    assert inp.count("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1") == 2, "the task input no longer repeats the uuid"
+    return root, rec
+
+
+@pytest.mark.parametrize("kind,mode", [("route", "honest"), ("joint", "joint_honest"), ("joint-fixed", "joint_honest")])
+def test_input_repeating_a_uuid_stays_valid(rt_dup, kind, mode):
+    """A task input that repeats a graphic's uuid: an output that leaves both copies alone is not
+    'added (duplicate key)' (5b3a795 matched copies on the output side only)."""
+    root, _ = rt_dup
+    row, _ = cheat(root, mode, kind=kind)
+    s = row["score"]
+    assert row["status"] == "ok", row
+    assert s["valid"], s
+    foreign = s.get("foreign") or s.get("place_foreign") or {}
+    assert not foreign.get("count"), foreign
