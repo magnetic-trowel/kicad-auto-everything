@@ -967,6 +967,18 @@ def cg_mem_pressure(cg):
     return 0.0
 
 
+def at_high(cg, high_mb):
+    """Whether a job's memory (page cache included) is at the memory.high kaeq set for it (high_mb), within 5%:
+    only then is its memory pressure kaeq's doing (a 10-s pressure average lags a raised limit)."""
+    if not isinstance(high_mb, (int, float)):
+        return False
+    try:
+        with open(os.path.join(cg, "memory.current")) as f:
+            return int(f.read()) / (1 << 20) >= 0.95 * high_mb
+    except (OSError, ValueError):
+        return False
+
+
 def cg_set_high(cg, mb):
     """Set a job's grant: its scope's memory.high (the kernel throttles, never kills, above it); None: no limit."""
     try:
@@ -1702,7 +1714,7 @@ class Daemon:
                              protected=j["preempts"] >= cfg["evict_protect_after"],
                              invest=active_for(j, now) * max(1.0, j["cpus"]),
                              compressed=bool(st.get("compressed") and st.get("frozen_since")),
-                             mpress=0.0 if st.get("frozen_since") else cg_mem_pressure(cg),
+                             mpress=0.0 if st.get("frozen_since") or not at_high(cg, st.get("set")) else cg_mem_pressure(cg),
                              swapped=0.0 if st.get("squeezed") else swapped,   # squeezed: cold, stays out
                              owner=j["owner"], expect=max(self.need_mb(j, cfg), st["max_use"]),
                              held_out=swapped if st.get("squeezed") else 0.0, cg=cg))
