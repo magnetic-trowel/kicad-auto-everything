@@ -206,7 +206,9 @@ def _run(inp, out, project, o, workdir, time_s, base_report, drc_s, log):
                 rep["seconds"][part] = round(time.monotonic() - t1, 1)
                 continue
             entries = r.pop("_entries", [])
+            n0 = len(jr.entries)
             jr.add(entries)
+            entries = jr.entries[n0:]           # after merging conflicting ones
             rep["hazards"] += [h for h in r.get("hazards") or [] if isinstance(h, dict)]
             rep["stages"][part] = dict(_summary(part, r), entries=len(entries))
             rep["parts"]["ran"].append(part)
