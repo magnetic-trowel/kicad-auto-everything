@@ -39,4 +39,6 @@ Purposes: (1) spare others dead ends: failures are written up as carefully as su
 | [data](data/README.md) | The open-board corpus: licence audit, near-duplicate removal, import fixes, DRC statistics | 14,318 licence-audited open boards; 1,637 near-duplicates removed by content fingerprint; about 17% DRC-clean, as committed, under their own rules. |
 | [ideas](ideas.md) | Untested ideas with mechanisms: original ideas, cross-domain transplants, joint place-and-route ideas, problem transformations | — |
 
+Cross-cutting: [whole-codebase bug audit (2026-11)](audit-2611.md): about 50 bugs fixed across routers, placer, loader, physics inputs and scoring (score v8, v9; task spec 9).
+
 Pending: the 500-board comparison of every merit method (experiments `merit-500r3`, `merit-500r3k`) is still running; those method pages say "pending" until it finishes.
