@@ -244,6 +244,89 @@ def dsn_pins(tree):
     return out
 
 
+def _padstack_geoms(ps, dsn_l):
+    """{DSN layer: shapely shape} of a padstack's shapes in padstack coordinates (DSN units)."""
+    from shapely.geometry import LineString, Point
+    out = {}
+    for sh in findall(ps, "shape"):
+        node = sh[1] if len(sh) > 1 and isinstance(sh[1], list) else None
+        if node is None or len(node) < 3 or str(node[1]) not in dsn_l:
+            continue
+        try:
+            v = [float(t) for t in node[2:] if not isinstance(t, list)]
+        except ValueError:
+            continue
+        kind, g = node[0], None
+        if kind == "circle" and v:
+            g = Point(v[1] if len(v) > 2 else 0.0, v[2] if len(v) > 2 else 0.0).buffer(v[0] / 2, quad_segs=16)
+        elif kind == "rect" and len(v) >= 4:
+            g = Polygon([(v[0], v[1]), (v[2], v[1]), (v[2], v[3]), (v[0], v[3])])
+        elif kind == "polygon" and len(v) >= 7:
+            g = Polygon(list(zip(v[1::2], v[2::2])))
+        elif kind == "path" and len(v) >= 3:
+            pts = list(zip(v[1::2], v[2::2]))
+            g = (LineString(pts) if len(pts) > 1 else Point(pts[0])).buffer(max(v[0], 1e-6) / 2, quad_segs=16)
+        if g is not None:
+            g = g if g.is_valid else g.buffer(0)
+            if not g.is_empty:
+                out[str(node[1])] = g
+    return out
+
+
+def netless_pin_keepouts(tree, plan, cu):
+    """Netless pins (NPTH holes KiCad exports as pins, netless copper pads) as keepouts.
+
+    KiCad keeps a netless pad netless, but the fork, reading a DSN, gives a netless pin that
+    overlaps a netted pad of its footprint that pad's net (connectNetlessPadsToTheirFootprintsNet,
+    whenever the input is not KiCad's JSON), and then routes to it: tracks onto tactile-switch
+    NPTH pegs (adafruit magtag SW1, SW3, X4) and netless ferrite pads (ubertooth FB2, FB3), which
+    KiCad reports as shorts. A keepout of the pin's shape, in the pin's own clearance class
+    (plan.pin_class, which already holds the hole clearance of an NPTH), is the same obstacle and
+    carries no net. Pins are converted per image and pin id only when every placement's pin is
+    netless and classed. Removes them from the library and returns ([Obstacle], {(ref, pin)})."""
+    from .constraints import Obstacle
+    lib = find(tree, "library")
+    struct = find(tree, "structure")
+    network = find(tree, "network")
+    placement = find(tree, "placement")
+    if lib is None or struct is None or network is None or placement is None:
+        return [], set()
+    dsn_l = [str(l[1]) for l in findall(struct, "layer")]
+    if len(dsn_l) != len(cu):
+        return [], set()
+    netted = {str(t) for n in findall(network, "net") for pn in findall(n, "pins") for t in pn[1:]}
+    img_of = {}
+    for comp in findall(placement, "component"):
+        for pl in findall(comp, "place"):
+            if len(pl) > 1:
+                img_of[str(pl[1])] = str(comp[1])
+    pins = dsn_pins(tree)
+    ok = {}                                      # (image, pin id) -> every placement netless and classed
+    for ref, num, _ps, _side, _m in pins:
+        key = (img_of.get(ref), num)
+        good = f"{ref}-{num}" not in netted and (ref, num) in plan.pin_class and ref != OBSTACLE_REF
+        ok[key] = ok.get(key, True) and good
+    stacks = {str(ps[1]): ps for ps in findall(lib, "padstack") if len(ps) > 1}
+    obs, gone = [], set()
+    for ref, num, psn, side, m in pins:
+        if not ok.get((img_of.get(ref), num)) or psn not in stacks:
+            continue
+        for dl, g in _padstack_geoms(stacks[psn], dsn_l).items():
+            i = dsn_l.index(dl)
+            if side == "back":
+                i = len(cu) - 1 - i
+            geo = _apply_affine(g, m)
+            obs.append(Obstacle("keepout", cu[i], geo, plan.pin_class[(ref, num)], f"netless pin {ref}-{num}"))
+        gone.add((ref, num))
+    drop = {(img_of.get(r), n) for r, n in gone}
+    for im in findall(lib, "image"):
+        for p in list(findall(im, "pin")):
+            rest = [c for c in p[2:] if not isinstance(c, list)]
+            if rest and (str(im[1]), str(rest[0])) in drop:
+                S.remove(im, p)
+    return obs, gone
+
+
 def _pad_copper(pad, layer):
     from shapely.ops import unary_union
     rings = pad.get("poly") if "poly" in pad else (pad.get("poly_by_layer") or {}).get(layer)
@@ -672,7 +755,9 @@ def apply(tree, plan, info):
     image = ["image", OBSTACLE_IMAGE]
     place = ["place", OBSTACLE_REF, "0", "0", "front", "0"]
     n_ko = 0
-    for ob in plan.obstacles:
+    netless, netless_pins = netless_pin_keepouts(tree, plan, cu)
+    summary["netless_pins_as_keepouts"] = len(netless_pins)
+    for ob in list(plan.obstacles) + netless:
         for main, windows in _shape_nodes(ob, lname, cu):
             name = f"ko{n_ko}"
             n_ko += 1
@@ -720,7 +805,7 @@ def apply(tree, plan, info):
                 if isinstance(c, list) and c and c[0] == "pin":
                     pl.remove(c)
             for (cref, pin), cls in plan.pin_class.items():
-                if cref == ref:
+                if cref == ref and (cref, pin) not in netless_pins:
                     pl.append(["pin", Q(pin), ["clearance_class", cls]])
                     pins_set += 1
     summary["pins_classed"] = pins_set
