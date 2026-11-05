@@ -20,7 +20,7 @@ export PYTHONPATH=$REPO/kae/src:$REPO/bench/src KAE_BRIDGE_FREEROUTING=$fork OMP
 extra=()
 case $arm in *-fr) extra=(--no-repair --no-last-mile --no-blocked);; esac
 case ${arm%-fr} in
-  on) export KAE_FR_PIN_ENTRIES=on KAE_FR_RAILS=off;;
+  on|on2) export KAE_FR_PIN_ENTRIES=on KAE_FR_RAILS=off;;
   rails) export KAE_FR_PIN_ENTRIES=on KAE_FR_RAILS=on;;
   off) export KAE_FR_PIN_ENTRIES=off KAE_FR_RAILS=off;;
   *) echo "unknown arm $arm" >&2; exit 2;;

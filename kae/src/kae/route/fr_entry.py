@@ -123,10 +123,21 @@ def _ball_grids(info):
     return {k for k, v in n.items() if v >= BALL_GRID_MIN}
 
 
+def _holes(info):
+    """Every pad hole of the board as a shapely shape (board mm), with its pad record."""
+    out = []
+    for pd in info.get("pads") or []:
+        h = pd.get("hole")
+        if h and h.get("a") and h.get("b") and h.get("width"):
+            out.append((LineString([tuple(h["a"]), tuple(h["b"])]).buffer(float(h["width"]) / 2)
+                        if tuple(h["a"]) != tuple(h["b"]) else Point(h["a"]).buffer(float(h["width"]) / 2), pd))
+    return out
+
+
 def pin_entries(tree, plan, info, need_of=None):
     """{(ref, pin): (centre, {layer: (pad, entries)})} for every pin routing may end on: a pin with
     a net in a routing class, its copper on a layer, and its DSN centre inside that copper. Pads
-    of ball grids are left to the escape stage. `need_of(ref, net)`: the width (mm) the pad's
+    of ball grids are left to the escape stage, and so are lands that hold another pad's hole. `need_of(ref, net)`: the width (mm) the pad's
     current needs (necks are never narrower)."""
     from .constraints import _pad_shapes
     from .translate import dsn_pins
@@ -135,6 +146,7 @@ def pin_entries(tree, plan, info, need_of=None):
         return given
     pads = {(p.get("comp"), p.get("pin")): p for p in info.get("pads") or []}
     balls = _ball_grids(info)
+    holes = _holes(info)
     min_w = float(getattr(plan, "min_width", 0.0) or 0.0)
     out = {}
     for ref, num, _ps, _side, m in dsn_pins(tree):
@@ -153,6 +165,8 @@ def pin_entries(tree, plan, info, need_of=None):
             g = (real or {}).get(layer)
             if g is None or g.is_empty or g.geom_type != "Polygon" or not g.buffer(1e-6).contains(Point(centre)):
                 continue
+            if any(hp is not pd and hg.intersects(g) for hg, hp in holes):
+                continue          # a land holding another pad's hole (a switch's NPTH peg): a tail would cut it
             w = rc.widths.get(layer)
             if not w:
                 continue
