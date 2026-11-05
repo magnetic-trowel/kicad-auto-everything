@@ -89,7 +89,13 @@ def _ang(a, b):
 
 # ----------------------------------------------------------------------------- the pass
 class Taut:
-    def __init__(self, board_path, opts=None, log=print):
+    def __init__(self, board_path, opts=None, log=print, *, board=None, info=None, space=None, brief=None,
+                 fills=None):
+        """board_path: the board (its text: tuning patterns; its project: operating facts). The
+        keywords let a caller that already holds them skip the loading (kae.route.critical_taut:
+        the critical stage's Space with its copper as existing tracks): `board` (its tracks are
+        the routing), `info` (pcbnew_io.export_dsn), `space` (a critical_space.Space of that board
+        and info), `brief`, and `fills` (critical_recheck.fills_of, for pours "hold")."""
         from kae.board import pcbnew_io
         from kae.board.kicad_file import load
         from .bridge import severities
@@ -100,13 +106,15 @@ class Taut:
         self.o = {**DEFAULTS, **(opts or {})}
         self.log = log
         self.path = Path(board_path).resolve()
-        self.board = load(self.path)
-        with tempfile.TemporaryDirectory(prefix="kae-taut-") as d:
-            self.info = pcbnew_io.export_dsn(self.path, Path(d) / "board.dsn")
-        self.sp = Space(self.board, self.info, sev=severities(self.path))
+        self.board = board if board is not None else load(self.path)
+        if info is None and space is None:
+            with tempfile.TemporaryDirectory(prefix="kae-taut-") as d:
+                info = pcbnew_io.export_dsn(self.path, Path(d) / "board.dsn")
+        self.info = info if info is not None else space.info
+        self.sp = space if space is not None else Space(self.board, self.info, sev=severities(self.path))
         A.fix_space_arcs(self.sp, self.board.tracks)
         from kae.circuit.brief import build
-        self.brief = build(self.board)
+        self.brief = brief if brief is not None else build(self.board)
         self.power, self.ground, self.switch, self.victims = PC.classify(self.brief, self.board.nets)
         sp = self.sp
         cu = sp.cu
@@ -115,8 +123,11 @@ class Taut:
         self.PC = PC
         self.fills = {}
         if self.o["pours"] == "hold":
-            from .critical_recheck import fills_of
-            self.fills = fills_of(self.path)
+            if fills is not None:
+                self.fills = fills
+            else:
+                from .critical_recheck import fills_of
+                self.fills = fills_of(self.path)
         self.zone_clr = {}
         for z in self.board.zones:
             for l in z.layers or []:

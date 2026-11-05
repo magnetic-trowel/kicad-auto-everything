@@ -73,6 +73,7 @@ Where the code differs from the table above, and why [I]:
 **The last mile before finish.** Closing a connection is worth more than any shape. The last mile can rip unlocked copper, so finishing first would be wasted on what it rips. After finish, nothing changes topology except a retweak, which re-finishes only its region.
 
 **Critical copper is tightened at stage 2, not 7.** It is locked for Freerouting, so later is too late (P4). Tightening it on the near-empty board is also cheaper: there is little in the way. The guard is the module's routed physics (`critical_modules.quote`), not length: shorter is not always lower loop inductance.
+- *As built* (`kae.route.critical_taut`, opt `tighten`, off until the arm-C A/B): taut runs on a copy of the session's `Space`, so moved parts and every rule are what the grid router saw. Branches that share an input track form one group. A group is kept only if every module it touches quotes no worse than `tighten_tol` (0.5 %) on hops rebuilt from the new copper, and every rail branch it touches has no more resistance (drop = I·R). A group whose hops cannot be mapped is refused, and a kept group that conflicts with refused copper is dropped. Other nets' fills come from the stitching step's KiCad refill (`tighten_pours=hold`). The joint loop has no fills, so it uses `refill`, as the grid router does. A KiCad DRC gate closes the step (`tighten_gate`), because exact checks against the rule port are not enough: on lenaschimmel the port read a pad class as 0.12 mm where KiCad requires 0.2 mm, and tightened copper used the difference. On 4 boards the final DRC was unchanged, critical copper got 0–2 % shorter with corners about halved, and crystal pulling fell by up to 8 % ([results](../../../bench/results/2026-11-05-crit-tighten-26f47f6.md)).
 
 **Pours and fills.** Every shape stage holds other nets' refilled copper as obstacles and its own net's fill as free. KiCad refills once, in the gate; the refill can only grow into space a tightened track left.
 
@@ -87,7 +88,7 @@ Where the code differs from the table above, and why [I]:
 | Gate ↔ noisy DRC types | magtag's `solder_mask_bridge` count changes from run to run; power copper's gate spent its budget chasing it | The gate compares violations by identity (type, items, position bucket), not by counts; a type that differs between two runs of the same board is noise and excluded, with a note |
 | Rule D ↔ mask bridges | cm4-carrier: 16 of 19 reverts were long-edge approaches into fine-pitch pads | The plan's entry frame includes the mask web: a long-edge approach that leaves less than the board's minimum web is not a candidate, so the gate never sees it |
 | Retweak ↔ finish | The retweak rips a module's surroundings and re-routes them | It calls finish on the nets it re-routed, with the rest held |
-| Joint loop ↔ shapes | The joint loop quotes candidates on routed copper | The copper it quotes is born-right grid copper, the same shapes the board gets |
+| Joint loop ↔ shapes | The joint loop quotes candidates on routed copper | Candidates are quoted on grid copper. The kept copper is then tightened once under the same quotes, so what ships is never worse than what was judged. Running taut once per candidate would cost more than the search itself (`optimize_modules`) |
 | Physics ↔ grid noise | dream117er and redbot heat terms doubled under taut, most likely 0.25 mm raster noise | Before the A/B, a check that rasterizes the same copper at two offsets; if the term moves, the evaluator gets a fix in its own commit |
 
 ## 5. Efficiency
@@ -113,6 +114,6 @@ Reported per arm: cp1 and cpk, completion, errors by type, `clean_strict`, obliq
 
 ## 7. Open choices
 
-- **Arcs on 45/90 boards.** `rule-genealogy-routing-style-dfm` R02/R03 keeps 45° for editability. That is an editing reason, not physics or fab. Default: arcs. A plan setting (`arc_policy=keep45`) lets the commanding LLM keep the board's style.
+- **Arcs on 45/90 boards.** `rule-genealogy-routing-style-dfm` R02/R03 keeps 45° for editability. That is an editing reason, not physics or fab. Default: arcs. A plan setting (`arc_policy=keep45`) lets the commanding LLM keep the board's style. Taut has no segment-only mode, so with keep45 stage 2 does not tighten at all and says so in its report. Until the plan carries the setting, it is a `kae.route.critical` option.
 - **Via sliding** in taut is not built; vias stay where the router put them.
 - **Coupled diff pairs** are tightened as a pair only when the input pair is coupled; Freerouting's are not, so a pair-aware stage 4 is a separate question ([diff pairs](diff-pair-routing.md)).
