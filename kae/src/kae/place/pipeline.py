@@ -42,7 +42,7 @@ from . import clusters, cpsat, edges, seed as seedmod
 from .anneal import Annealer, make_annealer
 from . import exact as exactmod
 from .legalize import exact_check, legalize
-from .problem import Problem, fixed_text
+from .problem import PLACE_SEVERITY, Problem, fixed_text
 from .state import State, grid_violations
 from .stubs import make_brief, make_terms
 
@@ -60,6 +60,7 @@ class Result:
     terms: object = None         # the place terms the scorecard uses (None: no structures)
     order: list = field(default_factory=list)    # the protection-order rules
     brief: dict | None = None    # the circuit brief placement used (kae.hazards: net voltages)
+    verified: dict | None = None  # place(verify=...): what the caller's check said of the board as written
 
 
 SA_U_SAT = 3.0   # see place(): utilization saturates beyond this in the annealer's terms
@@ -100,8 +101,8 @@ def _net_roles(brief):
 
 
 def _severity_mode(board, board_path, opts):
-    """'strict', 'level_c' or 'board' (Problem._severities): the project's KAE_PLACE_SEVERITY text
-    variable, else opts['place_severity'], else None (the environment, else the default)."""
+    """The project's KAE_PLACE_SEVERITY text variable, else opts['place_severity'], else None (the
+    environment, else the default: resolve_severity)."""
     tv = (getattr(getattr(board, "rules", None), "kae_vars", None) or {}).get("KAE_PLACE_SEVERITY")
     if tv or (opts or {}).get("place_severity"):
         return tv or opts["place_severity"]
@@ -235,8 +236,207 @@ def physics_summary(terms, poses, breakdown=True):
     return out
 
 
+# The severity ladder (kae-exact-legality.md, "Severity ladder"): strict first, level_c only when
+# strict cannot fit. On 113 boards whose projects waive checks (decide-ab, legality-ab2, k=2) strict
+# was legal under the real rules on 46% of runs against level_c's 28%, but left 12 boards with
+# placement shorts against 6: when the drawn courtyards do not fit, the placer piles parts up.
+LADDER = "strict_then_level_c"
+LADDER_STRICT_SHARE = 0.55   # strict's share of the caller's time; level_c gets the rest (>= 45%)
+LADDER_MIN_S = 20.0          # a level_c rung with less time left than this is not started
+ELECTRICAL = ("shorting_items", "clearance", "hole_clearance")   # errors that make a board not work
+
+
+def resolve_severity(board, board_path=None, opts=None):
+    """The placement legality mode: the project's KAE_PLACE_SEVERITY text variable, else
+    opts['place_severity'], else the KAE_PLACE_SEVERITY environment variable, else
+    PLACE_SEVERITY. One of 'strict_then_level_c', 'strict', 'level_c', 'board'."""
+    mode = _severity_mode(board, board_path, opts) or os.environ.get("KAE_PLACE_SEVERITY") or PLACE_SEVERITY
+    mode = str(mode).strip().lower().replace("-", "_")
+    if mode not in (LADDER, "strict", "level_c", "board"):
+        raise ValueError(f"place severity {mode!r}: '{LADDER}', 'strict', 'level_c' or 'board'")
+    return mode
+
+
+def waives_courtyards(board):
+    """The board's project downgrades courtyards_overlap: the only case where level_c differs
+    from strict (Problem._severities: cy_shrink)."""
+    sev = getattr(getattr(board, "rules", None), "severities", None) or {}
+    return sev.get("courtyards_overlap", "error") != "error"
+
+
+def placement_errors(res):
+    """{type: count} of the placement errors a result leaves: the exact check's findings, and
+    KiCad's errors the placer can repair on the board as written (report kicad_verdict, set by
+    kae.cli's KiCad loop). Both often name the same error, so a type counts the larger of the two."""
+    rep = res.report
+    out = {}
+    ex = rep.get("exact")
+    for v in ex if isinstance(ex, list) else ():
+        t = v.get("type", "?")
+        out[t] = out.get(t, 0) + 1
+    for t, n in ((rep.get("kicad_verdict") or {}).get("by_type") or {}).items():
+        out[t] = max(out.get(t, 0), int(n))
+    return out
+
+
+def rung_key(errs):
+    """Better is smaller: no shorts or clearance errors first, then fewer placement errors."""
+    return (sum(errs.get(t, 0) for t in ELECTRICAL) > 0, sum(errs.values()))
+
+
+def courtyard_margin_overlaps(P, st, min_area=1e-4, max_pairs=40):
+    """Pairs of parts (at least one movable) whose drawn courtyards, deflated as KiCad's DRC does,
+    overlap at the state's poses: [(ref, ref, mm^2, layer)], largest first. Under level_c these
+    are the margins the take-in let neighbours share."""
+    from shapely.strtree import STRtree
+    from kae.board import transform
+    defl = float(getattr(P, "max_error", 0.0) or 0.0)
+    by_layer = {}
+    for p in P.parts:
+        x, y, rot, side = st.pose(p.i)
+        own_l, opp_l = transform.courtyard_layers(p.fp, side)
+        for which, layer in (("own", own_l), ("opposite", opp_l)):
+            for g in transform.courtyard(p.fp, x, y, rot, side, which=which, deflate=defl) or ():
+                if g is not None and not g.is_empty:
+                    by_layer.setdefault(layer, []).append((p.i, g))
+    out = []
+    for layer, items in by_layer.items():
+        tree = STRtree([g for _, g in items])
+        for a, (i, g) in enumerate(items):
+            for b in tree.query(g):
+                b = int(b)
+                j, h = items[b]
+                if b <= a or j == i or not (P.parts[i].movable or P.parts[j].movable):
+                    continue
+                area = g.intersection(h).area
+                if area > min_area:
+                    out.append((P.parts[i].ref, P.parts[j].ref, round(area, 4), layer))
+    out.sort(key=lambda r: -r[2])
+    return out[:max_pairs]
+
+
+def _rung_summary(res, seconds):
+    errs = placement_errors(res)
+    return dict(severity=res.report.get("severity_used"), legal=not errs, errors=sum(errs.values()),
+                by_type=errs, electrical=sum(errs.get(t, 0) for t in ELECTRICAL),
+                relax_bodies=res.report.get("relax_bodies"), hpwl=res.report.get("hpwl"),
+                kicad_verified=(res.verified or {}).get("clean") is not None, seconds=round(seconds, 1))
+
+
 def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, log=None, anneal=True,
-          edge_mate=False, anneal_args=None, angle_step=None, fixed=(), board_path=None, opts=None):
+          edge_mate=False, anneal_args=None, angle_step=None, fixed=(), board_path=None, opts=None,
+          verify=None):
+    """Place the unlocked footprints of `board` within `time_s` seconds (resolve_severity picks
+    the legality profile). The default, 'strict_then_level_c', places at 'strict' with body
+    relaxation off, in LADDER_STRICT_SHARE of the time; when that leaves placement errors
+    (placement_errors: the exact check, and KiCad's verdict when `verify` gives one) it places
+    again from a fresh seed at 'level_c', with relax_bodies as set, in the time left, and keeps
+    level_c unless strict was better (rung_key). Order of softening: strict courtyards, then
+    Level C courtyards, then (relax_bodies 'escalate') bodies freed to their pads, the riskiest.
+    A project that does not waive courtyards_overlap has level_c = strict: one strict rung, with
+    relax_bodies as set. `verify(res, end)`: the caller's check of a rung (kae.cli: write the
+    board and run KiCad's DRC loop until `end`, monotonic seconds), called on each rung of a
+    two-rung ladder; its return value is kept as res.verified. Report: severity_used,
+    severity_ladder, and a severity_fallback hazard when the fallback ran."""
+    log = log or (lambda *a, **k: None)
+    kw = dict(seed=seed, physics=physics, workers=workers, log=log, anneal=anneal, edge_mate=edge_mate,
+              anneal_args=anneal_args, angle_step=angle_step, fixed=fixed, board_path=board_path, opts=opts)
+    mode = resolve_severity(board, board_path, opts)
+    if mode != LADDER:
+        return _place_rung(board, time_s=time_s, brief=brief, severity=mode, **kw)
+    ladder = dict(mode=LADDER, strict_share=LADDER_STRICT_SHARE)
+    if not waives_courtyards(board):
+        res = _place_rung(board, time_s=time_s, brief=brief, severity="strict", **kw)
+        ladder.update(rungs=1, fallback=None,
+                      note="the project does not waive courtyards_overlap, so level_c is the same as strict")
+        res.report["severity_ladder"] = ladder
+        return res
+    t0 = time.monotonic()
+    end = t0 + float(time_s)
+    src = None
+    if brief is None:           # once for both rungs
+        try:
+            brief, src = make_brief(board)
+        except Exception as e:  # noqa: BLE001 - comprehension must not stop placement
+            log(f"brief failed ({type(e).__name__}: {e}); placing without it")
+            brief, src = {}, "none"
+    t_strict = LADDER_STRICT_SHARE * float(time_s)
+    log(f"severity ladder: strict first ({t_strict:.0f} s of {float(time_s):.0f} s), level_c if it cannot fit")
+    r1 = _place_rung(board, time_s=t_strict, brief=brief, severity="strict", relax="off", **kw)
+    if verify is not None and r1.poses:
+        r1.verified = verify(r1, t0 + t_strict)
+    e1 = placement_errors(r1)
+    ladder["strict"] = _rung_summary(r1, time.monotonic() - t0)
+    if src is not None:
+        r1.report["brief"]["source"] = src
+    if not e1:
+        ladder.update(rungs=1, fallback=None)
+        r1.report["severity_ladder"] = ladder
+        return r1
+    why = dict(errors=sum(e1.values()), by_type=e1,
+               source="exact check and KiCad DRC" if (r1.verified or {}).get("clean") is not None else "exact check")
+    ladder["fallback"] = why
+    left = end - time.monotonic()
+    log(f"severity ladder: strict left {why['errors']} placement errors {e1}; level_c with {left:.0f} s left")
+    if left < LADDER_MIN_S:
+        ladder.update(rungs=1, skipped=f"{left:.0f} s left, under {LADDER_MIN_S:.0f} s")
+        r1.report["severity_ladder"] = ladder
+        r1.report.setdefault("hazards", []).append(dict(
+            code="severity_fallback", severity="warn", category="assembly",
+            message=(f"Placed with drawn courtyards (strict), which left {why['errors']} placement errors; "
+                     "too little time was left to try IPC Level C courtyards (level_c)."),
+            objects=[], evidence=dict(used="strict", strict_errors=e1, seconds_left=round(left, 1)),
+            fix="Re-place with more time, or with --severity level_c."))
+        return r1
+    t1 = time.monotonic()
+    r2 = _place_rung(board, time_s=left, brief=brief, severity="level_c", **kw)
+    if verify is not None and r2.poses:
+        r2.verified = verify(r2, end)
+    e2 = placement_errors(r2)
+    ladder["level_c"] = _rung_summary(r2, time.monotonic() - t1)
+    if src is not None:
+        r2.report["brief"]["source"] = src
+    keep_c = rung_key(e2) < rung_key(e1)
+    res = r2 if keep_c else r1
+    ladder.update(rungs=2, chosen="level_c" if keep_c else "strict", seconds=round(time.monotonic() - t0, 1))
+    res.report["severity_ladder"] = ladder
+    if keep_c:
+        P, st = r2.problem, r2.state
+        pairs = courtyard_margin_overlaps(P, st) if (P is not None and st is not None) else []
+        refs = []
+        for a, b, _, _ in pairs:
+            refs += [r for r in (a, b) if r not in refs]
+        left_cy = e2.get("courtyards_overlap", 0)
+        res.report.setdefault("hazards", []).append(dict(
+            code="severity_fallback", severity="warn" if left_cy else "info", category="assembly",
+            message=(f"Drawn courtyards (strict) did not fit: strict left {why['errors']} placement errors "
+                     f"({', '.join(f'{k} {v}' for k, v in sorted(e1.items()))}). kae placed again with IPC Level C "
+                     f"courtyards (level_c): each courtyard taken in by {P.cy_shrink:.2f} mm, as the project waives "
+                     f"courtyards_overlap. {len(pairs)} pairs of parts share courtyard margin"
+                     + (f"; {left_cy} courtyard overlaps remain even so." if left_cy else ".")),
+            objects=refs[:40],
+            evidence=dict(used="level_c", courtyard_shrink_mm=P.cy_shrink, strict_errors=e1, level_c_errors=e2,
+                          margin_pairs=[dict(a=a, b=b, mm2=m, layer=ly) for a, b, m, ly in pairs],
+                          source="kae.place.pipeline LADDER; IPC-7351 courtyard excess B 0.25 / C 0.10 mm"),
+            fix="Check the listed parts' spacing for assembly, give the board more room, or re-place with "
+                "--severity strict (full courtyards; the dense parts may then collide)."))
+    else:
+        res.report.setdefault("hazards", []).append(dict(
+            code="severity_fallback", severity="info", category="assembly",
+            message=(f"Drawn courtyards (strict) left {why['errors']} placement errors; IPC Level C courtyards "
+                     f"(level_c) were tried and left {sum(e2.values())}, no better, so the strict placement is kept."),
+            objects=[], evidence=dict(used="strict", strict_errors=e1, level_c_errors=e2),
+            fix="Give the board more room, fix parts in place, or remove parts."))
+    log(f"severity ladder: kept {ladder['chosen']} (strict {rung_key(e1)}, level_c {rung_key(e2)})")
+    return res
+
+
+def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, log=None, anneal=True,
+                edge_mate=False, anneal_args=None, angle_step=None, fixed=(), board_path=None, opts=None,
+                severity=None, relax=None):
+    """One placement at one legality profile (place() runs one or two of these). `severity`:
+    'strict', 'level_c' or 'board' (None: _severity_mode); `relax`: a relax_bodies mode that
+    overrides the setting (the strict rung of the severity ladder runs with 'off')."""
     t0 = time.monotonic()
     log = log or (lambda *a, **k: None)
     workers = workers or _default_workers()
@@ -302,8 +502,9 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         board, pinned = _pin_edge_connectors(board, brief, held, fixed, angle_step, seed, rep, log)
         fixed = fixed | set(pinned)
     P = Problem.build(board, net_kinds=_net_kinds(brief), held={fp.uuid for fp in held} | fixed,
-                      angle_step=angle_step, severity=_severity_mode(board, board_path, opts))
+                      angle_step=angle_step, severity=severity or _severity_mode(board, board_path, opts))
     rep["severity"] = dict(mode=P.severity_mode, project_downgrades=dict(P.downgraded))
+    rep["severity_used"] = P.severity_mode
     rep.setdefault("hazards", []).extend(P.severity_hazards())
     if fixed_text(board):
         # board-level copper text: KiCad's glyphs for the exact check (and the silk texts with
@@ -315,7 +516,7 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     # body of a part without a courtyard to its pads only when legalization or the floorplan fails;
     # 'off' keeps it as an obstacle always (10 pp less probe completion on 52 dense boards); 'auto' also up front on a board over 95% full (the old behaviour)
     from kae.route.constraints import setting
-    relax_mode = str(setting("relax_bodies", board_path, opts)).strip().lower()
+    relax_mode = str(relax or setting("relax_bodies", board_path, opts)).strip().lower()
     if relax_mode not in ("off", "escalate", "auto"):
         raise ValueError(f"relax_bodies {relax_mode!r}: 'off', 'escalate' or 'auto'")
     relax_ok = relax_mode != "off"

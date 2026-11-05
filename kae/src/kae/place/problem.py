@@ -58,9 +58,14 @@ EPS = 1e-6
 #     legal_strict flags those margins; each such placement carries a warn hazard.
 #   "strict": drawn courtyards everywhere (a dense waiving board may then not fit: git4dcc d24).
 #   "board": the project's severities decide, as before.
+#   "strict_then_level_c" (default): kae.place.pipeline.place runs "strict" and falls back to
+#     "level_c" only when strict leaves placement errors (the severity ladder). A single Problem
+#     cannot ladder: built with this mode (the joint loop's windows) it is "level_c", the profile
+#     that accepts whatever either rung placed.
 FIXED_ERROR_CHECKS = ("courtyards_overlap", "copper_edge_clearance", "items_not_allowed", "clearance",
                       "shorting_items", "hole_clearance")
-PLACE_SEVERITY = "level_c"
+PLACE_SEVERITY = "strict_then_level_c"
+LADDER_MODE = "strict_then_level_c"
 COURTYARD_LEVEL_C_SHRINK = 0.25 - 0.10
 # pads KiCad leaves out of the copper-to-edge check (drc_test_provider_edge_clearance.cpp):
 # castellated pads and edge-connector ("connect") pads
@@ -582,9 +587,10 @@ class Problem:
         freely (not heatsink-mount packages); the right angles stay the first rotations.
         severity: 'level_c' (FIXED_ERROR_CHECKS are errors whatever the project says, with
         courtyards at IPC Level C where the project waives them), 'strict' (drawn courtyards
-        everywhere) or 'board' (the
-        project's severities); None: the project's KAE_PLACE_SEVERITY text variable, else the
-        KAE_PLACE_SEVERITY environment variable, else PLACE_SEVERITY."""
+        everywhere), 'board' (the project's severities) or 'strict_then_level_c' (here the same
+        as 'level_c'; the ladder is kae.place.pipeline.place's); None: the project's
+        KAE_PLACE_SEVERITY text variable, else the KAE_PLACE_SEVERITY environment variable,
+        else PLACE_SEVERITY."""
         P = cls()
         P.board = board
         P.held = set(held)
@@ -615,7 +621,7 @@ class Problem:
         """DRC rule severities of the board's project (kae.board Rules.severities, from the
         .kicad_pro). In the 'board' mode a check the project sets to 'warning' or 'ignore' is no
         error, so legality does not need it (courtyards_overlap: ignore lets courtyards overlap
-        and only copper counts). In 'level_c' (the default) and 'strict' FIXED_ERROR_CHECKS stay
+        and only copper counts). In 'level_c' and 'strict' FIXED_ERROR_CHECKS stay
         errors; `downgraded` lists the ones the project had downgraded (reported as hazards)."""
         r = getattr(board, "rules", None)
         self.severity = dict(getattr(r, "severities", None) or {}) if r is not None else {}
@@ -627,8 +633,10 @@ class Problem:
                 os.environ.get("KAE_PLACE_SEVERITY") or PLACE_SEVERITY
         mode = str(mode).strip().lower()
         mode = mode.replace("-", "_")
+        if mode == LADDER_MODE:
+            mode = "level_c"        # one Problem cannot ladder (pipeline.place does)
         if mode not in ("strict", "level_c", "board"):
-            raise ValueError(f"place severity {mode!r}: 'strict', 'level_c' or 'board'")
+            raise ValueError(f"place severity {mode!r}: '{LADDER_MODE}', 'strict', 'level_c' or 'board'")
         self.severity_mode = mode
         self.downgraded = {c: self.severity[c] for c in FIXED_ERROR_CHECKS
                            if self.severity.get(c, "error") != "error"}

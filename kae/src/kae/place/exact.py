@@ -1506,7 +1506,8 @@ def kicad_feedback(P, st, report, step=0.3):
     (P.feedback): two parts an error names keep their current distance + `step` (growing each
     time KiCad still objects); a part an error names alone (against a zone, a graphic, a
     track) keeps off the error's positions by `step`. Returns {errors, by_type, constraints,
-    fixed_only}: errors between fixed items only cannot be repaired by placement."""
+    fixed_only, placer_by_type}: errors between fixed items only cannot be repaired by placement;
+    placer_by_type counts the others (the placer's) by type."""
     from .legalize import _OF_REF, kicad_violations, violation_parts
     viols = kicad_violations(report)
     fb = getattr(P, "feedback", None)
@@ -1518,7 +1519,9 @@ def kicad_feedback(P, st, report, step=0.3):
     zre = re.compile(r"^Zone \[([^\]]*)\] on (\S+?),?(\s|$)")
     tre = re.compile(r"^PCB text '.*' on \S+", re.S)
     texts = None
+    marks = []          # fixed_only before each violation: it was fixed-only when the count grew
     for v in viols:
+        marks.append(out["fixed_only"])
         out["by_type"][v["type"]] = out["by_type"].get(v["type"], 0) + 1
         # board text on copper (a grid obstacle only; the exact model has no text): the parts
         # the error names keep their hulls off the text's box, by `step` more each time KiCad
@@ -1607,6 +1610,11 @@ def kicad_feedback(P, st, report, step=0.3):
                     g = shapely.Point(pos["x"], pos["y"]).buffer(step)
                     fb["avoid"].setdefault(i, []).append((g, f"{v['type']} at ({pos['x']:.2f}, {pos['y']:.2f}) (KiCad DRC)"))
                     out["constraints"] += 1
+    marks.append(out["fixed_only"])
+    out["placer_by_type"] = {}
+    for v, a, b in zip(viols, marks, marks[1:]):
+        if b == a:
+            out["placer_by_type"][v["type"]] = out["placer_by_type"].get(v["type"], 0) + 1
     return out
 
 

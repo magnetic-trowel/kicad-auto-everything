@@ -62,6 +62,19 @@ The copper-text check was added after pic-programmer's ZIF socket landed on "1=>
 finds the same 4 pads KiCad flags, and nothing on the 21 human boards that carry copper
 text. [C]
 
+### Legality profile: the severity ladder
+Courtyards, copper-to-edge, rule areas, clearance, shorts and hole clearance are errors
+whatever the project says (`--severity`, [kae-exact-legality](../../research/placement/kae-exact-legality.md)).
+On a project that waives courtyard overlap, the default `strict_then_level_c` places with
+drawn courtyards (`strict`, no body relaxation) in 55% of `--time`. Only if that leaves placement
+errors (the exact check or KiCad's verdict after the KiCad rounds) does it place again with
+courtyards taken in 0.15 mm (IPC Level C, `level_c`) in the rest of the time, with body
+relaxation last. It keeps level_c unless strict was better (no shorts or clearance errors,
+then fewer errors). Why: on 113 waiving boards strict was legal under the real rules on 46% of
+runs against level_c's 28%, but left 12 boards with placement shorts against 6. The report
+gives `severity_used`, `severity_ladder` and a `severity_fallback` hazard. `strict`, `level_c`
+and `board` (follow the project) remain options.
+
 ### KiCad loop: blame rules and safety net
 
 KiCad's DRC report is turned into constraints that the repair honours
@@ -84,7 +97,7 @@ Since 2026-10-25 a repair round that moves parts also re-runs the silk pass: on 
 pic-programmer, 40 evictions had left 18 silk errors.
 
 ### What the report flags
-The report closes with `hazards` and `hazard_summary` ([hazards.md](../architecture/hazards.md)). Each part the placer relaxed to its pads (`relax_bodies`: `escalate` by default, only when legalization fails; `off` or `auto`) gets one hazard at its final pose: `body_overlap` (block) when its body lies over another part, else `body_relaxed` (info). The written board is rechecked with the safety checks forced on (`--recheck`), so a courtyard overlap, short or edge violation that the project's severities hide is reported even though the placer, like the scorer, followed the project.
+The report closes with `hazards` and `hazard_summary` ([hazards.md](../architecture/hazards.md)). Each part the placer relaxed to its pads (`relax_bodies`: `escalate` by default, only when legalization fails; `off` or `auto`) gets one hazard at its final pose: `body_overlap` (block) when its body lies over another part, else `body_relaxed` (info). The written board is rechecked with the safety checks forced on (`--recheck`), so a courtyard overlap, short or edge violation that the project's severities hide is reported, whatever profile the placer used.
 
 ### Silkscreen
 
