@@ -384,7 +384,9 @@ def diff(base, out, anc=None, noise=()):
     of its type whose items it covers: every item of the input violation is among what the output's
     items stand for, and each output item stands for at least one of them. Matches in the same or a
     neighbouring position bucket are made first; then any position (a pre-existing violation on a
-    track a pass rewrote moves with the track: cm4-carrier's track_width and clearance)."""
+    track a pass rewrote moves with the track: cm4-carrier's track_width and clearance); last, one in
+    a neighbouring bucket sharing at least one item (KiCad names one of an item's several partners:
+    a via too close to two pads is reported against either, by the items' order in the file)."""
     anc = anc or {}
     pool = {}
     for v in violations(base):
@@ -399,12 +401,12 @@ def diff(base, out, anc=None, noise=()):
         per = [anc.get(u, {u}) for u, _ in v[1]]
         todo.append((v, identity(v, anc)[2], per, set().union(*per) if per else set()))
 
-    def match(t, b, per, cover, near):
+    def match(t, b, per, cover, near, partial=False):
         hit = None
         for c in pool.get(t, ()):
             if c[2] or (near and not _near(c[1], b)):
                 continue
-            if c[0] <= cover and all(x & c[0] for x in per):
+            if (c[0] & cover) if partial else (c[0] <= cover and all(x & c[0] for x in per)):
                 hit = c
                 if c[1] == b:
                     break
@@ -417,15 +419,16 @@ def diff(base, out, anc=None, noise=()):
             left.append((v, b, per, cover))
         else:
             hit[2] = True
-    new = []
-    for v, b, per, cover in left:
-        t = v[0]
-        hit = match(t, b, per, cover, False)
-        if hit is None:
-            new.append(v)
-        else:
-            hit[2] = True
-    return new
+    for partial, near in ((False, False), (True, True)):
+        rest = []
+        for v, b, per, cover in left:
+            hit = match(v[0], b, per, cover, near, partial)
+            if hit is None:
+                rest.append((v, b, per, cover))
+            else:
+                hit[2] = True
+        left = rest
+    return [v for v, *_ in left]
 
 
 def noise_types(rep1, rep2):

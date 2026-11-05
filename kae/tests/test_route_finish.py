@@ -82,6 +82,10 @@ def test_identity_diff_matches_rewritten_items_not_counts():
     # but only once: a second one on the same items is new
     two = _rep(("clearance", [("P", 1.0, 1.0), ("A2", 1.2, 1.1)]), ("clearance", [("P", 4.0, 4.0), ("A2", 4.0, 4.0)]))
     assert len(J.diff(base, two, anc)) == 1 and J.diff(base, two, anc)[0][1][0][1] == (4.0, 4.0)
+    # a via too close to two pads, reported against the other one: the same violation
+    via = _rep(("clearance", [("VIA", 5.0, 5.0), ("PAD1", 5.4, 5.0)]))
+    assert J.diff(via, _rep(("clearance", [("VIA", 5.0, 5.0), ("PAD2", 4.6, 5.0)]))) == []
+    assert len(J.diff(via, _rep(("clearance", [("VIA", 9.0, 9.0), ("PAD2", 9.0, 9.0)])))) == 1
     # unconnected by count
     assert J.judge([base], _rep(("clearance", [("P", 1, 1), ("A", 1.1, 1)]), unconnected=1)) == {"unconnected": 1}
 
