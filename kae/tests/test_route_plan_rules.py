@@ -297,7 +297,7 @@ def test_module_hops_rank_entries_by_the_modules_physics(tmp_path):
     """critical_modules._entry_by_physics: each module's quote with rule-D candidates is no worse
     than with the old entry only (pad_entry "centre"), and no kept entry is acute."""
     old = F.session(tmp_path / "c", pad_entry="centre").route()
-    new = F.session(tmp_path / "d").route()
+    new = F.session(tmp_path / "d", entry_guard=True).route()
     v0 = {m.id: m.physics.get("value") for m in old.modules if m.physics.get("value")}
     v1 = {m.id: m.physics.get("value") for m in new.modules if m.physics.get("value")}
     assert v0 and set(v0) == set(v1)
