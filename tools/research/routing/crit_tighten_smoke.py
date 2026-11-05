@@ -98,6 +98,9 @@ def main(argv=None):
     if w0.exists():
         res["crit_copper"] = crit_stats(w0)
     if dst.exists():
+        for ext in (".kicad_pro", ".kicad_dru"):          # the board's rules, or KiCad judges by defaults
+            if inp.with_suffix(ext).exists():
+                shutil.copy2(inp.with_suffix(ext), dst.with_suffix(ext))
         d = drc.run(dst, out / f"{a.arm}.drc.json", timeout=1800)
         errs = drc.errors(d)
         by = {}
