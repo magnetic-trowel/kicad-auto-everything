@@ -119,12 +119,16 @@ def test_gate_reverts_the_culprit_and_its_dependants_only(tmp_path):
     def rules(text, k):
         return [("clearance", [("V", 2.5, -0.3)])] if '"V"' in text else []
     run, calls = _fake_drc(rules)
-    g = J.gate(src, src, jr, tmp_path / "g", drc_run=run, log=lambda *a: None)
+    g = J.gate(src, src, jr, tmp_path / "g", drc_run=run, log=lambda *a: None, recover=0)
     assert g["kept"] == {"tails:a", "taut:net:N1", "power:B"}
     assert g["drc_out"]["errors"] == 0 and g["drc_runs"] == len(calls)
     # input, the full output, the noise run (no cache), the attributed board
     assert [c["cache"] for c in calls] == [True, True, False, True]
     assert set(J.items(g["text"])) == {"A2", "B"}
+    # with recovery, the reverted entry is tried again once (and stays out)
+    run, calls = _fake_drc(rules)
+    g = J.gate(src, src, jr, tmp_path / "g2", drc_run=run, log=lambda *a: None)
+    assert g["kept"] == {"tails:a", "taut:net:N1", "power:B"} and len(calls) == 5
 
 
 def test_gate_ddmin_when_nothing_is_attributable(tmp_path):
@@ -223,3 +227,15 @@ def test_finish_end_to_end_on_a_fixture_board(tmp_path):
     # one gate: the input, the output, and only what a worse output needs
     assert rep["drc_runs"] <= 2 + len(rep["gate_rounds"])
     assert all(e["stage"] in ("tails", "taut", "power") for e in rep["journal"])
+
+
+def test_entries_of_one_pass_in_conflict_are_merged():
+    """Taut moves N2 away and N1 into the room it left: reverting N2 alone would put it back on N1's
+    new copper, so the two are one entry (either order in the diff)."""
+    t0 = _board(_seg("A", "N1", (0, 0), (5, 0)), _seg("B", "N2", (0, 1), (5, 1)), _seg("C", "N3", (0, 9), (5, 9)))
+    t1 = _board(_seg("A2", "N1", (0, 0), (5, 1)), _seg("B2", "N2", (0, 1), (5, 2)), _seg("C2", "N3", (0, 9), (5, 8)))
+    jr = J.Journal(t0, margin=0.2).add(J.diff_entries("taut", t0, t1))
+    assert len(jr.entries) == 2
+    big = next(e for e in jr.entries if "|" in e.net)
+    assert big.net == "N1|N2" and set(big.after) == {"A2", "B2"} and sorted(big.meta["merged"])
+    assert set(J.items(jr.text({big.id}))) == {"A2", "B2", "C"}

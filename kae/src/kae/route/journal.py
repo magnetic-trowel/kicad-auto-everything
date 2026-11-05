@@ -48,6 +48,7 @@ from . import critical_write as W
 HEADS = ("segment", "arc", "via", "zone")
 BUCKET = 0.5           # mm: position bucket of a violation (neighbouring buckets match too)
 MARGIN = 0.5           # mm: new copper this close to another net's removed copper builds on its removal
+                       # (finish passes the project's largest clearance, clearance_margin)
 NET_RE = re.compile(r'\(net\s+("(?:[^"\\]|\\.)*"|[^\s()]+)')
 
 
@@ -107,6 +108,17 @@ def geom(head, block):
     return layers, line.buffer(w / 2, quad_segs=4)
 
 
+def clearance_margin(project_board, default=0.2, cap=MARGIN):
+    """The largest net-class clearance of the project (what a restored track must keep from new
+    copper), at most `cap`; `default` without one."""
+    try:
+        pro = json.loads(Path(project_board).with_suffix(".kicad_pro").read_text(encoding="utf-8"))
+        cl = [float(c.get("clearance") or 0) for c in (pro.get("net_settings") or {}).get("classes") or []]
+        return min(cap, max(cl)) if cl and max(cl) > 0 else default
+    except (OSError, ValueError, TypeError, AttributeError):
+        return default
+
+
 # ----------------------------------------------------------------------------- entries
 class Entry:
     __slots__ = ("id", "stage", "net", "before", "after", "deps", "meta")
@@ -160,48 +172,78 @@ class Journal:
         self._removed = []         # (entry id, net, layers, geometry) of removed copper, for space deps
 
     def add(self, entries):
-        """Append entries (one pass's, in its order), working out what each built on: the items it
-        removes that an earlier entry wrote, and the other nets' copper earlier entries removed
-        within `margin` of what it writes (one spatial index per call)."""
+        """Append one pass's entries, working out what each built on: items it removes that an earlier
+        entry wrote, and other nets' copper that an entry of an earlier pass removed within `margin` of
+        what it writes. Within one pass the changes were planned against each other in an order the
+        diff does not keep, so two of its entries in such a conflict (either way round) are merged into
+        one: kept or reverted together (taut: net A tightened into room net B left)."""
         from shapely import STRtree
         entries = list(entries)
         for e in entries:
             if e.id in self.by_id:
                 raise ValueError(f"duplicate journal entry {e.id}")
-        order = {e.id: k for k, e in enumerate(self.entries)}
-        n0 = len(self.entries)
+        mine = []
         for k, e in enumerate(entries):
-            order[e.id] = n0 + k
-        removed = list(self._removed)
-        for e in entries:
             for u, (head, blk) in e.before.items():
                 layers, g = geom(head, blk)
                 if g is not None:
-                    removed.append((e.id, e.net, layers, g))
-        tree = STRtree([r[3] for r in removed]) if removed else None
-        for e in entries:
+                    mine.append((k, e.net, layers, g))
+        removed = [(r, True) for r in self._removed] + [(r, False) for r in mine]
+        tree = STRtree([r[3] for r, _ in removed]) if removed else None
+        parent = list(range(len(entries)))
+
+        def find(x):
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+        for k, e in enumerate(entries):
             for u in e.before:
                 if u in self.writer:
                     e.deps.add(self.writer[u])
-            if tree is not None:
-                me = order[e.id]
-                for u, (head, blk) in e.after.items():
-                    layers, g = geom(head, blk)
-                    if g is None:
+            if tree is None:
+                continue
+            for u, (head, blk) in e.after.items():
+                layers, g = geom(head, blk)
+                if g is None:
+                    continue
+                for i in tree.query(g.buffer(self.margin)):
+                    (who, net, ls, g2), earlier = removed[int(i)]
+                    if net == e.net or (not earlier and who == k):
                         continue
-                    for i in tree.query(g.buffer(self.margin)):
-                        eid, net, ls, g2 = removed[int(i)]
-                        if order[eid] >= me or net == e.net or eid in e.deps:
-                            continue
-                        if layers is not None and ls is not None and not (layers & ls):
-                            continue
-                        if g2.distance(g) <= self.margin:
-                            e.deps.add(eid)
+                    if layers is not None and ls is not None and not (layers & ls):
+                        continue
+                    if g2.distance(g) > self.margin:
+                        continue
+                    if earlier:
+                        e.deps.add(who)
+                    else:
+                        parent[find(k)] = find(who)
+        groups = {}
+        for k in range(len(entries)):
+            groups.setdefault(find(k), []).append(entries[k])
+        merged = []
+        for k in sorted(groups):
+            g = groups[k]
+            if len(g) == 1:
+                merged.append(g[0])
+                continue
+            nets = sorted({x.net for x in g})
+            m = Entry(g[0].id, g[0].stage, "|".join(nets), {}, {}, dict(merged=[x.id for x in g]))
+            for x in g:
+                m.before.update(x.before)
+                m.after.update(x.after)
+                m.deps |= x.deps
+            merged.append(m)
+        for e in merged:
             self.entries.append(e)
             self.by_id[e.id] = e
             for u in e.after:
                 self.writer[u] = e.id
-        self._removed = removed
+            for u, (head, blk) in e.before.items():
+                layers, g = geom(head, blk)
+                if g is not None:
+                    self._removed.append((e.id, e.net, layers, g))
         return self
 
     def ids(self, stage=None):
@@ -411,9 +453,10 @@ def _culprits(jr, kept, rep, new, near):
 
 
 def gate(input_board, project_board, jr, workdir, base_report=None, budget=24, deadline=None, log=print,
-         drc_run=None):
+         drc_run=None, recover=8):
     """Judge the journal's entries with KiCad's DRC and keep the largest set found no worse than the
     input. `base_report`: a DRC report of the input the caller already has (else one is run).
+    `recover`: DRC runs at most for adding back what attribution reverted (0: none).
     Returns dict(kept={ids}, text, drc_in, drc_out, worse_full, noise, rounds, drc_runs, seconds)."""
     from . import drc
     t0 = time.monotonic()
@@ -455,6 +498,37 @@ def gate(input_board, project_board, jr, workdir, base_report=None, budget=24, d
             f"{drc.summary(rep)['unconnected']} unconnected; worse {worse or 'none'}")
         return rep, worse
 
+    def addback(accepted, cands, limit, tag):
+        """Grow `accepted` (judged no worse, or the input) by groups of `cands`: stages, failing ones by net
+        halves, failing nets by entry halves, breadth first, each kept when KiCad finds it no worse.
+        Returns the best (kept, report) found, None when nothing was added."""
+        got = None
+        queue = [("stage", [i for i in jr.ids(s) if i in cands]) for s in jr.stages()]
+        k = 0
+        while queue and probes[0] < limit and not (left() <= 20 and res.setdefault("time_limited", True)):
+            level, group = queue.pop(0)
+            if not group:
+                continue
+            trial = jr.closed(accepted | set(group))
+            if trial == accepted:
+                continue
+            rep2, w2 = judged(trial, f"{tag}{k}-{level}")
+            k += 1
+            if not w2:
+                accepted = trial
+                got = dict(kept=set(trial), rep=rep2)
+                continue
+            nets = {}
+            for i in group:
+                nets.setdefault(jr.by_id[i].net, []).append(i)
+            ns = sorted(nets)
+            if level != "entries" and len(ns) > 1:
+                h = len(ns) // 2
+                queue += [("nets", [i for n in ns[:h] for i in nets[n]]), ("nets", [i for n in ns[h:] for i in nets[n]])]
+            elif len(group) > 1:
+                queue += [("entries", group[:len(group) // 2]), ("entries", group[len(group) // 2:])]
+        return got
+
     rep, worse = judged(allids, "out")
     res["worse_full"] = dict(worse)
     if worse and any(t != "unconnected" for t in worse) and not (left() <= 30 and res.setdefault("time_limited", True)):
@@ -486,34 +560,12 @@ def gate(input_board, project_board, jr, workdir, base_report=None, budget=24, d
                 best = dict(kept=set(kept), rep=rep)
                 break
         if worse:
-            # ddmin from the input: stage by stage, a failing stage net by net, a failing net entry by entry
-            accepted = set()
-            queue = [("stage", jr.ids(s)) for s in jr.stages()]
-            k = 0
-            while queue and probes[0] < budget and not (left() <= 20 and res.setdefault("time_limited", True)):
-                level, group = queue.pop(0)
-                trial = jr.closed(accepted | set(group))
-                if trial == accepted:
-                    continue
-                rep2, w2 = judged(trial, f"dd{k}-{level}")
-                k += 1
-                if not w2:
-                    accepted = trial
-                    best = dict(kept=set(trial), rep=rep2)
-                    continue
-                if level in ("stage", "nets"):
-                    nets = {}
-                    for i in group:
-                        nets.setdefault(jr.by_id[i].net, []).append(i)
-                    ns = sorted(nets)
-                    if len(ns) > 1:
-                        h = len(ns) // 2
-                        queue[:0] = [("nets", [i for n in ns[:h] for i in nets[n]]),
-                                     ("nets", [i for n in ns[h:] for i in nets[n]])]
-                    elif len(group) > 1:
-                        queue[:0] = [("entries", group[:len(group) // 2]), ("entries", group[len(group) // 2:])]
-                elif len(group) > 1:
-                    queue[:0] = [("entries", group[:len(group) // 2]), ("entries", group[len(group) // 2:])]
+            # ddmin from the input, breadth first: every stage, then the failing stages' halves by net, then a
+            # failing net's entries by halves (a failing stage does not use up the budget of the later ones)
+            best = addback(set(), set(allids), budget, "dd") or best
+        elif recover and best["kept"] != allids:
+            # attribution reverts whole neighbourhoods: add them back the same way while budget is left
+            best = addback(set(best["kept"]), allids - best["kept"], min(budget, probes[0] + recover), "rec") or best
     kept = best["kept"]
     res.update(kept=kept, text=jr.text(kept) if kept else jr.input, drc_out=drc.summary(best["rep"]),
                drc_runs=runs[0], seconds=round(time.monotonic() - t0, 1))

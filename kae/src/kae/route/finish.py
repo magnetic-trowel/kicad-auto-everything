@@ -51,7 +51,9 @@ DEFAULTS = dict(
     parts=PARTS,
     zone_above_a=5.0,       # A: power copper pours rails above this instead of widening their tracks
     drc_budget=24,          # KiCad DRC runs the gate may spend beyond the input's
-    margin=J.MARGIN,        # mm: new copper this close to another net's removed copper depends on its removal
+    recover=8,              # of them, at most this many to add back what attribution reverted
+    margin=None,            # mm: new copper this close to another net's removed copper depends on its removal
+                            # (None: the project's largest net-class clearance, journal.clearance_margin)
     tails_opts=None,        # pad_reroute.run keyword overrides (rails, target, operating)
     taut_opts=None,         # taut.DEFAULTS overrides
     power_opts=None,        # power_copper.DEFAULTS overrides
@@ -182,7 +184,8 @@ def _run(inp, out, project, o, workdir, time_s, base_report, drc_s, log):
             base_report = None          # a capped count: the gate runs its own (uncapped) DRC of the input
         est = estimate(staged, drc_s, o["parts"])
         rep["estimate_s"] = est
-        jr = J.Journal(staged.read_text(encoding="utf-8"), margin=o["margin"])
+        jr = J.Journal(staged.read_text(encoding="utf-8"),
+                       margin=o["margin"] if o["margin"] is not None else J.clearance_margin(project))
         cur = staged
         for part in o["parts"]:
             need = est.get(part, 10.0) + est["gate"]
@@ -212,7 +215,7 @@ def _run(inp, out, project, o, workdir, time_s, base_report, drc_s, log):
             log(f"[finish] {part}: {len(entries)} entries in {rep['seconds'][part]:.1f} s")
         t1 = time.monotonic()
         g = J.gate(staged, project, jr, wd / "gate", base_report=base_report, budget=int(o["drc_budget"]),
-                   deadline=deadline, log=log)
+                   deadline=deadline, log=log, recover=int(o["recover"]))
         rep["seconds"]["gate"] = round(time.monotonic() - t1, 1)
         J.write(g["text"], out, project)
         kept = g["kept"]
