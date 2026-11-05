@@ -330,3 +330,21 @@ def test_readmission_splits_a_batch_by_what_kicad_names(tmp_path):
     tags = [r["tag"] for r in g["rounds"]]
     assert g["recovery"] == dict(reverted=4, far=3, near=1)
     assert sum(t.startswith("rec") for t in tags) == 3, tags     # far batch, it without the via, the near one
+
+
+def test_attribution_uses_positions_of_unnamed_violations_even_when_others_name_items(tmp_path):
+    jr, (t0, *_rest) = _chain()
+    src = tmp_path / "in" / "board.kicad_pcb"
+    src.parent.mkdir()
+    src.write_text(t0)
+
+    def rules(text, k):
+        out = []
+        if '"V"' in text:
+            out.append(("clearance", [("V", 2.5, -0.3)]))
+        if "(width 0.6)" in text:
+            out.append(("starved_thermal", [("PAD3", 2.0, 5.4)]))     # names the pad beside widened B
+        return out
+    run, calls = _fake_drc(rules)
+    g = J.gate(src, src, jr, tmp_path / "g", drc_run=run, log=lambda *a: None, recover=0)
+    assert g["kept"] == {"tails:a", "taut:net:N1"} and not any(r["tag"].startswith("dd") for r in g["rounds"])

@@ -465,8 +465,8 @@ def judge(base_reps, out, anc=None, noise=()):
 
 # ----------------------------------------------------------------------------- the gate
 def _culprits(jr, kept, rep, new, near):
-    """Kept entries the new violations name (an item they wrote), else whose copper lies within
-    `near` mm of a violation's position."""
+    """Kept entries the new violations name (an item they wrote), and, for a violation that names none,
+    those whose copper lies within `near` mm of its positions."""
     from shapely.geometry import Point
     writer = {}
     for e in jr.entries:
@@ -481,7 +481,7 @@ def _culprits(jr, kept, rep, new, near):
             bad |= named
         else:
             pts += [p for _, p in its if p]
-    if pts and not bad:
+    if pts:     # violations naming no changed item (a starved thermal names its pad), whatever else is named
         for e in jr.entries:
             if e.id not in kept:
                 continue
