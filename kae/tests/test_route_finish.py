@@ -286,3 +286,47 @@ def test_gate_judges_a_check_at_kicads_error_limit_by_count(tmp_path):
     run, calls = _fake_drc(rules)
     g = J.gate(src, src, jr, tmp_path / "g", drc_run=run, log=lambda *a: None)
     assert g["capped"] == ["track_width"] and g["kept"] == set(jr.by_id) and len(calls) == 2
+
+
+def test_recovery_readmits_what_attribution_reverted_around_an_unnamed_violation(tmp_path):
+    """A violation that names no changed item, 2.4 mm from everything: attribution at 2.5 mm reverts all
+    four entries; re-admission brings back all but the culprit (the via), batch by batch."""
+    jr, (t0, *_rest) = _chain()
+    src = tmp_path / "in" / "board.kicad_pcb"
+    src.parent.mkdir()
+    src.write_text(t0)
+
+    def rules(text, k):
+        return [("hole_clearance", [("PAD9", 2.5, 2.4)])] if '"V"' in text else []
+    run, calls = _fake_drc(rules)
+    g = J.gate(src, src, jr, tmp_path / "g", drc_run=run, log=lambda *a: None)
+    assert g["kept"] == {"tails:a", "taut:net:N1", "power:B"}
+    assert g["recovery"]["reverted"] == 4 and len(calls) <= 10
+
+
+def test_readmission_splits_a_batch_by_what_kicad_names(tmp_path):
+    """Five independent widenings and a via. On the full output KiCad names only a pad near the via
+    (attribution reverts the via and the widenings within 1 mm); on a re-admitted batch it names the via.
+    The batch clear of the pad goes on without the via in one more run (no halving), then the one near it."""
+    segs0 = [_seg(f"S{i}", f"N{i}", (i, 0), (i, 4)) for i in range(5)]
+    segs1 = [_seg(f"S{i}", f"N{i}", (i, 0), (i, 4), w=0.4) for i in range(5)]
+    t0 = _board(*segs0)
+    t1 = _board(*segs1, _via("V", "NV", 2.0, 5.5))
+    jr = J.Journal(t0).add(J.diff_entries("power", t0, t1, {**{f"S{i}": f"S{i}" for i in range(5)}, "V": "V"}))
+    src = tmp_path / "in" / "board.kicad_pcb"
+    src.parent.mkdir()
+    src.write_text(t0)
+    seen = []
+
+    def rules(text, k):
+        if '"V"' not in text:
+            return []
+        seen.append(k)
+        names = "PAD7" if len(seen) <= 1 else "V"        # the full output names the pad
+        return [("clearance", [(names, 2.0, 4.5)])]
+    run, calls = _fake_drc(rules)
+    g = J.gate(src, src, jr, tmp_path / "g", drc_run=run, log=lambda *a: None)
+    assert g["kept"] == {f"power:S{i}" for i in range(5)}
+    tags = [r["tag"] for r in g["rounds"]]
+    assert g["recovery"] == dict(reverted=4, far=3, near=1)
+    assert sum(t.startswith("rec") for t in tags) == 3, tags     # far batch, it without the via, the near one

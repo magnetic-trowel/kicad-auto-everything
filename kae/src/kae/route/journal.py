@@ -493,8 +493,25 @@ def _culprits(jr, kept, rep, new, near):
     return bad
 
 
+def split_by_culprits(jr, ids, pts, margin):
+    """(far, near): the entries of `ids`, in journal order, whose copper (written and removed) lies more
+    than `margin` from every point in `pts` (positions of items new violations named), and the rest."""
+    from shapely.geometry import MultiPoint
+    order = [e.id for e in jr.entries if e.id in ids]
+    if not pts:
+        return order, []
+    mp = MultiPoint(pts)
+    far, near = [], []
+    for i in order:
+        e = jr.by_id[i]
+        d = min((g.distance(mp) for head, blk in list(e.after.values()) + list(e.before.values())
+                 for _l, g in [geom(head, blk)] if g is not None), default=float("inf"))
+        (far if d > margin else near).append(i)
+    return far, near
+
+
 def gate(input_board, project_board, jr, workdir, base_report=None, budget=24, deadline=None, log=print,
-         drc_run=None, recover=8):
+         drc_run=None, recover=16):
     """Judge the journal's entries with KiCad's DRC and keep the largest set found no worse than the
     input. `base_report`: a DRC report of the input the caller already has (else one is run).
     `recover`: DRC runs at most for adding back what attribution reverted (0: none).
@@ -574,6 +591,49 @@ def gate(input_board, project_board, jr, workdir, base_report=None, budget=24, d
                 queue += [("entries", group[:len(group) // 2]), ("entries", group[len(group) // 2:])]
         return got
 
+    def named_in(trial, rep2, cand):
+        """Entries of `cand` (in `trial`) whose copper the new violations of `rep2` name, with what built on them."""
+        new = diff(base[0], rep2, jr.ancestry(trial), noise)
+        if drc.summary(rep2)["unconnected"] > max(drc.summary(b)["unconnected"] for b in base):
+            had = {frozenset(u for u, _ in its) for _, its in unconnected(base[0])}
+            new += [v for v in unconnected(rep2) if frozenset(u for u, _ in v[1]) not in had]
+        uu = {u for _t, its in new for u, _p in its}
+        hit = {i for i in cand if uu & set(jr.by_id[i].after)}
+        return jr.dependants(hit) & set(cand)
+
+    def readmit(accepted, batches, limit, tag):
+        """Grow `accepted` by `batches` (lists of entry ids, in order), each tried whole: a batch KiCad finds
+        no worse is kept; one it does not is split by what it names (named entries retried alone, the
+        rest together) and, when it names nothing of the batch, halved. Stops when `limit` probes are spent."""
+        got = None
+        queue = [list(b) for b in batches if b]
+        k = 0
+        while queue and probes[0] < limit and not (left() <= 20 and res.setdefault("time_limited", True)):
+            group = queue.pop(0)
+            trial = jr.closed(accepted | set(group))
+            if trial == accepted:
+                continue
+            rep2, w2 = judged(trial, f"{tag}{k}")
+            k += 1
+            if not w2:
+                accepted = trial
+                got = dict(kept=set(trial), rep=rep2)
+                continue
+            added = [i for i in group if i in trial]
+            if len(added) <= 1:
+                continue                                    # a culprit: it stays reverted
+            bad = named_in(trial, rep2, added)
+            if bad and len(bad) < len(added):
+                rest = [i for i in added if i not in bad]
+                queue.insert(0, rest)                       # the others at once, without the named ones
+                if len(bad) > 1:
+                    b = sorted(bad, key=added.index)
+                    queue += [b[:len(b) // 2], b[len(b) // 2:]]
+            else:
+                queue.insert(0, added[len(added) // 2:])
+                queue.insert(0, added[:len(added) // 2])
+        return got
+
     rep, worse = judged(allids, "out")
     res["worse_full"] = dict(worse)
     if worse and any(t != "unconnected" for t in worse) and not (left() <= 30 and res.setdefault("time_limited", True)):
@@ -587,6 +647,13 @@ def gate(input_board, project_board, jr, workdir, base_report=None, budget=24, d
             log(f"[finish-gate] noise types (differ between two runs of the input): {noise}")
             worse = judge(base, rep, jr.ancestry(allids), noise)
             rounds.append(dict(tag="out/noise", kept=len(allids), summary=drc.summary(rep), worse=worse))
+    culprit_pts = []
+    if worse:
+        new0 = diff(base[0], rep, jr.ancestry(allids), noise)
+        if "unconnected" in worse:
+            had = {frozenset(u for u, _ in its) for _, its in unconnected(base[0])}
+            new0 += [v for v in unconnected(rep) if frozenset(u for u, _ in v[1]) not in had]
+        culprit_pts = [p for _t, its in new0 for _u, p in its if p]
     if not worse:
         best = dict(kept=set(allids), rep=rep)
     else:
@@ -615,8 +682,11 @@ def gate(input_board, project_board, jr, workdir, base_report=None, budget=24, d
             # failing net's entries by halves (a failing stage does not use up the budget of the later ones)
             best = addback(set(), set(allids), budget, "dd") or best
         elif recover and best["kept"] != allids:
-            # attribution reverts whole neighbourhoods: add them back the same way while budget is left
-            best = addback(set(best["kept"]), allids - best["kept"], min(budget, probes[0] + recover), "rec") or best
+            # attribution reverts whole neighbourhoods: re-admit them, those clear of every item the full
+            # output's new violations name first, then the rest, each batch split by what KiCad names
+            far, near_ = split_by_culprits(jr, allids - best["kept"], culprit_pts, jr.margin)
+            res["recovery"] = dict(reverted=len(allids - best["kept"]), far=len(far), near=len(near_))
+            best = readmit(set(best["kept"]), [far, near_], min(budget, probes[0] + recover), "rec") or best
     kept = best["kept"]
     res.update(kept=kept, text=jr.text(kept) if kept else jr.input, drc_out=drc.summary(best["rep"]),
                drc_runs=runs[0], seconds=round(time.monotonic() - t0, 1))

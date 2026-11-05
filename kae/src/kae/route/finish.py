@@ -51,7 +51,7 @@ DEFAULTS = dict(
     parts=PARTS,
     zone_above_a=5.0,       # A: power copper pours rails above this instead of widening their tracks
     drc_budget=24,          # KiCad DRC runs the gate may spend beyond the input's
-    recover=8,              # of them, at most this many to add back what attribution reverted
+    recover=16,             # of them, at most this many to re-admit what attribution reverted
     margin=None,            # mm: new copper this close to another net's removed copper depends on its removal
                             # (None: the project's largest net-class clearance, journal.clearance_margin)
     tails_opts=None,        # pad_reroute.run keyword overrides (rails, target, operating)
