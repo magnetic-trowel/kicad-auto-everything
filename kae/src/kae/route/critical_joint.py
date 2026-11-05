@@ -386,6 +386,18 @@ def optimize_modules(board, brief, terms=None, locked=(), info=None, poses=None,
         rep["rails"] = sess.rails
     if sess.opts.get("corner_joins", True):
         rep["joins"] = sess.join_at_corners()
+    if sess.opts.get("tighten"):
+        # the kept copper is tightened under the same quotes (critical_taut), so what is shipped
+        # is never worse than what was judged; candidates are judged on grid copper (a taut run
+        # per candidate would cost more than the search itself; routing-stages.md P7)
+        try:
+            rep["tighten"] = sess.tighten()
+            for mr in rep["modules"]:
+                m = next((x for x in mods if x.id == mr["id"]), None)
+                if m is not None:
+                    mr.update(value=m.physics.get("value"), u=m.physics.get("u"))
+        except Exception as e:  # noqa: BLE001 - the grid copper stays
+            rep["tighten"] = dict(error=f"{type(e).__name__}: {e}")
     tracks, vias = sess.copper()
     rep["seconds"] = round(time.monotonic() - t0, 2)
     rep["moved"] = {ctx.fp[u].ref: p for u, p in moved.items()}

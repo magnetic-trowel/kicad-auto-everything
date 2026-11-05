@@ -145,12 +145,19 @@ def _insert(text, chunks):
 
 
 def append_items(src, dst, tracks=(), vias=(), zones=()):
-    """dst = src plus tracks [(net, layer, width, a, b, uuid[, locked])], vias [(net, x, y,
-    size, drill, uuid[, locked])] (locked unless the 7th field says otherwise) and zones
-    [(net, layer, rings, name[, priority])]."""
+    """dst = src plus tracks [(net, layer, width, a, b, uuid[, locked[, mid]])] (an arc when
+    mid is given), vias [(net, x, y, size, drill, uuid[, locked])] (locked unless the 7th field
+    says otherwise) and zones [(net, layer, rings, name[, priority])]."""
     text = Path(src).read_text(encoding="utf-8")
     require_kicad10(text, src)
-    chunks = [track_sexpr(*t[:6], locked=t[6] if len(t) > 6 else True) for t in tracks]
+    chunks = []
+    for t in tracks:
+        lk = t[6] if len(t) > 6 else True
+        if len(t) > 7 and t[7] is not None:
+            from .arcs import arc_sexpr
+            chunks.append(arc_sexpr(t[0], t[1], t[2], t[3], t[7], t[4], uid=t[5], locked=lk))
+        else:
+            chunks.append(track_sexpr(*t[:6], locked=lk))
     chunks += [via_sexpr(*v[:5], uid=v[5], locked=v[6] if len(v) > 6 else True) for v in vias]
     chunks += [zone_sexpr(z[0], z[1], z[2], z[3], priority=z[4] if len(z) > 4 else 0) for z in zones]
     Path(dst).write_text(_insert(text, chunks), encoding="utf-8")
