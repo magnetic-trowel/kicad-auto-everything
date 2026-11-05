@@ -153,6 +153,29 @@ def test_heat_accounts_every_dc_loss_vias_and_lumped_parts():
     assert H.lumped_heat(info["net"], info["x"], {"L1": "D_on"}) == {}     # a diode's loss is V_f I in part_heat
 
 
+@pytest.mark.parametrize("cls", ["buck", "boost"])
+def test_a_synchronous_cell_heats_its_controller_with_both_switches_conduction(cls):
+    """With no rectifier part, the low-side (buck) or synchronous rectifier (boost) inside the controller
+    conducts I_L for (1 - D), as the DC flow injects it; part_heat charged only the switch's D share
+    (a 12 V -> 3.3 V, 2 A buck read 0.11 W of conduction against 0.40 W)."""
+    from types import SimpleNamespace
+
+    from kae.excite import heat as H
+    cell = dict(id="c", cls=cls, src="cell:c", vin="VIN", vout="OUT", sw="SW", ctrl="U1", rect="", parts=set())
+    pl = DC.Plan()
+    pl.volts = {"VIN": 12.0, "OUT": 3.3}
+    pl.feeds = {"OUT": dict(kind="cell", cell=cell, ref="U1")}
+    pl.loads = []
+    bd = SimpleNamespace(part_kind={})
+    IL, D, ron = 2.0, 0.275, 0.1
+    cv = {"cell:c": {"I_A": IL, "D": D, "V_V": 12.0, "t_i_s": 0.0, "t_v_s": 0.0}}
+    heat = H.part_heat(bd, pl, cv, {("heat:U1", "R_on_ohm"): ron}, {})
+    assert heat["U1"] == pytest.approx(IL ** 2 * ron)                  # D + (1 - D)
+    cell["rect"] = "D1"
+    heat = H.part_heat(bd, pl, cv, {("heat:U1", "R_on_ohm"): ron}, {})
+    assert heat["U1"] == pytest.approx(IL ** 2 * ron * D) and heat["D1"] > 0
+
+
 def test_copper_loss_budget_and_drop_share_the_unknown_rail_fallback():
     """With no rail voltage known, the loss budget was 0 and the loss u 0 (perfect) whatever the copper
     lost; it now takes the drop check's 3.3 V. A negative drop is no credit (phi clamps at 0)."""

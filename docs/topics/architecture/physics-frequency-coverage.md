@@ -6,6 +6,9 @@
 - **The board is one linear system across frequency.** Its copper and passive parts have
   matrices R, L (and, once added, P) that do not depend on frequency. The response at every
   frequency, and in time, lies in a small subspace spanned by solutions at a few frequencies.
+  Skin effect does not break this: it emerges from the filaments through the thickness, and what
+  `nsub` filaments cannot hold is a per-layer surface-impedance factor applied at evaluation
+  ([field-solver-accuracy](../../research/physics/field-solver-accuracy.md)).
 - **Recommendation:** build a passive reduced-order model by projecting the full field system onto
   the solutions of every source *and* every observer pattern at a few adaptively chosen
   frequencies. Evaluate every harm on it at any frequency, at every harmonic, and as a waveform.
@@ -27,7 +30,7 @@
 | f_sw and harmonics, ~0.1–10 MHz | capacitor ESR/ESL and C split the current; PDN anti-resonance | input and output ripple, supply bounce | the fundamental, one point |
 | 10–300 MHz | loop inductance, switch-node ring with C_sw, capacitor self-resonance | overshoot, ringing, CM emissions (CISPR 30–230 MHz), victim pickup | one 10 MHz solve, extrapolated as a constant L |
 | any, dV/dt-driven | electric field (partial capacitance) | capacitive crosstalk into high-Z nodes, switch-node CM via capacitance | not modelled |
-| above the quasi-static limit | retardation: θ = ωℓ/v ≳ 0.3 | transmission-line nets (DDR, USB), radiation above ~300 MHz | not modelled |
+| above the quasi-static limit | retardation: θ = ωℓ/v ≳ 0.3 | transmission-line nets (DDR, USB), radiation (above ~150 MHz on a 5 cm board) | not modelled |
 
 Two bands per aggressor ([kae.excite.evaluate](../../../kae/src/kae/excite/evaluate.py)) sample this
 at two points. The peak formula then joins them with an assumed shape: |Z_f| c₁ I + |L_e| I/t_i.
@@ -117,7 +120,9 @@ observer's reduced adjoint z. The two-sided basis carries z already.
 2. Greedy snapshots of every pattern where the estimated error of the harm is largest. The error
    is weighted by each source's spectrum and each observer's limit curve. Frequencies are chosen
    because a harm depends on them, not from a fixed list.
-3. Stop when the estimated harm error is below its tolerance (1e-3 of the bound).
+3. Stop when the estimated harm error is below its tolerance (1e-3 of the bound). A model stopped by the
+   snapshot limit above it, or with a snapshot solve at its iteration limit, reports `converged: false`
+   and marks the totals `uncertain`.
 
 **Harms from the reduced model.**
 - Peak quantities (overshoot, supply bounce, victim pickup): synthesize the waveform from the
@@ -158,8 +163,10 @@ plan.
   - With P the system is (L, P)-PEEC: still symmetric, still passive under congruence. The same
     reduction applies unchanged.
   - Reference for validation: FastCap, FastHenry's sibling.
-- **Electrically long nets.** Quasi-static PEEC holds while θ = ωℓ/v ≲ 0.3: to ~300 MHz on a 5 cm
-  board, ~100 MHz on 15 cm.
+- **Electrically long nets.** Quasi-static PEEC holds while θ = ωℓ/v ≲ 0.3, with v = c/√ε_eff
+  (ε_eff = 3.5, FR4 microstrip) and ℓ the board diagonal: f_qs = 0.3·c/(2π·ℓ·√3.5), 153 MHz at
+  5 cm, 51 MHz at 15 cm ([wideband.py](../../../kae/src/kae/excite/wideband.py) `THETA`, `EPS_EFF`).
+  Free-space v would give 286 and 95 MHz.
   - Nets whose knee frequency exceeds that are screened by θ and treated as quasi-TEM lines.
   - Their per-length L and C come from the same operators on the cross-section. They become
     routing constraints (impedance by layer, length match, spacing for crosstalk), not field prices.

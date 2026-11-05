@@ -83,6 +83,9 @@ Two protections around the loop:
 Since 2026-10-25 a repair round that moves parts also re-runs the silk pass: on a fixed
 pic-programmer, 40 evictions had left 18 silk errors.
 
+### What the report flags
+The report closes with `hazards` and `hazard_summary` ([hazards.md](../architecture/hazards.md)). Each part the placer relaxed to its pads (`relax_bodies`: `escalate` by default, only when legalization fails; `off` or `auto`) gets one hazard at its final pose: `body_overlap` (block) when its body lies over another part, else `body_relaxed` (info). The written board is rechecked with the safety checks forced on (`--recheck`), so a courtyard overlap, short or edge violation that the project's severities hide is reported even though the placer, like the scorer, followed the project.
+
 ### Silkscreen
 
 Silk is checked only where the project makes `silk_overlap` / `silk_over_copper` an
@@ -232,7 +235,9 @@ Why it is off by default:
 
 **Connector edge pull:** human boards put USB (100%), barrel (100%) and audio (100%) at the
 edge, but headers only 69% and mounting holes 84%. The term was dropped when the user
-decided the interface stays fixed. [C]
+decided the interface stays fixed. [C] That holds only on `*-fixed` tasks. Re-measured rates
+and the hard edge pin that plain `place` now uses are in
+[kae-fixed-interface](../../research/placement/kae-fixed-interface.md#edge-connectors-in-plain-place-mode-2026-11).
 
 **Free angles** (`--angles STEP`, parts at any multiple of STEP; CP-SAT stays on right
 angles): the paired test tool is

@@ -100,7 +100,9 @@ def test_declared_cables_turn_common_mode_into_a_field_at_10_m():
                      "source": "CISPR 32 class B"}]}
     st = OB.evaluate(WIDE, it, BRIEF)
     e1 = next(r for r in st["terms"] if r["id"] == "E1")
-    E = U.to_log(1.26e-6 * 1e8 * 1.5 * (1e-3 / 150) / 10, "dBuV/m")
+    # 1.5 m at 100 MHz is past the cable's resonance (knee 120 / (1.257e-6 x 1.5) = 64 MHz): the half-wave
+    # dipole's 2 x 60 I / r, not Ott's short-cable 1.26e-6 f l I / r (which would read 42.0 dBuV/m)
+    E = U.to_log(2 * 60 * (1e-3 / 150) / 10, "dBuV/m")
     assert e1["value"].startswith(f"{E:.4g}") and e1["met"] == (E <= 30)
     assert not any(q["id"] == "Q-cables" for q in st["questions"])
 
@@ -233,3 +235,219 @@ def test_an_implausible_observation_is_priced_at_its_cap_for_every_layout():
     ev["observations"].append(old)
     s1 = next(r for r in OB.evaluate(ev, it, BRIEF)["terms"] if r["id"] == "S1")
     assert s1["contribution"] == pytest.approx(costs[0])
+
+
+def test_the_copper_policy_floors_inner_layers_at_the_internal_ipc_width():
+    """The policy's IPC-2221 floor used the external k on every layer: an inner hop came out at
+    the outer width (0.30 mm for 1 A at 10 K, where the inner layer needs 0.78 mm)."""
+    from types import SimpleNamespace
+
+    from kae.em.pnr import PhysRouter
+    from kae.intent import route as IR
+    from kae.route.critical_physics import ipc2221_width
+    ladder = (0.2, 0.3, 0.5, 0.8, 1.0, 1.5)
+    h = IR.Policy({"terms": [{"id": "H", "tier": "hard", "obs": "heat.track", "max": "10 K", "why": "w"}],
+                   "knobs": {"route.area_cost": 100}})
+    out = h.width("VIN", [1.0] * 5, 0.035, 0.2, ladder, 0.2, None)[0]
+    inn = h.width("VIN", [1.0] * 5, 0.035, 0.2, ladder, 0.2, None, internal=True)[0]
+    assert out < ipc2221_width(1.0, 10, 0.035, internal=True) <= inn
+    # the router passes the hop's layer: inner layers get the internal k
+    r = object.__new__(PhysRouter)
+    r.policy, r.WIDTHS = h, ladder
+    r.layer_names = ["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"]
+    r.mesh = SimpleNamespace(layers=[SimpleNamespace(t=0.035)] * 4)
+    r.sp = SimpleNamespace(width_limits=lambda n, l: (0.2, 0.25, None), clamp_width=lambda n, l, w: w,
+                           _generic_need=lambda *a: 0.2)
+    assert r._intent_width("VIN", "F.Cu", 0.2, [1.0] * 5)[0] == out
+    assert r._intent_width("VIN", "In1.Cu", 0.2, [1.0] * 5)[0] == inn
+
+
+DROP = {"board": "synthetic", "total": {"complete": True}, "questions": [],
+        "observations": [_ob("drop.rail", "V", [0.050] * 3, kind="dc_drop", rail="+3V3", load="U5", parts=["U5"],
+                             nets=["+3V3"])]}
+
+
+def test_an_observation_is_priced_by_its_most_specific_term_only():
+    """Specificity (intent-driven-objectives.md §5): a board-wide drop cost and a +3V3 one at the same rate
+    priced the drop twice (100 instead of 50)."""
+    it = {"terms": [{"id": "B", "tier": "cost", "obs": "drop.rail", "rate": "1 mW_eq/mV", "why": "w"},
+                    {"id": "R", "tier": "cost", "obs": "drop.rail", "where": {"rail": "+3V3"}, "rate": "1 mW_eq/mV",
+                     "why": "w"}]}
+    st = OB.evaluate(DROP, it, BRIEF)
+    assert st["tiers"]["cost"] == pytest.approx(50.0)
+    b = next(r for r in st["terms"] if r["id"] == "B")
+    assert b["matched"] == 0 and b["overridden_by"] == ["R"]
+
+
+def test_terms_of_other_tiers_or_sides_do_not_compete():
+    it = {"terms": [{"id": "Lo", "tier": "limit", "obs": "drop.rail", "min": "10 mV", "rate": "1 mW_eq/mV", "why": "w"},
+                    {"id": "Hi", "tier": "limit", "obs": "drop.rail", "max": "40 mV", "rate": "1 mW_eq/mV", "why": "w"},
+                    {"id": "H", "tier": "hard", "obs": "drop.rail", "max": "60 mV", "why": "w"}]}
+    st = OB.evaluate(DROP, it, BRIEF)
+    assert all(r["matched"] == 1 for r in st["terms"] if r["id"] in ("Lo", "Hi", "H"))
+    assert st["tiers"]["limit"] == pytest.approx(10.0)
+
+
+def test_equal_specificity_overlap_is_an_error_naming_both_terms():
+    it = {"terms": [{"id": "A", "tier": "cost", "obs": "drop.rail", "where": {"rail": "+3V3"}, "rate": "1 mW_eq/mV",
+                     "why": "w"},
+                    {"id": "B", "tier": "cost", "obs": "drop.*", "where": {"load": "U5"}, "rate": "2 mW_eq/mV",
+                     "why": "w"}]}
+    with pytest.raises(OB.IntentError, match=r"\['A', 'B'\]"):
+        OB.evaluate(DROP, it, BRIEF)
+
+
+def test_a_drop_limit_costs_the_router_nothing_until_it_is_exceeded():
+    """'Limits have epsilon-constraint semantics: once met they cost nothing' (§6). k_R charged a drop limit's
+    rate on every net, whatever its bound or its where.load (2000 per V.A on an unrelated signal net)."""
+    from kae.intent import route as IR
+    lim = {"id": "T2", "tier": "limit", "obs": "drop.rail", "where": {"load": "U5"}, "max": "27 mV",
+           "rate": "2 mW_eq/mV", "why": "w"}
+    p, base = IR.Policy({"terms": [lim]}), IR.Policy({})
+    for net in ("+5V", "SOME_SIGNAL"):
+        assert p.k_R(net, [1.0] * 3) == base.k_R(net, [1.0] * 3)
+    # a cost on +5V's drop prices +5V's copper, not other nets'
+    c = IR.Policy({"terms": [{k: v for k, v in dict(lim, id="C", tier="cost", where={"rail": "+5V"}).items() if k != "max"}]})
+    assert c.k_R("+5V", [1.0] * 3)[0] > base.k_R("+5V", [1.0] * 3)[0]
+    assert c.k_R("SOME_SIGNAL", [1.0] * 3) == base.k_R("SOME_SIGNAL", [1.0] * 3)
+    # in physics routing the limit is priced by its excess at the load it names only
+    ob = dict(loss=(0.0, 0.0, 1.0), drops=[("U5", "+5V", 0.0, 0.030, 0.0), ("U6", "+5V", 0.0, 0.040, 0.0)])
+    assert p.dc_cost(ob) == pytest.approx(2000 * 0.003)
+    assert p.dc_cost(dict(ob, drops=[("U5", "+5V", 0.0, 0.020, 0.0)])) == 0.0
+
+
+def test_router_scopes_must_all_hold():
+    from kae.intent import route as IR
+    t = {"id": "X", "where": {"rail": "+5V", "part": "U5"}}
+    assert not IR._net_matches(t, "+5V", {})          # a part scope says nothing about a bare net
+    assert IR._net_matches({"id": "Y", "where": {"rail": "+5*"}}, "+5V", {})
+    assert IR._net_matches({"id": "Z"}, "ANY", {})
+
+
+def test_section_edits_reject_unresolved_members_and_id_collisions():
+    """§8: 'unresolved members come back as errors'. add accepted a typo'd part (its terms then matched
+    nothing, silently), and rename onto an existing id dropped that section."""
+    from kae.intent import sections as SE
+    brief = dict(BRIEF, nets={"SW": {}, "RF_IN": {}, "VIN": {}})
+    secs = SE.from_brief(brief)
+    with pytest.raises(SE.SectionError, match="U99_TYPO"):
+        SE.apply(secs, {"add": [{"id": "x", "parts": ["U7", "U99_TYPO"]}]}, brief)
+    with pytest.raises(SE.SectionError, match="NO_SUCH_NET"):
+        SE.apply(secs, {"add": [{"id": "x", "nets": ["NO_SUCH_NET"]}]}, brief)
+    with pytest.raises(SE.SectionError, match="already exists"):
+        SE.apply(secs, {"rename": {"cell:buck:U3": "victim:analog:U7"}}, brief)
+    with pytest.raises(SE.SectionError, match="already exists"):
+        SE.apply(secs, {"add": [{"id": "cell:buck:U3", "parts": ["U7"]}]}, brief)
+    ok = SE.apply(secs, {"rename": {"cell:buck:U3": "buck"}, "add": [{"id": "gnss", "parts": ["U7"], "nets": ["RF_IN"]}]},
+                  brief)
+    assert set(ok) == {"buck", "victim:analog:U7", "gnss"}
+    # the evaluator passes its brief, so a typo in an intent's sections is an error there too
+    it = {"sections": {"add": [{"id": "x", "parts": ["U99_TYPO"]}]}, "terms": []}
+    with pytest.raises(SE.SectionError):
+        OB.evaluate(WIDE, it, brief)
+
+
+def test_the_unit_modules_own_examples_parse():
+    """units.py's docstring and the design doc's T4 use '-180 dBm/Hz'; it raised UnitError."""
+    assert U.quantity("-180 dBm/Hz") == (-180.0, "dBm/Hz")
+    assert U.to_log(1e-21, "dBm/Hz") == pytest.approx(-180.0)
+    assert U.quantity("27 mV") == pytest.approx((0.027, "V"))
+    assert U.rate("2 mW_eq/mV", "mW_eq") == pytest.approx((2000.0, "V"))
+    assert U.rate("20 mW_eq/dB", "mW_eq") == (20.0, "dB")
+
+
+# ---------------------------------------------------------------- hard terms are a tier, never bought (CI7)
+def test_a_hard_term_takes_no_rate():
+    with pytest.raises(OB.IntentError, match="never traded"):
+        OB.load({"terms": [{"id": "H", "tier": "hard", "obs": "pickup.peak", "max": "50 mV", "rate": "1 mW_eq/mV",
+                            "why": "w"}]})
+
+
+def test_the_router_keeps_hard_terms_out_of_the_cost_and_reports_them():
+    """A hard term was priced at 1e6 per V inside the router's cost sum: a large enough cost elsewhere could
+    buy it. Now it steers the search only, is judged on its own, and a violation is a block hazard."""
+    import numpy as np
+    from kae.intent import route as IR
+    hard = {"id": "H", "tier": "hard", "obs": "pickup.peak", "max": "50 mV", "why": "ADC LSB", "source": "U7 ds"}
+    lim = {"id": "L", "tier": "limit", "obs": "pickup.peak", "max": "10 mV", "rate": "1 mW_eq/mV", "why": "w"}
+    p = IR.Policy({"terms": [hard, lim]})
+    terms = [(hard, None, 0.05, "hard"), (lim, 1000.0, 0.01, "limit")]
+    V = np.array([0.02, 0.08])
+    assert p.pair_cost(terms, V) == pytest.approx([1000 * 0.01, 1000 * 0.07])      # the limit only
+    assert list(p.dC_dV(terms, V)) == pytest.approx([1000.0, 1000.0 + IR.Policy.HARD_SLOPE])
+    rows = p.pair_hard(terms, V)
+    assert len(rows) == 1 and rows[0][3] == pytest.approx((0.08 - 0.05) / 0.05)
+    hz = p.hazards([(t, "U7.3 <- cell:buck:U3", w, l, v) for t, w, l, v in rows])
+    blocks = [h for h in hz if h["severity"] == "block"]
+    assert [h["code"] for h in blocks] == ["hard_term_violated"] and "U7.3" in blocks[0]["message"]
+    assert {"code", "severity", "category", "message", "objects", "evidence", "fix"} <= set(blocks[0])
+    # met: no block
+    assert not [h for h in p.hazards([(t, "x", 0.04, l, 0.0) for t, _, l, _ in rows]) if h["severity"] == "block"]
+
+
+def test_hard_terms_the_router_cannot_compute_are_flagged_unchecked():
+    from kae.intent import route as IR
+    tj = {"id": "TJ", "tier": "hard", "obs": "temp.junction", "max": "125 °C", "why": "rating"}
+    pk = {"id": "PK", "tier": "hard", "obs": "overshoot.peak", "max": "30 V", "why": "V_ds rating"}
+    dr = {"id": "DR", "tier": "hard", "obs": "drop.rail", "max": "50 mV", "why": "w"}
+    p = IR.Policy({"terms": [tj, pk, dr]})
+    codes = lambda hz: sorted(h["objects"][0] for h in hz if h["code"] == "hard_term_unchecked")  # noqa: E731
+    assert codes(p.hazards([])) == ["TJ"]
+    assert codes(p.hazards([], checked_pairs=False, checked_dc=False)) == ["DR", "PK", "TJ"]
+
+
+def test_a_hard_drop_term_is_judged_at_its_worst_corner():
+    from kae.intent import route as IR
+    dr = {"id": "DR", "tier": "hard", "obs": "drop.rail", "where": {"load": "U5"}, "max": "30 mV", "why": "w"}
+    p = IR.Policy({"terms": [dr]})
+    obs = [dict(loss=(0, 0, 0), drops=[("U5", "+5V", 0, dv, 0), ("U6", "+5V", 0, 0.1, 0)]) for dv in (0.02, 0.04)]
+    rows = p.dc_hard(obs)
+    assert [(r[0]["id"], r[1]) for r in rows] == [("DR", "U5@+5V")] and rows[0][4] == pytest.approx(1 / 3)
+    assert p.dc_cost(obs[1]) == 0.0                     # never in the cost
+
+
+def test_a_capped_heating_width_is_a_hazard():
+    from kae.intent import route as IR
+    ladder = (0.2, 0.5, 1.0, 2.0)
+    for tier, sev in (("hard", "block"), ("limit", "warn")):
+        t = {"id": "H", "tier": tier, "obs": "heat.track", "max": "10 K", "why": "w"}
+        if tier == "limit":
+            t["rate"] = "1 mW_eq/K"
+        p = IR.Policy({"terms": [t]})
+        w, _ = p.width("+12V", [5.0] * 3, 0.035, 0.2, ladder, 0.2, 0.5)
+        p.width("+12V", [2.0] * 3, 0.035, 0.2, ladder, 0.2, 0.5)          # a second hop: one hazard per net
+        assert w == 0.5
+        hz = [h for h in p.hazards() if h["code"] == "heating_width_capped"]
+        assert len(hz) == 1 and hz[0]["severity"] == sev and hz[0]["evidence"]["hops"] == 2
+        assert hz[0]["evidence"]["I_A"] == 5.0
+
+
+def test_a_defaulted_area_price_is_reported():
+    from kae.intent import route as IR
+    assert [h["code"] for h in IR.Policy({}).hazards()] == ["area_cost_defaulted"]
+    assert IR.Policy({"knobs": {"route.area_cost": 0.2}}).hazards() == []
+
+
+# ---------------------------------------------------------------- the term contract (CI11), temperatures (CI15)
+def test_an_unsourced_bound_is_marked_assumed():
+    st = OB.evaluate(WIDE, {"terms": [
+        {"id": "A", "tier": "limit", "obs": "pickup.peak", "max": "1 mV", "rate": "1 mW_eq/mV", "why": "guess"},
+        {"id": "S", "tier": "hard", "obs": "loss.copper", "max": "1 W", "why": "w", "source": "fuse rating"}]}, BRIEF)
+    rows = {r["id"]: r for r in st["terms"]}
+    assert rows["A"].get("assumed") is True and "assumed" not in rows["S"]
+    assert st["assumed_limits"] == ["A"]
+
+
+def test_celsius_is_absolute_for_junctions_and_a_rise_for_tracks():
+    ev = {"board": "synthetic", "total": {"complete": True}, "questions": [], "observations": [
+        _ob("temp.junction", "C", [80.0, 130.0], kind="heat", observer="heat:U3", source="dc", parts=["U3"]),
+        _ob("heat.track", "K", [4.0, 12.0], kind="dc_heat", nets=["VIN"])]}
+    assert U.quantity("125 °C") == (125.0, "C") and U.quantity("10 K") == (10.0, "K")
+    st = OB.evaluate(ev, {"terms": [{"id": "R", "tier": "hard", "obs": "heat.track", "max": "10 °C", "why": "w"}]},
+                     BRIEF)
+    r = st["terms"][0]
+    assert r["met"] is False and r["value"] == "12 K"           # a rise in °C is a rise
+    # kelvin against an absolute temperature is refused, not read as 398 C
+    with pytest.raises(OB.IntentError, match="absolute temperature"):
+        OB.evaluate(ev, {"terms": [{"id": "J", "tier": "hard", "obs": "temp.junction", "max": "398 K", "why": "w"}]},
+                    BRIEF)

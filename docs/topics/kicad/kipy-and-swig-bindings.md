@@ -8,6 +8,7 @@
   - Losing the token can silently reconnect a transaction to a new KiCad [P].
 - **SWIG `pcbnew`** was deprecated in 9.0 and is to be removed in 11.0. It still offers stand-alone `LoadBoard`/`SaveBoard`, `ExportSpecctraDSN`, `ImportSpecctraSES` and `WriteDRCReport` in 10.0 [P].
 - **`SaveBoard` silently drops data.** Never let pcbnew or kipy re-serialize a user's file [P].
+- **`SaveBoard` = connectivity + the plain writer.** `SaveBoard` runs `BuildConnectivity` and `SynchronizeNetsAndNetClasses` and then `PCB_IO_MGR::Save(KICAD_SEXP)`; `LoadBoard` builds connectivity after `PCB_IO_MGR::Load`. The connectivity step re-nets copper; the writer itself still sorts items into `std::set`s, so its de-duplication applies to both ([pcbnew_scripting_helpers.cpp @10.0](https://gitlab.com/kicad/code/kicad/-/blob/10.0/pcbnew/python/scripting/pcbnew_scripting_helpers.cpp), [pcb_io_kicad_sexpr.cpp @10.0](https://gitlab.com/kicad/code/kicad/-/blob/10.0/pcbnew/pcb_io/kicad_sexpr/pcb_io_kicad_sexpr.cpp)) [P].
 - Under GPL-3.0-or-later, linking SWIG is license-compatible. The problem is longevity: **SWIG plugins break in KiCad 11** [I].
 
 ## Key facts

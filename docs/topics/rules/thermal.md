@@ -23,12 +23,13 @@
 
 **TI SNVA419C** (AN-2020 "Thermal Design By Insight, Not Hindsight", [PDF](https://www.ti.com/lit/pdf/snva419)) [P]:
 - **Rule 1 (board size):** ≥15.29 cm² (2.37 in²) of two-sided solid copper per W for a 40 °C rise, natural convection, no heatsink. Airflow can reduce this "by up to half". Alternative: area ≥ 500 °C·cm²/W ÷ (θ_JA − θ_JC). This assumes no enclosure blockage and an EP tied to planes that reach the board edge. Inner planes improve a good 2-layer design by up to 30%.
-- **Rule 2:** a 12 mil via with 0.5 oz walls ≈ **261 °C/W**. "As many thermal vias as will fit underneath the exposed pad … with 1mm spacing", on as many layers as possible, with a solid bottom ground.
+- **Rule 2:** a 12 mil via with 0.5 oz walls ≈ **261 °C/W** (Table 1: 1.65 mm long, k = 4 W/cm·K, wall 17.5 µm inside the drill radius, π(r² − (r−t)²)). At kae's 20 µm and π(d+t)t over 1.6 mm it is 204 °C/W; at 25 µm, 160. "As many thermal vias as will fit underneath the exposed pad … with 1mm spacing", on as many layers as possible, with a solid bottom ground.
 - **Rule 3:** ≥1 oz; 2 oz above 3 W; 4 oz above 6 W. Example: 3 × 3 in 2-layer θ_JA 28.3 → 21.2 °C/W going from 1 to 2 oz (25% better).
 - **Rule 4:** a cut perpendicular to heat flow added 5.5 °C, vs 1.5 °C for a parallel cut. Route traces through spreaders radially.
 - **Rule 5:** plastic package tops have θ_JT 50–200 °C/W, so heatsink the board bottom through the EP and vias.
 - **Rule 6:** superposition "almost works" (slightly non-linear).
-- **Constants:** λ_Cu ≈ 4 W/cm·K; FR-4 ≈ 0.0023 W/cm·K; h ≈ 10 W/m²K. 1 cm² of 1 oz copper laterally ≈ 71 °C/W; FR-4 vertical for 1 cm² ≈ 13.9 °C/W. No thickness is given; with λ_FR4 = 0.0023 W/cm·K that figure implies t ≈ 0.32 mm. Compute R = t/(λ·A) from the stack-up instead: ≈70 °C/W for 1 cm² of a 1.6 mm board [I].
+- **Constants:** λ_Cu ≈ 4 W/cm·K; FR-4 ≈ 0.0023 W/cm·K; h ≈ 10 W/m²K (Table 1: "board to air for natural convection", 0.001 W/cm²·°C per face). 1 cm² of 1 oz copper laterally ≈ 71 °C/W; FR-4 vertical for 1 cm² ≈ 13.9 °C/W. No thickness is given; with λ_FR4 = 0.0023 W/cm·K that figure implies t ≈ 0.32 mm. Compute R = t/(λ·A) from the stack-up instead: ≈70 °C/W for 1 cm² of a 1.6 mm board [I].
+- **kae's constants** ([materials.py](../../../kae/src/kae/materials.py)): FR-4 0.3 W/m·K through the laminate (measured 0.29, Azar and Graebner, SEMI-THERM 1996; datasheets 0.3–0.4; TI's 0.23 is the low end) and 0.8 along it (measured 0.81–1.06: the glass weave); h = 10 per face (correlations: 3–6 convection plus ~6 radiation at ε 0.9). On a synthetic copper-sparse 1 W part, isotropic 0.3 read 301 K against 185 K split; on an exposed pad with 9 vias and a plane, 62 vs 60 K. h 12 → 10 adds ~10 % [C].
 
 **TI SLMA002H** (PowerPAD, [PDF](https://www.ti.com/lit/pdf/slma002)) [P]:
 - Thermal land directly under the package; TQFP maximum land = body − 2.0 mm, solder-mask-defined.

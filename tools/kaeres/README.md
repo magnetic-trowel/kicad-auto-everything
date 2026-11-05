@@ -43,7 +43,8 @@ Consequences:
       bugs.json                       bug records of this run
   experiments/<name>/
     experiment.json, boards.txt       methods, harness and kae commits, evaluators
-    REPORT.md, results.csv            per method: cp1, completion, not closed, DRC errors, timeouts, CPU, physics
+    REPORT.md, results.csv            per method: cp1, k, cpk, completion, not closed, DRC errors, timeouts, CPU, physics;
+                                      paired tests against a baseline (below)
     bugs/BY-SIGNATURE.md, index.jsonl bugs grouped by signature: the work list for a fixing agent
   index.sqlite                        rebuildable cache over everything (kaeres index)
 ```
@@ -64,7 +65,7 @@ $K method add "kae bridge" --command "{py:kae} -m kae.route.cli route {input} {o
 $K method list
 $K exp create NAME --method "freerouting 2.5.0" --method "fr-fork master" [--boards @ids.txt] --description "..."
 $K exp submit NAME [--limit 20]       # one kaeq job per board that lacks a run; re-submitting resumes
-$K exp status NAME; $K exp report NAME; $K exp install-timer NAME   # report + index hourly
+$K exp status NAME; $K exp report NAME [--baseline METHOD]; $K exp install-timer NAME   # report + index hourly
 $K board BOARD_ID                     # every method's run of this board, with its scores
 $K rerun ~/kae-baselines/boards/ID/runs/RUN [--submit]   # the code, binary and command; queue a reproduction
 $K index                              # then e.g. sqlite3 ~/kae-baselines/index.sqlite 'select ...'
@@ -129,6 +130,28 @@ Each record has `board`, `method` (a method name, `harness` or `physics`), `cate
 | `physics_error` | kae's physics failed on a board or module |
 
 Unrouted connections and timeouts are outcomes, not bugs: they are in `results.csv` and `REPORT.md`.
+
+## Reading a report
+
+- **cp1, k, cpk.** cp1 is attempt 0's clean rate. k is the most attempts any board has (the
+  experiment's `--attempts`), and cpk is the share of boards with any clean attempt, so cpk = cp1
+  when k = 1. A method named `… restarts` is wrapped by `restart.py`: one run is already the best
+  of its internal seeds within one wall budget (the `restarts` column), so its cp1 is a best-of-N
+  that a bare router's cp1 is not. Compare such methods with each other, or give the bare router
+  the same CPU (the CPU column).
+- **Paired against a baseline.** For each method against `--baseline` (default: the experiment's
+  first method), on the boards both have run: exact McNemar for cp1 and cpk, a sign-flip test
+  for completion and for cp1_mean (the clean share over all attempts, the primary), Holm over the
+  secondaries, a 95 % bootstrap CI that resamples repositories, and the boards that flipped. A
+  failed run counts as not clean. A board only one method has run yet is left out and counted
+  ("not run by one"): finish both before concluding. Runs whose scorer failed (`score_error`)
+  are left out too; rescore them. The code is `bench/src/kaebench/stats.py`, shared with
+  `kaebench report`.
+- **CPU.** The method's own report (`restart.py`'s `work.cpu_s`) when it has one, else kaebench's
+  rusage. Before the kaebench launcher became a subreaper, rusage lost everything inside the
+  bwrap sandbox (bwrap exits without reaping its pid 1), so every `--command` run made with an
+  older harness reads ~0; those show as no value, or as the job step's cgroup CPU
+  (`job_steps.run.cgroup_cpu_s`, recorded from now on, which also includes scoring).
 
 To reproduce a router bug without KiCad, run Freerouting on `artifacts/board.dsn.gz` with the
 flags in `run.json` → `adapter_meta.rule_args`.

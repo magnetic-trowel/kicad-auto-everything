@@ -20,7 +20,7 @@ Shape (keys beyond these are additions the consumers ignore):
   commutation_cell, decap, crystal, oscillator, connector_chain, victim, heat_source,
   thermal_victim, antenna. `budget` entries {quantity: {value, unit, class, basis}} appear only
   where the board states a budget-relevant fact; generic priors live in kae.physics.priors.
-- `diff_pairs`, `placement_order` (structure ids, physically decisive first), `summary`.
+- `diff_pairs` (with `kicad_pair` and a `rename_proposal` for names KiCad will not pair), `placement_order` (structure ids, physically decisive first), `summary`.
 
 Inputs are only what the .kicad_pcb states (names, values, footprints, lib ids, pin functions
 and types, fields, net classes, schematic sheet names); positions are never read.
@@ -40,7 +40,7 @@ from .structures import EXTERNAL, find_structures
 
 SCHEMA = 'kae.brief/1'
 REF_FIELDS = {'controller', 'inductor', 'ic', 'crystal', 'connector', 'part', 'shunt', 'amp', 'bootstrap_cap', 'series_r',
-              'feedback_r', 'caps', 'hf_caps', 'bulk_caps', 'load_caps', 'protection', 'series', 'match', 'output_caps',
+              'feedback_r', 'caps', 'hf_caps', 'bulk_caps', 'load_caps', 'load_caps_xin', 'load_caps_xout', 'protection', 'series', 'match', 'output_caps',
               'input_caps', 'filter', 'phase_shunts', 'top', 'bottom', 'feedforward_cap', 'high', 'low', 'rectifier', 'bond',
               'series_shunt', 'bootstrap_r', 'charge_pump_caps', 'caps_in', 'caps_out'}
 PAIR_FIELDS = {'loop', 'chain', 'feed', 'loads', 'ic_pins'}
@@ -307,11 +307,11 @@ def build(board, *, use_sheets: bool = True) -> dict:
     pairs = []
     for dp in roles.pairs:
         d = {'p': dp.p, 'n': dp.n, 'interface': dp.interface, 'speed': dp.speed, 'confidence': round(dp.confidence, 3),
-             'evidence': evidence_json(dp.evidence, 6)}
+             'evidence': evidence_json(dp.evidence, 6), 'kicad_pair': dp.kicad_pair, 'rename_proposal': dp.rename}
         if dp.interface in ZDIFF:
-            z, tol = ZDIFF[dp.interface]
+            z, lo, hi = ZDIFF[dp.interface]
             d['budget'] = {'Zdiff': {'value': z, 'unit': 'ohm', 'class': 'E5', 'basis': ZDIFF_SRC[dp.interface],
-                                     'interval': [round(z * (1 - tol), 1), round(z * (1 + tol), 1)]}}
+                                     'interval': [round(lo, 1), round(hi, 1)]}}
         pairs.append(d)
     order = sorted(structures, key=lambda s: (-s['priority'], s['id']))
     placement_order = [{'id': s['id'], 'priority': s['priority'], 'confidence': s['confidence']} for s in order
@@ -331,6 +331,7 @@ def build(board, *, use_sheets: bool = True) -> dict:
         'grounds': roles.grounds, 'rails': {n: (roles.rails[n].attrs.get('volts') or {}).get('value') for n in roles.rails},
         'switch_nodes': sorted(roles.switch_nodes), 'sheets_used': use_sheets and any(p.sheet for p in nl.parts.values()),
         'power_pins_without_caps': [{'ic': nl.parts[u['ic']].refdes, 'rail': u['rail'], 'pins': u['pins']} for u in st['uncovered']],
+        'caps_over_rating': caps_over_rating(nl, roles, ids),
         'runtime_s': round(time.perf_counter() - t0, 3),
     }
     return {'schema': SCHEMA, 'board': {'path': str(getattr(board, 'path', '') or ''), 'footprints': len(nl.parts),
@@ -339,6 +340,46 @@ def build(board, *, use_sheets: bool = True) -> dict:
                                                              'fields, net classes, zones (net only), schematic sheet names; no positions'},
             'nets': nets, 'parts': parts, 'structures': structures, 'diff_pairs': pairs,
             'placement_order': placement_order, 'summary': summary}
+
+
+# the rail-voltage sources _rail_voltage reads that are an assumption, not a statement of the board
+_LOW_VOLTS = ('assumed', 'estimate', 'unknown')
+
+
+def caps_over_rating(nl, roles, ids) -> list:
+    """Capacitors between a rail and a ground whose stated voltage rating (the 'Voltage' field, else
+    the value: '10uF 25V') is below the rail's nominal voltage: the part fails in use (an MLCC
+    cracks or shorts, an electrolytic vents). One row per part with the rating, the rail voltage
+    and where that voltage comes from; `confident` is False when the voltage is only inferred
+    (an assumed cell, conflicting sources, a weakly classified rail), for kae.board_hazards'
+    capacitor_over_voltage (block, or warn when not confident). Parts without a stated rating
+    are not judged."""
+    from . import values as V
+    out = []
+    for net, caps in sorted(roles.caps_to.items()):
+        nr = roles.nets.get(net)
+        vb = (nr.attrs.get('volts') if nr is not None else None) or {}
+        v = vb.get('value')
+        if v is None:
+            continue
+        for cref, gnd in caps:
+            part = nl.parts[cref]
+            fld = part.fields.get('Voltage') or ''
+            rated = V.rated_voltage(fld) or V.rated_voltage(part.value)
+            if not rated or rated + 1e-9 >= abs(v):
+                continue
+            src = str(vb.get('relative_to') or '')
+            lineage = [str(x) for x in vb.get('lineage') or []]
+            doubts = [x for x in lineage if x.startswith('conflict')]
+            if any(w in src for w in _LOW_VOLTS):
+                doubts.append(f"rail voltage {src}")
+            if nr.confidence < 0.6:
+                doubts.append(f"rail role confidence {nr.confidence:.2f}")
+            out.append({'ref': part.refdes, 'part': ids(cref), 'value': part.value, 'rated_V': rated,
+                        'rated_source': "field 'Voltage'" if V.rated_voltage(fld) else 'value',
+                        'rail': net, 'ground': gnd, 'rail_V': v, 'rail_V_source': src,
+                        'rail_V_interval': vb.get('interval'), 'confident': not doubts, 'doubts': doubts})
+    return out
 
 
 def _refs_in(s: dict) -> list:

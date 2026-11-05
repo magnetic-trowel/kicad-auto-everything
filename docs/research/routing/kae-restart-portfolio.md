@@ -16,6 +16,7 @@ There is no merit method of its own: the merit script notes "kae portfolio is le
 - Waves of `parallel` separate `python -m <router> route` processes, each with its own seed. The seed is the DSN item-order permutation (`translate.permute` in the [bridge](kae-freerouting-bridge.md)) plus the fork's `item_order_seed`.
 - The wave budget starts at `first_s` and multiplies by `growth` (default 2) each wave, so a board that genuinely needs a long attempt still gets one: 60, 120, 240 s, ...
 - The first clean attempt (0 errors, 0 unconnected, read from the attempt's JSON report `repair.final`, else `drc`) stops the rest. Otherwise the best (errors, unconnected) is kept when time runs out.
+- Since the 2026-11 bug audit attempts rank by (unconnected, errors beyond the input's own), stop on the first board routed fully, and the kept board gets a final last mile with reserved time ([last mile and restarts](../../topics/routing/last-mile-and-restarts.md)). The results below predate that.
 - Attempts get `GRACE_S` = 30 s to write their board and a `MARGIN_S` = 15 s safety margin; the run stops early if all attempts of a wave fail at once.
 - `--router M[:ARGS]` may be repeated; attempts cycle through the listed routers (the [mixed portfolio](kae-routing-dead-ends.md), not finished).
 

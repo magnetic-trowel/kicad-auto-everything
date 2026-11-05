@@ -47,6 +47,7 @@
 | all pin types deleted | 99.45% of net roles kept, rail-set Jaccard 0.93, decap-group Jaccard 0.93 (before name-first: 0.993 / 0.92 / 0.90) | same |
 | pin types flipped against names | 0.998-1.0 (was 0.95 on rails); partly circular test | same |
 | unannotated pins, 40 unannotated boards | boards with physics modules 12 -> 27, decaps 26 -> 133; 40 annotated boards unchanged | commit [dfe6260](https://github.com/magnetic-trowel/kicad-auto-everything/commit/dfe626056d1087259702fe786b4a098f85c0cbee) |
+| analog nets after the name gate (2026-11): a name decides alone only where no IC pin is named; charger PROG/ISET pins; bus and control suffixes veto | 32-board sample: 7 real analog nets recovered (Vref, AUDIO_IN/OUT, ADC, STACK-CURRENT, SENSOR_TRACK, a PROG pin), 0 of 11 false positives back (8 ferrite nets, TEMP_ALERT, BATTERY_SENSE_ENABLE, a comparator output); ADC_BAT on a named ESP32 GPIO stays `signal`. 400 random corpus boards: analog 506 -> 675, none lost; about 6 of 169 gains read as false (MIX_BP, TEMP_HUM, SPDIF_TX, AUDIO_LDOO) | [roles.py](../../../kae/src/kae/circuit/roles.py) `_signal_roles` |
 | run time | median 0.1 s per board | same doc |
 
 Small n: the held-out audit rests on 3 boards (6 for the pin-type test), the unannotated-pins check on 40+40 boards with no placement or routing result on top.

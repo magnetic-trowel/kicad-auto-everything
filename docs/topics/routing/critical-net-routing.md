@@ -15,40 +15,35 @@ Modules come from the physics brief (`kae.circuit.brief`) in priority order; rai
 
 | Module | Copper drawn | Objective and rule |
 |---|---|---|
-| Commutation cell | Every board hop of the hot loop (input cap → switch → return); return vias | Loop L. Each hop is as wide as its terminals allow, never below IPC-2221 for the cell current, on the layer next to the reference plane; the switch node stays at class width. A ground hop longer than 1.5× the straight distance + 1 mm is left to the plane. |
+| Commutation cell | Every board hop of the hot loop (input cap → switch → return); return vias | Loop L. Each hop is as wide as its terminals allow, never below IPC-2221 for the cell current (what fits only narrower goes to the bridge), on the layer next to the reference plane; the switch node stays as narrow as that allows. A ground hop longer than 1.5× the straight distance + 1 mm is left to the plane. |
 | Power path | The loop C_in → pass elements → C_out (load switch, eFuse, ideal diode) | As a cell. Widths come from the upper bound of the brief's current interval. |
 | Return vias | Up to 4 (more for ≥ 2 A) at the ground pads | 24 directions × 4 gaps; vias are added while each lowers the routed L by ≥ 2 %. |
 | Decoupling | Cap rail pad → IC power pin; cap and IC ground into the plane | Loop L, against the place terms' structure. Pairing comes from the brief: `pin`, or `nearest_pin`. A cap the IC owns with p < 0.5 is not its own and is not paired. A cap more than 10 mm from its pin is left to the bridge. |
 | Rail group | Each cap's rail pad → the nearest group load's rail pin; ground via | A rail feeding many identical loads. No loop is quoted, because which cap serves which load is the layout's choice. |
-| Crystal | IC pin → crystal → load caps; load-cap ground vias | Pulling = S·C_trace/4 (ppm): each net's C adds to one load cap. |
-| Protection chain | Connector → protector → protected part; the protector's ground via | Surge path L′(w, h)·ℓ plus the via down to the plane. Hops after the protector are left to the bridge. |
+| Crystal | IC pin → crystal → load caps; load-cap ground vias | Pulling = S·C_trace/4 (ppm): each net's C adds to one load cap. No vias on clock traces ([XTAL-DMIN](../rules/crystals-clocks.md)): a hop needing one goes to the bridge. |
+| Protection chain | Connector → protector → protected part; the protector's ground via | Surge path L′(w, h)·ℓ plus the via down to the plane. No via before the protector ([emc-placement](../rules/emc-placement.md)): such a hop goes to the bridge, flagged for same-side placement; so do hops after it. |
 | Power rail | A trunk to the farthest load, then branches | DC drop, zones first. A track is drawn only where it beats the class width; see the next section. |
 
 Differential pairs and buses stay with the bridge ([diff-pair-routing](diff-pair-routing.md)).
 
 ### Keeping critical copper out of the router's way
 
-Locked copper is a wall for Freerouting. The stage therefore draws only what buys physics, and draws it so the router can join to it.
+Locked copper walls Freerouting in, so the stage draws only what buys physics, where the router can join it.
 
-- **Joins Freerouting can see** ([critical.py](../../../kae/src/kae/route/critical.py) `join_at_corners`). Freerouting joins a wire to a pin or via only at its centre, and to another wire only at a corner; KiCad joins anything that overlaps. A track ending inside a pad off its centre gets a neck to the centre. A track ending on another track's body splits that body there. Before this, 101 ends on bodies and 70 off-centre pad ends sat on 24 of 28 boards.
+- **Joins Freerouting can see** ([critical.py](../../../kae/src/kae/route/critical.py) `join_at_corners`). Freerouting joins a wire to a pin or via only at its centre, and to another wire only at a corner (KiCad: anything that overlaps). So an off-centre end in a pad gets a neck to the centre, and an end on another track's body splits that body. Before this, 101 ends on bodies and 70 off-centre pad ends sat on 24 of 28 boards.
 - **DSN rounding.** At ≥ 100 mm KiCad's DSN loses half a micrometre, and fixed wires ending on pin centres float for Freerouting: 167 of 1,598 locked track ends on 10 boards. The bridge snaps them back (`translate.snap_wiring`, [bridge](freerouting-constraint-bridge.md)).
 - **Spokes first.** `Session.thermal_spokes` runs before the modules (`thermal_spokes`, on). KiCad's DRC on the bare board names the pads the placement already starves of thermal spokes, and each gets its missing spokes as short legal tracks of its net into the fill. On paw3395, C11's GND pad was starved on the bare board, and the critical VIN copper then took the room of its second spoke: crit seed 1 went from 2 starved_thermal + 6 open to 0 errors + 1 open [C]. Spoke corridors (`constraints.thermal_corridors`) also keep other nets' critical copper out of every pad's best spoke strips.
 - **Escape corridors** (`escape_mm`, off). These are strips out of a dense IC's signal pins that other nets' critical copper avoids. On canhw they did not reduce unconnected items (19–33 vs 13–29, k = 1–2) and left decap loops within 1 % [C].
 - **Width that buys physics.** After routing, each loop hop is narrowed to the narrowest width whose loop stays within 5 % of the wide one (`trim_tol`). It never goes below the class width or the hop current's IPC width. Same centre line, so every clearance holds. On lambdakb's VDDPIX hop: 1.41 → 0.98 mm for +4.5 % nH.
-- **Rails only where they beat the class width.** A branch that fits only at about the class width (≤ 1.05×) has no drop physics over the router's track, so it is ripped up and left to the router. On suzyqboard a 17 mm VBUS track between the USB connectors had cut D− and CC. The trunk to the farthest load carries the design current; every other branch carries its own load's current.
-- **Joins of a critical net.** A critical net's nearby pads (`complete_mm` 8) and its islands (`island_mm` 20) are joined at the class width. On the shared benchmark host (crit-v3), cp1 on A+B was 0.636 with these joins against 0.515 without; locally, oasis went from 9 to 1 unconnected [C]. `soft` writes them unlocked.
-- **Decaps over their rail plane.** When the rail is an inner plane under both the capacitor and the pin, and the hop is longer than 2 mm (`decap_plane_mm`), the capacitor gets a via into the plane instead of a surface track around the IC.
-- **Other nets' pins keep an escape.** Before a hop is committed, nearby unrouted pins of other nets must still reach the edge of a 3.5 mm window or a via site, keeping a quarter of their room. If not, the hop is retried with a keep-out around them. An optional hop is dropped instead.
-- **Ground pours stay whole.** Crossing a ground pour costs 3× a foreign pour in the search. After routing, every ground fill piece cut off on its layer gets stitching vias into the same net's fill on another layer, legal and ≥ 2 mm apart. This applies to pieces that hold ground pads and are tied by fewer than 3 barrels.
+- **Rails only where they beat the class width.** In `auto` mode a rail whose trunk needs ≤ 1.2× the class width is left to the router (at most 13.5 K where 10 K was asked, ΔT ∝ w^−1.65, at a current with the 3× margin; an `info` hazard). A branch that fits only at ≤ 1.05× is ripped up: no drop physics over the router's track. On suzyqboard a 17 mm VBUS track had cut D− and CC. The trunk carries the design current; other branches their load's.
+- **Joins of a critical net.** A critical net's nearby pads (`complete_mm` 8) and its islands (`island_mm` 20) are joined at the class width. In crit-v3, cp1 on A+B was 0.636 with these joins against 0.515 without; oasis went from 9 to 1 unconnected [C]. `soft` writes them unlocked.
+- **Decaps over their rail plane.** When the rail is an inner plane under both capacitor and pin and the hop exceeds 2 mm (`decap_plane_mm`), the capacitor gets a via into the plane, not a surface track around the IC.
+- **Other nets' pins keep an escape.** Before a hop is committed, nearby unrouted pins of other nets must still reach a 3.5 mm window's edge or a via site with a quarter of their room; else the hop is retried with a keep-out around them, or dropped if optional.
+- **Ground pours stay whole.** Crossing a ground pour costs 3× a foreign pour in the search. After routing, every ground fill piece cut off on its layer that holds ground pads and has fewer than 3 barrels gets legal stitching vias, ≥ 2 mm apart, into the net's fill on another layer.
 
 ### The router: grid search with exact verification
 
-`GridRouter.connect(net, sources, targets, width, layers)` ([critical_grid.py](../../../kae/src/kae/route/critical_grid.py)):
-
-1. **Raster.** One grid per layer at 0.05 mm (coarsened above 1.5 M cells). A cell is blocked when a track centred there would come closer to an obstacle than R = w/2 + KiCad's requirement, plus a margin m = √(R² + res²/2) − R. With that margin, every move between free neighbours is legal; m is 2 µm at R = 0.3 mm.
-2. **Costs.** Crossing a foreign pour costs 0.4 per cell, a ground pour 1.2. A 0.4 mm halo around other nets' pads costs 0.6. A via costs 1.5 cells, or 3–5 for rails and fallbacks.
-3. **Search.** A* over 8 neighbours with an octile heuristic, numba-compiled, through vias where one fits on every layer ([critical_kernels.py](../../../kae/src/kae/route/critical_kernels.py)).
-4. **Geometry.** The cell path becomes polylines. Their ends move onto pad centres where legal, and the lines are string-pulled. Every segment and via is checked again with exact distances, 2 µm above each requirement. A failing route is refused.
+`GridRouter.connect(net, sources, targets, width, layers)` ([critical_grid.py](../../../kae/src/kae/route/critical_grid.py), kernels in [critical_kernels.py](../../../kae/src/kae/route/critical_kernels.py)), shared with the last mile and described there ([kae-last-mile § Grid router](../../research/routing/kae-last-mile.md#idea-and-how-it-works)): a 0.05 mm raster per layer, blocked where a centred track would break R = w/2 + KiCad's requirement plus a margin that makes every move between free neighbours legal, numba A* through vias, then polylines string-pulled and re-checked exactly (2 µm above each requirement); a failing route is refused.
 
 **Rules** come from the bridge's rule engine and are never re-derived ([critical_space.py](../../../kae/src/kae/route/critical_space.py)):
 - track widths per net and layer;
@@ -69,9 +64,11 @@ The task's `.kicad_dru` must sit beside the board for DRC, or custom drill and e
 - **Without Terms.** The E5 priors apply, per pin.
 
 **DC.** A track has R = ρl/(wt) and a via barrel R = ρh/(π(d + t_p)t_p). Widths come from three rules ([power-copper § 3](../physics/power-copper.md)):
-- IPC-2221: 1 A needs 0.30 mm and 5 A 2.77 mm on 35 µm copper;
+- IPC-2221, a floor (what fits only narrower goes to the bridge): 1 A needs 0.30 mm and 5 A 2.77 mm on 35 µm copper;
 - the drop budget, w ≥ ρlI/(tΔV);
 - the feed width: a ≥ 0.25 A branch is as wide as its narrower pad, up to 3 mm.
+
+`rail_max_mm` (3 mm) caps all widths: wider locked tracks wall the router in, and a branch that misses its width falls back to the class width. Nothing adds the pour the cap assumes, so copper below its IPC width gets a hazard with its rise ([high-current](../rules/power/high-current.md#how-kae-applies-these)): 3 mm of 1 oz at 10 A is 42 K (IPC-2221) to 65 K (IPC-2152). Zone and layer-change vias: `vias_needed` per drill (0.81 A per 0.3 mm via, `via_A` overrides). An intent's `dT_max_K` and `drop_share` replace 10 K and 2 %.
 
 ### Currents: the E5 priors
 
@@ -98,16 +95,13 @@ A rail's design current is min(source rating, max(3Σ, Σ + 0.1 A)). The drop bu
 
 **Recheck** compares each routed module with its value at the module stage (its critical copper alone). It flags the module when u grew by > 15 %, crossed 1, or plane cover fell by > 0.10.
 
-**Re-tweak** (`--rounds N`, default 0) rips the nets that cross the flagged module's region, at most the 4 shortest, whole. It guards the plane and lets the bridge re-route them. A round is kept only if unconnected items and errors do not rise and the flagged modules improve. Rip-ups have not paid. On the shared benchmark host, 2 boards were flagged and no round was kept. On paw3395, round 1 restored a decap from u 0.83 to 0.53 but raised unconnected items from 3 to 7 [C].
+**Re-tweak** (`--rounds N`, default 0) rips up to the 4 shortest nets crossing a flagged module, guards the plane and lets the bridge re-route; a round is kept only if nothing gets worse. It has not paid: on paw3395 a decap went from u 0.83 to 0.53 but unconnected items from 3 to 7 [C].
 
 ### Joint module optimization and the joint loop
 
 `optimize_modules(board, brief, terms=None, locked=(), …, session=None, window=None, modules=None) -> (poses, copper, report)` ([critical_joint.py](../../../kae/src/kae/route/critical_joint.py)):
-- **What moves.** Parts that are not locked, not shared with another module, and not connectors. Heatsink-tab packages keep right angles.
-- **Candidates.** Translations of 0.25–2 mm, rotations of 15–345°, and the aligned pose (terminals facing their partners).
-- **Legality, exact at any angle.** Courtyards with KiCad's 5 µm deflation, pad clearances, committed copper, the outline and rule areas.
-- **Judging.** Candidates are screened by `terms.delta`. The best 6 are routed and quoted, and a move is kept when the module's u falls by > 1 %.
-- **Scoping.** `window` (geometry or bounds) and `modules` scope the work. `board_physics`, `recheck`, `stage_values` and `modules_to_retweak` take the same `window`, so the joint loop can re-place and re-route locally.
+- Unlocked, unshared, non-connector parts move by 0.25–2 mm, 15–345° or to the aligned pose; legality is exact at any angle (courtyards, clearances, copper, outline, rule areas).
+- `terms.delta` screens; the best 6 are routed and quoted; a move is kept when u falls by > 1 %. `window` and `modules` scope it, as they do `board_physics` and `recheck` ([joint-place-route](../physics/joint-place-route.md)).
 
 On 12 human placements (120 s each, 0 DRC errors): hot loops changed on 7 of 8 converters, median −4 %, up to −26 %. Decoupling loops changed in 19 structures, median −9 %, up to −61 % [C].
 
@@ -128,16 +122,16 @@ On 12 human placements (120 s each, 0 DRC errors): hot loops changed on 7 of 8 c
 
 ## Recommendations for our system
 
-1. **Route physics first; let one engine judge legality and one objective judge physics.** Exact checks against the shared rule port keep critical copper DRC-clean. Pricing against `place_terms` keeps placer, router and recheck in agreement.
-2. **Lock only copper that buys physics, and make every join visible to the router.** Trim widths, leave class-width rails and joins to the router, and end on centres and corners.
-3. **Protect planes rather than repair them.** Guards and stitching cost less than rip-up, which has not paid yet.
+1. **Route physics first: one engine judges legality, one objective physics** (the shared rule port; `place_terms`).
+2. **Lock only copper that buys physics, with every join visible to the router.**
+3. **Protect planes rather than repair them:** guards and stitching cost less than rip-up.
 
 ## Conflicts and open questions
 
-- **Routability vs physics.** Critical copper still trails the bridge on clean boards. Its worst cases are the dense pmw3610 sensor boards, where every last-mile join forces rip-ups nothing can absorb ([last-mile-and-restarts](last-mile-and-restarts.md)). Use a mixed portfolio with the critical router first.
+- **Routability vs physics.** Critical copper still trails the bridge on clean boards, worst on the dense pmw3610 boards ([last-mile-and-restarts](last-mile-and-restarts.md)). Use a mixed portfolio, critical router first.
 - **Return coverage.** `suite_physics` finds more return-coverage (RET-COV) issues on critical arms than on the bridge (A+B 241 vs 185, C 92 vs 74), although critical copper wins every inductance metric ([10x](../../../bench/results/2026-10-25-crit-v6-10x-1ef5bf1.md)). Not yet explained: candidates are critical copper on the reference layer, guards that cut pours, and the bridge's routing around locked copper.
-- **Estimator vs passport.** The routed-copper estimator ranks layouts; the rb HF passport decides absolute values (olimex human board: 10.97 vs 6.4 nH).
-- **Re-tweak** needs a cheaper form than rip-up: a pre-route reservation (decap guards), or local re-placement through the joint loop.
+- **Estimator vs passport.** The estimator ranks layouts; the rb HF passport decides absolute values (olimex: 10.97 vs 6.4 nH).
+- **Re-tweak** needs a cheaper form than rip-up (decap guards, or the joint loop).
 
 ## Sources
 

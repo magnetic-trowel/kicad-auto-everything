@@ -66,6 +66,10 @@ Source: [kicad_mcp_codebases.md § 2](../../../research_notes/LLM%20driven%20PCB
 - **Every read carries a source tag** (`source: live|saved|mixed`, `board_rev`, `kicad_version`). After a board has been seen live, refuse file writes for the rest of the session [I]. See [mcp-tool-surface-spec.md](mcp-tool-surface-spec.md).
 - **Run a CI matrix** on KiCad 9.0.x and 10.0.x (Linux, macOS, Windows), with a `kicad-cli` load check on every file a test produces [I].
 - **In file mode, confirm the format stamp is unchanged** after each write [I].
+- **What kae does** (decisions and measurements: [kae-board-model.md § Writing boards](../../research/placement/kae-board-model.md#writing-boards)) [C]:
+  - Poses, SES imports and routing edits go through KiCad's plain reader and writer (`PCB_IO_MGR`), not `LoadBoard`/`SaveBoard` and not a byte splice: the import and `FOOTPRINT::Flip` exist only inside KiCad. There is no fallback to `LoadBoard`/`SaveBoard`.
+  - Every such write is re-read and compared with the board in memory (stamp, item counts, every pad's, routing item's and zone's net). Changed copper or nets never reach the destination; a format upgrade or changed drawing counts become `data` hazards in the report.
+  - The text writers (`kae.route.critical_write`) refuse boards stamped 20241229 or lower instead of version-gating their output.
 
 ## Conflicts and open questions
 - Which further 9/10 dialect differences exist (padstacks, tenting, DRC JSON)? Discovered only by measurement so far; none is documented in advance.

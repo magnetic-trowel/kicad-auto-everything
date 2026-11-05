@@ -670,12 +670,50 @@ class Step:
 
     def __enter__(self):
         self.t0, self.r0 = time.monotonic(), resource.getrusage(resource.RUSAGE_CHILDREN)
+        self.c0 = cgroup_cpu_s()
         return self
 
     def __exit__(self, *exc):
         r = resource.getrusage(resource.RUSAGE_CHILDREN)
+        c1 = cgroup_cpu_s()
         self.steps[self.name] = dict(wall_s=round(time.monotonic() - self.t0, 2),
-                                     cpu_s=round(r.ru_utime + r.ru_stime - self.r0.ru_utime - self.r0.ru_stime, 2))
+                                     cpu_s=round(r.ru_utime + r.ru_stime - self.r0.ru_utime - self.r0.ru_stime, 2),
+                                     **({"cgroup_cpu_s": round(c1 - self.c0, 2)} if None not in (c1, self.c0) else {}))
+
+
+def cgroup_cpu_s():
+    """CPU seconds used so far by this process's cgroup v2 (usage_usec of cpu.stat), None when it
+    cannot be read. A kaeq job has a scope of its own and runs its steps one after another, so a
+    step's difference is its CPU, including processes rusage never sees: bwrap exits without
+    reaping its sandbox's pid 1, which made every sandboxed method read ~0 CPU before the
+    kaebench launcher became a subreaper."""
+    try:
+        rel = Path("/proc/self/cgroup").read_text().strip().splitlines()[-1].split("::", 1)[1]
+        for line in (Path("/sys/fs/cgroup") / rel.lstrip("/") / "cpu.stat").read_text().splitlines():
+            k, v = line.split()
+            if k == "usage_usec":
+                return int(v) / 1e6
+    except (OSError, IndexError, ValueError):
+        pass
+    return None
+
+
+def method_cpu_s(r):
+    """The method's CPU seconds of a run record: its own report (restart.py's work.cpu_s), else
+    kaebench's rusage, which is None for a sandboxed method whose rusage was lost (bwrap; under
+    1 % of a core over its wall time with a single process accounted), else the kaeq job
+    step's cgroup difference when that was recorded (an upper bound: it includes the scoring
+    that kaebench runs in the same step)."""
+    w = (r.get("work") or {}).get("cpu_s")
+    if w:
+        return w
+    mu = r.get("method_usage") or {}
+    cpu, wall = mu.get("cpu_s"), r.get("runtime_s") or 0
+    lost = (cpu is not None and (r.get("adapter_meta") or {}).get("sandboxed") and mu.get("processes", 1) <= 1
+            and wall > 30 and cpu < 0.01 * wall)
+    if cpu is not None and not lost:
+        return cpu
+    return ((r.get("job_steps") or {}).get("run") or {}).get("cgroup_cpu_s")
 
 
 def _limit_as():
@@ -1104,7 +1142,7 @@ def run_view(bid, d, r, evs, human_phys=None):
                completion=s.get("completion"), start_unconnected=s.get("start_unconnected"), unconnected=s.get("unconnected"),
                errors=s.get("errors"), warnings=s.get("warnings"), errors_by_type=json.dumps(s.get("errors_by_type") or {}, sort_keys=True),
                track_length_mm=s.get("track_length_mm"), vias=s.get("vias"), wl_ratio=s.get("wl_ratio"), via_delta=s.get("via_delta"),
-               runtime_s=r.get("runtime_s"), cpu_s=(r.get("work") or {}).get("cpu_s") or mu.get("cpu_s"),
+               runtime_s=r.get("runtime_s"), cpu_s=method_cpu_s(r),
                max_rss_mb=(r.get("work") or {}).get("peak_rss_mb") or mu.get("max_rss_mb"),
                attempts=(r.get("work") or {}).get("attempts"), wall_to_best_s=(r.get("work") or {}).get("wall_to_best_s"),
                timed_out=meta.get("timed_out"), partial=meta.get("partial"), final_state=rep.get("final_state"),
@@ -1200,7 +1238,7 @@ def cmd_rerun(a):
 
 # ------------------------------------------------------------------ experiment reports
 def exp_rows(e):
-    """(rows, bugs, prepare failures) of an experiment: each method's run on each board's task of the
+    """(rows, bugs, prepare failures) of an experiment: each method's runs (every attempt) on each board's task of the
     experiment (exp_task_id; a run on another task is not comparable and is left out), viewed through
     the experiment's evaluators (falling back to the run's newest evaluation of the same type)."""
     boards = (exp_dir(e["name"]) / "boards.txt").read_text().split()
@@ -1215,10 +1253,10 @@ def exp_rows(e):
         for p in (bd / "prepare-failures").glob(f"{e['harness']['commit'][:12]}.json"):
             fails.append(read_json(p))
         task_meta = None
-        for m in want:
-            d, r = find_run(bid, m["id"], 0, exp_task_id(e, bid, _run_kind(dict(method_id=m["id"]))))
+        for m, att in ((m, att) for m in want for att in range(1 if m is want[0] and human else e.get("attempts") or 1)):
+            d, r = find_run(bid, m["id"], att, exp_task_id(e, bid, _run_kind(dict(method_id=m["id"]))))
             if d is None:
-                stale += find_run(bid, m["id"], 0)[0] is not None
+                stale += find_run(bid, m["id"], att)[0] is not None
                 continue
             if task_meta is None:
                 task_meta = (read_json(bd / "tasks" / r["task_id"] / "task.json") or {}).get("record") or {}
@@ -1232,7 +1270,7 @@ def exp_rows(e):
             v["evaluator_drc"], v["evaluator_physics"] = use["drc"], use["physics"]
             v["foreign_evaluator"] = use["drc"] is not None and use["drc"] != evs["drc"]  # scored, but by another scorer
             b = read_json(bd / "board.json") or {}
-            v.update(split=task_meta.get("split"), pads=(task_meta.get("reference") or {}).get("stats", {}).get("pads"),
+            v.update(repo=task_meta.get("repo"), split=task_meta.get("split"), pads=(task_meta.get("reference") or {}).get("stats", {}).get("pads"),
                      human_clean=task_meta.get("human_clean"), qualified=task_meta.get("qualified"),
                      layers=b.get("layers"), footprints=b.get("footprints"), collection=b.get("collection"), license_tier=b.get("license_tier"))
             rows.append(v)
@@ -1271,27 +1309,93 @@ def _common(rows, names, key):
     return set.intersection(*sets) if sets else set()
 
 
+def _cpk(rows, boards):
+    """(k, any-clean share over `boards`) of one method's rows of every attempt: k is the most
+    attempts a board has; a board counts clean when any of its attempts is."""
+    by = defaultdict(list)
+    for r in rows:
+        by[r["board"]].append(r)
+    k = max([len(v) for v in by.values()] or [1])
+    return k, _mean([1.0 if any(r["clean"] for r in by.get(b, [])) else 0.0 for b in boards])
+
+
+def paired_table(rows, base, names, repos):
+    """Paired A/B of each method against `base` on the boards both ran (kaebench.stats): cp1 and
+    cpk by exact McNemar, completion by sign-flip, 95 % CIs by bootstrap over repositories, the
+    secondaries Holm-corrected, and the boards that flipped."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "bench" / "src"))
+    from kaebench import stats
+    by = defaultdict(lambda: defaultdict(list))
+    for r in rows:
+        by[r["method"]][r["board"]].append(r)
+    out = [f"### Paired against {base}", "",
+           "Boards both methods ran (a failed run counts as not clean; boards one has not run yet are left out and counted). "
+           "p: exact McNemar for cp1/cpk, sign-flip for completion and cp1_mean; Holm over cp1, cpk, completion; "
+           "CI: 95 % bootstrap of B − A resampling repositories. Significant at p < 0.05.", "",
+           "| B | boards | not run by one | k | cp1_mean A → B (p) | cp1 A → B | cp1 +/− boards | p cp1 (Holm) | cpk A → B | p cpk (Holm) | "
+           "completion A → B | p (Holm) | B − A cp1, 95 % CI | verdict (cp1_mean) |",
+           "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    flips = []
+    for n in names:
+        if n == base or n not in by:
+            continue
+        A, B = by[base], by[n]
+        boards = sorted(b for b in set(A) & set(B) if not any(r["status"] == "score_error" for r in A[b] + B[b]))
+        k = max(len(v) for v in list(A.values()) + list(B.values()))
+
+        def m(arm, f):
+            return {b: f(sorted(arm[b], key=lambda r: r["attempt"])) for b in boards}
+        c1 = lambda rs: 1.0 if rs[0]["attempt"] == 0 and rs[0]["clean"] else 0.0
+        ck = lambda rs: 1.0 if any(r["clean"] for r in rs) else 0.0
+        cm = lambda rs: sum(1.0 for r in rs if r["clean"]) / k
+        co = lambda rs: (rs[0]["completion"] or 0.0) if rs[0]["attempt"] == 0 else 0.0
+        cl = {b: repos.get(b) or b for b in boards}
+        t = {"cp1": stats.paired(m(A, c1), m(B, c1), boards, clusters=cl, binary=True),
+             "cpk": stats.paired(m(A, ck), m(B, ck), boards, clusters=cl, binary=True),
+             "completion": stats.paired(m(A, co), m(B, co), boards, clusters=cl)}
+        prim = stats.paired(m(A, cm), m(B, cm), boards, clusters=cl)
+        h = dict(zip(t, stats.holm([v["p"] for v in t.values()])))
+        lost = len(set(A) ^ set(B))
+        out.append(f"| {n} | {len(boards)} | {lost} | {k} | {_f(prim['mean_a'])} → {_f(prim['mean_b'])} ({_f(prim['p'], 4)}) | "
+                   f"{_f(t['cp1']['mean_a'])} → {_f(t['cp1']['mean_b'])} | +{len(t['cp1']['gained'])} / −{len(t['cp1']['lost'])} | "
+                   f"{_f(t['cp1']['p'], 4)} ({_f(h['cp1'], 4)}) | {_f(t['cpk']['mean_a'])} → {_f(t['cpk']['mean_b'])} | "
+                   f"{_f(t['cpk']['p'], 4)} ({_f(h['cpk'], 4)}) | {_f(t['completion']['mean_a'])} → {_f(t['completion']['mean_b'])} | "
+                   f"{_f(t['completion']['p'], 4)} ({_f(h['completion'], 4)}) | {_f(t['cp1']['diff'])} [{_f(t['cp1']['ci'][0])}, {_f(t['cp1']['ci'][1])}] | "
+                   f"{stats.verdict(prim)} |")
+        for key, who in (("gained", n), ("lost", base)):
+            for b in t["cp1"][key][:20]:
+                loser = (A if key == "gained" else B)[b][0]
+                flips.append(f"| {n} | {b} | {who} | {loser['unconnected']} | {loser['errors_by_type']} |")
+    if flips:
+        out += ["", "cp1 flips (first 20 each way per method): the board, the method clean on it, and what the other's attempt 0 still had.", "",
+                "| B | board | clean only in | other's unconnected | other's errors by type |", "|---|---|---|---|---|"] + flips
+    return out + [""]
+
+
 def method_table(rows, names, title):
     """Per-method table. DRC errors and physics are averaged over the ok runs that have a value, which
     differ by method (a board with no output drops out instead of counting as worst, which favours
     methods that fail on hard boards): each is shown with its board count, and again over the boards
     on which every method has a value, the comparable number."""
+    every = rows
+    rows = [r for r in rows if r["attempt"] == 0]
     ce, cp = _common(rows, names, "errors"), _common(rows, names, "physics_total")
-    out = [f"### {title}", "", "| method | boards | ok | cp1 (clean) | completion | not closed | DRC errors / board (boards) | "
+    out = [f"### {title}", "", "| method | boards | ok | cp1 (clean) | k | cpk (any clean) | completion | not closed | DRC errors / board (boards) | "
            f"DRC errors / board, {len(ce)} common boards | "
            "timeouts | no output | errors | CPU s median / p90 / total h | restarts median / p90 | wall s median | "
            f"physics Σu (boards) | physics Σu, {len(cp)} common boards | Σu vs human (median) | module ratio (median) |",
-           "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+           "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for n in names:
         rs = [r for r in rows if r["method"] == n]
         if not rs:
             continue
+        k, cpk = _cpk([r for r in every if r["method"] == n], {r["board"] for r in rs})
         ok = [r for r in rs if r["status"] == "ok"]
         cpu = [r["cpu_s"] for r in rs]
         errs = [r["errors"] for r in ok if r["errors"] is not None]
         phys = [r["physics_total"] for r in rs if r["physics_total"] is not None]
         out.append("| " + " | ".join([
-            n, str(len(rs)), str(len(ok)), _f(_mean([1.0 if r["clean"] else 0.0 for r in rs])),
+            n, str(len(rs)), str(len(ok)), _f(_mean([1.0 if r["clean"] else 0.0 for r in rs])), str(k), _f(cpk),
             _f(_mean([r["completion"] if r["completion"] is not None else 0.0 for r in rs])),
             str(sum(1 for r in ok if (r["unconnected"] or 0) > 0)), f"{_f(_mean(errs), 2)} ({len(errs)})",
             _f(_mean([r["errors"] for r in ok if r["board"] in ce]), 2),
@@ -1359,13 +1463,21 @@ def cmd_exp_report(a):
     if foreign:
         rep += ["", f"**Note:** {foreign} runs were scored by a different DRC evaluator than this experiment's (reused runs from "
                 "an older scorer). Rescore them before comparing numbers."]
-    rep += ["", "Columns: cp1 = share of boards routed clean (valid, 0 unconnected, 0 DRC errors) on attempt 0; completion = "
+    rep += ["", "Columns: cp1 = share of boards routed clean (valid, 0 unconnected, 0 DRC errors) on attempt 0; k = the most "
+            "attempts a board has; cpk = share of boards with any clean attempt among k (equal to cp1 when k = 1). A method "
+            "named *restarts* is wrapped by restart.py, so one of its runs is already the best of its internal restarts "
+            "(restarts column): its cp1 is a best-of-N over seeds within one wall budget; completion = "
             "share of initially unconnected items routed (0 for no output); not closed = boards with unconnected items left; "
             "timeouts = stopped at the deadline (partial); CPU s = the method's own processes (router, DSN export, SES import), "
             "not scoring; physics Σu = kae module physics total (lower is better; modules without a value count 3); Σu vs "
             "human = per-board ratio to the human board's; module ratio = per-board median of method / human module value "
             "over modules routed in both (lower is better). The human method is the original copper scored the same way.", ""]
     rep += method_table(rows, names, "All boards")
+    nonhuman = [n for n in names if not human or n != human["name"]]
+    base = getattr(a, "baseline", None) or (nonhuman[0] if nonhuman else None)
+    if base in names and len(nonhuman) > 1:
+        rep += paired_table([r for r in rows if r["method"] in nonhuman], base, nonhuman,
+                            {r["board"]: r.get("repo") for r in rows})
     rep += method_table([r for r in rows if r["human_clean"]], names, "Boards whose human layout is DRC-clean")
     for sp in ("A", "B", "C"):
         rep += method_table([r for r in rows if r["split"] == sp], names,
@@ -1375,13 +1487,13 @@ def cmd_exp_report(a):
     rep += ["### DRC error types (errors on ok attempts)", "", "| type | " + " | ".join(names) + " |", "|---|" + "---|" * len(names)]
     per = {n: Counter() for n in names}
     for r in rows:
-        if r["status"] == "ok" and r["method"] in per:
+        if r["status"] == "ok" and r["method"] in per and r["attempt"] == 0:
             per[r["method"]].update(json.loads(r["errors_by_type"]))
     for typ in sorted(set().union(*per.values()), key=lambda t: -sum(per[n][t] for n in names))[:25]:
         rep.append(f"| {typ} | " + " | ".join(str(per[n][typ]) for n in names) + " |")
     rep += ["", "### Router final states", "", "| method | COMPLETED | TIMED_OUT | other | none |", "|---|---|---|---|---|"]
     for m in ms.values():
-        fs = Counter((r["final_state"] or "none") for r in rows if r["method_id"] == m["id"])
+        fs = Counter((r["final_state"] or "none") for r in rows if r["method_id"] == m["id"] and r["attempt"] == 0)
         other = sum(v for k, v in fs.items() if k not in ("COMPLETED", "TIMED_OUT", "none"))
         rep.append(f"| {m['name']} | {fs['COMPLETED']} | {fs['TIMED_OUT']} | {other} | {fs['none']} |")
     rep += ["", "### Bugs", "", f"{len(bugs)} records, {len(groups)} signatures; top 15 (all: `bugs/BY-SIGNATURE.md`):", ""]
@@ -1630,7 +1742,7 @@ def cmd_index(a):
             meta = r.get("adapter_meta") or {}
             c.execute("INSERT OR REPLACE INTO runs VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                       (bd.name, r["run"], r["method_id"], r["method_name"], r["attempt"], r["task_id"], r["status"],
-                       r.get("runtime_s"), mu.get("cpu_s"), mu.get("max_rss_mb"), (meta.get("router_report") or {}).get("final_state"),
+                       r.get("runtime_s"), method_cpu_s(r), mu.get("max_rss_mb"), (meta.get("router_report") or {}).get("final_state"),
                        int(bool(meta.get("timed_out") or meta.get("partial"))), r.get("experiment"), str(d)))
             for eid, ev in evals_of(d).items():
                 s = (ev or {}).get("score") or {}
@@ -1694,6 +1806,8 @@ def main():
     for n, f in (("status", cmd_exp_status), ("report", cmd_exp_report), ("install-timer", cmd_exp_timer)):
         s = ep.add_parser(n)
         s.add_argument("name")
+        if n == "report":
+            s.add_argument("--baseline", help="method name the others are paired against (default: the experiment's first)")
         s.set_defaults(f=f)
     s = sub.add_parser("job", help="one board (what each queued job runs)")
     s.add_argument("--experiment"), s.add_argument("--board", required=True)

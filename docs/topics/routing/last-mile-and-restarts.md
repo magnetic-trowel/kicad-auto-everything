@@ -25,21 +25,21 @@
    A part counts when it holds a pad, or a fill that a track or via of the net reaches. Track-only parts are tails.
 2. **Joins.** Each smaller part is joined to the rest with `GridRouter.connect` (0.05 mm grid, exact checks against `kae.route.effective`). The search windows grow: around the part and the nearest other part (1, 3, 8 mm), then 15 mm in every direction.
 3. **Rip-up.** If the joins find nothing, the window's unlocked tracks and vias of other nets are taken out and priced per cell crossed (`RIP_COST` 20 per cell: crossing a 0.25 mm track at 0.2 mm clearance costs as much as an 18 mm detour). Only the items the new copper actually violates are ripped, at most 40 per join.
-4. **Negotiated re-route.** A ripped net goes back on the queue and is joined by the same search. Each time a net is ripped its copper gets dearer to rip again (`HIST_WEIGHT`). After 3 rip-ups (`HIST_MAX`) it is left alone. `MAX_JOINS` bounds a pass at 40 joins. What stays open goes to a nested repair loop, which routes it with the new copper fixed.
+4. **Negotiated re-route.** A ripped net goes back on the queue and is joined by the same search. Each time a net is ripped its copper gets dearer to rip again (`HIST_WEIGHT`). After 3 rip-ups (`HIST_MAX`) it is left alone. In the repair loop a round has no join cap: it stops at its deadline, about half the time left ([kae-last-mile](../../research/routing/kae-last-mile.md); `MAX_JOINS` = 40 holds for other callers). What stays open goes to a nested repair loop, which routes it with the new copper fixed.
 5. **Via in pad.** A pad walled in by its own footprint (a microphone's centre pad inside its ring) is left through a via in the pad. The human board does the same.
-6. **Acceptance.** A round replaces the output only when KiCad's DRC on the re-opened board is better and has no more errors. The next round works on the previous round's board, so a join can open the net it ripped and the next round closes it.
+6. **Acceptance.** A round replaces the output only when KiCad's DRC on the re-opened board is better and has no more errors (or no more beyond the input's). The next round works on the previous round's board, so a join can open the net it ripped and the next round closes it. No cap on open connections, no 0-error precondition; rounds stop after 2 rip-up rounds in a row are not kept, or with < 30 s left ([kae-last-mile](../../research/routing/kae-last-mile.md) step 6).
 
 Bugs that hid the last mile's effect, all fixed by 2ec702e:
 
 | Bug | Effect | Fix |
 |---|---|---|
-| Open cap of 8 | skipped bms-c1 (15/11 open); offline the last mile alone took 27 → 0 in 25 s [C] | `LAST_MILE_MAX = 40`; a pour net in many pieces is re-queued |
+| Open cap of 8 | skipped bms-c1 (15/11 open); offline the last mile alone took 27 → 0 in 25 s [C] | `LAST_MILE_MAX = 40` (removed later in c78dfb8: no cap); a pour net in many pieces is re-queued |
 | Escaped net names | KiCad's DRC report shows `A/B` for the board's `A{slash}B`, so nothing matched (noisecard after critical copper) | `lastmile.unescape` maps report names back |
-| Rounds that trade an open for an error | the repair key summed errors and opens, so olimex kept a round with a starved thermal. The last mile then never ran, since it needs 0 errors | a round is kept only if its errors do not rise |
+| Rounds that trade an open for an error | the repair key summed errors and opens, so olimex kept a round with a starved thermal. The last mile then never ran, since it needed 0 errors (no longer: db8c15d) | a round is kept only if its errors do not rise |
 | Two route vias closer than the same-net pitch | hole-to-hole errors | the route is searched again with dearer vias, or refused |
 
 ### Errors the router keeps making
-Before the last mile, `repair._rip_errors` takes out the unlocked router copper that each remaining error names: clearance, short, mask bridge, track width, edge and similar types. A starved thermal names a pad and a zone, not the copper causing it, so there the foreign unlocked copper in the pad's spoke corridors (`constraints.thermal_corridors`) is taken out instead. When the result has 0 errors, the last mile routes it with exact checks. Pre-routes and critical copper are never taken out here.
+Before the last mile, `repair._rip_errors` takes out the unlocked router copper that each remaining error names: clearance, short, mask bridge, track width, edge and similar types. A starved thermal names a pad and a zone, not the copper causing it, so there the foreign unlocked copper in the pad's spoke corridors (`constraints.thermal_corridors`) is taken out instead. The last mile then routes what is open with exact checks, whether or not errors remain. Pre-routes and critical copper are never taken out here.
 
 ### What stays open: the `blocked` report ([blocked.py](../../../kae/src/kae/route/blocked.py))
 The router never relaxes a board rule. After the last mile, each connection still open is tested in lastmile's grid and Space: a path without our other copper is `congestion`; one without the input's pre-routes too is `fixed copper`. Otherwise a relaxed search (only overlap hard, every clearance a price per cell) finds the cheapest path, and its narrowest real gap names the binding rule. A finer search then tries narrower tracks, so a track-width minimum is told apart from a clearance. The report gives the rule's source, or the kae default and its override, and leaves the decision to the caller ([kae README](../../../kae/README.md#kaeroute)).
@@ -61,7 +61,8 @@ Locally, on six A+B boards the soft tier made paw3222 clean with better physics 
 
 ### Restart portfolio ([portfolio.py](../../../kae/src/kae/route/portfolio.py))
 `python -m kae.route.portfolio route IN OUT --parallel P --first-s F [--router M[:ARGS]]...`
-- **Waves.** Attempts run in waves of `parallel` seeds. The wave budget starts at `first_s` and doubles, so a board that needs a long attempt still gets one. The first clean attempt (0 errors, 0 open) stops the rest; otherwise the best (errors, unconnected) is kept.
+- **Waves.** Attempts run in waves of `parallel` seeds. The wave budget starts at `first_s` and doubles, so a board that needs a long attempt still gets one. Attempts rank as the restart wrapper's judge and the harness do: fewer open connections first, then fewer DRC errors beyond the input's own (`repair.input_errors`). The first attempt routed fully (0 open, no error beyond the input's) stops the rest; otherwise the best is kept.
+- **Final last mile.** The kept board gets one more last mile (`bridge.last_mile_only`), with time reserved from the start and all time left at the end, however late its attempt ended. It is kept only if it ranks better (`--no-final` turns it off). The restart wrapper's `--final` does the same for any method.
 - **Why it works.** Routing time is heavy-tailed, and the winners come from deep in the seed sequence (paw3395 won with its 9th and 10th seeds). Item-order diversity closes the last connections, not attempt length. canhw-processor's "clock-bound" first route was a bad order: other seeds route it clean in 128–190 s.
 - **Mixed routers.** Attempts cycle through the listed routers. Among equal results the first-listed router wins, and its running attempts finish before a later router's clean result ends the run. List the physics-first router first; otherwise the faster bridge wins every board and the physics edge is lost.
 - **Cost.** Up to `parallel` cores and JVMs per board.
@@ -73,7 +74,7 @@ Locally, on six A+B boards the soft tier made paw3222 clean with better physics 
 - **Sandboxes.** kaebench gives each attempt a private /tmp, so there `-j` and the heap cap govern memory.
 
 ## Recommendations for our system
-- **Last mile on.** Keep it on, with the no-new-error rule. Route through the portfolio when cores allow. On small hosts use `KAE_FR_XMX=3g` and at most two JVMs.
+- **Last mile on.** Keep it on, with the no-new-error rule. Route through the portfolio (or the restart wrapper with `--final`) when cores allow: either way the kept board gets a last mile of its own. On small hosts use `KAE_FR_XMX=3g` and at most two JVMs.
 - **Mixed portfolio for physics.** List `kae.route.critical_cli … --last-mile-soft` first and `kae.route.cli` second: the union of what each closes, with the critical router's physics.
 - **Don't tune budgets.** Spend effort on diversity (seeds, routers) and exact local repair.
 

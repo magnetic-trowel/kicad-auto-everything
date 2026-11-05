@@ -298,3 +298,61 @@ def test_fixed_parts_keep_their_input_pose_and_the_rest_moves(tmp_path):
     assert moved
     rep = json.loads(Path(str(out) + ".kae.json").read_text())
     assert rep["fixed"]["n"] == 2 and set(rep["fixed"]["refs"]) == {"U4", "J1"}
+
+
+def test_relax_bodies_off_skips_the_step_and_relaxed_overlaps_are_hazards():
+    """relax_bodies 'off': escalation never frees bodies. A relaxed part whose body
+    ends up over another part is a 'block' hazard (an axial resistor or a USB receptacle over
+    0402s cannot be assembled); one with nothing under it is 'info'."""
+    from shapely.geometry import box as sbox
+    from kae.place.pipeline import _escalate, body_hazards
+    from kae.place.problem import Problem
+    from kae.place.state import State, grid_violations
+    b = kicad_file.load(FIXTURE)
+    j1 = next(f for f in b.footprints if f.ref == "J1")
+    j1.courtyard = []
+    j1.body = [sbox(-6, -6, 6, 6)]                 # a big body around its two pins
+    P = Problem.build(b)
+    P.set_margin(30.0)
+    st = State(P)
+    for i in P.mov:
+        st.X[i], st.Y[i] = P.ncx // 2, P.ncy // 2
+    steps = _escalate(P, st, workers=2, seed=0, log=None, time_s=20.0, relax_ok=False)
+    assert "bodies relaxed" not in [s["step"] for s in steps]
+    assert not any(getattr(p, "relaxed", False) for p in P.parts)
+    assert P.relaxed_body_hazards(st) == []
+    # relaxed, with U1 moved under J1's body
+    P2 = Problem.build(b)
+    assert "J1" in P2.relax_bodies()
+    st2 = State(P2)
+    for p in P2.parts:
+        if p.movable:
+            st2.X[p.i], st2.Y[p.i] = P2.grid_of(p.x0, p.y0)
+    ref = {p.ref: p.i for p in P2.parts}
+    st2.X[ref["U1"]], st2.Y[ref["U1"]] = st2.X[ref["J1"]], st2.Y[ref["J1"]]
+    rep = dict(hazards=[dict(code="other", objects=[])])
+    hz = body_hazards(rep, P2, st2)
+    j = [h for h in hz if h["objects"][:1] == ["J1"]]
+    assert hz[0]["code"] == "other" and len(j) == 1
+    assert j[0]["code"] == "body_overlap" and j[0]["severity"] == "block" and "U1" in j[0]["objects"]
+    st2.X[ref["U1"]], st2.Y[ref["U1"]] = P2.grid_of(*P2.outline.bounds[2:])     # far away again
+    st2.X[ref["U1"]] -= 200
+    j = [h for h in body_hazards(rep, P2, st2) if h["objects"][:1] == ["J1"]]
+    assert len([h for h in rep["hazards"] if h["code"].startswith("body_") and h["objects"][0] == "J1"]) == 1
+    assert j[0]["code"] in ("body_overlap", "body_relaxed")
+def test_congestion_weight_and_margin_are_settings_and_physics_is_traced():
+    """Audit P5/P10: place_w_cong and place_margin (kae.route.constraints.DEFAULTS, so --set
+    and KAE_ text variables reach them) default to the current behaviour (30, auto) and switch
+    the RUDY term and the routing margin off at 0; P6: the report traces physics per stage."""
+    from kae.place.pipeline import place
+    from kae.route.constraints import DEFAULTS
+    assert DEFAULTS["place_w_cong"] == 30.0 and DEFAULTS["place_margin"] < 0
+    b = kicad_file.load(FIXTURE)
+    on = place(b, seed=0, time_s=10, physics=True, workers=1).report
+    assert "margin_set" not in on and on["w_cong"] == 30.0
+    stages = [t["stage"] for t in on.get("physics_trace", [])]
+    assert stages[:2] == ["seed", "anneal"] and all("total_linear" in t for t in on["physics_trace"])
+    off = place(kicad_file.load(FIXTURE), seed=0, time_s=10, physics=True, workers=1,
+                opts=dict(place_w_cong=0, place_margin=0)).report
+    assert off["margin_set"] == 0.0 and off["margin_mm"] == 0.0
+    assert off["w_cong"] == 0.0

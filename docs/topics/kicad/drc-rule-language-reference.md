@@ -4,6 +4,7 @@
 - **10.0 parses:** 35 constraint keywords (34 documented plus the undocumented `solder_mask_sliver`), 3 deprecated aliases, 23 current functions (including the undocumented `intersectsKeepout`) plus 5 deprecated ones, any registered item property, and 4 severities plus a `layer` clause [P].
 - **Units are only `mm, mil, in, deg, ps, fs`.** The documented `th`, `"` and `rad` are rejected by the source. Time units are allowed only in `length` and `skew` (corrected, VK) [P].
 - **Parser gotchas:**
+  - One parse error and kicad-cli 10.0.7 drops the **whole file** silently (exit 0); check with `kae dru-check` ([kicad-cli.md](kicad-cli.md#pcb-drc-100-byte-identical-docs-on-master)) [M].
   - A second `condition` silently **overwrites** the first.
   - Each constraint type may appear only once per rule.
   - The **last** matching rule wins, but a footprint net tie forces clearance 0 and pad/footprint clearance overrides beat every rule (see *Clearance resolution*).

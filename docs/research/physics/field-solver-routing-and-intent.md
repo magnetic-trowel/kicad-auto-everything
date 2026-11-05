@@ -33,6 +33,14 @@ A raster PEEC field solver ([physics-frequency-coverage](../../topics/architectu
 | Falling back to human copper | Meaningless for new boards; hid that the router could not route the DRAM rails | `pnr.route_whole` (now: leave unfinished nets to the completion router) |
 | Flux batching, warm-started snapshots, larger preconditioner patches | No speed gain | not adopted |
 
+## Open: the neutral area price
+
+`AREA_COST` = 0.05 mW_eq/mm² (`kae/src/kae/intent/route.py`, since 5199c80 without a stated basis) sets every power width when an intent is silent, w* = 3.1 mm/A on 35 µm copper.
+- **Economic basis [S][I]:** a 2-layer board at volume costs $0.0003–0.0008/mm² ([PCBCart](https://www.pcbcart.com/article/content/how-much-does-a-pcb-cost)); 1 mW for 5 years at $0.15/kWh is $0.0066; so 0.05–0.12 for an always-on board, about 4× more at 25 % duty.
+- **Human layouts [M]:** 147 rail nets carrying ≥ 0.1 A in kae's DC plan on 59 of the 112 suite boards (`tools/research/physics/area_cost_widths.py`). The human p90 width implies a median 0.64 (IQR 0.18–3.4). At 0.3–3 A the median human width is 0.4–0.5 mm, where w*(0.05) is 0.9–3.5 mm; 3 % of human nets are that wide. The plan's currents are priors (0.15–1× ratings), which biases the implied price up.
+- **Router widths at 0.05 [M]:** battery and VBUS rails 1.5–3 mm (aura, chaac, echoplayer, boost), 1V8_SYS 2 mm (ddr5); the locked power copper is where completion suffered above.
+- **Not decided:** A/B 0.05 / 0.2 / 0.5 in `tools/kaeres/experiments/area-cost-ab.sh` (completion, DRC errors, copper loss, hottest track).
+
 ## Next
 
 Give the intent's widths to the completion router as KiCad net-class rules (one routing pass, power at intent widths, DRC checks the same rules); price with the evaluator's two bands before trusting contracts; per-section field windows. Comparison pages of these runs: published privately as artifacts, regenerated with `route_view.py`.

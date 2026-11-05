@@ -13,7 +13,8 @@ BASE = {"V": "V", "A": "A", "W": "W", "K": "K", "Ohm": "Ohm", "Ω": "Ohm", "H": 
         "m": "m"}
 # logarithmic units: dimension name -> (linear dimension, reference in SI, 10 or 20 log)
 LOG = {"dBuV": ("V", 1e-6, 20), "dBµV": ("V", 1e-6, 20), "dBV": ("V", 1.0, 20), "dBm": ("W", 1e-3, 10),
-       "dBuV/m": ("V/m", 1e-6, 20), "dBµV/m": ("V/m", 1e-6, 20), "dB": ("ratio", 1.0, 20)}
+       "dBm/Hz": ("W/Hz", 1e-3, 10), "dBuV/m": ("V/m", 1e-6, 20), "dBµV/m": ("V/m", 1e-6, 20), "dB": ("ratio", 1.0, 20)}
+CELSIUS = ("°C", "degC", "C")
 CURRENCY = {"W_eq": 1.0, "mW_eq": 1e-3, "uW_eq": 1e-6, "µW_eq": 1e-6}
 _NUM = r"([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)"
 
@@ -28,8 +29,10 @@ def unit(u):
     u = u.strip()
     if u in LOG:
         return 1.0, u
-    if u in ("°C", "degC", "C"):
-        return 1.0, "K"                      # a temperature rise or a limit in Celsius: same steps
+    if u in CELSIUS:
+        # a temperature in degrees Celsius: absolute against an absolute observable (temp.junction), a rise
+        # against a rise (heat.track, where "10 °C" is IPC-2221's own wording); K is a rise only
+        return 1.0, "C"
     for base, dim in sorted(BASE.items(), key=lambda kv: -len(kv[0])):
         if u.endswith(base):
             p = u[: -len(base)]
@@ -62,7 +65,7 @@ def rate(text, currency):
     v, cur, per = float(m.group(1)), m.group(2), m.group(3)
     if cur not in CURRENCY:
         raise UnitError(f"rate '{text}': '{cur}' is not a currency; use {', '.join(CURRENCY)}")
-    if per in ("dB", "K", "°C") or per in LOG:
+    if per in ("dB", "K") or per in CELSIUS or per in LOG:      # per kelvin = per degree Celsius: one step
         k, dim = 1.0, ("dB" if per in LOG or per == "dB" else "K")
     else:
         k, dim = unit(per)
@@ -82,7 +85,7 @@ def fmt(value_si, dim):
     a = abs(value_si)
     for p, k in (("G", 1e9), ("M", 1e6), ("k", 1e3), ("", 1.0), ("m", 1e-3), ("µ", 1e-6), ("n", 1e-9), ("p", 1e-12)):
         if a >= k or k == 1e-12:
-            if dim == "K" and p:
+            if dim in ("K", "C") and p:
                 return f"{value_si:.4g} K"
             return f"{value_si / k:.4g} {p}{dim}"
     return f"{value_si:.4g} {dim}"

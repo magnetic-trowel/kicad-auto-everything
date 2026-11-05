@@ -4,7 +4,7 @@
 
     kae place INPUT OUTPUT [--seed N] [--time S] [--no-physics] [--stages seed,anneal,legalize]
                            [--workers W] [--writer auto|pcbnew|sexpr] [--edge-mate] [--report FILE]
-                           [--drc auto|on|off] [--drc-rounds N]
+                           [--drc auto|on|off] [--drc-rounds N] [--recheck auto|on|off]
     kae brief INPUT [--out FILE]
 
 `kae place` reads INPUT (.kicad_pcb with its project files beside it), places every unlocked
@@ -20,7 +20,10 @@ Legality is closed-loop: the placer repairs against its exact check (kae.place.e
 then, when kicad-cli is found (KAE_KICAD_CLI / KAE_KICAD_WRAP / PATH; --drc auto|on|off),
 KiCad's DRC on the written board feeds every placement error back as a constraint and the
 board is repaired and written again (--drc-rounds, default 6) until KiCad has no placement
-error or the time is up. Exit status: 0 when the placement passed the exact check and KiCad
+error or the time is up. Every report ends with "hazards" and "hazard_summary" (kae.hazards):
+what would make the board not work, not buildable or risky, including a recheck of OUTPUT
+with the safety checks forced on whatever the project's severities say (--recheck;
+kae.board_hazards). `kae brief` ends with the project's static hazards. Exit status: 0 when the placement passed the exact check and KiCad
 (when it ran), 3 when an output was written but violations remain (listed in the report,
 with the closed loop's diagnosis per part), 2 on errors.
 
@@ -79,7 +82,9 @@ def cmd_place(a):
     anneal = "anneal" in stages and not a.no_anneal
     anneal_args = json.loads(a.anneal_args) if a.anneal_args else None
     kw = dict(physics=not a.no_physics, workers=a.workers, log=_log, anneal=anneal, edge_mate=a.edge_mate,
-              anneal_args=anneal_args, angle_step=a.angles, board_path=a.input)
+              anneal_args=anneal_args, angle_step=a.angles, board_path=a.input,
+              opts={k: v for k, v in (("place_severity", getattr(a, "severity", None)),
+                                      ("relax_bodies", getattr(a, "relax_bodies", None))) if v} or None)
     fix_classes = [c.strip() for c in (a.fix_class or "").split(",") if c.strip()]
     fix_refs = [r.strip() for r in (a.fix or "").split(",") if r.strip()]
     if fix_classes or fix_refs:
@@ -107,9 +112,19 @@ def cmd_place(a):
         kicad_clean, wrep2 = _kicad_loop(a, res, t0, write)
         if wrep2 is not None:
             res.report["writer"] = wrep2
+        from kae.place.pipeline import body_hazards
+        body_hazards(res.report, res.problem, res.state)
+    # what the writer's post-write check found in the file it wrote (format upgrade, changed items),
+    # moved to the top level once (popped so the nested copy is not listed again)
+    res.report.setdefault("hazards", []).extend((res.report.get("writer") or {}).pop("hazards", None) or [])
+    from kae.route.constraints import setting
+    if res.poses and int(setting("connector_edge", a.input)) >= 1:
+        from kae.place.pipeline import edge_hazards
+        edge_hazards(res.report, board, res.poses)
     res.report["total_s"] = round(time.monotonic() - t0, 2)
     legal = not res.report.get("exact") and not res.report.get("outline_incomplete") and kicad_clean is not False
     res.report["legal"] = bool(legal)
+    _hazards(res.report, a, "place", t0, brief=getattr(res, "brief", None), board=board)
     text = json.dumps(res.report, default=str)
     print(text, flush=True)          # last line of stdout: what kaebench keeps (adapter.log)
     side = Path(str(a.output) + ".kae.json")
@@ -162,6 +177,12 @@ def _kicad_loop(a, res, t0, write):
             # a fresh staged copy each attempt; the first verdict may take nearly all that is
             # left, repairs need a share after
             staged = kdrc.stage_board(a.output, a.input, tempfile.mkdtemp(prefix="kae-drc-", dir=tmp))
+            if getattr(P, "severity_mode", "board") in ("strict", "level_c"):
+                # KiCad reports what the profile keeps as errors; courtyards taken in to Level C
+                # stay the exact model's alone (KiCad would object to the margins they allow)
+                from kae.place.problem import FIXED_ERROR_CHECKS
+                kdrc.promote_severities(staged, [c for c in FIXED_ERROR_CHECKS
+                                                 if not (c == "courtyards_overlap" and P.cy_shrink > 0)])
             left = t0 + 0.97 * float(a.time) - time.monotonic()
             try:
                 report = kdrc.run(staged, Path(staged).parent / "drc.json",
@@ -313,11 +334,31 @@ def _probe_select(a, board, kw, t0, write):
 def _refresh_physics(res):
     """A KiCad round moved parts: protection order and the physics scorecard again, for the
     board as written; the values place() reported stay as *_pre_drc."""
-    from kae.place.pipeline import final_physics
+    from kae.place.pipeline import final_physics, physics_trace
     for k in ("protection_order", "scorecard"):
         if k in res.report:
             res.report[f"{k}_pre_drc"] = res.report[k]
     final_physics(res)
+    if res.terms is not None:
+        physics_trace(res.report, "kicad_repair", res.terms,
+                      {p.uuid: res.state.pose(p.i) for p in res.problem.parts})
+
+
+def _hazards(report, a, kind, t0, brief=None, board=None):
+    """The report's closing hazards and hazard_summary (kae.hazards; kae.board_hazards.finish:
+    the project's own settings, and the output rechecked with the safety checks forced on)."""
+    from kae.board_hazards import finish
+    deadline = None if getattr(a, "time", None) is None else t0 + float(a.time)
+    if getattr(a, "drc", None) == "off" and getattr(a, "recheck", "auto") == "auto":
+        mode = "off"                 # --drc off: no KiCad for this run (ablations, unit tests)
+    else:
+        mode = getattr(a, "recheck", "auto")
+    t = time.monotonic()
+    finish(report, a.output, a.input, kind=kind, mode=mode, deadline=deadline, brief=brief, board=board, log=_log)
+    report.setdefault("recheck", {})["total_s"] = round(time.monotonic() - t, 2)
+    s = report["hazard_summary"]
+    _log(f"hazards: {s['block']} block, {s['warn']} warn, {s['info']} info"
+         + (f" (blocked: {', '.join(s.get('block_codes') or {})})" if s["blocked"] else ""))
 
 
 def cmd_brief(a):
@@ -328,6 +369,9 @@ def cmd_brief(a):
     except ImportError:
         from kae.place.stubs import stub_brief as build
     b = build(board)
+    from kae.board_hazards import static_hazards
+    from kae.hazards import finalize
+    finalize(b, extra=static_hazards(a.input, brief=b, board=board))
     text = json.dumps(b, indent=1, default=str)
     if a.out:
         Path(a.out).write_text(text)
@@ -365,6 +409,15 @@ def main(argv=None):
                          "probe leaves the fewest open connections on (physics within 10%%; off by default)")
     sp.add_argument("--fix", default="", metavar="REF[,REF...]",
                     help="keep these parts at their input pose (fixed obstacles, as locked parts)")
+    sp.add_argument("--severity", default=None, choices=("strict", "level_c", "board"),
+                    help="placement legality: 'level_c' (default) keeps courtyards, copper-to-edge, rule areas, "
+                         "clearance, shorts and hole clearance errors whatever the project says, with courtyards "
+                         "at IPC Level C (0.15 mm in) where the project waives them; 'strict' drawn courtyards "
+                         "everywhere; 'board' follows the project's severities (also: KAE_PLACE_SEVERITY)")
+    sp.add_argument("--relax-bodies", default=None, choices=("off", "escalate", "auto"),
+                    help="parts without a courtyard: 'off' (default) keeps their bodies as obstacles; 'escalate' "
+                         "frees them to their pads when legalization fails; 'auto' also up front on a board over "
+                         "95%% full (the old behaviour). Relaxed parts are hazards in the report")
     sp.add_argument("--fix-class", default="", metavar="CLASS[,CLASS...]",
                     help="keep every part of these classes at its input pose: connectors, mounting, user "
                          "(kae.place.fixed.classify)")
@@ -375,11 +428,18 @@ def main(argv=None):
                          "F x the board span (0: annealer seeds only)")
     sp.add_argument("--anneal-args", help="JSON of annealer weights for experiments, e.g. '{\"w_phys\": 2.0}' "
                                           "(w_phys, w_wl, w_cong, w_order, w_disp, cong_args, ...)")
+    from kae.board_hazards import add_arguments as recheck_args
+    recheck_args(sp)
     sp.set_defaults(fn=cmd_place)
     sb = sub.add_parser("brief", help="print the physics brief of a board")
     sb.add_argument("input")
     sb.add_argument("--out")
     sb.set_defaults(fn=cmd_brief)
+    sd = sub.add_parser("dru-check", help="check .kicad_dru custom rules (static, then KiCad's own parser); "
+                                          "KiCad silently drops the whole file on any error")
+    from kae.board import dru_check
+    dru_check.add_arguments(sd)
+    sd.set_defaults(fn=dru_check.run)
     a = ap.parse_args(argv)
     nc = _numba_cache()
     if nc:

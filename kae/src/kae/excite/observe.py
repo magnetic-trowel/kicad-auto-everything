@@ -22,6 +22,8 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
+from kae.physics import criteria as CR
+
 # priors for what each observer tolerates from the copper (V, peak), used when nothing better is known
 TOL = {
     "supply_digital": (0.05, "5% of the rail: half a CMOS noise margin (JESD8 V_IL/V_IH 30/70%)"),
@@ -34,9 +36,10 @@ TOL = {
     "reset": (0.3, "30% of the rail at a reset input (CMOS V_IL)"),
     "crystal": (0.01, "10 mV at an oscillator pin"),
     "cm": (None, "CISPR 32 class B (30 dBuV/m at 10 m, 30-230 MHz) radiated by 1 m of cable, E = 1.26e-6 f l I / r "
-                 "(Ott, EMC Engineering, eq. 12-7), cable common-mode impedance 150 ohm: V_lim(f) = 3.8e4 / f V "
-                 "per harmonic"),
-    "overshoot": (0.2, "20% of the bus as copper ring (no switch rating known)"),
+                 "(Ott, EMC Engineering, eq. 12-7) capped at the resonant cable's 2 x 60 I / r, cable common-mode "
+                 "impedance 150 ohm: V_lim(f) = 3.8e4 / f V per harmonic to 95 MHz, 0.40 mV above "
+                 "(kae.physics.criteria.cable_v_lim)"),
+    "overshoot": (None, "switch-node peak <= 0.85 x the switch's absolute maximum (kae.physics.criteria)"),
 }
 
 
@@ -59,9 +62,11 @@ def observers(bd, brief, sources):
     for s in sources:
         m = s.meta
         if s.kind == "cell":
-            frac, why = TOL["overshoot"]
-            out.append(Observer(f"overshoot:{m['cell']}", "overshoot", s.a, s.b, s.pa, s.pb, frac * m["V"],
-                                f"{why}; V = {m['V']:g} V", "prior", dict(source=s.name)))
+            # the bound at the nominal bus and the prior rating; each corner re-derives it from its own
+            # bus voltage and the switch's rating when known (harm.overshoot_bound)
+            out.append(Observer(f"overshoot:{m['cell']}", "overshoot", s.a, s.b, s.pa, s.pb,
+                                CR.overshoot_limits(m["V"])[0], CR.overshoot_basis(m["V"]), "prior",
+                                dict(source=s.name, bound_legacy=0.2 * m["V"])))
     for ref, nodes in bd.ic_nodes.items():
         kind, sub, role = bd.part_kind.get(ref, ("ic", None, ""))
         for rail, v in nodes.items():
@@ -151,7 +156,7 @@ def observation(bd, o, s, values, us, fs=()):
         out["f_Hz"] = list(fs)
         out["scope"]["connectors"] = to_parts
         out["reference"] = dict(value=None, basis=o.basis + " (the limit as a voltage at f: "
-                                f"{CM_V_LIM_HZ:g} V Hz / f, for 1 m of cable)", src_class=o.src_class)
+                                "cable_v_lim(f), for 1 m of cable)", src_class=o.src_class)
     return out
 
 
@@ -181,8 +186,13 @@ def gentle_f(src, f_cap=F_PATTERN):
     return min(src.meta.get("f_e") or 1e8, f_cap)
 
 
-CM_V_LIM_HZ = 3.8e4        # V_lim(f) = CM_V_LIM_HZ / f, see TOL["cm"]
-F_CM = (30e6, 230e6)
+F_CM = CR.F_CM
+F_KNEE = CR.E_CAP_K / (CR.OTT_K * CR.L_CABLE_M)     # 95 MHz: above it the 1 m cable is resonant
+
+
+def cm_v_lim(f):
+    """The cable common-mode voltage limit at f (V per harmonic), see TOL["cm"]."""
+    return CR.cable_v_lim(f)
 
 
 def size(o, s, L):
@@ -199,7 +209,7 @@ def size(o, s, L):
     f_r = m.get("f_e") or 1e8
     f = min(max(f_r, F_CM[0]), F_CM[1])
     v = 2 * abs(L) * I * f_rep * (1.0 if f <= f_r else (f_r / f) ** 1)
-    return v, CM_V_LIM_HZ / f
+    return v, cm_v_lim(f)
 
 
 def ideal(bd, sol):

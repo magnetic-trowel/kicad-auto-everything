@@ -164,3 +164,124 @@ def test_worker_timeout_and_restart(monkeypatch):
     pcbnew_io._release(w)
     assert len(pcbnew_io.extract(FIXTURE)["footprints"]) == n
     assert w not in pcbnew_io._ALL
+
+
+# ----------------------------------------------------------------------------- write checks
+def _ses(path, nets, vias=()):
+    """A minimal Specctra session: nets {name: [(layer, [(x, y), ...])]} in mm, KiCad frame;
+    vias [(net, x, y)] with one through padstack."""
+    k = 10000.0      # (resolution um 10): units per mm
+
+    def xy(p):
+        return f"{round(p[0] * k)} {round(-p[1] * k)}"
+    body = []
+    names = list(nets) + [v[0] for v in vias if v[0] not in nets]
+    for name in names:
+        body.append(f'      (net "{name}"')
+        for layer, pts in nets.get(name, ()):
+            body.append(f"        (wire (path {layer} 2500 {' '.join(xy(p) for p in pts)}))")
+        for n, x, y in vias:
+            if n == name:
+                body.append(f'        (via "Via[0-3]_600:300_um" {xy((x, y))})')
+        body.append("      )")
+    path.write_text("(session s (base_design s)\n  (routes (resolution um 10)\n"
+                    '    (library_out (padstack "Via[0-3]_600:300_um" (shape (circle F.Cu 6000 0 0))'
+                    " (shape (circle B.Cu 6000 0 0)) (attach off)))\n"
+                    "    (network_out\n" + "\n".join(body) + "\n    )\n  )\n)\n")
+    return path
+
+
+def test_writes_check_stamp_counts_and_nets(tmp_path):
+    src = _copy(tmp_path)
+    b = kicad_file.load(src)
+    u1 = next(f for f in b.footprints if f.ref == "U1")
+    out = tmp_path / "out.kicad_pcb"
+    res = pcbnew_io.write_poses(src, out, {u1.uuid: (u1.x + 1, u1.y, 270, "F")})
+    chk = res["write_check"]
+    assert chk["stamp_in"] == chk["stamp_out"] == 20260206
+    assert chk["counts_changed"] == {} and chk["pads_changed"] == chk["routing_changed"] == chk["zones_changed"] == 0
+    assert chk["counts"]["footprints"] == len(b.footprints) and res["hazards"] == []
+    # a KiCad 8 board comes out in KiCad 10's format: said, as a data hazard
+    from test_board_kicad_file import _to_kicad8
+    k8 = _copy(tmp_path, "k8", _to_kicad8(FIXTURE.read_text()))
+    res = pcbnew_io.resave(k8, tmp_path / "k8out.kicad_pcb")
+    assert res["write_check"]["stamp_in"] == 20240108 and res["write_check"]["stamp_out"] == 20260206
+    assert [h["code"] for h in res["hazards"]] == ["kicad_format_upgraded"]
+    assert res["hazards"][0]["severity"] == "warn" and res["hazards"][0]["category"] == "data"
+
+
+def test_edit_routing_refuses_unknown_nets_and_layers(tmp_path):
+    src = _copy(tmp_path)
+    out = tmp_path / "out.kicad_pcb"
+    for net, layer in (("NOPE", "F.Cu"), ("", "F.Cu"), ("GND", "Bogus.Cu"), ("GND", "F.SilkS")):
+        with pytest.raises(pcbnew_io.PcbnewRefused) as e:
+            pcbnew_io.edit_routing(src, out, add=[dict(net=net, layer=layer, a=[1, 1], b=[2, 1], width=0.2)])
+        assert e.value.detail["unknown_nets"] or e.value.detail["unknown_layers"]
+        assert not out.exists()
+    res = pcbnew_io.edit_routing(src, out, add=[dict(net="GND", layer="In2.Cu", a=[1, 1], b=[2, 1], width=0.2)])
+    assert res["added"] == 1 and res["hazards"] == []
+    assert any(t.net == "GND" and t.layer == "In2.Cu" for t in kicad_file.load(out).tracks)
+
+
+def test_import_ses_keeps_preroute_nets_and_checks_the_session(tmp_path):
+    from kae.route.bridge import import_session
+    src = _copy(tmp_path)
+    pre = tmp_path / "pre.kicad_pcb"
+    # a locked GND pre-route that ends on U1 pad 1 (SIG1): KiCad's import rebuilds
+    # connectivity, which would hand it SIG1
+    pcbnew_io.edit_routing(src, pre, add=[dict(net="GND", layer="F.Cu", a=[7.0, 9.2], b=[8.5, 9.2], width=0.2)],
+                           lock_all=True)
+    for ext in (".kicad_pro", ".kicad_dru"):
+        shutil.copy(src.with_suffix(ext), pre.with_suffix(ext))
+    before = {t.uuid: t.net for t in kicad_file.load(pre).tracks}
+    ses = _ses(tmp_path / "good.ses", {"SIG2": [("F.Cu", [(19.2, 11.5), (25.0, 11.5), (39.717, 10.566)])]},
+               vias=[("SIG2", 25.0, 11.5)])
+    out = tmp_path / "out.kicad_pcb"
+    res = import_session(pre, ses, out)
+    after = kicad_file.load(out)
+    assert {t.uuid: t.net for t in after.tracks if t.uuid in before} == before
+    assert set(res["kept"]) >= set(before)
+    chk = res["import_check"]
+    assert chk["session"] == dict(segments=2, arcs=0, vias=1) and chk["landed"] == chk["session"]
+    assert chk["missing"] == {} and chk["extra"] == {}
+    assert all(h["severity"] != "block" for h in res["hazards"])
+    if res["renetted"]:      # KiCad moved the pre-route; kae put it back and says so
+        assert res["renetted"][0]["net"] == "GND"
+        assert "preroute_overlaps_foreign_pad" in [h["code"] for h in res["hazards"]]
+    # a wire on a net the board does not have lands on net 0; one on an unknown layer is skipped
+    bad = _ses(tmp_path / "bad.ses", {"NOPE": [("F.Cu", [(60, 30), (65, 30)])],
+                                       "SIG3": [("Bogus.Cu", [(60, 35), (65, 35)])]})
+    res = import_session(pre, bad, tmp_path / "bad.kicad_pcb")
+    codes = {h["code"]: h["severity"] for h in res["hazards"]}
+    assert codes.get("ses_import_wrong_net") == "block" and codes.get("ses_import_incomplete") == "warn"
+
+
+def test_write_poses_keep_upright_arm(tmp_path):
+    """keep_upright turns parts with FOOTPRINT::Rotate: same poses and pads as
+    SetOrientation, footprint texts kept readable (equal up to sdiff's rotation artefacts)."""
+    src = _copy(tmp_path)
+    b = kicad_file.load(src)
+    poses = {f.uuid: (f.x, f.y, (f.rot + 180.0) % 360.0, f.side) for f in b.footprints if not f.locked}
+    plain, upright = tmp_path / "plain.kicad_pcb", tmp_path / "upright.kicad_pcb"
+    pcbnew_io.write_poses(src, plain, poses)
+    pcbnew_io.write_poses(src, upright, poses, keep_upright=True)
+    a, c = kicad_file.load(plain).by_uuid(), kicad_file.load(upright).by_uuid()
+    for u, (x, y, rot, side) in poses.items():
+        assert abs(c[u].x - x) < 1e-6 and abs((c[u].rot - rot + 180) % 360 - 180) < 1e-6
+        assert all(math.hypot(p.x - q.x, p.y - q.y) < 2e-6 for p, q in zip(a[u].pads, c[u].pads))
+    assert sdiff.diff(plain, upright, rotation_artifacts=True) == []
+
+
+def test_write_check_reports_merged_duplicate_drawings(tmp_path):
+    """KiCad's writer keeps board drawings in a std::set ordered without the uuid, so an
+    exact duplicate is written once: reported as a data hazard, not an error."""
+    text = FIXTURE.read_text()
+    i = text.index("\t(gr_line")
+    j = text.index("\n\t)\n", i) + 4
+    dup = text[i:j]
+    u = dup.split('(uuid "', 1)[1].split('"', 1)[0]
+    text = text[:j] + dup.replace(u, "00000000-0000-4000-8000-0000000d0b1e") + text[j:]
+    src = _copy(tmp_path, "dup", text)
+    res = pcbnew_io.resave(src, tmp_path / "out.kicad_pcb")
+    assert res["write_check"]["drawings_merged"] == 1 and res["write_check"]["drawings_lost"] == 0
+    assert [h["code"] for h in res["hazards"]] == ["kicad_write_merged_duplicate_drawings"]

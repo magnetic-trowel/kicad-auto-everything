@@ -124,3 +124,65 @@ def test_power_mux_group_is_the_controller_uuid_and_or_groups_name_the_rail():
     ps = [s for s in b['structures'] if s['kind'] == 'power_path']
     assert len(ps) == 2 and all(s['group'] == 'uuid-U1' == s['controller'] for s in ps)
     assert 'uuid-U1' not in {u for s in ps for u in s['members_ref'] if u not in s['switches']}
+
+
+def test_diff_pair_budget_uses_the_sourced_window():
+    from circuit_fixtures import R
+    soc = IC('U1', 'SOC', 'Package_BGA:BGA-100', [('A2', 'HDMI_TX0_P', 'HDMI_D0_P', 'output'), ('A3', 'HDMI_TX0_N', 'HDMI_D0_N', 'output'),
+                                                 ('B1', 'VDD', '+1V8', 'power_in'), ('B2', 'VSS', 'GND', 'power_in')])
+    j = fp('J1', 'HDMI_A', 'Connector_Video:HDMI_A_Molex_208658-1001_Horizontal',
+           [('1', 'HDMI_D0_P', 'D0+', 'passive'), ('3', 'HDMI_D0_N', 'D0-', 'passive'), ('2', 'GND', 'GND', 'passive')])
+    b = build(board([soc, j, C('C1', '100nF', '+1V8', 'GND'), R('R1', '10k', '+1V8', 'GND')]))
+    dp = next(d for d in b['diff_pairs'] if d['interface'] == 'hdmi')
+    assert dp['budget']['Zdiff']['interval'] == [90.0, 110.0] and 'AM57xx' in dp['budget']['Zdiff']['basis']
+
+
+def test_diff_pairs_say_whether_kicad_pairs_them_and_propose_renames():
+    """net-role-classification.md: propose _P/_N renames for pairs KiCad's suffix rule will not pair."""
+    from circuit_fixtures import R
+    can = IC('U1', 'TCAN1042', 'Package_SO:SOIC-8', [('6', 'CANL', 'CAN_L', 'bidirectional'), ('7', 'CANH', 'CAN_H', 'bidirectional'),
+                                                    ('3', 'VCC', '+5V', 'power_in'), ('2', 'GND', 'GND', 'power_in')])
+    parts = mcu_parts() + [can, R('R1', '120', 'CAN_H', 'CAN_L'), C('C1', '100nF', '+5V', 'GND'),
+                           fp('J1', 'USB_C_Receptacle', 'Connector_USB:USB_C_Receptacle_HRO_TYPE-C-31-M-12',
+                              [('A6', 'USB_DP', 'D+', 'bidirectional'), ('A7', 'USB_DM', 'D-', 'bidirectional'),
+                               ('A1', 'GND', 'GND', 'passive')]),
+                           fp('J2', 'Conn_01x03', 'Connector_JST:JST_PH_B3B-PH-K', [('1', 'CAN_H', '', ''), ('2', 'CAN_L', '', ''),
+                                                                                     ('3', 'GND', '', '')])]
+    b = build(board(parts))
+    pairs = {(d['p'], d['n']): d for d in b['diff_pairs']}
+    can_ = pairs[('CAN_H', 'CAN_L')]
+    assert can_['kicad_pair'] is False and can_['rename_proposal']['p'] == 'CAN_P' and can_['rename_proposal']['n'] == 'CAN_N'
+    usb = pairs[('USB_DP', 'USB_DM')]
+    assert usb['kicad_pair'] is False and (usb['rename_proposal']['p'], usb['rename_proposal']['n']) == ('USB_D_P', 'USB_D_N')
+
+
+def test_kicad_suffix_pairs_need_no_rename():
+    from kae.circuit.roles import _kicad_pair
+    assert _kicad_pair('/hdmi/TMDS_D0_P', '/hdmi/TMDS_D0_N', 'TMDS_D0_', '', 'P', 'N') == (True, None)
+    assert _kicad_pair('/USB_D+', '/USB_D-', 'USB_D', '', '+', '-') == (True, None)
+    assert _kicad_pair('TXP0', 'TXN0', 'TX', '0', 'P', 'N') == (True, None)      # digits after the suffix: KiCad pairs them
+    ok, ren = _kicad_pair('/io/Lvds_a', '/io/Lvds_b', 'LVDS_', '', 'A', 'B')
+    assert not ok and ren['p'] == '/io/Lvds_P' and ren['n'] == '/io/Lvds_N' and 'note' in ren
+
+
+def test_capacitor_below_its_rail_voltage_is_a_hazard():
+    """A capacitor rated below its rail's voltage fails in use: block when the board states the
+    rail voltage (a net name), warn when it is only inferred (a charger's one Li-ion cell assumed);
+    no rating, or a rating at or above the rail, is not judged."""
+    from kae.board_hazards import capacitor_voltage_hazards
+    ic = IC('U1', 'DRV8871', 'Package_SO:SOIC-8', [('1', 'VM', '+12V', 'power_in'), ('2', 'GND', 'GND', 'power_in')])
+    chg = IC('U2', 'TP4056', 'Package_SO:SOIC-8', [('5', 'BAT', 'VBAT', 'power_out'), ('4', 'VCC', '+5V', 'power_in'),
+                                                   ('3', 'GND', 'GND', 'power_in')])
+    b = build(board([ic, chg, C('C1', '10uF 6.3V', '+12V', 'GND'), C('C2', '10uF 25V', '+12V', 'GND'),
+                     C('C3', '100nF', '+12V', 'GND'), C('C4', '10uF 2.5V', 'VBAT', 'GND'),
+                     C('C5', '10uF 16V', '+5V', 'GND')]))
+    rows = {r['ref']: r for r in b['summary']['caps_over_rating']}
+    assert set(rows) == {'C1', 'C4'}
+    assert rows['C1']['confident'] and rows['C1']['rail_V'] == 12.0 and rows['C1']['rated_V'] == 6.3
+    assert not rows['C4']['confident'] and rows['C4']['doubts']
+    hz = {h['objects'][0]: h for h in capacitor_voltage_hazards(b)}
+    assert hz['C1']['code'] == 'capacitor_over_voltage' and hz['C1']['severity'] == 'block'
+    assert hz['C1']['category'] == 'electrical' and hz['C1']['objects'] == ['C1', '+12V']
+    ev = hz['C1']['evidence']
+    assert ev['rated_V'] == 6.3 and ev['rail_V'] == 12.0 and 'net name' in ev['rail_V_source']
+    assert hz['C4']['severity'] == 'warn'

@@ -23,7 +23,7 @@ brief = build(load('board.kicad_pcb'))   # JSON-ready dict, schema 'kae.brief/1'
 | `nets` | name → role (ground, rail, switch_node, clock, high_speed, analog, rf, reset, boot, signal, no_connect), subrole, `volts` plus `volts_belief`, `source` {kind, `part` uuid, `ref`, `path`}, evidence |
 | `parts` | footprint uuid → `ref`, kind, subtype, role, `external`, `P_W`, confidence, evidence |
 | `structures` | `id`, `kind`, `confidence`, `evidence`, `priority`; members by footprint uuid, `members_ref` maps them back |
-| `diff_pairs`, `placement_order`, `summary` | pairs with a Zdiff budget; structure ids by priority; counts and runtime |
+| `diff_pairs`, `placement_order`, `summary` | pairs with a Zdiff budget, `kicad_pair` and a `_P`/`_N` `rename_proposal`; structure ids by priority; counts and runtime |
 
 Structure kinds and the fields a placer or router reads:
 
@@ -39,7 +39,7 @@ Positions never enter: a test moves every footprint and pad at random and checks
 
 ## 2. The evidence model
 
-Every conclusion is a sum of natural-log-odds weights over facts a reviewer can check: STRONG 3.0, MODERATE 1.5, WEAK 0.7, negative where a fact argues against. Confidence = logistic(prior + Σw), clipped to [0.02, 0.98]. The facts are kept as text ("power_in pins on 2 parts (U3.VDD)"). They come from eight sources: refdes prefix, lib id, value and fields, pin function, pin type, topology, net class and sheet. No source decides alone, and each rule names its counter-evidence. Part kinds are a softmax with an *unknown* score of 1.0: 4 of the suite's 9,227 parts end unknown. Budgets are E5 Beliefs with a basis (`f_sw = 1.1 MHz for AP63203`).
+Every conclusion is a sum of natural-log-odds weights over facts a reviewer can check: STRONG 3.0, MODERATE 1.5, WEAK 0.7, negative where a fact argues against. Confidence = logistic(prior + Σw), clipped to [0.02, 0.98]. The facts are kept as text ("power_in pins on 2 parts (U3.VDD)"). They come from eight sources: refdes prefix, lib id, value and fields, pin function, pin type, topology, net class and sheet. Only a role-naming net class decides alone ([intent](../llm/net-role-classification.md)); each rule names its counter-evidence. Part kinds are a softmax with an *unknown* score of 1.0: 4 of the suite's 9,227 parts end unknown. Budgets are E5 Beliefs with a basis (`f_sw = 1.1 MHz for AP63203`).
 
 **Pin semantics put the name first.** Each pin is read as ground, supply, supply output, analog, signal or nothing, in this order:
 1. Ground names, except V−/VSS on a negative rail.
@@ -60,14 +60,14 @@ Part kinds come from lib ids (`R_Shunt_*_Kelvin`, `Crystal`), part-number famili
 
 | Role | For | Against |
 |---|---|---|
-| Ground | names, ground pins, many 2-pin caps; a battery's negative pole net-tied to ground | splits stay distinct (analog, power, isolated, chassis); Kelvin lines tied to ground keep their role |
-| Rail | supply pins, regulator and inductor outputs, caps to ground, pours, rail names; a module supply pin wired straight to a connector pin | a control suffix (`12V0_OUT_EN`); a sense input with no supply pin; logic-only IC pins |
+| Ground | net class, names, ground pins, many 2-pin caps; a battery's negative pole net-tied to ground | splits stay distinct (analog, power, isolated, chassis); Kelvin lines tied to ground keep their role |
+| Rail | net class, supply pins, regulator and inductor outputs, caps to ground, pours, rail names; a module supply pin wired straight to a connector pin | a control suffix (`12V0_OUT_EN`); a sense input with no supply pin; logic-only IC pins |
 | Switch node | an inductor between an IC switch pin or FET pair and a decoupled rail | a FET pair without power-stage evidence is a logic gate |
 | Clock | crystal or oscillator terminals | a pin name alone (PC14, XTAL_32K on an ESP32-C3 GPIO) |
 | Diff pair | complementary names on a common IC or connector; MIPI on a camera FPC | an LED across the pair; a crystal's XTALP/XTALN |
-| Analog, reset, boot | ADC, sense and reference names; amplifier and AFE inputs; RST and BOOT pins | logic and bridge-driver pins; a converter's BST net |
+| Analog, reset, boot | amplifier and AFE inputs; charger PROG pins; ADC, sense, reference names (alone where no IC pin is named); RST, BOOT pins | a bare name beside named pins; control or bus suffixes (`ADC_CS`); `Net-(FB1-Pad1)`; logic and bridge-driver pins; BST nets |
 
-**Rail sources**, first match wins: battery, a dev module's 3V3 pin, an input jack's supply pin, an IC's internal output, a bridge rectifier, a regulator or load-switch output, an inductor, a series path (fuse, bead, ≤ 1 Ω, closed jumper, diode, four-terminal shunt) through middle nets, any connector, unknown. A diode from a low-side switch's drain is a flyback clamp, not a source. When two rails joined by a fuse name each other, the connector side wins. **Voltages** come from the name, a regulator part number, USB or battery defaults, a core-regulator table, inheritance through series parts (−0.4 V per diode), and last the lowest capacitor rating ÷ 1.6.
+**Rail sources**, first match wins: battery, a module's 3V3 pin, a jack's supply pin, an IC's internal output, a rectifier, a regulator or load-switch output, an inductor, a series path (fuse, bead, ≤ 1 Ω, closed jumper, diode, shunt), any connector, unknown. A low-side switch's drain diode is a clamp, not a source. Of fused rails naming each other, the connector side wins. **Voltages** come from the name, a regulator part number, USB or battery defaults, a core-regulator table, inheritance through series parts (−0.4 V per diode), else the lowest capacitor rating bounds it (no value).
 
 ### 3.2 Commutation cells
 
@@ -91,7 +91,7 @@ Allocation runs jointly per rail over every capacitor from the rail to ground:
 
 The score adds schematic affinity (same sheet +2, other −1, same 100-block of references +1.5) and the class preference. Assignment is greedy with quotas; ties fill owners in reference order. Leftovers go to the near-best owner with the fewest caps per pin. A converter left without a capacitor takes another converter's second one. Ownership probability `caps_p` is a softmax of the same scores.
 
-**Pairing is stated only where the netlist decides it.** `pin_caps` names a pin only for a single-pin group and only for small ceramics within quota at p ≥ 0.5 (`pairing: 'pin'`). A group with several pins on one net says `nearest_pin`: the placer pairs each cap with the nearest of those pins. Entry bulk says `nearest_load`. Three critical-router cases traced to rule errors: round-robin pin assignment, a module's `3V3` pin read as a regulator output, and leftovers piling on the first consumer. Fixing them cut pairings with a human distance over 10 mm from 33.2% to 11.6% [C].
+**Pairing is stated only where the netlist decides it.** `pin_caps` names a pin only for a single-pin group and only for HF bodies within quota at p ≥ 0.5 (`pairing: 'pin'`): non-polarized chips ≤ 0603 at any value, else ≤ 1 µF ([decoupling-pdn](../rules/decoupling-pdn.md)). Several pins on one net give `nearest_pin`: the placer pairs each cap with the nearest one. Entry bulk says `nearest_load`. Fixing three rule errors (round-robin pin assignment, a module's `3V3` pin read as a regulator output, leftovers piling on the first consumer) cut pairings with a human distance over 10 mm from 33.2% to 11.6% [C].
 
 ### 3.4 Power paths without switching
 

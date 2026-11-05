@@ -68,7 +68,26 @@ DEFAULTS = dict(
     thermal_spokes=True,   # manual spokes first for pads the placement starves (Session.thermal_spokes)
     lm_soft=False,         # the bridge's last mile may re-lay critical copper, kept by the joint loop's
                            # physics rule (soft_critical)
+    dT_max_K=10.0,         # IPC-2221 temperature rise critical copper is sized for (intent_opts)
+    drop_share=0.02,       # rail + ground DC drop budget, fraction of the rail voltage (intent_opts)
+    rail_max_mm=3.0,       # widest rail / cell track; above ~5.3 A on 1 oz a pour is due: copper capped below its
+                           # IPC width is a hazard with its rise (high-current.md "How kae applies these")
+    rail_over_cap=False,   # A/B arm (decide C2): ladders start at the IPC width above the cap, the cap only a floor
+    via_A=0.0,             # current per rail via (0: from its drill and plating, critical_physics.via_current)
+    via_plating_mm=0.0,    # via plating (0: IPC-6012 class 2's 20 um, kae.materials)
 )
+
+
+def intent_opts(intent):
+    """Session opts from an intent's requirements (as kae.excite.dc.plan reads them), so the
+    critical router sizes copper against the limits the evaluator scores: dT_max_K and
+    drop_share. Takes the facts dict or a kae.intent/1 document (its facts); {} without one."""
+    if not intent:
+        return {}
+    if intent.get("schema") == "kae.intent/1":
+        intent = intent.get("facts") or {}
+    req = intent.get("requirements") or {}
+    return {k: float(req[k]) for k in ("dT_max_K", "drop_share") if req.get(k) is not None}
 
 
 def _log(msg):
@@ -515,9 +534,17 @@ class Session:
             stitched=int(getattr(self, "n_stitched", 0) or 0),
             space_notes=list(self.space.notes),
             modules=[dict(id=m.id, kind=m.kind, status=m.status, items=len(m.copper), physics=m.physics,
-                          notes=m.notes[:6]) for m in self.modules],
+                          notes=m.notes[:6], flags=m.flags) for m in self.modules],
             rails=self.rails,
+            hazards=self.hazards(),
         )
+
+    def hazards(self):
+        """Every module's and rail's hazards (docs: the shared hazard schema), blocks first."""
+        out = [h for m in self.modules for h in getattr(m, "hazards", [])]
+        out += [h for r in self.rails or [] for h in r.get("hazards", [])]
+        order = {"block": 0, "warn": 1, "info": 2}
+        return sorted(out, key=lambda h: order.get(h.get("severity"), 3))
 
 
 # ----------------------------------------------------------------------------- API
@@ -571,6 +598,8 @@ def run(input_path, output_path, seed=0, time_s=900.0, opts=None, bridge_opts=No
                 except Exception as e:  # noqa: BLE001 - stitching is a refinement
                     log(f"stitching: {type(e).__name__}: {e}")
             rep["critical"] = s.report()
+            if rep["critical"].get("hazards"):          # the shared schema: top level of the report
+                rep.setdefault("hazards", []).extend(rep["critical"]["hazards"])
             guards = s.guards() if bridge else []
             rep["critical"]["guards"] = len(guards)
             s.write(w0, guards=guards)
@@ -643,14 +672,17 @@ def soft_critical(s, slack=0.10):
     return dict(soft_fixed=uuids, physics_guard=guard)
 
 
-def write_joint(src, dst, poses, copper):
+def write_joint(src, dst, poses, copper, hazards=None):
     """dst = src with parts moved to `poses` (pcbnew_io.write_poses: KiCad's own writer, any
     angle) and the critical copper added (locked but for soft joins). Project files are
-    copied beside dst."""
+    copied beside dst. The writer's post-write hazards (format upgrade, merged or lost
+    drawings) are appended to `hazards` when a list is given."""
     import shutil
     src, dst = Path(src), Path(dst)
     if poses:
-        pcbnew_io.write_poses(src, dst, {u: tuple(p) for u, p in poses.items()})
+        wrep = pcbnew_io.write_poses(src, dst, {u: tuple(p) for u, p in poses.items()})
+        if hazards is not None:
+            hazards.extend((wrep or {}).get("hazards") or [])
     elif src.resolve() != dst.resolve():
         shutil.copy2(src, dst)
     tracks = [c for c in copper if isinstance(c, Track)]
