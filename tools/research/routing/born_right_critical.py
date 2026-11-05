@@ -78,7 +78,12 @@ def main(argv=None):
         res = dict(board=src.parent.parent.parent.name if src.parent.name == "input" else src.stem, mode=mode,
                    route_s=round(t, 1), tracks=rep["tracks"], vias=rep["vias"], track_mm=rep["track_mm"],
                    router=rep["router"], entries=st, drc_in=base, drc_out=dr,
-                   hazards=[h["code"] for h in rep.get("hazards") or []])
+                   hazards=[h["code"] for h in rep.get("hazards") or []],
+                   modules={m["id"]: (m.get("physics") or {}).get("value") for m in rep.get("modules") or []},
+                   modules_acute=sorted(m.id for m in s.modules if any("centre_acute" in (r.entries if r else ())
+                                                                    for r in m.hops.values())),
+                   module_entries={m.id: {k: list(r.entries) for k, r in m.hops.items() if r is not None}
+                                   for m in s.modules})
         (out / f"{mode}.json").write_text(json.dumps(res, indent=1))
         print(json.dumps(dict(mode=mode, route_s=res["route_s"], track_mm=res["track_mm"],
                               router_entries=rep["router"].get("entries"), necks=rep["router"].get("necks"),
@@ -86,7 +91,9 @@ def main(argv=None):
                                                         "acute", "overhanging", "necked_lands_chained")},
                               fallbacks={k: rep["router"].get(k) for k in ("fallback_old_entry", "fallback_crossing",
                                                                            "lands_kept_out", "neck_leaf")},
-                              drc=dr.get("by_type"), unconnected=dr.get("unconnected"))), flush=True)
+                              drc=dr.get("by_type"), unconnected=dr.get("unconnected"),
+                              quote_s=round(rep["router"].get("quote_s", 0.0), 2), modules=res["modules"],
+                              modules_acute=res["modules_acute"])), flush=True)
     return 0
 
 

@@ -312,6 +312,134 @@ def _escape_gap(ctx, net, w, pad, layer):
     return w / 2.0 + w_p + 2.0 * cc + 0.05
 
 
+ENTRY_CANDIDATES = 3      # rule-D routes quoted per module hop (the best, then without its approach at one end)
+
+
+def _entry_by_physics(ctx, m, tag, net, sources, targets, w, layers, **kw):
+    """A module hop's pad entries ranked by the module's own physics (quote: the loop's nH, the
+    crystal's ppm), not by length: up to ENTRY_CANDIDATES rule-D routes (the router's best, then
+    the best without its approach at either end) and the old entry are each committed, quoted and taken
+    out; the lowest quote is kept, rule D on a tie. An acute entry (> 45 degrees) is kept only
+    when nothing else routes. The old entry kept over a rule-D one counts as physics_exception
+    (GridRouter.stats["entries"]); a module without a quote takes rule D. Time spent quoting:
+    GridRouter.stats["quote_s"]."""
+    import time as _time
+    gr = ctx.gr
+    if getattr(gr, "pad_entry", "centre") != "centreline":
+        return gr.connect(net, sources, targets, w, layers, **kw)
+    cands = []
+    first = gr.connect(net, sources, targets, w, layers, count=False, **kw)
+    if first is not None:
+        cands.append(("rule", first))
+        # alternatives: without the first route's approach at one end, then at the other
+        seen = {tuple(first.goals)}
+        for g in list(first.goals):
+            if len(cands) >= ENTRY_CANDIDATES:
+                break
+            rt = gr.connect(net, sources, targets, w, layers, drop_goals={g}, count=False, **kw)
+            if rt is not None and rt.goals and tuple(rt.goals) not in seen:
+                seen.add(tuple(rt.goals))
+                cands.append(("rule", rt))
+    old = gr.connect(net, sources, targets, w, layers, entry="old", count=False, **kw)
+    if old is not None:
+        cands.append(("old", old))
+    calls = len(cands) or 1
+    ok = [c for c in cands if "centre_acute" not in c[1].entries] or cands
+    if not ok:
+        gr.count_route(None, calls)
+        return None
+    best = ok[0]
+    if len(ok) > 1:
+        t0 = _time.monotonic()
+        prev = m.hops.get(tag)
+        scored = []
+        for i, (kind, rt) in enumerate(ok):
+            items = ctx.commit(m, rt, tag) if (rt.segs or rt.vias) else []
+            m.hops[tag] = rt
+            v = quote(ctx, m, store=False)
+            gone = {id(x) for x in items}
+            ctx.sp.remove(items)
+            m.copper = [x for x in m.copper if id(x) not in gone]
+            scored.append((v, i, kind, rt))
+        m.hops[tag] = prev
+        if any(x[0] is None for x in scored):
+            # the module cannot be quoted before all its hops are routed (decaps, crystals,
+            # chains, rails): every candidate by the hop's own term of the same physics
+            scored = [(_hop_term(ctx, m, rt, sources, targets), i, kind, rt) for _v, i, kind, rt in scored]
+            gr.stats["hop_terms"] = gr.stats.get("hop_terms", 0) + 1
+        gr.stats["quote_s"] = gr.stats.get("quote_s", 0.0) + _time.monotonic() - t0
+        gr.stats["quoted"] = gr.stats.get("quoted", 0) + len(scored)
+        valid = [x for x in scored if x[0] is not None]
+        if valid:
+            lo = min(x[0] for x in valid)
+            # rule D wherever it is no worse than the best quote (a relative 1e-6 for float noise)
+            tied = [x for x in valid if x[0] <= lo * (1 + 1e-6) + 1e-12]
+            pick = min(tied, key=lambda x: (x[2] != "rule", x[1]))
+            best = (pick[2], pick[3])
+    kind, rt = best
+    if kind == "old" and any(k == "rule" and any(not e.startswith("centre") for e in r.entries) for k, r in ok):
+        rt.entries = ["physics_exception" if e.startswith("centre") else e for e in rt.entries]
+    gr.count_route(rt, calls)
+    return rt
+
+
+MU0_NH_PER_MM = 0.4 * math.pi        # mu0 in nH/mm
+
+
+def _strip_l(length, w, h):
+    """Partial inductance (nH) of a microstrip of `length` and width w at height h over its
+    plane (Wheeler's Z0 times the delay, er = 1: L/len = mu0 / (2 pi) ln(8h/w + w/4h) for w <= h,
+    mu0 / (w/h + 1.393 + 0.667 ln(w/h + 1.444)) above)."""
+    w = max(w, 1e-3)
+    h = 1.6 if h in (None, INF) or h <= 0 else h
+    u = w / h
+    if u <= 1:
+        per = MU0_NH_PER_MM / (2 * math.pi) * math.log(8 / u + u / 4)
+    else:
+        per = MU0_NH_PER_MM / (u + 1.393 + 0.667 * math.log(u + 1.444))
+    return per * length
+
+
+def _hop_term(ctx, m, rt, sources, targets):
+    """The hop's own share of its module's physics, where the module is not quotable yet:
+    crystals the trace capacitance its copper adds (as _crystal_value), loops (cells, paths,
+    decaps, chains) the hop's inductance as loop_model draws it (terminal centre, the route,
+    terminal centre; necks at their width), anything else its resistance (length / width)."""
+    if rt is None or not rt.segs:
+        return 0.0
+    segs = [(l, a, b, rt.seg_w(i)) for i, (l, a, b) in enumerate(rt.segs)]
+
+    def centre(anchors, q):
+        for an in anchors:
+            for l in an.layers:
+                c = an.centre_on(l)
+                if c is not None and an.geom_on(l).distance(Point(q)) < 1e-6:
+                    return tuple(c)
+        return None
+    l0, a0 = segs[0][0], segs[0][1]
+    l1, b1 = segs[-1][0], segs[-1][2]
+    ca = centre(sources, a0) or centre(targets, a0)
+    cb = centre(targets, b1) or centre(sources, b1)
+    if ca is not None:
+        segs.insert(0, (l0, ca, a0, rt.width))
+    if cb is not None:
+        segs.append((l1, b1, cb, rt.width))
+    if m.kind == "crystal":
+        C = 0.0
+        for l, a, b, w in segs[1 if ca else 0:len(segs) - (1 if cb else 0)]:
+            h, pl, _ = ctx.plane(l, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, gnd=False)
+            er = dielectric_er(ctx.sp.cu, ctx.sp.z, ctx.sp.er, l, pl)
+            C += trace_capacitance_pf(math.dist(a, b), w, h if h != INF else ctx.sp.thickness, er)
+        return C
+    if m.kind in ("cell", "path", "decap", "chain"):
+        out = 0.0
+        for l, a, b, w in segs:
+            h, _pl, _pn = ctx.plane(l, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, gnd=True)
+            out += _strip_l(math.dist(a, b), w, h)
+        return out
+    return sum(math.dist(a, b) / max(w, 1e-3) for _l, a, b, w in segs)
+
+
 def route_hop(ctx, m, tag, net, sources, targets, widths, layers, via=False, via_cost=None, layer_factor=None,
               max_len=None, optional=False):
     """Try each width (widest first) on the given layers; commit and return the first route
@@ -324,10 +452,8 @@ def route_hop(ctx, m, tag, net, sources, targets, widths, layers, via=False, via
         w = ctx.sp.clamp_width(net, layers[0], w)
         avoid = []
         for _ in range(3):
-            # a module hop's physics prices its length: rule D only where it costs no length
-            # (GridRouter entry "physics": the shortest of rule D and the old entry, never acute)
-            rt = ctx.gr.connect(net, sources, targets, w, layers, via=via, via_cost=via_cost,
-                                layer_factor=layer_factor, max_len=max_len, avoid=avoid, entry="physics")
+            rt = _entry_by_physics(ctx, m, tag, net, sources, targets, w, layers, via=via, via_cost=via_cost,
+                                   layer_factor=layer_factor, max_len=max_len, avoid=avoid)
             if rt is None:
                 break
             boxed = ctx.gr.boxes_in(rt) if ctx.opts.get("keep_escapes", True) else []

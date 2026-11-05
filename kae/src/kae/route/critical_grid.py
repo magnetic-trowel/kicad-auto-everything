@@ -371,7 +371,9 @@ class Route:
     res: float = 0.0
     necks: dict = field(default_factory=dict)  # seg index -> neck width (the final piece into a necked land)
     entries: list = field(default_factory=list)  # how each pad end was reached: "straight", "long", "axial",
-                                                 # "radial" (rule D) or "centre" (the old entry)
+                                                 # "radial" (rule D), "centre" / "centre_acute" (the old entry),
+                                                 # "physics_exception" (the old entry, kept for the module's physics)
+    goals: list = field(default_factory=list)    # rule-D approaches used (connect drop_goals keys)
 
     def layers(self):
         return sorted({s[0] for s in self.segs})
@@ -618,35 +620,37 @@ class GridRouter:
 
     # ------------------------------------------------------------------ connect
     def connect(self, net, sources, targets, width, layers, layer_factor=None, via=True, window=None,
-                via_cost=None, skip=(), max_len=None, avoid=(), phys=None, entry=None):
+                via_cost=None, skip=(), max_len=None, avoid=(), phys=None, entry=None, drop_goals=(), count=True):
         """Route one track of `width` between anchor sets (see _connect). Stages, each tried only when
         the one before found nothing and had something to give up: other lands of the net and
         necked lands that already have copper kept out of the search (`_free` False), then those
-        lands free (a counter `fallback_crossing`). `entry` "physics" (hops of a physics module,
-        kae.route.critical_modules): no price on entering a land other than through a rule-D
-        anchor, so the shortest of rule D and the old entry wins (a shorter loop), and an old
-        entry taken where a rule-D one was possible counts as `physics_exception`; an acute old
-        entry is refused there and the hop routed as any other."""
-        self.stats["calls"] += 1
+        lands free (a counter `fallback_crossing`).
+        `entry`: None / "rule" (rule D, the old entry only as the fallback), "old" (the old entry
+        only: a candidate for a caller that prices both, critical_modules.route_hop).
+        `drop_goals`: rule-D approaches (Route.goals keys) not to use, for a second candidate.
+        `count` False: the caller counts the route it keeps (count_route)."""
+        if count:
+            self.stats["calls"] += 1
         kw = dict(layer_factor=layer_factor, via=via, window=window, via_cost=via_cost, skip=skip,
                   max_len=max_len, avoid=avoid, phys=phys)
         self._blocked_any, self._had_goals = False, False
-        phys_entry = entry == "physics" and self.pad_entry == "centreline"
-        rt = self._connect(net, sources, targets, width, layers, _entry="physics" if phys_entry else "rule", **kw)
-        if rt is not None and phys_entry and "centre_acute" in rt.entries:
-            alt = self._connect(net, sources, targets, width, layers, **kw)
-            if alt is not None:
-                rt = alt
-        blocked = self._blocked_any
-        if rt is None and blocked:
-            rt = self._connect(net, sources, targets, width, layers, _free=True, **kw)
-            if rt is not None:
+        self._drop_goals = set(drop_goals or ())
+        legacy = entry == "old"
+        rt = self._connect(net, sources, targets, width, layers, _legacy=legacy, **kw)
+        if rt is None and self._blocked_any:
+            rt = self._connect(net, sources, targets, width, layers, _free=True, _legacy=legacy, **kw)
+            if rt is not None and count:
                 self.stats["fallback_crossing"] += 1
-        if rt is not None:
-            if phys_entry and self._had_goals and any(k.startswith("centre") for k in rt.entries):
-                rt.entries = ["physics_exception" if k.startswith("centre") else k for k in rt.entries]
+        self._drop_goals = set()
+        if rt is not None and count:
             self._count(rt)
         return rt
+
+    def count_route(self, rt, calls=1):
+        """Count a route a caller kept out of several candidates (connect(count=False))."""
+        self.stats["calls"] += calls
+        if rt is not None:
+            self._count(rt)
 
     def _connect(self, net, sources, targets, width, layers, layer_factor=None, via=True, window=None,
                  via_cost=None, skip=(), max_len=None, avoid=(), phys=None, _aligned=False, _legacy=False,
@@ -710,9 +714,10 @@ class GridRouter:
                         if not got:
                             continue
                         land, goals = got
-                        if _entry != "physics":
-                            self._penalize(grid, cost[li], land, width)
+                        self._penalize(grid, cost[li], land, width)
                         for goal in goals:
+                            if goal["key"] in getattr(self, "_drop_goals", ()):
+                                continue
                             for kk in self._disc_cells(grid, goal["a"], li, flat, plane):
                                 if kk not in drop:
                                     gd.setdefault(int(kk), goal)
@@ -984,7 +989,7 @@ class GridRouter:
                 seen.add(k2)
                 keep = (w / 2 + PE.NECK_LEN - 1e-3) if wn < w - 1e-9 else w / 2
                 goals.append(dict(a=tuple(aa), end=tuple(end), kind=kind, wn=wn, w=w, keep=keep, land=land,
-                                  rule=rule, layer=layer))
+                                  rule=rule, layer=layer, key=(rule.idx, layer) + k2))
         out = (land, goals) if goals else ()
         if len(self._goal_cache) > 20000:
             self._goal_cache.clear()
@@ -1188,7 +1193,9 @@ class GridRouter:
             if sp.via_violations(net, x, y, first=True):
                 return None
         length = sum(math.dist(a, b) for _, a, b in segs)
-        return Route(net=net, width=width, segs=segs, vias=vias, length=length, necks=necks, entries=entries)
+        rt = Route(net=net, width=width, segs=segs, vias=vias, length=length, necks=necks, entries=entries)
+        rt.goals = [g["key"] for g in (gpre, gpost) if g is not None]
+        return rt
 
     def _final(self, net, layer, goal, p, tol):
         """The final piece of a rule-D end: (end, straight, kind). From the anchor a by default;

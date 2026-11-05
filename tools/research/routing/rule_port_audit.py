@@ -4,7 +4,7 @@
 
     python rule_port_audit.py BOARD.kicad_pcb OUT.json [--pads 80] [--seed 0]
 
-For a sample of pads on the outer layers and one representative net of each routing class
+The board's tracks and vias are removed first (--keep-routing keeps them). For a sample of pads on the outer layers and one representative net of each routing class
 (another net than the pad's), a short test track of the class width is laid at Space's
 requirement (critical_space.Space.need) plus 3 um from the pad ("lax" run), and in a second
 board at the requirement minus 10 um ("strict" run). KiCad's DRC on each board is the referee:
@@ -19,6 +19,9 @@ import random
 import sys
 import tempfile
 from pathlib import Path
+
+
+BATCH = 40
 
 
 def _tracks(sp, plan, pads, gap_delta, nets=()):
@@ -80,6 +83,7 @@ def main(argv=None):
     ap.add_argument("--pads", type=int, default=80)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--refs", default="", help="parts whose pads are always tested (comma-separated)")
+    ap.add_argument("--keep-routing", action="store_true", help="test on the board as it is (default: tracks and vias removed)")
     ap.add_argument("--nets", default="", help="test-copper nets besides each class's representative")
     a = ap.parse_args(argv)
     from kae.board import pcbnew_io
@@ -89,6 +93,15 @@ def main(argv=None):
     from kae.route.bridge import severities
     from kae.route.critical_space import Space
     src = Path(a.board).resolve()
+    if not a.keep_routing:
+        # test copper among the board's own tracks meets them first (KiCad then reports the short,
+        # not the pad clearance): audit on the bare placement
+        bare = Path(a.out).with_suffix(".bare.kicad_pcb")
+        W.edit(src, bare, remove=[r["uuid"] for r in W.routing(src)])
+        for ext in (".kicad_pro", ".kicad_dru"):
+            if src.with_suffix(ext).exists():
+                bare.with_suffix(ext).write_bytes(src.with_suffix(ext).read_bytes())
+        src = bare
     with tempfile.TemporaryDirectory() as d:
         info = pcbnew_io.export_dsn(src, Path(d) / "b.dsn")
     sp = Space(load(src), info, sev=severities(src))
@@ -100,13 +113,18 @@ def main(argv=None):
     res = {}
     for run, delta in (("lax", 0.003), ("strict", -0.01)):
         tracks, meta = _tracks(sp, sp.plan, pads, delta, [n for n in a.nets.split(",") if n])
-        with tempfile.TemporaryDirectory(dir=src.parent) as d:
-            b = Path(d) / "board.kicad_pcb"
-            W.append_items(src, b, tracks=tracks)
-            for ext in (".kicad_pro", ".kicad_dru"):
-                if src.with_suffix(ext).exists():
-                    b.with_suffix(ext).write_bytes(src.with_suffix(ext).read_bytes())
-            rep = drc.run(b, Path(d) / "drc.json")
+        viol = []
+        # KiCad stops reporting a check type past its error limit, so a board with many violating
+        # test tracks hides some: at most BATCH test tracks per DRC run
+        for k in range(0, len(tracks), BATCH):
+            with tempfile.TemporaryDirectory(dir=src.parent) as d:
+                b = Path(d) / "board.kicad_pcb"
+                W.append_items(src, b, tracks=tracks[k:k + BATCH])
+                for ext in (".kicad_pro", ".kicad_dru"):
+                    if src.with_suffix(ext).exists():
+                        b.with_suffix(ext).write_bytes(src.with_suffix(ext).read_bytes())
+                viol += drc.run(b, Path(d) / "drc.json").get("violations") or []
+        rep = dict(violations=viol)
         hits = {}
         for v in rep.get("violations") or []:
             if v.get("severity") not in ("error", "warning"):

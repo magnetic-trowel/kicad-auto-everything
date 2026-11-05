@@ -131,6 +131,9 @@ class Plan:
     net_class: dict = field(default_factory=dict)      # net -> routing class name
     matrix: dict = field(default_factory=dict)         # (R, S, layer) -> mm (R <= S by name)
     pin_class: dict = field(default_factory=dict)      # (comp, pin) -> obstacle class name
+    pin_exact: dict = field(default_factory=dict)      # (comp, pin) -> {(class, layer): (track, via) mm} measured
+                                                       # from the pad's real copper (Space), where the DSN shape
+                                                       # lies inside it
     obstacle_classes: dict = field(default_factory=dict)
     obstacles: list = field(default_factory=list)
     net_graphics: list = field(default_factory=list)   # (net, {layer: polygon}, obstacle class, why)
@@ -476,6 +479,13 @@ def plan(info, board_path, opts=None):
             pin_req[key] = cls
             p.obstacle_classes[cls] = ObstacleClass(cls, dict(vec))
         p.pin_class[(pad["comp"], pad["pin"])] = cls
+        if not outside:
+            # the DSN shape lies inside the real copper (chords of rounded corners, a custom pad's
+            # first outline): the class above adds the largest excess on every side. For exact
+            # checks against the real copper (critical_space.Space) the requirement without it
+            dsn, real = _pad_shapes(pad)
+            if any(_excess(real.get(l), dsn) > 1e-6 for l in pad["layers"]):
+                p.pin_exact[(pad["comp"], pad["pin"])] = _pad_requirements(info, rb, p, pad, sev, outside=True)
 
     # ---- obstacles
     _obstacles(info, rb, p, sev, opts)

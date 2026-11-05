@@ -293,17 +293,24 @@ def test_a_necked_land_with_copper_stays_a_leaf(tmp_path):
     assert all(c9.geom.distance(LineString([u, v])) >= 0.25 - 1e-6 for _, u, v in rt2.segs)
 
 
-def test_physics_entry_never_longer_than_rule_d_and_never_acute(tmp_path):
-    p, info, plan, sp = _plan(tmp_path, [_part("Q1", 110.0, 110.0), _part("Q2", 116.0, 114.0)])
-    a, b = _pad(sp, "Q1"), _pad(sp, "Q2")
-    _, rd = _connect(sp, "FA", a, b)
-    gr = GridRouter(sp)
-    rp = gr.connect("FA", [_anchor(a)], [_anchor(b)], 0.25, ["F.Cu"], via=False, entry="physics")
-    assert rp is not None and rp.length <= rd.length + 0.3
-    assert "centre_acute" not in rp.entries
-    for (u, v), pad in (((rp.segs[0][2], rp.segs[0][1]), a), ((rp.segs[-1][1], rp.segs[-1][2]), b)):
-        ang = PE.entry_angle(pad.geom, u, v)
-        assert ang is None or ang <= 45.0
+def test_module_hops_rank_entries_by_the_modules_physics(tmp_path):
+    """critical_modules._entry_by_physics: each module's quote with rule-D candidates is no worse
+    than with the old entry only (pad_entry "centre"), and no kept entry is acute."""
+    old = F.session(tmp_path / "c", pad_entry="centre").route()
+    new = F.session(tmp_path / "d").route()
+    v0 = {m.id: m.physics.get("value") for m in old.modules if m.physics.get("value")}
+    v1 = {m.id: m.physics.get("value") for m in new.modules if m.physics.get("value")}
+    assert v0 and set(v0) == set(v1)
+    acute = {m.id for m in old.modules if any("centre_acute" in (r.entries if r else ()) for r in m.hops.values())}
+    for k in v0:
+        # an old entry that was acute is forbidden now, so its module may pay for that (U2's decap)
+        assert v1[k] <= v0[k] * 1.001 or k in acute, (k, v0[k], v1[k])
+    assert any(v1[k] < v0[k] * 0.999 for k in v0)                  # and some module gains (the crystal)
+    assert new.router.stats.get("quoted", 0) > 0
+    # an acute entry is kept only where nothing else routes the hop: fewer than with the old entry
+    def n_acute(s):
+        return sum("centre_acute" in (r.entries if r else ()) for m in s.modules for r in m.hops.values())
+    assert n_acute(new) < n_acute(old)
 
 
 def test_join_at_corners_adds_no_copper_at_rule_d_pad_ends(tmp_path):
@@ -317,3 +324,28 @@ def test_join_at_corners_adds_no_copper_at_rule_d_pad_ends(tmp_path):
     centres = {(round(p.pos[0], 6), round(p.pos[1], 6)) for p in sp.pads if p.kind == "pad" and p.pos is not None}
     for t in (it for it in sp.routed if it.kind == "track" and id(it) not in before):
         assert not any((round(q[0], 6), round(q[1], 6)) in centres for q in (t.geom.coords[0], t.geom.coords[-1]))
+
+
+def test_space_measures_pads_from_their_real_copper(tmp_path):
+    """A pad whose DSN shape lies inside its copper (a custom pad's first outline, chords of
+    rounded corners): the DSN pin class adds the largest excess on every side, Space measures from
+    the real copper with the plain requirement, so it is exact on every side and never laxer."""
+    p = F.write_board(tmp_path, extra=[_part("Q1", 110.0, 110.0)])
+    info = F.synth_info(load(p))
+    pd = next(x for x in info["pads"] if x["ref"] == "Q1")
+    x, y = pd["pos"]
+    tab = [[x + 0.5, y - 0.2], [x + 0.6, y - 0.2], [x + 0.6, y + 0.2], [x + 0.5, y + 0.2], [x + 0.5, y - 0.2]]
+    pd["poly"] = [pd["poly"][0], [tab]]                  # a second outline: 0.1 mm of copper past the DSN shape
+    plan = CN.plan(info, p, {})
+    sp = Space(load(p), info, plan=plan)
+    it = _pad(sp, "Q1")
+    assert (pd["comp"], pd["pin"]) in plan.pin_exact
+    dsn_need = plan.obstacle_classes[it.cls].values[(sp.rc("GND"), "F.Cu")][0]
+    assert dsn_need == pytest.approx(0.3, abs=1e-3)      # 0.2 clearance + 0.1 excess, on every side
+    assert sp.need(it, "GND", "track", "F.Cu") == pytest.approx(0.2, abs=1e-6)
+    assert it.geom.contains(Point(x + 0.55, y))          # the tab is copper Space keeps clear of
+    # never laxer: a track 0.21 mm from the tab is legal, 0.19 mm is not; on the far side 0.21 mm is
+    # legal where the DSN class alone would have asked 0.3 mm
+    assert not sp.track_violations("GND", "F.Cu", 0.2, (x + 0.91, y - 1), (x + 0.91, y + 1))
+    assert sp.track_violations("GND", "F.Cu", 0.2, (x + 0.89, y - 1), (x + 0.89, y + 1))
+    assert not sp.track_violations("GND", "F.Cu", 0.2, (x - 0.81, y - 1), (x - 0.81, y + 1))
