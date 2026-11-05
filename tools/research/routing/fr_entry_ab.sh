@@ -4,7 +4,8 @@
 # fr_entry_ab.sh BOARDDIR ARM[-fr] SEED BUDGET_S FORK
 # One arm of the native rule D entry A/B (kae.route.fr_entry + the fork's router.kae_pin_entries):
 # `kae.route.cli route` of BOARDDIR/input.kicad_pcb (with its project files) with the Freerouting
-# build FORK, KAE_FR_PIN_ENTRIES=on|off (ARM; "rails" also writes rail classes), then
+# build FORK, KAE_FR_PIN_ENTRIES by ARM (off*, on: phase 1, plan*: phase 2, rails*: phase 2 and rail
+# classes; OPERATING_DIR/<board>.operating.json becomes KAE_OPERATING for every arm), then
 # kae.route.pad_reroute on the result. ARM-fr: Freerouting's import alone (no repair rounds, no last
 # mile, no diagnosis), to see the router's own ends. Writes BOARDDIR/ARM/{routed,rr}.kicad_pcb, route.json,
 # rr.json, and score.json: per stage, KiCad DRC of the re-opened board (errors by type,
@@ -21,10 +22,14 @@ extra=()
 case $arm in *-fr) extra=(--no-repair --no-last-mile --no-blocked);; esac
 case ${arm%-fr} in
   on|on2|on3) export KAE_FR_PIN_ENTRIES=on KAE_FR_RAILS=off;;
-  rails) export KAE_FR_PIN_ENTRIES=on KAE_FR_RAILS=on;;
-  off) export KAE_FR_PIN_ENTRIES=off KAE_FR_RAILS=off;;
+  plan*) export KAE_FR_PIN_ENTRIES=plan KAE_FR_RAILS=off;;
+  rails*) export KAE_FR_PIN_ENTRIES=plan KAE_FR_RAILS=on;;
+  off*) export KAE_FR_PIN_ENTRIES=off KAE_FR_RAILS=off;;
   *) echo "unknown arm $arm" >&2; exit 2;;
 esac
+# operating facts (rail currents for KAE_FR_RAILS, pad currents for pad_reroute's necks), every arm alike
+[ -n "$OPERATING_DIR" ] && [ -f "$OPERATING_DIR/$(basename "$dir").operating.json" ] && \
+  export KAE_OPERATING=$OPERATING_DIR/$(basename "$dir").operating.json
 ulimit -v 40000000
 for t in routed rr; do for e in kicad_pro kicad_dru; do
   [ -f "$dir/input.$e" ] && cp "$dir/input.$e" "$out/$t.$e"; done; done

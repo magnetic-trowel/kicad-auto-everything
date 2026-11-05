@@ -13,7 +13,7 @@ the rule, routing-stages P3).
 
 The DSN extension is one scope at the end of the `pcb` scope:
 
-    (kae_pin_entries (version 1)
+    (kae_pin_entries (version 1) [(mode plan)]
       (pin REF PIN (layer L) (centre x y) (frame ux uy w h cx cy) [(radial)]
         (entry KIND (width W) [(neck N)] (approach x y) (end x y)) ...)
       (class_floor CLASS (width W) (layer_rule L (width W)) ...))
@@ -30,7 +30,7 @@ pairs of a rail class and a victim class get power_copper.victim_gap as their cl
 
 What the plan may supply (rf-plan; computed here until it does): `plan.pin_entries`
 ({(ref, pin): {layer: entries}}), `plan.rail_need` ({net: {layer: mm}}), `plan.victims`
-(net names). Settings: env KAE_FR_PIN_ENTRIES (on/off, default off), KAE_FR_RAILS (on/off),
+(net names). Settings: env KAE_FR_PIN_ENTRIES (off, on or plan; mode()), KAE_FR_RAILS (on/off),
 KAE_FR_RAIL_GAPS (on/off), KAE_OPERATING (operating facts JSON, for the currents).
 """
 from __future__ import annotations
@@ -55,8 +55,17 @@ def _on(name, default="off"):
     return (os.environ.get(name) or default).strip().lower() in ("1", "on", "true", "yes")
 
 
+def mode():
+    """KAE_FR_PIN_ENTRIES: "off" (default), "on" (phase 1: the fork re-ends traces at listed pins
+    with fixed tails) or "plan" (phase 2: the fork plans each tail before it searches, as routing)."""
+    v = (os.environ.get("KAE_FR_PIN_ENTRIES") or "off").strip().lower()
+    if v == "plan":
+        return "plan"
+    return "on" if v in ("1", "on", "true", "yes") else "off"
+
+
 def enabled():
-    return _on("KAE_FR_PIN_ENTRIES")
+    return mode() != "off"
 
 
 # ----------------------------------------------------------------------------- entries
@@ -307,12 +316,12 @@ def rail_classes(tree, plan, needs, lname, scale, gaps=False, victims=()):
 
 
 # ----------------------------------------------------------------------------- the DSN scope
-def scope_node(entries, scale, lname, floors=None):
+def scope_node(entries, scale, lname, floors=None, planned=False):
     """The kae_pin_entries node: pins in (ref, pin) order, layers in plan order, entries in
     land_entries order."""
     def xy(p):
         return [fmt(p[0] * scale), fmt(-p[1] * scale)]
-    node = [SCOPE, ["version", "1"]]
+    node = [SCOPE, ["version", "1"]] + ([["mode", "plan"]] if planned else [])
     for (ref, num) in sorted(entries, key=lambda k: (str(k[0]), str(k[1]))):
         centre, per = entries[(ref, num)]
         for layer, (g, es) in per.items():
@@ -357,7 +366,7 @@ def apply(tree, plan, info, lname, entries=None, rails=None, gaps=None):
     floors, summary = rail_classes(tree, plan, needs, lname, scale, gaps, getattr(plan, "victims", ()) or ()) \
         if rails else ({}, {})
     table = pin_entries(tree, plan, info, need_of) if entries else {}
-    tree.append(scope_node(table, scale, lname, floors))
+    tree.append(scope_node(table, scale, lname, floors, planned=entries and mode() == "plan"))
     n_ent = sum(len(es) for _c, per in table.values() for _g, es in per.values())
     summary.update(pins=len(table), pin_layers=sum(len(per) for _c, per in table.values()), entries=n_ent,
                    necked=sum(1 for _c, per in table.values() for _g, es in per.values() for e in es if e.get("neck")),

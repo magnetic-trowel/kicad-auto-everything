@@ -162,3 +162,16 @@ def test_freerouting_asks_the_fork_for_the_table(tmp_path):
     assert FR.fork_settings(q, None) == {}
     log = "x\n[main] INFO kae_pin_entries: pin_layers=3 tails=2 raw=1 inserted=4\n"
     assert FR.pin_entry_stats(log) == dict(pin_layers=3, tails=2, raw=1, inserted=4)
+
+
+def test_plan_mode_is_written(monkeypatch):
+    monkeypatch.setenv("KAE_FR_PIN_ENTRIES", "plan")
+    monkeypatch.delenv("KAE_FR_RAILS", raising=False)
+    info, plan = _board()
+    tree = S.parse(DSN)
+    assert FE.apply(tree, plan, info, lambda l: l)["pins"] == 3
+    assert S.find(S.find(tree, FE.SCOPE), "mode") == ["mode", "plan"]
+    monkeypatch.setenv("KAE_FR_PIN_ENTRIES", "on")
+    tree = S.parse(DSN)
+    FE.apply(tree, plan, info, lambda l: l)
+    assert S.find(S.find(tree, FE.SCOPE), "mode") is None
