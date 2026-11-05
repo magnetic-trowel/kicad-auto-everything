@@ -77,8 +77,11 @@ def test_identity_diff_matches_rewritten_items_not_counts():
     new = J.diff(base, _rep(("clearance", [("Q", 9.0, 9.0), ("V", 9.0, 9.1)])), anc)
     assert len(new) == 1 and new[0][0] == "clearance"
     assert J.judge([base], _rep(("clearance", [("Q", 9.0, 9.0), ("V", 9.0, 9.1)])), anc) == {"clearance": 1}
-    # far away it is not the same violation either
-    assert len(J.diff(base, _rep(("clearance", [("P", 4.0, 4.0), ("A2", 4.0, 4.0)])), anc)) == 1
+    # the same items further along the rewritten track: still the same violation (it moved with it)
+    assert J.diff(base, _rep(("clearance", [("P", 4.0, 4.0), ("A2", 4.0, 4.0)])), anc) == []
+    # but only once: a second one on the same items is new
+    two = _rep(("clearance", [("P", 1.0, 1.0), ("A2", 1.2, 1.1)]), ("clearance", [("P", 4.0, 4.0), ("A2", 4.0, 4.0)]))
+    assert len(J.diff(base, two, anc)) == 1 and J.diff(base, two, anc)[0][1][0][1] == (4.0, 4.0)
     # unconnected by count
     assert J.judge([base], _rep(("clearance", [("P", 1, 1), ("A", 1.1, 1)]), unconnected=1)) == {"unconnected": 1}
 

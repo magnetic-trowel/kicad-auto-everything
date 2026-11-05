@@ -358,9 +358,10 @@ def _near(b1, b2):
 def diff(base, out, anc=None, noise=()):
     """Violations of report `out` that report `base` does not have, by identity, one to one:
     [(type, items)] new in `out` (noise types left out). An output violation matches an input one
-    of its type in the same or a neighbouring position bucket whose items it covers: every item of
-    the input violation is among what the output's items stand for, and each output item stands
-    for at least one of them."""
+    of its type whose items it covers: every item of the input violation is among what the output's
+    items stand for, and each output item stands for at least one of them. Matches in the same or a
+    neighbouring position bucket are made first; then any position (a pre-existing violation on a
+    track a pass rewrote moves with the track: cm4-carrier's track_width and clearance)."""
     anc = anc or {}
     pool = {}
     for v in violations(base):
@@ -368,22 +369,35 @@ def diff(base, out, anc=None, noise=()):
             continue
         t, ids, b = identity(v)
         pool.setdefault(t, []).append([ids, b, False])
-    new = []
+    todo = []
     for v in violations(out):
         if v[0] in noise:
             continue
-        t, its = v
-        b = identity(v, anc)[2]
-        per = [anc.get(u, {u}) for u, _ in its]
-        cover = set().union(*per) if per else set()
+        per = [anc.get(u, {u}) for u, _ in v[1]]
+        todo.append((v, identity(v, anc)[2], per, set().union(*per) if per else set()))
+
+    def match(t, b, per, cover, near):
         hit = None
         for c in pool.get(t, ()):
-            if c[2] or not _near(c[1], b):
+            if c[2] or (near and not _near(c[1], b)):
                 continue
-            if c[0] <= cover and all(s & c[0] for s in per):
+            if c[0] <= cover and all(x & c[0] for x in per):
                 hit = c
                 if c[1] == b:
                     break
+        return hit
+    left = []
+    for v, b, per, cover in todo:
+        t = v[0]
+        hit = match(t, b, per, cover, True)
+        if hit is None:
+            left.append((v, b, per, cover))
+        else:
+            hit[2] = True
+    new = []
+    for v, b, per, cover in left:
+        t = v[0]
+        hit = match(t, b, per, cover, False)
         if hit is None:
             new.append(v)
         else:
