@@ -143,6 +143,10 @@ def _holes(info):
     return out
 
 
+THERMAL_HALO = 0.5        # mm beyond a thermal pad's relief gap kept free of other nets' tails when
+                          # neither pad nor zone gives a spoke width
+
+
 def _keep_clear(info, plan, layer_pads):
     """Per copper layer, [(shape, pad uuid)] a tail of another pad must not touch: the thermal-spoke
     corridors of zone-connected pads (constraints.thermal_corridors, so a tail never takes a spoke's
@@ -157,6 +161,22 @@ def _keep_clear(info, plan, layer_pads):
         cors = []
     for geo, layer, pad in cors:
         out.setdefault(layer, []).append((geo, pad.get("uuid"), pad.get("net")))
+    # the whole relief ring of every thermal pad of a zone net: the corridors above give way to
+    # other pins' escapes, so on fine-pitch parts they leave the spokes unprotected (redbot U2's and
+    # dream117er's USB-C GND pads starved under planned tails of their neighbours)
+    zones = {}
+    for z in info.get("zones") or []:
+        if z.get("net") and not z.get("rule_area"):
+            for l in z.get("layers") or []:
+                zones.setdefault((z["net"], l), z)
+    for layer, items in layer_pads.items():
+        for pd, g in items:
+            z = zones.get((pd.get("net"), layer))
+            if z is None or pd.get("zone_connection") in ("full", "none"):
+                continue
+            gap = pd.get("thermal_gap") or z.get("thermal_gap") or 0.0
+            spoke = pd.get("spoke_width") or z.get("spoke_width") or THERMAL_HALO
+            out.setdefault(layer, []).append((g.buffer(float(gap) + float(spoke)), pd.get("uuid"), pd.get("net")))
     m2c = float(((info.get("settings") or {}).get("mask_to_copper")) or 0.0)
     cu = list(info.get("copper") or [])
     for layer, items in layer_pads.items():
