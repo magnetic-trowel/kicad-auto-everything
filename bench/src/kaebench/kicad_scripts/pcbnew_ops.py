@@ -451,7 +451,7 @@ def _is_teardrop(blk):
     return any(t == "teardrop" and blk[i - 1] == "(" for i, t in enumerate(blk) if i)
 
 
-def _keyed(text, ignore_heads=()):
+def _keyed(text, ignore_heads=(), dups=None):
     """Top-level objects keyed by (kind, uuid), or (kind, name) for named objects without a
     uuid such as board properties, or (kind, ordinal); as comparable token lists.
     Teardrops (saved without uuid, in no fixed order) are skipped like ignore_heads."""
@@ -473,6 +473,9 @@ def _keyed(text, ignore_heads=()):
                                   for i, t in enumerate(blk)])
         if head.startswith("gr_"):
             toks = _drop_net(toks)
+        if (head, u) in out and dups is not None:
+            dups.setdefault((head, u), []).append(toks)   # a repeated key: judged in _foreign
+            continue
         out[(head, u)] = toks
     return out
 
@@ -526,12 +529,27 @@ def _same_tokens(a, b):
     return True
 
 
-def _foreign(out_text, in_text, limit=50, skip=()):
+def _foreign(out_text, in_text, limit=50, skip=(), skip_dup_kinds=()):
     """Top-level objects added, removed or changed, routing, zone fills, groups and tuning
-    patterns excepted, and the (kind, uuid) keys in skip (judged elsewhere)."""
+    patterns excepted, and the (kind, uuid) keys in skip (judged elsewhere).
+
+    An object the output repeats under one key is matched to the input by content, not by file
+    order: the task's object is unchanged when any copy equals it, and every other copy counts
+    as added, except kinds in skip_dup_kinds (judged elsewhere: a joint task's zones)."""
     ignore = ROUTING_HEADS + UNSCORED_HEADS
-    a, b = _keyed(out_text, ignore), _keyed(in_text, ignore)
+    adup = {}
+    a, b = _keyed(out_text, ignore, dups=adup), _keyed(in_text, ignore)
     diffs = []
+    for k, extra in adup.items():
+        copies = [a[k]] + extra
+        if k in b:
+            keep = next((t for t in copies if _same_tokens(t, b[k])), copies[0])
+            copies.remove(keep)
+            a[k] = keep
+        else:
+            a[k] = copies.pop(0)
+        if k[0] not in skip_dup_kinds and k not in set(skip):
+            diffs += [dict(kind=k[0], id=k[1], change="added (duplicate key)") for _ in copies]
     for k in sorted((set(a) | set(b)) - set(skip)):
         if k not in a:
             diffs.append(dict(kind=k[0], id=k[1], change="removed"))
@@ -923,7 +941,7 @@ def transplant_placement(out_path, inp_path, dst, ref_path=None, zones=False):
         skip = [("zone", u) for u in {z.m_Uuid.AsString() for z in _zones(out) if not z.IsTeardropArea()} - in_ids]
     _unfill(out)
     _unfill(fresh)
-    foreign = _foreign(_canonical(out), _canonical(fresh), skip=skip)
+    foreign = _foreign(_canonical(out), _canonical(fresh), skip=skip, skip_dup_kinds=("zone",) if zones else ())
     _out(dict(ok=True, loadable=True, missing=missing[:50], n_missing=len(missing), extra=extra[:50],
               n_extra=len(extra), locked_moved=locked_moved[:50], n_locked_moved=len(locked_moved),
               routing_added=routing_added, output=ident, foreign=foreign, copy=copy))
