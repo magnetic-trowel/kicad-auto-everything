@@ -3,7 +3,7 @@
 #
 # Shared settings of the route-finish-ab job scripts (sourced). SHA must be set: the route-finish commit
 # whose frozen checkout and venvs kaeres made at `exp create` (~/kae-baselines/code/...@SHA12).
-: "${SHA:?commit (the experiment's harness and kae)}"
+: "${SHA:?commit of the experiment harness and kae}"
 STORE=${KAE_RESULTS:-$HOME/kae-baselines}
 CORPUS=${KAE_CORPUS:-$HOME/kae-boards}
 CODE=$STORE/code/kicad-auto-everything@${SHA:0:12}
