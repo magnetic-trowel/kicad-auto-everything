@@ -533,30 +533,33 @@ def _foreign(out_text, in_text, limit=50, skip=(), skip_dup_kinds=()):
     """Top-level objects added, removed or changed, routing, zone fills, groups and tuning
     patterns excepted, and the (kind, uuid) keys in skip (judged elsewhere).
 
-    An object the output repeats under one key is matched to the input by content, not by file
-    order: the task's object is unchanged when any copy equals it, and every other copy counts
-    as added, except kinds in skip_dup_kinds (judged elsewhere: a joint task's zones)."""
+    Boards can repeat a uuid (copy-paste in older KiCad versions), so the copies under one key are
+    matched by content on both sides, never by file order: a copy equal to one on the other side
+    is unchanged, the rest pair up as changed, and what is left over is added (output) or removed
+    (input). Extra output copies of kinds in skip_dup_kinds are judged elsewhere (a joint task's
+    zones)."""
     ignore = ROUTING_HEADS + UNSCORED_HEADS
-    adup = {}
-    a, b = _keyed(out_text, ignore, dups=adup), _keyed(in_text, ignore)
+    adup, bdup = {}, {}
+    a, b = _keyed(out_text, ignore, dups=adup), _keyed(in_text, ignore, dups=bdup)
     diffs = []
-    for k, extra in adup.items():
-        copies = [a[k]] + extra
-        if k in b:
-            keep = next((t for t in copies if _same_tokens(t, b[k])), copies[0])
-            copies.remove(keep)
-            a[k] = keep
-        else:
-            a[k] = copies.pop(0)
-        if k[0] not in skip_dup_kinds and k not in set(skip):
-            diffs += [dict(kind=k[0], id=k[1], change="added (duplicate key)") for _ in copies]
-    for k in sorted((set(a) | set(b)) - set(skip)):
-        if k not in a:
-            diffs.append(dict(kind=k[0], id=k[1], change="removed"))
-        elif k not in b:
-            diffs.append(dict(kind=k[0], id=k[1], change="added"))
-        elif not _same_tokens(a[k], b[k]):
-            diffs.append(dict(kind=k[0], id=k[1], change="changed"))
+    skip = set(skip)
+    for k in sorted((set(a) | set(b)) - skip):
+        ca = ([a[k]] if k in a else []) + adup.get(k, [])
+        cb = ([b[k]] if k in b else []) + bdup.get(k, [])
+        left = []
+        for t in ca:
+            j = next((i for i, u in enumerate(cb) if _same_tokens(t, u)), None)
+            if j is None:
+                left.append(t)
+            else:
+                cb.pop(j)
+        n_changed = min(len(left), len(cb))
+        diffs += [dict(kind=k[0], id=k[1], change="changed") for _ in range(n_changed)]
+        diffs += [dict(kind=k[0], id=k[1], change="removed") for _ in range(len(cb) - n_changed)]
+        extra = len(left) - n_changed
+        if extra and not (k in b and k[0] in skip_dup_kinds):
+            diffs += [dict(kind=k[0], id=k[1], change="added" if k not in b else "added (duplicate key)")
+                      for _ in range(extra)]
     counts = {}
     for d in diffs:
         counts[d["kind"]] = counts.get(d["kind"], 0) + 1
