@@ -189,9 +189,10 @@ def _tail_clear(e, centre, g, w, uuid, net, tree_of):
 def pin_entries(tree, plan, info, need_of=None):
     """{(ref, pin): (centre, {layer: (pad, entries)})} for every pin routing may end on: a pin with
     a net in a routing class, its copper on a layer, and its DSN centre inside that copper. Pads
-    of ball grids are left to the escape stage, and so are lands that hold another pad's hole. An
-    entry whose tail would touch another pad's thermal-spoke corridor or solder-mask opening is
-    dropped (_keep_clear). `need_of(ref, net)`: the width (mm) the pad's
+    of ball grids are left to the escape stage, and so are lands that hold another pad's hole. Pads
+    of a net with a zone on the layer (unless solidly or not connected) keep Freerouting's end: a tail
+    would break KiCad's count of their thermal spokes. An entry whose tail would touch another
+    pad's thermal-spoke corridor or solder-mask opening is dropped (_keep_clear). `need_of(ref, net)`: the width (mm) the pad's
     current needs (necks are never narrower)."""
     from .constraints import _pad_shapes
     from .translate import dsn_pins
@@ -208,6 +209,12 @@ def pin_entries(tree, plan, info, need_of=None):
             if g is not None and not g.is_empty:
                 layer_pads.setdefault(l, []).append((q, g))
     clear = _keep_clear(info, plan, layer_pads)
+    # nets with a zone on a layer: their pads there join the fill by thermal spokes, and KiCad
+    # counts a track as a spoke only as one segment from inside the pad into the fill; a tail ending
+    # at its approach point in the thermal gap breaks that (starved_thermal: dream117er's USB-C
+    # GND pads, redbot's motor and GND pads), so such pads keep Freerouting's own end
+    zoned = {(z.get("net"), l) for z in info.get("zones") or []
+             if z.get("net") and not z.get("rule_area") for l in z.get("layers") or []}
     trees = {l: (shapely.STRtree([x[0] for x in v]), v) for l, v in clear.items()}
     dropped = 0
     min_w = float(getattr(plan, "min_width", 0.0) or 0.0)
@@ -227,6 +234,8 @@ def pin_entries(tree, plan, info, need_of=None):
         for layer in plan.copper:
             g = (real or {}).get(layer)
             if g is None or g.is_empty or g.geom_type != "Polygon" or not g.buffer(1e-6).contains(Point(centre)):
+                continue
+            if (pd["net"], layer) in zoned and pd.get("zone_connection") not in ("full", "none"):
                 continue
             if any(hp is not pd and hg.intersects(g) for hg, hp in holes):
                 continue          # a land holding another pad's hole (a switch's NPTH peg): a tail would cut it

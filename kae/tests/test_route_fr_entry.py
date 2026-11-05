@@ -193,3 +193,13 @@ def test_entries_keep_out_of_a_neighbours_mask_opening():
     kept = [e for e in es if FE._tail_clear(e, (0.0, 0.0), a, 0.25, "u0", "A", tree)]
     assert kept and len(kept) < len(es)
     assert all(e["a"][1] < 0.3 for e in kept)                    # nothing from the side facing B
+
+
+def test_thermal_pads_of_a_zone_net_keep_freeroutings_end():
+    info, plan = _board()
+    info["zones"] = [dict(net="VCC", layers=["F.Cu"])]
+    table = FE.pin_entries(S.parse(DSN), plan, info)
+    assert set(table) == {("R1", "2")}                    # both VCC pads join the zone by spokes
+    for p in info["pads"]:
+        p["zone_connection"] = "full"
+    assert set(FE.pin_entries(S.parse(DSN), plan, info)) == {("R1", "1"), ("R1", "2"), ("TP1", "1")}
