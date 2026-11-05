@@ -225,3 +225,65 @@ def test_a_dc_band_that_solves_nothing_builds_no_system():
     b = SimpleNamespace(footprints=[], tracks=[])
     E._dc_harms(pl, bm, b, None, None, {}, [], 1, 0, [0.0] * 4, [], lambda *a: None, system=holder)
     assert holder == {}
+
+
+def _track_reading(angle_deg, off, w=0.25, arc=False, pour=None):
+    """(I, w_eff, dT) of track_currents for one track carrying 1 A, the mesh origin shifted by off."""
+    import math
+    from types import SimpleNamespace as NS
+
+    from shapely.geometry import LineString
+
+    from kae.em import solve as ES
+    from kae.em.kicad import _arc_points
+    from kae.em.mesh import Layer, Mesh
+    p = 0.25
+    m = Mesh.over(-5 + off[0], -5 + off[1], 5 + off[0], 5 + off[1], p, [Layer("F.Cu", 0.0, 0.035, 1)])
+    a = math.radians(angle_deg)
+    ux, uy = math.cos(a), math.sin(a)
+    s, e = (-3 * ux, -3 * uy), (3 * ux, 3 * uy)
+    tr = NS(start=s, end=e, mid=(-uy, ux) if arc else None, width=w, layer="F.Cu", net="A")
+    pts = _arc_points(tr) if arc else [s, e]
+    fills = {}
+    if pour:
+        pg = LineString([s, e]).buffer(pour / 2, cap_style=2)
+        m.paint_connected(0, "A", pg)
+        fills = {"A": {"F.Cu": [pg]}}
+    if w >= 3 * p:
+        m.paint_connected(0, "A", LineString(pts).buffer(w / 2, quad_segs=8))
+    else:
+        m.paint_line(0, "A", pts, w)
+    m.terminal("a0", 0, xy=s, net="A")
+    m.terminal("a1", 0, xy=e, net="A")
+    net = ES.Network(m)
+    _, info = ES.potentials(m, {"a0": 1.0, "a1": -1.0}, 0.0, net=net)
+    I, weff, t, ext = DC.track_currents(NS(m=m, fills=fills), [tr], net)(info["x"])[0]
+    return I, weff, DC.ipc_dT(abs(I), weff, t, ext)
+
+
+OFFSETS = [(0.0, 0.0), (0.0625, 0.04375), (0.125, 0.0875), (0.1875, 0.13125)]
+
+
+@pytest.mark.parametrize("arc", [False, True])
+@pytest.mark.parametrize("angle", [0, 30, 45, 67.5])
+def test_track_heating_reads_the_true_current_at_any_angle_and_offset(angle, arc):
+    """A thin track's raster is a staircase of cells: its current is 1 A and its width 0.25 mm wherever
+    the track falls in its cells (counting cells along a perpendicular read 0.7 A to 2 A)."""
+    for off in OFFSETS:
+        I, weff, _ = _track_reading(angle, off, arc=arc)
+        assert I == pytest.approx(1.0, abs=1e-6)
+        assert weff == pytest.approx(0.25)
+
+
+@pytest.mark.parametrize("angle", [0, 45, 67.5])
+def test_track_heating_in_a_pour_is_steady_under_sub_cell_shifts(angle):
+    """A thin track inside a 3 mm pour of its net: the width is the copper across it (0.25 mm plus a
+    cell each side) and the rise moves little with the raster's offset."""
+    rd = [_track_reading(angle, off, pour=3.0) for off in OFFSETS]
+    assert all(w == pytest.approx(0.75) for _, w, _ in rd)
+    dT = [d for _, _, d in rd]
+    assert max(dT) / min(dT) < 1.2
+    # a wide track (painted as an area): its current and width
+    for off in OFFSETS:
+        I, weff, _ = _track_reading(angle, off, w=1.0)
+        assert I == pytest.approx(1.0, abs=1e-6) and weff == pytest.approx(1.0)
