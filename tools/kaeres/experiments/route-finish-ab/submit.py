@@ -77,7 +77,7 @@ def main():
         if a.what == "fork":
             big = size_mb(b) > 20
             jobs.append(dict(cmd=f"env {env} bash fork.sh {a.arm} {b}", name=f"rfab:{a.arm}:{short}", cpus=2,
-                             mem="24G" if big else "8G", disk="8G" if big else "2G", timeout="6h", prio=a.prio))
+                             mem="24G" if big else "4G", disk="8G" if big else "2G", timeout="6h", prio=a.prio))
             continue
         ev, peak = hist.get(b, (None, None))
         if ev is None and not a.include_unsolved:

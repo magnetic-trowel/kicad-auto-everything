@@ -192,4 +192,11 @@ $S/analyze.py --exp route-finish-ab-s1 > REPORT-s1.md
   so F would be two new routed arms (about 2 × 130 CPU-h routing plus physics), for a stage the 4-board study
   measured at 0–8 s with equal DRC on all boards and one board with small crystal and rail gains. Not worth it in
   this round; a 12-board subset is the cheap form if wanted.
+- **Queue freezes move the budget.** kaeq freezes jobs under memory pressure (SIGSTOP); restart.py's budget is wall
+  time, so a frozen routing job loses attempts. In the smoke, the A and C jobs were frozen 3 min each (A 270 s and
+  C 292 s against A0's 36 s on the same board). Arms of one board then differ by load, not code: check
+  `kaeq result` freeze counts per job, re-run boards whose job was frozen in one arm and not the other, or run the
+  routing stage when the queue is not memory-bound.
+- The warmed numba cache is small (204 KB against 9.7 MB for merge3-ab's, which also warmed kae.joint); kernels a
+  board needs beyond the two warm boards compile inside the first attempt of every arm alike.
 - B's finish is not charged to a wall budget; C's is. A B > C result on time-skipped parts is that, not a code effect.

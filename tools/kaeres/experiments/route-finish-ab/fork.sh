@@ -46,10 +46,14 @@ else
   tpl="cp $ws/in/stored.kicad_pcb {output}"
   tmo=600
 fi
-"$KB" --workdir "$ws/w" run --adapter "rfab-$arm" --command "$tpl" --sandbox-ro "$ws/in" --sandbox-ro "$CODE" \
+# the sandbox hides the corpus and the store: Apptainer gets only what the method can see (as kaeres does)
+APPTAINER_BIND="$ws,$CODE,$CODE.venv-kae" "$KB" --workdir "$ws/w" run --adapter "rfab-$arm" --command "$tpl" --sandbox-ro "$ws/in" --sandbox-ro "$CODE" \
   --sandbox-ro "$CODE.venv-kae" --kinds route -k 1 --timeout "$tmo" --all --only "$b" --name "$arm" -j 1 > "$ws/run.log" 2>&1 || true
 ad=$ws/w/results/$arm/rfab-$arm/route/$b/attempt-0
 [ -f "$ad/attempt.json" ] || { tail -40 "$ws/run.log" >&2; exit 1; }
+if ! grep -q '"status": "ok"' "$ad/attempt.json"; then   # not kept: a retry runs it again
+  tail -c 3000 "$ad/adapter.log" >&2; rm -rf "$dest"; exit 1
+fi
 cp "$ad/attempt.json" "$dest/"
 [ -f "$ad/adapter.log" ] && cp "$ad/adapter.log" "$dest/"
 [ -f "$ad/score/drc.json" ] && cp "$ad/score/drc.json" "$dest/"
