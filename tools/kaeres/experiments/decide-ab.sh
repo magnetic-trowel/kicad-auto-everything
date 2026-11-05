@@ -149,6 +149,18 @@ tier1b() {
     "$(lname old place-fixed)" "$(lname strict place-fixed)" "$(lname level-c place-fixed)" "$(lname strict-esc place-fixed)"
 }
 
+tier1c() {
+  # ---- P2 severity ladder (2026-11-05, the user's call): strict first, level_c only when strict can't fit.
+  # Every arm at the ladder commit (it also carries the mask-bridge fix c5582e8 and later decide-2611
+  # commits), so none of the tier-1 runs are reused: run with SHA=<decide-severity-ladder>.
+  place "$(lname ladder place)" place strict_then_level_c escalate
+  place "$(lname levelc-esc place)" place level_c escalate
+  place "$(lname strict-esc place)" place strict escalate
+  exp legality-ladder-place-down $LB/legality-ab.boards.txt 2 \
+    "P2 severity ladder: strict_then_level_c vs level_c and strict (all with relax escalate) on the 113 downgrade boards; kae place at $S7, k=2" \
+    "$(lname ladder place)" "$(lname levelc-esc place)" "$(lname strict-esc place)"
+}
+
 tier2() {
   # ---- J13 eff_tiebreak: reuses the A/A control's runs
   joint "kae joint decide eff1 $S7 (restarts)" "--set eff_tiebreak=1"
@@ -187,6 +199,7 @@ tier3() {
 exps() {
   case $1 in
     1) echo legality-ab-place-down legality-ab-place-relax legality-ab-place-ctrl legality-ab-fixed-down legality-ab-fixed-relax copper-ab edge-ab2 aa-joint ;;
+    1c) echo legality-ladder-place-down ;;
     1b) echo legality-ab2-place-down legality-ab2-fixed-down ;;
     2) echo eff-tiebreak-ab keepupright-ab area-cost-ab2 ;;
     3) echo placement-decide-staged placement-decide-joint ;;
