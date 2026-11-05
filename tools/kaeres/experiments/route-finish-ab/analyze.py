@@ -63,7 +63,7 @@ def arm_of(name):
 
 
 class Data:
-    def __init__(self, exp, out):
+    def __init__(self, exp, out, churn="exclude"):
         self.e = jl(STORE / "experiments" / exp / "experiment.json")
         if not self.e:
             sys.exit(f"no experiment {exp}")
@@ -73,7 +73,9 @@ class Data:
         self.drc_eval = self.e["evaluators"]["drc"]
         self.arms = [a for a in ("A0", "A0r", "A", "A2", "B", "C", "D", "E") if a in ("A0", "A0r", "B") or a in self.ids]
         self._a0 = None
-        self.src = defaultdict(Counter)   # arm -> where its scores came from (rescore / fork / stored)
+        self.src = defaultdict(lambda: defaultdict(set))   # arm -> source -> boards
+        self.churn_mode = churn
+        self.churn = {p.parent.name for p in self.out.glob("rescore-*/*/churn.json") if (jl(p) or {}).get("all_churn")}
 
     def run_dir(self, arm, b):
         if arm == "A0":
@@ -100,29 +102,31 @@ class Data:
             return dict(clean=r["clean"] == "True", completion=float(r["completion"] or 0), unconnected=int(r["unconnected"] or 0),
                         errors=int(r["errors"] or 0), errors_by_type=json.loads(r["errors_by_type"] or "{}"), clean_strict=None,
                         valid=r["valid"] == "True")
-        # a re-score at the experiment's harness (fork.sh rescore:<id|B|A0>) wins over the stored score
+        # a re-score at the experiment's harness (fork.sh rescore:<id|B|A0>) wins over the stored score;
+        # boards whose re-scores are only uuid churn (churn_check.py) have no consistent score at this scorer:
+        # left out of every arm (--churn exclude), or given each run's own stored score (--churn stored)
+        if b in self.churn and self.churn_mode == "exclude":
+            self.src[arm]["left out (uuid churn)"].add(b)
+            return None
         key = {"B": "B", "A0r": "A0"}.get(arm, (self.ids.get(arm) or "")[:12])
         r = jl(self.out / f"rescore-{key}" / b / "attempt.json") if key else None
-        churn = (jl(self.out / f"rescore-{key}" / b / "churn.json") or {}).get("all_churn") if key else None
-        if r and r.get("status") == "ok" and not churn:
-            self.src[arm]["rescore"] += 1
+        if r and r.get("status") == "ok" and b not in self.churn:
+            self.src[arm]["rescore"].add(b)
             return r.get("score")
-        if churn:   # invalid only by uuid churn of a fresh prepare: the run's own score (its own task) stands
-            if arm == "A0r":   # no score of A0 against its own task at this scorer exists: left out
-                self.src[arm]["left out (uuid churn)"] += 1
-                return None
-            self.src[arm]["stored (re-score was uuid churn)"] += 1
+        if b in self.churn and arm == "A0r":   # no score of A0 against its own task at this scorer
+            self.src[arm]["left out (uuid churn)"].add(b)
+            return None
         if arm in ("B", "A0r"):
             d = self.fork_dir(arm, b)
             a = jl(d / "attempt.json") if d else None
             if a and a.get("status") == "ok":
-                self.src[arm]["fork"] += 1
+                self.src[arm]["fork" + (" (uuid churn)" if b in self.churn else "")].add(b)
                 return a.get("score")
             return None
         d = self.run_dir(arm, b)
         ev = jl(d / "evals" / f"{self.drc_eval}.json") if d else None
         if ev:
-            self.src[arm]["stored"] += 1
+            self.src[arm]["stored" + (" (uuid churn)" if b in self.churn else "")].add(b)
         return (ev or {}).get("score")
 
     def log(self, arm, b):
@@ -220,7 +224,9 @@ def sec_routing(D):
                      f3(comp), nc, f"{err:.2f}", sum(int(s.get("unconnected") or 0) for s in got.values()),
                      sum(1 for s in got.values() if not s.get("valid", True))])
     out.append("Score sources (per arm, board-reads): " + "; ".join(
-        f"{a} " + ", ".join(f"{k} {n}" for k, n in sorted(c.items())) for a, c in D.src.items()) + "\n")
+        f"{a} " + ", ".join(f"{k} {len(n)}" for k, n in sorted(c.items())) for a, c in D.src.items()) + "\n")
+    if D.churn:
+        out.append(f"Boards whose re-score is only uuid churn ({len(D.churn)}, --churn {D.churn_mode}): {' '.join(sorted(D.churn))}\n")
     out.append(table(["arm", "boards", "cp1", "cpk (k=1)", "clean_strict", "completion", "not closed", "errors / board",
                       "unconnected (sum)", "invalid"], rows))
     inv = []
@@ -481,9 +487,11 @@ def main():
     ap.add_argument("--exp", required=True)
     ap.add_argument("--out", default=f"/var/tmp/{os.environ.get('USER', '')}/rf-ab")
     ap.add_argument("--section", default="routing,geometry,physics,hazards,stages")
+    ap.add_argument("--churn", choices=("exclude", "stored"), default="exclude",
+                    help="boards whose re-score is only uuid churn: left out of every arm, or each run's stored score")
     ap.add_argument("--offset-list", help="write the (board, arm) pairs whose physics needs offset-averaging")
     a = ap.parse_args()
-    D = Data(a.exp, a.out)
+    D = Data(a.exp, a.out, a.churn)
     print(f"# route-finish A/B: {a.exp}\n\nArms {', '.join(D.arms)}; methods "
           + ", ".join(f"{k} `{v}`" for k, v in D.ids.items()) + f"; DRC evaluator `{D.drc_eval}`; {len(D.boards)} boards.\n")
     fns = dict(routing=sec_routing, geometry=sec_geometry, physics=lambda d: sec_physics(d, a.offset_list),

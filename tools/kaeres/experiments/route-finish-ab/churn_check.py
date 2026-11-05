@@ -6,7 +6,7 @@ A board whose source objects carry no uuid (old formats, generated files) gets f
 prepare converts it, so a stored output re-scored against a newly prepared task shows those objects as
 removed and added although nothing changed. This diagnosis (it changes no score) pairs the foreign objects
 by content with the uuid left out: all_churn is true when every removed object has an added twin of equal
-content and nothing else differs. Runs in KiCad's Python (pcbnew_ops imports pcbnew)."""
+content and the only changed objects are uuid swaps (the same contents under exchanged keys). Runs in KiCad's Python (pcbnew_ops imports pcbnew)."""
 import json
 import sys
 from collections import Counter
@@ -21,9 +21,13 @@ a, b = P._keyed(out, ign), P._keyed(inp, ign)
 added = Counter(tuple(a[(i["kind"], i["id"])]) for i in f.get("items") or [] if i["change"] == "added" and (i["kind"], i["id"]) in a)
 removed = Counter(tuple(b[(i["kind"], i["id"])]) for i in f.get("items") or [] if i["change"] == "removed" and (i["kind"], i["id"]) in b)
 other = [i for i in f.get("items") or [] if i["change"] not in ("added", "removed")]
+# objects whose uuids were swapped between two prepares (zero uuids reassigned in file order, and KiCad's
+# file order follows the random uuids): the changed objects' contents are the same multiset on both sides
+ch = [(i["kind"], i["id"]) for i in other if i["change"] == "changed" and (i["kind"], i["id"]) in a and (i["kind"], i["id"]) in b]
+swapped = len(ch) == len(other) and Counter(tuple(a[k]) for k in ch) == Counter(tuple(b[k]) for k in ch)
 paired = sum((added & removed).values())
 res = dict(foreign=f.get("count"), paired_by_content=paired, unpaired_added=sum((added - removed).values()),
-           unpaired_removed=sum((removed - added).values()), other=len(other),
-           all_churn=bool(f.get("count")) and not other and added == removed)
+           unpaired_removed=sum((removed - added).values()), other=len(other), swapped=bool(other) and swapped,
+           all_churn=bool(f.get("count")) and (not other or swapped) and added == removed)
 open(sys.argv[4], "w").write(json.dumps(res))
 print(json.dumps(res))
