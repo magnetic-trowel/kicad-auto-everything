@@ -140,6 +140,24 @@ def test_guard_refuses_a_shorter_path_the_physics_quotes_worse(tmp_path, monkeyp
     assert m.physics["value"] == v0
 
 
+def test_refuse_restores_the_grid_copper_and_physics(tmp_path):
+    """The stage gate's hook: refusing every tightened piece gives back the grid copper, hops
+    and module values exactly."""
+    s = F.session(tmp_path, tighten=True)
+    s.route()
+    m = _module(s, "decap")
+    key = _hop_key(m, "rail:")
+    _detour(s, m, key)
+    geo0 = sorted(it.geom.wkt for it in s.space.routed)
+    hops0, v0 = dict(m.hops), m.physics["value"]
+    rep = s.tighten()
+    assert rep["kept"] >= 1 and sorted(it.geom.wkt for it in s.space.routed) != geo0
+    rep = s._tighten_refuse(s._tighten_new)
+    assert rep["kept"] == 0 and rep["gate_reverted"] >= 1
+    assert sorted(it.geom.wkt for it in s.space.routed) == geo0 and not s.arcs
+    assert all(m.hops[k] is hops0[k] for k in hops0) and m.physics["value"] == v0
+
+
 def test_keep45_leaves_the_copper_and_says_why(tmp_path):
     s = F.session(tmp_path, tighten=True, arc_policy="keep45")
     s.route()
@@ -179,6 +197,8 @@ def test_tightened_copper_adds_no_drc_error(tmp_path):
     s.write(out0)
     rep = s.tighten()
     assert rep["kept"] >= 1
+    gate = s.tighten_gate(tmp_path / "gate")
+    assert gate["rounds"] >= 1
     out = tmp_path / "taut" / "board.kicad_pcb"
     out.parent.mkdir()
     s.write(out)
@@ -186,3 +206,5 @@ def test_tightened_copper_adds_no_drc_error(tmp_path):
     d1 = drc.run(out, tmp_path / "taut.json")
     e1 = drc.errors(d1)
     assert len(e1) <= len(e0), [(v["type"], v["description"]) for v in e1]
+    live = {it.uuid for it in s.space.routed} & s._tighten_new
+    assert not [v for v in e1 if {i.get("uuid") for i in v.get("items", [])} & live]

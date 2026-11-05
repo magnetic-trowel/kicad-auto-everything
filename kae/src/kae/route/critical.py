@@ -82,6 +82,7 @@ DEFAULTS = dict(
                            # no segment-only mode)
     tighten_tol=0.005,     # a module's quote / a rail branch's resistance may rise at most this fraction
     tighten_passes=4,      # taut passes at most
+    tighten_gate=True,     # KiCad's DRC on the tightened copper; errors naming it restore it (Session.tighten_gate)
     tighten_pours="hold",  # other nets' fills (KiCad's refill with the critical copper) when known: "hold"
                            # (obstacles; copper stays in its knockout) or "refill" (ignored, as the grid router)
 )
@@ -383,6 +384,46 @@ class Session:
         self.tightened = tighten(self, fills=fills, opts=opts, log=self.log)
         return self.tightened
 
+    def tighten_gate(self, workdir, rounds=3, timeout=900):
+        """KiCad's DRC on the tightened copper (the stage boundary's gate, routing-stages.md
+        P5): every error that names tightened copper restores that copper's groups
+        (critical_taut's refuse, which settles the physics guard again); repeated while
+        something was restored, at most `rounds` times. The exact check inside taut uses the
+        rule port's numbers; where those are below KiCad's (a pad class the port reads
+        smaller), only KiCad catches it. Returns {rounds, reverted, errors_named}."""
+        from . import drc
+        refuse = getattr(self, "_tighten_refuse", None)
+        out = dict(rounds=0, reverted=0, errors_named=0)
+        if refuse is None:
+            return out
+        wd = Path(workdir)
+        wd.mkdir(parents=True, exist_ok=True)
+        for k in range(rounds):
+            new = set(getattr(self, "_tighten_new", ()) or ())
+            live = {it.uuid for it in self.space.routed} & new
+            if not live:
+                break
+            b = wd / f"gate{k}.kicad_pcb"
+            self.write(b)
+            rep = drc.run(b, wd / f"gate{k}.json", timeout=timeout)
+            out["rounds"] += 1
+            named = set()
+            n = 0
+            for v in drc.errors(rep) + list(rep.get("unconnected_items") or []):
+                us = {i.get("uuid") for i in v.get("items") or []} & live
+                if us:
+                    named |= us
+                    n += 1
+            out["errors_named"] += n
+            if not named:
+                break
+            before = int(self.tightened.get("gate_reverted", 0))
+            refuse(named, why="drc")
+            out["reverted"] += int(self.tightened.get("gate_reverted", 0)) - before
+        self.tightened["gate"] = out
+        self.log(f"tighten gate: {out}")
+        return out
+
     # ------------------------------------------------------------------ output
     def soft(self, it):
         """Whether a committed item is a join without physics (a critical net's nearby pads
@@ -629,6 +670,8 @@ def run(input_path, output_path, seed=0, time_s=900.0, opts=None, bridge_opts=No
                         s.write(w0)
                         fills = fills_of(w0)
                     s.tighten(fills=fills if s.opts.get("tighten_pours", "hold") == "hold" else None)
+                    if s.opts.get("tighten_gate", True):
+                        s.tighten_gate(wd / "tighten-gate")
                 except Exception as e:  # noqa: BLE001 - tightening is a refinement; the copper stays as routed
                     import traceback
                     traceback.print_exc()

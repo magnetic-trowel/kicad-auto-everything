@@ -156,6 +156,7 @@ def tighten(s, fills=None, opts=None, log=None):
     rep = dict(arc_policy=o["arc_policy"], tol=tol)
     if not hasattr(s, "arcs"):
         s.arcs = {}
+    s._tighten_refuse, s._tighten_new = None, set()
     if o["arc_policy"] == "keep45":
         rep["skipped"] = ("arc_policy keep45: taut has no segment-only mode (its paths are tangents and arcs), "
                           "so the critical copper keeps its grid shape")
@@ -370,95 +371,119 @@ def tighten(s, fills=None, opts=None, log=None):
     def worse(v, v0):
         return v0 is not None and (v is None or v > v0 * (1 + tol))
 
-    for _round in range(8):
-        acc = {g.k for g in groups} - set(refused)
-        set_state(acc)
-        changed = False
-        for mid in quoted:
-            v, mapped = value(mid, acc)
-            hit = [g for g in touch[mid] if g.k in acc]
-            if not mapped:
-                for g in hit:
-                    refused[g.k] = f"unmapped hop of {mid}"
-                changed = True
-                continue
-            after[mid] = v
-            v0 = before.get(mid)
-            if worse(v, v0) and hit:
-                # which of its groups: each alone (the module's other groups as they were);
-                # when none is worse alone, the combination is, and all go
-                bad = [g for g in hit if len(hit) > 1 and worse(value(mid, acc - {h.k for h in hit if h is not g})[0], v0)]
-                for g in bad or hit:
-                    refused[g.k] = f"physics of {mid}"
-                changed = True
-        if changed:
-            continue
-        set_state(acc)
-        # kept copper against the restored copper of refused groups, exactly
-        restored = {id(it) for g in groups if g.k in refused for it in g.old}
-        bad = set()
-        if restored:
-            for g in groups:
-                if g.k not in acc:
-                    continue
-                for it in g.new:
-                    v = A.polyline_violations(sp, it.net, next(iter(it.layers)), it.width, _item_coords(it))
-                    if any(x != "edge" and id(x) in restored for x, _, _ in v):
-                        bad.add(g.k)
-                        break
-        if not bad:
-            break
-        for k in bad:
-            refused[k] = "conflict with restored copper"
-    acc = {g.k for g in groups} - set(refused)
-    for g in groups:
-        if (g.k in acc) != (g.k in applied):
-            swap(g, g.k in acc)
-    for g in groups:
-        if g.k not in acc:
-            for it in g.new:
-                s.arcs.pop(it.uuid, None)
+    p0 = {mid: dict(mods[mid].physics) for mid in quoted}
+    mids = {it.uuid: s.arcs[it.uuid] for g in groups for it in g.new if it.uuid in s.arcs}
 
-    # ---- the modules keep their rebuilt hops; their stage values are the tightened copper's
-    per = []
-    for mid in sorted(set(touch) & set(mods)):
-        m = mods[mid]
-        kept = [g for g in touch[mid] if g.k in acc]
-        row = dict(id=mid, kind=m.kind, groups=len(touch[mid]), kept=len(kept))
-        if mid in quoted:
-            hp = hops_for(mid, acc) if kept else h0[mid]
-            if hp is not None:
-                m.hops = hp
-            row["before"] = before.get(mid)
-            if m.physics:
-                row["u_before"] = m.physics.get("u")
-            v = quote(ctx, m, store=True) if kept else before.get(mid)
-            row["after"] = v
-            row["u_after"] = m.physics.get("u") if kept else row.get("u_before")
-            row["unit"] = m.physics.get("unit")
-        elif mid.startswith("rail:"):
-            r0 = r1 = 0.0
-            for g in touch[mid]:
-                for it in g.old:
-                    if _owner_id(it) == mid:
-                        r0 += r_track(it.geom.length, it.width, sp.tcu.get(next(iter(it.layers)), 0.035))
-                cur = g.new if g.k in acc else g.old
-                for it in cur:
-                    if _owner_id(it) == mid:
-                        r1 += r_track(it.geom.length, it.width, sp.tcu.get(next(iter(it.layers)), 0.035))
-            row.update(r_before_mohm=round(1e3 * r0, 4), r_after_mohm=round(1e3 * r1, 4))
-        per.append(row)
-    why = {}
-    for k, w in refused.items():
-        w0 = w.split(" of ")[0]
-        why[w0] = why.get(w0, 0) + 1
-    kept_nets = {n for g in groups if g.k in acc for n in g.nets}
-    rep.update(kept=len(acc), refused=len(refused), refused_why=why, modules=per,
-               hazards=[h for h in tt.hazards if set(h.get("objects") or []) & kept_nets],
-               after=copper_stats(s), seconds=round(time.monotonic() - t0, 3))
-    log(f"tighten: {len(groups)} groups ({rep['branches_tightened']} branch rewrites), {len(acc)} kept, "
-        f"{len(refused)} refused {why or ''}; {rep['before']['length_mm']} -> {rep['after']['length_mm']} mm, "
-        f"corners {rep['before']['corners']} -> {rep['after']['corners']}; {rep['seconds']:.1f}s")
+    def settle():
+        for _round in range(8):
+            acc = {g.k for g in groups} - set(refused)
+            set_state(acc)
+            changed = False
+            for mid in quoted:
+                v, mapped = value(mid, acc)
+                hit = [g for g in touch[mid] if g.k in acc]
+                if not mapped:
+                    for g in hit:
+                        refused[g.k] = f"unmapped hop of {mid}"
+                    changed = True
+                    continue
+                after[mid] = v
+                v0 = before.get(mid)
+                if worse(v, v0) and hit:
+                    # which of its groups: each alone (the module's other groups as they were);
+                    # when none is worse alone, the combination is, and all go
+                    bad = [g for g in hit if len(hit) > 1 and worse(value(mid, acc - {h.k for h in hit if h is not g})[0], v0)]
+                    for g in bad or hit:
+                        refused[g.k] = f"physics of {mid}"
+                    changed = True
+            if changed:
+                continue
+            set_state(acc)
+            # kept copper against the restored copper of refused groups, exactly
+            restored = {id(it) for g in groups if g.k in refused for it in g.old}
+            bad = set()
+            if restored:
+                for g in groups:
+                    if g.k not in acc:
+                        continue
+                    for it in g.new:
+                        v = A.polyline_violations(sp, it.net, next(iter(it.layers)), it.width, _item_coords(it))
+                        if any(x != "edge" and id(x) in restored for x, _, _ in v):
+                            bad.add(g.k)
+                            break
+            if not bad:
+                break
+            for k in bad:
+                refused[k] = "conflict with restored copper"
+        acc = {g.k for g in groups} - set(refused)
+        for g in groups:
+            if (g.k in acc) != (g.k in applied):
+                swap(g, g.k in acc)
+        for g in groups:
+            for it in g.new:
+                if g.k in acc and it.uuid in mids:
+                    s.arcs[it.uuid] = mids[it.uuid]
+                else:
+                    s.arcs.pop(it.uuid, None)
+
+        # ---- the modules keep their rebuilt hops; their stage values are the tightened copper's
+        per = []
+        for mid in sorted(set(touch) & set(mods)):
+            m = mods[mid]
+            kept = [g for g in touch[mid] if g.k in acc]
+            row = dict(id=mid, kind=m.kind, groups=len(touch[mid]), kept=len(kept))
+            if mid in quoted:
+                hp = hops_for(mid, acc) if kept else h0[mid]
+                if hp is not None:
+                    m.hops = hp
+                row["before"] = before.get(mid)
+                row["u_before"] = p0[mid].get("u")
+                if not kept:
+                    m.physics = dict(p0[mid])
+                v = quote(ctx, m, store=True) if kept else before.get(mid)
+                row["after"] = v
+                row["u_after"] = m.physics.get("u") if kept else row.get("u_before")
+                row["unit"] = m.physics.get("unit")
+            elif mid.startswith("rail:"):
+                r0 = r1 = 0.0
+                for g in touch[mid]:
+                    for it in g.old:
+                        if _owner_id(it) == mid:
+                            r0 += r_track(it.geom.length, it.width, sp.tcu.get(next(iter(it.layers)), 0.035))
+                    cur = g.new if g.k in acc else g.old
+                    for it in cur:
+                        if _owner_id(it) == mid:
+                            r1 += r_track(it.geom.length, it.width, sp.tcu.get(next(iter(it.layers)), 0.035))
+                row.update(r_before_mohm=round(1e3 * r0, 4), r_after_mohm=round(1e3 * r1, 4))
+            per.append(row)
+        why = {}
+        for k, w in refused.items():
+            w0 = w.split(" of ")[0]
+            why[w0] = why.get(w0, 0) + 1
+        kept_nets = {n for g in groups if g.k in acc for n in g.nets}
+        rep.update(kept=len(acc), refused=len(refused), refused_why=why, modules=per,
+                   hazards=[h for h in tt.hazards if set(h.get("objects") or []) & kept_nets],
+                   after=copper_stats(s), seconds=round(time.monotonic() - t0, 3))
+        log(f"tighten: {len(groups)} groups ({rep['branches_tightened']} branch rewrites), {len(acc)} kept, "
+            f"{len(refused)} refused {why or ''}; {rep['before']['length_mm']} -> {rep['after']['length_mm']} mm, "
+            f"corners {rep['before']['corners']} -> {rep['after']['corners']}; {rep['seconds']:.1f}s")
+
+
+    def refuse(uuids, why="drc"):
+        """Refuse (restore) the groups whose new copper has a uuid in `uuids`, then settle the
+        guard again; the stage's KiCad gate (critical.run) calls this. Returns the report."""
+        uuids = set(uuids)
+        hit = [g for g in groups if g.k not in refused and any(it.uuid in uuids for it in g.new)]
+        for g in hit:
+            refused[g.k] = why
+        if hit:
+            settle()
+        rep["gate_reverted"] = rep.get("gate_reverted", 0) + len(hit)
+        return rep
+
+    settle()
+    s._tighten_refuse = refuse
+    s._tighten_new = {it.uuid for g in groups for it in g.new}
     return rep
 
 
