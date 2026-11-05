@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from shapely.geometry import box
+from shapely.geometry import Point, box
 
 from kae.board.kicad_file import load
 from kae.board.model import Zone
@@ -99,6 +99,27 @@ def test_keepout_prices_only_pads_whose_mask_would_bridge():
     assert inside > 0.0 == T.part(i, int(st.X[i]), int(st.Y[i]), 0)
     _put(P, st, i, 0, 12.0, 30.0, sig)
     assert Z.report(P, st, T)["foreign_in_outer_zone"] >= 1
+
+
+def test_keepout_prices_pads_in_a_board_mask_aperture():
+    # a 5.4 mm board-level F.Mask opening (polarfire-som's mounting points): pads of other nets
+    # inside it bridge (KiCad's solder_mask_bridge); the occupancy grid leaves it out on purpose
+    b = _board()
+    b.graphics = dict(b.graphics or {})
+    b.graphics["F.Mask"] = list(b.graphics.get("F.Mask", [])) + [Point(30.0, 15.0).buffer(2.7)]
+    P = Problem.build(b)
+    st = State(P)
+    assert len(P.fixed_mask) >= 1
+    T = Z.build(P, pull=0.0, keepout=1.0)
+    assert T is not None and T.info["apertures"] >= 1 and T.info["keepout_pads"] >= 1
+    i = _ref(P)["U1"]
+    sig = [k for k, pd in enumerate(P.parts[i].fp.pads) if pd.net == "SIG1"][0]
+    _put(P, st, i, 0, 30.0, 15.0, sig)
+    inside = T.part(i, int(st.X[i]), int(st.Y[i]), 0)
+    _put(P, st, i, 0, 45.0, 30.0, sig)
+    assert inside > 0.0 == T.part(i, int(st.X[i]), int(st.Y[i]), 0)
+    # the grid does not block it (one net's pads under an opening are legal)
+    assert not any("mask" in o.why for o in P.obstacles)
 
 
 def test_weights_zero_switch_the_term_off():

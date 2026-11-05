@@ -220,7 +220,8 @@ def build(P, pull=1.0, keepout=1.0, parts=None):
     from kae.board import transform
     board = P.board
     zones = fixed_zones(board)
-    if not zones or (pull <= 0 and keepout <= 0):
+    apertures = list(getattr(P, "fixed_mask", []) or []) if keepout > 0 else []
+    if not (zones or apertures) or (pull <= 0 and keepout <= 0):
         return None
     # zone cells ~0.1 mm, coarser on big boards (at most ~1M cells a map)
     cell = max(RASTER_MM, math.sqrt(max(1.0, P.ncx * P.ncy) * P.g * P.g / 1e6))
@@ -260,6 +261,14 @@ def build(P, pull=1.0, keepout=1.0, parts=None):
         for ly in z.layers:
             if ly in ("F.Cu", "B.Cu"):
                 outer_zones[ly].append((z.net, z.outline, float(z.clearance or 0.0)))
+    # board-level mask apertures (Problem.fixed_mask): the fixed outer zones they already expose
+    # on their side; a pad of any other net within reach bridges (polarfire-som: four 5.4 mm
+    # mounting-point openings, parts pulled into them, 199 solder_mask_bridge in one kept run;
+    # the grid leaves them out on purpose, as one net's pads under an opening are legal)
+    ap_nets = []
+    for sd, gm in apertures:
+        ly = "F.Cu" if sd == 0 else "B.Cu"
+        ap_nets.append({net for net, o, _ in outer_zones.get(ly, ()) if net and o.intersects(gm)})
     full = set()                             # (net, reach) whose region is a solid plane
     region_cache = {}
 
@@ -316,6 +325,15 @@ def build(P, pull=1.0, keepout=1.0, parts=None):
                         for q in pts:
                             raw[i].append((k, "keep", m, 1.0 / len(pts), q))
                         hit = True
+                    for a, (asd, gm) in enumerate(apertures):
+                        if asd != sd or (pd.net and pd.net in ap_nets[a]) or (not pd.net and not ap_nets[a]):
+                            continue
+                        rk = round(s2c + mm, 3)
+                        m = map_of(("keep", "aperture", a, rk), lambda o=gm, r=rk: o.buffer(max(r, 1e-3)))
+                        pts = [(pd.lx, pd.ly)] + [tuple(v) for v in pad_corners(pd)]
+                        for q in pts:
+                            raw[i].append((k, "keep", m, 1.0 / len(pts), q))
+                        hit = True
                 n_keep += hit
     if not maps:
         return None
@@ -361,7 +379,7 @@ def build(P, pull=1.0, keepout=1.0, parts=None):
     planes = np.stack(maps).astype(np.uint16)
     nzx, nzy = planes.shape[1], planes.shape[2]
     dz = max(1, int(round(0.5 * max(nzx, nzy))))
-    info = dict(zones=len(zones), maps=len(maps), cell_mm=round(c * g, 4),
+    info = dict(zones=len(zones), apertures=len(apertures), maps=len(maps), cell_mm=round(c * g, 4),
                 pull_nets=len(pull_pads), pull_pads=sum(len(v) for v in pull_pads.values()),
                 keepout_pads=n_keep, solid_planes=sorted({k[0] for k in full}),
                 pull=pull, keepout=keepout)
