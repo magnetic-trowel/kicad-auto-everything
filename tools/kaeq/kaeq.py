@@ -903,6 +903,7 @@ def compress(cg, mb, running=False, done=None):
     running job (squeeze): the kernel takes its least recently used pages, and swapping is turned off again after.
     done(mb_reclaimed) is called at the end."""
     def go():
+        set_unit_prop(cg, MemorySwapMax="infinity")
         try:
             with open(os.path.join(cg, "memory.swap.max"), "w") as f:
                 f.write("max")
@@ -948,6 +949,7 @@ def user_pressure():
 
 def uncompress(cg):
     """After a thaw: no more swapping (memory.swap.max 0); what is in swap comes back as the job needs it."""
+    set_unit_prop(cg, MemorySwapMax="0")
     try:
         with open(os.path.join(cg, "memory.swap.max"), "w") as f:
             f.write("0")
@@ -979,8 +981,34 @@ def at_high(cg, high_mb):
         return False
 
 
+def set_unit_prop(cg, **props):
+    """Set a job scope's systemd properties too (systemctl --user set-property --runtime): systemd re-applies a
+    unit's properties to its cgroup when it reconfigures units of the same slice (every job start), so a value
+    written only to the cgroup file is reverted to what the scope was started with. Runs in the background."""
+    unit = os.path.basename(cg.rstrip("/"))
+    if not unit.endswith(".scope"):
+        return
+    try:
+        subprocess.Popen(["systemctl", "--user", "set-property", "--runtime", unit, *[f"{k}={v}" for k, v in props.items()]],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError:
+        pass
+
+
+def cg_high_mb(cg):
+    """A job's memory.high now, MB (None: no limit)."""
+    try:
+        with open(os.path.join(cg, "memory.high")) as f:
+            v = f.read().strip()
+        return None if v == "max" else int(v) >> 20
+    except (OSError, ValueError):
+        return "?"
+
+
 def cg_set_high(cg, mb):
-    """Set a job's grant: its scope's memory.high (the kernel throttles, never kills, above it); None: no limit."""
+    """Set a job's grant: its scope's memory.high (the kernel throttles, never kills, above it); None: no limit.
+    Written to the cgroup (at once) and to the scope's systemd properties (so systemd does not revert it)."""
+    set_unit_prop(cg, MemoryHigh="infinity" if mb is None else f"{int(mb)}M")
     try:
         with open(os.path.join(cg, "memory.high"), "w") as f:
             f.write("max" if mb is None else str(int(mb) << 20))
@@ -1794,6 +1822,8 @@ class Daemon:
                     dlog(f"lease #{j['id']}: {fgb(by[j['id']]['grant_mb'])} -> {fgb(g)} (uses {fgb(j['use'])})")
             # a timed job is never throttled (memory.high max): throttling would cost it time, like a freeze
             high = None if j.get("timed") or j.get("keep") else int(g + max(1024, cfg.get("lease_backstop_frac", 0.1) * g))
+            if st["set"] == high and cg_high_mb(cgs[j["id"]]) != high:
+                st["set"] = "reverted"           # changed behind kaeq's back (systemd re-applied a property): set again
             if st["set"] != high and cg_set_high(cgs[j["id"]], high):
                 st["set"] = high
             # a job that needs memory nobody can give waits frozen (no pressure for systemd-oomd to kill it for);
