@@ -27,7 +27,7 @@ BATCH = 40
 def _tracks(sp, plan, pads, gap_delta, nets=()):
     from shapely.geometry import LineString
     from kae.route import critical_write as W
-    out, meta = [], {}
+    out, meta, placed = [], {}, []
     want_net = set(nets)
     cu = sp.cu
     outer = {cu[0], cu[-1]}
@@ -62,17 +62,22 @@ def _tracks(sp, plan, pads, gap_delta, nets=()):
                     if abs(err) < 1e-4:
                         break
                     off -= err
-                crowd = sum(1 for x in sp.query(layer, seg.bounds, 0.6) if x is not it and x.net != net
-                            and x.geom.distance(seg) < x.r + w / 2 + 0.6)
+                # KiCad reports one clearance violation per track (the first item its search
+                # meets), so a test track may come near nothing but its pad (earlier test tracks
+                # included: they are in the Space)
+                if sp.track_violations(net, layer, w, a, b, ignore=(it,), first=True):
+                    continue
                 d_true = it.geom.distance(seg) - w / 2
-                if best is None or crowd < best[0]:
-                    best = (crowd, a, b, d_true)
+                best = (0, a, b, d_true)
+                break
             if best is None:
                 continue
             u = W.new_uuid()
+            placed.append(sp.add_track(net, layer, w, best[1], best[2], owner=("audit", u)))
             out.append((net, layer, w, best[1], best[2], u, False))
             meta[u] = dict(pad=f"{it.owner[0]}.{it.owner[1]}", pad_uuid=it.uuid, pad_net=it.net, net=net,
                            layer=layer, need=round(nd, 4), gap=round(best[3], 4), cls=it.cls)
+    sp.remove(placed)
     return out, meta
 
 

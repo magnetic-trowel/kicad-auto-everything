@@ -327,6 +327,8 @@ def _entry_by_physics(ctx, m, tag, net, sources, targets, w, layers, **kw):
     gr = ctx.gr
     if getattr(gr, "pad_entry", "centre") != "centreline":
         return gr.connect(net, sources, targets, w, layers, **kw)
+    if getattr(gr, "force_old", False):            # _entry_guard's old-entry routing of the module
+        return gr.connect(net, sources, targets, w, layers, entry="old", **kw)
     cands = []
     first = gr.connect(net, sources, targets, w, layers, count=False, **kw)
     if first is not None:
@@ -1696,12 +1698,92 @@ def trim_widths(ctx, m, tol=None):
     return n
 
 
+GUARDED = ("cell", "path", "decap", "crystal", "chain")      # modules routed both ways (_entry_guard)
+_STATE = ("copper", "hops", "vias", "physics", "status", "notes", "flags", "hazards")
+_STATUS_RANK = {"routed": 2, "partial": 1}
+
+
+def _state(m):
+    return {k: getattr(m, k) for k in _STATE} | {"spec": m.spec}
+
+
+def _reset(m, spec):
+    m.copper, m.hops, m.vias, m.physics = [], {}, {}, {}
+    m.status, m.notes, m.flags, m.hazards = "pending", [], [], []
+    m.spec = dict(spec)
+
+
+def _restore(m, st):
+    for k, v in st.items():
+        setattr(m, k, v)
+
+
+def _readd(sp, items):
+    """Put copper taken out with Space.remove back."""
+    for it in items:
+        for l in it.layers:
+            if l in sp.items:
+                sp.items[l].append(it)
+        sp.routed.append(it)
+    sp.invalidate()
+
+
+def _acute(m):
+    return any("centre_acute" in (r.entries if r is not None else ()) for r in m.hops.values())
+
+
+def _entry_guard(ctx, m, fn):
+    """The module routed twice: with rule-D entries ranked by its physics (_entry_by_physics),
+    and with the old entries only; the old routing is kept only when its quote is lower, it
+    routes as many hops, and none of its entries is acute (> 45 degrees, never allowed). A hop
+    choice cannot see a module whose hops join other pads with one entry than the other (aifryz
+    Y1). Reported in m.physics["entry_guard"]."""
+    gr, sp = ctx.gr, ctx.sp
+    spec0 = dict(m.spec)
+    before = {id(it) for it in sp.routed}
+    fn(ctx, m)
+    trim_widths(ctx, m)
+    a_items = [it for it in sp.routed if id(it) not in before]
+    a_state, va = _state(m), m.physics.get("value")
+    sp.remove(a_items)
+    _reset(m, spec0)
+    gr.force_old = True
+    try:
+        fn(ctx, m)
+        trim_widths(ctx, m)
+    finally:
+        gr.force_old = False
+    b_items = [it for it in sp.routed if id(it) not in before]
+    vb = m.physics.get("value")
+    hops_a = sum(r is not None for r in a_state["hops"].values())
+    hops_b = sum(r is not None for r in m.hops.values())
+    keep_b = (vb is not None and va is not None and vb < va * (1 - 1e-6) and not _acute(m)
+              and hops_b >= hops_a and _STATUS_RANK.get(m.status, 0) >= _STATUS_RANK.get(a_state["status"], 0))
+    if keep_b:
+        for r in m.hops.values():
+            if r is not None:
+                r.entries = ["physics_exception" if e == "centre" else e for e in r.entries]
+        m.physics["entry_guard"] = dict(kept="old", rule_d=va, old=vb)
+        gr.stats["guard_old"] = gr.stats.get("guard_old", 0) + 1
+        return m
+    b_acute = _acute(m)
+    sp.remove(b_items)
+    _readd(sp, a_items)
+    _restore(m, a_state)
+    m.physics["entry_guard"] = dict(kept="rule_d", rule_d=va, old=vb, old_acute=b_acute)
+    gr.stats["guard_rule_d"] = gr.stats.get("guard_rule_d", 0) + 1
+    return m
+
+
 def route_module(ctx, m):
     fn = ROUTERS.get(m.kind)
     if fn is None:
         m.status = "skipped"
         return m
     try:
+        if m.kind in GUARDED and getattr(ctx.gr, "pad_entry", "centre") == "centreline" \
+                and _opt(ctx, "entry_guard"):
+            return _entry_guard(ctx, m, fn)
         fn(ctx, m)
         trim_widths(ctx, m)
         return m

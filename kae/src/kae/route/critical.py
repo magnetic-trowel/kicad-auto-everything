@@ -75,6 +75,9 @@ DEFAULTS = dict(
     rail_over_cap=False,   # A/B arm (decide C2): ladders start at the IPC width above the cap, the cap only a floor
     via_A=0.0,             # current per rail via (0: from its drill and plating, critical_physics.via_current)
     via_plating_mm=0.0,    # via plating (0: IPC-6012 class 2's 20 um, kae.materials)
+    entry_guard=True,      # with rule-D pad entries: each physics module is routed with them and with the old
+                           # entries, and the old routing kept only when it quotes lower and has no acute entry
+                           # (critical_modules._entry_guard)
 )
 
 

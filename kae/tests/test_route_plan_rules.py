@@ -306,6 +306,12 @@ def test_module_hops_rank_entries_by_the_modules_physics(tmp_path):
         # an old entry that was acute is forbidden now, so its module may pay for that (U2's decap)
         assert v1[k] <= v0[k] * 1.001 or k in acute, (k, v0[k], v1[k])
     assert any(v1[k] < v0[k] * 0.999 for k in v0)                  # and some module gains (the crystal)
+    guarded = [m for m in new.modules if m.physics.get("entry_guard")]
+    assert guarded and all(m.physics["entry_guard"]["kept"] in ("rule_d", "old") for m in guarded)
+    for m in guarded:                                              # the old routing only where it quotes lower
+        g = m.physics["entry_guard"]
+        if g["kept"] == "old":
+            assert g["old"] < g["rule_d"]
     assert new.router.stats.get("quoted", 0) > 0
     # an acute entry is kept only where nothing else routes the hop: fewer than with the old entry
     def n_acute(s):
