@@ -129,6 +129,9 @@ DEFAULTS = {
     "lease_release_gb": 2.0, # lease: a grant more than max(this, lease_release_frac of use) above use for
     "lease_release_frac": 0.25,  # lease_release_after_s
     "lease_release_after_s": 120,  # is trimmed to use x 1.25 (at least use + 1 GB)
+    "lease_press_pct": 10.0, # lease: a job whose own memory pressure (full avg10) is above this needs more, though its
+                             # non-reclaimable use looks under its grant: memory.high counts its page cache too, and
+                             # it is thrashing it (D state)
     "lease_freeze_mb": 256,  # lease: a job that gets no more is frozen only once within max(this, 2 ticks of its
                              # measured growth) of its grant; until then it runs on in the room it already has
     "lease_stall_s": 900,
@@ -952,6 +955,18 @@ def uncompress(cg):
         pass
 
 
+def cg_mem_pressure(cg):
+    """full avg10 memory pressure (%) of a job's scope: the share of time all its tasks stalled on memory."""
+    try:
+        with open(os.path.join(cg, "memory.pressure")) as f:
+            for line in f:
+                if line.startswith("full"):
+                    return float(line.split()[1].split("=")[1])
+    except (OSError, ValueError, IndexError):
+        pass
+    return 0.0
+
+
 def cg_set_high(cg, mb):
     """Set a job's grant: its scope's memory.high (the kernel throttles, never kills, above it); None: no limit."""
     try:
@@ -962,7 +977,7 @@ def cg_set_high(cg, mb):
         return False
 
 
-def lease_plan(jobs, real_mb, cfg, now, buffer=0.0, timed_held=None, credit=0.0):
+def lease_plan(jobs, real_mb, cfg, now, buffer=0.0, timed_held=None, credit=0.0, free_now=None):
     """One pass of the memory leases. jobs: [{id, prio, started, grant, use, slack_since, stall_since, grew}] (MB, s;
     grew: MB the job grew since the last tick). real_mb: memory really free beyond the reserve (MemAvailable). A grant
     is a limit, not a reservation: what is free for grants and new jobs is real_mb minus `buffer` (room for the
@@ -1016,6 +1031,10 @@ def lease_plan(jobs, real_mb, cfg, now, buffer=0.0, timed_held=None, credit=0.0)
     held += sum(j.get("swapped", 0.0) for j in jobs if not j.get("compressed"))   # thawed: still coming back
     # (a squeezed running job's cold pages are passed as swapped=0: they stay out unless it touches them)
     free_mb = real_mb - buffer - held + credit     # credit: squeezable memory of timed jobs (squeeze_credit)
+    # what the guard, the evictions and kept jobs' room-making go by: memory really free beyond the reserve (real_mb
+    # also leaves out what jobs started this tick declared, before their scope shows: right for admission, but
+    # not a shortage to requeue or freeze for)
+    real_mb = real_mb if free_now is None else free_now
     stalled = []
     if real_mb < buffer:     # the fleet grew into the buffer: freeze who grew, the least valuable first
         grew = sorted((j for j in jobs if j.get("grew", 0.0) > 0 and not keep(j)),
@@ -1041,6 +1060,8 @@ def lease_plan(jobs, real_mb, cfg, now, buffer=0.0, timed_held=None, credit=0.0)
         if j["id"] in stalled:
             continue
         g, u = grants[j["id"]], j["use"] + (j.get("swapped", 0.0) if j.get("compressed") else 0.0)  # it holds that
+        if j.get("mpress", 0.0) > cfg.get("lease_press_pct", 10.0):
+            u = max(u, g)                # thrashing at its limit: it needs more whatever its use says
         margin = max(cfg["lease_margin_mb"], cfg.get("lease_margin_frac", 0.0) * g)
         if u < g - margin:
             stall[j["id"]] = 0.0
@@ -1681,6 +1702,7 @@ class Daemon:
                              protected=j["preempts"] >= cfg["evict_protect_after"],
                              invest=active_for(j, now) * max(1.0, j["cpus"]),
                              compressed=bool(st.get("compressed") and st.get("frozen_since")),
+                             mpress=0.0 if st.get("frozen_since") else cg_mem_pressure(cg),
                              swapped=0.0 if st.get("squeezed") else swapped,   # squeezed: cold, stays out
                              owner=j["owner"], expect=max(self.need_mb(j, cfg), st["max_use"]),
                              held_out=swapped if st.get("squeezed") else 0.0, cg=cg))
@@ -1749,7 +1771,7 @@ class Daemon:
                          and now - (j["started"] or now) >= cfg.get("lease_warm_s", 120)
                          and not (self.lease_st.get(j["id"]) or {}).get("hot"))
             credit = min(cfg["squeeze_credit"] * steady, compress_room_mb(cfg["compress_frozen"])) * gain
-        plan = lease_plan(jobs, room - other, dict(cfg, timed_hold_frac=hold), now, buffer, timed_held, credit)
+        plan = lease_plan(jobs, room - other, dict(cfg, timed_hold_frac=hold), now, buffer, timed_held, credit, room)
         by = {j["id"]: j for j in running}
         for j in jobs:
             st, g = self.lease_st[j["id"]], int(plan["grants"][j["id"]])
@@ -1787,9 +1809,9 @@ class Daemon:
                                  f"(restarts with --mem {fgb(need)})")
             c.execute("UPDATE jobs SET mem_mb=?, grant_mb=0 WHERE id=?", (need, v["id"]))
         self.mem_stalled = set(plan["stalled"])
-        self.squeeze_one(cfg, now, jobs, room - other, buffer)
+        self.squeeze_one(cfg, now, jobs, room, buffer)
         ev = plan["evict"]
-        if ev is not None and self.squeezing is not None and room - other >= buffer / 4:
+        if ev is not None and self.squeezing is not None and room >= buffer / 4:
             ev = None                    # a squeeze is under way: give it the time, unless free is under a quarter
         if ev is not None and now - self.evict_ts >= cfg["evict_every_s"]:
             self.evict_ts = now

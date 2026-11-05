@@ -980,3 +980,16 @@ def test_fillers_start_while_a_starving_head_waits_for_cpu(kq):
     assert states(d)["head"] == "queued" and states(d)["filler"] == "running"
     d.sample_cpu = orig
     d.c.execute("UPDATE jobs SET state='cancelled' WHERE state IN ('queued','running')")
+
+
+def test_a_thrashing_job_gets_more_and_declared_memory_of_new_jobs_is_no_shortage(kq):
+    cfg = dict(LEASE, lease_hold_frac=0.1, lease_press_pct=10.0)
+    # use (non-reclaimable) looks under the grant, but the job stalls on memory 80% of the time: it gets a step
+    j = dict(id=1, prio=0, started=10, grant=7000, use=5000, mpress=80.0, keep=True)
+    assert kq.lease_plan([j], 50000.0, cfg, now=1000.0)["grants"][1] > 7000
+    assert kq.lease_plan([dict(j, mpress=0.0)], 50000.0, cfg, now=1000.0)["grants"][1] == 7000
+    # free memory for admission minus what jobs started this tick declared (real_mb) is low, but memory is really
+    # free (free_now): no eviction
+    p = kq.lease_plan([dict(j, mpress=0.0, invest=10.0)], 1000.0, cfg, now=1000.0, buffer=20000.0, free_now=38000.0)
+    assert p["evict"] is None and p["stalled"] == []
+    assert kq.lease_plan([dict(j, mpress=0.0, invest=10.0)], 1000.0, cfg, now=1000.0, buffer=20000.0)["evict"] == 1
