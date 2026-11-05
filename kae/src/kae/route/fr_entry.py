@@ -143,10 +143,55 @@ def _holes(info):
     return out
 
 
+def _keep_clear(info, plan, layer_pads):
+    """Per copper layer, [(shape, pad uuid)] a tail of another pad must not touch: the thermal-spoke
+    corridors of zone-connected pads (constraints.thermal_corridors, so a tail never takes a spoke's
+    room: starved_thermal), and every pad's solder-mask opening (copper grown by its mask expansion
+    plus the board's mask-to-copper clearance, so a tail never lies exposed in a neighbour's
+    opening: solder_mask_bridge)."""
+    from .constraints import thermal_corridors
+    out = {}
+    try:
+        cors = thermal_corridors(info, plan, None, getattr(plan, "severities", None))
+    except Exception:          # the corridors need the plan's classes; without them, none
+        cors = []
+    for geo, layer, pad in cors:
+        out.setdefault(layer, []).append((geo, pad.get("uuid"), pad.get("net")))
+    m2c = float(((info.get("settings") or {}).get("mask_to_copper")) or 0.0)
+    cu = list(info.get("copper") or [])
+    for layer, items in layer_pads.items():
+        side = "F" if cu and layer == cu[0] else ("B" if cu and layer == cu[-1] else None)
+        if side is None:
+            continue
+        for pd, g in items:
+            exp = (pd.get("mask") or {}).get(side)
+            if exp is None:
+                continue
+            out.setdefault(layer, []).append((g.buffer(max(float(exp) + m2c, 0.0)), pd.get("uuid"), pd.get("net")))
+    return out
+
+
+def _tail_clear(e, centre, g, w, uuid, net, tree_of):
+    """Whether entry e's tail (approach, end, centre at width w, outside its own land g) keeps out of
+    the keep-clear shapes of every pad of another net."""
+    pts = [e["a"], e["end"]] + ([centre] if math.dist(e["end"], centre) > 1e-9 else [])
+    cu = LineString(pts).buffer((e.get("neck") or w) / 2, quad_segs=8).difference(g.buffer(1e-6))
+    if cu.is_empty:
+        return True
+    tree, items = tree_of
+    for i in tree.query(cu):
+        geo, owner, onet = items[i]
+        if owner != uuid and onet != net and geo.intersects(cu):
+            return False
+    return True
+
+
 def pin_entries(tree, plan, info, need_of=None):
     """{(ref, pin): (centre, {layer: (pad, entries)})} for every pin routing may end on: a pin with
     a net in a routing class, its copper on a layer, and its DSN centre inside that copper. Pads
-    of ball grids are left to the escape stage, and so are lands that hold another pad's hole. `need_of(ref, net)`: the width (mm) the pad's
+    of ball grids are left to the escape stage, and so are lands that hold another pad's hole. An
+    entry whose tail would touch another pad's thermal-spoke corridor or solder-mask opening is
+    dropped (_keep_clear). `need_of(ref, net)`: the width (mm) the pad's
     current needs (necks are never narrower)."""
     from .constraints import _pad_shapes
     from .translate import dsn_pins
@@ -156,6 +201,15 @@ def pin_entries(tree, plan, info, need_of=None):
     pads = {(p.get("comp"), p.get("pin")): p for p in info.get("pads") or []}
     balls = _ball_grids(info)
     holes = _holes(info)
+    import shapely
+    layer_pads = {}
+    for q in info.get("pads") or []:
+        for l, g in ((_pad_shapes(q)[1]) or {}).items():
+            if g is not None and not g.is_empty:
+                layer_pads.setdefault(l, []).append((q, g))
+    clear = _keep_clear(info, plan, layer_pads)
+    trees = {l: (shapely.STRtree([x[0] for x in v]), v) for l, v in clear.items()}
+    dropped = 0
     min_w = float(getattr(plan, "min_width", 0.0) or 0.0)
     out = {}
     for ref, num, _ps, _side, m in dsn_pins(tree):
@@ -180,10 +234,16 @@ def pin_entries(tree, plan, info, need_of=None):
             if not w:
                 continue
             es = land_entries(g, centre, w, need, min_w)
+            if layer in trees:
+                kept = [e for e in es if _tail_clear(e, centre, g, w, pd.get("uuid"), pd["net"], trees[layer])]
+                dropped += len(es) - len(kept)
+                es = kept
             if es:
                 per[layer] = (g, es)
         if per:
             out[(ref, num)] = (centre, per)
+    if isinstance(getattr(plan, "notes", None), dict):
+        plan.notes["fr_entry_dropped"] = dropped
     return out
 
 

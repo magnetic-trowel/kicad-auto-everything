@@ -175,3 +175,21 @@ def test_plan_mode_is_written(monkeypatch):
     tree = S.parse(DSN)
     FE.apply(tree, plan, info, lambda l: l)
     assert S.find(S.find(tree, FE.SCOPE), "mode") is None
+
+
+def test_entries_keep_out_of_a_neighbours_mask_opening():
+    """Two 1.0 x 0.6 mm lands of different nets 0.3 mm apart (long edges facing, mask expansion
+    0.05 mm): no tail of either runs between them, where it would lie in the other's opening."""
+    a, b = box(-0.5, -0.3, 0.5, 0.3), box(-0.5, 0.6, 0.5, 1.2)
+    pads = [dict(comp="R1", ref="R1", pin=str(i + 1), uuid=f"u{i}", net=n, attr="smd", layers=["F.Cu"],
+                 pos=[g.centroid.x, g.centroid.y], mask={"F": 0.05}, poly=[[list(g.exterior.coords)]])
+            for i, (g, n) in enumerate(((a, "A"), (b, "B")))]
+    info = dict(copper=["F.Cu", "B.Cu"], pads=pads, nets={"A": {}, "B": {}}, settings={"mask_to_copper": 0.0})
+    layer_pads = {"F.Cu": [(p, g) for p, g in zip(pads, (a, b))]}
+    clear = FE._keep_clear(info, SimpleNamespace(), layer_pads)
+    import shapely
+    tree = (shapely.STRtree([x[0] for x in clear["F.Cu"]]), clear["F.Cu"])
+    es = FE.land_entries(a, (0.0, 0.0), 0.25)
+    kept = [e for e in es if FE._tail_clear(e, (0.0, 0.0), a, 0.25, "u0", "A", tree)]
+    assert kept and len(kept) < len(es)
+    assert all(e["a"][1] < 0.3 for e in kept)                    # nothing from the side facing B
