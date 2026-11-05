@@ -558,6 +558,15 @@ def gate(input_board, project_board, jr, workdir, base_report=None, budget=24, d
         rounds.append(dict(tag=tag, kept=len(kept), summary=drc.summary(rep), worse=worse))
         log(f"[finish-gate] {tag}: {len(kept)}/{len(allids)} entries, {drc.summary(rep)['errors']} errors, "
             f"{drc.summary(rep)['unconnected']} unconnected; worse {worse or 'none'}")
+        if worse and set(worse) <= set(res["noise"]) and probes[0] < budget:
+            # only a noisy check reads above both input runs (magtag's mask bridges: +-1 on the same board):
+            # one more fresh run of the same board, the better reading counts
+            probes[0] += 1
+            rep2 = check(jr.text(kept), tag + "-again", fresh=True)
+            w2 = judge(base, rep2, jr.ancestry(kept), noise)
+            rounds.append(dict(tag=tag + "-again", kept=len(kept), summary=drc.summary(rep2), worse=w2))
+            if sum(w2.values()) < sum(worse.values()):
+                rep, worse = rep2, w2
         return rep, worse
 
     def addback(accepted, cands, limit, tag):
@@ -601,28 +610,53 @@ def gate(input_board, project_board, jr, workdir, base_report=None, budget=24, d
         hit = {i for i in cand if uu & set(jr.by_id[i].after)}
         return jr.dependants(hit) & set(cand)
 
+    def near_in(trial, rep2, cand, near=1.0):
+        new = diff(base[0], rep2, jr.ancestry(trial), noise)
+        if drc.summary(rep2)["unconnected"] > max(drc.summary(b)["unconnected"] for b in base):
+            had = {frozenset(u for u, _ in its) for _, its in unconnected(base[0])}
+            new += [v for v in unconnected(rep2) if frozenset(u for u, _ in v[1]) not in had]
+        pts = [p for _t, its in new for _u, p in its if p]
+        _f, close = split_by_culprits(jr, set(cand), pts, near)
+        return jr.dependants(set(close)) & set(cand)
+
     def readmit(accepted, batches, limit, tag):
         """Grow `accepted` by `batches` (lists of entry ids, in order), each tried whole: a batch KiCad finds
         no worse is kept; one it does not is split by what it names (named entries retried alone, the
         rest together) and, when it names nothing of the batch, halved. Stops when `limit` probes are spent."""
         got = None
         queue = [list(b) for b in batches if b]
+        deferred, grown = [], False
         k = 0
-        while queue and probes[0] < limit and not (left() <= 20 and res.setdefault("time_limited", True)):
+        while (queue or (deferred and grown)) and probes[0] < limit \
+                and not (left() <= 20 and res.setdefault("time_limited", True)):
+            if not queue:
+                # entries waiting for something they built on that was admitted since
+                queue, deferred, grown = [sum(deferred, [])], [], False
             group = queue.pop(0)
             trial = jr.closed(accepted | set(group))
             if trial == accepted:
+                deferred.append(group)
                 continue
             rep2, w2 = judged(trial, f"{tag}{k}")
             k += 1
             if not w2:
                 accepted = trial
                 got = dict(kept=set(trial), rep=rep2)
+                grown = True
+                rest = [i for i in group if i not in trial]
+                if rest:
+                    deferred.append(rest)
                 continue
             added = [i for i in group if i in trial]
+            if len(group) > len(added):
+                deferred.append([i for i in group if i not in trial])
             if len(added) <= 1:
                 continue                                    # a culprit: it stays reverted
             bad = named_in(trial, rep2, added)
+            if not bad:
+                # nothing named (a starved thermal names its pad): the entries near the new violations
+                # apart from the rest
+                bad = near_in(trial, rep2, added)
             if bad and len(bad) < len(added):
                 rest = [i for i in added if i not in bad]
                 queue.insert(0, rest)                       # the others at once, without the named ones
