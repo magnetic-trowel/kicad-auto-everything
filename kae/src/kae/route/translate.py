@@ -763,6 +763,11 @@ def apply(tree, plan, info):
             network.append(["class_class", ["classes", oname, n], *_class_rule_nodes(None, vals, cu, lname)])
     summary["classes"] = len(plan.classes)
     summary["obstacle_classes"] = len(plan.obstacle_classes)
+    # ---- rule D entries and rail classes for kae's Freerouting fork (fr_entry; off by default)
+    from . import fr_entry
+    fe = fr_entry.apply(tree, plan, info, lname)
+    if fe:
+        summary["fr_entry"] = fe
     return summary
 
 
