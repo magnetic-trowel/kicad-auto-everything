@@ -168,3 +168,153 @@ def test_cli_runs(capsys):
     sim.main(["--synthetic", "20", "--seed", "2", "--policies", "reserve,predictive", "--cpu", "burst"])
     out = capsys.readouterr().out
     assert "reserve" in out and "predictive:H=300" in out
+
+
+# ---------------------------------------------------------------- freezing batch jobs (sim_freeze)
+
+import sim_freeze as sf  # noqa: E402
+
+
+def freeze_setup(policy, cap_mb, jobs, win=300.0):
+    """A FreezeSim with jobs started by hand: jobs = [(id, mem_mb, use, grant, wall)], all batch, all past warm-up.
+    The buffer is the 4 GB minimum."""
+    tpls = [flat(100, use=u, mem=m, id=i) for i, m, u, _, _ in jobs]
+    pol = sf.parse_policy(policy)() if isinstance(policy, str) else policy
+    s = sf.FreezeSim(tpls, pol, CpuAll(), ram_mb=cap_mb, cpus=64)
+    for j in s.pending:
+        s.enqueue(j)
+    s.pending = []
+    runs = [s.start(j) for j in list(s.queue)]
+    for r, (_, _, u, g, wall) in zip(runs, jobs):
+        r.use = r.peak = u
+        r.grant, r.wall, r.active, r.p = g, wall, wall, wall
+    s.used = sum(r.use for r in runs)
+    s.t = 2000.0
+    return s, runs
+
+
+# a big (12 GB declared) job at its grant and three small ones with room in their grants; 6 GB really free
+BIG_AND_SMALL = [("big", 12000, 9000.0, 9000.0, 1000.0)] + [(f"s{k}", 4000, 3000.0, 4000.0, 1000.0) for k in range(3)]
+
+
+def test_current_freezes_big_job_at_its_grant():
+    s, runs = freeze_setup("current", 24000, BIG_AND_SMALL)
+    s.mem.on_tick(s)
+    assert runs[0].frozen                                  # no whole step free: the big job waits frozen
+    assert not any(r.frozen for r in runs[1:])
+
+
+def test_protect_freezes_small_jobs_not_the_big_one():
+    s, runs = freeze_setup("protect", 24000, BIG_AND_SMALL)
+    runs[1].start = runs[1].start - 1                      # make s0 the least valuable (it has the most left)
+    runs[1].p = 10.0
+    s.mem.on_tick(s)
+    big = runs[0]
+    assert not big.frozen and big.grant > 9000.0           # it got its step
+    frozen = [r for r in runs[1:] if r.frozen]
+    assert frozen == [runs[1]]                             # one small job, the lowest value, was frozen
+    assert frozen[0].zfree == pytest.approx(0.3 * 3000.0)  # and compressed: 30% of it freed
+    assert s.used == pytest.approx(9000.0 + 3 * 3000.0 - 900.0)
+    assert s.m["room"] == 0                                # freezing was enough: nobody requeued
+
+
+def test_protect_without_part3_freezes_big_job():
+    s, runs = freeze_setup("protect:-3", 24000, BIG_AND_SMALL)
+    s.mem.on_tick(s)
+    assert runs[0].frozen and not any(r.frozen for r in runs[1:])
+
+
+def test_make_room_freeze_only_does_not_requeue():
+    s, runs = freeze_setup("protect:requeue=none", 24000, BIG_AND_SMALL)
+    s.zram_cap = 0.0                                       # freezing frees (almost) nothing, requeues are off
+    s.mem.on_tick(s)
+    assert runs[0].frozen and s.m["room"] == 0 and len(s.running) == 4
+
+
+def test_make_room_requeues_when_freezing_is_not_enough():
+    # zram full: freezing frees nothing, so the cheapest unprotected job is requeued for the big one
+    s, runs = freeze_setup("protect", 24000, BIG_AND_SMALL)
+    s.zram_cap = 0.0
+    for r, w in zip(runs[1:], (900.0, 300.0, 600.0)):
+        r.active = w
+    s.mem.on_tick(s)
+    assert not runs[0].frozen and runs[0].grant > 9000.0
+    assert s.m["room"] == 1 and runs[2] not in s.running   # least invested work per MB
+    assert runs[2].job in s.queue
+
+
+def test_min_run_window():
+    # one small job at its grant with nothing free; it was just thawed after 2000 s frozen
+    jobs = [("a", 4000, 3000.0, 3000.0, 1000.0), ("b", 30000, 13000.0, 20000.0, 5000.0)]
+    for pol, win in (("protect", 300.0), ("protect:win=600", 600.0)):
+        s, (a, b) = freeze_setup(pol, 20500, jobs)
+        a.frozen, a.frozen_since = True, s.t - 2000.0
+        s.thaw(a, s.mem.window())
+        assert a.guard_until == pytest.approx(s.t + max(win, 500.0))
+        s.mem.on_tick(s)
+        assert not a.frozen                                # inside its window: runs on past its grant
+        s.t = a.guard_until + 2
+        s.mem.on_tick(s)
+        assert a.frozen                                    # after it: frozen again
+    s, (a, b) = freeze_setup("protect:-4", 20500, jobs)    # no window: frozen at once
+    a.frozen, a.frozen_since = True, s.t - 2000.0
+    s.thaw(a, s.mem.window())
+    s.mem.on_tick(s)
+    assert a.frozen
+    s, (a, b) = freeze_setup("protect", 20500, jobs)       # below half the buffer the window does not hold
+    a.frozen, a.frozen_since = True, s.t - 2000.0
+    s.thaw(a, s.mem.window())
+    assert not s.mem.can_freeze(s, a, 3000.0)
+    assert s.mem.can_freeze(s, a, 1000.0)                  # real free 1000 MB < buffer / 2
+
+
+def test_protected_room_not_used_by_admission():
+    # a protected job (expects 20 GB, uses 10) and 14 GB really free: a 6 GB job fits in what is free, not beside
+    # the 10 GB the big one will grow into
+    jobs = [("big", 20000, 10000.0, 11000.0, 1000.0)]
+    new = flat(100, use=6000.0, mem=6000.0, id="new")
+    for pol, ok in (("current", True), ("protect", False), ("protect:-1", False), ("protect:parts=1", False),
+                    ("protect:-1,-5", True)):
+        s, _ = freeze_setup(pol, 24000 + 4096, jobs)
+        s.mem.on_tick(s)
+        job = sim.Job(99, new)
+        s.mem.prepare(s)
+        assert s.mem.admit(s, job) is ok, pol
+
+
+def test_big_job_waits_while_jobs_are_frozen_small_backfills():
+    jobs = [("a", 4000, 3000.0, 3000.0, 1000.0), ("b", 4000, 3000.0, 4000.0, 1000.0)]
+    small, big = flat(100, use=500.0, mem=500.0, id="sm"), flat(100, use=9000.0, mem=9000.0, id="bg")
+    for pol, ok_small in (("current", False), ("protect", True)):
+        s, (a, b) = freeze_setup(pol, 60000, jobs)
+        s.mem.on_tick(s)
+        s.freeze(a)                                        # a waits frozen
+        s.mem.on_tick(s)
+        s.freeze(a)
+        s.mem.blocked = True
+        s.mem.thaw_need = 4000.0
+        s.mem.prepare(s)
+        assert s.mem.admit(s, sim.Job(98, small)) is ok_small, pol
+        assert not s.mem.admit(s, sim.Job(99, big)), pol
+
+
+def test_freeze_policies_replay_synthetic():
+    ts = sim.synth_templates(60, seed=4, under=0.0)
+    hist = sim.synth_templates(30, seed=5, under=0.0, prefix="h")
+    for p in ("current", "protect", "protect:-3,value=oracle"):
+        m = sf.simulate(ts, p, history=hist, ram_gb=110, reserve_gb=30, cpus=96, timed="none")
+        assert m["jobs"] == 60 and m["unfinished"] == 0, p
+        assert m["overflow_n"] == 0, p
+        assert sum(m[f"bin{b}"]["jobs"] for b in sf.BIN_NAMES) == 60
+
+
+def test_freeze_policy_parsing():
+    p = sf.parse_policy("protect:-2,-4,T=4,win=120,value=oracle")()
+    assert p.parts == {1, 3, 5} and p.T == 4 * 1024 and p.win == 120 and p.value_mode == "oracle"
+    assert sf.parse_policy("current")().parts == set()
+    q = sf.parse_policy("protect:parts=134,requeue=none,sa=0.5")()
+    assert q.parts == {1, 3, 4} and q.requeue == "none" and q.sa_frac == 0.5
+    assert sf.parse_policy("protect:parts=13")().parts == {1, 3}
+    with pytest.raises(ValueError):
+        sf.parse_policy("protect:bogus=1")
+    assert [sf.size_bin(x * 1024) for x in (1, 2, 8, 15.9, 16)] == ["<2", "2-8", "8-16", "8-16", ">16"]

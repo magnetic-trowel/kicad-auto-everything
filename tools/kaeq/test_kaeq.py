@@ -316,6 +316,8 @@ def test_no_start_while_threads_queue_for_a_cpu(kq):
         clock[0] += 4000
         return 0, clock[0]
     kq.cpu_ticks = idle_cpus
+    conf = json.load(open(kq.CONF)); conf.update(runq_window_s=1, heavy_boost=False)   # a short window; no fillers
+    json.dump(conf, open(kq.CONF, "w"))
     d = kq.Daemon()
     submit(kq, "sleep 20", name="busy", qos="batch")
     drive(kq, d, lambda: states(d)["busy"] == "running")  # (with nothing running, one job always starts)
@@ -340,9 +342,18 @@ def test_batch_jobs_run_at_sched_idle_timed_jobs_above_them(kq, tmp_path):
     submit(kq, f"ps -o ni=,cls= -p $$ > {tmp_path / 'b'}", name="b", qos="batch")
     submit(kq, f"ps -o ni=,cls= -p $$ > {tmp_path / 't'}", name="t")
     drive(kq, d, lambda: all(v == "ok" for v in states(d).values()))
+    # light (--mem 50M, no history): one step down from the start; timed at timed_nice + 1
     ni, cls = (tmp_path / "b").read_text().split()
-    assert cls == "IDL" and ni in ("19", "-")  # ps prints "-" for the nice of SCHED_IDLE on some versions
-    assert (tmp_path / "t").read_text().split() == ["10", "TS"]   # normal scheduling, far above SCHED_IDLE
+    assert cls == "IDL" and ni in ("19", "-")
+    assert (tmp_path / "t").read_text().split() == ["11", "TS"]
+    submit(kq, f"ps -o ni=,cls= -p $$ > {tmp_path / 'bh'}", name="bh", qos="batch", mem="16G")   # heavy: a step up
+    drive(kq, d, lambda: states(d)["bh"] in ("ok", "queued") and (tmp_path / "bh").exists() or states(d)["bh"] == "ok")
+    assert (tmp_path / "bh").read_text().split() == ["19", "TS"]
+    conf = json.load(open(kq.CONF)); conf["heavy_boost"] = False; json.dump(conf, open(kq.CONF, "w"))
+    submit(kq, f"ps -o ni=,cls= -p $$ > {tmp_path / 'b2'}", name="b2", qos="batch")
+    drive(kq, d, lambda: states(d)["b2"] == "ok")
+    ni, cls = (tmp_path / "b2").read_text().split()
+    assert cls == "IDL" and ni in ("19", "-")  # without the boost: SCHED_IDLE (ps may print "-" for its nice)
 
 
 LEASE = dict(lease_margin_frac=0.15, warmup_s=300, lease_release_frac=0.25, mem_overrun=1.5, lease_release_gb=2.0, lease_release_after_s=120, lease_margin_mb=512, lease_step_gb=1.0,
@@ -457,7 +468,11 @@ def test_lease_plan_never_stalls_a_timed_job_and_makes_room_with_a_batch_job(kq)
             dict(id=4, prio=0, started=40, grant=8192, use=2048)]                 # batch, newest
     p = kq.lease_plan(jobs, 0.0, cfg, now=1000.0)
     assert 1 not in p["stalled"] and p["short"] == [1] and 2 in p["stalled"]
-    assert p["timed_victim"] == 3                  # the frozen batch job first, then the newest
+    # making room in two stages: first the running batch job is frozen (its memory compressed), no requeue yet
+    assert 4 in p["stalled"] and p["timed_victim"] is None
+    jobs[3]["frozen"] = True                       # all batch jobs frozen: for a timed job, requeue the newest
+    assert kq.lease_plan(jobs, 0.0, cfg, now=1000.0)["timed_victim"] == 4
+    jobs[3]["frozen"] = False
     # timed jobs get memory first, and their unused grant counts in full; never frozen as growers
     jobs[0]["grew"] = jobs[1]["grew"] = 500.0
     p = kq.lease_plan(jobs, 1100.0, cfg, now=1000.0, buffer=4096.0 + 0)
@@ -656,6 +671,23 @@ def test_a_running_timed_job_has_its_cold_memory_squeezed_into_zram(kq, tmp_path
     assert "ok 153600" in (tmp_path / "jobs" / "1" / "log").read_text()          # its memory came back intact
 
 
+def test_jobs_that_are_not_memory_heavy_move_one_cpu_step_down(kq, tmp_path):
+    d = _lease_daemon(kq, tmp_path, lease_warm_s=0, keep_gb=4, mem_budget_gb=200)
+    prog = "import threading, time\nt = threading.Thread(target=time.sleep, args=(30,))\nt.start()\ntime.sleep(30)"
+    submit(kq, "python3 -c " + repr(prog).replace("\\n", "\n"), name="b", qos="batch", mem="6G")   # starts up
+    submit(kq, "python3 -c " + repr(prog).replace("\\n", "\n"), name="t", qos="timed", mem="6G")
+    drive(kq, d, lambda: len(d.cgroups) == 2)
+    d.ratios, d.ratios_ts = {"t": 0.01}, time.time() + 3600   # its owner's history now says: light after all
+    d.demote_ts = 0.0
+    drive(kq, d, lambda: d.demoted == {1, 2}, secs=20)
+    tids = lambda i: [int(x) for x in open(d.cgroups[i] + "/cgroup.threads").read().split()]
+    assert all(os.sched_getscheduler(t) == os.SCHED_IDLE for t in tids(1))       # batch: down to SCHED_IDLE
+    assert all(os.getpriority(os.PRIO_PROCESS, t) == 11 for t in tids(2))         # timed: nice 10 -> 11
+    d.c.execute("UPDATE jobs SET state='cancelled'")
+    for i in (1, 2):
+        kq.kill_tree(d.c.execute("SELECT pid FROM jobs WHERE id=?", (i,)).fetchone()[0], d.cgroups.get(i))
+
+
 def _lease_daemon(kq, tmp_path, **cfg):
     conf = json.load(open(kq.CONF))
     conf.update(cgroup="auto", slice="kaeqtest.slice", mem_pool="lease", lease_buffer_gb=0.1, lease_buffer_ticks=0)
@@ -802,3 +834,162 @@ def test_run_time_is_owner_speed_times_board_difficulty(kq):
     # slow's speed x the huge board's difficulty (seen twice: shrunk to 2/3 of its log effect): far above the
     # owner's typical job, below the unshrunk 4 x 3000
     assert src == "board" and 4 * 100 * 30 ** 0.5 < d < 4 * 3000
+
+
+def test_expensive_batch_jobs_run_on_and_cheap_ones_make_room(kq):
+    """A frozen job holds its memory for nothing, a big one most: expensive batch jobs are kept running (never
+    frozen for a grant); room is made by freezing the newest cheap job, never by a requeue for a batch job; a
+    just-thawed job is kept for its run window, which gives way below half the buffer."""
+    cfg = dict(LEASE, lease_hold_frac=0.1)
+    big = dict(id=1, prio=0, started=10, grant=20000, use=19900, keep=True, dear=True)
+    small_a = dict(id=2, prio=0, started=20, grant=2000, use=1990)        # at its grant
+    small_b = dict(id=3, prio=0, started=30, grant=2000, use=1000)        # running, newest
+    p = kq.lease_plan([big, small_a, small_b], 0.0, cfg, now=1000.0)
+    assert 1 not in p["stalled"] and p["short"] == [1]            # the big job is not frozen...
+    assert 3 in p["stalled"] and 2 in p["stalled"]                # ...the cheap ones are (the newest made room)
+    p = kq.lease_plan([big, dict(small_a, frozen=True), dict(small_b, frozen=True)], 0.0, cfg, now=1000.0)
+    assert p["timed_victim"] is None                             # all frozen: no requeue for a batch job
+    # with keep_reserve_frac, part of its forecast growth is set aside (the daemon passes reserve_mb)
+    p = kq.lease_plan([dict(big, reserve_mb=4000), small_a, small_b], 100000.0, dict(cfg, lease_warm_s=0), now=1000.0)
+    assert p["held"] == pytest.approx(4000 + 0.1 * 10 + 0.1 * 1000)
+    # a just-thawed small job is kept (in its window): not frozen though at its grant with nothing free...
+    p = kq.lease_plan([dict(small_a, keep=True)], 2000.0, cfg, now=1000.0, buffer=3000.0)
+    assert p["stalled"] == [] and p["short"] == [2]
+    # ...unless free memory is below half the buffer: then it may be frozen again
+    p = kq.lease_plan([dict(small_a, keep=True)], 1000.0, cfg, now=1000.0, buffer=3000.0)
+    assert p["stalled"] == [2]
+
+
+def test_batch_cpu_admission_needs_a_lasting_dip_and_its_quantile_adapts(kq):
+    assert kq.quantile([10, 120, 120, 120, 125], 0.8) == 125 and kq.quantile([], 0.8) == 0.0
+    cfg = dict(runq_over_target=0.10, runq_idle_target=0.20, runq_idle_cpus=4)
+    over = [(130, True)] * 3 + [(110, True)] * 7               # 30% of samples oversubscribed: more cautious
+    assert kq.adapt_runq_q(0.8, over, 122, cfg)[0] == pytest.approx(0.85)
+    idle = [(100, True)] * 5 + [(121, True)] * 5               # half the time 4+ CPUs idle while jobs waited: bolder
+    assert kq.adapt_runq_q(0.8, idle, 122, cfg)[0] == pytest.approx(0.75)
+    assert kq.adapt_runq_q(0.8, [(100, False)] * 10, 122, cfg)[0] == 0.8   # idle but nothing waits: unchanged
+    assert kq.adapt_runq_q(0.95, over, 122, cfg)[0] == 0.95 and kq.adapt_runq_q(0.5, idle, 122, cfg)[0] == 0.5
+    # one dip in a saturated window does not open the door
+    clock = [0]
+
+    def idle_cpus():
+        clock[0] += 4000
+        return 0, clock[0]
+    kq.cpu_ticks = idle_cpus
+    conf = json.load(open(kq.CONF)); conf.update(threads=64, reserve_cpu=0, runq_window_s=600, heavy_boost=False)
+    json.dump(conf, open(kq.CONF, "w"))
+    d = kq.Daemon()
+    kq.runnable_threads = lambda: 0
+    submit(kq, "sleep 20", name="busy", qos="batch")
+    drive(kq, d, lambda: states(d)["busy"] == "running")      # (with nothing running, one job always starts)
+    now = time.time()
+    d.runq_hist = [(now - 100 + i, 70.0, True) for i in range(99)] + [(now, 0.0, True)]   # saturated, one dip
+    submit(kq, "true", name="b", qos="batch", cpus=2)
+    d.tick()
+    assert states(d)["b"] == "queued"
+    d.c.execute("UPDATE jobs SET state='cancelled' WHERE state IN ('queued','running')")
+
+
+def test_a_batch_job_starved_of_cpu_is_frozen_compressed_and_thawed_when_there_is_room(kq, tmp_path):
+    d = _lease_daemon(kq, tmp_path, cpu_freeze_every_s=0, threads=512, reserve_cpu=0)
+    submit(kq, "python3 -c 'import time\na = bytearray(300 << 20)\nfor i in range(0, len(a), 4096): a[i] = 1\n"
+               "time.sleep(40)'", name="b", qos="batch", mem="400M")
+    submit(kq, "sleep 40", name="later", qos="batch")
+    drive(kq, d, lambda: d.cgroups.get(1) and 1 in d.cpuj and kq.cg_mem(d.cgroups[1])[0] > 250, secs=30)
+    d.cpuj[1]["starved_since"] = time.time() - 300            # as if its threads had waited for a CPU 5 min
+    d.timed_wait = 0.03                                        # (not calm: no thaw in the same pass)
+    running = d.c.execute("SELECT * FROM jobs WHERE state='running'").fetchall()
+    d.cpu_freeze(kq.config(), time.time(), running)
+    assert kq.cg_frozen(d.cgroups[1])
+    drive(kq, d, lambda: kq.cg_swap_mb(d.cgroups[1]) > 100 and states(d)["later"] == "running", secs=40)
+    assert 1 not in d.sys["lease"]["compressed"]             # waiting for CPU, not memory: starts go on
+    d.timed_wait, d.calm_since = 0.0, time.time() - 60
+    d.runq_hist = [(time.time(), 0.0, False)]
+    d.cpu_freeze(kq.config(), time.time(), running)          # room in the run queue: thawed
+    assert not kq.cg_frozen(d.cgroups[1])
+    d.c.execute("UPDATE jobs SET state='cancelled'")
+    for i in (1, 2):
+        kq.kill_tree(d.c.execute("SELECT pid FROM jobs WHERE id=?", (i,)).fetchone()[0], d.cgroups.get(i))
+
+
+def test_light_batch_jobs_fill_spare_cpus_and_heavy_ones_wait_for_the_run_queue(kq):
+    clock = [0]
+
+    def idle_cpus():
+        clock[0] += 4000
+        return 0, clock[0]
+    kq.cpu_ticks = idle_cpus
+    kq.runnable_threads = lambda: 0
+    conf = json.load(open(kq.CONF)); conf.update(threads=64, reserve_cpu=0, runq_window_s=600, cgroup="off")
+    json.dump(conf, open(kq.CONF, "w"))
+    d = kq.Daemon()
+    submit(kq, "sleep 20", name="busy", qos="timed")
+    drive(kq, d, lambda: states(d)["busy"] == "running")
+    now = time.time()
+    d.runq_hist = [(now - 100 + i, 70.0, True) for i in range(100)]      # normal-priority threads saturate
+    submit(kq, "sleep 20", name="heavy", qos="batch", cpus=2, mem="16G")    # starts at nice 19, normal policy
+    submit(kq, "sleep 20", name="filler", qos="batch", cpus=2, mem="1G")    # starts at SCHED_IDLE
+    for _ in range(3):
+        d.tick()
+    assert states(d)["filler"] == "running" and states(d)["heavy"] == "queued"
+    d.c.execute("UPDATE jobs SET state='cancelled' WHERE state IN ('queued','running')")
+
+
+def test_a_waiting_filler_holds_no_room_for_itself(kq):
+    clock = [0]
+
+    def idle_cpus():
+        clock[0] += 4000
+        return 0, clock[0]
+    kq.cpu_ticks = idle_cpus
+    kq.runnable_threads = lambda: 200                        # no spare CPU right now: fillers wait
+    conf = json.load(open(kq.CONF)); conf.update(threads=64, reserve_cpu=0, cgroup="off", starve_after_s=0)
+    json.dump(conf, open(kq.CONF, "w"))
+    d = kq.Daemon()
+    submit(kq, "sleep 20", name="busy", qos="timed")
+    drive(kq, d, lambda: states(d)["busy"] == "running")
+    submit(kq, "sleep 20", name="filler", qos="batch", cpus=2, mem="1G", prio=5)   # first in line, long "starving"
+    submit(kq, "sleep 20", name="timed", qos="timed", cpus=1, mem="1G")
+    drive(kq, d, lambda: states(d)["timed"] == "running")
+    assert states(d)["filler"] == "queued"
+    kq.runnable_threads = lambda: 0                          # CPUs spare: it starts
+    drive(kq, d, lambda: states(d)["filler"] == "running")
+    d.c.execute("UPDATE jobs SET state='cancelled' WHERE state IN ('queued','running')")
+
+
+def test_fillers_start_while_a_starving_head_waits_for_cpu(kq):
+    clock = [0]
+
+    def idle_cpus():
+        clock[0] += 4000
+        return 0, clock[0]
+    kq.cpu_ticks = idle_cpus
+    kq.runnable_threads = lambda: 0
+    conf = json.load(open(kq.CONF)); conf.update(threads=64, reserve_cpu=0, cgroup="off", starve_after_s=0)
+    json.dump(conf, open(kq.CONF, "w"))
+    d = kq.Daemon()
+    submit(kq, "sleep 20", name="busy", qos="timed")
+    drive(kq, d, lambda: states(d)["busy"] == "running")
+    submit(kq, "sleep 20", name="head", qos="timed", prio=5, mem="1G")       # waits: timed jobs are short of CPU
+    submit(kq, "sleep 20", name="filler", qos="batch", cpus=2, mem="1G")
+    d.timed_wait = 0.5
+    orig = d.sample_cpu
+    d.sample_cpu = lambda *a, **k: None                       # keep timed_wait as set
+    for _ in range(3):
+        d.tick()
+    assert states(d)["head"] == "queued" and states(d)["filler"] == "running"
+    d.sample_cpu = orig
+    d.c.execute("UPDATE jobs SET state='cancelled' WHERE state IN ('queued','running')")
+
+
+def test_a_thrashing_job_gets_more_and_declared_memory_of_new_jobs_is_no_shortage(kq):
+    cfg = dict(LEASE, lease_hold_frac=0.1, lease_press_pct=10.0)
+    # use (non-reclaimable) looks under the grant, but the job stalls on memory 80% of the time: it gets a step
+    j = dict(id=1, prio=0, started=10, grant=7000, use=5000, mpress=80.0, keep=True)
+    assert kq.lease_plan([j], 50000.0, cfg, now=1000.0)["grants"][1] > 7000
+    assert kq.lease_plan([dict(j, mpress=0.0)], 50000.0, cfg, now=1000.0)["grants"][1] == 7000
+    # free memory for admission minus what jobs started this tick declared (real_mb) is low, but memory is really
+    # free (free_now): no eviction
+    p = kq.lease_plan([dict(j, mpress=0.0, invest=10.0)], 1000.0, cfg, now=1000.0, buffer=20000.0, free_now=38000.0)
+    assert p["evict"] is None and p["stalled"] == []
+    assert kq.lease_plan([dict(j, mpress=0.0, invest=10.0)], 1000.0, cfg, now=1000.0, buffer=20000.0)["evict"] == 1
