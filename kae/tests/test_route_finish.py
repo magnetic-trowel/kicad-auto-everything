@@ -348,3 +348,36 @@ def test_attribution_uses_positions_of_unnamed_violations_even_when_others_name_
     run, calls = _fake_drc(rules)
     g = J.gate(src, src, jr, tmp_path / "g", drc_run=run, log=lambda *a: None, recover=0)
     assert g["kept"] == {"tails:a", "taut:net:N1"} and not any(r["tag"].startswith("dd") for r in g["rounds"])
+
+
+def test_finish_replans_later_stages_around_reverted_earlier_ones(tmp_path, monkeypatch):
+    """taut moves N1 (A -> A2), which KiCad rejects; power planned a via in the room A left, so it goes
+    too. The re-plan runs power again on the gated board, which now places its via elsewhere."""
+    from kae.route import finish, drc
+    t0 = _board(_seg("A", "N1", (0, 0), (5, 0)), _seg("B", "N2", (0, 5), (5, 5)))
+
+    def fake_pass(part, src, dst, o, wd, timeout, log):
+        text = Path(src).read_text()
+        if part == "taut":
+            new = text.replace(_seg("A", "N1", (0, 0), (5, 0)), _seg("A2", "N1", (0, 1), (5, 1)))
+        else:
+            via = _via("V", "N2", 2.5, 0.0) if '"A2"' in text else _via("W", "N2", 2.5, 3.0)
+            new = text[:text.rstrip().rfind(")")] + via + ")\n"
+        J.write(new, dst, src)
+        return dict(_entries=J.diff_entries(part, text, new, {"V": "V", "W": "W"}))
+    monkeypatch.setattr(finish, "_pass", fake_pass)
+
+    def fake_drc(board, out_json, timeout=900, cache=True):
+        text = Path(board).read_text()
+        rep = _rep(("clearance", [("A2", 2.5, 1.0), ("PADX", 2.5, 1.3)])) if '"A2"' in text else _rep()
+        Path(out_json).write_text(json.dumps(rep))
+        return rep
+    monkeypatch.setattr(drc, "run", fake_drc)
+    src = tmp_path / "in.kicad_pcb"
+    src.write_text(t0)
+    rep = finish.run(src, tmp_path / "out" / "board.kicad_pcb", opts=dict(parts=("taut", "power")),
+                     workdir=tmp_path / "w", log=lambda *a: None)
+    out = J.items((tmp_path / "out" / "board.kicad_pcb").read_text())
+    assert set(out) == {"A", "B", "W"}
+    assert rep["replan"]["parts"] == ["power"] and rep["stages"]["power"]["replan_kept"] == 1
+    assert rep["drc_out"]["errors"] == 0

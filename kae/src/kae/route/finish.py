@@ -52,6 +52,8 @@ DEFAULTS = dict(
     zone_above_a=5.0,       # A: power copper pours rails above this instead of widening their tracks
     drc_budget=24,          # KiCad DRC runs the gate may spend beyond the input's
     recover=16,             # of them, at most this many to re-admit what attribution reverted
+    replan=True,            # after the gate, run the stages after the earliest one with reverts again on the
+                            # gated board, behind a second gate (its input DRC is the first gate's last)
     margin=None,            # mm: new copper this close to another net's removed copper depends on its removal
                             # (None: the project's largest net-class clearance, journal.clearance_margin)
     tails_opts=None,        # pad_reroute.run keyword overrides (rails, target, operating)
@@ -231,7 +233,51 @@ def _run(inp, out, project, o, workdir, time_s, base_report, drc_s, log):
         if (deadline is not None and left() < 0) or g.get("time_limited"):
             cacheable = False
         rep["journal"] = [dict(id=e.id, stage=e.stage, net=e.net, deps=sorted(e.deps), kept=e.id in kept,
-                               n_before=len(e.before), n_after=len(e.after), **e.meta) for e in jr.entries]
+                               n_before=len(e.before), n_after=len(e.after), round=1, **e.meta) for e in jr.entries]
+        # re-plan: entries reverted with a change they built on lose their copper, where the chained passes
+        # would have planned the later stage around the gated earlier one. The stages after the earliest one
+        # with reverts run again on the gated board, behind a second gate whose input DRC is the first's last
+        ran = rep["parts"]["ran"]
+        rev_st = [p for p in ran if any(e.stage == p and e.id not in kept for e in jr.entries)]
+        later = ran[ran.index(rev_st[0]) + 1:] if rev_st else []
+        if o.get("replan", True) and later and g.get("report") is not None \
+                and left() > sum(est.get(p, 10.0) for p in later) + est["gate"]:
+            t1 = time.monotonic()
+            cur2 = J.write(g["text"], wd / "r2" / "in" / "board.kicad_pcb", project)
+            jr2 = J.Journal(g["text"], margin=jr.margin)
+            r2 = dict(parts=[], entries={})
+            for part in later:
+                dst = drc.stage_board(cur2, project, wd / "r2" / part / "out")
+                try:
+                    rr = _pass(part, cur2, dst, o, wd / "r2" / part / "work",
+                               timeout=max(30, int(left() - est["gate"])) if deadline else 3600, log=log)
+                except Exception as e:      # noqa: BLE001
+                    r2.setdefault("failed", {})[part] = f"{type(e).__name__}: {e}"[:300]
+                    continue
+                n0 = len(jr2.entries)
+                jr2.add([x for x in rr.pop("_entries", [])])
+                r2["entries"][part] = len(jr2.entries) - n0
+                r2["parts"].append(part)
+                cur2 = dst
+            if jr2.entries:
+                g2 = J.gate(cur2, project, jr2, wd / "gate2", base_report=g["report"], budget=int(o["drc_budget"]),
+                            deadline=deadline, log=log, recover=int(o["recover"]), known_noise=g["noise"])
+                kept2 = g2["kept"]
+                J.write(g2["text"], out, project)
+                for part in r2["parts"]:
+                    st = [e for e in jr2.entries if e.stage == part]
+                    rep["stages"][part].update(replan_entries=len(st),
+                                               replan_kept=sum(1 for e in st if e.id in kept2))
+                r2.update(kept=len(kept2), drc_runs=g2["drc_runs"], gate_rounds=g2["rounds"])
+                rep.update(drc_out=g2["drc_out"], drc_runs=rep["drc_runs"] + g2["drc_runs"],
+                           kept=rep["kept"] + len(kept2), entries=rep["entries"] + len(jr2.entries))
+                rep["journal"] += [dict(id=e.id, stage=e.stage, net=e.net, deps=sorted(e.deps), kept=e.id in kept2,
+                                        n_before=len(e.before), n_after=len(e.after), round=2, **e.meta)
+                                   for e in jr2.entries]
+                if g2.get("time_limited"):
+                    cacheable = False
+            rep["replan"] = r2
+            rep["seconds"]["replan"] = round(time.monotonic() - t1, 1)
         # (e) hazards
         for part, why in rep["parts"]["skipped"].items():
             rep["hazards"].append(H.make(

@@ -511,10 +511,11 @@ def split_by_culprits(jr, ids, pts, margin):
 
 
 def gate(input_board, project_board, jr, workdir, base_report=None, budget=24, deadline=None, log=print,
-         drc_run=None, recover=16):
+         drc_run=None, recover=16, known_noise=()):
     """Judge the journal's entries with KiCad's DRC and keep the largest set found no worse than the
     input. `base_report`: a DRC report of the input the caller already has (else one is run).
-    `recover`: DRC runs at most for adding back what attribution reverted (0: none).
+    `recover`: DRC runs at most for adding back what attribution reverted (0: none). `known_noise`:
+    types already found noisy on this board (a second gate on the first one's output).
     Returns dict(kept={ids}, text, drc_in, drc_out, worse_full, noise, rounds, drc_runs, seconds)."""
     from . import drc
     t0 = time.monotonic()
@@ -540,15 +541,17 @@ def gate(input_board, project_board, jr, workdir, base_report=None, budget=24, d
     reused = base_report is not None
     base = [base_report if reused else check(None, "in")]
     allids = set(jr.by_id)
-    res = dict(kept=set(), drc_in=drc.summary(base[0]), drc_in_reused=reused, noise=[], rounds=rounds)
+    res = dict(kept=set(), drc_in=drc.summary(base[0]), drc_in_reused=reused, noise=sorted(known_noise),
+               rounds=rounds)
     if not allids:
-        res.update(text=jr.input, drc_out=res["drc_in"], drc_runs=runs[0], seconds=round(time.monotonic() - t0, 1))
+        res.update(text=jr.input, drc_out=res["drc_in"], drc_runs=runs[0], seconds=round(time.monotonic() - t0, 1),
+                   report=base[0])
         return res
     # a check at KiCad's error limit reports some 199 of its violations, which ones by the items' order
     # in the file: its identities say nothing, its count can only stay (cm4-carrier's track_width)
     capped = sorted(t for t, n in res["drc_in"]["by_type"].items() if n >= ERROR_LIMIT)
     res["capped"] = capped
-    noise = list(capped)
+    noise = sorted(set(capped) | set(known_noise))
     best = dict(kept=set(), rep=base[0])
 
     def judged(kept, tag):
@@ -670,7 +673,8 @@ def gate(input_board, project_board, jr, workdir, base_report=None, budget=24, d
 
     rep, worse = judged(allids, "out")
     res["worse_full"] = dict(worse)
-    if worse and any(t != "unconnected" for t in worse) and not (left() <= 30 and res.setdefault("time_limited", True)):
+    if worse and not known_noise and any(t != "unconnected" for t in worse) \
+            and not (left() <= 30 and res.setdefault("time_limited", True)):
         # a type looks worse: is it noise? A second run of the input, no cache, with its routing items
         # moved to the end of the file as every output has them: a check KiCad stops at its error limit
         # (199) reports a different subset when the items come in another order (cm4-carrier's track_width)
@@ -722,7 +726,7 @@ def gate(input_board, project_board, jr, workdir, base_report=None, budget=24, d
             res["recovery"] = dict(reverted=len(allids - best["kept"]), far=len(far), near=len(near_))
             best = readmit(set(best["kept"]), [far, near_], min(budget, probes[0] + recover), "rec") or best
     kept = best["kept"]
-    res.update(kept=kept, text=jr.text(kept) if kept else jr.input, drc_out=drc.summary(best["rep"]),
+    res.update(kept=kept, text=jr.text(kept) if kept else jr.input, drc_out=drc.summary(best["rep"]), report=best["rep"],
                drc_runs=runs[0], seconds=round(time.monotonic() - t0, 1))
     return res
 
