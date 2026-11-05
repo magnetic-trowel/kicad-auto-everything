@@ -73,6 +73,7 @@ class Data:
         self.drc_eval = self.e["evaluators"]["drc"]
         self.arms = [a for a in ("A0", "A0r", "A", "A2", "B", "C", "D", "E") if a in ("A0", "A0r", "B") or a in self.ids]
         self._a0 = None
+        self.src = defaultdict(Counter)   # arm -> where its scores came from (rescore / fork / stored)
 
     def run_dir(self, arm, b):
         if arm == "A0":
@@ -99,12 +100,29 @@ class Data:
             return dict(clean=r["clean"] == "True", completion=float(r["completion"] or 0), unconnected=int(r["unconnected"] or 0),
                         errors=int(r["errors"] or 0), errors_by_type=json.loads(r["errors_by_type"] or "{}"), clean_strict=None,
                         valid=r["valid"] == "True")
+        # a re-score at the experiment's harness (fork.sh rescore:<id|B|A0>) wins over the stored score
+        key = {"B": "B", "A0r": "A0"}.get(arm, (self.ids.get(arm) or "")[:12])
+        r = jl(self.out / f"rescore-{key}" / b / "attempt.json") if key else None
+        churn = (jl(self.out / f"rescore-{key}" / b / "churn.json") or {}).get("all_churn") if key else None
+        if r and r.get("status") == "ok" and not churn:
+            self.src[arm]["rescore"] += 1
+            return r.get("score")
+        if churn:   # invalid only by uuid churn of a fresh prepare: the run's own score (its own task) stands
+            if arm == "A0r":   # no score of A0 against its own task at this scorer exists: left out
+                self.src[arm]["left out (uuid churn)"] += 1
+                return None
+            self.src[arm]["stored (re-score was uuid churn)"] += 1
         if arm in ("B", "A0r"):
             d = self.fork_dir(arm, b)
             a = jl(d / "attempt.json") if d else None
-            return (a or {}).get("score") if a and a.get("status") == "ok" else None
+            if a and a.get("status") == "ok":
+                self.src[arm]["fork"] += 1
+                return a.get("score")
+            return None
         d = self.run_dir(arm, b)
         ev = jl(d / "evals" / f"{self.drc_eval}.json") if d else None
+        if ev:
+            self.src[arm]["stored"] += 1
         return (ev or {}).get("score")
 
     def log(self, arm, b):
@@ -201,8 +219,22 @@ def sec_routing(D):
         rows.append([arm, f"{n}/{len(D.boards)}", f3(cp1), f3(cp1), f3(sum(strict) / len(strict)) if strict else None,
                      f3(comp), nc, f"{err:.2f}", sum(int(s.get("unconnected") or 0) for s in got.values()),
                      sum(1 for s in got.values() if not s.get("valid", True))])
+    out.append("Score sources (per arm, board-reads): " + "; ".join(
+        f"{a} " + ", ".join(f"{k} {n}" for k, n in sorted(c.items())) for a, c in D.src.items()) + "\n")
     out.append(table(["arm", "boards", "cp1", "cpk (k=1)", "clean_strict", "completion", "not closed", "errors / board",
                       "unconnected (sum)", "invalid"], rows))
+    inv = []
+    for arm in D.arms:
+        for b in D.boards:
+            sc = D.score(arm, b)
+            if sc and not sc.get("valid", True):
+                bad = [k for k, v in (sc.get("integrity") or {}).items() if v is False]
+                fo = sc.get("foreign") or {}
+                det = "; ".join(f"{x.get('kind')} {x.get('change')}" for x in (fo.get("items") or [])[:4])
+                inv.append([arm, b[:40], ",".join(bad), fo.get("by_kind") or fo.get("counts") or fo.get("count"), det])
+    if inv:
+        out.append("\n### Invalid outputs (integrity checks that failed; foreign objects)\n")
+        out.append(table(["arm", "board", "failed", "foreign", "first items"], inv))
     ks = sorted({k for c in types.values() for k in c}, key=lambda k: -sum(c[k] for c in types.values()))
     out.append("\n### DRC errors by type (sum over boards)\n")
     out.append(table(["type"] + list(types), [[k] + [types[a].get(k, 0) for a in types] for k in ks]))

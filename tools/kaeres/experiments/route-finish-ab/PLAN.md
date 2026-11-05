@@ -178,6 +178,10 @@ $S/analyze.py --exp route-finish-ab-s1 > REPORT-s1.md
 # stage 2: STAGE=full route-finish-ab.sh, exp submit route-finish-ab, fork B and A0 on all boards, measures as §6
 ```
 
+After a scoring fix, stored boards are re-scored without re-routing: `submit.py fork --arm rescore:<method id>`
+(or `rescore:B`, `rescore:A0`) copies each stored output into a kaebench run at the new SHA
+(`OUT/rescore-<id>/`); `analyze.py` prefers those scores and says which source each arm's scores came from.
+
 `exp submit` queues as owner `exp-<name>` at the default priority; use `kaeq prio` to raise it (≤ 5).
 
 ## 8. Known limits

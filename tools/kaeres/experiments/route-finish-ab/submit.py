@@ -6,6 +6,7 @@ stats and physics). Writes a JSONL job file; submits it only with --submit.
 
     submit.py fork --arm B --a-id ID --sha SHA --boards FILE [--submit]
     submit.py fork --arm A0 --sha SHA --boards FILE
+    submit.py fork --arm rescore:ID|rescore:B|rescore:A0 --sha SHA --boards FILE   (re-score stored boards)
     submit.py measure --arm human|A0|B|ID --sha SHA --boards FILE [--offsets] [--submit]
 
 Physics resources per board come from the queue's history of earlier evaluations of the same board
@@ -92,7 +93,7 @@ def main():
             jobs.append(dict(cmd=cmd, name=f"rfab:m:{a.arm[:8]}:{short}" + (f"@{off[0]}" if off else ""), cpus=cpus,
                              mem=f"{mem}M", disk="4G", timeout=f"{tmo}s", prio=a.prio))
             est += ev
-    f = Path(a.out) / f"jobs-{a.what}-{a.arm[:12]}{'-off' if a.offsets else ''}.jsonl"
+    f = Path(a.out) / f"jobs-{a.what}-{a.arm.replace(':', '-')[:20]}{'-off' if a.offsets else ''}.jsonl"
     f.parent.mkdir(parents=True, exist_ok=True)
     f.write_text("".join(json.dumps(j) + "\n" for j in jobs))
     print(f"{len(jobs)} jobs -> {f}" + (f"; physics ~{est / 3600:.1f} job-h at 4 cpus" if est else "")
@@ -100,7 +101,7 @@ def main():
     if a.submit and jobs:
         if a.prio > 5:
             sys.exit("priority above 5 needs the user's say-so")
-        subprocess.run(["kaeq", "submit", "--jobs", str(f), "--owner", a.owner, "--tag", f"rfab-{a.what}-{a.arm[:12]}",
+        subprocess.run(["kaeq", "submit", "--jobs", str(f), "--owner", a.owner, "--tag", f"rfab-{a.what}-{a.arm.replace(':', '-')[:20]}",
                         "--retries", "1"], check=True, cwd=HERE)
 
 

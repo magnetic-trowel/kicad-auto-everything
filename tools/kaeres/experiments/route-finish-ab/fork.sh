@@ -7,6 +7,8 @@
 #   B    kae.route.cli finish on arm A's kept board (A_ID: A's kaeres method id), the task input's rules
 #        and the board's operating facts; --time as restart.py's finish reserve (finish_estimate)
 #   A0   merge3-ab's kae bridge main final board (286c2335844d, e9889fd), copied: its re-score at SHA
+#   rescore:ID   a stored kaeres run of method ID (or rescore:B, OUT/B's board), copied: a re-score at SHA
+#        after a scoring fix, without re-routing; writes OUT/rescore-<ID12>/<BOARD>/
 # Writes OUT/<ARM>/<BOARD>/: attempt.json (kaebench score, errors_by_type, clean_strict), output.kicad_pcb.gz,
 # drc.json, adapter.log (finish's report is its last JSON line).
 #   SHA=... A_ID=... OUT=/var/tmp/$USER/rf-ab fork.sh B BOARD        (run it through kaeq: submit.py fork)
@@ -16,10 +18,13 @@ arm=$1 b=$2
 case "$arm" in
   B) src=$(rf_run_dir "$b" "${A_ID:?A_ID: arm A method id}") || { echo "$b: no run of A (${A_ID:0:8})" >&2; exit 3; } ;;
   A0) src=$(rf_run_dir "$b" A0) || { echo "$b: no A0 run" >&2; exit 3; } ;;
-  *) echo "ARM: B or A0" >&2; exit 2 ;;
+  rescore:B) src=$OUT/B/$b; [ -f "$src/output.kicad_pcb.gz" ] || { echo "$b: no B board" >&2; exit 3; } ;;
+  rescore:*) src=$(rf_run_dir "$b" "${arm#rescore:}") || { echo "$b: no run of ${arm#rescore:}" >&2; exit 3; } ;;
+  *) echo "ARM: B, A0 or rescore:ID|B" >&2; exit 2 ;;
 esac
-dest=$OUT/$arm/$b
-[ -f "$dest/attempt.json" ] && { echo "$b: $arm done"; exit 0; }
+label=$arm; case "$arm" in rescore:*) m=${arm#rescore:}; label=rescore-${m:0:12} ;; esac
+dest=$OUT/$label/$b
+[ -f "$dest/attempt.json" ] && { echo "$b: $label done"; exit 0; }
 ws=${KAEQ_SCRATCH:-$(mktemp -d "/var/tmp/$USER/rfab-fork-XXXXXX")}
 mkdir -p "$ws/in" "$dest"
 rf_env "$ws" "$b"
@@ -47,14 +52,19 @@ else
   tmo=600
 fi
 # the sandbox hides the corpus and the store: Apptainer gets only what the method can see (as kaeres does)
-APPTAINER_BIND="$ws,$CODE,$CODE.venv-kae" "$KB" --workdir "$ws/w" run --adapter "rfab-$arm" --command "$tpl" --sandbox-ro "$ws/in" --sandbox-ro "$CODE" \
-  --sandbox-ro "$CODE.venv-kae" --kinds route -k 1 --timeout "$tmo" --all --only "$b" --name "$arm" -j 1 > "$ws/run.log" 2>&1 || true
-ad=$ws/w/results/$arm/rfab-$arm/route/$b/attempt-0
+APPTAINER_BIND="$ws,$CODE,$CODE.venv-kae" "$KB" --workdir "$ws/w" run --adapter "rfab-$label" --command "$tpl" --sandbox-ro "$ws/in" --sandbox-ro "$CODE" \
+  --sandbox-ro "$CODE.venv-kae" --kinds route -k 1 --timeout "$tmo" --all --only "$b" --name "$label" -j 1 > "$ws/run.log" 2>&1 || true
+ad=$ws/w/results/$label/rfab-$label/route/$b/attempt-0
 [ -f "$ad/attempt.json" ] || { tail -40 "$ws/run.log" >&2; exit 1; }
 if ! grep -q '"status": "ok"' "$ad/attempt.json"; then   # not kept: a retry runs it again
   tail -c 3000 "$ad/adapter.log" >&2; rm -rf "$dest"; exit 1
 fi
 cp "$ad/attempt.json" "$dest/"
+# an invalid re-score: is it only uuid churn from a fresh prepare (churn_check.py; diagnosis, no score change)?
+if [ "$arm" != B ] && grep -q '"valid": false' "$ad/attempt.json"; then
+  $KAE_KICAD_WRAP python3 "$(cd "$(dirname "$0")" && pwd)/churn_check.py" "$CODE/bench/src/kaebench/kicad_scripts" \
+    "$ws/in/stored.kicad_pcb" "$ws/w/tasks/$b/route/input/board.kicad_pcb" "$dest/churn.json" || true
+fi
 [ -f "$ad/adapter.log" ] && cp "$ad/adapter.log" "$dest/"
 [ -f "$ad/score/drc.json" ] && cp "$ad/score/drc.json" "$dest/"
 [ -f "$ad/output/board.kicad_pcb" ] && gzip -c "$ad/output/board.kicad_pcb" > "$dest/output.kicad_pcb.gz"
