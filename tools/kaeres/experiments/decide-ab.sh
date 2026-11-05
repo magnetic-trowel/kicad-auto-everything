@@ -163,9 +163,9 @@ tier2() {
     "kae place keepupright0 $S7" "kae place keepupright1 $S7"
   # ---- CI7b area cost: area-cost-ab.sh at $SHA, qualified suite, k = 1 (deterministic)
   SHA=$SHA bash tools/kaeres/experiments/area-cost-ab.sh
-  exp area-cost-ab bench/suites/qualified-kicad-10.0.7.txt 1 \
+  exp area-cost-ab2 bench/suites/qualified-kicad-10.0.7.txt 1 \
     "CI7b (decide-intent-circuit): route.area_cost 0.05 / 0.2 / 0.5, kae-plain (pnr --plain --lock + bridge) at $S7, qualified suite, k=1" \
-    "kae-plain area 0.05 $S7" "kae-plain area 0.2 $S7" "kae-plain area 0.5 $S7"
+    "kae-plain area 0.05 $S7 v2" "kae-plain area 0.2 $S7 v2" "kae-plain area 0.5 $S7 v2"
 }
 
 tier3() {
@@ -188,7 +188,7 @@ exps() {
   case $1 in
     1) echo legality-ab-place-down legality-ab-place-relax legality-ab-place-ctrl legality-ab-fixed-down legality-ab-fixed-relax copper-ab edge-ab2 aa-joint ;;
     1b) echo legality-ab2-place-down legality-ab2-fixed-down ;;
-    2) echo eff-tiebreak-ab keepupright-ab area-cost-ab ;;
+    2) echo eff-tiebreak-ab keepupright-ab area-cost-ab2 ;;
     3) echo placement-decide-staged placement-decide-joint ;;
   esac
 }
