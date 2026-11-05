@@ -224,7 +224,7 @@ def _run(inp, out, project, o, workdir, time_s, base_report, drc_s, log):
             rep["stages"][part].update(kept_entries=sum(1 for e in st if e.id in kept),
                                        reverted_entries=sum(1 for e in st if e.id not in kept))
         rep.update(drc_in=g["drc_in"], drc_out=g["drc_out"], drc_in_reused=g["drc_in_reused"], drc_runs=g["drc_runs"],
-                   noise=g["noise"], worse_full=g.get("worse_full"), gate_rounds=g["rounds"],
+                   noise=g["noise"], capped=g.get("capped"), worse_full=g.get("worse_full"), gate_rounds=g["rounds"],
                    entries=len(jr.entries), kept=len(kept), gate_time_limited=bool(g.get("time_limited")))
         if (deadline is not None and left() < 0) or g.get("time_limited"):
             cacheable = False

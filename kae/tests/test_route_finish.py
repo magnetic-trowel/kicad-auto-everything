@@ -272,3 +272,17 @@ def test_gate_attributes_a_new_open(tmp_path):
     g = J.gate(src, src, jr, tmp_path / "g", drc_run=run, log=lambda *a: None, recover=0)
     assert g["kept"] == {"tails:a", "taut:net:N1", "power:V"} and g["drc_out"]["unconnected"] == 0
     assert len(calls) == 3        # input, output, attributed board (an open alone needs no noise run)
+
+
+def test_gate_judges_a_check_at_kicads_error_limit_by_count(tmp_path):
+    jr, (t0, *_rest) = _chain()
+    src = tmp_path / "in" / "board.kicad_pcb"
+    src.parent.mkdir()
+    src.write_text(t0)
+
+    def rules(text, k):
+        off = 0 if k == 1 else 1000          # every output reports another 199 of them
+        return [("track_width", [(f"T{i + off}", float(i), 0.0)]) for i in range(199)]
+    run, calls = _fake_drc(rules)
+    g = J.gate(src, src, jr, tmp_path / "g", drc_run=run, log=lambda *a: None)
+    assert g["capped"] == ["track_width"] and g["kept"] == set(jr.by_id) and len(calls) == 2

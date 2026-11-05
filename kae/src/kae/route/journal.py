@@ -46,6 +46,7 @@ from pathlib import Path
 from . import critical_write as W
 
 HEADS = ("segment", "arc", "via", "zone")
+ERROR_LIMIT = 199      # KiCad 10 drc_engine: violations reported per check at most (clearance and opens: more)
 BUCKET = 0.5           # mm: position bucket of a violation (neighbouring buckets match too)
 MARGIN = 0.5           # mm: new copper this close to another net's removed copper builds on its removal
                        # (finish passes the project's largest clearance, clearance_margin)
@@ -526,7 +527,11 @@ def gate(input_board, project_board, jr, workdir, base_report=None, budget=24, d
     if not allids:
         res.update(text=jr.input, drc_out=res["drc_in"], drc_runs=runs[0], seconds=round(time.monotonic() - t0, 1))
         return res
-    noise = []
+    # a check at KiCad's error limit reports some 199 of its violations, which ones by the items' order
+    # in the file: its identities say nothing, its count can only stay (cm4-carrier's track_width)
+    capped = sorted(t for t, n in res["drc_in"]["by_type"].items() if n >= ERROR_LIMIT)
+    res["capped"] = capped
+    noise = list(capped)
     best = dict(kept=set(), rep=base[0])
 
     def judged(kept, tag):
@@ -576,9 +581,9 @@ def gate(input_board, project_board, jr, workdir, base_report=None, budget=24, d
         # moved to the end of the file as every output has them: a check KiCad stops at its error limit
         # (199) reports a different subset when the items come in another order (cm4-carrier's track_width)
         base.append(check(reordered(jr.input), "in2", fresh=True))
-        noise = noise_types(base[0], base[1])
-        res["noise"] = noise
-        if noise:
+        res["noise"] = noise_types(base[0], base[1])
+        noise = sorted(set(capped) | set(res["noise"]))
+        if res["noise"]:
             log(f"[finish-gate] noise types (differ between two runs of the input): {noise}")
             worse = judge(base, rep, jr.ancestry(allids), noise)
             rounds.append(dict(tag="out/noise", kept=len(allids), summary=drc.summary(rep), worse=worse))
