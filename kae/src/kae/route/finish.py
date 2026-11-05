@@ -50,7 +50,7 @@ PARTS = ("tails", "taut", "power")
 DEFAULTS = dict(
     parts=PARTS,
     zone_above_a=5.0,       # A: power copper pours rails above this instead of widening their tracks
-    drc_budget=24,          # KiCad DRC runs the gate may spend beyond the input's
+    drc_budget=32,          # KiCad DRC runs the gates may spend beyond the input's (both gates together)
     recover=16,             # of them, at most this many to re-admit what attribution reverted
     replan=True,            # after the gate, run the stages after the earliest one with reverts again on the
                             # gated board, behind a second gate (its input DRC is the first gate's last)
@@ -261,7 +261,7 @@ def _run(inp, out, project, o, workdir, time_s, base_report, drc_s, log):
                 cur2 = dst
             if jr2.entries:
                 g2 = J.gate(cur2, project, jr2, wd / "gate2", base_report=g["report"],
-                            budget=max(6, int(o["drc_budget"]) - int(g.get("probes") or 0)),
+                            budget=max(10, int(o["drc_budget"]) - int(g.get("probes") or 0)),
                             deadline=deadline, log=log, recover=int(o["recover"]), known_noise=g["noise"])
                 kept2 = g2["kept"]
                 J.write(g2["text"], out, project)
