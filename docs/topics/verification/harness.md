@@ -29,7 +29,7 @@
 | Route task | All tracks/vias removed, zones unfilled, placement kept | `pcbnew_ops.py strip-routing` |
 | Place task | Unlocked footprints rotated to 0° and stacked off-board; locked footprints stay (task spec 2); copper removed | `pcbnew_ops.py strip-placement` |
 | Run | Private copy per attempt, timeout, resumable, parallel `-j` | `runner.py` |
-| Score (route) | Rebuild from input + routing (`transplant-routing`); `clean`, `completion`, error counts by type, `wl_ratio`, `via_delta`; integrity (placement, pad nets, layers, nets, no foreign changes); copy check against the human copper | `score.py`, `pcbnew_ops.py` |
+| Score (route) | Rebuild from input + routing and added copper zones (`transplant-routing --zones`, score v10; zone rules in the `score.py` docstring and [bench/README](../../../bench/README.md#scoring)); `clean`, `completion`, error counts by type, `wl_ratio`, `via_delta`; integrity (placement, pad nets, layers, nets, no foreign changes); copy check against the human copper | `score.py`, `pcbnew_ops.py` |
 | Score (place) | Rebuild from input + poses (`transplant-placement`); `legal` (no courtyard, clearance, edge, hole or keepout errors; pads inside outline), `hpwl_ratio`, plus a probe route of the rebuilt board by a fixed router | `score.py`, `pcbnew_ops.py` |
 | Report | @1 and best-of-k (clean, completion, errors, length) per adapter × split | `report.py` |
 

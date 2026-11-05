@@ -197,6 +197,123 @@ def test_deleted_keepout_still_applies(rt):
     assert "KEEPOUT" in rebuilt.read_text()
 
 
+# --- added zones (score v10): a route method may pour copper, within the rules ---
+
+def test_added_pour_connects_and_scores_valid(rt):
+    """An N1 pour over both N1 pads replaces N1's tracks: valid, clean, and its refilled copper
+    counts in connectivity (the same routing without it leaves N1 open). Its fill is not taken
+    from the output; the rebuilt board carries the zone unfilled and DRC refills it."""
+    root, _ = rt
+    s = cheat(root, "n2_only")[0]["score"]
+    assert s["valid"] and not s["clean"] and s["unconnected"] == 1 and s["zones_added"] == 0, s
+    row, run_dir = cheat(root, "zone_gnd")
+    s = row["score"]
+    assert s["valid"] and s["clean"] and s["unconnected"] == 0 and s["completion"] == 1.0, s
+    assert s["zones_added"] == 1 and s["zone_problems"] == [] and s["integrity"]["zones"], s
+    assert not s["suspect_copy"] and s["copy"]["zones"] == dict(matched=0, total=1, suspect=False), s
+    rebuilt = (next(run_dir.glob("*/route/*/attempt-0/score")) / "board.kicad_pcb").read_text()
+    assert rebuilt.count("abababab-abab-abab-abab-") == 1 and "filled_polygon" not in rebuilt
+
+
+def test_pad_zone_connection_is_a_route_edit(rt):
+    """A pad's own zone connection (solid on a heat pad) may be set: transplanted, not foreign."""
+    root, _ = rt
+    row, run_dir = cheat(root, "zone_solid_pad")
+    s = row["score"]
+    assert s["valid"] and s["clean"] and s["pad_zone_connections"] == 1 and s["foreign"]["count"] == 0, s
+    rebuilt = (next(run_dir.glob("*/route/*/attempt-0/score")) / "board.kicad_pcb").read_text()
+    assert rebuilt.count("(zone_connect 2)") == 1
+
+
+def test_overlapping_zone_needs_its_own_priority(rt):
+    """Over the task's N2 zone, an N1 zone at the same priority is refused (KiCad 10.0.7's filler
+    deadlocks on such ties when uuids tie too); at a higher priority it is legal."""
+    root, _ = rt
+    s = cheat(root, "zone_overlap_tie")[0]["score"]
+    assert not s["valid"] and s["integrity"]["zones"] is False, s
+    assert "equal priority" in s["zone_problems"][0]["reasons"][0], s
+    s = cheat(root, "zone_overlap_priority")[0]["score"]
+    assert s["valid"] and s["clean"] and s["zones_added"] == 1, s
+
+
+def test_copied_human_pour_is_suspect(rt):
+    root, _ = rt
+    s = cheat(root, "zone_copy")[0]["score"]
+    assert s["copy"]["zones"]["matched"] == 1 and s["suspect_copy"], s
+
+
+@pytest.mark.parametrize("mode,broken,reason", [
+    ("zone_edit", "untouched", None),
+    ("zone_delete", "untouched", None),
+    ("zone_dup_uuid", "zones", "duplicate uuid"),
+    ("zone_unknown_net", "zones", "not in the task"),
+    ("zone_no_net", "zones", "no net"),
+    ("zone_non_copper", "zones", "copper layers"),
+    ("zone_outside", "zones", "outside the board outline"),
+    ("zone_in_keepout", "zones", "keepout"),
+    ("zone_rule_area", "zones", "rule area"),
+])
+def test_illegal_zones_are_invalid(rt, mode, broken, reason):
+    root, _ = rt
+    row, _ = cheat(root, mode)
+    s = row["score"]
+    assert row["status"] == "ok", row
+    assert not s["valid"] and not s["clean"] and s["integrity"][broken] is False, s
+    if reason:
+        assert any(reason in r for z in s["zone_problems"] for r in z["reasons"]), s["zone_problems"]
+
+
+@pytest.mark.parametrize("kind", ["joint", "joint-fixed"])
+def test_joint_tasks_may_add_zones(rt, kind):
+    """Joint tasks take added zones and pads' zone connection under the route rules: the
+    placement half ignores them (legality judged on the placement alone), the routing half
+    transplants and checks them."""
+    root, _ = rt
+    s = cheat(root, "joint+n2_only", kind=kind)[0]["score"]
+    assert s["valid"] and s["legal"] and not s["clean"] and s["unconnected"] == 1, s
+    for mode in ("joint+zone_gnd", "joint+zone_solid_pad", "joint+zone_overlap_priority"):
+        s = cheat(root, mode, kind=kind)[0]["score"]
+        assert s["valid"] and s["legal"] and s["clean"] and s["unconnected"] == 0, (mode, s)
+        assert s["integrity"]["route_zones"] and s["place_foreign"]["count"] == 0 and s["zones_added"] == 1, (mode, s)
+    assert s["pad_zone_connections"] == 0
+    row, run_dir = cheat(root, "joint+zone_solid_pad", kind=kind)
+    assert row["score"]["pad_zone_connections"] == 1, row["score"]
+    sdir = next(run_dir.glob(f"*/{kind}/*/attempt-0/score"))
+    placed_text = (sdir / "placement" / "board.kicad_pcb").read_text()  # what placement legality judged
+    assert "abababab-abab-abab-abab-" not in placed_text and "(zone_connect 2)" not in placed_text
+    routed_text = (sdir / "routing" / "board.kicad_pcb").read_text()
+    assert routed_text.count("abababab-abab-abab-abab-") == 1 and routed_text.count("(zone_connect 2)") == 1
+    s = cheat(root, "joint+zone_copy", kind=kind)[0]["score"]
+    assert s["copy"]["zones"]["matched"] == 1 and s["suspect_copy"], s
+
+
+@pytest.mark.parametrize("kind", ["joint", "joint-fixed"])
+@pytest.mark.parametrize("mode,broken,reason", [
+    ("zone_edit", "untouched", None),
+    ("zone_delete", "untouched", None),
+    ("zone_dup_uuid", "zones", "duplicate uuid"),
+    ("zone_unknown_net", "zones", "not in the task"),
+    ("zone_no_net", "zones", "no net"),
+    ("zone_non_copper", "zones", "copper layers"),
+    ("zone_outside", "zones", "outside the board outline"),
+    ("zone_in_keepout", "zones", "keepout"),
+    ("zone_rule_area", "zones", "rule area"),
+    ("zone_overlap_tie", "zones", "equal priority"),
+])
+def test_illegal_zones_are_invalid_in_joint_tasks(rt, kind, mode, broken, reason):
+    root, _ = rt
+    row, _ = cheat(root, f"joint+{mode}", kind=kind)
+    s = row["score"]
+    assert row["status"] == "ok", row
+    assert not s["valid"] and not s["clean"] and s["integrity"][f"route_{broken}"] is False, s
+    if broken == "untouched":  # a task zone edited or deleted: the placement half sees it too
+        assert s["integrity"]["place_untouched"] is False, s
+    else:  # an added zone is the routing half's to judge; the placement stays legal
+        assert s["integrity"]["place_untouched"] is True, s
+    if reason:
+        assert any(reason in r for z in s["zone_problems"] for r in z["reasons"]), s["zone_problems"]
+
+
 @pytest.mark.parametrize("mode,broken", [
     ("move_locked", "locked"),
     ("move_edge_cut", "locked"),

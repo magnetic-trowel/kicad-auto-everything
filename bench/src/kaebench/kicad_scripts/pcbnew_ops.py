@@ -14,8 +14,8 @@ process from the harness. Every operation prints one JSON object on stdout.
     python pcbnew_ops.py export-dsn IN DSN
     python pcbnew_ops.py import-ses IN SES OUT
     python pcbnew_ops.py unconnected BOARD
-    python pcbnew_ops.py transplant-routing OUTPUT INPUT DEST [REFERENCE]
-    python pcbnew_ops.py transplant-placement OUTPUT INPUT DEST [REFERENCE]
+    python pcbnew_ops.py transplant-routing OUTPUT INPUT DEST [REFERENCE] [--zones]
+    python pcbnew_ops.py transplant-placement OUTPUT INPUT DEST [REFERENCE] [--zones]
     python pcbnew_ops.py covered-micro-arcs BOARD [MAX_MM]
 """
 import hashlib
@@ -526,13 +526,13 @@ def _same_tokens(a, b):
     return True
 
 
-def _foreign(out_text, in_text, limit=50):
+def _foreign(out_text, in_text, limit=50, skip=()):
     """Top-level objects added, removed or changed, routing, zone fills, groups and tuning
-    patterns excepted."""
+    patterns excepted, and the (kind, uuid) keys in skip (judged elsewhere)."""
     ignore = ROUTING_HEADS + UNSCORED_HEADS
     a, b = _keyed(out_text, ignore), _keyed(in_text, ignore)
     diffs = []
-    for k in sorted(set(a) | set(b)):
+    for k in sorted((set(a) | set(b)) - set(skip)):
         if k not in a:
             diffs.append(dict(kind=k[0], id=k[1], change="removed"))
         elif k not in b:
@@ -587,11 +587,156 @@ def _net_names(board):
     return names
 
 
-def transplant_routing(out_path, inp_path, dst, ref_path=None):
+# --- Zones a route method adds (transplant-routing --zones; score v10) ---
+OUTLINE_TOL_NM = 10000  # board outline grown by 10 um: its arcs are polygonized to ~5 um
+AREA_TOL_NM2 = 1e8  # 100 um^2: overlaps smaller than this are rounding, not copper
+ZONE_COPY_IOU = 0.8  # an added zone this close to a human zone (same net and layer) is a copy
+
+
+def _zones(board):
+    return [pcbnew.Cast_to_ZONE(board.GetArea(i)) for i in range(board.GetAreaCount())]
+
+
+def _zone_layers(z):
+    return list(z.GetLayerSet().Seq())
+
+
+def _poly(z):
+    return pcbnew.SHAPE_POLY_SET(z.Outline())
+
+
+def _overlap(a, b):
+    """Area (nm^2) where the outlines of zones a and b meet."""
+    p = _poly(a)
+    p.BooleanIntersection(_poly(b))
+    return p.Area()
+
+
+def _iou(a, b):
+    inter = _overlap(a, b)
+    if inter <= 0:
+        return 0.0
+    u = _poly(a)
+    u.BooleanAdd(_poly(b))
+    return inter / u.Area() if u.Area() > 0 else 0.0
+
+
+def _outer_outline(board):
+    """The board's outer outline (cut-outs filled in), grown by OUTLINE_TOL_NM; None if none."""
+    poly = pcbnew.SHAPE_POLY_SET()
+    if not board.GetBoardPolygonOutlines(poly, False) or poly.OutlineCount() == 0:
+        return None
+    outer = pcbnew.SHAPE_POLY_SET()
+    for i in range(poly.OutlineCount()):
+        outer.AddOutline(poly.COutline(i))
+    outer.Inflate(OUTLINE_TOL_NM, pcbnew.CORNER_STRATEGY_ROUND_ALL_CORNERS, 1000)
+    return outer
+
+
+def _share_layer(a, b):
+    return any(b.IsOnLayer(l) for l in _zone_layers(a))
+
+
+def _added_zones(out, board, ref, nets):
+    """Judge the zones OUTPUT adds to INPUT (score v10). Returns (accepted uuids, problems, copy).
+
+    Added = not a teardrop and a uuid no input zone has. Each must be a copper zone (no rule
+    area) on the board's enabled copper layers, on a net the task has (named; no net-less
+    zones), inside the board's outer outline, out of every rule area that forbids copper pours
+    on a shared layer, and, where it overlaps another zone on a shared layer, at a strictly
+    different priority (so the fill never depends on uuid tie-breaks; KiCad 10.0.7's filler
+    deadlocks on overlapping zones of different nets that tie on priority and uuid). Zone
+    uuids must be unique. Input zones that are missing or changed are reported by _foreign.
+    copy: added zones whose outline matches a human zone on the same net and a shared layer
+    (IoU >= ZONE_COPY_IOU)."""
+    in_ids = {z.m_Uuid.AsString() for z in _zones(board) if not z.IsTeardropArea()}
+    out_zones = [z for z in _zones(out) if not z.IsTeardropArea()]
+    ids = [z.m_Uuid.AsString() for z in out_zones]
+    added = [z for z in out_zones if z.m_Uuid.AsString() not in in_ids]
+    # a second zone under an input zone's uuid would hide behind it in _foreign's keyed compare
+    problems = [dict(uuid=u, net="", reasons=["duplicate uuid of a task zone"], given=True)
+                for u in sorted({u for u in ids if u in in_ids and ids.count(u) > 1})]
+    if not added:
+        return [], problems, None
+    enabled = board.GetEnabledLayers()
+    outline = _outer_outline(board)
+    keepouts = [z for z in _zones(board) if z.GetIsRuleArea() and z.GetDoNotAllowZoneFills()]
+    keepouts += [z for fp in board.GetFootprints() for z in fp.Zones()
+                 if z.GetIsRuleArea() and z.GetDoNotAllowZoneFills()]
+    others = [z for z in out_zones if not z.GetIsRuleArea()]
+    accepted = []
+    for z in added:
+        u = z.m_Uuid.AsString()
+        why = []
+        if ids.count(u) > 1:
+            why.append("duplicate uuid")
+        if z.GetIsRuleArea():
+            why.append("rule area")
+        layers = _zone_layers(z)
+        if not layers or any(not pcbnew.IsCopperLayer(l) or not enabled.Contains(l) for l in layers):
+            why.append("not on the board's copper layers")
+        name = z.GetNetname()
+        if not name:
+            why.append("no net")
+        elif name not in nets:
+            why.append(f"net {name!r} not in the task")
+        if not why:
+            if outline is None:
+                why.append("board has no outline")
+            else:
+                rest = _poly(z)
+                rest.BooleanSubtract(outline)
+                if rest.Area() > AREA_TOL_NM2:
+                    why.append("outside the board outline")
+            for k in keepouts:
+                if _share_layer(z, k) and _overlap(z, k) > AREA_TOL_NM2:
+                    why.append("in a keepout that forbids copper pours")
+                    break
+            for w in others:
+                if (w is not z and _share_layer(z, w) and w.GetAssignedPriority() == z.GetAssignedPriority()
+                        and _overlap(z, w) > AREA_TOL_NM2):
+                    why.append(f"overlaps zone {w.m_Uuid.AsString()} at equal priority")
+                    break
+        if why:
+            problems.append(dict(uuid=u, net=name, reasons=why))
+        else:
+            accepted.append(u)
+    copy = None
+    if ref is not None:
+        human = [h for h in _zones(ref) if not h.IsTeardropArea() and not h.GetIsRuleArea()]
+        matched = sum(1 for z in added if any(
+            h.GetNetname() == z.GetNetname() and _share_layer(z, h) and _iou(z, h) >= ZONE_COPY_IOU for h in human))
+        copy = dict(matched=matched, total=len(added), suspect=matched > 0)
+    return accepted, problems, copy
+
+
+def _pad_zone_connections(out, board):
+    """Pads whose own zone connection (zone_connect: inherited, solid, thermal, none) OUTPUT
+    changed: {pad key: (output pad, input pad)}. The only footprint edit a route method may make."""
+    in_pads = _pads_by_key(board)
+    changed = {}
+    for k, p in _pads_by_key(out).items():
+        q = in_pads.get(k)
+        if q is not None and p.GetLocalZoneConnection() != q.GetLocalZoneConnection():
+            changed[k] = (p, q)
+    return changed
+
+
+def _pads_by_key(board):
+    """Pads keyed by (footprint uuid, index, number): pad uuids are invented afresh on load when a
+    file has none, the order of a footprint's pads is kept."""
+    return {(fp.m_Uuid.AsString(), i, p.GetNumber()): p for fp in board.GetFootprints() for i, p in enumerate(fp.Pads())}
+
+
+def transplant_routing(out_path, inp_path, dst, ref_path=None, zones=False):
     """DEST = INPUT + the tracks, arcs and vias of OUTPUT. Report OUTPUT's other changes.
 
-    Works on KiCad's own re-save of OUTPUT: accepted routing objects are copied as text
-    into INPUT (nets are referenced by name in KiCad 10 files). pcbnew objects are never
+    With zones (route tasks, score v10), also the copper zones OUTPUT adds (unfilled; DRC
+    refills every zone) when they pass _added_zones, and pads' own zone connection
+    (zone_connect) as OUTPUT sets it; both are then left out of the foreign changes.
+
+    Works on KiCad's own re-save of OUTPUT: accepted routing objects and zones are copied as
+    text into INPUT (nets are referenced by name in KiCad 10 files). pcbnew objects are never
     moved between boards or removed, which upsets SWIG's type tracking.
     """
     out, err = _try_load(out_path)
@@ -634,16 +779,36 @@ def transplant_routing(out_path, inp_path, dst, ref_path=None):
     for head, a, b in _top_spans(out_text):
         if head in ROUTING_HEADS and _block_uuid(_TOK.findall(out_text[a:b])) in accepted:
             blocks.append(out_text[a:b])
+    zone_ok, zone_problems, zone_copy, pad_conn = [], [], None, {}
+    zone_blocks = []
+    if zones:
+        zone_ok, zone_problems, zone_copy = _added_zones(out, board, ref, nets - {""})
+        pad_conn = _pad_zone_connections(out, board)
+        if zone_ok:
+            _unfill(out)  # the method's fill is never used: DRC refills every zone
+            ztext = _canonical(out)
+            for head, a, b in _top_spans(ztext):
+                if head == "zone" and _block_uuid(_TOK.findall(ztext[a:b])) in zone_ok:
+                    zone_blocks.append(ztext[a:b])
     with open(inp_path, encoding="utf-8") as f:
         in_text = f.read()
     end = in_text.rstrip().rfind(")")
     with open(dst, "w", encoding="utf-8") as f:
-        f.write(in_text[:end] + "".join("\t" + blk + "\n" for blk in blocks) + in_text[end:])
+        f.write(in_text[:end] + "".join("\t" + blk + "\n" for blk in blocks + zone_blocks) + in_text[end:])
+    if pad_conn:
+        staged = _load(dst)
+        pads = _pads_by_key(staged)
+        for k, (p, _) in pad_conn.items():
+            pads[k].SetLocalZoneConnection(p.GetLocalZoneConnection())
+        _save(staged, dst)
     check = _load(dst)
     n_routing = len(list(check.GetTracks()))
     if n_routing != len(given) + len(blocks):
         raise RuntimeError(f"transplant produced {n_routing} routing items, expected "
                            f"{len(given)} + {len(blocks)}")
+    if check.GetAreaCount() != board.GetAreaCount() + len(zone_blocks):
+        raise RuntimeError(f"transplant produced {check.GetAreaCount()} zones, expected "
+                           f"{board.GetAreaCount()} + {len(zone_blocks)}")
 
     # Placement unchanged within the tolerance the place side allows anchored parts (_same_pose):
     # a joint output that rounds a locked part's pose by under 1 um passed transplant-placement
@@ -660,12 +825,24 @@ def transplant_routing(out_path, inp_path, dst, ref_path=None):
             _set_pose(o, f.GetPosition(), f.GetOrientation(), f.IsFlipped())
         else:
             moved.append(f.GetReference())
+    for p, q in pad_conn.values():  # an allowed edit: compare the rest of the pad
+        p.SetLocalZoneConnection(q.GetLocalZoneConnection())
     _unfill(out)
     _unfill(board)
-    foreign = _foreign(_canonical(out), _canonical(board))
-    _out(dict(ok=True, loadable=True, added=len(blocks), bad_layer=bad_layer, new_net_items=new_net,
-              missing_given=missing_given, output=ident, placement_moved=moved[:50], n_placement_moved=len(moved),
-              foreign=foreign, copy=copy))
+    skip = [("zone", z["uuid"]) for z in zone_problems if not z.get("given")] + [("zone", u) for u in zone_ok]
+    foreign = _foreign(_canonical(out), _canonical(board), skip=skip)
+    res = dict(ok=True, loadable=True, added=len(blocks), bad_layer=bad_layer, new_net_items=new_net,
+               missing_given=missing_given, output=ident, placement_moved=moved[:50], n_placement_moved=len(moved),
+               foreign=foreign, copy=copy)
+    if zones:
+        if zone_copy is not None:
+            copy = dict(copy or {}, zones=zone_copy)
+            copy["suspect"] = bool(copy.get("suspect")) or zone_copy["suspect"]
+            res["copy"] = copy
+        res.update(zones_added=len(zone_ok) + sum(1 for z in zone_problems if not z.get("given")), zones_transplanted=len(zone_blocks),
+                   zone_problems=zone_problems[:50], n_zone_problems=len(zone_problems),
+                   pad_zone_connections=len(pad_conn))
+    _out(res)
 
 
 def _same_pose(a, b):
@@ -682,11 +859,16 @@ def _set_pose(fp, pos, orientation, flipped):
     fp.SetPosition(pos)
 
 
-def transplant_placement(out_path, inp_path, dst, ref_path=None):
+def transplant_placement(out_path, inp_path, dst, ref_path=None, zones=False):
     """DEST = INPUT with each footprint that is not anchored (_anchored) moved to its pose in
     OUTPUT (position, orientation, side). Report OUTPUT's other changes, moved anchored parts
     (as locked_moved), and footprints
-    missing from or added to OUTPUT. Place inputs carry no copper, so neither does DEST."""
+    missing from or added to OUTPUT. Place inputs carry no copper, so neither does DEST.
+
+    With zones (joint tasks, score v10): the zones OUTPUT adds and pads' own zone connection are
+    the routing half's to judge and transplant (transplant-routing --zones), so they are left out
+    of the foreign changes here, and never put into DEST: placement legality is judged on the
+    placement alone."""
     out, err = _try_load(out_path)
     if out is None:
         _out(dict(ok=True, loadable=False, error=err))
@@ -733,9 +915,15 @@ def transplant_placement(out_path, inp_path, dst, ref_path=None):
             _set_pose(f, o.GetPosition(), o.GetOrientation(), o.IsFlipped())
             _set_pose(f, *pose)
             _set_pose(o, *pose)
+    skip = []
+    if zones:
+        for p, q in _pad_zone_connections(out, fresh).values():
+            p.SetLocalZoneConnection(q.GetLocalZoneConnection())
+        in_ids = {z.m_Uuid.AsString() for z in _zones(fresh)}
+        skip = [("zone", u) for u in {z.m_Uuid.AsString() for z in _zones(out) if not z.IsTeardropArea()} - in_ids]
     _unfill(out)
     _unfill(fresh)
-    foreign = _foreign(_canonical(out), _canonical(fresh))
+    foreign = _foreign(_canonical(out), _canonical(fresh), skip=skip)
     _out(dict(ok=True, loadable=True, missing=missing[:50], n_missing=len(missing), extra=extra[:50],
               n_extra=len(extra), locked_moved=locked_moved[:50], n_locked_moved=len(locked_moved),
               routing_added=routing_added, output=ident, foreign=foreign, copy=copy))
@@ -810,9 +998,9 @@ def main(argv):
         elif op == "unconnected":
             unconnected(args[0])
         elif op == "transplant-routing":
-            transplant_routing(*args[:4])
+            transplant_routing(*args[:4], zones="--zones" in argv)
         elif op == "transplant-placement":
-            transplant_placement(*args[:4])
+            transplant_placement(*args[:4], zones="--zones" in argv)
         elif op == "covered-micro-arcs":
             covered_micro_arcs(args[0], *(float(a) for a in args[1:2]))
         else:

@@ -146,6 +146,7 @@ def observation(bd, o, s, values, us, fs=()):
     why = implausible(o, values)
     if why:
         out["implausible"] = why
+        out["cap_V"] = IMPLAUSIBLE_RAIL_FRAC * o.meta["V"]
     if fs:
         out["f_Hz"] = list(fs)
         out["scope"]["connectors"] = to_parts
