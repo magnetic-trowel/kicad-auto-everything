@@ -35,12 +35,18 @@ Keys: pipeline, stage order, pad entry, taut arcs, power copper, necks, DRC gate
 | 1 Plan (`constraints.plan`) | Rules every stage obeys | Classes, clearances, vias, thermal corridors | **Adds** per-pad entry frame and rule (D), neck width per two-terminal land (process, package class, series current), required width per rail branch (`current_need`), arc policy |
 | 2 Critical copper (`critical`) | Physics-first copper, locked | Grid routes; ends at pad centre or the edge rule | **Born right:** rule D goals, necks, overhang check. **Tightened before lock:** taut on module and rail copper; a move is kept only if the module's routed physics is no worse |
 | 3 Escapes (`lastmile.plane_escapes`, `escape`) | Plane joins, ball-grid dog-bones | Stub plus via per pad the fill misses | Stubs end by rule D. Ground vias at decap and IC ground pads move here from power copper as an A/B arm: reserved before routing instead of fitted afterwards |
-| 4 Freerouting | Bulk topology | Unchanged | Unchanged; its centre ends are expected and finished in stage 7 |
+| 4 Freerouting | Bulk topology | Unchanged | Its centre ends are finished in stage 7; optionally the fork draws rule D tails itself (below) |
 | 5 Repair rounds (`repair.loop`) | Fixes DRC errors, re-routes what is open | Unchanged | Grid joins born right. Arm: rule D tails on each import's new Freerouting copper (cheap, exact check only), so repair sees final ends |
 | 6 Last mile (`lastmile.close`) | Closes the last opens | Grid router with rip-up | Born right (P2) |
 | 7 **Finish** (new, `kae.route.finish`) | Final shape and fill on the kept board | Three post-passes with three gates, power copper off by default, rule D and taut not wired in | (a) rule D tails on Freerouting copper → (b) taut and arcs on all unlocked copper → (c) power copper (widening, zones above 5 A, sharing, necks, stitching) → (d) one journaled DRC gate → (e) hazards |
 | 8 Recheck / retweak (`critical_recheck`) | Modules that got worse | On the routed board | On the finished board; a retweak re-runs stage 7 only on the region it ripped |
 | 9 Diagnose (`blocked`) and report | Why opens are open; hazards | Unchanged | Unchanged, on the finished board |
+
+**Stage 4 with native entries (optional, off by default).** The fork can draw rule D ends itself from a table kae writes (`kae.route.fr_entry`; `KAE_FR_PIN_ENTRIES=on`, fork setting `router.kae_pin_entries`) [I]:
+- **One copy of the rule.** For each pin and layer the DSN scope `kae_pin_entries` lists `pad_entry.centreline_targets`' candidates from every side of the land: approach point, end on the long centre line, width, neck. Freerouting reads them and derives nothing. Stock builds skip the scope.
+- **Fixed tails.** When a trace ends at a listed pin off every entry, the fork cuts it where it first comes within reach of the land, joins it to the nearest legal approach point, and adds a fixed (`SHOVE_FIXED`) tail: approach, end, centre. This happens after each inserted connection and in pull-tight, which tightens up to the approach point. Freerouting's contact model needs the end at the pin centre, so a tail whose end is off the centre runs on along the centre line, inside the land.
+- **Rails.** With `KAE_FR_RAILS=on`, a rail whose operating current needs width gets its own class at that width, and a per-class width floor under every neck-down (`class_floor`).
+- **Still finished in stage 7.** Entries the fork cannot make legal keep Freerouting's end, and so do the repair rounds' grid joins and the last mile. Phase 2, a search that aims at the approach point, is not built.
 
 **Where the portfolio runs it.** Attempts run stages 1–6. The restart wrapper's final pass (`--final`) on the kept board runs the last mile, then stage 7, with its time reserved from the start (`final_reserve`). A single attempt (`kae.route.cli route`) runs stage 7 at its end when time is left.
 
