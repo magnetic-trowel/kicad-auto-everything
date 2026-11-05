@@ -28,7 +28,7 @@ from pathlib import Path
 
 from kae.board import pcbnew_io
 
-from . import constraints, drc, freerouting, specctra, translate
+from . import constraints, drc, freerouting, specctra, stepcache, translate
 
 DEFAULT_OPTS = dict(
     fanout=False,            # Freerouting's fanout pre-pass narrows tracks (see freerouting.py):
@@ -98,6 +98,7 @@ def severities(board_path):
 
 def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None, log=_log):
     t0 = time.monotonic()
+    fork = stepcache.fork_context(input_path, seed, time_s, opts)   # KAE_STEP_CACHE: fork points
     opts = {**DEFAULT_OPTS, **(opts or {})}
     input_path, output_path = Path(input_path).resolve(), Path(output_path).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -213,6 +214,7 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             specctra.write(ses, ses_k)
             routed = pcbnew_io.import_ses(input_path, ses_k, output_path).get("routing") or []
             report["status"] = "routed"
+        stepcache.save_fork(fork, "routed", {"board": output_path, "ses": run.ses}, time.monotonic() - t0)
         # the input's locked tracks and vias (pre-routes): exported as fixed wiring, never
         # returned by Freerouting, kept as they are by KiCad's import; the repair loop never
         # rips, widens or unlocks them
@@ -233,6 +235,7 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             staged = drc.stage_board(output_path, input_path, wd / "drc")
             rep = drc.run(staged, wd / "drc" / "drc.json", timeout=max(10, left() - 5))
             report["drc"] = drc.summary(rep)
+        stepcache.save_fork(fork, "repaired", {"board": output_path}, time.monotonic() - t0)
         if opts.get("power_copper") and left() > 60:
             from . import power_copper
             report["power_copper"] = power_copper.hook(output_path, input_path, wd / "power_copper",
@@ -248,6 +251,7 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             blk = report.setdefault("blocked", {})
             blk["packages"] = report.pop("blocked_packages")
             blk["summary"] = [c["summary"] for c in blk["packages"]] + list(blk.get("summary") or [])
+        stepcache.save_fork(fork, "final", {"board": output_path}, time.monotonic() - t0, report)
         return report
     finally:
         report["opts"] = {k: v for k, v in opts.items()

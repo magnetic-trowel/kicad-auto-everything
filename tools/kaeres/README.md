@@ -87,6 +87,28 @@ Settings for every job:
 - Freerouting gets `-Xmx` sized to the board (`java_heap=auto-v1`) and `-XX:ActiveProcessorCount=2`.
 - The harness tree has a 40 GB address-space cap.
 
+## Step cache (A/B arms that share early steps)
+
+`$K exp create NAME --method A --method B --env KAE_STEP_CACHE=/var/tmp/$USER/step-cache ...` gives the
+experiment's jobs kae's step cache (`kae/src/kae/route/stepcache.py`). The arms of one board run in one job,
+one after the other, so arm B replays arm A's identical Freerouting runs and kicad-cli DRCs instead of
+computing them again. The setting is in `experiment.json` (`env`), not in any method, so method ids do not
+change; only result-neutral settings are accepted there. Methods need a harness commit whose sandbox binds
+the cache directory (kaebench `Sandbox`) and whose `restart.py` charges cached time.
+
+- Keys are content only (input bytes, tool, settings), never experiment or run paths, so any later A/B on the
+  same input hits too. A Freerouting run that stopped by itself replays under any job timeout it fits in; one
+  that stopped at its job timeout replays under that timeout. A DRC replays when it fits in its timeout. A
+  hit costs its recorded duration: kae's clock and `restart.py`'s budgets, holds and kills count it as if
+  the step had run.
+- Fork points: each attempt's board after Freerouting's import (with the raw session), after repair and last
+  mile, and at its end, keyed by input, seed, budget, options and the kae source (`stepcache.find_fork`).
+- Size: at most `KAE_STEP_CACHE_MAX_GB` (default 50), gzip blobs deduplicated by content; past the cap the
+  least recently used entries go, never one a job is reading. `python -m kae.route.stepcache stats|prune`.
+- `run.json` → `work.step_cache` holds hits, misses, uncacheable steps, charged and saved seconds and the
+  real wall time; `wall_s` is charged time.
+- Put the cache on local disk, never the NFS home. Delete it any time; nothing else depends on it.
+
 ## Bug records
 
 Each record has `board`, `method` (a method name, `harness` or `physics`), `category`,

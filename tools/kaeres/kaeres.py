@@ -500,6 +500,20 @@ def exp_dir(name):
     return STORE / "experiments" / name
 
 
+# environment an experiment may set for its jobs without changing any method's identity: settings
+# that change no result (KAE_STEP_CACHE: kae's step cache replays identical steps, time charged)
+RESULT_NEUTRAL_ENV = ("KAE_STEP_CACHE",)
+
+
+def exp_env(a):
+    env = dict(kv.split("=", 1) for kv in a.env or [])
+    bad = sorted(set(env) - set(RESULT_NEUTRAL_ENV))
+    if bad:
+        raise SystemExit(f"--env {bad}: only {RESULT_NEUTRAL_ENV} (settings that change no result) are allowed; "
+                         "anything else belongs in the method's recipe")
+    return env
+
+
 def load_exp(name):
     e = read_json(exp_dir(name) / "experiment.json")
     if not e:
@@ -547,7 +561,7 @@ def cmd_exp_create(a):
              harness=dict(commit=harness, link=github_link("https://github.com/magnetic-trowel/kicad-auto-everything", harness)),
              kae=dict(commit=kae, link=github_link("https://github.com/magnetic-trowel/kicad-auto-everything", kae)),
              kicad=kicad, evaluators=evs, corpus=str(CORPUS), corpus_manifest_sha256=sha256_file(CORPUS / "manifest.jsonl"),
-             boards=len(boards))
+             boards=len(boards), **({"env": exp_env(a)} if a.env else {}))
     d.mkdir(parents=True)
     (d / "boards.txt").write_text("\n".join(boards) + "\n")
     write_json(d / "experiment.json", e)
@@ -735,6 +749,7 @@ def cmd_job(a):
         except OSError:
             shutil.rmtree(tmpc, ignore_errors=True)
     env["KICAD_CONFIG_HOME"] = str(kcfg)
+    env.update({k: v for k, v in ((e or {}).get("env") or {}).items() if k in RESULT_NEUTRAL_ENV})
     env["KAE_DRC_TIMEOUT"] = str(900 if size < 20 else 3600)
     env["JAVA_TOOL_OPTIONS"] = f"-Xmx{heap_gb(size)}g -XX:ActiveProcessorCount=2"
     env.pop("VIRTUAL_ENV", None)
@@ -1667,6 +1682,9 @@ def main():
     s.add_argument("--attempts", type=int, default=1)
     s.add_argument("--harness", default="HEAD", help="revision for prepare, the human reference and physics briefs")
     s.add_argument("--kae", default="origin/claude/vigilant-mayer-i91rrr", help="revision with the kae package (physics)")
+    s.add_argument("--env", action="append", metavar="KEY=VALUE",
+                   help="job environment that changes no result, e.g. KAE_STEP_CACHE=/var/tmp/$USER/step-cache "
+                        "(not part of any method's identity)")
     s.set_defaults(f=cmd_exp_create)
     s = ep.add_parser("submit")
     s.add_argument("name"), s.add_argument("--only"), s.add_argument("--limit", type=int)
