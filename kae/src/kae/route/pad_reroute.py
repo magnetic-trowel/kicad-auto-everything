@@ -162,11 +162,12 @@ def chain(segs_by_node, start_seg, pad_end, R, stop_nodes, at_pad=lambda q: Fals
 
 
 def plan(text, info, sp, gr, overlap=0.05, log=print, deadline=None, rails="middle", target="centreline",
-         currents=None, margin=None, hazards=None):
+         currents=None, margin=None, hazards=None, only=None):
     """Re-routes [(change dict)] and per-entry outcomes {reason: count}. `sp` is a Space of the
     board (updated as changes are accepted), `gr` a GridRouter on it. `currents`: {(ref, net): A}
     through each pad (power_copper.pad_currents), which sets the narrowest neck; `hazards`: a list
-    the land hazards are appended to (kae.hazards entries)."""
+    the land hazards are appended to (kae.hazards entries); `only`: segment uuids whose entries
+    may be re-routed (None: all; the repair loop passes one import's new copper)."""
     from . import power_copper as PC
     margin = PC.DEFAULTS["current_margin"] if margin is None else margin
     currents = currents or {}
@@ -206,7 +207,7 @@ def plan(text, info, sp, gr, overlap=0.05, log=print, deadline=None, rails="midd
         if deadline is not None and time.monotonic() > deadline:
             note("time")
             break
-        if s["uuid"] in done or s["locked"]:
+        if s["uuid"] in done or s["locked"] or (only is not None and s["uuid"] not in only):
             continue
         for g, c, pd in pads.get((s["net"], s["layer"]), ()):
             ina, inb = g.contains(Point(s["a"])), g.contains(Point(s["b"]))
@@ -430,6 +431,22 @@ def _octo(sp, net, layer, w, pts):
     return out
 
 
+def piece_uuid(ch, i):
+    """The uuid of the i-th new piece of a re-route (deterministic)."""
+    return str(_uuid.uuid5(_uuid.NAMESPACE_URL, f"kae-pad-reroute:{ch['id']}:{i}"))
+
+
+def journal_keys(changes):
+    """{uuid: change id} of every item a re-route removes, cuts or writes (kae.route.journal)."""
+    keys = {}
+    for ch in changes:
+        for s, _p, _q in ch["pieces"]:
+            keys[s["uuid"]] = ch["id"]
+        for i in range(len(ch["pts"]) - 1):
+            keys[piece_uuid(ch, i)] = ch["id"]
+    return keys
+
+
 def write(text, changes, skip=frozenset()):
     """The board text with the re-routes in `changes` (ids in `skip` left as they are)."""
     remove, edits, extra = set(), [], []
@@ -451,7 +468,7 @@ def write(text, changes, skip=frozenset()):
                 remove.add(s["uuid"])
         n_p = len(ch["pts"]) - 1
         for i, (p, q) in enumerate(zip(ch["pts"][:-1], ch["pts"][1:])):
-            uid = str(_uuid.uuid5(_uuid.NAMESPACE_URL, f"kae-pad-reroute:{ch['id']}:{i}"))
+            uid = piece_uuid(ch, i)
             extra.append(W.track_sexpr(ch["net"], ch["layer"], _piece_w(ch, i, n_p), p, q, uid=uid, locked=locked))
     out, pos = [], 0
     for _h, a, b in W._blocks(text, ("segment",)):
@@ -471,11 +488,13 @@ def write(text, changes, skip=frozenset()):
 
 
 def run(input_path, output_path, overlap=None, workdir=None, timeout=3600, rails="middle", target="centreline",
-        operating=None, log=print):
+        operating=None, log=print, gate=True, only=None):
     """The DRC-gated pass. Returns a report: entries considered and their outcomes, the kept
     re-routes, DRC in and out, pad-entry counts in and out, seconds, and `hazards` (kae.hazards
     entries: lands a current keeps wider copper on). `operating`: operating facts JSON for the
-    pads' currents (default: the project's KAE_OPERATING text variable, as power_copper)."""
+    pads' currents (default: the project's KAE_OPERATING text variable, as power_copper).
+    `gate=False` (kae.route.finish): no DRC; every planned re-route is written and returned as
+    kae.route.journal entries in rep["_entries"]. `only`: segment uuids that may be re-routed."""
     from kae.board.kicad_file import load
     from . import constraints as CN
     from . import drc
@@ -503,12 +522,24 @@ def run(input_path, output_path, overlap=None, workdir=None, timeout=3600, rails
     hazards = []
     t1 = time.monotonic()
     changes, outcome, octo = plan(text, info, sp, gr, ovl, log=log, deadline=t0 + 0.6 * timeout, rails=rails,
-                                  target=target, currents=currents, hazards=hazards)
+                                  target=target, currents=currents, hazards=hazards, only=only)
     t_plan = time.monotonic() - t1
     rep = dict(board=str(inp), target=target, overlap=ovl, octilinear=octo, outcome=outcome, planned=len(changes),
                stats_in=PT.stats(text, info), setup_s=round(t1 - t0, 1), plan_s=round(t_plan, 1),
                len_old_mm=round(sum(c["old_len"] for c in changes), 3),
                len_new_mm=round(sum(c["new_len"] for c in changes), 3), operating=bool(op))
+    if not gate:
+        from . import journal as J
+        out = Path(output_path)
+        new = write(text, changes)
+        J.write(new, out, inp)
+        meta = {c["id"]: dict(kind="tail", old_len=round(c["old_len"], 4), new_len=round(c["new_len"], 4),
+                              neck=c.get("neck")) for c in changes}
+        rep.update(kept=len(changes), stats_out=PT.stats(new, info), necks=sum(1 for c in changes if c.get("neck")),
+                   len_delta_mm=round(sum(c["new_len"] - c["old_len"] for c in changes), 3), hazards=hazards,
+                   total_s=round(time.monotonic() - t0, 1), gate=False,
+                   _entries=J.diff_entries("tails", text, new, journal_keys(changes), meta))
+        return rep
     base_rep = drc.run(staged, wd / "in.drc.json", timeout=max(10, end_t - time.monotonic()))
     base = drc.summary(base_rep)
     rep["drc_in"] = base

@@ -464,6 +464,58 @@ def find_fork(ctx, stage, code=None):
     return get(fork_key(ctx, stage, code)) if ctx is not None else None
 
 
+# ---- a cached function of a board ------------------------------------------------------
+#
+# kae.route.finish: its output is a deterministic function of the input board and project files,
+# the code and its options (P9 of docs/topics/routing/routing-stages.md), so an A/B whose arms
+# differ only after it, or a re-run of the same arm, replays it. Same store, same 50 GB LRU cap.
+
+def board_key(step, board, project=None, opts=None, tool=None):
+    """Key of a step on `board`: its bytes, the project files of `project` (default: beside the
+    board), the kae source (code_id), `opts` and the tool's identity (e.g. KiCad's version)."""
+    b, pr = Path(board), Path(project or board)
+    files = dict(board=file_sha(b), **{e: file_sha(pr.with_suffix(e)) for e in (".kicad_pro", ".kicad_dru")
+                                         if pr.with_suffix(e).exists()})
+    return make_key(step, dict(input=files, opts=json.loads(json.dumps(opts or {}, sort_keys=True, default=str)),
+                               code=code_id(), tool=tool))
+
+
+def cached_board_step(step, key, outputs, compute, timeout=None):
+    """`compute()` -> (report, cacheable) through the cache: a hit restores `outputs` {name: path}
+    and returns the stored report (with "step_cache": "hit"), charged its recorded seconds, when
+    those fit in `timeout`; a miss runs `compute`, which writes `outputs`, and stores them with the
+    report when it says the result is cacheable (it did not stop for time). Without the cache it
+    just runs `compute`."""
+    if not enabled():
+        return compute()[0]
+    t0 = _real_monotonic()
+    with reading(key) as meta:
+        if meta is not None and (timeout is None or meta.get("seconds", 0) <= timeout):
+            rp = Path(next(iter(outputs.values()))).with_name(f".{step}-report.json")
+            try:
+                restore(meta, {**outputs, "report": rp})
+                rep = json.loads(rp.read_text())
+                rp.unlink(missing_ok=True)
+            except (OSError, ValueError):
+                meta = None
+            if meta is not None:
+                charge(step, True, meta["seconds"], _real_monotonic() - t0, key)
+                rep["step_cache"] = "hit"
+                return rep
+    t1 = _real_monotonic()
+    rep, cacheable = compute()
+    dt = _real_monotonic() - t1
+    stored = False
+    if cacheable and all(Path(p).exists() for p in outputs.values()):
+        rp = Path(next(iter(outputs.values()))).with_name(f".{step}-report.json")
+        rp.write_text(json.dumps(rep, default=str))
+        stored = put(key, dict(step=step, seconds=round(dt, 3)), {**outputs, "report": rp})
+        rp.unlink(missing_ok=True)
+    charge(step, False, dt, dt, key, cacheable=cacheable)
+    rep["step_cache"] = "stored" if stored else ("miss" if cacheable else "uncacheable")
+    return rep
+
+
 # ---- charges ------------------------------------------------------------------------------
 
 def charge(step, hit, charged_s, real_s, key=None, cacheable=True):

@@ -252,11 +252,13 @@ def _legal(staged, info):
     return lambda net, layer, w, a, b: not sp.track_violations(net, layer, w, a, b, first=True)
 
 
-def run(input_path, output_path, overlap=None, workdir=None, timeout=1800, reend=False, rails="centre", log=print):
+def run(input_path, output_path, overlap=None, workdir=None, timeout=1800, reend=False, rails="centre", log=print,
+        gate=True):
     """The DRC-gated pass: plan, write, KiCad DRC, revert what made it worse. With `reend`, entries
     more than 10 degrees off the edge normal are re-ended perpendicular (pieces checked exactly).
     Returns a report: planned/kept changes, cut and re-ended counts, DRC in and out, and the pad
-    entries (stats) of the input and the output."""
+    entries (stats) of the input and the output. `gate=False` (kae.route.finish): no DRC; every
+    trim is written and returned as kae.route.journal entries (one per segment) in rep["_entries"]."""
     from . import constraints as CN
     from . import drc
     import time
@@ -273,6 +275,13 @@ def run(input_path, output_path, overlap=None, workdir=None, timeout=1800, reend
                reended=sum(1 for t in trims if t[4] == "reend"),
                cut_mm=round(sum(math.dist(t[0][t[1]], t[2]) for t in trims if t[4] == "cut"), 3),
                stats_in=stats(text, info))
+    if not gate:
+        from . import journal as J
+        new = write(text, trims)
+        J.write(new, output_path, inp)
+        rep.update(kept=len(trims), stats_out=stats(new, info), gate=False,
+                   _entries=J.diff_entries("trim", text, new, {t[0]["uuid"]: t[0]["uuid"] for t in trims}))
+        return rep
     base_rep = drc.run(staged, wd / "in.drc.json", timeout=max(10, end_t - time.monotonic()))
     base = drc.summary(base_rep)
     rep["drc_in"] = base
