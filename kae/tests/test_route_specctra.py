@@ -343,3 +343,12 @@ def test_check_import_flags_missing_and_wrong_net_copper(tmp_path):
     assert {h["code"]: h["severity"] for h in hz} == {"ses_import_wrong_net": "block", "ses_import_incomplete": "warn"}
     for h in hz:
         assert set(h) == {"code", "severity", "category", "message", "objects", "evidence", "fix"}
+
+
+def test_session_drops_zero_length_points():
+    ses = S.parse('''(session x (routes (resolution um 10) (network_out
+      (net A (wire (path F.Cu 2000 0 0 100 0 100 0 100 0)) (wire (path F.Cu 2000 5 5 5 5))))))''')
+    n = translate.drop_repeated_points(S.find(S.find(ses, "routes"), "network_out"))
+    net = S.find(S.find(S.find(ses, "routes"), "network_out"), "net")
+    assert n == 3
+    assert [p[3:] for w in S.findall(net, "wire") for p in S.findall(w, "path")] == [["0", "0", "100", "0"]]

@@ -896,7 +896,43 @@ def fix_session(ses_tree, plan):
     snaps = getattr(plan, "wire_snaps", None) or {}
     if snaps:
         out["points_restored"] = _unsnap(net_out, snaps, scale)
+    zl = drop_repeated_points(net_out)
+    if zl:
+        out["zero_length_points"] = zl
     return out
+
+
+def drop_repeated_points(net_out):
+    """Remove a wire path's points that repeat the one before (after the session's rounding), and
+    wires left with a single point. Freerouting writes a corner whose rational coordinates round
+    to its neighbour's as a second point; KiCad imports that as a zero-length track, which its DRC
+    reports as `tracks_crossing` against any track within about a millimetre (magtag BATT_MON,
+    aifryz ETH_TXN). Returns the points removed."""
+    n = 0
+    for net in findall(net_out or [], "net"):
+        for w in list(findall(net, "wire")):
+            for p in findall(w, "path"):
+                if len(p) < 5:
+                    continue
+                head, coords = p[:3], p[3:]
+                pts, keep = [], []
+                for i in range(0, len(coords) - 1, 2):
+                    try:
+                        q = (round(float(coords[i])), round(float(coords[i + 1])))
+                    except (TypeError, ValueError):
+                        pts = None
+                        break
+                    if keep and keep[-1][0] == q:
+                        n += 1
+                        continue
+                    keep.append((q, (coords[i], coords[i + 1])))
+                if pts is None:
+                    continue
+                if len(keep) < 2:
+                    S.remove(net, w)
+                    break
+                p[:] = head + [c for _q, xy in keep for c in xy]
+    return n
 
 
 def _unsnap(net_out, snaps, scale):
