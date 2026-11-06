@@ -161,6 +161,17 @@ tier1c() {
     "$(lname ladder place)" "$(lname levelc-esc place)" "$(lname strict-esc place)"
 }
 
+tier1d() {
+  # ---- P2 ladder v2 (2026-11-06): fc00528 fixes the unverified-rung choice and the overrun, and skips
+  # strict when drawn courtyards overfill the board. Only the ladder arm is new (run with SHA=fc00528);
+  # the controls are tier 1c's levelc-esc / strict-esc at 5ce841b (the fix touches the ladder path only).
+  place "$(lname ladder2 place)" place strict_then_level_c escalate
+  local C=5ce841b
+  SHA=5ce841b6ab328409f5d60b3a5af7f09f72153c8b exp legality-ladder2-place-down $LB/legality-ab.boards.txt 2 \
+    "P2 ladder v2 at $S7 vs tier 1c's levelc-esc / strict-esc at $C on the 113 downgrade boards, k=2" \
+    "$(lname ladder2 place)" "kae place legality levelc-esc (place) $C" "kae place legality strict-esc (place) $C"
+}
+
 tier2() {
   # ---- J13 eff_tiebreak: reuses the A/A control's runs
   joint "kae joint decide eff1 $S7 (restarts)" "--set eff_tiebreak=1"
@@ -200,6 +211,7 @@ exps() {
   case $1 in
     1) echo legality-ab-place-down legality-ab-place-relax legality-ab-place-ctrl legality-ab-fixed-down legality-ab-fixed-relax copper-ab edge-ab2 aa-joint ;;
     1c) echo legality-ladder-place-down ;;
+    1d) echo legality-ladder2-place-down ;;
     1b) echo legality-ab2-place-down legality-ab2-fixed-down ;;
     2) echo eff-tiebreak-ab keepupright-ab area-cost-ab2 ;;
     3) echo placement-decide-staged placement-decide-joint ;;
