@@ -290,8 +290,11 @@ def placement_errors(res):
 
 
 def rung_key(errs):
-    """Better is smaller: no shorts or clearance errors first, then fewer placement errors."""
-    return (sum(errs.get(t, 0) for t in ELECTRICAL) > 0, sum(errs.values()))
+    """Better is smaller: no shorts or clearance errors first, then fewer of them, then fewer
+    placement errors (soldiercrab: strict 18 shorts and 18 clearance but 56 errors in all against
+    level_c's 16 and 9 in 78, mostly mask bridges; the total alone kept strict)."""
+    el = sum(errs.get(t, 0) for t in ELECTRICAL)
+    return (el > 0, el, sum(errs.values()))
 
 
 def kicad_checked(res):

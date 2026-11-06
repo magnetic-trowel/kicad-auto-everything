@@ -532,3 +532,21 @@ def test_a_single_problem_takes_the_ladder_as_level_c(tmp_path):
     assert resolve_severity(b, opts={"place_severity": "strict"}) == "strict"
     with pytest.raises(ValueError):
         resolve_severity(b, opts={"place_severity": "loose"})
+
+
+def test_ladder_ranks_by_electrical_errors_then_total_and_bounds_the_diagnosis():
+    """rung_key: fewer shorts and clearance errors beat fewer errors in all (soldiercrab:
+    strict 36 electrical in 56 against level_c 25 in 78). close_loop/diagnose with a deadline
+    stop trying spots when it passes (the ladder's rungs; pico-ice spent 70 s a part)."""
+    import time
+    from kae.place import exact
+    from kae.place.pipeline import rung_key
+    from kae.place.problem import Problem
+    from kae.place.state import State
+    strict = {"shorting_items": 18, "clearance": 18, "courtyards_overlap": 2, "solder_mask_bridge": 18}
+    level_c = {"shorting_items": 16, "clearance": 9, "solder_mask_bridge": 52, "items_not_allowed": 1}
+    assert rung_key(level_c) < rung_key(strict) and rung_key({"courtyards_overlap": 9}) < rung_key(level_c)
+    P = Problem.build(kicad_file.load(FIXTURE))
+    st = State(P)
+    d = exact.diagnose(P, st, exact.ExactModel(P, st), P.mov[0], deadline=time.monotonic() - 1.0)
+    assert d["reason"] == "unknown"

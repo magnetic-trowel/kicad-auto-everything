@@ -1635,11 +1635,12 @@ def _intrinsic(v):
 
 
 # ----------------------------------------------------------------------------- diagnosis
-def diagnose(P, st, E, i, limit=400):
+def diagnose(P, st, E, i, limit=400, deadline=None):
     """Why part i found no clean spot: 'no_room' (not even with every other movable part
     gone: the outline, locked parts and rule areas leave none), 'side_full' (the movable
     parts' own area on its side exceeds the free area), else 'crowded' (room exists, the
-    neighbours fill it). Returns {reason, detail}."""
+    neighbours fill it). Returns {reason, detail}. `deadline` (monotonic seconds): stop trying
+    candidates then ('unknown'; one part's 800 tries took 70 s on pico-ice)."""
     p = P.parts[i]
     S, pad = _tables(P, st, set(P.mov))
     fixed = {q.i for q in P.parts if not q.movable} | {i}
@@ -1648,7 +1649,9 @@ def diagnose(P, st, E, i, limit=400):
         S, pad = _tables(P, st, set(P.mov), obstacles=False)
         cands = _candidates(P, st, i, S, pad, list(range(len(p.rots))), 4.0, limit)
     clean = None
-    for c, X, Y, k in cands:
+    for n, (c, X, Y, k) in enumerate(cands):
+        if deadline is not None and time.monotonic() >= deadline:
+            return dict(reason="unknown", detail=f"{p.ref}: out of time after {n} of {len(cands)} spots")
         f = E.findings_at(i, X, Y, k)
         if not [v for v in f if set(v["parts"]) <= fixed]:
             clean = (X, Y, k)
@@ -1677,7 +1680,7 @@ def close_loop(P, st, time_s, log=None, deadline=None):
             if deadline is not None and time.monotonic() >= deadline:
                 rep.setdefault("diagnosis_skipped", []).append(P.parts[q].ref)
                 continue
-            rep["diagnosis"][P.parts[q].ref] = diagnose(P, st, E, q)
+            rep["diagnosis"][P.parts[q].ref] = diagnose(P, st, E, q, deadline=deadline)
         if log:
             for r, d in rep["diagnosis"].items():
                 log(f"illegal: {d['reason']}: {d['detail']}")
