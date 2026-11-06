@@ -21,6 +21,7 @@ Consequences:
 - The same recipe always gets the same method id, under any name. Changing any commit, flag, timeout, binary or KiCad version gives a new id. Names may repeat across versions; the id tells them apart.
 - A harness commit that does not touch scoring keeps the same DRC evaluator, so its scores stay comparable. A scoring change makes a new evaluator, and runs gain a new evaluation beside the old one. Runs are never redone for that.
 - An **experiment** is a view: methods × boards, plus reports. A run that already exists for a method on a board is reused. Comparing a new router against the baseline only runs the new router.
+- A task spec bump gives every board a new task id, but a run still counts on the new task when the task it ran on had the same content (see [Task aliases](#task-aliases)). Only boards whose prepared input changed are run again.
 - Code must be pushed when it is registered, so every link works. `--allow-dirty` freezes uncommitted work as a local snapshot commit and saves its patch next to the method.
 
 ## Layout
@@ -34,6 +35,7 @@ Consequences:
   boards/<board-id>/
     board.json                        corpus row
     tasks/<task-id>/task.json         prepared task (board sha256, task spec, KiCad); human DRC
+    tasks/<task-id>/content.json      content hash of the prepared task, per harness commit that prepared it
     prepare-failures/<harness>.json   when a harness could not build the task
     runs/<slug>.<method-id8>.a<attempt>/
       run.json                        method, task, harness commit, timing, CPU, router outcome
@@ -78,7 +80,7 @@ nothing in that experiment.
 ## Per board job
 
 1. **Preflight.** KiCad's Python must import pcbnew. If it can't, the job exits 75 and kaeq retries it; this is an infrastructure failure, not a board result.
-2. **Prepare.** `kaebench prepare-dir` builds the route task once per harness commit. Its task id is the hash of the board file sha256, task spec and KiCad version.
+2. **Prepare.** `kaebench prepare-dir` builds the route task once per harness commit. Its task id is the hash of the board file sha256, task spec and KiCad version. The job records the task's content hash, and that of the older tasks the methods' runs were made on (see [Task aliases](#task-aliases)).
 3. **Run.** Every missing method runs in one `kaebench run` (built-in adapters, interleaved) or one run per `--command` method. The human layout (the `reference` method) is scored once per board. The kaebench score becomes the run's DRC evaluation.
 4. **Physics.** `physics_board.py` runs kae's routed module physics on each new run's scored board. The brief is built from the task input, so module ids pair with the human run.
 5. **Archive.** Run folders are written atomically, with bug records. If another experiment's job wrote the same run meanwhile, the first one is kept.
@@ -109,6 +111,15 @@ the cache directory (kaebench `Sandbox`) and whose `restart.py` charges cached t
 - `run.json` → `work.step_cache` holds hits, misses, uncacheable steps, charged and saved seconds and the
   real wall time; `wall_s` is charged time.
 - Put the cache on local disk, never the NFS home. Delete it any time; nothing else depends on it.
+
+## Task aliases
+
+Before task spec 10, prepare drew random uuids for objects that a board file stores no uuid for (KiCad 5/6 files, generated boards). Then one task id could stand for several different inputs, and a stored output re-scored against a new preparation came out invalid. From spec 10 on, prepare is deterministic: the same board bytes give byte-identical task files.
+
+- **Content hash** (`task_content`, `v1:`). It covers the files of `reference/` and of the kind's input directory (`drc.json` reports, which are dated, are left out) and the parts of `task.json` that the scorer and runner read: reference stats, pads outside, the kind's task entry, split and project rules. Local paths, the task spec and the round trip are left out. Each job stores it in `tasks/<id>/content.json`, under the harness commit that prepared the task.
+- **Alias.** `find_run` counts a run made on another task of the same board file, kind and KiCad when that task's content, as prepared by the run's own harness (`task_prepared_by`, else `harness_commit`), equals a content recorded for the wanted task. Inputs that differ never alias. A spec-9 preparation of a board without uuids is random, so it never equals the seeded one.
+- **Old tasks.** Their content is computed lazily. The first job on a board at a newer spec re-prepares the board with each older harness commit whose runs it could reuse (`fill_old_contents`, one prepare per commit), if that harness's code is in `code/`. `kaeres job --content-only --harness H --board B --method M ...` does only this, so the queue can do it ahead of an experiment.
+- **Older-spec methods.** From spec 10 on, a method pinned to a harness of an older task spec runs, with its own harness, on tasks prepared by the experiment's harness (`prep_harness`), and `exp create` accepts it. Its stored runs on unchanged boards are reused; on changed boards it runs again, on a deterministic task. Runs keep the DRC evaluation of the harness that scored them, as before.
 
 ## Bug records
 

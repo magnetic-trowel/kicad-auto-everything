@@ -136,3 +136,76 @@ def test_exp_create_refuses_a_method_prepared_on_another_task_spec(monkeypatch, 
     a = type("A", (), dict(name="x", method=["fr"], harness="h9", kae="h9", boards=None, attempts=1, description=""))
     with pytest.raises(SystemExit, match="another task spec"):
         K.cmd_exp_create(a)
+
+
+def _task_dir(root, board_text="(kicad_pcb)\n", repo="local:/a"):
+    """A kaebench tasks/<board> directory with a route input."""
+    import json
+    t = root / "b1"
+    for sub in ("reference", "route/input"):
+        (t / sub).mkdir(parents=True, exist_ok=True)
+        (t / sub / "board.kicad_pcb").write_text(board_text)
+        (t / sub / "drc.json").write_text(json.dumps({"date": str(root)}))  # dated: not content
+    rec = dict(id="b1", repo=repo, task_spec=9, pcb_sha256="s", split="A", reference=dict(stats={"pads": 2}),
+               tasks=dict(route=dict(input_stats={"tracks": 0})), roundtrip=dict(route=dict(ok=True)))
+    (t / "task.json").write_text(json.dumps(rec))
+    return t
+
+
+def test_task_content_covers_inputs_not_paths_or_reports(tmp_path):
+    a = kaeres.task_content(_task_dir(tmp_path / "a", repo="local:/a"), "route")
+    b = kaeres.task_content(_task_dir(tmp_path / "b", repo="local:/b"), "route")
+    c = kaeres.task_content(_task_dir(tmp_path / "c", board_text="(kicad_pcb (uuid x))\n"), "route")
+    assert a and a == b and a != c
+    assert kaeres.task_content(_task_dir(tmp_path / "d"), "place") is None
+
+
+def _store(tmp_path, monkeypatch, old_content, new_content):
+    """A board with a spec-9 route task (a run of method m on it, prepared by harness h9) and a spec-10
+    route task of the same board file and KiCad, each with the recorded content."""
+    import json
+    monkeypatch.setattr(kaeres, "STORE", tmp_path)
+    bd = tmp_path / "boards" / "b1"
+    for tid, spec, hc, content in (("old000000000", 9, "h9", old_content), ("new000000000", 10, "h10", new_content)):
+        (bd / "tasks" / tid).mkdir(parents=True)
+        (bd / "tasks" / tid / "task.json").write_text(json.dumps(dict(
+            id=tid, prepared_by=hc, recipe=dict(board_sha256="s", task_spec=spec, kind="route", kicad="10.0.7"))))
+        (bd / "tasks" / tid / "content.json").write_text(json.dumps({hc: content}))
+    (bd / "runs" / "m.a0").mkdir(parents=True)
+    (bd / "runs" / "m.a0" / "run.json").write_text(json.dumps(dict(
+        run="m.a0", method_id="m", attempt=0, task_id="old000000000", harness_commit="h9")))
+
+
+def test_a_run_on_a_task_of_equal_content_is_reused(tmp_path, monkeypatch):
+    _store(tmp_path, monkeypatch, "v1:same", "v1:same")
+    d, r = kaeres.find_run("b1", "m", 0, "new000000000")
+    assert r is not None and r["task_id"] == "old000000000"
+
+
+def test_a_run_on_a_task_of_other_content_is_not_reused(tmp_path, monkeypatch):
+    _store(tmp_path, monkeypatch, "v1:random-uuids", "v1:seeded")
+    assert kaeres.find_run("b1", "m", 0, "new000000000") == (None, None)
+    assert kaeres.find_run("b1", "m", 0, "old000000000")[1] is not None  # still on its own task
+
+
+def test_content_of_another_harness_or_board_file_is_not_an_alias(tmp_path, monkeypatch):
+    import json
+    _store(tmp_path, monkeypatch, "v1:same", "v1:same")
+    old = tmp_path / "boards" / "b1" / "tasks" / "old000000000"
+    # the content recorded for the old task came from a harness that did not make the run
+    (old / "content.json").write_text(json.dumps({"h9-other": "v1:same"}))
+    assert kaeres.find_run("b1", "m", 0, "new000000000") == (None, None)
+    (old / "content.json").write_text(json.dumps({"h9": "v1:same"}))
+    tj = json.loads((old / "task.json").read_text())
+    tj["recipe"]["board_sha256"] = "t"  # another board file
+    (old / "task.json").write_text(json.dumps(tj))
+    assert kaeres.find_run("b1", "m", 0, "new000000000") == (None, None)
+
+
+def test_older_spec_methods_prepare_with_the_experiments_harness_from_spec_10(monkeypatch):
+    specs = {"h8": 8, "h9": 9, "h10": 10, "h10b": 10}
+    monkeypatch.setattr(kaeres, "harness_task_spec", lambda c: specs.get(c))
+    assert kaeres.prep_harness("h9", "h10") == "h10"
+    assert kaeres.prep_harness("h10b", "h10") == "h10b"
+    assert kaeres.prep_harness("h8", "h9") == "h8"  # before spec 10 a method keeps its own tasks
+    assert kaeres.prep_harness("h9", "unknown") == "h9"
