@@ -25,9 +25,10 @@ RHO_CU_OHM_MM = 1.72e-5            # copper resistivity, ohm mm
 # (IQR 0.18-3.4) over 147 rail nets >= 0.1 A on 59 suite boards, i.e. tracks about 3.5x narrower
 # (tools/research/physics/area_cost_widths.py). Kept until the A/B (tools/kaeres/experiments/area-cost-ab.sh)
 # decides; reported as a defaulted knob (hazard area_cost_defaulted).
-AREA_COST = 0.05
-AREA_COST_BASIS = ("economic, always-on board: $0.0003-0.0008/mm^2 of 2-layer board vs 1 mW for 5 y at $0.15/kWh "
-                   "($0.0066); human layouts imply about 0.6 (tracks ~3.5x narrower than this default)")
+AREA_COST = 0.2
+AREA_COST_BASIS = ("A/B area-cost-ab2 (112 qualified boards): 0.2 vs 0.05 routed as clean (cp1 0.56 vs 0.55), "
+                   "completed more (0.91 vs 0.86, not significant) with fewer timeouts (21 vs 26) and the same "
+                   "physics; between the always-on economic value (0.05-0.12) and human layouts (~0.6)")
 
 
 def _net_matches(t, net, secs, kind=None):

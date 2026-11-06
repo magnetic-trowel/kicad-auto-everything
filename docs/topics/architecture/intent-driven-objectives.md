@@ -124,7 +124,7 @@ Rules:
 | connectivity, DRC, clearances, creepage | hard | legality, not preference |
 | part ratings with a source (V_max of a switch, T_j max) | hard, worst corner | a rating is a fact |
 | total copper dissipation | cost, 1 mW_eq/mW, CVaR20 | energy is absolute: it needs no guessed bound |
-| copper area (router widths only) | `knobs.route.area_cost` 0.05 mW_eq/mm², reported as defaulted | bounds w* = √(k_R ρ / (t a)); economic for an always-on board (0.05–0.12), but human layouts imply ≈ 0.6, tracks ≈ 3.5× narrower: basis and A/B in [field-solver-routing-and-intent](../../research/physics/field-solver-routing-and-intent.md) |
+| copper area (router widths only) | `knobs.route.area_cost` 0.2 mW_eq/mm², reported as defaulted | bounds w* = √(k_R ρ / (t a)); between the always-on economic value (0.05–0.12) and human layouts (≈ 0.6); chosen by A/B (0.2 completed most, same physics): basis and A/B in [field-solver-routing-and-intent](../../research/physics/field-solver-routing-and-intent.md) |
 | drop, heating, supply noise, victim pickup | reported, unpriced, against the old priors labelled `reference` | the user rejected assumed bounds as prices |
 | cable common mode | reported as a layout-only *transfer* quantity (nH of shared path per connector pair, V/A), with no CISPR verdict | no cable is assumed; it is priced only when `environment.cables` declares one |
 | radiated loop emission | reported in dBµV/m at 10 m next to CISPR 32 B, unpriced | an enclosure is unknown |
