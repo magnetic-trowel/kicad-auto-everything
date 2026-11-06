@@ -69,8 +69,9 @@ On a project that waives courtyard overlap, the default `strict_then_level_c` pl
 drawn courtyards (`strict`, no body relaxation) in 55% of `--time`. Only if that leaves placement
 errors (the exact check or KiCad's verdict after the KiCad rounds) does it place again with
 courtyards taken in 0.15 mm (IPC Level C, `level_c`) in the rest of the time, with body
-relaxation last. It keeps level_c unless strict was better (no shorts or clearance errors,
-then fewer errors). Why: on 113 waiving boards strict was legal under the real rules on 46% of
+relaxation last. Strict is skipped when drawn courtyards already cover more than the board. Each rung keeps
+15% of its share for its KiCad loop. A rung KiCad judged beats one it did not; otherwise level_c
+is kept unless strict was better by KiCad's counts (no shorts or clearance errors, then fewer errors). Why: on 113 waiving boards strict was legal under the real rules on 46% of
 runs against level_c's 28%, but left 12 boards with placement shorts against 6. The report
 gives `severity_used`, `severity_ladder` and a `severity_fallback` hazard. `strict`, `level_c`
 and `board` (follow the project) remain options.

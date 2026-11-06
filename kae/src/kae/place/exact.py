@@ -1664,13 +1664,20 @@ def diagnose(P, st, E, i, limit=400):
     return dict(reason="crowded", detail=f"{p.ref}: room exists (e.g. grid {clean}) but its region is full")
 
 
-def close_loop(P, st, time_s, log=None):
+def close_loop(P, st, time_s, log=None, deadline=None):
     """The closed legality loop at the end of a placement: exact repair, then for whatever is
-    left, why. Returns the repair report with 'diagnosis' {ref: {reason, detail}}."""
+    left, why. Returns the repair report with 'diagnosis' {ref: {reason, detail}}. `deadline`
+    (monotonic seconds): no part is diagnosed after it (a part's diagnosis took 37 s on
+    pico-ice, 7 parts 260 s); the rest are listed in 'diagnosis_skipped'."""
     rep = repair(P, st, time_s=time_s, log=log)
     if rep["stuck"]:
         E = ExactModel(P, st)
-        rep["diagnosis"] = {P.parts[q].ref: diagnose(P, st, E, q) for q in rep["stuck_parts"][:12]}
+        rep["diagnosis"] = {}
+        for q in rep["stuck_parts"][:12]:
+            if deadline is not None and time.monotonic() >= deadline:
+                rep.setdefault("diagnosis_skipped", []).append(P.parts[q].ref)
+                continue
+            rep["diagnosis"][P.parts[q].ref] = diagnose(P, st, E, q)
         if log:
             for r, d in rep["diagnosis"].items():
                 log(f"illegal: {d['reason']}: {d['detail']}")

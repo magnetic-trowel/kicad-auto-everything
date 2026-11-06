@@ -117,10 +117,11 @@ def body_hazards(rep, P, st):
     return rep["hazards"]
 
 
-def _escalate(P, st, workers, seed, log, time_s, relax_ok=False):
+def _escalate(P, st, workers, seed, log, time_s, relax_ok=False, hard_end=None):
     """Legality before wishes: drop the routing margin, then (relax_ok: relax_bodies 'escalate'
     or 'auto') let bodies without courtyards overlap (KiCad does not check them), legalizing
-    again after each step. Returns the steps taken with what each left illegal."""
+    again after each step. Returns the steps taken with what each left illegal. `hard_end`
+    (monotonic seconds; the severity ladder's rungs): no step starts after it, and none runs past it."""
     steps = []
     for step in ("escape bands off", "margin 0") + (("bodies relaxed",) if relax_ok else ()):
         if not grid_violations(st):
@@ -137,7 +138,13 @@ def _escalate(P, st, workers, seed, log, time_s, relax_ok=False):
             relaxed = P.relax_bodies()
             if not relaxed:
                 continue
-        r = legalize(P, st, time_s=time_s, workers=workers, seed=seed, log=log, window_share=0.5)
+        ts = time_s
+        if hard_end is not None:
+            ts = min(time_s, hard_end - time.monotonic())
+            if ts < 1.0:
+                steps.append(dict(step=step, skipped="time"))
+                break
+        r = legalize(P, st, time_s=ts, workers=workers, seed=seed, log=log, window_share=0.5)
         steps.append(dict(step=step, end_violators=r.get("end_violators"), violations=r.get("violations")))
         if step == "bodies relaxed":
             steps[-1]["relaxed"] = relaxed          # data; hazards: Problem.relaxed_body_hazards
@@ -243,6 +250,9 @@ def physics_summary(terms, poses, breakdown=True):
 LADDER = "strict_then_level_c"
 LADDER_STRICT_SHARE = 0.55   # strict's share of the caller's time; level_c gets the rest (>= 45%)
 LADDER_MIN_S = 20.0          # a level_c rung with less time left than this is not started
+LADDER_MAX_UTIL = 1.0        # strict is skipped when drawn courtyards fill more than the board on a side
+LADDER_KICAD_FRAC = 0.15     # each rung keeps this share of its time (at least LADDER_KICAD_MIN_S, at most
+LADDER_KICAD_MIN_S = 30.0    # half) for the caller's check: KiCad's DRC loop and the write
 ELECTRICAL = ("shorting_items", "clearance", "hole_clearance")   # errors that make a board not work
 
 
@@ -284,6 +294,20 @@ def rung_key(errs):
     return (sum(errs.get(t, 0) for t in ELECTRICAL) > 0, sum(errs.values()))
 
 
+def kicad_checked(res):
+    """KiCad's DRC judged the result as written (the caller's verify ran its loop)."""
+    return (res.verified or {}).get("clean") is not None and "kicad_verdict" in res.report
+
+
+def rung_rank(res):
+    """Smaller is better: a KiCad-judged rung first (an exact-check count alone never beats
+    KiCad's: openaio's unjudged strict rung had 3 electrical findings and 38-55 shorts), then
+    rung_key of KiCad's placer errors when judged, else of placement_errors."""
+    ck = kicad_checked(res)
+    errs = dict((res.report.get("kicad_verdict") or {}).get("by_type") or {}) if ck else placement_errors(res)
+    return (0 if ck else 1,) + rung_key(errs)
+
+
 def courtyard_margin_overlaps(P, st, min_area=1e-4, max_pairs=40):
     """Pairs of parts (at least one movable) whose drawn courtyards, deflated as KiCad's DRC does,
     overlap at the state's poses: [(ref, ref, mm^2, layer)], largest first. Under level_c these
@@ -320,7 +344,9 @@ def _rung_summary(res, seconds):
     return dict(severity=res.report.get("severity_used"), legal=not errs, errors=sum(errs.values()),
                 by_type=errs, electrical=sum(errs.get(t, 0) for t in ELECTRICAL),
                 relax_bodies=res.report.get("relax_bodies"), hpwl=res.report.get("hpwl"),
-                kicad_verified=(res.verified or {}).get("clean") is not None, seconds=round(seconds, 1))
+                kicad_verified=kicad_checked(res),
+                kicad_errors=(res.report.get("kicad_verdict") or {}).get("by_type") if kicad_checked(res) else None,
+                seconds=round(seconds, 1))
 
 
 def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, log=None, anneal=True,
@@ -331,7 +357,10 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     relaxation off, in LADDER_STRICT_SHARE of the time; when that leaves placement errors
     (placement_errors: the exact check, and KiCad's verdict when `verify` gives one) it places
     again from a fresh seed at 'level_c', with relax_bodies as set, in the time left, and keeps
-    level_c unless strict was better (rung_key). Order of softening: strict courtyards, then
+    level_c unless strict was better (rung_rank: a KiCad-judged rung first, then rung_key of
+    KiCad's counts). Strict is skipped, and level_c gets the whole time, when drawn courtyards
+    cover more than the board on a side (LADDER_MAX_UTIL). Each rung ends its placement
+    LADDER_KICAD_FRAC of its share early (hard_end), for `verify`. Order of softening: strict courtyards, then
     Level C courtyards, then (relax_bodies 'escalate') bodies freed to their pads, the riskiest.
     A project that does not waive courtyards_overlap has level_c = strict: one strict rung, with
     relax_bodies as set. `verify(res, end)`: the caller's check of a rung (kae.cli: write the
@@ -360,25 +389,43 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         except Exception as e:  # noqa: BLE001 - comprehension must not stop placement
             log(f"brief failed ({type(e).__name__}: {e}); placing without it")
             brief, src = {}, "none"
+
+    def kicad_reserve(share):
+        # the end of a rung's share kept for the caller's check (KiCad's DRC loop, the write)
+        return 0.0 if verify is None else min(0.5 * share, max(LADDER_KICAD_MIN_S, LADDER_KICAD_FRAC * share))
     t_strict = LADDER_STRICT_SHARE * float(time_s)
-    log(f"severity ladder: strict first ({t_strict:.0f} s of {float(time_s):.0f} s), level_c if it cannot fit")
-    r1 = _place_rung(board, time_s=t_strict, brief=brief, severity="strict", relax="off", **kw)
-    if verify is not None and r1.poses:
-        r1.verified = verify(r1, t0 + t_strict)
-    e1 = placement_errors(r1)
-    ladder["strict"] = _rung_summary(r1, time.monotonic() - t0)
+    res1 = kicad_reserve(t_strict)
+    ladder.update(kicad_reserve_s=round(res1, 1))
+    log(f"severity ladder: strict first ({t_strict:.0f} s of {float(time_s):.0f} s, {res1:.0f} s of it for KiCad), "
+        "level_c if it cannot fit")
+    r1 = _place_rung(board, time_s=t_strict - res1, brief=brief, severity="strict", relax="off",
+                     hard_end=t0 + t_strict - res1, max_util=LADDER_MAX_UTIL, **kw)
+    aborted = r1.report.get("aborted")
     if src is not None:
         r1.report["brief"]["source"] = src
-    if not e1:
-        ladder.update(rungs=1, fallback=None)
-        r1.report["severity_ladder"] = ladder
-        return r1
-    why = dict(errors=sum(e1.values()), by_type=e1,
-               source="exact check and KiCad DRC" if (r1.verified or {}).get("clean") is not None else "exact check")
+    if aborted:
+        e1 = {}
+        ladder["strict"] = dict(severity="strict", skipped=aborted,
+                                utilization=(r1.report.get("problem") or {}).get("utilization"),
+                                seconds=round(time.monotonic() - t0, 1))
+        why = dict(errors=None, by_type={}, source="occupancy", reason=aborted)
+        log(f"severity ladder: strict skipped ({aborted}); level_c with the whole time")
+    else:
+        if verify is not None and r1.poses:
+            r1.verified = verify(r1, t0 + t_strict)
+        e1 = placement_errors(r1)
+        ladder["strict"] = _rung_summary(r1, time.monotonic() - t0)
+        if not e1:
+            ladder.update(rungs=1, fallback=None)
+            r1.report["severity_ladder"] = ladder
+            return r1
+        why = dict(errors=sum(e1.values()), by_type=e1,
+                   source="exact check and KiCad DRC" if kicad_checked(r1) else "exact check")
     ladder["fallback"] = why
     left = end - time.monotonic()
-    log(f"severity ladder: strict left {why['errors']} placement errors {e1}; level_c with {left:.0f} s left")
-    if left < LADDER_MIN_S:
+    if not aborted:
+        log(f"severity ladder: strict left {why['errors']} placement errors {e1}; level_c with {left:.0f} s left")
+    if left < LADDER_MIN_S and not aborted:
         ladder.update(rungs=1, skipped=f"{left:.0f} s left, under {LADDER_MIN_S:.0f} s")
         r1.report["severity_ladder"] = ladder
         r1.report.setdefault("hazards", []).append(dict(
@@ -389,16 +436,19 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
             fix="Re-place with more time, or with --severity level_c."))
         return r1
     t1 = time.monotonic()
-    r2 = _place_rung(board, time_s=left, brief=brief, severity="level_c", **kw)
+    res2 = kicad_reserve(left)
+    r2 = _place_rung(board, time_s=left - res2, brief=brief, severity="level_c", hard_end=t1 + left - res2, **kw)
     if verify is not None and r2.poses:
         r2.verified = verify(r2, end)
     e2 = placement_errors(r2)
     ladder["level_c"] = _rung_summary(r2, time.monotonic() - t1)
     if src is not None:
         r2.report["brief"]["source"] = src
-    keep_c = rung_key(e2) < rung_key(e1)
+    # a rung KiCad has judged beats one only the exact check has; two judged rungs compare KiCad's counts
+    keep_c = bool(aborted) or rung_rank(r2) < rung_rank(r1)
     res = r2 if keep_c else r1
-    ladder.update(rungs=2, chosen="level_c" if keep_c else "strict", seconds=round(time.monotonic() - t0, 1))
+    ladder.update(rungs=1 if aborted else 2, chosen="level_c" if keep_c else "strict",
+                  seconds=round(time.monotonic() - t0, 1))
     res.report["severity_ladder"] = ladder
     if keep_c:
         P, st = r2.problem, r2.state
@@ -407,15 +457,17 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         for a, b, _, _ in pairs:
             refs += [r for r in (a, b) if r not in refs]
         left_cy = e2.get("courtyards_overlap", 0)
+        what = (f"Drawn courtyards (strict) cannot fit: {aborted}, so strict was not tried. " if aborted else
+                f"Drawn courtyards (strict) did not fit: strict left {why['errors']} placement errors "
+                f"({', '.join(f'{k} {v}' for k, v in sorted(e1.items()))}). ")
         res.report.setdefault("hazards", []).append(dict(
             code="severity_fallback", severity="warn" if left_cy else "info", category="assembly",
-            message=(f"Drawn courtyards (strict) did not fit: strict left {why['errors']} placement errors "
-                     f"({', '.join(f'{k} {v}' for k, v in sorted(e1.items()))}). kae placed again with IPC Level C "
-                     f"courtyards (level_c): each courtyard taken in by {P.cy_shrink:.2f} mm, as the project waives "
-                     f"courtyards_overlap. {len(pairs)} pairs of parts share courtyard margin"
-                     + (f"; {left_cy} courtyard overlaps remain even so." if left_cy else ".")),
+            message=(what + f"kae placed with IPC Level C courtyards (level_c): each courtyard taken in by "
+                     f"{P.cy_shrink:.2f} mm, as the project waives courtyards_overlap. {len(pairs)} pairs of parts "
+                     "share courtyard margin" + (f"; {left_cy} courtyard overlaps remain even so." if left_cy else ".")),
             objects=refs[:40],
             evidence=dict(used="level_c", courtyard_shrink_mm=P.cy_shrink, strict_errors=e1, level_c_errors=e2,
+                          strict_skipped=aborted or None,
                           margin_pairs=[dict(a=a, b=b, mm2=m, layer=ly) for a, b, m, ly in pairs],
                           source="kae.place.pipeline LADDER; IPC-7351 courtyard excess B 0.25 / C 0.10 mm"),
             fix="Check the listed parts' spacing for assembly, give the board more room, or re-place with "
@@ -427,17 +479,29 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
                      f"(level_c) were tried and left {sum(e2.values())}, no better, so the strict placement is kept."),
             objects=[], evidence=dict(used="strict", strict_errors=e1, level_c_errors=e2),
             fix="Give the board more room, fix parts in place, or remove parts."))
-    log(f"severity ladder: kept {ladder['chosen']} (strict {rung_key(e1)}, level_c {rung_key(e2)})")
+    log(f"severity ladder: kept {ladder['chosen']} (strict {None if aborted else rung_rank(r1)}, "
+        f"level_c {rung_rank(r2)})")
     return res
 
 
 def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, log=None, anneal=True,
                 edge_mate=False, anneal_args=None, angle_step=None, fixed=(), board_path=None, opts=None,
-                severity=None, relax=None):
+                severity=None, relax=None, hard_end=None, max_util=None):
     """One placement at one legality profile (place() runs one or two of these). `severity`:
     'strict', 'level_c' or 'board' (None: _severity_mode); `relax`: a relax_bodies mode that
-    overrides the setting (the strict rung of the severity ladder runs with 'off')."""
+    overrides the setting (the strict rung of the severity ladder runs with 'off'). The ladder's
+    rungs only: `hard_end` (monotonic seconds) caps the stages that otherwise take a minimum
+    time (escalation, final legalization, the closed loop and its diagnosis, the order and silk
+    passes), so a rung ends in its share; `max_util`: return at once, with report['aborted'] and
+    no poses, when the parts' occupancy on a side is over this fraction of the board (they
+    cannot all fit)."""
     t0 = time.monotonic()
+
+    def cap(s):     # a stage's time, within hard_end
+        return s if hard_end is None else max(1.0, min(s, hard_end - time.monotonic()))
+
+    def late():
+        return hard_end is not None and time.monotonic() >= hard_end - 1.0
     log = log or (lambda *a, **k: None)
     workers = workers or _default_workers()
     rep = dict(seed=seed, time_s=time_s, physics=physics, workers=workers, stages={})
@@ -550,6 +614,12 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
         p.kind = (bparts.get(p.uuid) or {}).get("kind", "")
     stage("problem", t)
     rep["problem"] = P.summary()
+    if max_util is not None and max(rep["problem"].get("utilization") or [0.0]) > max_util:
+        u = max(rep["problem"]["utilization"])
+        rep["aborted"] = f"occupancy {u:.3f} of the board on a side, over {max_util:g}: the parts cannot all fit"
+        log(f"{P.severity_mode}: {rep['aborted']}")
+        rep["seconds"] = round(time.monotonic() - t0, 2)
+        return Result(poses={}, report=rep, state=None, problem=P)
     n = len(P.mov)
     budget = plan_budget(time_s, n)
     rep["budget_s"] = round(budget, 1)
@@ -691,7 +761,8 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
         rep["legalize_seed"] = legalize(P, st, time_s=max(3.0, 0.15 * (deadline - time.monotonic())),
                                         workers=workers, seed=seed, log=log, window_share=0.0 if big else 0.6)
         if grid_violations(st):
-            rep["legalize_seed_escalation"] = _escalate(P, st, workers, seed, log, max(3.0, 0.1 * budget), relax_ok)
+            rep["legalize_seed_escalation"] = _escalate(P, st, workers, seed, log, max(3.0, 0.1 * budget), relax_ok,
+                                                        hard_end=hard_end)
         stage("legalize_seed", t)
     if big and not grid_violations(st) and time.monotonic() < deadline - 0.5 * budget:
         # big boards: CP-SAT floorplans region by region (the global one stops at
@@ -783,7 +854,8 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
     st = final
     viol = grid_violations(st)
     if viol:
-        rep["legalize_escalation"] = _escalate(P, st, workers, seed, log, max(3.0, 0.1 * budget), relax_ok)
+        rep["legalize_escalation"] = _escalate(P, st, workers, seed, log, max(3.0, 0.1 * budget), relax_ok,
+                                               hard_end=hard_end)
         viol = grid_violations(st)
     if viol and (P.margin > 0 or getattr(P, "escape_on", False)):
         # the routing margin and the escape bands are wishes, legality is not: judge (and repair)
@@ -794,8 +866,9 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
         P.set_margin(0.0)
         rep["margin_dropped"] = True
         viol = grid_violations(st)
-    if viol and time.monotonic() < deadline + 0.1 * budget:
-        rep["legalize_final"] = legalize(P, st, time_s=max(3.0, 0.1 * budget), workers=workers, seed=seed, log=log)
+    if viol and time.monotonic() < deadline + 0.1 * budget and not late():
+        rep["legalize_final"] = legalize(P, st, time_s=cap(max(3.0, 0.1 * budget)), workers=workers, seed=seed,
+                                         log=log)
         viol = grid_violations(st)
     if rep.get("legalize_escalation") or rep.get("legalize_final"):
         trace("legalize_escalation", st)
@@ -811,17 +884,20 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
         # leave the KiCad DRC its share (kae.cli runs it on the written board): ~0.1 s a part
         reserve = min(0.2 * float(time_s), 5.0 + 0.1 * len(P.parts))
         left = max(5.0, t0 + 0.9 * float(time_s) - 15.0 - reserve - t)
-        rep["closed_loop"] = exactmod.close_loop(P, st, time_s=left, log=log)
+        if hard_end is None:
+            rep["closed_loop"] = exactmod.close_loop(P, st, time_s=left, log=log)
+        else:
+            rep["closed_loop"] = exactmod.close_loop(P, st, time_s=cap(left), log=log, deadline=hard_end)
         rep["exact"] = exact_check(P, st)
         stage("closed_loop", t)
         trace("closed_loop", st)
-    if order:
+    if order and not late():
         # protection-order rules an annealer cut short left broken: the protection part to the
         # nearest clean spot that keeps them, the physics total bounded (kae.place.exact)
         t = time.monotonic()
         reserve = min(0.2 * float(time_s), 5.0 + 0.1 * len(P.parts))
         # a few seconds even when the stages ran over (a loaded host is when it is needed)
-        left = max(5.0, min(0.05 * budget + 5.0, t0 + 0.9 * float(time_s) - 15.0 - reserve - t))
+        left = cap(max(5.0, min(0.05 * budget + 5.0, t0 + 0.9 * float(time_s) - 15.0 - reserve - t)))
         phys = None
         if report_terms is not None:
             def phys():
@@ -835,13 +911,13 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
             rep["exact"] = exact_check(P, st)
             trace("order_fix", st)
         stage("order_fix", t)
-    if exactmod.silk_on(P):
+    if exactmod.silk_on(P) and not late():
         # silkscreen where the project makes it an error: a soft pass, legality kept
         t = time.monotonic()
         if "silk_text" not in rep:
             rep["silk_text"] = exactmod.refine_silk_text(P, log=log)
         reserve = min(0.2 * float(time_s), 5.0 + 0.1 * len(P.parts))
-        left = max(5.0, min(0.15 * budget + 10.0, t0 + 0.9 * float(time_s) - 15.0 - reserve - t))
+        left = cap(max(5.0, min(0.15 * budget + 10.0, t0 + 0.9 * float(time_s) - 15.0 - reserve - t)))
         phys = None
         if report_terms is not None:
             def phys():
