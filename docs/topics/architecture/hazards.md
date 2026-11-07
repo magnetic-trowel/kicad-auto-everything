@@ -86,6 +86,7 @@
 | `class_max_below_ipc` | warn, thermal | net class maximum below the IPC-2221 width for the current |
 | `escape_infeasible` | block, electrical | `escape.certificate`: balls no routing can escape under the rules, with the relaxations that suffice ([bga-routing-ranked-ideas.md](../routing/bga-routing-ranked-ideas.md)) |
 | `body_overlap` / `body_relaxed` | block / info, assembly | `Problem.relaxed_body_hazards`, per part `relax_bodies` freed (`escalate` by default: only when legalization fails; `off`, `auto`), on the final poses: block when its body overlaps another part ([kae-exact-legality](../../research/placement/kae-exact-legality.md)) |
+| `severity_fallback` | info / warn, assembly | `kae place` severity ladder (`strict_then_level_c`, the default): drawn courtyards did not fit, so level_c (courtyards 0.15 mm in) was kept, or strict was skipped because drawn courtyards overfill the board: info, objects the parts whose drawn courtyards share margin; warn when courtyard overlaps remain. Info when level_c was tried and strict kept; warn when no time was left to try it ([kae-exact-legality](../../research/placement/kae-exact-legality.md)) |
 | `check_not_run` | warn, data | the joint loop's final card `checked` has `false` (values reported `null`) |
 | `physics_over_budget` | warn | a module's routed u > 1 (the critical recheck flags u crossing 1, [critical-net-routing.md](../routing/critical-net-routing.md)) |
 | `outline_incomplete` | block, manufacturing | `kae place`: staged footprints carry Edge.Cuts, the outline is open |

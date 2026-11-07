@@ -377,7 +377,7 @@ def test_kicad_error_with_board_text_keeps_the_named_part_off_the_text():
         {"description": f"Pad 1 [x] of {i.ref} on F.Cu", "pos": {"x": 0, "y": 0}},
         {"description": "PCB text 'v20' on F.Cu", "pos": {"x": jx, "y": jy}, "uuid": "no-such-text"}]}]}
     fb = exact.kicad_feedback(P, st, report, step=0.5)
-    assert fb["errors"] == 1 and fb["constraints"] == 1
+    assert fb["errors"] == 1 and fb["constraints"] == 1 and fb["placer_by_type"] == {"clearance": 1}
     assert set(P.feedback["avoid"]) == {i.i} and not P.feedback["sep"]
     exact.kicad_feedback(P, st, report, step=0.5)                 # KiCad still objects: wider
     (g1, _), (g2, _) = P.feedback["avoid"][i.i]
@@ -388,7 +388,8 @@ def test_kicad_error_with_board_text_keeps_the_named_part_off_the_text():
         rep2 = {"violations": [{"type": "clearance", "severity": "error", "items": [
             {"description": f"Footprint {fixed.ref}", "pos": {"x": 0, "y": 0}},
             {"description": "PCB text 'x' on F.Cu", "pos": {"x": jx, "y": jy}}]}]}
-        assert exact.kicad_feedback(P, st, rep2)["fixed_only"] == 1
+        fb2 = exact.kicad_feedback(P, st, rep2)
+        assert fb2["fixed_only"] == 1 and fb2["placer_by_type"] == {}
 
 
 def test_knockout_text_box_carries_kicads_margin(tmp_path):
@@ -512,6 +513,7 @@ def test_kicad_loop_writes_the_best_judged_placement_back(monkeypatch):
     start = (int(st.X[i7]), int(st.Y[i7]), int(st.K[i7]))
     res, (clean, _) = run_loop([2, 5, 3], 2)          # worse after the first repair: round 0 back
     assert clean is False and res.report["kicad_written_round"] == 0
+    assert res.report["kicad_verdict"]["errors"] == 2        # the verdict of the board as written
     assert (int(st.X[i7]), int(st.Y[i7]), int(st.K[i7])) == start and written[-1] == res.poses
     assert res.poses[ref["U7"].uuid] == st.pose(i7)
     st.X[i7], st.Y[i7], st.K[i7] = start

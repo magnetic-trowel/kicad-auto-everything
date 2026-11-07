@@ -171,10 +171,12 @@ DEFAULTS = dict(
     escape_band_scale=1.0,         # band depth per side = scale x escapes on that side x (track + clearance)
     escape_band_max_mm=2.5,        # mm: the deepest band on one side
     escape_ring_pitch=0.5,         # mm: pad rings (QFN, QFP) at most this fine get bands
-    place_severity="level_c",      # placement legality: "level_c" keeps courtyards, copper-to-edge, rule areas,
-                                   # clearance, shorts and hole clearance errors whatever the project says,
-                                   # courtyards at IPC Level C where it waives them; "strict" drawn courtyards
-                                   # everywhere; "board" follows the project (kae.place.problem)
+    place_severity="strict_then_level_c",  # placement legality: courtyards, copper-to-edge, rule areas,
+                                   # clearance, shorts and hole clearance are errors whatever the project says.
+                                   # "strict_then_level_c" (default) places with drawn courtyards and, only when
+                                   # that leaves placement errors, again with courtyards at IPC Level C where
+                                   # the project waives them (kae.place.pipeline LADDER); "strict" and
+                                   # "level_c" one rung each; "board" follows the project (kae.place.problem)
     relax_bodies="escalate",       # placement: "escalate" (default) frees a courtyard-less part to its pads only when
                                    # legalization fails (each such overlap a body_overlap block hazard); "off" never;
                                    # "auto" also up front on a board over 95% full (kae.place.pipeline)
