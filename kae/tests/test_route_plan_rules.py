@@ -69,10 +69,11 @@ def test_land_necks_by_class_process_and_series_current():
              "U1": [(9, True, "A", 0.3), (10, True, "B", 0.3), (11, True, "C", 0.3)]}
     power, ground = {"+3V3", "+5V", "VIN"}, {"GND"}
     n, ser = PC.land_necks(lands, power, ground, {"+5V": 0.1, "VIN": 0.1}, "reflow")
-    assert n[1] == n[2] == 0.25 and n[3] == 0.3 and 5 not in n and 9 not in n
+    assert n[1] == n[2] == 0.25 and n[3] == 0.3 and n[5] == 1.3 and 9 not in n  # 1206: capped at its land
     assert ser[1] == 0.0 and ser[7] == 0.1 and n[7] == pytest.approx(max(0.3, PC.current_need(0.1)))
     assert PC.land_necks(lands, power, ground, {}, "hand")[0][5] == 0.5        # hand: 1206 too
-    assert PC.land_necks(lands, power, ground, {}, "wave")[0] == {}            # glued chips: none
+    wave = PC.land_necks(lands, power, ground, {}, "wave")[0]                  # glued chips: land width only
+    assert wave[1] == 0.5 and wave[3] == 0.9 and wave[5] == 1.3
     # a rail current that needs more than the land: no neck
     n2, _ = PC.land_necks(lands, power, ground, {"+5V": 5.0}, "reflow")
     assert 7 not in n2 and 8 not in n2
@@ -87,13 +88,14 @@ def test_plan_carries_necks_currents_and_the_land_hazard(tmp_path):
     c1 = rules[("C1", "1")]
     assert c1.two_terminal and c1.neck == 0.3 and plan.process == "reflow"     # 0805 land, 1.0 mm wide
     assert rules[("U2", "4")].neck is None and not rules[("U2", "4")].two_terminal
-    assert rules[("L1", "1")].neck is None                                      # 1210: no neck in reflow
+    l1 = rules[("L1", "1")]                                                     # 1210: capped at its land in reflow
+    assert l1.neck == pytest.approx(1.2)
     assert rules[("FB1", "1")].neck == 0.3 and not plan.hazards
     op = tmp_path / "op.json"
     op.write_text(json.dumps({"parts": {"FB1": {"I_A": 3.0}}, "requirements": {"assembly": {"process": "wave"}}}))
     _, _, plan2, _ = _plan(tmp_path / "b", [fb], {"operating": str(op)})
     r2 = {(r.ref, str(r.number)): r for r in plan2.pad_rules.values()}
-    assert plan2.process == "wave" and r2[("C1", "1")].neck is None
+    assert plan2.process == "wave" and r2[("C1", "1")].neck == pytest.approx(1.0)  # wave: land width only
     assert r2[("FB1", "1")].series_a == 3.0 and r2[("FB1", "1")].need > 0.9
     hz = [h for h in plan2.hazards if h["code"] == "land_enlarged_by_track"]
     assert len(hz) == 2 and {h["objects"][0] for h in hz} == {"FB1.1", "FB1.2"}
