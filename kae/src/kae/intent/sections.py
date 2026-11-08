@@ -54,11 +54,14 @@ class SectionError(ValueError):
     pass
 
 
-def apply(sections, spec):
+def apply(sections, spec, brief=None):
     """The intent's edits: {"accept": "all" | [ids], "drop": [ids], "rename": {old: new},
     "add": [{"id", "parts", "nets", "merge": [ids]}]}. Returns {id: Section}; unknown ids are errors that
-    name the ids that exist."""
+    name the ids that exist, as are a rename or an add onto an existing id and, given the brief, an added
+    part or net the board does not have (intent-driven-objectives.md §8: unresolved members are errors)."""
     spec = spec or {}
+    refs = {p["ref"] for p in brief["parts"].values()} if brief and brief.get("parts") else None
+    nets = set(brief["nets"]) if brief and brief.get("nets") else None
     secs = dict(sections)
     acc = spec.get("accept", "all")
     if acc != "all":
@@ -73,6 +76,9 @@ def apply(sections, spec):
     for old, new in (spec.get("rename") or {}).items():
         if old not in secs:
             raise SectionError(f"sections.rename: unknown '{old}'; this board's sections: {sorted(secs)[:40]}")
+        if new != old and new in secs:
+            raise SectionError(f"sections.rename: '{old}' -> '{new}': '{new}' already exists; drop it first, or "
+                               f"merge both with sections.add")
         s = secs.pop(old)
         s.id = new
         secs[new] = s
@@ -80,6 +86,12 @@ def apply(sections, spec):
         sid = a.get("id")
         if not sid:
             raise SectionError("sections.add: every added section needs an 'id'")
+        if sid in secs:
+            raise SectionError(f"sections.add: '{sid}' already exists; pick a new id (or rename or drop it first)")
+        for what, have in (("parts", refs), ("nets", nets)):
+            bad = sorted(x for x in a.get(what, []) if have is not None and x not in have)
+            if bad:
+                raise SectionError(f"sections.add '{sid}': {what} {bad} are not on this board")
         s = Section(sid, a.get("kind", "intent"), set(a.get("parts", [])), set(a.get("nets", [])), set(), "intent")
         for m in a.get("merge", []):
             if m not in sections and m not in secs:

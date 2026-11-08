@@ -22,6 +22,7 @@
 """
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import dataclass, field
 
@@ -57,6 +58,8 @@ class Struct:
     src: dict = field(default_factory=dict)
     choices: dict = field(default_factory=dict)   # seg index -> [[pad idx], ...]: the segment
     #                                               ends at the nearest of these pad groups
+    min_sep: list = field(default_factory=list)   # [((part, [pad idx]), (part, [pad idx]), mm)]:
+    #                                               pads at least this far apart (hard)
 
 
 @dataclass
@@ -166,6 +169,7 @@ def structures(P, brief):
             continue
         segs = []
         choices = {}
+        min_sep = []
 
         def seg(a, b, wt, alts=None):
             if alts is not None and len(alts) > 1:
@@ -221,6 +225,17 @@ def structures(P, brief):
                     if xp:
                         segs.append(((xt, xp), (ic, ip), w))
             xall = [k for k, pd in enumerate(P.parts[xt].fp.pads) if pd.net]
+            # a vendor minimum distance (ESP32 XTAL-DMIN, docs/topics/rules/crystals-clocks.md):
+            # every crystal pad at least d_min from the IC's XIN and XOUT pins
+            dmin = _d_min(s)
+            if dmin and ic is not None:
+                xnets = set(s.get("nets") or [])
+                xsig = [k for k in xall if P.parts[xt].fp.pads[k].net in xnets] or xall
+                for nm in ("xin", "xout"):
+                    ip = pads(ic, _nums(s.get(nm))) if s.get(nm) is not None else []
+                    min_sep += [((xt, [k]), (ic, ip), dmin) for k in xsig] if ip else []
+            # the XIN cap is placed first and closest (XTAL-CAP): a slightly stronger pull
+            xin_caps = set(_ids(s.get("load_caps_xin")))
             for c in _ids(s.get("load_caps")):
                 if c in by_uuid:
                     ci = by_uuid[c]
@@ -228,7 +243,7 @@ def structures(P, brief):
                     xp = [k for k in xall if P.parts[xt].fp.pads[k].net in nets_c] or xall
                     cp = [k for k, pd in enumerate(P.parts[ci].fp.pads) if pd.net in {P.parts[xt].fp.pads[q].net for q in xp}] or [0]
                     members.add(ci)
-                    segs.append(((ci, cp), (xt, xp), 0.5 * w))
+                    segs.append(((ci, cp), (xt, xp), (0.6 if c in xin_caps else 0.5) * w))
         elif kind == "commutation_cell":
             loop = []
             for m in s.get("loop", []):
@@ -291,9 +306,20 @@ def structures(P, brief):
         ok = [q for q, sg in enumerate(segs) if sg[0][1] and sg[1][1] and sg[0][0] in members and sg[1][0] in members]
         choices = {n: choices[q] for n, q in enumerate(ok) if q in choices}
         segs = [segs[q] for q in ok]
+        min_sep = [ms for ms in min_sep if ms[0][1] and ms[1][1] and ms[0][0] in members and ms[1][0] in members]
         if segs and len(members) >= 2:
-            out.append(Struct(kind=kind, members=members, segs=segs, src=s, choices=choices))
+            out.append(Struct(kind=kind, members=members, segs=segs, src=s, choices=choices, min_sep=min_sep))
     return out
+
+
+def _d_min(s):
+    """A structure's `budget.d_min` (mm), or None."""
+    b = ((s.get("budget") or {}).get("d_min") or {})
+    try:
+        v = float(b.get("value")) if isinstance(b, dict) and b.get("value") is not None else None
+    except (TypeError, ValueError):
+        return None
+    return v if v and v > 0 else None
 
 
 def _pad_clusters(fp, ks, dmax=PIN_CLUSTER_MM):
@@ -507,6 +533,18 @@ def micro_place(P, members, structs, anchor, time_s=2.0, top_k=3, workers=2, see
                 m.add_abs_equality(dy, ay - by)
             wi = max(1, int(round(10 * w)))
             obj += [wi * dx, wi * dy]
+        for (ia, pa), (ib, pb), mm in getattr(s, "min_sep", None) or []:
+            # Chebyshev distance >= d (so the Euclidean distance is too): far enough in x or in y;
+            # one more cell covers the rounding of both pin positions to the grid
+            ax, ay = pin_expr(ia, pa)
+            bx, by = pin_expr(ib, pb)
+            dq = int(math.ceil(mm / g - 1e-9)) + 1
+            far = [m.new_bool_var("") for _ in range(4)]
+            m.add_bool_or(far)
+            m.add(ax - bx >= dq).only_enforce_if(far[0])
+            m.add(bx - ax >= dq).only_enforce_if(far[1])
+            m.add(ay - by >= dq).only_enforce_if(far[2])
+            m.add(by - ay >= dq).only_enforce_if(far[3])
     # compactness: half-perimeter of the members' origins
     if compact > 0 and len(members) > 1:
         xs = [V[i][0] for i in members]

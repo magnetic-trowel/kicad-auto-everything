@@ -28,6 +28,18 @@ Official pages read 2026-10-20; compiled in [interface_rule_packs.md § 10](../.
 
 Sources: [JLCPCB PCB](https://jlcpcb.com/capabilities/pcb-capabilities); [JLCPCB assembly](https://jlcpcb.com/capabilities/pcb-assembly-capabilities); [PCBWay](https://www.pcbway.com/capabilities.html); [OSH Park 2L](https://docs.oshpark.com/services/two-layer/), [4L](https://docs.oshpark.com/services/four-layer/); [Eurocircuits](https://www.eurocircuits.com/pcb-design-guidelines-classification/).
 
+**Fab classes for suggested relaxations** (pages read 2026-11-03; table `PROFILES` in `kae/src/kae/route/fab.py`). kae's diagnoses (BGA escape certificates, `kae.route.blocked`) suggest rule relaxations to the commanding LLM. Each suggestion is clipped at the board's fab's finest class and labelled with the cheapest class that builds it; anything beyond *standard* is a manufacturing hazard (warn) that names the cost. The fab is the board's `KAE_FAB` text variable or `--set fab=` (default `jlcpcb`); `opts["fab_profiles"]` adds profiles. Values in mm, 1 oz, multilayer (2-layer in brackets where it differs):
+
+| Fab, class | Track / space | Pad to track | Via (diameter / drill) | Via-in-pad | Cost, per the fab |
+|---|---|---|---|---|---|
+| JLCPCB standard | 0.09 / 0.09 (0.10) | 0.10 | 0.45 / 0.20 | from 6 layers | none ("0.2mm or 0.25mm hole size with via diameter less than 0.45mm … will cost more") |
+| JLCPCB advanced | 0.076 / 0.076 ("3 mil is acceptable in BGA fan-outs"; 0.10 on 2 layers) | 0.09 ("min. 0.09 mm for multilayer boards") | 0.25 / 0.15 | yes, filled and capped | surcharge |
+| JLCPCB HDI | 0.069 / 0.069 ("Extreme capability: 2.7 mil"; 3 mil standard HDI) | 0.076 [I] | 0.20 / 0.10 (≤1 mm boards, ENIG/OSP; or laser blind vias 0.075–0.15 mm) | yes | "may increase both cost and production time" |
+| PCBWay standard / advanced | 0.10 / 0.10 | 0.10 [I] | 0.50 / 0.20; 0.45 / 0.15 with a surcharge (ring 0.15) | advanced | surcharge below 0.2 mm drill |
+| OSH Park 4L (2L) | 0.127 (0.152) | same [I] | 0.458 / 0.254 (0.508 / 0.254) | no | standard only |
+
+Sources: [JLCPCB capabilities](https://jlcpcb.com/capabilities/pcb-capabilities) (incl. its HDI section); [JLCPCB BGA design guidelines](https://jlcpcb.com/help/article/bga-design-guidelines---pcb-layout-recommendations-for-bga-packages) (trace-to-BGA-pad 0.10 mm on 2 and 4 layers, 0.076 mm "on some traces", via-in-pad free on 6–20 layers); [JLCPCB POFV](https://jlcpcb.com/blog/Free-Via-in-Pad-on-6-20-Layer-PCBs-with-POFV); [PCBWay capabilities](https://www.pcbway.com/capabilities.html) (its advanced table grades 3–3.5 mil as medium/high difficulty without one number per class, so kae lists no PCBWay HDI class); OSH Park as above. **Conflict:** JLCPCB's capabilities page allows 0.09 mm pad-to-track at BGAs on multilayer boards, its BGA guideline says 0.10 mm; kae calls 0.10 standard and 0.09 advanced. Eurocircuits' pattern and drill classes are an image on its page and were not read.
+
 ## JLCPCB detail
 Incl. V-cut, castellation and panel geometry; [interface_rule_packs.md § 10](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/interface_rule_packs.md)) [P]:
 - **Copper weight → min track/space:** 2 oz 0.16 (2L) / 0.15 mm (ML); 2.5 oz 0.20; 3.5 oz 0.25; 4.5 oz 0.30 mm (2L only). Available weights: 2L 1/2/2.5/3.5/4.5 oz; ML outer 1–2 oz, inner 0.5 oz default.

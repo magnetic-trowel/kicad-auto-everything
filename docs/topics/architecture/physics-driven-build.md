@@ -12,7 +12,7 @@ All numbers model against model [C]. All A/Bs re-route priced nets inside the hu
 | Piece | Physics | Method | Cost (one core, loaded host) |
 |---|---|---|---|
 | `em.kernels` | partial inductance of rectangular bars | exact Hoer–Love form within 6 cells (= 12-point Gauss quadrature to 1e-9); filaments beyond (0.3% at the seam) | µs per table entry |
-| `em.mesh`, `em.kicad` | every net's copper in a window (tracks, arcs, pads, vias, refilled zones) on the stackup | square raster per layer; bars split through thickness (graded toward faces); tracks < 3 cells -> 4-connected chains with true width and length; pads, via landings equipotential | seconds |
+| `em.mesh`, `em.kicad` | every net's copper in a window (tracks, arcs, pads, vias, refilled zones) on the stackup | square raster per layer; bars split through thickness into `nsub` filaments (graded toward faces from nsub 3; the default 2 are equal halves: [field-solver-accuracy](../../research/physics/field-solver-accuracy.md)); tracks < 3 cells -> 4-connected chains with true width and length; pads, via landings equipotential | seconds |
 | `em.solve` | magneto-quasi-static R + jωL network | FFT products of block-Toeplitz L_p; projected COCG on the KCL constraint, preconditioned by 2×2-cell stacks; batched right-hand sides | boost window 0.25 mm: ~25 s per pattern |
 | `em.fields`, `em.t1` | what new copper would couple to | L_p operator read without the mask (flux), reference layer's flux subtracted, gap-crossing potential | one extra FFT pass per pattern |
 | `excite.models`, `.sources`, `.observe` | the board's small-signal circuit and its harms | MNA over nets + part internals; aggressors: switch as current source, IC cores, clocks; observers through one adjoint each | ms |
@@ -33,7 +33,7 @@ Refinement, boost hot loop, all nets meshed:
 |---|---|---|---|---|
 | Loop L | 8.76 nH | 8.20 nH | 7.92 nH | 7.65 nH |
 
-First-order convergence (differences halve); 0.25 mm reads 15% high. Only the loop's 3 nets meshed: 8.85 / 8.32 nH (other copper screens ~1%).
+First-order convergence (differences halve); 0.25 mm reads 15% high; the evaluators state this bias and the priced nets under 3 cells (`mesh` in their output; [field-solver-accuracy](../../research/physics/field-solver-accuracy.md)). Only the loop's 3 nets meshed: 8.85 / 8.32 nH (other copper screens ~1%).
 
 FastHenry (3.0wr, built from source; wrapper [ref_fasthenry](../../../tools/research/physics/ref_fasthenry.py); harness [em_vs_fasthenry](../../../tools/research/physics/em_vs_fasthenry.py)):
 

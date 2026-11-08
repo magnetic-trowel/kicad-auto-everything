@@ -26,6 +26,7 @@ graphics of on-board footprints (as pcbnew does); off-board footprints keep thei
 import json
 import math
 import re
+import sys
 import uuid as _uuid
 from pathlib import Path
 
@@ -94,6 +95,17 @@ def _f(v, default=0.0):
         return default
 
 
+def _pad_fab(pd):
+    """A pad's fabrication property, `(property pad_prop_castellated)` -> 'castellated'
+    ('' when it has none). KiCad's copper-to-edge check skips castellated pads
+    (drc_test_provider_edge_clearance.cpp)."""
+    for node in pd[1:]:
+        if type(node) is list and node and node[0] == "property" and len(node) > 1 and type(node[1]) is str \
+                and node[1].startswith("pad_prop_"):
+            return node[1][len("pad_prop_"):]
+    return ""
+
+
 def _xy(node):
     return float(node[1]), float(node[2])
 
@@ -160,6 +172,30 @@ def synth_uuid(lib_id, x, y, rot, side, index):
     xn, yn = int(round(x * 1e6)), int(round(y * 1e6))
     rm = int(round((rot % 360.0) * 1000)) % 360000
     return str(_uuid.uuid5(_uuid.NAMESPACE_URL, f"kae-footprint:{lib_id}:{xn}:{yn}:{rm}:{side}:{index}"))
+
+
+def footprint_keys(nodes):
+    """The part key of each footprint node (`footprint`/`module` S-expression), in file
+    order, exactly as `load` assigns Footprint.uuid: the uuid, a KiCad 5 tstamp as a KIID,
+    or synth_uuid when the footprint has none or repeats an earlier one. Returns [(key,
+    flag)], flag "" or "uuid_synthesized" / "uuid_duplicate". Writers that find footprints
+    by key (kae.place.writer.write_sexpr) use this, so they accept every key the loader
+    hands out."""
+    out, seen = [], set()
+    for i, node in enumerate(nodes):
+        u = value(node, "uuid") or _kiid(value(node, "tstamp")) or ""
+        flag_ = ""
+        if not u or u in seen:
+            flag_ = "uuid_synthesized" if not u else "uuid_duplicate"
+            lib_id = node[1] if len(node) > 1 and type(node[1]) is str else ""
+            at = first(node, "at")
+            fx, fy = (float(at[1]), float(at[2])) if at else (0.0, 0.0)
+            frot = float(at[3]) if at is not None and len(at) > 3 else 0.0
+            side = "B" if value(node, "layer", "F.Cu") == "B.Cu" else "F"
+            u = synth_uuid(lib_id, fx, fy, norm_deg(frot), side, i)
+        seen.add(u)
+        out.append((u, flag_))
+    return out
 
 
 def _kiid(v):
@@ -438,7 +474,7 @@ class _Reader:
                    pintype=value(pd, "pintype", "") or "",
                    uuid=value(pd, "uuid") or value(pd, "tstamp") or "", slot=slot,
                    rratio=_f(value(pd, "roundrect_rratio"), 0.0), offset=offset,
-                   clearance=_f(value(pd, "clearance"), 0.0) or fp_clear,
+                   clearance=_f(value(pd, "clearance"), 0.0) or fp_clear, fab=_pad_fab(pd),
                    outline=self._pad_geometry(pd, shape, (sx, sy), s), layer_shapes=self._padstack(pd, s))
 
     def _pad_geometry(self, node, shape, size, s):
@@ -707,7 +743,9 @@ def read_dru(path):
                 d["args"] = extra
             cons.append(d)
         out.append(dict(name=r[1] if len(r) > 1 and type(r[1]) is str else "",
-                        condition=value(r, "condition", ""), layer=value(r, "layer", ""), constraints=cons))
+                        # a second (condition) overwrites the first in KiCad
+                        condition=sexpr.last_value(r, "condition", ""), layer=value(r, "layer", ""),
+                        constraints=cons))
     return out
 
 
@@ -749,6 +787,7 @@ def read_rules(pcb_path, tree=None):
         r.mask_to_copper = float(rr.get("solder_mask_to_copper_clearance") or 0.0)
         r.severities = {str(k): str(v) for k, v in (ds.get("rule_severities") or {}).items()
                         if v in ("error", "warning", "ignore")}
+        r.kae_vars = {str(k): str(v) for k, v in (d.get("text_variables") or {}).items() if str(k).startswith("KAE_")}
         r.track_widths = [float(w) for w in ds.get("track_widths") or [] if w]
         r.via_sizes = [(float(v.get("diameter", 0)), float(v.get("drill", 0)))
                        for v in ds.get("via_dimensions") or [] if v.get("diameter")]
@@ -779,11 +818,19 @@ def read_rules(pcb_path, tree=None):
                                            diff_pair_width=0.2, diff_pair_gap=0.25, priority=2147483647)
     dru = pcb_path.with_suffix(".kicad_dru")
     if dru.exists():
-        try:
-            r.custom = read_dru(dru)
-            r.source = (r.source + " + " if r.source else "") + dru.name
-        except (ValueError, OSError) as e:
-            r.custom = [dict(name="(unreadable)", condition=str(e), layer="", constraints=[])]
+        # KiCad drops the whole file on any parse error, and its DRC then checks net-class and
+        # board rules only (drc-rule-language-reference.md): place against what it checks
+        from .dru_check import rejection
+        r.dru_rejected = rejection(dru, pcb_path) or ""
+        if r.dru_rejected:
+            print(f"warning: KiCad drops this rules file ({r.dru_rejected}); using net-class and board "
+                  f"rules only, as KiCad's DRC will", file=sys.stderr, flush=True)
+        else:
+            try:
+                r.custom = read_dru(dru)
+                r.source = (r.source + " + " if r.source else "") + dru.name
+            except (ValueError, OSError) as e:
+                r.custom = [dict(name="(unreadable)", condition=str(e), layer="", constraints=[])]
     return r
 
 
@@ -1038,16 +1085,12 @@ def load(path, *, arc_tol=geom.ARC_TOL, rules=True):
         raise ValueError(f"{path}: not a KiCad board")
     rd = _Reader(tree, path, arc_tol)
     rd.keepouts, rd.zones, rd.fp_areas = [], [], []
-    fps = []
-    for node in tree:
-        if type(node) is list and node and node[0] in ("footprint", "module"):
-            fps.append(rd.footprint(node))
-    seen = set()
-    for i, fp in enumerate(fps):   # the footprint uuid is the part key: make it unique
-        if not fp.uuid or fp.uuid in seen:
-            fp.flags.append("uuid_synthesized" if not fp.uuid else "uuid_duplicate")
-            fp.uuid = synth_uuid(fp.lib_id, fp.x, fp.y, fp.rot, fp.side, i)
-        seen.add(fp.uuid)
+    nodes = [n for n in tree if type(n) is list and n and n[0] in ("footprint", "module")]
+    fps = [rd.footprint(n) for n in nodes]
+    for fp, (key, flag_) in zip(fps, footprint_keys(nodes)):   # the footprint uuid is the part key
+        if flag_:
+            fp.flags.append(flag_)
+        fp.uuid = key
     for fp, areas in rd.fp_areas:
         for a in areas:
             a.footprint = fp.uuid

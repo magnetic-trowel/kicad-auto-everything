@@ -31,7 +31,7 @@ from kae.physics import priors as PR
 from kae.physics.boardview import body_z
 
 from .critical_grid import Anchor
-from .critical_physics import INF, Loop, dielectric_er, ipc2221_width, trace_capacitance_pf
+from .critical_physics import INF, Loop, dielectric_er, heat_hazard, ipc2221_width, trace_capacitance_pf
 from kae.physics.kernels import lprime_hj
 
 GND_RE = re.compile(r'(^|[^A-Z])(A|D|P|S|C)?GND|^/?VSS|^0V$|GROUND|EARTH', re.I)
@@ -52,6 +52,26 @@ class Module:
     physics: dict = field(default_factory=dict)     # value, unit, alloc, u, ...
     status: str = "pending"
     notes: list = field(default_factory=list)
+    flags: list = field(default_factory=list)       # dicts for the report: copper the current asks more of
+    hazards: list = field(default_factory=list)     # kae.hazards schema (heat_hazard, crystal_ground_no_plane, ...)
+
+
+DT_MAX_K = 10.0           # IPC-2221 temperature rise (K) of critical copper (high-current.md), opts dT_max_K
+
+
+def dT_max(ctx):
+    """The temperature rise (K) critical copper is sized for: opts dT_max_K (an intent's
+    requirements.dT_max_K, critical.intent_opts), else 10 K."""
+    return float(ctx.opts.get("dT_max_K") or DT_MAX_K)
+
+
+def _opt(ctx, key):
+    """An option, falling back to kae.route.critical.DEFAULTS (Session merges them; a bare
+    Ctx does not)."""
+    if key in ctx.opts:
+        return ctx.opts[key]
+    from .critical import DEFAULTS
+    return DEFAULTS[key]
 
 
 def modules_from_brief(brief, kinds=("cell", "path", "decap", "rgroup", "crystal", "chain")):
@@ -447,16 +467,27 @@ def route_cell(ctx, m):
         d = math.hypot(ux, uy) or 1.0
         ux, uy = ux / d, uy / d
         a = min(extent_across(ta.geom, ux, uy), extent_across(tb.geom, ux, uy))
-        w_cur = ipc2221_width(I, t_mm=ctx.sp.tcu.get(L0, 0.035))
+        w_ipc = ipc2221_width(I, dT=dT_max(ctx), t_mm=ctx.sp.tcu.get(L0, 0.035))
         mn, opt, mx = ctx.sp.width_limits(net, L0)
-        floor = max(mn, min(w_cur, a), 0.0)
-        w_cur = min(w_cur, max(a, float(ctx.opts.get("rail_max_mm", 3.0))))   # 100 A of FETs: pours, not tracks
+        cap = max(a, float(ctx.opts.get("rail_max_mm", 3.0)))
+        w_cur = min(w_ipc, cap)             # 100 A of FETs: pours, not tracks
+        if w_ipc > cap + 1e-9:
+            m.notes.append(f"hop {k} ({net}): IPC-2221 needs {w_ipc:.2f} mm for {I:.2f} A; capped at {cap:g} mm "
+                           f"(rail_max_mm): a pour, not a track")
+            m.flags.append(dict(flag="rail_max_cap", hop=k, net=net, I_A=round(I, 3), ipc_mm=round(w_ipc, 3),
+                                cap_mm=cap))
+        # the floor: never below IPC-2221 for the cell current (critical-net-routing.md), nor the class
+        floor = max(mn, w_cur)
+        if mx is not None and floor > mx + 1e-9:
+            m.notes.append(f"hop {k} ({net}): IPC width {floor:.2f} mm exceeds the class maximum {mx:g} mm")
+            m.flags.append(dict(flag="class_max_below_ipc", hop=k, net=net, ipc_mm=round(floor, 3), max_mm=mx))
         if net == sw:
             hi = max(w_cur, opt)            # the switch node: as narrow as the current allows
         else:
             hi = max(a, w_cur, opt)         # terminal width (wider gains nothing)
-        widths = width_ladder(hi, max(floor, mn), 5) + ([opt] if opt < floor else []) + [mn]
-        widths = sorted(set(round(w, 4) for w in widths), reverse=True)
+        if ctx.opts.get("rail_over_cap") and w_ipc > cap:
+            hi = max(hi, w_ipc)             # A/B arm (decide C2): the IPC width first, the cap the floor
+        widths = sorted(set(round(w, 4) for w in width_ladder(hi, floor, 5)), reverse=True)
         # a ground hop over its own plane has the vias as its return: a detour on the surface
         # buys nothing, so it is routed only when it stays short
         max_len = None
@@ -474,10 +505,23 @@ def route_cell(ctx, m):
             outer = [ctx.sp.cu[0], ctx.sp.cu[-1]]
             rt = route_hop(ctx, m, f"hop{k}", net, [anchor(ta)], [anchor(tb)], widths[-3:], outer, via=True,
                            via_cost=4.0)
+        t_l0 = ctx.sp.tcu.get(L0, 0.035)
+        refs = [getattr(ctx.fp.get(t_.fp), "ref", t_.fp) for t_ in (ta, tb)]
+        where = f"{m.id} hop {k} ({refs[0]} to {refs[1]})"
         if rt is not None:
             ok += 1
+            t_min = min((ctx.sp.tcu.get(l_, 0.035) for l_, _, _ in rt.segs), default=t_l0)
+            hz = heat_hazard("copper_below_ipc_width", I, rt.width, t_min, dT_max(ctx), [net], where=where,
+                             w_ipc=ipc2221_width(I, dT=dT_max(ctx), t_mm=t_min))
         else:
-            m.notes.append(f"hop {k} ({net}) not routed")
+            m.notes.append(f"hop {k} ({net}): no room at its IPC-2221 width {floor:.2f} mm for {I:.2f} A; "
+                           f"left to the bridge")
+            m.flags.append(dict(flag="ipc_floor_unroutable", hop=k, net=net, I_A=round(I, 3),
+                                floor_mm=round(floor, 3)))
+            hz = heat_hazard("rail_left_narrow", I, max(opt, mn), t_l0, dT_max(ctx), [net],
+                             where=where + " (left to the bridge at the class width)", w_ipc=w_ipc)
+        if hz is not None:
+            m.hazards.append(hz)
     # return vias at the ground terminals of the loop
     _return_vias(ctx, m, T, side)
     m.status = "routed" if ok == len(hops) else ("partial" if ok else "failed")
@@ -746,7 +790,7 @@ def allocation(ctx, m):
     if m.kind == "cell":
         ex = s.get("excite") or {}
         vin = ex.get("V") or ctx.volts(s.get("rail")) or PR.V_IN_UNKNOWN.value
-        return PR.hot_loop_budget(s.get("class") or "unknown", vin, t_sw_ns=ex.get("t_sw_ns"))
+        return PR.hot_loop_budget(s.get("class") or "unknown", vin, t_sw_ns=ex.get("t_sw_ns"), v_abs=PR.budget_v_abs(ex))
     if m.kind == "path":
         ex = s.get("excite") or {}
         v = ex.get("V") or ctx.volts(s.get("rail_in")) or ctx.volts(s.get("rail_out")) or 5.0
@@ -756,7 +800,7 @@ def allocation(ctx, m):
         pins = s.get("power_pins") or []
         return PR.decap_budget(v, ctx.npins(s.get("ic")), max(1, len(pins)), function=s.get("function"))
     if m.kind == "crystal":
-        return PR.crystal_budget(s.get("f_Hz"))[0]
+        return PR.crystal_budget(s.get("f_Hz"), c_load_pf=PR.crystal_cl(s))[0]
     if m.kind == "chain":
         return PR.esd_budget()
     return PR.Belief(1.0, "", "none")
@@ -898,7 +942,7 @@ def route_decap(ctx, m):
         m.status = "skipped"
         m.notes.append("no capacitor-pin pairs")
         return m
-    max_d = float(ctx.opts.get("decap_max_mm", 15.0))
+    max_d = float(_opt(ctx, "decap_max_mm"))
     loops = []
     done = tried = 0
     for pin, cap in pairs:
@@ -1183,7 +1227,13 @@ def route_crystal(ctx, m):
             a, b = _tree(ctx, m, net, terms, f"xt:{net}:1")
             ok += a
             tot += b
-    # load capacitors' ground pads into the plane
+    # load capacitors' ground pads into the plane: one via each, beside the pad, toward the IC's XIN.
+    # Stitched, not a single-tie island: over a solid plane the oscillator's return runs under its own
+    # traces and every via lowers its impedance (TI AM335x errata advisory 1.0.30 reversed TI's single-tie
+    # advice for this reason; TI AM67, Espressif, Microchip AN3588 stitch). The single tie of ST AN2867 /
+    # TI SLAA322D keeps foreign return currents out of the oscillator's ground where the board has no plane
+    # under it: kae then adds no via and flags it (docs/topics/rules/crystals-clocks.md, XTAL-GUARD).
+    no_plane = []
     for c in s.get("load_caps") or []:
         f = ctx.fp.get(c)
         if f is None:
@@ -1194,12 +1244,26 @@ def route_crystal(ctx, m):
                 lay = ctx.side_layer(c)
                 lay = lay if lay in t.layers else t.layers[0]
                 h, pl, pn = ctx.plane(lay, t.x, t.y, gnd=True)
+                if pl is None or pn != p.net:
+                    no_plane.append(ctx.fp[c].ref if c in ctx.fp else str(c))
                 if pl is not None and pn == p.net and not _has_plane_link(ctx, t, p.net):
                     cands = via_candidates(ctx, t, lay, p.net, pl, toward=(ctx.sp.terminal(ic, [s.get('xin')]).x,
                                                                           ctx.sp.terminal(ic, [s.get('xin')]).y)
                                            if s.get("xin") else None)
                     if cands:
                         _commit_vias(ctx, m, p.net, lay, t, [cands[0]], f"via:{c}:{p.number}")
+    if no_plane:
+        y_ref = ctx.fp[y].ref if y in ctx.fp else str(y)
+        m.hazards.append(dict(
+            code="crystal_ground_no_plane", severity="warn", category="electrical",
+            message=(f"{y_ref}: load capacitor grounds ({', '.join(no_plane)}) have no ground plane under them; "
+                     f"kae left their ground to the general router, so other return currents may share it"),
+            objects=[y_ref] + no_plane,
+            evidence=dict(caps=no_plane, source="TI SLAA322D sec. 3, ST AN2867 sec. 7.1, AVR186: without a plane, "
+                                                 "a clean local ground tied once to the MCU's oscillator ground"),
+            fix=("route the load-cap grounds together, short, to the MCU's oscillator ground pin (VSS/AVSS) with "
+                 "a guard ring tied there once, and keep other return currents off it; or pour a ground plane "
+                 "under the crystal circuit")))
     m.spec["_nets"] = nets
     m.status = "routed" if ok == tot and tot else ("partial" if ok else "failed")
     quote(ctx, m)
@@ -1247,13 +1311,15 @@ def _tree(ctx, m, net, terms, tag, widths=None):
         srcs = [anchor(x) for x in done]
         for d in done:
             srcs += ctx.net_copper_anchors(net, connected_to=d)
+        # no via fallback: "no vias on the clock input/output traces" (Espressif, XTAL-DMIN in
+        # docs/topics/rules/crystals-clocks.md); a hop that needs one is left to the bridge
         rt = route_hop(ctx, m, f"{tag}:{k}", net, [anchor(t)], srcs, ws, [layers[0]], via=False)
-        if rt is None and len(ctx.sp.cu) > 1:
-            rt = route_hop(ctx, m, f"{tag}:{k}", net, [anchor(t)], srcs, ws[-1:], [ctx.sp.cu[0], ctx.sp.cu[-1]],
-                           via=True, via_cost=3.0)
         k += 1
         if rt is not None:
             ok += 1
+        else:
+            m.notes.append(f"{tag}: {net} to {ctx.fp[t.fp].ref} has no same-layer route (no vias on crystal "
+                           "traces); left to the bridge")
         done.append(t)
     return ok, need
 
@@ -1261,7 +1327,7 @@ def _tree(ctx, m, net, terms, tag, widths=None):
 def _crystal_value(ctx, m):
     nets = m.spec.get("_nets") or []
     s = m.spec
-    _, S = PR.crystal_budget(s.get("f_Hz"))
+    _, S = PR.crystal_budget(s.get("f_Hz"), c_load_pf=PR.crystal_cl(s))
     C = 0.0
     for net in nets:
         for it in ctx.sp.routed:
@@ -1298,12 +1364,13 @@ def route_chain(ctx, m):
     # hops after the first protector carry no surge-path physics; chain_tail=False leaves
     # them to the general router (less locked copper in its way, the order not enforced)
     first_prot = next((k for k, t in enumerate(T) if k > 0 and t.fp in prot), len(T) - 1)
+    has_prot = any(t.fp in prot for t in T[1:])
     ok = need = 0
     for k in range(len(T) - 1):
         ta, tb = T[k], T[k + 1]
         if ta.fp == tb.fp or ta.net != tb.net:
             continue
-        if k >= first_prot and not ctx.opts.get("chain_tail", True):
+        if k >= first_prot and not _opt(ctx, "chain_tail"):
             m.notes.append(f"hop {k} after the protector left to the general router")
             continue
         need += 1
@@ -1316,19 +1383,24 @@ def route_chain(ctx, m):
         ws = [opt, mn]
         if power:
             I = float((getattr(ctx, "rail_I", None) or {}).get(ta.net) or ctx.opts.get("chain_power_a", 1.0))
-            w = max(ipc2221_width(I, t_mm=ctx.sp.tcu.get(l0, 0.035)), opt)
+            w = max(ipc2221_width(I, dT=dT_max(ctx), t_mm=ctx.sp.tcu.get(l0, 0.035)), opt)
             ws = sorted({w, max(opt, min(w, min(ta.width, tb.width))), opt, mn}, reverse=True)
         tgt = [anchor(tb)] + (ctx.net_copper_anchors(ta.net, connected_to=tb) if k == len(T) - 2 else [])
         rt = None
         if layers:
             rt = route_hop(ctx, m, f"hop{k}", ta.net, [anchor(ta)], tgt, ws, [layers[0]], via=False)
-        if rt is None and len(ctx.sp.cu) > 1:
+        if rt is None and has_prot and k < first_prot:
+            # connector -> TVS: no via or stub before the TVS (docs/topics/rules/emc-placement.md,
+            # interfaces/usb2.md "ESD path order, 0 vias"): left to the bridge
+            m.notes.append(f"hop {k} ({ta.net}, {ctx.fp[ta.fp].ref} -> {ctx.fp[tb.fp].ref}): connector->TVS "
+                           "needs same-side placement (no via before the TVS)")
+        elif rt is None and len(ctx.sp.cu) > 1:
             # parts on opposite sides, or no room on the shared layer: through one via
             rt = route_hop(ctx, m, f"hop{k}", ta.net, [anchor(ta)], tgt, ws, [ctx.sp.cu[0], ctx.sp.cu[-1]],
                            via=True, via_cost=3.0)
         if rt is not None:
             ok += 1
-        else:
+        elif not (has_prot and k < first_prot):
             m.notes.append(f"hop {k} ({ta.net}, {ctx.fp[ta.fp].ref} -> {ctx.fp[tb.fp].ref}) not routed")
     # the protector's ground into the plane (or to the connector's ground pin)
     for u in prot:
@@ -1391,7 +1463,7 @@ def route_rail_group(ctx, m):
     s = m.spec
     rail = s.get("rail")
     loads = s.get("loads") or []
-    max_d = float(ctx.opts.get("decap_max_mm", 10.0))
+    max_d = float(_opt(ctx, "decap_max_mm"))
     lt = []
     for u in loads:
         f = ctx.fp.get(u)

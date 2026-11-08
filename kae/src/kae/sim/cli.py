@@ -119,8 +119,10 @@ def main(argv=None):
     rep["board"] = dict(file=a.board, sha256=hashlib.sha256(Path(a.board).read_bytes()).hexdigest())
     rep["testbench"] = dict(file=a.testbench, sha256=hashlib.sha256(Path(a.testbench).read_bytes()).hexdigest())
     rep["design_skipped"] = ctx.design.skipped
+    from kae.hazards import finalize, sim_hazards
+    finalize(rep, extra=sim_hazards(rep))
     write(rep, a.out)
-    print(json.dumps(rep["summary"]))
+    print(json.dumps(dict(rep["summary"], hazard_summary=rep["hazard_summary"])))
     return 0
 
 

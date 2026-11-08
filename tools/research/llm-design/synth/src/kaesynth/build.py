@@ -8,7 +8,6 @@ import shlex
 import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 from . import dru
@@ -51,18 +50,6 @@ def kicad_cli():
         return [*shlex.split(wrap), "kicad-cli"]
     p = shutil.which("kicad-cli")
     return [p] if p else None
-
-
-def kicad_python():
-    """A Python interpreter that can import KiCad's pcbnew (KAE_KICAD_PYTHON overrides)."""
-    cands = [os.environ.get("KAE_KICAD_PYTHON"), "/usr/bin/python3", shutil.which("python3"),
-             "/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/Current/bin/python3"]
-    for c in cands:
-        if c and Path(c).exists():
-            r = subprocess.run([c, "-c", "import pcbnew"], capture_output=True)
-            if r.returncode == 0:
-                return c
-    return None
 
 
 def _env():
@@ -129,36 +116,35 @@ def parity(cli, sch, design, netclasses, blocks=None):
 
 
 def lint_dru(cli, outdir, design, netclasses):
-    """Static grammar lint of the .kicad_dru, then a DRC smoke run on an outlined empty board
-    (kicad-cli 10.0.7 ignores bad rules silently, and crashes on creepage rules without an outline)."""
+    """Lint the emitted .kicad_dru: kaesynth's own grammar and net-class check, then kae's
+    `dru_check` (docs/topics/kicad/kicad-cli.md). kicad-cli 10.0.7 drops the whole file on
+    any parse error without a message and exits 0, so a DRC run proves nothing; dru_check's
+    KiCad pass appends a sentinel rule and checks that its violation appears."""
     text = (outdir / f"{design.slug}.kicad_dru").read_text()
-    probs = dru.lint(text, set(netclasses.classes) | {"Default"})
+    return dru_verdict(text, cli, set(netclasses.classes) | {"Default"})
+
+
+def dru_verdict(text, cli, classes, kicad=True):
+    """'ok', 'ok (...)' when a pass was skipped, or 'FAIL: ...' (KiCad would drop the file)."""
+    probs = dru.lint(text, classes)
     if probs:
         return "FAIL: " + "; ".join(probs[:5])
-    py = kicad_python()
-    if py is None:
-        return "ok (static lint; DRC smoke skipped: no Python with pcbnew)"
-    w, h = 100.0, 100.0
-    if design.board_spec and design.board_spec.width_mm:
-        w, h = design.board_spec.width_mm, design.board_spec.height_mm or design.board_spec.width_mm
-    script = ("import pcbnew,sys\n"
-              "b=pcbnew.NewBoard(sys.argv[1])\n"
-              "s=pcbnew.PCB_SHAPE(b); s.SetShape(pcbnew.SHAPE_T_RECT); s.SetLayer(pcbnew.Edge_Cuts)\n"
-              "s.SetStart(pcbnew.VECTOR2I(0,0)); s.SetEnd(pcbnew.VECTOR2I(pcbnew.FromMM(float(sys.argv[2])),pcbnew.FromMM(float(sys.argv[3]))))\n"
-              "s.SetWidth(pcbnew.FromMM(0.1)); b.Add(s); b.Save(sys.argv[1])\n")
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp = Path(tmp)
-        board = tmp / f"{design.slug}.kicad_pcb"
-        subprocess.run([py, "-c", script, str(board), str(w), str(h)], capture_output=True, text=True)
-        if not board.exists():
-            return "ok (static lint; DRC smoke skipped: could not create a board)"
-        shutil.copy(outdir / f"{design.slug}.kicad_dru", tmp / f"{design.slug}.kicad_dru")
-        shutil.copy(outdir / f"{design.slug}.kicad_pro", tmp / f"{design.slug}.kicad_pro")
-        rpt = tmp / "drc.json"
-        p = subprocess.run([*cli, "pcb", "drc", "--format", "json", "-o", str(rpt), str(board)],
-                           capture_output=True, text=True, env=_env())
-        if p.returncode < 0 or not rpt.exists():
-            return f"FAIL: kicad-cli pcb drc exited {p.returncode} with these rules"
+    try:
+        from kae.board import dru_check
+    except ImportError:
+        return "ok (kaesynth lint only; kae.board.dru_check not importable, so KiCad's parser was not asked)"
+    errs = [i for i in dru_check.static_check(text) if i.severity == "error"]
+    if errs:
+        return "FAIL: " + "; ".join(str(i) for i in errs[:5])
+    if not kicad or not cli:
+        return "ok (static checks only; KiCad's parser was not asked)"
+    try:
+        res = dru_check.kicad_check(text, cli=cli)
+    except (RuntimeError, OSError, subprocess.SubprocessError) as e:
+        return f"FAIL: kae dru-check could not run kicad-cli: {e}"
+    if not res.accepted:
+        who = ", ".join(f"{n} (line {ln})" for n, ln in res.culprits) or "a form outside the rules"
+        return f"FAIL: KiCad {res.version} drops this file; rejected: {who}"
     return "ok"
 
 

@@ -19,10 +19,10 @@ def _report(net, *pads):
     return {"unconnected_items": [{"items": [{"description": f"Pad {n} [{net}] of {r} on F.Cu"} for r, n in pads]}]}
 
 
-def _diagnose(p, rep, input_ids=()):
+def _diagnose(p, rep, input_ids=(), opts=None):
     info = F.synth_info(load(p))
     plan = CN.plan(info, p, {})
-    return B.diagnose(p, info, plan, [], rep, input_ids=input_ids, log=lambda *a: None)
+    return B.diagnose(p, info, plan, [], rep, input_ids=input_ids, log=lambda *a: None, opts=opts)
 
 
 def _boxed(gap, dup=False):
@@ -58,18 +58,43 @@ def test_congestion_is_not_blamed_on_a_rule(tmp_path):
 
 
 def test_a_gap_a_narrower_track_fits_blames_the_minimum_width(tmp_path):
-    """A 0.5 mm gap between +3V3 pads at 0.2 mm clearance leaves 0.1 mm for a track: the board's
-    0.15 mm minimum (board setup) binds, and the report says which narrower track would pass."""
-    p = F.write_board(tmp_path, extra=_boxed(0.5))
+    """A 0.54 mm gap between +3V3 pads at 0.2 mm clearance leaves 0.14 mm for a track: the board's
+    0.15 mm minimum (board setup) binds, and the report says which narrower track would pass,
+    found by binary search, and that the fab builds it in its standard class (JLCPCB 2 layers:
+    0.10 mm)."""
+    p = F.write_board(tmp_path, extra=_boxed(0.54))
     out = _diagnose(p, _report("SIG", ("S1", 1), ("T1", 1)))
     assert len(out["blocked"]) == 1 and not out["congestion"]
     r = out["blocked"][0]
     b = r["binding"]
     assert r["cause"] == "rule" and r["pads"] in (["S1.1"], ["T1.1"])
-    assert b["constraint"] == "track_width" and b["required"] == 0.15 and 0.05 <= b["available"] <= 0.1
+    assert b["constraint"] == "track_width" and b["required"] == 0.15 and 0.1 <= b["available"] < 0.14
     assert "board setup minimum track width" in b["where"] and b["source"] == "board"
     assert b["clearance"]["required"] == 0.2
-    assert "relax to" in r["line"] and out["summary"] == [r["line"]]
+    assert b["fab"] == "JLCPCB" and b["fab_class"] == "standard" and not out["hazards"]
+    assert "relax to" in r["line"] and "(JLCPCB standard)" in r["line"] and out["summary"] == [r["line"]]
+
+
+FINE = {"fine": dict(name="FineFab", two_layer=dict(
+    standard=dict(track=0.1, space=0.1, pad_track=0.1, via=(0.45, 0.2), via_in_pad=False, cost="no surcharge"),
+    hdi=dict(track=0.05, space=0.05, pad_track=0.05, via=(0.2, 0.1), via_in_pad=True, cost="HDI")))}
+
+
+def test_no_track_below_the_fab_is_suggested_and_a_finer_class_is_a_hazard(tmp_path):
+    """0.1 mm of room: JLCPCB's 2-layer floor (0.10 mm) does not pass on the search grid, so no
+    narrower track is suggested (the clearance binds, labelled with the class that builds
+    what is available); a fab with a 0.05 mm HDI class gets the narrower track, labelled hdi,
+    and a manufacturing hazard (warn) that names its cost."""
+    p = F.write_board(tmp_path, extra=_boxed(0.5))
+    rep = _report("SIG", ("S1", 1), ("T1", 1))
+    b = _diagnose(p, rep)["blocked"][0]["binding"]
+    assert b["constraint"] != "track_width" or b["available"] >= 0.1
+    out = _diagnose(p, rep, opts=dict(fab="fine", fab_profiles=FINE))
+    b = out["blocked"][0]["binding"]
+    assert b["constraint"] == "track_width" and 0.05 <= b["available"] < 0.1 and b["fab_class"] == "hdi"
+    (h,) = out["hazards"]
+    assert h["code"] == "relaxation_beyond_standard_fab" and h["severity"] == "warn"
+    assert h["category"] == "manufacturing" and "FineFab's hdi class" in h["message"] and "SIG" in h["objects"]
 
 
 def test_a_gap_no_track_fits_blames_the_net_class_clearance(tmp_path):

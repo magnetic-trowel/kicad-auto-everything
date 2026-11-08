@@ -124,3 +124,51 @@ def test_judge_counts_unconnected_items_of_any_severity(tmp_path, monkeypatch):
         assert restart.drc(board, inp, 60)["unconnected"] == 3, sev
         assert restart.judge(board, inp, {}, 60) == (0, 1, 3, 0, 0), sev
         assert json.loads(inp.with_suffix(".kicad_pro").read_text()) == pro  # the task's project untouched
+
+
+def test_judge_counts_past_drcs_cap_of_499_with_pcbnew(tmp_path, monkeypatch):
+    """kicad-cli lists at most 499 unconnected items: polarfire-som's ~150 attempts all read 499, so
+    the wrapper chose blind. Past the cap the count comes from pcbnew (a stand-in here)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("restart_cap", RESTART)
+    restart = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(restart)
+    bin_ = tmp_path / "bin"
+    bin_.mkdir()
+    # the stand-in kicad-cli must not run on the stand-in python3 below
+    (bin_ / "kicad-cli").write_text(FAKE_CLI.replace("#!/usr/bin/env python3", f"#!{sys.executable}", 1))
+    (bin_ / "kicad-cli").chmod(0o755)
+    (bin_ / "python3").write_text("#!/bin/sh\necho '{\"unconnected\": 812}'\n")
+    (bin_ / "python3").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_}:{os.environ['PATH']}")
+    monkeypatch.setenv("KAE_KICAD_WRAP", "")
+    inp = tmp_path / "in" / "board.kicad_pcb"
+    inp.parent.mkdir()
+    inp.write_text("(kicad_pcb)\n")
+    for n, want in ((498, 498), (499, 812)):
+        board = tmp_path / f"a{n}" / "board.kicad_pcb"
+        board.parent.mkdir()
+        board.write_text(f"(kicad_pcb) OPEN={n}\n")
+        assert restart.drc(board, inp, 60)["unconnected"] == want
+    (bin_ / "python3").write_text("#!/bin/sh\nexit 1\n")            # no KiCad Python: the capped count stays
+    board = tmp_path / "nopy" / "board.kicad_pcb"
+    board.parent.mkdir()
+    board.write_text("(kicad_pcb) OPEN=499\n")
+    assert restart.drc(board, inp, 60)["unconnected"] == 499
+
+
+def test_judge_reports_unconnected_items_a_project_ignores(tmp_path):
+    """A project that sets unconnected_items to "ignore" makes kicad-cli list none at all
+    (gamaphy-freedom-rp2040): the judge's own copy turns the check back on, other
+    severities stay as the board set them."""
+    import json
+    import restart
+    pro = tmp_path / "board.kicad_pro"
+    sev = {"unconnected_items": "ignore", "clearance": "warning"}
+    pro.write_text(json.dumps({"board": {"design_settings": {"rule_severities": sev}}}))
+    restart.report_unconnected(pro)
+    got = json.loads(pro.read_text())["board"]["design_settings"]["rule_severities"]
+    assert got == {"unconnected_items": "error", "clearance": "warning"}
+    pro.write_text("{}")
+    restart.report_unconnected(pro)                       # no severities: left alone
+    assert pro.read_text() == "{}"

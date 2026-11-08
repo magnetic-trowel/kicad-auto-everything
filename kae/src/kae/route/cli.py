@@ -29,11 +29,19 @@ diagnosis alone on any routed board.
 `lastmile` is the post-route stage alone (bridge.last_mile_only): BOARD, routed from the task
 INPUT, gets the last mile with INPUT's rules; OUTPUT is BOARD or a round KiCad's DRC finds better.
 
-Exit status: 0 when a routed board was written, 2 otherwise.
+The report ends with "hazards" and "hazard_summary" (kae.hazards): among them a recheck of
+OUTPUT with the safety checks forced on whatever the project's severities say (--recheck,
+kae.board_hazards). Exit status: 0 when a routed board was written, 2 otherwise.
 """
 import argparse
 import json
 import sys
+import time
+
+
+# the router keeps its own budget (--time); the recheck may run this much past it (a kaebench
+# --command method gets the attempt's timeout as --time, and the board is written by then)
+RECHECK_GRACE_S = 0.0
 
 
 def main(argv=None):
@@ -75,6 +83,8 @@ def main(argv=None):
                    help="override one of kae's own defaults (e.g. ignored_clearance_floor=0.08); a "
                         "KAE_<KEY> text variable in the KiCad project overrides this in turn")
     r.add_argument("--report")
+    from kae.board_hazards import add_arguments as recheck_args
+    recheck_args(r)
     m = sub.add_parser("lastmile", help="the last mile alone on a routed board (with the task input's rules)")
     m.add_argument("input")
     m.add_argument("board")
@@ -85,6 +95,7 @@ def main(argv=None):
     m.add_argument("--keep", action="store_true")
     m.add_argument("--set", action="append", default=[], metavar="KEY=VALUE")
     m.add_argument("--report")
+    recheck_args(m)
     a = ap.parse_args(argv)
     from kae.route import bridge
     if a.cmd == "lastmile":
@@ -104,6 +115,7 @@ def main(argv=None):
 
 
 def _finish(a, run, opts):
+    t0 = time.monotonic()
     for kv in a.set:
         k, _, v = kv.partition("=")
         try:
@@ -116,6 +128,9 @@ def _finish(a, run, opts):
         import traceback
         traceback.print_exc()
         rep = dict(status="error", error=f"{type(e).__name__}: {e}")
+    from kae.board_hazards import finish
+    finish(rep, a.output, a.input, kind="route", mode=a.recheck, deadline=t0 + float(a.time) + RECHECK_GRACE_S,
+           log=lambda m: print(f"[kae.route] {m}", file=sys.stderr, flush=True))
     text = json.dumps(rep, default=str)
     if a.report:
         with open(a.report, "w") as f:

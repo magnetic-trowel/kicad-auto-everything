@@ -557,6 +557,60 @@ def test_chain_tail_is_left_to_the_bridge(tmp_path):
     assert any("after the protector" in n for n in ch.notes)
 
 
+def _blocked_session(tmp_path, monkeypatch, kind, prefix):
+    """A session whose same-layer routes for `kind` modules' hops tagged `prefix` all fail (no room
+    on the shared layer), recording those modules' route_hop calls as (tag, via)."""
+    from kae.route import critical_modules as CM
+    calls = []
+    real = CM.route_hop
+
+    def fake(ctx, m, tag, *a, **kw):
+        if m.kind != kind:
+            return real(ctx, m, tag, *a, **kw)
+        calls.append((tag, bool(kw.get("via"))))
+        if tag.startswith(prefix) and not kw.get("via"):
+            return None
+        return real(ctx, m, tag, *a, **kw)
+    monkeypatch.setattr(CM, "route_hop", fake)
+    s = F.session(tmp_path)
+    s.route()
+    return s, calls
+
+
+def test_crystal_traces_never_fall_back_to_a_via(tmp_path, monkeypatch):
+    """crystals-clocks.md XTAL-DMIN (Espressif): no vias on the clock input/output traces. A
+    crystal hop with no same-layer route is left to the bridge, not routed through a via."""
+    s, calls = _blocked_session(tmp_path, monkeypatch, "crystal", "xt:")
+    assert any(t.startswith("xt:") for t, _ in calls)
+    assert not [t for t, v in calls if t.startswith("xt:") and v]
+    m = next(m for m in s.modules if m.kind == "crystal")
+    assert m.status in ("partial", "failed")
+    assert any("no vias on crystal traces" in n for n in m.notes)
+
+
+def test_connector_to_tvs_hop_never_takes_a_via(tmp_path, monkeypatch):
+    """interfaces/usb2.md "ESD path order, 0 vias"; emc-placement.md: no via or stub before the
+    TVS. Hop 0 (connector -> TVS) with no same-layer route asks for same-side placement."""
+    s, calls = _blocked_session(tmp_path, monkeypatch, "chain", "hop0")
+    assert ("hop0", False) in calls and ("hop0", True) not in calls
+    ch = next(m for m in s.modules if m.kind == "chain")
+    assert any("connector->TVS needs same-side placement" in n for n in ch.notes)
+
+
+def test_bare_ctx_options_fall_back_to_the_session_defaults():
+    """critical-net-routing.md: decap_max_mm 10 mm, chain_tail off; a Ctx built without the
+    Session's merge (excite.dc) must route the same."""
+    from types import SimpleNamespace
+
+    from kae.board.model import Board
+    from kae.route.critical import DEFAULTS
+    from kae.route.critical_modules import Ctx, _opt
+    ctx = Ctx(None, None, {}, Board(path="x.kicad_pcb", version=20250114, footprints=[], nets={}))
+    assert _opt(ctx, "decap_max_mm") == DEFAULTS["decap_max_mm"] == 10.0
+    assert _opt(ctx, "chain_tail") is DEFAULTS["chain_tail"] is False
+    assert _opt(SimpleNamespace(opts={"decap_max_mm": 4.0}), "decap_max_mm") == 4.0
+
+
 def _rail_islands(tmp_path, reach):
     from shapely.ops import unary_union
     s = F.session(tmp_path, rails="all", rail_complete_mm=reach)
@@ -1088,7 +1142,7 @@ def test_crystal_trace_capacitance_uses_the_dielectric_under_the_trace():
     assert dielectric_er(cu, z, er, "B.Cu", "In2.Cu") == 4.0
     assert dielectric_er(cu, z, er, "B.Cu", None) == 4.0
     assert dielectric_er(cu, z, er, "F.Cu", "In2.Cu") == pytest.approx((3.7 * 0.2 + 4.6 * 1.2) / 1.4)
-    assert dielectric_er(cu, z, [], "B.Cu", None) == 4.3
+    assert dielectric_er(cu, z, [], "B.Cu", None) == 4.5   # Space's and KiCad's default, not 4.3
 
 
 def test_rail_design_current_keeps_its_margin_without_a_source_rating(tmp_path, monkeypatch):
@@ -1114,3 +1168,214 @@ def test_board_physics_names_a_module_kind_without_a_routed_value(monkeypatch):
     monkeypatch.setattr(CM, "modules_from_brief", lambda brief, kinds: [NS(id="g1", kind="rgroup", spec={})])
     out = CR.board_physics(b, brief={"nets": {}, "parts": {}}, fills=None, terms={}, rails=False)
     assert out["g1"]["error"] == "no routed value for kind 'rgroup'"
+
+
+# ----------------------------------------------------------------------------- IPC floor (audit)
+def _cell(s, I):
+    from kae.route.critical_modules import modules_from_brief, route_module
+    m = next(x for x in modules_from_brief(s.brief, ("cell",)) if x.kind == "cell")
+    m.spec["excite"] = dict(I=I)
+    return route_module(s.ctx, m)
+
+
+def test_cell_hops_never_go_below_their_ipc_width(tmp_path):
+    """The hop ladder ended at the class minimum: at 3 A the cell's GND hop was committed at
+    0.97 mm against an IPC-2221 width of 1.37 mm, with nothing reported
+    (critical-net-routing.md: never below IPC-2221 for the cell current)."""
+    from kae.route.critical_physics import ipc2221_width
+    s = F.session(tmp_path, kinds=("cell",), rails="none")
+    m = _cell(s, 3.0)
+    w_ipc = ipc2221_width(3.0, t_mm=0.035)
+    routed = {k: rt for k, rt in m.hops.items() if rt is not None}
+    assert routed
+    for k, rt in routed.items():
+        assert rt.width >= w_ipc - 1e-3, (k, rt.net, rt.width)
+    for k, rt in m.hops.items():                # a hop that does not fit is left out and says why
+        if rt is None:
+            assert any(k.replace("hop", "hop ") in n for n in m.notes), m.notes
+
+
+def test_cell_hop_capped_by_rail_max_is_noted_and_flagged(tmp_path):
+    s = F.session(tmp_path, kinds=("cell",), rails="none")
+    m = _cell(s, 6.0)                                      # IPC 3.56 mm on 35 um, over the 3 mm cap
+    assert any(f["flag"] == "rail_max_cap" and f["cap_mm"] >= 3.0 for f in m.flags)
+    assert any("rail_max_mm" in n for n in m.notes)
+    assert all(rt.width >= 3.0 - 1e-3 for rt in m.hops.values() if rt is not None)
+
+
+def test_critical_copper_follows_the_intents_dT_and_drop_share(tmp_path):
+    """The router sized copper at 10 K and 2 % whatever the intent said; the evaluator
+    (kae.excite.dc) scores against the intent's dT_max_K and drop_share."""
+    from kae.route import critical
+    from kae.route.critical_physics import ipc2221_width
+    from kae.route.critical_rails import drop_share
+    o = critical.intent_opts({"schema": "kae.intent/1",
+                              "facts": {"requirements": {"dT_max_K": 30, "drop_share": 0.01}}})
+    assert o == {"dT_max_K": 30.0, "drop_share": 0.01}
+    assert critical.intent_opts({"requirements": {"dT_max_K": 20}}) == {"dT_max_K": 20.0}
+    assert critical.intent_opts(None) == {}
+    s = F.session(tmp_path, kinds=("cell",), rails="none", **o)
+    assert drop_share(s.ctx) == 0.01
+    m = _cell(s, 3.0)
+    w30 = ipc2221_width(3.0, dT=30.0, t_mm=0.035)
+    assert m.spec["_floor"] and all(abs(f - max(w30, 0.2)) < 0.25 for f in m.spec["_floor"].values())
+    assert max(m.spec["_floor"].values()) < ipc2221_width(3.0, t_mm=0.035)
+
+
+def test_rail_branches_never_go_below_their_ipc_width(tmp_path, monkeypatch):
+    """Rail branches stepped down to the class width when the IPC width did not fit; now the
+    ladder stops at IPC-2221 and a branch that cannot fit there is left to the general router
+    with a note. A board with no room anywhere: route_hop routes nothing and records what it was
+    offered."""
+    from kae.route import critical_rails as CR
+    from kae.route.critical_physics import ipc2221_width
+    monkeypatch.setattr(CR, "load_current", lambda ctx, u, net, cells, draws=None: 2.0)
+    offered = []
+    monkeypatch.setattr(CR, "route_hop", lambda ctx, m, tag, net, s, t, widths, *a, **k: offered.append(widths))
+    s = F.session(tmp_path, kinds=(), rails="all")
+    s.route()
+    br = [b for r in s.rails for b in (r.get("branches") or []) if "current_A" in b and "via" not in b]
+    assert br and offered
+    lo = min(ipc2221_width(b["current_A"], t_mm=0.035) for b in br)
+    assert min(min(w) for w in offered) >= lo - 1e-3
+    assert all("IPC-2221 width" in b["note"] for b in br)
+
+
+def test_rail_ladder_floor_and_cap_flag():
+    from types import SimpleNamespace
+
+    from kae.route.critical_modules import Module
+    from kae.route.critical_rails import _branch_widths
+    ctx = SimpleNamespace(opts={"rail_max_mm": 3.0})
+    m, b = Module(id="r", kind="rail", spec={}, parts=[]), {}
+    ws, floor = _branch_widths(ctx, m, "br:x", b, 1.0, 0.30, 0.9, 0.0, 0.2)
+    assert floor == 0.30 and min(ws) >= 0.30 and max(ws) >= 0.9 and "capped" not in b
+    ws, floor = _branch_widths(ctx, m, "br:y", b, 10.0, 7.19, 1.0, 0.0, 0.2)
+    assert ws == [3.0] and floor == 3.0 and b["capped"]["cap_mm"] == 3.0 and "rail_max_mm" in m.notes[-1]
+
+
+# ----------------------------------------------------------------------------- heat of capped copper (decide)
+def test_via_current_reproduces_slva959_and_counts_vias():
+    """One via's current: IPC-2221's internal curve on the barrel pi (d + t) t at 20 um plating
+    reproduces TI SLVA959 Table 3-1 (8-16 mil rows) within 13 %; the count is the larger of
+    I / I_via and IPC-2152's equal cross-section (binding above ~10 A)."""
+    from kae.route.critical_physics import via_current, vias_needed
+    for mil, ti in ((8, 0.55), (10, 0.81), (12, 0.84), (16, 1.1)):
+        assert via_current(mil * 0.0254) == pytest.approx(ti, rel=0.13), mil
+    assert via_current(0.3, 0.025) > via_current(0.3, 0.020)        # plating matters (high-current.md)
+    assert vias_needed(1.0, 0.3) == 2 and vias_needed(4.0, 0.3) == 5   # 0.81 A each
+    assert vias_needed(4.0, 0.3, per_via_a=1.0) == 4                    # opts via_A: TI's one per amp
+    assert vias_needed(20.0, 0.3) > 20.0 / via_current(0.3)            # equal cross-section binds
+
+
+def test_track_rise_by_ipc2221_and_ipc2152():
+    from kae.route.critical_physics import ipc2152_dT, ipc2221_dT, ipc2221_width
+    assert ipc2221_dT(1.0, ipc2221_width(1.0)) == pytest.approx(10.0, rel=1e-6)
+    assert ipc2221_dT(10.0, 3.0) == pytest.approx(42.3, abs=0.5)      # 3 mm of 1 oz at 10 A
+    assert ipc2152_dT(10.0, 3.0) == pytest.approx(64.7, abs=0.5)      # Brooks-Adam, KiCad's calculator
+    assert ipc2152_dT(10.0, 3.0, 0.070) < ipc2152_dT(10.0, 3.0)
+
+
+def test_heat_hazard_severity():
+    from kae.route.critical_physics import heat_hazard, ipc2221_width
+    assert heat_hazard("c", 1.0, 0.5, 0.035, 10.0, ["+5V"]) is None
+    hz = heat_hazard("c", 10.0, 3.0, 0.035, 10.0, ["+12V"], nominal_a=10 / 3)
+    assert hz["severity"] == "warn" and hz["evidence"]["dT_ipc2221_K"] > 40 and hz["objects"] == ["+12V"]
+    assert heat_hazard("c", 15.0, 3.0, 0.035, 10.0, ["+12V"])["severity"] == "block"   # 106-145 K
+    w = ipc2221_width(2.0)
+    assert heat_hazard("c", 2.0, w / 1.15, 0.035, 10.0, ["X"])["severity"] == "info"  # within the 1.2x gate
+
+
+def test_capped_cell_hop_reports_its_rise_as_a_hazard(tmp_path):
+    """The rail_max_mm cap left 10 A on a 3 mm hop (IPC-2221 wants 7.2 mm) with only a flag; now
+    a hazard carries the rise, and the report gathers it at the top level."""
+    s = F.session(tmp_path, kinds=("cell",), rails="none")
+    m = _cell(s, 10.0)
+    hz = [h for h in m.hazards if h["code"] in ("copper_below_ipc_width", "rail_left_narrow")]
+    assert hz and all(h["severity"] in ("warn", "block") for h in hz)
+    assert all(h["evidence"]["dT_ipc2221_K"] > 10.0 and h["category"] == "thermal" for h in hz)
+    s.modules = [m]
+    assert s.report()["hazards"]
+
+
+def test_rail_left_to_the_router_narrow_is_a_hazard(tmp_path, monkeypatch):
+    """A rail branch with no room at its IPC width goes to the general router at the class width:
+    a hazard with its rise there."""
+    from kae.route import critical_rails as CR
+    monkeypatch.setattr(CR, "load_current", lambda ctx, u, net, cells, draws=None: 2.0)
+    monkeypatch.setattr(CR, "route_hop", lambda *a, **k: None)
+    s = F.session(tmp_path, kinds=(), rails="all")
+    s.route()
+    hz = [h for r in s.rails for h in r.get("hazards", []) if h["code"] == "rail_left_narrow"]
+    assert hz and all(h["severity"] in ("warn", "block") for h in hz)
+    assert {h["code"] for h in s.report()["hazards"]} >= {"rail_left_narrow"}
+
+
+def test_rail_over_cap_arm_tries_the_ipc_width_first():
+    """A/B arm rail_over_cap (decide C2): above the cap the ladder starts at the IPC width and the cap
+    is only its floor; off (the default) the cap is the only width."""
+    from types import SimpleNamespace
+
+    from kae.route.critical_modules import Module
+    from kae.route.critical_rails import _branch_widths
+    m, b = Module(id="r", kind="rail", spec={}, parts=[]), {}
+    ws, floor = _branch_widths(SimpleNamespace(opts={"rail_max_mm": 3.0}), m, "br:y", b, 10.0, 7.19, 1.0, 0.0, 0.2)
+    assert ws == [3.0]
+    ws, floor = _branch_widths(SimpleNamespace(opts={"rail_max_mm": 3.0, "rail_over_cap": True}), m, "br:y", b,
+                               10.0, 7.19, 1.0, 0.0, 0.2)
+    assert ws[0] == pytest.approx(7.19, abs=1e-3) and floor == 3.0 and min(ws) == 3.0
+
+
+def test_via_hazard_severity():
+    from kae.route.critical_physics import via_hazard
+    assert via_hazard(4.0, 5, 5, 0.3, 0.02, 10.0, ["+5V"]) is None
+    hz = via_hazard(4.0, 2, 5, 0.3, 0.02, 10.0, ["+5V"], nominal_a=4 / 3)
+    assert hz["severity"] == "warn" and hz["code"] == "vias_below_current" and hz["evidence"]["vias_needed"] == 5
+    assert via_hazard(10.0, 1, 13, 0.3, 0.02, 10.0, ["+12V"])["severity"] == "block"   # 10 A in one 0.3 mm barrel
+    assert via_hazard(1.0, 0, 2, 0.3, 0.02, 10.0, ["+3V3"])["severity"] == "warn"      # none: the router's one
+def test_text_writers_refuse_pre_kicad10_boards(tmp_path):
+    """KiCad 9 rejects named nets and KiCad 6/7 a `(locked yes)` on a track: the writers that
+    emit them refuse older boards; removing items stays allowed; both lock spellings read."""
+    k9 = tmp_path / "k9.kicad_pcb"
+    k9.write_text('(kicad_pcb (version 20241229) (generator "pcbnew") (generator_version "9.0")\n'
+                  '\t(net 0 "")\n\t(net 1 "A")\n'
+                  '\t(segment\n\t\t(start 0 0)\n\t\t(end 1 0)\n\t\t(width 0.2)\n\t\t(layer "F.Cu")\n\t\t(net 1)\n'
+                  '\t\t(uuid "11111111-1111-1111-1111-111111111111")\n\t)\n)\n')
+    k6 = tmp_path / "k6.kicad_pcb"
+    k6.write_text('(kicad_pcb (version 20211014) (generator pcbnew)\n  (net 0 "")\n  (net 1 "A")\n'
+                  '  (segment locked (start 0 0) (end 1 0) (width 0.2) (layer "F.Cu") (net 1) '
+                  '(tstamp 22222222-2222-2222-2222-222222222222))\n)\n')
+    out = tmp_path / "o.kicad_pcb"
+    with pytest.raises(W.KiCadVersionError, match="KiCad 9 or older"):
+        W.append_items(k9, out, tracks=[("A", "F.Cu", 0.2, (0, 0), (1, 1), None)])
+    with pytest.raises(W.KiCadVersionError):
+        W.transplant(k9, k9, out)
+    with pytest.raises(W.KiCadVersionError):
+        W.edit(k6, out, unlock="all")
+    assert not out.exists()
+    W.edit(k9, out, remove=["11111111-1111-1111-1111-111111111111"])
+    assert "1111" not in out.read_text()
+    assert [i["locked"] for i in W.routing(k6)] == [True] and [i["locked"] for i in W.routing(k9)] == [False]
+
+
+def test_copper_hotter_than_nearby_parts_is_a_warning_and_past_the_laminate_a_block():
+    """Copper heat hazards: block past FR-4's 130 C, warn past 105 C (parts rated 85-105 C nearby), at a
+    50 C ambient, judged at the expected current."""
+    from kae.route.critical_physics import heat_hazard, ipc2221_dT, ipc2152_dT
+    # find widths that put 2 A of 35 um copper at ~80 K (130 C) and ~65 K (115 C) above ambient
+    def width_for(rise):
+        lo, hi = 0.01, 20.0
+        for _ in range(80):
+            mid = (lo + hi) / 2
+            if max(ipc2221_dT(2.0, mid), ipc2152_dT(2.0, mid)) > rise:
+                lo = mid
+            else:
+                hi = mid
+        return hi
+    hot = heat_hazard("copper_below_ipc_width", 2.0, width_for(90), 0.035, 10.0, ["N"], w_ipc=width_for(90) * 1.1)
+    warm = heat_hazard("copper_below_ipc_width", 2.0, width_for(65), 0.035, 10.0, ["N"], w_ipc=width_for(65) * 1.1)
+    cool = heat_hazard("copper_below_ipc_width", 2.0, width_for(30), 0.035, 10.0, ["N"], w_ipc=width_for(30) * 1.1)
+    assert hot["severity"] == "block"
+    assert warm["severity"] == "warn" and warm["evidence"]["T_parts_warn_C"] == 105.0
+    assert "105" in warm["message"]
+    assert cool["severity"] == "info"

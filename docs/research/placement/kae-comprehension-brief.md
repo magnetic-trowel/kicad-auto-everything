@@ -54,6 +54,7 @@ Brief built without positions on 112 boards; the human layout scores it. Ownersh
 | Crystal to IC (31) | 4.7 mm | 4.7 mm; 87% within 12 mm | | | |
 | TVS nearer the connector (269 chains) | 60.2% | 59.5% | | | 50% |
 
+- Analog nets after the name gate (2026-11, [roles.py](../../../kae/src/kae/circuit/roles.py) `_signal_roles`): a name decides alone only where no IC pin is named; charger PROG/ISET pins count; bus and control suffixes veto. 32-board sample: 7 real analog nets recovered (Vref, AUDIO_IN/OUT, ADC, STACK-CURRENT, SENSOR_TRACK, a PROG pin), 0 of 11 false positives back (8 ferrite nets, TEMP_ALERT, BATTERY_SENSE_ENABLE, a comparator output); ADC_BAT on a named ESP32 GPIO stays `signal`. 400 random corpus boards: analog 506 -> 675, none lost; about 6 of 169 gains read as false (MIX_BP, TEMP_HUM, SPDIF_TX, AUDIO_LDOO).
 - Rail groups: 8 on 5 boards, 62 caps; reference-order allocation 61% right, nearest-load pairing 90%.
 - Power paths by class: load switches, muxes, reverse-polarity FETs, BMS bank at percentile ≤ 0.02; low-side and ideal-diode at 0.14–0.15 (caps at the rail source, or loop through a cable).
 - Calibration: monotone, underconfident below 0.7. Reported < 0.5 → right 55%; 0.5–0.7 → 77%; ≥ 0.9 → 92%.

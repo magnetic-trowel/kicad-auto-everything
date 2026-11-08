@@ -43,7 +43,7 @@ Built on the repo's closed forms: Hammerstad–Jensen L′ and C′, Grover/Neum
 | Via | barrel R and partial self-L between the layers it joins |
 | Pour of a non-ground net | copper graph's pour links (2 mm strips) for R and L; plate capacitance εA/h over its contacts (coarse) |
 | Ground net | pours = reference node; tracks and vias between pads and pours extracted |
-| Neighbours (signal profile) | same-layer pieces of other nets within 1 mm: mutual L with plane images (K clamped at ±0.9), coupling C from patch potential coefficients |
+| Neighbours (signal profile) | same-layer pieces of other nets within 1 mm: mutual L with plane images (K clamped at ±0.9), coupling C from patch potential coefficients over the dielectric slab (within 6 % of the layered field solver `kae.em.static` at gaps ≥ 3 h, up to 25 % low near h) |
 
 | Profile | Sections | Short pieces (< lmin) | Line C | Coupling | Used by |
 |---|---|---|---|---|---|
@@ -78,28 +78,7 @@ Verdict rules (pass / fail / marginal per requirement per mode; test status `unk
 
 ## 5a. Budgets (`kae.sim.budget`)
 
-- **Mechanism:** placer and critical router price each structure as spend / allocation; allocation = closed form unless the brief's structure carries a `budget`. `kae.sim.cli budgets` sweeps a series inductance at the cell's loop insertion point (`Vloop`) on the ideal circuit at every corner: budget = ideal loop inductance + largest addition at which the requirement holds at every corner. Written to `board.budgets.json`; applied only by opting-in methods (`critical_cli route --budgets`), never by evaluators, so a method's budgets cannot change its score.
-- **Applied only if all hold** (else closed form stays; the file records every reason):
-  1. Requirement from a trusted source: human, board rule, datasheet, board value, schematic, standard. A budget from a prior bound is no better than the closed form (on the boost below it was worse).
-  2. Achievable: ≥ loop inductance of the parts' own internal paths alone (`critical_recheck.cell_body_floor`, the router's model); no layout of those parts goes lower.
-  3. Stand-in-independent: sweep with a conservative stand-in (body-diode transit 20 ns, C_oss loss 0.05 Ω) and a lenient one (2 ns, 1 Ω); budget = conservative value, used only if the lenient one is within 3×.
-- **Smoke boards: no budget passes** [M]; both bounds are priors. Boost: 1.16 nH vs floor 3.12 nH; its closed-form allocation 2.08 nH is itself below the floor, so the router can never meet it. Motor driver: 0.24–1.78 nH across stand-ins vs floor 7.1 nH; its prior (a ring that never reaches the rating at 50 ns edges, capped at 50 nH) ignores recovery.
-
-**Loop measures, boost, cross-checked** [M].
-- Routed loop: router closed form 13.2 nH, PEEC on the same pieces 13.1 nH, 9.4 nH of copper without part bodies. SPICE loop test over the whole commutation loop (switch-node copper included): 6.6 nH copper + 1.0 nH capacitor ESL. An earlier test stopped at the switch pins (2.7 nH): a different loop, wrongly compared.
-- Geometry: the switch-node trace cuts IC1's ground pad off from C5's on F.Cu, so the return detours to a via 6.5 mm away (as the router models it); a B.Cu track slots the reference plane under the loop, which both fast models ignore.
-- Reference `tools/research/physics/pt_mesh_loop.py`: nodal PEEC of all copper in a window, planes meshed, no plane assumed; −2.4% against an image plane at 0.5 mm pitch.
-
-| Copper-only loop, boost | nH | vs reference |
-|---|---|---|
-| Reference, F.Cu 0.25 mm, B.Cu 0.5 mm (0.35 / 0.7 mm: 10.96) | 10.59 | |
-| Reference with B.Cu filled solid (0.35 / 0.7 mm) | 9.25 | slot adds ≈ 1.7 nH (+18%) |
-| Router's closed form | 9.37 | −11%; within ≈ 5% of the solid-plane reference |
-| SPICE extraction, power profile | 6.57 | −38% |
-
-- The router's loop model is the authority for loop inductance; its error on this loop is the plane slot it cannot see.
-- SPICE extraction (no mutual L in the power profile, ideal plane under each piece) must not judge loops; it stays for DC drop and loss, where it was checked.
-- One loop is one data point: next, sample hot loops across the corpus to put an error band on the closed form.
+`kae.sim.cli budgets` sweeps a series inductance at each cell's loop insertion point to derive a budget for the placer and critical router; it is applied only when trusted, achievable and stand-in independent, and only with `critical_cli route --budgets`, never by evaluators. None passed on the smoke boards. The boost loop's measures (router closed form vs mesh reference vs SPICE extraction) are cross-checked there too: [functional-evaluator-budgets](functional-evaluator-budgets.md).
 
 ## 6. Command line
 

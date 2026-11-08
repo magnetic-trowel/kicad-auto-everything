@@ -21,7 +21,7 @@ brief = build(load('board.kicad_pcb'))   # JSON-ready dict, schema 'kae.brief/1'
 | `nets` | name → role (ground, rail, switch_node, clock, high_speed, analog, rf, reset, boot, signal, no_connect), subrole, `volts` + `volts_belief`, `source` {kind, `part` uuid, `ref`, `path`}, evidence |
 | `parts` | footprint uuid → `ref`, kind, subtype, role, `external`, `P_W`, confidence, evidence |
 | `structures` | `id`, `kind`, `confidence`, `evidence`, `priority`; members by footprint uuid, `members_ref` maps back |
-| `diff_pairs`, `placement_order`, `summary` | pairs with a Zdiff budget; structure ids by priority; counts, runtime |
+| `diff_pairs`, `placement_order`, `summary` | pairs with a Zdiff budget, `kicad_pair` and a `_P`/`_N` `rename_proposal`; structure ids by priority; counts, runtime |
 
 | Structure kind | Fields a placer/router reads |
 |---|---|
@@ -37,7 +37,7 @@ Position independence is tested: moving every footprint and pad at random return
 
 - Confidence = logistic(prior + Σw), clipped to [0.02, 0.98]; w are natural-log-odds weights: STRONG 3.0, MODERATE 1.5, WEAK 0.7, negative for counter-evidence.
 - Names outvote pin types: a library that types VIN as `input` or EN as `power_in` no longer changes the brief.
-- Facts are kept as checkable text ("power_in pins on 2 parts (U3.VDD)"), from 8 sources: refdes prefix, lib id, value and fields, pin function, pin type, topology, net class, sheet. No source decides alone; each rule names its counter-evidence.
+- Facts are kept as checkable text ("power_in pins on 2 parts (U3.VDD)"), from 8 sources: refdes prefix, lib id, value and fields, pin function, pin type, topology, net class, sheet. Only a role-naming net class decides alone ([intent](../llm/net-role-classification.md)); each rule names its counter-evidence.
 - Part kinds: softmax with an *unknown* score 1.0; 4 of 9,227 suite parts end unknown.
 - Budgets are E5 Beliefs with a basis (`f_sw = 1.1 MHz for AP63203`).
 
@@ -60,15 +60,15 @@ Part kinds from lib ids (`R_Shunt_*_Kelvin`, `Crystal`), part-number families (U
 
 | Role | For | Against |
 |---|---|---|
-| Ground | names, ground pins, many 2-pin caps; battery negative net-tied to ground | splits stay distinct (analog, power, isolated, chassis); Kelvin lines tied to ground keep their role |
-| Rail | supply pins, regulator/inductor outputs, caps to ground, pours, rail names; module supply pin wired to a connector pin | control suffix (`12V0_OUT_EN`); sense input with no supply pin; logic-only IC pins |
+| Ground | net class, names, ground pins, many 2-pin caps; battery negative net-tied to ground | splits stay distinct (analog, power, isolated, chassis); Kelvin lines tied to ground keep their role |
+| Rail | net class, supply pins, regulator/inductor outputs, caps to ground, pours, rail names; module supply pin wired to a connector pin | control suffix (`12V0_OUT_EN`); sense input with no supply pin; logic-only IC pins |
 | Switch node | inductor between an IC switch pin or FET pair and a decoupled rail | FET pair without power-stage evidence = logic gate |
 | Clock | crystal or oscillator terminals | pin name alone (PC14, XTAL_32K on an ESP32-C3 GPIO) |
 | Diff pair | complementary names on a common IC or connector; MIPI on a camera FPC | LED across the pair; crystal XTALP/XTALN |
-| Analog, reset, boot | ADC, sense, reference names; amplifier/AFE inputs; RST, BOOT pins | logic and bridge-driver pins; a converter's BST net |
+| Analog, reset, boot | amplifier/AFE inputs; charger PROG pins; ADC, sense, reference names (alone where no IC pin is named); RST, BOOT pins | a bare name beside named pins; control or bus suffixes (`ADC_CS`); `Net-(FB1-Pad1)`; logic and bridge-driver pins; BST nets |
 
-- **Rail source**, first match: battery, dev module 3V3 pin, input-jack supply pin, IC internal output, bridge rectifier, regulator or load-switch output, inductor, series path (fuse, bead, ≤ 1 Ω, closed jumper, diode, four-terminal shunt) through middle nets, any connector, unknown. A diode from a low-side switch drain is a flyback clamp, not a source. Two rails joined by a fuse that name each other: connector side wins.
-- **Voltage**, in order: name, regulator part number, USB/battery defaults, core-regulator table, inheritance through series parts (−0.4 V per diode), lowest capacitor rating ÷ 1.6.
+- **Rail source**, first match: battery, module 3V3 pin, jack supply pin, IC internal output, rectifier, regulator or load-switch output, inductor, series path (fuse, bead, ≤ 1 Ω, closed jumper, diode, shunt), any connector, unknown. A low-side switch's drain diode is a clamp, not a source. Of fused rails naming each other, the connector side wins.
+- **Voltage**, in order: name, regulator part number, USB/battery defaults, core-regulator table, inheritance through series parts (−0.4 V per diode); else the lowest capacitor rating bounds it (no value).
 
 ### 3.2 Commutation cells
 
@@ -90,7 +90,7 @@ Allocation is joint per rail over every rail-to-ground capacitor:
 | Connector entry; buck output / boost input | their bulk caps (polarized ≥ 10 µF; ≥ 10 µF) | those only (exclusive) |
 
 - Score = schematic affinity (same sheet +2, other −1, same 100-block of references +1.5) + class preference. Greedy with quotas; ties fill owners in reference order. Leftovers → near-best owner with fewest caps per pin. A converter with no cap takes another converter's second. `caps_p` = softmax of the same scores.
-- **Pairing only where the netlist decides it.** `pin_caps` names a pin only for a single-pin group, small ceramics within quota, p ≥ 0.5 (`pairing: 'pin'`). Several pins on one net → `nearest_pin` (placer pairs each cap with the nearest). Entry bulk → `nearest_load`.
+- **Pairing only where the netlist decides it.** `pin_caps` names a pin only for a single-pin group, HF bodies within quota, p ≥ 0.5 (`pairing: 'pin'`): non-polarized chips ≤ 0603 at any value, else ≤ 1 µF ([decoupling-pdn](../rules/decoupling-pdn.md)). Several pins on one net → `nearest_pin` (placer pairs each cap with the nearest). Entry bulk → `nearest_load`.
 - Three rule errors fixed (round-robin pin assignment; module `3V3` pin read as regulator output; leftovers piling on the first consumer): pairings with human distance > 10 mm 33.2% → 11.6% [C].
 
 ### 3.4 Power paths without switching

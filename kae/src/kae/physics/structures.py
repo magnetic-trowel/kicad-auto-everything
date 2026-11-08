@@ -547,6 +547,31 @@ class CrystalComp:
         return self.s * dcl
 
 
+class CrystalClearanceComp:
+    """How far (mm) a crystal sits inside a vendor's minimum distance from its IC's
+    oscillator pins: d_min minus the nearest crystal pad to XIN/XOUT pin centre distance,
+    0 when clear (ESP32 XTAL-DMIN, docs/topics/rules/crystals-clocks.md). The pulling term
+    falls with distance, so on its own it would pull the crystal inside the annulus."""
+
+    def __init__(self, crystal_terms, ic_terms, d_min):
+        self.ty = list(crystal_terms)
+        self.tic = list(ic_terms)
+        self.d_min = float(d_min)
+        self.parts = tuple(sorted({t.i for t in self.ty + self.tic}))
+
+    def distance(self, st):
+        best = INF
+        for a in self.tic:
+            ax, ay = txy(st, a)
+            for b in self.ty:
+                bx, by = txy(st, b)
+                best = min(best, math.hypot(ax - bx, ay - by))
+        return best
+
+    def value(self, st):
+        return max(0.0, self.d_min - self.distance(st))
+
+
 # ============================================================================ thermal
 class ThermalField:
     """Board temperature rise at victims and sources by the fin kernel with images.

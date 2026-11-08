@@ -16,7 +16,7 @@ Calculator: [fe_emi_budget.py](../../../tools/research/physics/fe_emi_budget.py)
 | 3c. Stitching cap | Z_slot ∥ (jωL_path + 1/(jωC) + ESR) | circuit [I] | L_path 0.5–1.6 nH assumed |
 | 4. CM voltage | V_cm = ω·L_cm·I_n (current-driven); V_cm = imbalance·V_dm (voltage-driven) | MREMC [P-code] | — |
 | 5. Antenna and field | E_max = F_max·0.55·V_cm·cablefactor at 3 m. F_max = 2/sin(√2) below the 1 m cable's half-wave resonance, 2/sin(√(λ/1 m)) above it. cablefactor = sin(2π·1 m/λ) for λ ≥ 4 m | MREMC [P-code] | A worst-case maximum (resonant cable, best orientation); typical measurements fall 6–20 dB lower [I] |
-| 5'. Cross-check | I_cm = V_cm/Z_cm, with Z_cm = 36 Ω (resonant monopole) or 150 Ω (typical). E = 1.257×10⁻⁶·f·L·I/r, capped at 2·60·I/r | Ott, via [kicad-happy](https://github.com/aklofas/kicad-happy/blob/main/emc-precompliance.md) [P]; dipole theory [I] | The 5 µA rule assumes the typical case |
+| 5'. Cross-check | I_cm = V_cm/Z_cm, with Z_cm = 36 Ω (resonant monopole) or 150 Ω (typical). E = 1.257×10⁻⁶·f·L·I/r, capped at 2·60·I/r (the knee is 95 MHz for 1 m). Implemented once in `kae.physics.criteria` (placer, router prices, evaluators, `kae.intent` cable field) | Ott, via [kicad-happy](https://github.com/aklofas/kicad-happy/blob/main/emc-precompliance.md) [P]; the cap is a half-wave dipole's broadside 60·I/r (Balanis, *Antenna Theory* §4.6) doubled by the ground reflection [I] | The 5 µA rule assumes the typical case |
 | 6. Limit | CISPR 32 Class B at 3 m: 40 dBµV/m (30–230 MHz), 47 dBµV/m (230–1000 MHz); above 1 GHz 50 average / 70 peak. FCC 15.109 B: 40 / 43.5 / 46 / 54 dBµV/m | vendor summaries of CISPR 32 [S]; [eCFR](https://www.law.cornell.edu/cfr/text/47/15.109) [P] | Check the edition in force |
 
 Two physical points sit behind step 3a:
@@ -53,7 +53,7 @@ Here removing a slot or split beats edge-rate and series-R tweaks by 20–35 dB.
 
 ## 4. Consistency checks
 - **1 mV rule** (LearnEMC: about 1 mV between antenna parts can fail Class B [P]). MREMC gives 60.9 dBµV/m for 1 mV at 100 MHz, 21 dB over the limit. At a typical 150 Ω, 1 mV is 6.7 µA, close to Ott's 5 µA. The two rules are one rule at typical common-mode impedance; MREMC's resonant worst case (~36 Ω) is ~13 dB harsher.
-- **5 µA rule** (Ott: Class B for cables ≥ 1 m [P]). Ott's short-antenna formula with 1 m at 3 m and 100 MHz gives 46 dBµV/m for 5 µA: 3 dB over the FCC 88–216 MHz limit and 6 dB over CISPR 32's 40 dBµV/m. So 5 µA is a typical-case rule with no margin.
+- **5 µA rule** (Ott: Class B for cables ≥ 1 m [P]). Ott's short-antenna formula with 1 m at 3 m and 100 MHz gives 46 dBµV/m for 5 µA: 3 dB over the FCC 88–216 MHz limit and 6 dB over CISPR 32's 40 dBµV/m. So 5 µA is a typical-case rule with no margin. Ott's own tip ([tips-cm](https://hott.shielddigitaldesign.com/techtips/tips-cm.html) [P]) states "less than 5 microamps" for class B on cables ≥ 1 m with no frequency; the short-cable formula meets it near 30–50 MHz. kae's placer and evaluator both use the chain's 2.6 µA at 100 MHz.
 - **Base case** A: MREMC says fail by 6 dB, the 5 µA check says pass by 8 dB. The 14 dB spread is the difference between a resonant and a typical cable impedance. Treat MREMC as the upper bound and the 5 µA check as the median.
 
 ## 5. Other source mechanisms

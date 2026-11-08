@@ -93,6 +93,7 @@ Consequences:
 - A constant-R estimate of 40 K becomes 47.5 K; 100 K becomes 165 K.
 - No steady state exists above ΔT₀ = 254 K. That is the clean physics behind fusing.
 - IR drop at 40 K above ambient is 16% higher than the 20 °C value most calculators print.
+- **Built** in the evaluator's heat band (`kae.excite.heat.tcr_solve`): each cell's copper heat scales by 1 + α(T_amb + ΔT − 20 °C) on the board's own conduction network, iterated to the fixed point; the DC band's copper loss and drops take the same factor; a loop gain ≥ 1 (no fixed point) is the block hazard `thermal_runaway_copper`. Effect on real boards: [field-solver-accuracy](../../research/physics/field-solver-accuracy.md).
 
 ## Heatsinks, interfaces and alternative paths
 

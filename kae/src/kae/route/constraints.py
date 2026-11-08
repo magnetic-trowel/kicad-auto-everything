@@ -174,6 +174,30 @@ DEFAULTS = dict(
     escape_band_scale=1.0,         # band depth per side = scale x escapes on that side x (track + clearance)
     escape_band_max_mm=2.5,        # mm: the deepest band on one side
     escape_ring_pitch=0.5,         # mm: pad rings (QFN, QFP) at most this fine get bands
+    place_severity="strict_then_level_c",  # placement legality: courtyards, copper-to-edge, rule areas,
+                                   # clearance, shorts and hole clearance are errors whatever the project says.
+                                   # "strict_then_level_c" (default) places with drawn courtyards and, only when
+                                   # that leaves placement errors, again with courtyards at IPC Level C where
+                                   # the project waives them (kae.place.pipeline LADDER); "strict" and
+                                   # "level_c" one rung each; "board" follows the project (kae.place.problem)
+    relax_bodies="escalate",       # placement: "escalate" (default) frees a courtyard-less part to its pads only when
+                                   # legalization fails (each such overlap a body_overlap block hazard); "off" never;
+                                   # "auto" also up front on a board over 95% full (kae.place.pipeline)
+    place_w_cong=0.0,              # placement: weight of the annealer's RUDY + pin-escape congestion term
+                                   # (kae.place.cost.Congestion). Off: the placement-decide-staged A/B (213
+                                   # merit boards, k=2) found 0 / 10 / 30 equal (cp1 0.305 / 0.310 / 0.305,
+                                   # completion 0.941-0.943), so the simpler setting wins; RUDY also ranks PCB
+                                   # routability near chance (docs/research/placement/kae-routability-estimators.md)
+    place_margin=0.0,              # placement: routing room between movable parts, mm (Problem.set_margin);
+                                   # negative = auto (Problem.auto_margin: 2 x (0.7 - utilization), 0..1 mm).
+                                   # 0: placement-decide-staged found auto and 0 equal (cp1 0.305 both,
+                                   # completion 0.942 / 0.941), so the formula with no source is dropped
+    connector_edge=2,              # placement: user-facing connectors kae places (kae.place.edge_check:
+                                   # USB, barrel, audio, RJ/modular, video/D-sub; at or near 100 % on an
+                                   # edge on human boards) 2: pinned to the edge facing out after the seed,
+                                   # 1: only the connector_off_edge hazard, 0: neither (audit P4)
+    fab="jlcpcb",                  # the fab whose classes clip and label suggested relaxations (escape
+                                   # certificates, kae.route.blocked): kae.route.fab.PROFILES
     escape_fanout=0,               # placement: 1 also reserves the dog-bone via sites of each ball grid on the
                                    # other side (no part there covers them); 0: off
 )
@@ -219,8 +243,9 @@ def rule_board(info, board_path, opts=None):
     mins = {"clearance": s.get("min_clearance", 0.0), "hole_clearance": s.get("hole_clearance", 0.0),
             "edge_clearance": s.get("edge_clearance", 0.0)}
     floor = setting("ignored_clearance_floor", board_path, opts)
-    rb.ignored = {ct: max(floor, mins.get(ct) or 0.0) for key, ct in IGNORABLE.items()
-                  if _severity_ignored(sev, key)}
+    # the same floor holds where a custom rule with severity ignore/warning wins (rules._soften)
+    rb.soft_floor = {ct: max(floor, mins.get(ct) or 0.0) for ct in IGNORABLE.values()}
+    rb.ignored = {ct: rb.soft_floor[ct] for key, ct in IGNORABLE.items() if _severity_ignored(sev, key)}
     return rb
 
 
@@ -411,6 +436,8 @@ def plan(info, board_path, opts=None):
     p.edge_clearance = max(edge_vals) if edge_vals else s.get("edge_clearance", 0.0)
     p.notes["unsupported_functions"] = sorted(rb.unsupported)
     p.notes["rule_errors"] = list(rb.errors)
+    if rb.dru_rejected:
+        p.notes["dru_rejected"] = rb.dru_rejected   # KiCad drops the file: no custom rules applied
     return p
 
 
@@ -1121,4 +1148,5 @@ def validate(info, board_path):
             check(f"pad {ctype} {pad['ref']}.{pad['number']} {l}", c.min or 0.0, v)
     out["unsupported"] = sorted(rb.unsupported)
     out["rule_errors"] = rb.errors
+    out["dru_rejected"] = rb.dru_rejected
     return out

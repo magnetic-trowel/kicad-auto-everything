@@ -5,7 +5,7 @@
 Scope: one passive reduced-order model (Galerkin/PRIMA projection of the PEEC system) covering DC to the quasi-static limit for evaluation, router prices and sign-off; evidence on boost; stages R1–R7. Not here: the formal problem and tiers -> [physics-driven-design](physics-driven-design.md); field solver and capacitive prices -> [physics-driven-build](physics-driven-build.md); hop ports -> [physics-hop-ports](physics-hop-ports.md); later results (chaac R2, evaluator speed) -> [field-solver-routing-and-intent](../../research/physics/field-solver-routing-and-intent.md).
 Keys: model order reduction, MOR, reduced basis, PRIMA, Galerkin projection, two-sided basis, snapshots, greedy, dual-weighted residual, DC moments, AWE, `kae.em.spectral`, `--spectral`, R1–R7 gates, basis recycling, R–L transition, θ = ωℓ/v, quasi-TEM, wideband
 
-Copper and passive parts have frequency-independent R, L (and P once added), so the response at every frequency and in time lies in a small subspace spanned by solutions at a few frequencies. A band list combines samples by interpolation, with no error estimate; projection combines them by the physics (Galerkin), so resonances between samples come out right.
+Copper and passive parts have frequency-independent R, L (and P once added), so the response at every frequency and in time lies in a small subspace spanned by solutions at a few frequencies. Skin effect does not break this: it emerges from the filaments through the thickness, and what `nsub` filaments cannot hold is a per-layer surface-impedance factor applied at evaluation ([field-solver-accuracy](../../research/physics/field-solver-accuracy.md)). A band list combines samples by interpolation, with no error estimate; projection combines them by the physics (Galerkin), so resonances between samples come out right.
 
 ## 1. What the range has to cover
 
@@ -16,7 +16,7 @@ Copper and passive parts have frequency-independent R, L (and P once added), so 
 | f_sw and harmonics, ~0.1–10 MHz | capacitor ESR/ESL and C split the current; PDN anti-resonance | input/output ripple, supply bounce | fundamental, one point |
 | 10–300 MHz | loop L, switch-node ring with C_sw, capacitor self-resonance | overshoot, ringing, CM emissions (CISPR 30–230 MHz), victim pickup | one 10 MHz solve, extrapolated as constant L |
 | any, dV/dt-driven | electric field (partial capacitance) | capacitive crosstalk into high-Z nodes, switch-node CM via capacitance | not modelled |
-| above the quasi-static limit | retardation, θ = ωℓ/v ≳ 0.3 | transmission-line nets (DDR, USB), radiation above ~300 MHz | not modelled |
+| above the quasi-static limit | retardation, θ = ωℓ/v ≳ 0.3 | transmission-line nets (DDR, USB), radiation (above ~150 MHz on a 5 cm board) | not modelled |
 
 Two bands per aggressor ([kae.excite.evaluate](../../../kae/src/kae/excite/evaluate.py)) joined by the assumed peak shape |Z_f| c₁ I + |L_e| I/t_i fail near resonances (ring, PDN anti-resonance: |H(f)| peaks by Q), in the R–L transition (return path changes), and for capacitive coupling (∝ f, not constant L).
 
@@ -61,7 +61,7 @@ Script [`tools/research/physics/em_reduced_basis_check.py`](../../../tools/resea
 **Basis.**
 1. DC solution of every pattern + 2–4 DC moments each (cheap: preconditioner exact at f = 0).
 2. Greedy snapshots of every pattern where estimated harm error (weighted by source spectrum and observer limit curve) is largest: frequencies chosen by the harms, not a fixed list.
-3. Stop at estimated harm error < 1e-3 of the bound.
+3. Stop at estimated harm error < 1e-3 of the bound. A model stopped by the snapshot limit, or with a snapshot solve at its iteration limit, reports `converged: false` and marks the totals `uncertain`.
 
 **Harms from the reduced model.**
 - Peaks (overshoot, supply bounce, victim pickup): waveform from harmonics H_ks(jnω_sw)·c_n, n to the edge knee, one inverse FFT; ringing emerges from the resonance (no L, C_sw estimate; edge-share and |Z_f| c₁ terms gone).
@@ -78,7 +78,7 @@ Script [`tools/research/physics/em_reduced_basis_check.py`](../../../tools/resea
 ## 5. What projection does not cover, and what does
 
 - **Capacitive coupling, plane cavity modes need P** (layered-electrostatics potential coefficients) on the same raster with FFT Toeplitz kernels. (L, P)-PEEC stays symmetric and passive under congruence: same reduction. Validate against FastCap (FastHenry's sibling).
-- **Electrically long nets**: quasi-static PEEC holds while θ = ωℓ/v ≲ 0.3 (~300 MHz on a 5 cm board, ~100 MHz on 15 cm). Nets with knee above that: θ-screened, quasi-TEM lines with per-length L, C from the same operators on the cross-section -> routing constraints (impedance by layer, length match, crosstalk spacing), not field prices. Report radiated emission above the limit as not computed, never extrapolate.
+- **Electrically long nets**: quasi-static PEEC holds while θ = ωℓ/v ≲ 0.3, with v = c/√ε_eff (ε_eff = 3.5, FR4 microstrip) and ℓ the board diagonal: f_qs = 0.3·c/(2π·ℓ·√3.5), 153 MHz at 5 cm, 51 MHz at 15 cm ([wideband.py](../../../kae/src/kae/excite/wideband.py) `THETA`, `EPS_EFF`; free-space v would give 286 and 95 MHz). Nets with knee above that: θ-screened, quasi-TEM lines with per-length L, C from the same operators on the cross-section -> routing constraints (impedance by layer, length match, crosstalk spacing), not field prices. Report radiated emission above the limit as not computed, never extrapolate.
 
 ## 6. Build stages and their gates
 

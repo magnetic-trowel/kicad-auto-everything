@@ -15,6 +15,7 @@ Derived from [kicad_mcp_codebases.md § 6](../../../research_notes/LLM%20driven%
   4. Reads back and runs the hooks.
 - **Transport:** correlate requests by ID; never socket-probe; bounded timeouts; an uncertain write is reported `uncertain`, never retried.
 - **Outcome envelope:** `complete` | `partial` (applied, failed, unattempted items) | `refused` (with proof nothing changed) | `uncertain` (stop and reconcile) | `check_unavailable`. Unchecked categories are `null`, never `0`.
+- **Hazards:** every kae report closes with `hazards` (code, severity block/warn/info, category, message, objects, evidence, fix) and `hazard_summary` (counts, `blocked`), including an independent DRC recheck with the safety checks forced on; contract in [hazards.md](../architecture/hazards.md) [M].
 
 ## Tools
 | # | Tool | Contract |

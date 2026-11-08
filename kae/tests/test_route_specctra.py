@@ -309,3 +309,37 @@ def test_rounded_pin_polygons_are_circumscribed():
     assert S.find(rnd, "shape")[1] == ["circle", "F.Cu", "600"]
     c = pin_shape(t, ("C2", "1")).centroid                          # the transform matches dsn_pin_centres
     assert Point(c.x, c.y).distance(Point(94.0, 114.1)) < 1e-4
+
+
+def test_session_counts_as_kicads_import():
+    """FromSESSION: a path of n points -> n-1 tracks, qarc -> 1 arc, one via per vertex,
+    polygon wires ignored."""
+    tree = S.parse('(session s (routes (resolution um 10) (network_out'
+                   ' (net "GND" (wire (path F.Cu 2500 0 0 10 0 10 10)) (wire (qarc F.Cu 2500 0 0 1 1 0 1))'
+                   '  (wire (polygon B.Cu 0 0 0 1 0 1 1)) (via "V" 5 5) (via "V" 6 6))'
+                   ' (net "/A" (wire (path B.Cu 2500 0 0 0 0))))))')
+    c = S.session_counts(tree)
+    assert c["GND"] == dict(segments=2, arcs=1, vias=2, polygons=1)
+    assert c["/A"] == dict(segments=1, arcs=0, vias=0, polygons=0)
+
+
+def test_check_import_flags_missing_and_wrong_net_copper(tmp_path):
+    from kae.route.bridge import check_import
+    ses = tmp_path / "s.ses"
+    ses.write_text('(session s (routes (resolution um 10) (network_out'
+                   ' (net "GND" (wire (path F.Cu 2500 0 0 10 0 10 10)) (via "V" 5 5))'
+                   ' (net "SIG" (wire (path F.Cu 2500 0 0 10 0))))))')
+    kept = dict(uuid="k", kind="track", net="GND", locked=True)
+    good = dict(kept=["k"], routing=[kept, dict(uuid="a", kind="track", net="GND"),
+                                     dict(uuid="b", kind="track", net="GND"), dict(uuid="c", kind="via", net="GND"),
+                                     dict(uuid="d", kind="track", net="SIG")])
+    chk, hz = check_import(ses, good)
+    assert chk["missing"] == {} and chk["extra"] == {} and hz == []
+    # SIG's wire landed on no net, one GND track is missing
+    bad = dict(kept=["k"], routing=[kept, dict(uuid="a", kind="track", net="GND"), dict(uuid="c", kind="via", net="GND"),
+                                    dict(uuid="d", kind="track", net="")])
+    chk, hz = check_import(ses, bad)
+    assert chk["missing"] == {"GND": {"segments": 1}, "SIG": {"segments": 1}} and chk["extra"] == {"": {"segments": 1}}
+    assert {h["code"]: h["severity"] for h in hz} == {"ses_import_wrong_net": "block", "ses_import_incomplete": "warn"}
+    for h in hz:
+        assert set(h) == {"code", "severity", "category", "message", "objects", "evidence", "fix"}

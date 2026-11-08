@@ -1,7 +1,7 @@
 # kicad-cli on 10.0 vs master
 
 Scope: `kicad-cli` subcommands, `pcb drc` flags, the referee command. Not here: DRC JSON schema and keys -> [drc-report-and-repair-loop.md](drc-report-and-repair-loop.md); IPC -> [ipc-api-10-vs-11.md](ipc-api-10-vs-11.md); DSN/SES -> [specctra-freerouting-integration.md](specctra-freerouting-integration.md).
-Keys: kicad-cli, pcb drc, referee, --refill-zones, --save-board, --schematic-parity, --exit-code-violations, exit code 5, pcb export specctra, api-server, jobset, pcb import, ManualStepRequiredError, escape hatch
+Keys: kicad-cli, pcb drc, referee, --refill-zones, --save-board, --schematic-parity, --exit-code-violations, exit code 5, pcb export specctra, api-server, jobset, pcb import, ManualStepRequiredError, escape hatch, kae dru-check, silent .kicad_dru drop, exit code 3
 
 ## Subcommands by version
 | | 10.0 | master adds |
@@ -25,10 +25,18 @@ Sources: [kicad/cli @10.0](https://gitlab.com/kicad/code/kicad/-/tree/10.0/kicad
 | zones | not refilled without `--refill-zones`; board saved only with `--refill-zones` **and** `--save-board` |
 | `--schematic-parity` | without it, parity is not checked |
 | `--severity-all` | without it, excluded items are not reported |
-| `.kicad_dru` | read fresh each run; "Any errors in the custom rules will prevent the design rule checker from running" [P] |
+| `.kicad_dru` | read fresh each run; the 10.0 manual: custom rules "will only be applied if there are no errors in the custom rules definitions" (Board Setup) [P]. The older quote "Any errors in the custom rules will prevent the design rule checker from running" ([verification_kicad_and_tools.md](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_kicad_and_tools.md)) does not hold for the CLI |
+
+**A bad `.kicad_dru` is dropped silently on 10.0.7** [M]: one bad token (a `;` comment, a misspelled constraint, function, property, layer or severity, a time unit on a clearance, a repeated constraint, a missing paren or `(version 1)`) and the CLI ignores the whole file, prints nothing and exits 0, so a DRC run is no lint. `kae dru-check` agreed with KiCad on 50 crafted cases and on all 530 corpus `.kicad_dru` files; KiCad rejects 10 of them on their own boards ([44cebf9](https://github.com/magnetic-trowel/kicad-auto-everything/commit/44cebf9dfeb55cb103bdf015ec6fee0965e9119a), [32ad4c4](https://github.com/magnetic-trowel/kicad-auto-everything/commit/32ad4c403bf7b54ecfbdad76185075c58b177189)). Master returns exit 3 (`ERR_INVALID_INPUT_FILE`), "DRC incomplete: could not compile custom design rules.", and writes no report ([91358c2230](https://gitlab.com/kicad/code/kicad/-/commit/91358c2230)); not in 10.0.7 [P].
 
 ## Referee command
-`kicad-cli pcb drc --format json --schematic-parity --severity-all --refill-zones --exit-code-violations` on a **saved copy** = single source of truth for violations, unconnected items and parity; add `--all-track-errors` in repair loops [I]. Lint every generated `.kicad_dru` by running DRC on a scratch copy before applying it (syntax errors block DRC) [I, from VK]. Report schema and the 67 keys: [drc-report-and-repair-loop.md](drc-report-and-repair-loop.md).
+`kicad-cli pcb drc --format json --schematic-parity --severity-all --refill-zones --exit-code-violations` on a **saved copy** = single source of truth for violations, unconnected items and parity; add `--all-track-errors` in repair loops [I]. **Check every `.kicad_dru` with `kae dru-check FILE`** (`kae/src/kae/board/dru_check.py`) before relying on it; exit 0 clean, 1 errors, 2 could not run [M]:
+- Static pass: pure Python, names line, column and fix; vocabulary per KiCad version in `kae/src/kae/board/dru_vocab/`.
+- KiCad pass: DRC on a probe board with a sentinel rule appended; no sentinel violation means KiCad dropped the file, and each rule is then tried alone to name the culprits. `--board` runs it on the real board (board-specific layer names).
+- kae's rule readers (`kae.route.rules.build`, `kicad_file.read_rules`) run the static pass and, on an error, use no custom rules, as KiCad does ([c1eadb4](https://github.com/magnetic-trowel/kicad-auto-everything/commit/c1eadb4)). kaesynth's `lint_dru` calls `dru_check` too.
+- A plain DRC run on a scratch copy (the earlier advice, from VK) cannot detect a dropped file.
+
+ Report schema and the 67 keys: [drc-report-and-repair-loop.md](drc-report-and-repair-loop.md).
 
 ## Uses seen in MCP servers
 | Use | Detail |
