@@ -540,9 +540,27 @@ def cmd_exp_create(a):
         raise SystemExit(f"methods prepared with a harness of another task spec than {harness[:7]}'s ({want}): "
                          + "; ".join(f"{n} {i} (spec {s})" for n, i, s in off)
                          + ". Register them again with --harness at this experiment's harness.")
+    # runs made at another time are not comparable: on this shared host the same code, seeds and time
+    # budget left 13.9 % more open connections a few days later (zone-keepout-ab2 against zone-ab's base
+    # runs, 47 boards, p < 0.001), more than the effects the A/Bs measure; so an experiment makes all of
+    # its runs itself unless --reuse-runs says otherwise
+    if not a.reuse_runs:
+        old_runs = defaultdict(int)
+        ids = {m["id"] for m in ms if m["recipe"]["runner"]["type"] != "reference"}
+        for bid in boards:
+            if board_dir(bid).exists():
+                for _, r in board_runs(bid):
+                    if r["method_id"] in ids and r.get("experiment") != a.name and not r.get("repro_of"):
+                        old_runs[r["method_id"]] += 1
+        if old_runs:
+            raise SystemExit("methods with runs from other experiments on these boards: "
+                             + "; ".join(f"{m['name']} {m['id']} ({old_runs[m['id']]} runs)" for m in ms if m["id"] in old_runs)
+                             + ". Runs made at another time are not comparable (host load moves results by ~14 %): "
+                             "register a replicate of each (method add ... --param replicate=<tag>, same recipe otherwise) "
+                             "so every arm runs now, side by side; or pass --reuse-runs to compare with them anyway.")
     kicad = kicad_version()
     evs = evaluators_for(harness, kae, kicad)
-    e = dict(schema=SCHEMA, name=a.name, description=a.description or "", created=now(),
+    e = dict(schema=SCHEMA, name=a.name, reuse_runs=bool(a.reuse_runs), description=a.description or "", created=now(),
              methods=[dict(id=m["id"], name=m["name"]) for m in ms], attempts=a.attempts,
              harness=dict(commit=harness, link=github_link("https://github.com/magnetic-trowel/kicad-auto-everything", harness)),
              kae=dict(commit=kae, link=github_link("https://github.com/magnetic-trowel/kicad-auto-everything", kae)),
@@ -1205,8 +1223,10 @@ def exp_rows(e):
     human = next((m for m in methods().values() if m["recipe"]["runner"]["type"] == "reference"), None)
     want = ([dict(id=human["id"], name=human["name"])] if human else []) + [m for m in e["methods"] if not human or m["id"] != human["id"]]
     rows, bugs, fails, stale = [], [], [], 0
+    apart = []                      # boards whose methods' runs were made more than APART_H hours apart
     evs = e["evaluators"]
     for bid in boards:
+        made = []
         bd = board_dir(bid)
         if not bd.exists():
             continue
@@ -1235,10 +1255,23 @@ def exp_rows(e):
                      layers=b.get("layers"), footprints=b.get("footprints"), collection=b.get("collection"), license_tier=b.get("license_tier"))
             rows.append(v)
             bugs += read_json(d / "bugs.json", [])
+            if human is None or m["id"] != human["id"]:
+                made.append(r.get("finished"))
+        ts = [datetime.fromisoformat(t) for t in made if t]
+        if len(ts) >= 2 and (max(ts) - min(ts)).total_seconds() > APART_H * 3600:
+            apart.append(bid)
+    if apart:
+        print(f"warning: on {len(apart)} boards the methods' runs were made more than {APART_H} h apart "
+              f"(e.g. {apart[0]}): host load moves results by ~14 %, so those comparisons are not reliable",
+              file=sys.stderr)
+    e["_apart"] = apart
     if stale:
         print(f"{stale} runs left out: made on another task (board file, task spec or KiCad) than this experiment's",
               file=sys.stderr)
     return rows, bugs, fails
+
+
+APART_H = 12      # hours between the runs of one board's methods past which the report warns
 
 
 def _mean(xs):
@@ -1357,6 +1390,10 @@ def cmd_exp_report(a):
     if foreign:
         rep += ["", f"**Note:** {foreign} runs were scored by a different DRC evaluator than this experiment's (reused runs from "
                 "an older scorer). Rescore them before comparing numbers."]
+    if e.get("_apart"):
+        rep += ["", f"**Warning:** on {len(e['_apart'])} boards the methods' runs were made more than {APART_H} h apart "
+                "(runs reused from other experiments). Host load moves results by ~14 % on this host (zone-keepout-ab2), "
+                "so differences on those boards are not reliable; register replicates and run the arms side by side."]
     rep += ["", "Columns: cp1 = share of boards routed clean (valid, 0 unconnected, 0 DRC errors) on attempt 0; completion = "
             "share of initially unconnected items routed (0 for no output); not closed = boards with unconnected items left; "
             "timeouts = stopped at the deadline (partial); CPU s = the method's own processes (router, DSN export, SES import), "
@@ -1684,6 +1721,8 @@ def main():
     s.add_argument("--attempts", type=int, default=1)
     s.add_argument("--harness", default="HEAD", help="revision for prepare, the human reference and physics briefs")
     s.add_argument("--kae", default="origin/claude/vigilant-mayer-i91rrr", help="revision with the kae package (physics)")
+    s.add_argument("--reuse-runs", action="store_true",
+                   help="allow methods that already have runs from other experiments (made at another time: the report warns)")
     s.set_defaults(f=cmd_exp_create)
     s = ep.add_parser("submit")
     s.add_argument("name"), s.add_argument("--only"), s.add_argument("--limit", type=int)
