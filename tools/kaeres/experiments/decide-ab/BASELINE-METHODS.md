@@ -14,8 +14,16 @@ counted-budget change). Whichever session has queue room runs it, as one campaig
 **How to run it**
 - Every job `--class timed`.
 - One-board smoke first.
-- Size the kaeq timeout for the hardest board, and retry time-outs before analysing (see the lessons in
-  `tools/kaeres/README.md`).
+- Size the kaeq timeout for the hardest board (see the lessons in `tools/kaeres/README.md`).
+
+**Counted budgets** (branch work-budget, `kae.budget`; exact flags come with the counted-budget commit)
+- Every kae method runs with `KAE_BUDGET=work` in its command env, so "900 s × sqrt-fp40" means nominal
+  seconds of counted work, not wall time.
+- Freerouting (stock 2.5.0 and the fork) cannot be put on counted work. It runs to its own stop (passes
+  cap, generous job timeout), so its result does not depend on load either.
+- Wall time is then only a safety ceiling, 4× the nominal budget. A run that hits it reports
+  `ceiling_hit` and counts as failed, not as a partial result. Investigate every ceiling hit before
+  analysing: each one means a stage did uncounted work.
 
 **Routing and physics** (intent/physics work)
 - Boards: the 213 physics-set boards. Kind: route. k = 1.
