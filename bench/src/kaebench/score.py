@@ -69,7 +69,9 @@ from .boardfiles import board_path, install_rules, unconnected_ignored
 # 9: route placement integrity with the place side's pose tolerance (transplant-routing)
 # 10: route and joint tasks may add copper zones and set pads' zone connection (see the docstring)
 # 11: clean_strict / legal_strict / errors_strict (fixed-severity profile, STRICT_CHECKS)
-SCORE_VERSION = 11
+# 12: the integrated scorer: 10 and 11 together, and duplicate uuids matched by content on both sides
+#     (11 had meant different things on the decide and route-finish lines)
+SCORE_VERSION = 12
 # KiCad 10's DRC report stops listing unconnected items at 499 and other violations at 199
 # per type (drc_engine ERROR_LIMIT / EXTENDED_ERROR_LIMIT).
 DRC_UNCONNECTED_CAP = 499
