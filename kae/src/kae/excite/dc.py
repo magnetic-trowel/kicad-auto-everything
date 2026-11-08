@@ -45,6 +45,17 @@ ETA = (0.75, 0.85, 0.95)   # efficiency of a switching regulator without a cell 
 DC_KINDS = ("R", "L", "FB", "D_on", "short")     # circuit elements that conduct at DC
 LINEAR = ("regulator_linear", "charger", "load_switch", "battery_monitor", "usb_pd")
 SWITCHING = ("regulator_switching", "pmic", "regulator_module")
+# parts that consume power as well as supply a rail: a module (an MCU board of its own: Teensy, XIAO, Pico, ESP32
+# modules) whose regulator feeds the carrier's 3V3 while its own MCU draws from its input; an MCU, FPGA or radio
+# whose internal regulator feeds a core rail. Their own draw is a load on their input (or, fed from their own
+# connector, heat with no DC flow in the carrier's copper). A regulator's own draw is its quiescent current.
+CONSUMER_SUB = ("mcu", "fpga", "processor", "soc", "rf", "phy", "memory", "logic", "adc_dac", "interface", "sensor",
+                "audio_amp")
+# what a part with a supply and a ground pad draws (A) where kae.route.critical_rails has no class prior
+LOAD_PRIOR = {"optocoupler": 0.01, "oscillator": 0.01}
+# an LED with a pad on a rail and one on ground draws from the rail (an addressable LED's VDD and GND pins; a plain
+# LED returning to ground beside its series resistor's rail end is not on the rail and is not a load here)
+LOAD_KINDS = ("ic", "module", "connector", "led") + tuple(LOAD_PRIOR)
 SUPPLY_PIN = re.compile(r"^(V(CC|DD|IN|BAT|BUS|S|M|PP|IO|CORE|DDA|DDIO|USB|SYS|P|\+)\w*|AVDD|DVDD|IOVDD|PVDD|PVIN|"
                         r"AVCC|DVCC|VIN\d*|PWR|POWER|\+V\w*|V\+|VREG_IN|IN)$", re.I)
 VOLT_PIN = re.compile(r"^\+?\d+V\d*$|^\+?\d+(\.\d+)?V$", re.I)     # '3V3', '5V', '+1.8V': a supply pin by its voltage
@@ -88,6 +99,7 @@ class Plan:
         self.params = []        # Params of the DC band (load currents, efficiencies)
         self.notes = []
         self.dc_pads = set()
+        self.self_loads = []    # dict(ref, rail, key, pads): parts that power themselves from off the board (heat only)
 
 
 def _pads(board):
@@ -236,6 +248,11 @@ def plan(board, brief, bd, P, srcs, intent=None):
             f["rating"] = source_rating(ctx, uuid_of.get(f["ref"]), r, {})
     feeders = {f["ref"] for f in pl.feeds.values()}
 
+    def consumer(ref):
+        p = parts.get(uuid_of.get(ref)) or {}
+        k, sb = p.get("kind"), p.get("subtype")
+        return (k == "module" and sb not in LINEAR + SWITCHING + ("charge_pump",)) or (k == "ic" and sb in CONSUMER_SUB)
+
     def part_share(ref, r):
         """Rail r's share of part ref's supply pads over the fed rails it draws from (not one it feeds)."""
         n = {r2: len(supply(ref, r2)) for r2 in pl.feeds if pl.feeds[r2].get("ref") != ref
@@ -243,21 +260,32 @@ def plan(board, brief, bd, P, srcs, intent=None):
         return n.get(r, 0) / sum(n.values()) if sum(n.values()) else 1.0
     # loads: parts that draw from a rail and return at their own ground
     shares = {}
+    # an export through a connector without a ground pad of its own returns through the board's other connectors'
+    # grounds (a stack connector carries the rail, its mate the ground)
+    conn_g_all = conn_g
     for r in sorted(pl.feeds):
         for ref, pp in pads.items():
-            if ref in feeders and pl.feeds[r]["ref"] == ref or ref in cell_parts or ref in feeders and any(
+            if ref in feeders and pl.feeds[r]["ref"] == ref or ref in cell_parts or ref in feeders and not consumer(ref) and any(
                     f.get("rin") == r and f["ref"] == ref for f in pl.feeds.values()):
                 continue
             if not any(net == r for _, net, _, _ in pp):
                 continue
             u = uuid_of.get(ref)
             kind = (parts.get(u) or {}).get("kind")
-            if kind not in ("ic", "module", "connector"):
+            if kind not in LOAD_KINDS:
                 continue
             g = gnd_pads(ref)
+            stated = ((intent or {}).get("parts") or {}).get(ref, {}).get("I_A") is not None
+            if not g and kind == "connector" and stated and conn_g_all:
+                g = [t for t in conn_g_all if not t.startswith(ref + ".")]
+                if g:
+                    pl.notes.append(f"{r}: export {ref} has no ground pad; its return is taken at the other connectors' ground")
             if not g:
                 continue
-            a = load_current(ctx, u, r, {}, draws=draws_from(pp, r, rails) if kind in ("ic", "module") else None)
+            if kind in LOAD_PRIOR:
+                a = LOAD_PRIOR[kind] if supply(ref, r) and draws_from(pp, r, rails) or kind == "oscillator" else 0.0
+            else:
+                a = load_current(ctx, u, r, {}, draws=draws_from(pp, r, rails) if kind in ("ic", "module") else None)
             if kind == "connector":
                 a = 0.1 * a                          # an export: a tenth of its rating, typically
             if a <= 0:
@@ -282,6 +310,30 @@ def plan(board, brief, bd, P, srcs, intent=None):
                 pl.params.append(p)
                 ld["key"] = (p.subject, p.name)
             pl.loads.append(ld)
+    # self-powered consumers: a part that sources a rail from off the board (its own USB or battery) and draws
+    # its own current there: no DC flow in the carrier's copper, but its own dissipation heats the board
+    pl.self_loads = []
+    for ref in sorted({f["ref"] for f in pl.feeds.values() if f["kind"] == "external" and f.get("ref")}):
+        if not consumer(ref) or any(ld["ref"] == ref for ld in pl.loads):
+            continue
+        fed = [r for r, f in pl.feeds.items() if f["kind"] == "external" and f.get("ref") == ref]
+        r = max(fed, key=lambda n: (volts(n) or 0.0, n))
+        u = uuid_of.get(ref)
+        iv = ((intent or {}).get("parts") or {}).get(ref, {}).get("I_A")
+        if iv is not None:
+            lo, hi = iv if isinstance(iv, list) else [iv, iv]
+            p = Param(f"dc:{ref}@{r}", "I_A", math.sqrt(lo * hi) if lo > 0 else hi, lo, hi, "A", "intent",
+                      "the intent file (the part's own draw, from its own input)")
+        else:
+            a = load_current(ctx, u, r, {}, draws=True)
+            if a <= 0:
+                continue
+            p = Param(f"dc:{ref}@{r}", "I_A", a, a / 3, 3 * a, "A", "prior",
+                      f"{(parts.get(u) or {}).get('kind')} own draw by class (E5) x/3 .. x3")
+        pl.params.append(p)
+        mine = [t for n, net, _, _ in pads.get(ref, []) for t in tok(ref, [n]) if net in fed or net in grounds]
+        pl.self_loads.append(dict(ref=ref, rail=r, key=(p.subject, p.name), pads=mine or tok(ref, [n for n, _, _, _ in pads.get(ref, [])])))
+        pl.notes.append(f"{r}: {ref} powers itself from off the board; its own draw heats it but flows in no carrier copper")
     for r, lds in shares.items():
         tot = sum(ld["prior"] for ld in lds)
         for ld in lds:
@@ -290,7 +342,7 @@ def plan(board, brief, bd, P, srcs, intent=None):
     for r, f in pl.feeds.items():
         if f["kind"] == "cell" and r not in shares:
             pl.notes.append(f"{r}: fed by {f['cell']['id']} but no load with a ground pad found; the cell's DC flow is not modelled")
-    pl.dc_pads = {t for ld in pl.loads for t in ld["sup"] + ld["gnd"]}
+    pl.dc_pads = {t for ld in pl.loads for t in ld["sup"] + ld["gnd"]} | {t for sl in pl.self_loads for t in sl["pads"]}
     for f in pl.feeds.values():
         for k in ("out", "gnd", "inp"):
             pl.dc_pads |= set(f.get(k) or [])

@@ -175,7 +175,8 @@ TEXT_RULES = [
                                    r'\bMOC\d{4}|\bGAQY|\bEL817|\bPS2501|\bVTL5C|\bLTV-?\d|\bSFH\d{3}|\bACPL|\bHCPL|\bVO\d{3,4}')),
     ('module', None, 3.0, rx(r'\bmodule\b|\bWROOM|\bWROVER|\bESP32-[A-Z0-9]+-MINI|\bMINI-1|\bESP-\d{2}|\bXIAO|\bRPi_Pico|^Pico\w*$|\bArduino|'
                               r'\bWeMos|\bDevKit|breakout|\bXBEE|\bXB24|\bNORA-|\bBL54L|\bRFM9\d|\bSIM\d{3,4}|\bProMicro|\bRP2040-Zero|'
-                              r'\bDFPlayer|\bMini360|\bSC14CVMDECT|\bmikoto|\bSAMD21_breakout|SUPERMINI|\bHC-0\d|\bnRF52\d{2}-\w*module')),
+                              r'\bDFPlayer|\bMini360|\bSC14CVMDECT|\bmikoto|\bSAMD21_breakout|SUPERMINI|\bHC-0\d|\bnRF52\d{2}-\w*module|'
+                              r'\bTeensy|\bDaisy.?Seed')),
     ('graphic', None, 2.5, rx(r'\blogo\b|\bOSHW\b|\bWEEE\b|\bROHS\b|\bkibuzzard|\bQRCode|\bgraphic|\bSign_|\bLONGTHING|\bart\b|\bCreative_Commons')),
     ('mechanical', None, 1.5, rx(r'\bMECHANICAL\b|\bPCM_kikit:Board|\bpanel|\bmouse.?bite|\bcutout')),
 ]
@@ -221,7 +222,7 @@ LIB_RULES = [
     ('potentiometer', 3.0, rx(0, r'Potentiometer|TRIM_|Trimmer|RV2X4')),
     ('optocoupler', 2.5, rx(0, r'OptoDevice|Opto')),
     ('module', 3.5, rx(0, r'(^|:)Module|RF_Module|ESP32-|WROOM|XIAO|RPi_Pico|Arduino|WeMos|DevKit|Breakout|XBEE|NORA-|RFM9\d|BL54L|SC14CVMDECT|'
-                       r'ProMicro|RP2040.Zero|DFPlayer|Mini360|SUPERMINI|wemos|nice_nano|nano_|_nano|xiao')),
+                       r'ProMicro|RP2040.Zero|DFPlayer|Mini360|SUPERMINI|wemos|nice_nano|nano_|_nano|xiao|Teensy|Daisy.?Seed')),
     ('graphic', 3.0, rx(0, r'Logo|LOGO|logo|(^|:)Symbol|kibuzzard|Graphic|GRAPHIC|OSHW|oshw|QRCode|Sign_|Panelization|w_logo|Aesthetic|LONGTHING|bongo|Bongo')),
     ('mechanical', 2.0, rx(0, r'(^|:)Board$|kikit|MECHANICAL|Mechanical|mikoto|Cutout|PanelHole|Mech_')),
 ]

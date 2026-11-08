@@ -316,7 +316,7 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
         sys_dc = {}                          # built by the first solve that needs it (_dc_system)
         harms += _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes, log, obs_out=observations,
                            system=sys_dc)
-        if dcp.loads and not any(n.startswith("DC: copper open") for n in notes):
+        if (dcp.loads or dcp.self_loads) and not any(n.startswith("DC: copper open") for n in notes):
             # part temperatures from the board's own heat flow, and each part's loss (kae.excite.heat)
             from . import heat as HT
             harms += HT.evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, [0.0] * ncp, notes,
