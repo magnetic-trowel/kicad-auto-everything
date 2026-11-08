@@ -142,7 +142,8 @@ open side, an empty channel inside the grid included (nekoink U202). Against its
 the 10 ball-grid boards × 3 seeds: 26 pairs, open 5,270 → 5,526 (+4.9 %), pairs 9 fewer and 10 more,
 per board 2 better and 4 worse; errors 51.5 → 49.6 per run. No gain. On a big board the window repair
 rarely runs at all: it needs 120 s after the repair rounds, which on nekoink run to the last mile's
-90 s reserve (Freerouting took 694 of 1,200 s).
+90 s reserve (Freerouting took 694 of 1,200 s). Given its own time and then no limits it still did not
+pay: [bga-window-repair](../routing/bga-window-repair.md).
 
 ## Not done
 

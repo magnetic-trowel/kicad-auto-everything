@@ -5,8 +5,11 @@
 Scope: the reference methods re-run after the 2026-11 bug audit, against the pre-audit runs; the score v8 rescore of boards that ignore the unconnected check. Not here: the audit itself -> [audit](../audit-2611.md).
 Keys: baseline-2611b, post-audit baselines, merge3-ab, load-stable boards, fr-h1-rescore2, unconnected_items ignore, score v8
 
-**Status:** worked. The reference methods re-run after the whole-codebase bug audit, on the 213 merit
-boards; kae staged improves on the pre-audit runs, the bridge on the human placement does not move.
+**Status:** worked as baselines. The reference methods re-run after the whole-codebase bug audit, on
+the 213 merit boards. **Correction (2026-11-08):** the before/after comparison below is not evidence
+either way: the pre-audit runs are from another week, and on this host the same recipe days apart left
+13.9 % more open connections ([host-load drift](../benchmark-drift-2611.md)), more than the −4.6 % here;
+the "load-stable boards" filter assumed only large boards drift, but small ones do too.
 **First published:** 2026-11-04, branch `place-escape-keepouts`.
 
 ## What changed before these runs
@@ -55,6 +58,8 @@ gamaphy's human layout is not fully connected either (4 unconnected), so it leav
 re-prepared.
 
 ## Caveats
+
+- Before and after ran in different weeks: within host-load drift (status line above).
 
 - kaeq froze jobs for memory before it gained its "timed" class (2026-11-03); 29 of 419 jobs here were
   frozen, at most 1.7 min. None timed out.

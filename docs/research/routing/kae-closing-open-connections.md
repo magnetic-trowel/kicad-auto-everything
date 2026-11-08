@@ -76,7 +76,7 @@ Each is off by default where the code was kept.
 ## Code
 
 - `rules-merge3`: `rules-merge2` plus the plane policy, dog-bones, the outline fix, the near-miss fixes, `--final`, `--check-placement --screen`, the dense-board fixes, `kae.route.blocked` and the escape planner with its certificate. Board overrides for the new defaults: `KAE_BALL_ESCAPES`, `KAE_PLANE_STRICT_SHARE`, `KAE_PIN_FIELDS`, `KAE_BUS_ORDER`.
-- Not merged: `close-bga-region` (window repair: measured once, worth merging after a second run) and `close-topology` (bus order and pin fields, negative).
+- Not merged: `close-bga-region` (window repair: measured once; three later side-by-side A/Bs found no gain, [bga-window-repair](bga-window-repair.md)) and `close-topology` (bus order and pin fields, negative).
 - Literature behind the BGA work: [bga-routing-ranked-ideas](../../topics/routing/bga-routing-ranked-ideas.md), with [bga-routing-survey](../../topics/routing/bga-routing-survey.md), [routing-cross-domain-and-math](../../topics/routing/routing-cross-domain-and-math.md) and [routing-infeasibility-certificates](../../topics/routing/routing-infeasibility-certificates.md).
 
 ## Measured but not merged

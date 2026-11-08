@@ -6,7 +6,8 @@ Scope: four hard boards taken apart: open connections by cause and what to chang
 Keys: board study, polarfire-som, nekoink, sdi-mipi, gecko5education, fixed zones, zone-aware placement, LED matrix, series arrays, deep BGA rings, Freerouting time
 
 **Status:** worked as a study: it found why kae leaves connections open on these boards and ranked
-what to change; the changes are measured elsewhere (zone-aware placement, the BGA window repair).
+what to change; the changes are measured elsewhere. Finding 1's cost estimate turned out wrong (see
+there); zone-aware placement and the BGA window repair did not reduce open connections.
 **First published:** 2026-11-04. Runs: kae staged at 21bc53d (experiment `escape-ab3`), kae's router on the
 human placement (`baseline-2611b`), plus one-seed probes; open connections are pcbnew's count.
 
@@ -36,9 +37,12 @@ except 2–5 DDR3 necks on sdi-mipi.
    polarfire 148–221 of 469 (human 404); nekoink: 32 of 35 local top-layer pours end up with none of
    their net's pads, plane escapes leave 128–153 pads to the router instead of 15; gecko5: the FPGA sat
    off its +1V2 island (25 core balls then need routed escapes instead of 3), and every staged DRC error
-   was a solder-mask bridge from other nets' pads under fixed outer-layer zones. Cost: about +60 to +200
-   open connections a board at equal routing effort. Addressed by zone-aware placement (branch
-   `place-zone-aware`, experiment `zone-ab`).
+   was a solder-mask bridge from other nets' pads under fixed outer-layer zones. Estimated cost: about +60
+   to +200 open connections a board. **Corrected (2026-11-08):** the estimate was wrong. Counted per net,
+   nets that own a fixed zone are only 11–51 of 168–545 open connections per run (the router reaches
+   planes by vias); zone-aware placement doubled the power pads on their zones and left open connections
+   unchanged. Its keep-out does remove the mask bridges (gecko5 22 → 0). See
+   [zone-aware placement](../placement/zone-aware-placement.md).
 2. **Arrays get scattered.** gecko5's 12 × 10 RGB LED matrix (with its row resistors, column
    transistors and decoders: 37 % of the connections) was spread over the whole board in four
    rotations, about 165 of 247 opens; locking only the LEDs to the human grid removed about 110. On
@@ -48,8 +52,8 @@ except 2–5 DDR3 necks on sdi-mipi.
 3. **The router fails deep ball-grid rings.** sdi-mipi: 75–80 % of the opens are balls in rings 1–6 of the
    FPGA, on the human placement too ("congestion, a path exists" for 48–58 of ~60 checked). One seed with
    no extra cost on the outer layers left 163 instead of 185 open and doubled bottom-layer track (the
-   human uses 3,000 mm there, kae 475–880): worth an A/B. The BGA window repair (`close-bga-region`) aims
-   here but rarely gets time on big boards; see [escape-keepouts](../placement/escape-keepouts.md).
+   human uses 3,000 mm there, kae 475–880): worth an A/B. The BGA window repair (`close-bga-region`)
+   aimed here and did not work even with unlimited time ([bga-window-repair](../routing/bga-window-repair.md)).
 4. **Freerouting runs out of time on every big board.** Many short attempts never finish a pass; one
    1,500 s attempt beat the kept one on polarfire (429 vs 1,306). With the uncapped judge (below) the
    restart wrapper can now tell attempts apart; fewer, longer attempts on big boards are untested.

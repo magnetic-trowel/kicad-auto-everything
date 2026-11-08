@@ -86,6 +86,13 @@ Lessons from experiments that ran and measured nothing (2026-11):
   of another task spec runs every job and writes nothing, because its runs land on another task
   (`exp create` now refuses it); a wrapper from a harness without a flag the method uses (`--resume`)
   fails every run at once.
+- **Run every arm at the same time.** On this shared host the same code, seeds and time budget left
+  13.9 % more open connections a few days later (zone-keepout-ab2's fresh base against zone-ab's,
+  47 boards, p < 0.001): more than any effect the recent A/Bs measured. A run reused from another
+  experiment was made at another time, so `exp create` refuses methods that already have runs on the
+  experiment's boards. Register a replicate instead (`method add` with the same recipe plus
+  `--param replicate=<tag>`), so each board's job runs every arm side by side; `--reuse-runs` overrides,
+  and the report then warns about boards whose arms ran more than 12 h apart.
 - **Smoke first.** One or two boards, 1 attempt, `exp submit` on that experiment, then read the runs
   (status, scores, bug records) before submitting the full one.
 - **`results.csv` holds attempt 0 only** (cp1's attempt). A multi-seed comparison reads every attempt from
