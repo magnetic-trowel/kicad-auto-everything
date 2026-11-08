@@ -58,8 +58,26 @@ def ledger_for(bd, brief, srcs, intent=None):
     return P, L
 
 
+def coarsen_pitch(window, pitch, n_layers, max_cells):
+    """(pitch, note): the raster pitch doubled until the window's cells (nx ny layers) fit max_cells, and why. The
+    window is the board's pad extent, the same for every layout of one placement, so two layouts of a board always
+    share their pitch."""
+    if not max_cells:
+        return pitch, None
+    p0 = pitch
+    cells = lambda p: math.ceil((window[2] - window[0]) / p) * math.ceil((window[3] - window[1]) / p) * n_layers
+    n0 = cells(pitch)
+    while cells(pitch) > max_cells:
+        pitch *= 2
+    if pitch == p0:
+        return pitch, None
+    return pitch, (f"mesh: pitch {pitch:g} mm, not {p0:g}: the window at {p0:g} mm holds {n0 / 1e6:.2f}M cells, over the "
+                   f"budget of {max_cells / 1e6:.2f}M (memory and time grow faster than the cells); inductance bias "
+                   f"scales with the pitch, the same for every layout of this board")
+
+
 def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=None, log=print, lumped=True,
-             intent=None, n_corners=16, seed=0, dc=True):
+             intent=None, n_corners=16, seed=0, dc=True, max_cells=None):
     """Every harm of a laid-out board, across the parameters' intervals.
 
     Each aggressor's pattern is solved in two bands: its switching fundamental (current split by the
@@ -118,6 +136,10 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
                 x, y = transform.pad_xy(fp, p)
                 xs.append(x), ys.append(y)
         window = (min(xs) - 3, min(ys) - 3, max(xs) + 3, max(ys) + 3)
+    n_cu = len(b.stackup.gaps) + 1 if getattr(b, "stackup", None) is not None else 2
+    pitch, pitch_note = coarsen_pitch(window, pitch, n_cu, max_cells)
+    if pitch_note:
+        log(pitch_note)
     bm = BoardMesh(path, window, pitch, nsub=nsub, b=b, fills=fills)
     priced = {bd.net_of.get(p) for J in [v for _, v in pats.values()] + list(opats.values())
               for p, j in J.items() if abs(j) > 1e-9} - {None}
@@ -176,7 +198,15 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
         if band_res:
             solver_stats.append(_solver_row(f, band_res, time.time() - t_band))
             log("solver: " + _solver_line(solver_stats[-1]))
-    notes = list(mesh_notes)
+        # the harms read only each pattern's pad potentials: its full solution (every branch current and node
+        # potential: hundreds of MB on a large board) is kept only as the warm start of the source's next band
+        for _, info in band_res:
+            info.pop("x", None), info.pop("I", None), info.pop("net", None), info.pop("op", None)
+        for sn in [sn for sn in last if max(bands[sn].values()) <= f]:
+            del last[sn]
+    notes = ([pitch_note] if pitch_note else []) + list(mesh_notes)
+    if n_pins:
+        notes.append(f"pins: {n_pins} pads took their pin type and name from the operating facts (the schematic's)")
     uncomputed = []
     # an aggressor whose pattern drives current into a pad outside the copper model loses that current
     # from its solve: its harms are not computed (a dropped contribution is not a zero one)
@@ -658,10 +688,13 @@ def main(argv=None):
     ap.add_argument("--no-lumped", action="store_true", help="copper only, with the circuit's ideal-copper split")
     ap.add_argument("--intent", help="intent file (JSON): operating conditions, part facts, requirements")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--max-cells", type=float, default=None,
+                    help="raster budget (cells x copper layers): the pitch doubles until the board's window fits it")
     a = ap.parse_args(argv)
     from .beliefs import load_intent
     r = evaluate(a.board, a.pitch, tuple(a.window) if a.window else None, nsub=a.nsub, log=lambda m: print(m, file=sys.stderr),
-                 lumped=not a.no_lumped, intent=load_intent(a.intent), seed=a.seed)
+                 lumped=not a.no_lumped, intent=load_intent(a.intent), seed=a.seed,
+                 max_cells=int(a.max_cells) if a.max_cells else None)
     print_total(r["total"])
     print("assumptions:")
     for p in r["ledger"]:
