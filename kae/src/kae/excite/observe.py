@@ -87,12 +87,17 @@ def observers(bd, brief, sources):
             ref = tok.rsplit(".", 1)[0]
             if ref in seen or bd.port.get(ref) != "module" or bd.pin_type.get(tok) == "power_out":
                 continue
-            g = nearest_ground(bd, ref, tok)
-            if g is None:
-                continue
             seen.add(ref)
             frac, why = TOL["supply_digital"]
             V = bd.rails.get(net) or 3.3
+            mn = (getattr(bd, "module_nodes", None) or {}).get(ref) or {}
+            if net in mn:          # a clocked module's inside (kae.excite.sources): what its MCU sees
+                out.append(Observer(f"supply:{ref}:{net}", "supply", mn[net], mn["g"], bound=frac * V,
+                                    basis=f"{why} (inside the module); {net} = {V:g} V", meta=dict(ref=ref, rail=net, V=V)))
+                continue
+            g = nearest_ground(bd, ref, tok)
+            if g is None:
+                continue
             out.append(Observer(f"supply:{ref}:{net}", "supply", net, bd.net_of[g], tok, g, bound=frac * V,
                                 basis=f"{why} (at the module's pins); {net} = {V:g} V", meta=dict(ref=ref, rail=net, V=V)))
     # a radio's RF and antenna pins (kae.circuit.roles.radio_kind; nets of role rf or pins named RF/ANT): the layout's

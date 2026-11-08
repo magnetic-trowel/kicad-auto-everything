@@ -21,7 +21,7 @@ from __future__ import annotations
 import math
 import re
 
-from .models import PKG_L, SW_FN, _rl, _rlc, nearest_ground
+from .models import C_MODULE, PKG_L, PKG_R, SW_FN, _rl, _rlc, nearest_ground
 
 # dynamic core current and edge of IC classes (stand-ins; an IC's datasheet replaces them)
 DYNAMIC = {"mcu": (0.05, 1e-9), "fpga": (0.5, 0.5e-9), "memory": (0.1, 1e-9), "logic": (0.02, 1e-9),
@@ -76,8 +76,24 @@ def add_all(bd, brief, nl=None):
                 continue
             seen.add(ref)
             I, tr = MODULE_I, MODULE_TR
-            out.append(bd.circuit.src(f"core:{ref}:{net}", net, bd.net_of[g], pa=tok, pb=g, kind="core", ref=ref, rail=net,
-                                      I=I, didt=I / tr, f_e=1 / (math.pi * tr), V=bd.rails.get(net) or 3.3, f_rep=CORE_F))
+            meta = dict(kind="core", ref=ref, rail=net, I=I, didt=I / tr, f_e=1 / (math.pi * tr), V=bd.rails.get(net) or 3.3,
+                        f_rep=CORE_F)
+            c = bd.circuit
+            if any(e.name == f"{tok}:supply" for e in c.elems):
+                # the module supplies this rail (kae.excite.models._port_supplies): its decoupling is that port element
+                out.append(c.src(f"core:{ref}:{net}", net, bd.net_of[g], pa=tok, pb=g, **meta))
+                continue
+            # inside the module: its MCU draws from its own decoupling (C_MODULE), which its supply and ground pins
+            # (PKG_L each) join to the carrier; the carrier's copper carries only what that decoupling does not
+            nodes = bd.module_nodes.setdefault(ref, {})
+            if "g" not in nodes:
+                nodes["g"] = gi = f"{ref}:mgnd"
+                for tg in [t for nt in bd.grounds for t in bd.pads_of.get(nt, []) if t.rsplit(".", 1)[0] == ref]:
+                    c.z(f"{tg}:mpkg", bd.net_of[tg], gi, _rl(PKG_R, PKG_L), tg, None, "pkg")
+            v = nodes[net] = f"{ref}:m{net}"
+            c.z(f"{tok}:mpkg", net, v, _rl(PKG_R, PKG_L), tok, None, "pkg")
+            c.z(f"{ref}:{net}:mdec", v, nodes["g"], _rlc(0.01, 0.2e-9, C_MODULE), None, None, "die")
+            out.append(c.src(f"core:{ref}:{net}", v, nodes["g"], **meta))
     for net, d in brief["nets"].items():
         if d.get("role") != "clock":
             continue

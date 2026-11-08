@@ -132,10 +132,18 @@ def test_a_radio_module_gets_supply_and_rf_observers_and_drives_the_carrier(tmp_
     srcs = S.add_all(bd, br)
     assert O.radio_parts(bd, br) == {"U1": "subghz"}
     obs = {o.name: o for o in O.observers(bd, br, srcs)}
-    assert "supply:U1:+3V3" in obs and obs["supply:U1:+3V3"].pa == "U1.1" and obs["supply:U1:+3V3"].pb == "U1.2"
+    # inside the module: its MCU's supply node behind its pin, decoupled by the module's own capacitor
+    mn = bd.module_nodes["U1"]
+    assert (obs["supply:U1:+3V3"].a, obs["supply:U1:+3V3"].b) == (mn["+3V3"], mn["g"])
     assert "victim:rf:U1.3" in obs and obs["victim:rf:U1.3"].meta["cls"] == "rf"
     core = [s for s in srcs if s.name == "core:U1:+3V3"]
-    assert core and core[0].pa == "U1.1" and core[0].meta["didt"] == pytest.approx(S.MODULE_I / S.MODULE_TR)
+    assert core and (core[0].a, core[0].b) == (mn["+3V3"], mn["g"])
+    assert core[0].meta["didt"] == pytest.approx(S.MODULE_I / S.MODULE_TR)
+    pkg = {e.name: e for e in bd.circuit.elems if e.name.startswith("U1.")}
+    assert pkg["U1.1:mpkg"].pa == "U1.1" and pkg["U1.2:mpkg"].pa == "U1.2"
+    # the module's own decoupling carries most of its edge: little of it reaches the carrier's copper
+    J = bd.circuit.solve(core[0].meta["f_e"], [core[0]])[core[0].name]["Ja"]
+    assert abs(J.get("U1.1", 0)) < 0.5
 
 
 def test_a_power_module_is_no_clocked_aggressor():

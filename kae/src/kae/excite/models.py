@@ -119,6 +119,7 @@ class Board:
     part_kind: dict               # ref -> (kind, subtype, role)
     assumptions: list = field(default_factory=list)
     ic_nodes: dict = field(default_factory=dict)   # ref -> {"g": node, rail: node}
+    module_nodes: dict = field(default_factory=dict)  # ref -> {"g": node, rail: node}: a clocked module's inside
     pin_type: dict = field(default_factory=dict)   # pad -> the schematic's pin type ('' when absent)
     pin_fn: dict = field(default_factory=dict)     # pad -> the schematic's pin name ('' when absent)
     pad_xy: dict = field(default_factory=dict)     # pad -> (x, y) mm on the board
