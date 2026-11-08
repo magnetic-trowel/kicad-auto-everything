@@ -159,7 +159,8 @@ def part_heat(bd, dcp, cv, val, inj, ac_parts=None, losses=None):
     for ld, x in zip(dcp.loads, xs):
         pk = bd.part_kind.get(ld["ref"], ("", None))
         if pk[0] != "connector" and (pk[1] if len(pk) > 1 else None) not in PASS_ON:
-            add(ld["ref"], x * (dcp.volts.get(ld["rail"]) or 0.0), loss=False)
+            # a rail of unknown voltage at the DC band's 3.3 V (kae.excite.dc.observe): at 0 V its loads made no heat
+            add(ld["ref"], x * (dcp.volts.get(ld["rail"]) or 3.3), loss=False)
     for sl in getattr(dcp, "self_loads", []):
         # a part powered from off the board (its own USB): its own draw at its rail's voltage, all heat
         add(sl["ref"], cv.get(sl["key"], 0.0) * (dcp.volts.get(sl["rail"]) or 3.3), loss=False)

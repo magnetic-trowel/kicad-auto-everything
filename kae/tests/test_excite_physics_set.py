@@ -158,3 +158,22 @@ def test_to_part_scopes_a_term_to_the_victim_side():
     out_of = dict(id="supply.peak", scope=dict(from_parts=["U1"], to_parts=["U5"]))
     assert OB._match(t, into, {}) and not OB._match(t, out_of, {})
     assert OB.specificity(t) == 2
+
+
+def test_a_net_tie_joins_its_nets_and_a_load_on_a_rail_of_unknown_voltage_still_heats(tmp_path):
+    """A net tie (an analog ground tied to the power ground) is copper by design: it conducts at DC, or a regulator
+    returning at its analog ground pins left the DC flow open. A load on a rail whose voltage nothing states heats
+    at the DC band's 3.3 V fallback (it heated at 0 V: an LED digit board had no dissipating part)."""
+    nets = ["GND", "GNDA"]
+    b = _board(tmp_path, nets, [_fp("NT1", "NetTie_2", "NetTie:NetTie-2_SMD_Pad0.5mm", 10,
+                                    [_pad("1", 0, 1, "GND"), _pad("2", 1, 2, "GNDA")], 1)])
+    br = B.build(b)
+    bd = M.build(b, br)
+    assert [e.kind for e in bd.circuit.elems if e.name == "NT1"] == ["short"]
+    from types import SimpleNamespace
+    from kae.excite import heat as HT
+    pl = DC.Plan()
+    pl.loads = [dict(ref="D1", rail="N$20", key=("dc:D1@N$20", "I_A"))]
+    pl.volts = {"N$20": None}
+    heat = HT.part_heat(SimpleNamespace(part_kind={"D1": ("led", None, "")}), pl, {("dc:D1@N$20", "I_A"): 0.02}, {}, {})
+    assert heat == {"D1": pytest.approx(0.066)}

@@ -384,7 +384,8 @@ def _part(bd, ref, part, pins, kind, sub, role, rec, in_cell):
         for i in range(len(tw)):
             for j in range(i + 1, len(tw)):
                 c.z(f"{ref}:{i}{j}", tw[i].net, tw[j].net, _rlc(1.0, 1e-9, 10e-12), tok(tw[i]), tok(tw[j]), kind)
-    elif kind in ("jumper", "switch") and len(tw) == 2 or (kind == "resistor" and len(tw) != 2):
+    elif kind in ("jumper", "switch", "net_tie") and len(tw) == 2 or (kind == "resistor" and len(tw) != 2):
+        # a net tie is copper that joins two nets by design (an analog ground to the power ground at one point)
         if len(tw) == 2:
             c.z(ref, tw[0].net, tw[1].net, _rl(0.01, 1e-9), tok(tw[0]), tok(tw[1]), "short")
     elif kind == "battery" and len(tw) == 2:
