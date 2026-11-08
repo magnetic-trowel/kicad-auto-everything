@@ -246,3 +246,32 @@ def test_covered_micro_arcs(tmp_path):
     pcb.write_text(text)
     res = tools.run_ops("covered-micro-arcs", pcb)
     assert res["candidates"] == 4 and sorted(res["covered"]) == covered
+
+
+@needs_kicad
+def test_prepare_is_deterministic_for_boards_without_uuids(tmp_path):
+    """KiCad invents a uuid on load for every object a file stores none for (KiCad 5/6 boards,
+    generated files). prepare seeds KiCad's generator from the file's sha256 (task spec 10), so
+    the same source bytes give byte-identical task files, and the uuids a source does store are
+    kept."""
+    import re
+
+    text = re.sub(r'\s*\(uuid "[^"]+"\)', "", FIXTURE.read_text())
+    keep = "11111111-1111-1111-1111-111111111111"  # R1's own uuid stays in the source
+    text = text.replace('(footprint "test:R"', f'(footprint "test:R" (uuid "{keep}")', 1)
+    assert text.count("(uuid") == 1
+    files = []
+    for run in ("a", "b"):
+        src = tmp_path / run / "src" / "old.kicad_pcb"  # different paths, same bytes
+        src.parent.mkdir(parents=True)
+        src.write_text(text)
+        entry = dict(id="nouuid", repo="https://example.invalid/r", pcb_path="old.kicad_pcb")
+        rec = prepare.prepare_board(entry, {"kicad_pcb": str(src), "pcb_sha256": "x"}, tmp_path / run / "tasks")
+        assert rec["task_spec"] == prepare.TASK_SPEC
+        tdir = tmp_path / run / "tasks" / "nouuid"
+        files.append({str(p.relative_to(tdir)): p.read_bytes() for p in sorted(tdir.rglob("*.kicad_pcb"))})
+    assert files[0].keys() == files[1].keys() and len(files[0]) >= 4
+    for name in files[0]:
+        assert files[0][name] == files[1][name], name
+    ref = files[0]["reference/board.kicad_pcb"].decode()
+    assert keep in ref and ref.count("(uuid") > 10

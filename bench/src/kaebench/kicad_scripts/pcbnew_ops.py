@@ -54,7 +54,24 @@ def _out(obj):
     _JSON_OUT.flush()
 
 
-def _load(path):
+def _seed_uuids(path):
+    """Seed KiCad's uuid generator from the sha256 of the file about to be loaded.
+
+    KiCad gives every object a file stores no uuid for (KiCad 5/6 boards, partial or missing
+    tstamps, pads before KiCad 9) a random uuid on load, and saves objects ordered by uuid. So
+    the same source board gave different uuids, and a different file order, each time it was
+    prepared, and a stored output re-scored against a new preparation showed those objects as
+    removed and added. Seeded, the same bytes always load to the same uuids; the uuids a file
+    does store are kept as they are."""
+    with open(path, "rb") as f:
+        digest = hashlib.sha256(f.read()).digest()
+    pcbnew.KIID.SeedGenerator(int.from_bytes(digest[:4], "big"))
+
+
+def _load(path, seed=False):
+    """seed: make the uuids KiCad invents on load depend only on the file (task preparation)."""
+    if seed:
+        _seed_uuids(path)
     board = pcbnew.LoadBoard(path)
     if board is None:
         raise RuntimeError(f"could not load {path}")
@@ -190,7 +207,7 @@ def unconnected(path):
 
 
 def convert(src, dst):
-    board = _load(src)
+    board = _load(src, seed=True)
     _save(board, dst)
     n = _dedupe_uuids(dst)
     _out(dict(ok=True, path=dst, footprint_uuids_reassigned=n["footprint"],
@@ -264,7 +281,7 @@ def _strip_routing(board, keep_locked):
 
 
 def strip_routing(src, dst, keep_locked):
-    board = _load(src)
+    board = _load(src, seed=True)
     removed = _strip_routing(board, keep_locked)
     _save(board, dst)
     _out(dict(ok=True, path=dst, removed=removed))
@@ -279,7 +296,7 @@ def strip_placement(src, dst):
     Edge.Cuts are part of the board outline (staged off-board they would leave holes or open
     edges in the outline and add outline polygons in the staging area).
     """
-    board = _load(src)
+    board = _load(src, seed=True)
     # Move footprints before removing tracks: after Remove() SWIG returns untyped objects.
     bb = board.GetBoardEdgesBoundingBox()
     x0 = bb.GetRight() + int(10 * NM)
@@ -342,7 +359,7 @@ def lock_footprints(src, dst, uuids_json):
     """Lock the footprints whose uuids are listed (a JSON list in a file); nothing else changes."""
     with open(uuids_json) as f:
         want = set(json.load(f))
-    board = _load(src)
+    board = _load(src, seed=True)
     locked = 0
     for fp in board.GetFootprints():
         if fp.m_Uuid.AsString() in want and not fp.IsLocked():
