@@ -180,13 +180,15 @@ DEFAULTS = dict(
     relax_bodies="escalate",       # placement: "escalate" (default) frees a courtyard-less part to its pads only when
                                    # legalization fails (each such overlap a body_overlap block hazard); "off" never;
                                    # "auto" also up front on a board over 95% full (kae.place.pipeline)
-    place_w_cong=30.0,             # placement: weight of the annealer's RUDY + pin-escape congestion term
-                                   # (kae.place.cost.Congestion). Never ablated inside the placer; RUDY ranks
-                                   # PCB routability near chance (docs/research/placement/
-                                   # kae-routability-estimators.md). A/B arms 0 / 10 / 30 (audit P5)
-    place_margin=-1.0,             # placement: routing room between movable parts, mm (Problem.set_margin);
+    place_w_cong=0.0,              # placement: weight of the annealer's RUDY + pin-escape congestion term
+                                   # (kae.place.cost.Congestion). Off: the placement-decide-staged A/B (213
+                                   # merit boards, k=2) found 0 / 10 / 30 equal (cp1 0.305 / 0.310 / 0.305,
+                                   # completion 0.941-0.943), so the simpler setting wins; RUDY also ranks PCB
+                                   # routability near chance (docs/research/placement/kae-routability-estimators.md)
+    place_margin=0.0,              # placement: routing room between movable parts, mm (Problem.set_margin);
                                    # negative = auto (Problem.auto_margin: 2 x (0.7 - utilization), 0..1 mm).
-                                   # A/B arms -1 / 0 (audit P10)
+                                   # 0: placement-decide-staged found auto and 0 equal (cp1 0.305 both,
+                                   # completion 0.942 / 0.941), so the formula with no source is dropped
     connector_edge=2,              # placement: user-facing connectors kae places (kae.place.edge_check:
                                    # USB, barrel, audio, RJ/modular, video/D-sub; at or near 100 % on an
                                    # edge on human boards) 2: pinned to the edge facing out after the seed,
