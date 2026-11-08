@@ -84,6 +84,7 @@ DEFAULTS = dict(
                               # the land area and the via") or "track" (on the land's routed track, neck_len away,
                               # no second entry; see docs/research/routing/kae-power-copper.md)
     neck_via_gap=0.25,        # mm, via edge to a necked land (Eurocircuits)
+    land_cap=True,            # every other SMD land: grown copper within neck_len at most the land's width
     share=True,               # competing power/ground nets share room at w ~ I (False: first come, first served,
                               # highest current first)
     current_margin=3.0,       # a net's operating current x this sizes its IPC width (when above max_width)
@@ -558,6 +559,7 @@ class PowerCopper:
         asm = ((op or {}).get("requirements") or {}).get("assembly") or {}
         self.hand_solder = bool(asm.get("hand_solder_ok")) or asm.get("process") == "hand"
         self.process = process_of(asm)
+        self.caps = {}
         self.necks = self._necks() if self.o.get("neck", True) else {}
         za = self.o.get("zone_above_a")
         self.zone_nets = ({n for n in self.power | self.ground if self.current.get(n, 0.0) > float(za)}
@@ -603,9 +605,9 @@ class PowerCopper:
                 if id(it) in seen or it in ignore:
                     continue
                 seen.add(id(it))
-                if l == layer and it.kind == "pad" and it.net == net and id(it) in self.necks:
+                if l == layer and it.kind == "pad" and it.net == net and (id(it) in self.necks or id(it) in self.caps):
                     # necked land: f < 0 carries the neck width (see _allowed_half, _legal)
-                    out.append((it.geom, 0.0, self.o["neck_len"], -self.necks[id(it)]))
+                    out.append((it.geom, 0.0, self.o["neck_len"], -self.necks.get(id(it), self.caps.get(id(it)))))
                     continue
                 ex = self._extra(it, l, layer)
                 if l == layer:
@@ -1139,7 +1141,17 @@ class PowerCopper:
         no neck because their series current needs more than the land go to self.unnecked (hazards)."""
         lands = {fp: [(id(p), p.smd, p.net, _short_side(p.geom)) for p in pads if p.kind == "pad"]
                  for fp, pads in self.sp.pads_by_fp.items()}
+        self.caps = {}
         necks, series = land_necks(lands, self.power, self.ground, self.current, self.process, self.o["current_margin"])
+        if self.o.get("land_cap", True):
+            # every other SMD land (IC pins, parts with alternate pads) gets no grown copper wider than
+            # itself within neck_len: a 2.5 mm ground track into a 0.6 mm SOIC pin is a bridge and
+            # wicking risk (route-finish-ab stage 1: 16 mm^2 on one pin); the land's own copper and
+            # the router's track are untouched
+            for fp, pads in self.sp.pads_by_fp.items():
+                for p in pads:
+                    if p.kind == "pad" and p.smd and id(p) not in necks and id(p) not in series:
+                        self.caps[id(p)] = _short_side(p.geom)
         self.unnecked = []
         for fp, pads in self.sp.pads_by_fp.items():
             for p in pads:
