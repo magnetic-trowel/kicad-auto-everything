@@ -35,6 +35,7 @@ TOL = {
     "sense": (1e-3, "1 mV on a sense line"),
     "reset": (0.3, "30% of the rail at a reset input (CMOS V_IL)"),
     "crystal": (0.01, "10 mV at an oscillator pin"),
+    "rf": (1e-3, "1 mV at a radio's RF or antenna pin: baseband noise there mixes into its band and desenses it (prior)"),
     "cm": (None, "CISPR 32 class B (30 dBuV/m at 10 m, 30-230 MHz) radiated by 1 m of cable, E = 1.26e-6 f l I / r "
                  "(Ott, EMC Engineering, eq. 12-7) capped at the resonant cable's 2 x 60 I / r, cable common-mode "
                  "impedance 150 ohm: V_lim(f) = 3.8e4 / f V per harmonic to 95 MHz, 0.40 mV above "
@@ -77,6 +78,33 @@ def observers(bd, brief, sources):
             V = bd.rails.get(rail) or 3.3
             out.append(Observer(f"supply:{ref}:{rail}", "supply", v, nodes["g"], bound=frac * V,
                                 basis=f"{why}; {rail} = {V:g} V", meta=dict(ref=ref, rail=rail, V=V)))
+    # a module (a board of its own: kae.excite.models' ports) sees the carrier's noise between its supply pin and
+    # its nearest ground pin, as its own decoupling and regulator do: one supply observer per module and rail
+    from .models import nearest_ground
+    for net in sorted(bd.rails):
+        seen = set()
+        for tok in bd.pads_of.get(net, []):
+            ref = tok.rsplit(".", 1)[0]
+            if ref in seen or bd.port.get(ref) != "module" or bd.pin_type.get(tok) == "power_out":
+                continue
+            g = nearest_ground(bd, ref, tok)
+            if g is None:
+                continue
+            seen.add(ref)
+            frac, why = TOL["supply_digital"]
+            V = bd.rails.get(net) or 3.3
+            out.append(Observer(f"supply:{ref}:{net}", "supply", net, bd.net_of[g], tok, g, bound=frac * V,
+                                basis=f"{why} (at the module's pins); {net} = {V:g} V", meta=dict(ref=ref, rail=net, V=V)))
+    # a radio's RF and antenna pins (kae.circuit.roles.radio_kind; nets of role rf or pins named RF/ANT): the layout's
+    # noise there is in its receiver's input
+    for ref, tok, net, g in radio_pins(bd, brief):
+        frac, why = TOL["rf"]
+        if ref in bd.ic_nodes:
+            out.append(Observer(f"victim:rf:{tok}", "victim", bd.ic_nodes[ref]["g"], net, None, tok, frac, why, "prior",
+                                dict(net=net, cls="rf", ref=ref)))
+        elif g is not None:
+            out.append(Observer(f"victim:rf:{tok}", "victim", bd.net_of[g], net, g, tok, frac, why, "prior",
+                                dict(net=net, cls="rf", ref=ref)))
     for st in brief.get("structures") or []:
         if st.get("kind") != "victim":
             continue
@@ -103,6 +131,39 @@ def observers(bd, brief, sources):
             _, why = TOL["cm"]
             out.append(Observer(f"cm:{refs[i]}-{refs[j]}", "cm", "", "", conn_gnd[refs[i]], conn_gnd[refs[j]], 0.0, why,
                                 "standard", dict(pads=(conn_gnd[refs[i]], conn_gnd[refs[j]]))))
+    return out
+
+
+def radio_parts(bd, brief):
+    """{ref: radio kind} of the board's radios and GNSS receivers (kae.circuit.roles.radio_kind on each part's value
+    and library), among the parts the circuit model holds."""
+    from kae.circuit.roles import radio_kind
+    out = {}
+    for p in (brief.get("parts") or {}).values():
+        ref = p.get("ref")
+        if ref not in bd.part_kind:
+            continue
+        k = radio_kind(f"{p.get('value') or ''} {p.get('lib_id') or ''}", p.get("kind"), p.get("subtype"))
+        if k:
+            out[ref] = k
+    return out
+
+
+def radio_pins(bd, brief):
+    """[(ref, pad, net, nearest ground pad)] of every radio's RF pins: a pad on a net of role rf, or a pin named as
+    an RF or antenna pin (kae.circuit.roles.RF_PIN), that is not a ground or a rail."""
+    from kae.circuit.roles import RF_PIN
+    from .models import nearest_ground
+    radios = radio_parts(bd, brief)
+    nets = brief.get("nets") or {}
+    out = []
+    for tok, net in sorted(bd.net_of.items()):
+        ref = tok.rsplit(".", 1)[0]
+        if ref not in radios or not net or net in bd.grounds or net in bd.rails:
+            continue
+        fn = bd.pin_fn.get(tok, "") if hasattr(bd, "pin_fn") else ""
+        if (nets.get(net) or {}).get("role") == "rf" or (fn and RF_PIN.search(fn)):
+            out.append((ref, tok, net, nearest_ground(bd, ref, tok)))
     return out
 
 

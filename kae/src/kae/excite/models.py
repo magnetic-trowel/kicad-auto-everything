@@ -119,6 +119,7 @@ class Board:
     assumptions: list = field(default_factory=list)
     ic_nodes: dict = field(default_factory=dict)   # ref -> {"g": node, rail: node}
     pin_type: dict = field(default_factory=dict)   # pad -> the schematic's pin type ('' when absent)
+    pin_fn: dict = field(default_factory=dict)     # pad -> the schematic's pin name ('' when absent)
     pad_xy: dict = field(default_factory=dict)     # pad -> (x, y) mm on the board
     port: dict = field(default_factory=dict)       # ref -> "connector" | "module": where the copper meets
     #                                                circuitry off this board's model
@@ -168,6 +169,7 @@ def build(board, brief=None):
             tok = f"{ref}.{p.number}"
             bd.net_of[tok] = p.net
             bd.pin_type[tok] = p.ptype
+            bd.pin_fn[tok] = p.fn or ""
             bd.pads_of.setdefault(p.net, []).append(tok)
         in_cell = uuid_of.get(ref) in cell_parts
         pk = port_kind(kind, part, len(pins))

@@ -11,7 +11,9 @@
   INTENT     kae.intent: what matters. Standing priorities on every board (copper loss = power loss and
              efficiency; ripple), the spec's limits (rail tolerance -> drop.rail, rail and IC ripple ->
              supply.peak, sensitive pins -> pickup.peak, switch ratings -> overshoot.peak hard, track heat),
-             and EMI terms on boards with a radio or GNSS receiver (its supply and pins, declared cables).
+             and EMI terms on boards with a radio or GNSS receiver: the spec's radios and every part
+             kae.circuit.roles.radio_kind names, noise into its supply and RF pins (to_part: the victim side
+             only), and cable emission (declared cables; else 1 m on each cable-type connector).
 
     python intent_from_spec.py SPEC.json SUMMARY.json --intent INTENT.json --operating OPERATING.json
 
@@ -78,6 +80,8 @@ def verified(f, name):
     return typ, mx, f"{f.get('part') or f.get('query')} datasheet p.{v.get('page')}"
 
 
+CABLE_ROLES = ("connector_power", "connector_usb", "connector_audio", "connector_wire_to_board", "connector_ethernet",
+               "connector_can", "connector_hdmi", "connector_rf")
 AMPS_PER_PAD = 3.0      # A a connector pin carries at most, generously (0.1" headers ~3 A)
 AMPS_BY_KIND = ((r"screw|terminal|\bTB\d|barrel|jack|DCJ|XT\d\d|anderson|mini.?fit|micro.?fit|power", 15.0),
                 (r"JST.?(SH|GH|ZH)|SM\d\dB.?SR|picoblade", 1.0))
@@ -281,8 +285,16 @@ def compile_spec(spec, summary):
     radios = []
     for i, r in enumerate(spec.get("radio") or []):
         ref = S.ref(r.get("ref"), f"radio[{i}]")
-        if ref:
+        if ref and ref not in {x["ref"] for x in radios}:
             radios.append(dict(r, ref=ref))
+    # the board's own radios and GNSS receivers by part number (kae.circuit.roles.radio_kind), whether the spec
+    # listed them or not: EMI is a standing priority on every board with one
+    from kae.circuit.roles import radio_kind
+    for p in summary.get("parts") or []:
+        k = radio_kind(f"{p.get('value') or ''} {p.get('lib_id') or ''}", p.get("kind"), None)
+        if k and p["ref"] not in {x["ref"] for x in radios}:
+            radios.append(dict(ref=p["ref"], kind=k, basis="typical", why=f"{p.get('value')}: a {k} part by its part number"))
+            opwhy[f"radio.{p['ref']}"] = f"{p.get('value')} is a {k} part by its part number (kae.circuit.roles.radio_kind)"
     cables = []
     for i, c in enumerate(spec.get("connectors") or []):
         w = f"connectors[{i}]"
@@ -304,13 +316,21 @@ def compile_spec(spec, summary):
         L = S.num(c, "cable_length_m", "m", w)
         if L:
             cables.append(dict(connector=ref, length_m=L, why=why(c, c.get("function") or "cable")))
+    if radios and not cables:
+        # a radio board whose spec declares no cable lengths: every connector that takes a cable (power, USB, audio,
+        # wire-to-board, Ethernet, CAN, HDMI, RF) gets CISPR 32's reference 1 m, so its cable emission is judged
+        for p in summary.get("parts") or []:
+            if p.get("kind") == "connector" and p.get("role") in CABLE_ROLES and \
+                    any(n in (summary.get("ground_nets") or []) for n in (p.get("nets") or {})):
+                cables.append(dict(connector=p["ref"], length_m=1.0, why=f"guess: {p.get('role')} with no stated cable; "
+                                                                        f"CISPR 32's reference length (1 m)"))
     if radios:
         refs = sorted({r["ref"] for r in radios})
         kinds = ", ".join(sorted({str(r.get("kind")) for r in radios}))
         rip = min([x for x in (S.num(r, "supply_ripple_max_mV", "mV", "radio") for r in radios) if x] or [10.0])
-        terms += [dict(id="E1", tier="limit", obs="supply.peak", where={"part": refs}, max=f"{rip:g} mV", rate="20 mW_eq/mV",
+        terms += [dict(id="E1", tier="limit", obs="supply.peak", where={"to_part": refs}, max=f"{rip:g} mV", rate="20 mW_eq/mV",
                        source=f"{kinds} supply ripple {rip:g} mV", why=f"EMI: switching noise on the {kinds} supply desenses it. {STANDING}"),
-                  dict(id="E2", tier="cost", obs="pickup.peak", where={"part": refs}, rate="20 mW_eq/mV", agg="cvar20",
+                  dict(id="E2", tier="cost", obs="pickup.peak", where={"to_part": refs}, rate="20 mW_eq/mV", agg="cvar20",
                        why=f"EMI: noise coupled into the {kinds} pins. {STANDING}")]
         if cables:
             terms.append(dict(id="E3", tier="limit", obs="emission.cable_E", max="30 dBuV/m", rate="20 mW_eq/dB",
