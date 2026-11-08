@@ -624,7 +624,14 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
     if ef:
         rep["escape_fanout"] = {P.parts[i].ref: len(rs) for i, rs in ef.items()}
     soft_bands = eb if band_mode == 1 else {}
-    hard_bands = eb if band_mode >= 2 else {}
+    hard_bands = dict(eb) if band_mode >= 2 else {}
+    # heat sinks (kae.place.heat): a part sink's body is hard occupancy on its side, like a band
+    from . import heat as heatmod
+    op = heatmod.operating(board_path, opts)
+    if op:
+        sb, rep["heat_sinks"] = heatmod.sink_bands(P, op)
+        for i, b in sb.items():
+            hard_bands[i] = tuple(max(x, y) for x, y in zip(hard_bands.get(i, (0.0, 0.0, 0.0, 0.0)), b))
     if hard_bands or ef:
         P.set_escape(hard_bands, fanout=ef)
     roles = _net_roles(brief)
@@ -832,6 +839,16 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
             if kw["labels"]:
                 rep["labels"] = dict(associations=len(assoc), kinds=list(kinds), anchored=len(kw["labels"]),
                                      w_label=kw["w_label"])
+        # hot parts into region sinks (kae.place.heat), on the same term; a labelled part keeps its label
+        if op:
+            pulls, rep["heat_pulls"] = heatmod.pull_anchors(P, op, board_path, opts)
+            if pulls:
+                lab = dict(kw.get("labels") or {})
+                for i_, a_ in pulls.items():
+                    lab.setdefault(i_, a_)
+                kw["labels"] = lab
+                if not float(kw.get("w_label") or 0.0) > 0:
+                    kw["w_label"] = labelsmod.DEFAULT_WEIGHT
         # soft overlaps: silkscreen where the project makes it an error (on KiCad's glyphs) and
         # routing channels between parts' pads (kae.place.exact.channel_grid)
         w_silk = float(kw.pop("w_silk", SILK_W) or 0.0)
