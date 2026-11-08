@@ -367,8 +367,12 @@ def finish_hook(output_path, project_board, workdir, parts, time_s, base_report=
         rep = finish.run(output_path, wd / "out.kicad_pcb", project=project_board, opts=dict(parts=tuple(parts)),
                          workdir=wd / "work", time_s=time_s, base_report=base_report, log=log)
     except Exception as e:      # noqa: BLE001 - a post-pass never costs the routed board
+        from kae import hazards as H
         log(f"finish: skipped: {type(e).__name__}: {e}")
-        return dict(error=f"{type(e).__name__}: {e}")
+        return dict(error=f"{type(e).__name__}: {e}", hazards=[H.make(
+            "finish_failed", "warn", "data", f"The finish stage failed and was skipped: {type(e).__name__}: {e}"[:300],
+            objects=["finish"], fix="Report the board; it is handed back as routed, without rule D tails, taut "
+                                    "arcs or power copper.")])
     if rep.get("kept"):
         Path(output_path).write_text((wd / "out.kicad_pcb").read_text(encoding="utf-8"), encoding="utf-8")
     for k in ("journal", "gate_rounds"):

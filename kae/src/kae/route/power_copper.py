@@ -50,6 +50,8 @@ import shapely
 from shapely.geometry import LineString, Point
 from shapely.ops import unary_union
 
+from kae import materials as MAT
+
 from . import arcs as A
 from . import critical_write as W
 
@@ -110,7 +112,7 @@ VTOL = 0.03          # mm: vector mode's margin over each requirement (polygonal
 
 
 # ----------------------------------------------------------------------------- pure rules
-def ipc_width(current_a, dt_k=10.0, t_mm=0.035, external=True):
+def ipc_width(current_a, dt_k=10.0, t_mm=MAT.CU_1OZ_MM, external=True):
     """IPC-2221 track width (mm) for `current_a` at a `dt_k` rise: I = k*dT^0.44*A^0.725, A in mil^2."""
     if current_a <= 0:
         return 0.0
@@ -1452,8 +1454,11 @@ def hook(output_path, project_board, workdir, opts=None, timeout=900, log=print)
     try:
         rep = run(staged, wd / "out.kicad_pcb", opts=opts, workdir=wd / "pass", timeout=timeout, log=log)
     except Exception as e:      # noqa: BLE001 - a post-pass never costs the routed board
+        from kae import hazards as H
         log(f"[power-copper] skipped: {type(e).__name__}: {e}")
-        return dict(error=f"{type(e).__name__}: {e}")
+        return dict(error=f"{type(e).__name__}: {e}", hazards=[H.make(
+            "power_copper_failed", "warn", "data", f"Power copper failed and was skipped: {type(e).__name__}: {e}"[:300],
+            objects=["power_copper"], fix="Report the board; rails and grounds keep their routed widths.")])
     if any(rep["kept"].values()):
         text = (wd / "out.kicad_pcb").read_text(encoding="utf-8")
         Path(output_path).write_text(text, encoding="utf-8")
