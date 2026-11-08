@@ -120,6 +120,7 @@ class Board:
     assumptions: list = field(default_factory=list)
     ic_nodes: dict = field(default_factory=dict)   # ref -> {"g": node, rail: node}
     module_nodes: dict = field(default_factory=dict)  # ref -> {"g": node, rail: node}: a clocked module's inside
+    radios: dict = field(default_factory=dict)     # ref -> kind: radios the operating facts name (kae.excite.observe)
     pin_type: dict = field(default_factory=dict)   # pad -> the schematic's pin type ('' when absent)
     pin_fn: dict = field(default_factory=dict)     # pad -> the schematic's pin name ('' when absent)
     pad_xy: dict = field(default_factory=dict)     # pad -> (x, y) mm on the board

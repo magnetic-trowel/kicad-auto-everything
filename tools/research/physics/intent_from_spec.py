@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """A board's two structured inputs from its spec (numbers a model or a designer states about the board):
 
-  OPERATING  kae.excite.evaluate --intent: what the board does electrically. cells.<cell id>.{V_V,
+  OPERATING  kae.excite.evaluate --intent: what the board does electrically. radios.<ref> = kind, cells.<cell id>.{V_V,
              f_sw_Hz, I_A, t_i_s}, parts.<ref>.{I_A, I_sustained_A} (loads and output connectors; the sustained draw sets temperatures), nets.<rail>.source,
              requirements.thermal.{T_amb_C, airflow_h_W_m2K, heatsinks}, requirements.assembly.{process,
              hand_solder_ok, reflow_only_parts}. Each replaces one of the evaluator's priors. With --pintypes,
@@ -323,6 +323,9 @@ def compile_spec(spec, summary):
         L = S.num(c, "cable_length_m", "m", w)
         if L:
             cables.append(dict(connector=ref, length_m=L, why=why(c, c.get("function") or "cable")))
+    if radios:
+        op["radios"] = {r["ref"]: str(r.get("kind") or "rf") for r in radios}     # the evaluator's radios (kae.excite.observe)
+        opwhy["radios"] = "the spec's radios and every part kae.circuit.roles.radio_kind names"
     if radios and not cables:
         # a radio board whose spec declares no cable lengths: every connector that takes a cable (power, USB, audio,
         # wire-to-board, Ethernet, CAN, HDMI, RF) gets CISPR 32's reference 1 m, so its cable emission is judged

@@ -151,6 +151,7 @@ def radio_parts(bd, brief):
         k = radio_kind(f"{p.get('value') or ''} {p.get('lib_id') or ''}", p.get("kind"), p.get("subtype"))
         if k:
             out[ref] = k
+    out.update({r: k for r, k in (getattr(bd, "radios", None) or {}).items() if r in bd.part_kind})   # the operating facts'
     return out
 
 

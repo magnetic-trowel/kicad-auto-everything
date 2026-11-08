@@ -129,6 +129,7 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
     n_pins = PF.apply(b, (intent or {}).get("pins"))
     brief = brief or B.build(b)
     bd = M.build(b, brief)
+    bd.radios = dict((intent or {}).get("radios") or {})        # the operating facts' radios
     srcs = S.add_all(bd, brief)
     obs = O.observers(bd, brief, srcs)
     P, ledger = ledger_for(bd, brief, srcs, intent)

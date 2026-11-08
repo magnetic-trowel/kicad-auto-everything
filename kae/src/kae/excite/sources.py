@@ -50,10 +50,10 @@ def add_all(bd, brief, nl=None):
                 out.append(src)
     for ref, nodes in bd.ic_nodes.items():
         kind, sub, role = bd.part_kind.get(ref, ("ic", None, ""))
-        if sub not in DIGITAL:
-            continue                 # only clocked logic draws a core current at its clock; a charger, a
-            #                          regulator or an analog part does not
-        I, tr = DYNAMIC.get(sub or "", DYNAMIC[""])
+        if sub not in DIGITAL and ref not in (getattr(bd, "radios", None) or {}):
+            continue                 # only clocked logic (and a radio: its digital core and PA) draws a core current
+            #                          at its clock; a charger, a regulator or an analog part does not
+        I, tr = DYNAMIC.get(sub or ("mcu" if ref in (getattr(bd, "radios", None) or {}) else ""), DYNAMIC[""])
         for rail, v in nodes.items():
             if rail == "g":
                 continue

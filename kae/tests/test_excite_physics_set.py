@@ -233,3 +233,19 @@ def test_feeds_that_feed_each_other_are_broken_at_the_link_the_pins_deny(tmp_pat
     assert pl.feeds["PCM_AVDD"]["ref"] == "U2" and pl.feeds["PCM_AVDD"]["rin"] == "AMP_VDD"
     assert pl.feeds["AMP_VDD"] == dict(kind="external", ref="J1", out=["J1.1"], gnd=["J1.2"], rating=pl.feeds["AMP_VDD"].get("rating"))
     assert any("cycle" in n for n in pl.notes)
+
+
+def test_a_radio_the_operating_facts_name_is_a_clocked_aggressor(tmp_path):
+    """A Bluetooth IC with no recognised subtype (RN42) drew no core current, so a board whose only clocked part is its
+    radio had no aggressor and no EMI observation. The operating facts' radios count."""
+    nets = ["+3V3", "GND"]
+    u1 = [_pad("1", 0, 1, "+3V3", "VDD", "power_in"), _pad("2", 1, 2, "GND", "GND", "power_in"),
+          _pad("3", 2, 2, "GND", "GND", "power_in"), _pad("4", 3, 2, "GND", "GND", "power_in")]
+    b = _board(tmp_path, nets, [_fp("U1", "RN42", "Lib:RN42", 10, u1, 1)])
+    br = B.build(b)
+    bd = M.build(b, br)
+    assert not [s for s in S.add_all(bd, br) if s.kind == "core"]
+    bd = M.build(b, br)
+    bd.radios = {"U1": "bluetooth"}
+    core = [s for s in S.add_all(bd, br) if s.kind == "core"]
+    assert [s.name for s in core] == ["core:U1:+3V3"] and core[0].meta["I"] == S.DYNAMIC["mcu"][0]
