@@ -194,13 +194,18 @@ def neck_rule(land_w, process, series_current_a=0.0, margin=DEFAULTS["current_ma
     """Width (mm) grown copper may have within neck_len of a two-terminal part's land, or None (no
     limit). The neck is the land class's NECK_TABLE width for the process, never below what the
     part's own series current needs (IPC-2221 at margin x I): a fuse, ferrite or shunt in a rail
-    keeps its width. A part to ground (a decap) carries no DC and is necked."""
+    keeps its width. A part to ground (a decap) carries no DC and is necked. A class the process does
+    not neck (1206 and up in reflow, every class in wave) is capped at its land width."""
     w = NECK_TABLE.get(process, NECK_TABLE["reflow"]).get(pkg_class(land_w))
-    if w is None:
-        return None
-    w = min(w, land_w)
     need = current_need(series_current_a, margin)
-    return None if need >= land_w else max(w, need)
+    if need >= land_w:
+        return None           # the current needs more than the land: no neck (land_enlarged_by_track)
+    if w is None:
+        # a class the process does not neck still gets no copper wider than its land near it: copper
+        # beside the land is exposed land under the mask opening or a heat sink under mask, and on one
+        # terminal of two it unbalances the joint (1206 caps fed by 3 mm rails: 9-11 mm^2 per land)
+        return land_w
+    return max(min(w, land_w), need)
 
 
 def current_need(current_a, margin=DEFAULTS["current_margin"]):
@@ -213,8 +218,7 @@ def land_necks(lands, power, ground, current, process, margin=DEFAULTS["current_
     lands of two-terminal SMD parts. `lands`: {part: [(key, smd, net, land width)]}, one entry per
     copper pad; `current`: {net: A} (net_currents). A part with no ground pad and a power pad is in
     series with a rail (fuse, ferrite, shunt, jumper) and carries the rail's current; a land whose
-    neck_rule is None (wave, 1206+ in reflow, or a series current that needs more than the land)
-    gets no neck. The one implementation PowerCopper._necks and constraints.plan both use."""
+    neck_rule is None (a series current that needs more than the land) gets no neck. The one implementation PowerCopper._necks and constraints.plan both use."""
     necks, series_a = {}, {}
     for _part, cu in lands.items():
         if len(cu) != 2 or not all(smd for _k, smd, _n, _w in cu):
@@ -1129,11 +1133,35 @@ class PowerCopper:
         return out
 
     def _necks(self):
-        """{id(pad Item): neck width} for the lands of two-terminal SMD parts the process necks
-        (land_necks)."""
+        """{id(pad Item): neck width} for the lands of two-terminal SMD parts (land_necks). Lands that get
+        no neck because their series current needs more than the land go to self.unnecked (hazards)."""
         lands = {fp: [(id(p), p.smd, p.net, _short_side(p.geom)) for p in pads if p.kind == "pad"]
                  for fp, pads in self.sp.pads_by_fp.items()}
-        return land_necks(lands, self.power, self.ground, self.current, self.process, self.o["current_margin"])[0]
+        necks, series = land_necks(lands, self.power, self.ground, self.current, self.process, self.o["current_margin"])
+        self.unnecked = []
+        for fp, pads in self.sp.pads_by_fp.items():
+            for p in pads:
+                if p.kind == "pad" and id(p) in series and id(p) not in necks:
+                    self.unnecked.append((fp, p, series[id(p)]))
+        return necks
+
+    def land_hazards(self):
+        """land_enlarged_by_track for each unnecked two-terminal land a widened track enters wider than it."""
+        from . import pad_entry as PE
+        out = []
+        for fp, p, amps in getattr(self, "unnecked", []):
+            land_w = _short_side(p.geom)
+            widest = 0.0
+            for pieces in self.edits.values():
+                for pc_ in pieces:
+                    a, b, w = pc_[:3]
+                    if w > land_w + 1e-9 and LineString([a, b]).buffer(w / 2).intersects(p.geom):
+                        widest = max(widest, w)
+            if widest:
+                ref, num = p.owner if isinstance(p.owner, tuple) else (None, None)
+                out.append(PE.land_hazard(ref, num, p.net, widest, land_w,
+                                          current_need(amps, self.o["current_margin"]), amps))
+        return out
 
     def vector_or_widen(self):
         if self.o.get("mode") == "vector":
@@ -1315,6 +1343,7 @@ def run(input_path, output_path, opts=None, workdir=None, timeout=1800, log=prin
         for u in set(groups.values()):
             kind_of[u] = dict(kind=pc.group_kind(u) or ("zone" if any(z[3] == u for z in pc.zones) else "vector"))
         return dict(board=str(inp), planned=pc.stats, kept=dict(pc.stats), kinds=kinds, reverted=0, gate=False,
+                    hazards=pc.land_hazards(),
                     nets=dict(power=sorted(pc.power), ground=sorted(pc.ground), switch=sorted(pc.switch),
                               victims=sorted(pc.victims), zones=sorted(pc.zone_nets)),
                     plan_s=round(t_plan, 2), total_s=round(time.monotonic() - t0, 2),
@@ -1406,7 +1435,7 @@ def run(input_path, output_path, opts=None, workdir=None, timeout=1800, log=prin
                 stitch_vias=sum(1 for v in pc.vias if v[6] == "stitch" and v[5] not in skip) if "stitch" in kinds else 0,
                 vector_strips=sum(1 for x in pc.vector for k in x[2] if k[3] not in skip) if "vector" in kinds else 0,
                 vector_zones=sum(1 for z in pc.zones if z[3] not in skip) if "vector" in kinds else 0)
-    return dict(board=str(inp), planned=pc.stats, kept=kept, kinds=kinds, reverted=len(skip),
+    return dict(board=str(inp), planned=pc.stats, kept=kept, kinds=kinds, reverted=len(skip), hazards=pc.land_hazards(),
                 drc_in=base, drc_out=final or base, rounds=rounds,
                 nets=dict(power=sorted(pc.power), ground=sorted(pc.ground), switch=sorted(pc.switch),
                           victims=sorted(pc.victims)),

@@ -147,10 +147,10 @@ def test_neck_rule_by_class_process_and_current():
     assert pc.pkg_class(0.95) == "0603-0805" and pc.pkg_class(1.6) == "1206+"
     assert pc.neck_rule(0.6, "reflow") == pytest.approx(0.25)        # 0402 land
     assert pc.neck_rule(0.3, "reflow") == pytest.approx(0.15)        # 0201
-    assert pc.neck_rule(1.6, "reflow") is None                       # 1206 and up: no neck in reflow
+    assert pc.neck_rule(1.6, "reflow") == pytest.approx(1.6)         # 1206 and up: no copper wider than the land
     assert pc.neck_rule(1.6, "hand") == pytest.approx(0.5)
     assert pc.neck_rule(1.6, "vapour_phase") == pytest.approx(0.5)
-    assert pc.neck_rule(0.6, "wave") is None
+    assert pc.neck_rule(0.6, "wave") == pytest.approx(0.6)
     # a series part in a rail keeps the width its current needs
     w = pc.neck_rule(0.95, "reflow", series_current_a=0.5)
     assert w == pytest.approx(max(0.3, pc.ipc_width(1.5)))
