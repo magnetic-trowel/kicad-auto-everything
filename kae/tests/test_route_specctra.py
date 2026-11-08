@@ -343,3 +343,49 @@ def test_check_import_flags_missing_and_wrong_net_copper(tmp_path):
     assert {h["code"]: h["severity"] for h in hz} == {"ses_import_wrong_net": "block", "ses_import_incomplete": "warn"}
     for h in hz:
         assert set(h) == {"code", "severity", "category", "message", "objects", "evidence", "fix"}
+
+
+NETLESS_DSN = '''(pcb "/tmp/x.dsn"
+  (resolution um 10)
+  (unit um)
+  (structure (layer F.Cu (type signal)) (layer B.Cu (type signal)))
+  (placement
+    (component SW (place SW1 10000 -10000 front 90) (place SW2 20000 -10000 back 0))
+  )
+  (library
+    (image SW (pin PEG @1 -1150 300) (pin RECT 1 2100 -900))
+    (padstack PEG (shape (circle F.Cu 1508)) (shape (circle B.Cu 1508)) (attach off))
+    (padstack RECT (shape (rect F.Cu -750 -550 750 550)) (attach off))
+  )
+  (network (net A (pins SW1-1 SW2-1)))
+)
+'''
+
+
+def test_netless_pins_become_keepouts():
+    """A netless pin (an NPTH peg KiCad exports as a pin) becomes a keepout of its shape in its own
+    clearance class, on both sides of a back-side part, and leaves the image; netted pins stay."""
+    from shapely.geometry import Point
+    t = S.parse(NETLESS_DSN)
+    plan = SimpleNamespace(pin_class={("SW1", "@1"): "kae_pin1", ("SW2", "@1"): "kae_pin1", ("SW1", "1"): "kae_pin2",
+                                      ("SW2", "1"): "kae_pin2"})
+    centres = {(r, n): (m[2], m[5]) for r, n, ps, side, m in translate.dsn_pins(t)}
+    obs, gone = translate.netless_pin_keepouts(t, plan, ["F.Cu", "B.Cu"])
+    assert gone == {("SW1", "@1"), ("SW2", "@1")}
+    assert len(obs) == 4 and {o.cls for o in obs} == {"kae_pin1"} and {o.layer for o in obs} == {"F.Cu", "B.Cu"}
+    for o in obs:
+        ref = o.why.split()[-1].split("-")[0]
+        c = o.geom.centroid
+        assert Point(c.x, c.y).distance(Point(*centres[(ref, "@1")])) < 1e-6
+        assert abs(o.geom.area - 3.14159 * 0.754 ** 2) < 0.01
+    img = S.find(S.find(t, "library"), "image")
+    assert [str(p[2]) for p in S.findall(img, "pin")] == ["1"]
+
+
+def test_session_drops_zero_length_points():
+    ses = S.parse('''(session x (routes (resolution um 10) (network_out
+      (net A (wire (path F.Cu 2000 0 0 100 0 100 0 100 0)) (wire (path F.Cu 2000 5 5 5 5))))))''')
+    n = translate.drop_repeated_points(S.find(S.find(ses, "routes"), "network_out"))
+    net = S.find(S.find(S.find(ses, "routes"), "network_out"), "net")
+    assert n == 3
+    assert [p[3:] for w in S.findall(net, "wire") for p in S.findall(w, "path")] == [["0", "0", "100", "0"]]

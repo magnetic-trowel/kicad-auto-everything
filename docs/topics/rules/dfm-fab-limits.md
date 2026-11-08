@@ -72,6 +72,12 @@ Incl. V-cut, castellation and panel geometry; [interface_rule_packs.md § 10](..
 [S]
 - One end wets first and surface tension stands the part up; 0201/0402 are most susceptible.
 - Symmetric IPC-7351 pads; thermal relief on plane-connected pads (spokes 0.10–0.20 mm, gaps 0.20–0.30 mm); mirror any via within 1 mm of one pad; balance paste; a longer soak helps ([JLCPCB](https://jlcpcb.com/blog/pcb-tombstone); [AtlasPCB](https://www.atlaspcb.com/blog/pcb-tombstoning-prevention-smt/)).
+- Trace into the land:
+  - IPC-7351 §3.4.6.2 and AVX ask for a narrow conductor ("necking … at the component") but give no width [P].
+  - Eurocircuits: the same track width into both pads, kept for at least 0.25 mm from the pad edge, with vias at least 0.25 mm from the pad ([Eurocircuits](https://www.eurocircuits.com/pcb-assembly-guidelines-tombstoning/)) [S].
+  - In a reflow DOE, tombstones appeared on 0402 only, and nitrogen and fast profiles raised the rate ([TU Dresden/rehm](https://www.electronics.org/system/files/technical_resource/E10%26S30_02.pdf)) [P].
+  - Vapour phase makes 0402 and smaller worse [S].
+  - kae's rule, per land class and process (0.5 mm necks of 0.15/0.25/0.30 mm on 0201/0402/0603–0805 in reflow), is in [kae-power-copper](../../research/routing/kae-power-copper.md#necks-at-small-lands-tombstoning-and-manufacturability-2026-11-03).
 
 ## Fiducials
 Source: ([Solutions Mfg](https://www.solutionsmfg.com/images/pdf/fiducial.pdf)) [P], CORRECTED:

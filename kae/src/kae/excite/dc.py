@@ -475,37 +475,152 @@ def observe(pl, cv, V, info, tracks=None):
     return out
 
 
+def _arc_frame(t):
+    """(f(q) -> (x, y, ux, uy) at fraction q of the arc, centre, radius, length) of an arc track; None
+    when its three points are collinear."""
+    (x0, y0), (xm, ym), (x1, y1) = t.start, t.mid, t.end
+    d = 2.0 * (x0 * (ym - y1) + xm * (y1 - y0) + x1 * (y0 - ym))
+    if abs(d) < 1e-14:
+        return None
+    a1, a2, a3 = x0 * x0 + y0 * y0, xm * xm + ym * ym, x1 * x1 + y1 * y1
+    cx = (a1 * (ym - y1) + a2 * (y1 - y0) + a3 * (y0 - ym)) / d
+    cy = (a1 * (x1 - xm) + a2 * (x0 - x1) + a3 * (xm - x0)) / d
+    r = math.hypot(x0 - cx, y0 - cy)
+    b0, bm_, b1 = (math.atan2(y - cy, x - cx) for x, y in ((x0, y0), (xm, ym), (x1, y1)))
+    sw = (b1 - b0) % (2 * math.pi)
+    if (bm_ - b0) % (2 * math.pi) > sw:
+        sw -= 2 * math.pi
+
+    def at(q):
+        a = b0 + sw * q
+        s = 1.0 if sw > 0 else -1.0
+        return cx + r * math.cos(a), cy + r * math.sin(a), -s * math.sin(a), s * math.cos(a)
+    return at, (cx, cy), r, abs(r * sw)
+
+
+def _net_copper(bm, board_tracks, keys):
+    """{(net, layer name): (STRtree, [geometry])} of each named net's copper on each named layer, from the
+    board's geometry (tracks, arcs, pads, vias, KiCad's fills), not from the raster."""
+    from shapely import STRtree
+    from shapely.geometry import LineString, Point
+
+    from kae.em.kicad import _arc_points
+    geo = {k: [] for k in keys}
+    for t in board_tracks:
+        k = (t.net, t.layer)
+        if k in geo:
+            pts = _arc_points(t, 64) if getattr(t, "mid", None) is not None else [t.start, t.end]
+            geo[k].append(LineString(pts).buffer(t.width / 2, quad_segs=8))
+    for net, per in (getattr(bm, "fills", None) or {}).items():
+        for layer, pgs in per.items():
+            if (net, layer) in geo:
+                geo[(net, layer)].extend(pgs)
+    for lst in (getattr(bm, "pads", None) or {}).values():
+        for layer, g, p in lst:
+            if (p.net, layer) in geo and g is not None:
+                geo[(p.net, layer)].append(g)
+    b = getattr(bm, "b", None)
+    for v in (getattr(b, "vias", None) or []):
+        for layer in bm.span(v.layers):
+            if (v.net, layer) in geo:
+                geo[(v.net, layer)].append(Point(v.x, v.y).buffer(v.size / 2, quad_segs=8))
+    return {k: (STRtree(gs), gs) for k, gs in geo.items() if gs}
+
+
+def _copper_across(tree, cx, cy, nx, ny, half):
+    """Length of the net's copper along the segment through (cx, cy) in direction (nx, ny), half long each
+    way: the piece that holds the centre."""
+    from shapely.geometry import LineString
+    seg = LineString([(cx - nx * half, cy - ny * half), (cx + nx * half, cy + ny * half)])
+    st, gs = tree
+    iv = []                                  # the pieces as intervals of the distance along the segment
+    for k in st.query(seg):
+        g = gs[k].intersection(seg)
+        for q in getattr(g, "geoms", [g]):
+            if q.geom_type == "LineString" and not q.is_empty:
+                ts = [(x - cx) * nx + (y - cy) * ny for x, y in q.coords]
+                iv.append((min(ts), max(ts)))
+    iv.sort()
+    lo = hi = None
+    for a, b in iv:                          # merge touching pieces; keep the one holding the centre
+        if hi is not None and a <= hi + 1e-6:
+            hi = max(hi, b)
+            continue
+        if lo is not None and lo <= 1e-6 and hi >= -1e-6:
+            return hi - lo
+        lo, hi = a, b
+    return hi - lo if lo is not None and lo <= 1e-6 and hi >= -1e-6 else 0.0
+
+
 def track_currents(bm, board_tracks, net, nets=None):
-    """A function x -> [(I, w_eff mm, t mm, external)] per track: the current through the track's
-    cross-section at its quarter points (the largest), summed over the cells of its net along the
-    perpendicular within its width plus a cell, and the width of the net's copper there (a track inside
-    a pour of its net counts the pour's width)."""
+    """A function x -> [(I, w_eff mm, t mm, external)] per track, at the hottest of its quarter points.
+
+    The current is the flux of the solved bar currents through a grid line across the track (the
+    vertical line between two cell columns for a track running nearer x, else the horizontal one),
+    over the cells of the track's net on it: every bar crossing that line is counted once, whatever
+    the track's angle and wherever it falls in its cells, so the raster's staircase of a thin track
+    reads its true current. The width is the track's own unless more copper of its net lies across it
+    (a pour, a pad, a wider track) within its width plus a cell each side: then the width is that
+    copper's, measured on the board's geometry along the perpendicular, and the current is the flux
+    through the same window (the grid line's cells weighted by their overlap with it). Reading both
+    off cells sampled along the perpendicular gave 0.7x to 2x the true current, and 1x to 3x the
+    width, by the track's angle and sub-cell position (docs/topics/physics/thermal-physics.md,
+    'IPC-2221/2152 as a thermal model')."""
     m = bm.m
     p = m.pitch
     lname = [l.name for l in m.layers]
+    sel_t = [t for t in board_tracks
+             if t.layer in lname and (nets is None or t.net in nets) and t.net in m.nets]
+    trees = _net_copper(bm, board_tracks, {(t.net, t.layer) for t in sel_t}) if sel_t else {}
     samples, kept = [], []
-    for t in board_tracks:
-        if t.layer not in lname or (nets is not None and t.net not in nets) or t.net not in m.nets:
-            continue
+    for t in sel_t:
         l = lname.index(t.layer)
         nid = m.nets.index(t.net)
         (x0, y0), (x1, y1) = t.start, t.end
         L = math.hypot(x1 - x0, y1 - y0)
+        arc = _arc_frame(t) if getattr(t, "mid", None) is not None else None
+        if arc is not None:
+            L = arc[3]
         if L < p:
             continue
         ux, uy = (x1 - x0) / L, (y1 - y0) / L
+        half = t.width / 2 + p
         pts = []
         for q in (0.25, 0.5, 0.75):
-            cx, cy = x0 + q * (x1 - x0), y0 + q * (y1 - y0)
+            if arc is not None:
+                # an arc track: its quarter points on the arc, across its local direction (a chord
+                # can run outside the copper and would see none of the track's current)
+                cx, cy, ux, uy = arc[0](q)
+            else:
+                cx, cy = x0 + q * (x1 - x0), y0 + q * (y1 - y0)
+            tree = trees.get((t.net, t.layer))
+            across = _copper_across(tree, cx, cy, -uy, ux, half) if tree is not None else t.width
+            wide = across > t.width + 0.25 * p
+            vert = abs(ux) >= abs(uy)            # cut by a vertical grid line (x-bars) or a horizontal one
+            ua, ub = (ux, uy) if vert else (uy, ux)
+            ca, cb = (cx, cy) if vert else (cy, cx)
+            a0, b0, na, nb = (m.x0, m.y0, m.nx, m.ny) if vert else (m.y0, m.x0, m.ny, m.nx)
+            k = int(round((ca - a0) / p))        # the grid line a = a0 + k p, between cells k-1 and k
+            if not 1 <= k < na:
+                continue
+            bline = cb + (a0 + k * p - ca) * ub / ua     # where the track's centre line crosses it
+            if wide:
+                H = half / abs(ua)               # the perpendicular window, projected on the grid line
+            else:
+                # every bar of the track's own copper: a thin track's 4-connected chain crosses the
+                # line within 1.5 cells of its centre line
+                H = t.width / 2 / abs(ua) + 1.5 * p
+            lo, hi = bline - H, bline + H
             cells = []
-            half = t.width / 2 + p
-            for s in np.arange(-half, half + 1e-9, p):
-                j, i = _cell(m, cx - uy * s, cy + ux * s)
-                if 0 <= j < m.ny and 0 <= i < m.nx:
-                    cells.append((j, i))
-            pts.append(cells)
-        samples.append((l, nid, ux, uy, pts, t.width, m.layers[l]))
-        kept.append(t)
+            for c in range(max(0, int(math.floor((lo - b0) / p))), min(nb, int(math.floor((hi - b0) / p)) + 1)):
+                c0 = b0 + c * p
+                f = (min(hi, c0 + p) - max(lo, c0)) / p if wide else (1.0 if lo <= c0 + 0.5 * p <= hi else 0.0)
+                if f > 0:
+                    cells.append(((c, k - 1) if vert else (k - 1, c), f))
+            pts.append(("x" if vert else "y", 1.0 if ua > 0 else -1.0, cells, max(t.width, across)))
+        if pts:
+            samples.append((l, nid, pts, m.layers[l]))
+            kept.append(t)
     if not samples:
         f = lambda x: []          # noqa: E731
         f.tracks = []
@@ -524,26 +639,22 @@ def track_currents(bm, board_tracks, net, nets=None):
                     np.add.at(arr, (f["j"][sel], f["i"][sel]), np.real(x[a0:a0 + n][sel]))
                 K[(l, o)] = arr
         out = []
-        for l, nid, ux, uy, pts, w, layer in samples:
-            best, weff = 0.0, w
+        for l, nid, pts, layer in samples:
             lab = m.lab[l]
-            for cells in pts:
-                I = 0.0
-                cnt = 0
-                for j, i in cells:
-                    if lab[j, i] != nid:
-                        continue
-                    I += K[(l, "x")][j, i] * ux + K[(l, "y")][j, i] * uy
-                    cnt += 1
-                if abs(I) > abs(best):
-                    best = I
-                    weff = max(w, cnt * m.pitch)
             ext = l in (0, len(m.layers) - 1)
+            best, weff, dT = 0.0, pts[0][3], -1.0
+            for o, sgn, cells, w in pts:
+                Ko = K[(l, o)]
+                di, dj = (1, 0) if o == "x" else (0, 1)
+                I = 0.0
+                for (j, i), fr in cells:
+                    if lab[j, i] == nid and lab[j + dj, i + di] == nid:
+                        I += fr * Ko[j, i]
+                I *= sgn
+                d = ipc_dT(abs(I), w, layer.t, ext)
+                if d > dT:
+                    best, weff, dT = I, w, d
             out.append((best, weff, layer.t, ext))
         return out
     per_track.tracks = kept
     return per_track
-
-
-def _cell(m, x, y):
-    return int(math.floor((y - m.y0) / m.pitch)), int(math.floor((x - m.x0) / m.pitch))

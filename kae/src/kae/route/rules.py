@@ -556,7 +556,12 @@ def build(copper, settings, netclasses, nets, dru_path=None):
                                  [Constraint("diff_pair_gap", min=s.get("min_clearance", 0.0), opt=nc["dp_gap"])],
                                  implicit=True, source=f"netclass:{name}", netclass=name))
             if nc.get("clearance") is not None and nc["dp_gap"] < nc["clearance"]:
-                specific.append(Rule(f"netclass '{name}' (diff pair)", compile_condition("AB.isCoupledDiffPair()"),
+                # measured on KiCad 10.0.7 (aifryz sensor-hub, Default gap 0.09 < clearance 0.2): two
+                # coupled tracks 0.093 mm apart pass, a pad of one net 0.093 mm from a track of the
+                # other is a 0.2 mm netclass violation, so the narrower gap holds between tracks
+                # and vias only
+                specific.append(Rule(f"netclass '{name}' (diff pair)",
+                                     compile_condition("AB.isCoupledDiffPair() && A.Type != 'Pad' && B.Type != 'Pad'"),
                                      None, [Constraint("clearance", min=nc["dp_gap"])],
                                      implicit=True, source=f"netclass:{name}", netclass=name))
         if nc.get("via_diameter") is not None:
@@ -622,7 +627,10 @@ def evaluate(board, ctype, a, b=None, layer=None, geometric=False, custom=True):
         ob = b.get("override") if b is not None and b.get("connected") and not a_nc else None
         if oa is not None or ob is not None:
             val = max(v for v in (oa, ob) if v is not None)
-            if val:
+            # an override of zero or less is no override: KiCad falls through to the net class
+            # (ubertooth U3's thermal vias, pad clearance -0.099 mm: KiCad 10.0.7 requires the
+            # 0.2 mm class clearance, the port had floored -0.099 at the board minimum, 0.128)
+            if val > 0:
                 floor = s.get("min_clearance", 0.0) if ctype == "clearance" else s.get("hole_clearance", 0.0)
                 out.min, out.rule = max(val, floor), "local override"
                 return out

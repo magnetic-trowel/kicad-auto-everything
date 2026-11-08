@@ -1317,7 +1317,7 @@ def _lay_grid(sp, ctx, paths, plane_vias, info, deadline=None, tracks=True):
             if nd[0] == "g":
                 key = (q["layer"], nd[1])
                 slots[key] = [slots.get(key, [0, 0])[0] + 1, 0]
-    gr = GridRouter(sp)
+    gr = GridRouter(sp, pad_entry="centre")      # escapes leave from the ball's centre (dog-bone geometry)
     recs = []
     # the least flexible first on each layer (fewest options: they cannot go elsewhere)
     flex = ctx.get("flex", {})

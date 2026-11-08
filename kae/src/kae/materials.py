@@ -21,6 +21,9 @@ terms agree (docs/topics/rules/thermal.md, docs/topics/rules/power/high-current.
     ALPHA_CU         3.93e-3 1/K  copper resistance's temperature coefficient at T_REF_C (IEC 60028 via
                                   IS 8130); kae.excite.heat's TCR fixed point.
     T_REF_C          20 C         the temperature RHO_CU_OHM_MM and SIGMA_CU hold at.
+    CU_1OZ_MM        0.035 mm     the thickness of 1 oz/ft^2 copper foil (IPC-4562: 34.8 um nominal,
+                                  35 um as the fabs and IPC-2221's charts state it); outer layers end
+                                  thicker once plated, so 0.035 is the conservative side for width.
     K_FR4_THROUGH    0.3  W/(m K) FR-4 through the laminate: measured 0.29 (Azar and Graebner,
                                   SEMI-THERM 1996), datasheets 0.3 (Shengyi S1141) to 0.4 (Isola
                                   370HR); TI SNVA419 lists 0.23 without a source.
@@ -45,6 +48,7 @@ RHO_CU_OHM_MM = 1.72e-5
 SIGMA_CU = 5.8e7
 ALPHA_CU = 3.93e-3
 T_REF_C = 20.0
+CU_1OZ_MM = 0.035
 K_FR4_THROUGH = 0.3
 K_FR4_IN = 0.8
 H_AIR = 10.0

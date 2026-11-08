@@ -65,7 +65,7 @@ class Item:
     vias_only: a rule area that keeps out vias only
     """
     __slots__ = ('kind', 'net', 'layers', 'geom', 'r', 'cls', 'bbox', 'owner', 'hole', 'smd', 'vias_only',
-                 'local', 'fp', 'idx', 'uuid', 'width', 'drill', 'locked', 'pos')
+                 'local', 'fp', 'idx', 'uuid', 'width', 'drill', 'locked', 'pos', 'exact')
 
     def __init__(self, kind, net, layers, geom, r=0.0, cls=None, owner=None, hole=None, smd=False,
                  vias_only=False):
@@ -79,6 +79,7 @@ class Item:
         self.drill = 0.0
         self.locked = True
         self.pos = None
+        self.exact = None          # pads: requirements from the real copper (plan.pin_exact), geom = that copper
         self.bbox = _bbox(geom, r)
 
     def __repr__(self):
@@ -165,6 +166,7 @@ class Space:
         self.settings = info.get("settings") or {}
         self.via_in_pad = bool(self.opts.get("via_in_pad", False))
         self.pad_overlap = float(CN.setting("pad_entry_overlap", getattr(board, "path", None), self.opts))
+        self.pad_entry = CN.pad_entry_mode(getattr(board, "path", None), self.opts)
         st = board.stackup
         z = [0.0]
         if st is not None and st.copper == self.cu and len(st.gaps) == len(self.cu) - 1:
@@ -220,6 +222,16 @@ class Space:
                     continue
                 geom = unary_union(vals)
             cls = plan.pin_class.get((pd.get("comp"), pd.get("pin"))) if pd.get("pin") else None
+            exact = (getattr(plan, "pin_exact", None) or {}).get((pd.get("comp"), pd.get("pin"))) if pd.get("pin") else None
+            if exact is not None:
+                # the pad as its real copper, the requirement without the DSN shape's largest
+                # excess: per side exact where the export cut a corner, never laxer
+                vals = [g for l, g in real.items() if l in pd["layers"] and g is not None and not g.is_empty]
+                rg = unary_union(vals) if vals else None
+                if rg is not None and rg.geom_type == "Polygon" and rg.is_valid and rg.covers(geom.buffer(-1e-6)):
+                    geom = rg
+                else:
+                    exact = None
             hole = _hole_geom(pd.get("hole"))
             it = Item("pad", pd.get("net") or "", pd["layers"], geom, 0.0, cls,
                       owner=(pd.get("ref"), pd.get("number")), hole=hole, smd=pd.get("attr") == "smd")
@@ -231,6 +243,7 @@ class Space:
                         it.fp = f.uuid
                         break
             it.idx = k
+            it.exact = exact
             it.uuid = pd.get("uuid") or ""
             pos = pd.get("pos") or [geom.centroid.x, geom.centroid.y]
             it.pos = (float(pos[0]), float(pos[1]))
@@ -400,6 +413,10 @@ class Space:
             if it.vias_only and kind == "track":
                 return None
             return 0.0
+        if it.kind == "pad" and it.exact is not None:
+            v = it.exact.get((self.rc(net), layer))
+            if v is not None:
+                return v[0] if kind == "track" else v[1]
         if it.kind in ("pad", "shape", "hole", "pad_nopin"):
             oc = self.plan.obstacle_classes.get(it.cls) if it.cls else None
             v = oc.values.get((self.rc(net), layer)) if oc is not None else None

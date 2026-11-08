@@ -15,6 +15,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from . import stepcache
+
 # Violation types that depend on the local library setup, not on the board (as kaebench).
 ENV_DEPENDENT = ("lib_footprint_issues", "lib_footprint_mismatch")
 # kicad-cli lists at most this many unconnected items; past it (or when the project ignores the
@@ -48,15 +50,21 @@ def kicad_cli():
     return (p,)
 
 
-def run(board, out_json, timeout=900):
-    """kicad-cli pcb drc on `board`; returns the parsed JSON report."""
+def run(board, out_json, timeout=900, cache=True):
+    """kicad-cli pcb drc on `board`; returns the parsed JSON report. `cache=False` runs KiCad even
+    with the step cache on (a second run of the same board, to see which checks are noisy)."""
     board, out_json = Path(board).resolve(), Path(out_json).resolve()
     if out_json.exists():
         out_json.unlink()
     cmd = [*kicad_cli(), "pcb", "drc", "--format", "json", "--refill-zones", "--severity-all",
            "--units", "mm", "-o", str(out_json), str(board)]
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd=board.parent, errors="replace")
+        if cache and stepcache.enabled():   # KAE_STEP_CACHE: a board DRC'd before, with the same rules, replays its report
+            r = stepcache.run("kicad-drc", cmd, inputs=stepcache.kicad_inputs(board), outputs={"report": out_json},
+                              wd=board.parent, timeout=timeout, tool=stepcache.kicad_version(kicad_cli()),
+                              cwd=board.parent)
+        else:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd=board.parent, errors="replace")
     except subprocess.TimeoutExpired:
         raise DrcError(f"DRC timed out after {timeout}s")
     if not out_json.exists():

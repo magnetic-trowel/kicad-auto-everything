@@ -253,3 +253,25 @@ def test_a_rules_file_kicad_drops_gives_no_custom_rules(tmp_path, capsys):
     (tmp_path / "board.kicad_dru").write_text(dru.replace("clearence", "clearance").replace("0.1mm", "0.1mm) (max 1mm"))
     rb = C.rule_board(info, tmp_path / "board.kicad_pcb")
     assert not rb.dru_rejected and R.strictest(rb, "clearance", track("A"), track("B"), "F.Cu").min == 0.1
+
+
+def test_a_negative_or_zero_override_is_no_override():
+    """ubertooth U3's thermal vias carry a pad clearance of -0.099 mm: KiCad 10.0.7 requires the
+    0.2 mm class clearance there (a track 0.131 mm away is a violation); flooring the override at
+    the board minimum let the router come to the board minimum."""
+    b = board()
+    for v in (-0.09906, 0.0):
+        c = R.evaluate(b, "clearance", track("A"), pad("B", override=v), "F.Cu")
+        assert c.min == 0.2 and c.rule != "local override"
+        assert R.evaluate(b, "hole_clearance", track("A"), pad("B", override=v, drilled=True), "F.Cu").rule != \
+            "local override"
+
+
+def test_the_coupled_diff_pair_gap_holds_between_tracks_not_pads():
+    """KiCad 10.0.7 (aifryz sensor-hub): coupled tracks may sit at the pair gap, but a pad of one
+    net keeps the class clearance from the other net's track."""
+    cl = dict(CLASSES, Default=dict(CLASSES["Default"], dp_gap=0.09))
+    b = R.build(COPPER, SETTINGS, cl, {"D_P", "D_N"})
+    assert R.evaluate(b, "clearance", track("D_P"), track("D_N"), "F.Cu").min == 0.15     # the gap, at the board minimum
+    assert R.evaluate(b, "clearance", track("D_P"), pad("D_N"), "F.Cu").min == 0.2
+    assert R.evaluate(b, "clearance", pad("D_P"), track("D_N"), "F.Cu").min == 0.2

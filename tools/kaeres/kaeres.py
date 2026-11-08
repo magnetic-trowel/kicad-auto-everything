@@ -406,9 +406,82 @@ def board_runs(bid):
 
 
 def find_run(bid, method_id, attempt=0, task_id=None):
+    """The newest run of a method and attempt on a board, on task_id or a task of equal content (on_task)."""
     hits = [(d, r) for d, r in board_runs(bid) if r["method_id"] == method_id and r["attempt"] == attempt
-            and (task_id is None or r["task_id"] == task_id) and not r.get("repro_of")]
+            and (task_id is None or on_task(bid, r, task_id)) and not r.get("repro_of")]
     return hits[-1] if hits else (None, None)
+
+
+# ------------------------------------------------------------------ task content and aliases
+# A task id names a recipe (board file sha256, task spec, kind, KiCad), so a task spec bump gives every
+# board a new task id although most boards' prepared inputs do not change. Each prepared task also gets
+# a content hash: the files of its input and reference and the parts of task.json the scorer and the
+# runner read. A run made on another task of the same board, kind and KiCad counts as made on this one
+# when the task it ran on, as its own harness prepared it, has this task's content. Content is stored
+# per harness commit in tasks/<id>/content.json: a task spec before 10 drew random uuids for boards
+# whose files store none, so one task id could stand for several inputs, and only an input re-prepared
+# by the run's own harness tells which (a random one never equals a later, seeded preparation).
+CONTENT_VERSION = 1
+# what the scorer and the runner read from task.json (score.py, runner.py), per input kind
+_CONTENT_RECORD = ("pcb_sha256", "split", "has_project_rules")
+
+
+def task_content(task, kind):
+    """Content hash of a prepared task directory (kaebench's tasks/<board>) for one task kind; None when
+    that kind's input is not there. Covers every file of reference/ and of the kind's input directory
+    (drc.json reports, which carry a date, left out; their numbers are in the record), and the record's
+    reference stats, pads outside the outline and the kind's task entry. Local paths (repo), the task
+    spec and the round trip (a qualification verdict, not an input) are left out."""
+    task = Path(task)
+    ik = INPUT_KIND.get(kind, kind)
+    rec = read_json(task / "task.json")
+    if not rec or ik not in (rec.get("tasks") or {}) or not (task / ik).is_dir():
+        return None
+    ref = rec.get("reference") or {}
+    keep = dict({k: rec.get(k) for k in _CONTENT_RECORD}, stats=ref.get("stats"), pads_outside=ref.get("pads_outside"),
+                task=rec["tasks"][ik])
+    files = []
+    for top in ("reference", ik):
+        for f in sorted((task / top).rglob("*")):
+            if f.is_file() and f.name != "drc.json":
+                files.append([str(f.relative_to(task)), sha256_file(f)])
+    blob = json.dumps(dict(v=CONTENT_VERSION, kind=ik, record=keep, files=files), sort_keys=True, separators=(",", ":"))
+    return f"v{CONTENT_VERSION}:" + hashlib.sha256(blob.encode()).hexdigest()
+
+
+def task_meta(bid, tid):
+    return read_json(board_dir(bid) / "tasks" / tid / "task.json")
+
+
+def contents_of(bid, tid):
+    """{harness commit: content hash} recorded for a stored task."""
+    return read_json(board_dir(bid) / "tasks" / tid / "content.json", {}) or {}
+
+
+def record_content(bid, tid, harness, content):
+    p = board_dir(bid) / "tasks" / tid / "content.json"
+    if content and p.parent.is_dir() and contents_of(bid, tid).get(harness) != content:
+        write_json(p, dict(contents_of(bid, tid), **{harness: content}))
+
+
+def run_prepared_by(r):
+    """The harness commit that prepared the task a run ran on."""
+    return r.get("task_prepared_by") or r.get("harness_commit")
+
+
+def on_task(bid, r, tid):
+    """Whether run r counts as a run on task tid: made on it, or on a task of the same board file, kind
+    and KiCad whose content, as the run's harness prepared it, is a content recorded for tid."""
+    if r.get("task_id") == tid:
+        return True
+    new, old = task_meta(bid, tid), task_meta(bid, r.get("task_id") or "")
+    if not new or not old:
+        return False
+    a, b = new.get("recipe") or {}, old.get("recipe") or {}
+    if any(a.get(k) != b.get(k) for k in ("board_sha256", "kind", "kicad")):
+        return False
+    mine = contents_of(bid, r["task_id"]).get(run_prepared_by(r) or "")
+    return bool(mine) and mine in contents_of(bid, tid).values()
 
 
 def evals_of(run_dir):
@@ -500,6 +573,20 @@ def exp_dir(name):
     return STORE / "experiments" / name
 
 
+# environment an experiment may set for its jobs without changing any method's identity: settings
+# that change no result (KAE_STEP_CACHE: kae's step cache replays identical steps, time charged)
+RESULT_NEUTRAL_ENV = ("KAE_STEP_CACHE",)
+
+
+def exp_env(a):
+    env = dict(kv.split("=", 1) for kv in a.env or [])
+    bad = sorted(set(env) - set(RESULT_NEUTRAL_ENV))
+    if bad:
+        raise SystemExit(f"--env {bad}: only {RESULT_NEUTRAL_ENV} (settings that change no result) are allowed; "
+                         "anything else belongs in the method's recipe")
+    return env
+
+
 def load_exp(name):
     e = read_json(exp_dir(name) / "experiment.json")
     if not e:
@@ -534,8 +621,10 @@ def cmd_exp_create(a):
     # task and never count here (baseline-2611: freerouting 2.5.0 pinned to a spec-8 harness ran 552 s
     # per board and wrote no run)
     want = harness_task_spec(harness)
+    # from task spec 10 on, such a method runs on the experiment's tasks (prep_harness)
     off = [(m["name"], m["id"], harness_task_spec(hc)) for m in ms
-           for hc in [(m["code"].get("harness") or {}).get("commit")] if hc and harness_task_spec(hc) != want]
+           for hc in [(m["code"].get("harness") or {}).get("commit")]
+           if hc and harness_task_spec(hc) != want and prep_harness(hc, harness) != harness]
     if off:
         raise SystemExit(f"methods prepared with a harness of another task spec than {harness[:7]}'s ({want}): "
                          + "; ".join(f"{n} {i} (spec {s})" for n, i, s in off)
@@ -547,7 +636,7 @@ def cmd_exp_create(a):
              harness=dict(commit=harness, link=github_link("https://github.com/magnetic-trowel/kicad-auto-everything", harness)),
              kae=dict(commit=kae, link=github_link("https://github.com/magnetic-trowel/kicad-auto-everything", kae)),
              kicad=kicad, evaluators=evs, corpus=str(CORPUS), corpus_manifest_sha256=sha256_file(CORPUS / "manifest.jsonl"),
-             boards=len(boards))
+             boards=len(boards), **({"env": exp_env(a)} if a.env else {}))
     d.mkdir(parents=True)
     (d / "boards.txt").write_text("\n".join(boards) + "\n")
     write_json(d / "experiment.json", e)
@@ -782,6 +871,7 @@ def cmd_job(a):
         except OSError:
             shutil.rmtree(tmpc, ignore_errors=True)
     env["KICAD_CONFIG_HOME"] = str(kcfg)
+    env.update({k: v for k, v in ((e or {}).get("env") or {}).items() if k in RESULT_NEUTRAL_ENV})
     env["KAE_DRC_TIMEOUT"] = str(900 if size < 20 else 3600)
     env["JAVA_TOOL_OPTIONS"] = f"-Xmx{heap_gb(size)}g -XX:ActiveProcessorCount=2"
     env.pop("VIRTUAL_ENV", None)
@@ -804,17 +894,77 @@ def cmd_job(a):
         groups[harness].append((human, 0))  # every board gets the human layout scored, once
     made = []
     for hc, items in groups.items():
-        made += _job_group(bid, row, hc, kae, items, human, ws, env, log, kicad, a, size)
+        made += _job_group(bid, row, hc, kae, items, human, ws, env, log, kicad, a, size, prep_harness(hc, harness))
     print(f"{bid}: {len(made)} run(s) written in {time.monotonic() - t0:.0f}s: {', '.join(made) or '-'}", flush=True)
     shutil.rmtree(ws / "w", ignore_errors=True)
     return 0
 
 
-def _job_group(bid, row, hc, kae, items, human, ws, env, log, kicad, a, size):
+def prep_harness(hc, exp_hc):
+    """The harness that prepares the tasks a method of harness hc runs on in an experiment of harness
+    exp_hc: its own, unless its task spec is older than the experiment's and the experiment's is 10 or
+    later (deterministic preparation, content aliases). Then the method runs, with its own harness, on
+    the experiment's tasks, so its runs on boards whose task content did not change are reused."""
+    s, e = harness_task_spec(hc), harness_task_spec(exp_hc)
+    return exp_hc if s is not None and e is not None and e >= 10 and s < e else hc
+
+
+def _venv(hc):
     d, venv = code_dir(hc), code_dir(hc).with_name(code_dir(hc).name + ".venv")
     if not (venv / "bin" / "kaebench").exists():
         raise SystemExit(f"harness {hc[:7]} is not installed: kaeres exp create sets it up ({d})")
-    work = ws / f"w-{hc[:8]}"
+    return d, venv
+
+
+def _prepare(bid, phc, inputs, ws, env, log, steps, step="prepare"):
+    """kaebench prepare-dir of the board with harness phc (once per job): (task directory or None, rc, timed out)."""
+    _, venv = _venv(phc)
+    work = ws / f"w-{phc[:8]}"
+    task = work / "tasks" / bid
+    have = (read_json(task / "task.json") or {}).get("tasks") or {}
+    rc, to = 0, False
+    if not all(k in have for k in inputs):
+        with Step(step, steps):
+            rc, to = run_logged([venv / "bin" / "kaebench", "--workdir", work, "prepare-dir", "--dir", ws / "src",
+                        "--board-glob", "board.kicad_pcb", "--only", bid, "--kinds", ",".join(inputs), "-j", "1",
+                        *(["--force"] if have else [])],
+                       log, dict(env, PATH=f"{venv / 'bin'}:{env.get('PATH', '')}"), timeout=3 * 3600)
+    return (task if (task / "task.json").exists() else None), rc, to
+
+
+def fill_old_contents(bid, tids, kicad, method_ids, ws, env, log, steps):
+    """Record the content of the older tasks the given methods' runs on this board were made on, as each
+    run's own harness prepares them (one prepare per harness commit not yet recorded), so on_task can
+    tell which of those runs count on the new tasks tids ({kind: id}). Harnesses whose code is not here
+    are skipped: their runs are not reused."""
+    want = defaultdict(set)  # harness -> {(kind, old task id)}
+    for _, r in board_runs(bid):
+        if r.get("method_id") not in method_ids or r.get("repro_of"):
+            continue
+        old = task_meta(bid, r.get("task_id") or "")
+        kind = ((old or {}).get("recipe") or {}).get("kind")
+        new = task_meta(bid, tids.get(kind, "")) if kind in tids else None
+        phc = run_prepared_by(r)
+        if not old or not new or not phc or r["task_id"] == tids[kind] or phc in contents_of(bid, r["task_id"]):
+            continue
+        if any((old["recipe"].get(k) != new["recipe"].get(k)) for k in ("board_sha256", "kicad")):
+            continue
+        want[phc].add((kind, r["task_id"]))
+    for phc, pairs in sorted(want.items()):
+        if not (code_dir(phc).with_name(code_dir(phc).name + ".venv") / "bin" / "kaebench").exists():
+            print(f"{bid}: harness {phc[:7]} is not here; its runs are not reused", flush=True)
+            continue
+        task, _, _ = _prepare(bid, phc, sorted({INPUT_KIND.get(k, k) for k, _ in pairs}), ws, env, log, steps, f"prepare-{phc[:8]}")
+        rec = read_json(task / "task.json") if task else None
+        for kind, tid in sorted(pairs):
+            if rec and rec.get("task_spec") == task_meta(bid, tid)["recipe"].get("task_spec"):
+                record_content(bid, tid, phc, task_content(task, kind))
+
+
+def _job_group(bid, row, hc, kae, items, human, ws, env, log, kicad, a, size, phc=None):
+    phc = phc or hc  # the harness that prepares the tasks (prep_harness); hc runs and scores the methods
+    d, venv = _venv(hc)
+    work = ws / f"w-{phc[:8]}"
     kb = [venv / "bin" / "kaebench", "--workdir", work]
     genv = dict(env, PATH=f"{venv / 'bin'}:{env.get('PATH', '')}")
     steps = {}
@@ -823,10 +973,8 @@ def _job_group(bid, row, hc, kae, items, human, ws, env, log, kicad, a, size):
     # prepare builds task inputs; joint kinds run on the matching place input (kaebench's
     # prepare.INPUT_KIND), which must be asked for even when no place method is in the group
     inputs = sorted({INPUT_KIND.get(k, k) for k in kinds})
-    with Step("prepare", steps):
-        rc, to = run_logged(kb + ["prepare-dir", "--dir", ws / "src", "--board-glob", "board.kicad_pcb",
-                                  "--only", bid, "--kinds", ",".join(inputs), "-j", "1"], log, genv, timeout=3 * 3600)
-    task = work / "tasks" / bid
+    task, rc, to = _prepare(bid, phc, inputs, ws, env, log, steps)
+    task = task or work / "tasks" / bid
     tj = task / "task.json"
     if not tj.exists():
         txt = tail(log, 200)
@@ -836,8 +984,8 @@ def _job_group(bid, row, hc, kae, items, human, ws, env, log, kicad, a, size):
             raise SystemExit(75)
         bugs.add("harness", "prepare_timeout" if to else "prepare_error", _first_error(txt) or f"rc={rc}",
                  signature=f"harness:prepare:{_normalize(_first_error(txt))}", log_tail=tail(log, 60))
-        write_json(board_dir(bid) / "prepare-failures" / f"{hc[:12]}.json",
-                   dict(board=bid, harness=hc, at=now(), steps=steps, bugs=bugs.items, log_tail=tail(log, 200)))
+        write_json(board_dir(bid) / "prepare-failures" / f"{phc[:12]}.json",
+                   dict(board=bid, harness=phc, at=now(), steps=steps, bugs=bugs.items, log_tail=tail(log, 200)))
         _board_json(bid, row)
         return []
     record = json.loads(tj.read_text())
@@ -851,16 +999,21 @@ def _job_group(bid, row, hc, kae, items, human, ws, env, log, kicad, a, size):
         if not (tdir / "task.json").exists():
             tmp = tdir.with_name(tdir.name + f".tmp{os.getpid()}")
             tmp.mkdir(parents=True, exist_ok=True)
-            write_json(tmp / "task.json", dict(schema=SCHEMA, id=tids[kind], recipe=task_recipe, prepared_by=hc, at=now(), record=record))
+            write_json(tmp / "task.json", dict(schema=SCHEMA, id=tids[kind], recipe=task_recipe, prepared_by=phc, at=now(), record=record))
             if (task / "reference" / "drc.json").exists():
                 gz(task / "reference" / "drc.json", tmp / "human-drc.json.gz")
             try:
                 os.replace(tmp, tdir)
             except OSError:
                 shutil.rmtree(tmp, ignore_errors=True)
+        record_content(bid, tids[kind], phc, task_content(task, kind))
+    # runs on older tasks of equal content count on these (on_task): record what those tasks held
+    fill_old_contents(bid, tids, kicad, {m["id"] for m, _ in items}, ws, env, log, steps)
     task_id = tids["route"]
     tid = lambda m: tids[m["recipe"]["kind"]]
     _board_json(bid, row)
+    if getattr(a, "content_only", False):
+        return []
     evs = evaluators_for(hc, kae, kicad)
     # skip methods that already have a run on this task (another experiment may have made it meanwhile)
     todo = [(m, att) for m, att in items if a.method or find_run(bid, m["id"], att, tid(m))[0] is None]
@@ -881,7 +1034,7 @@ def _job_group(bid, row, hc, kae, items, human, ws, env, log, kicad, a, size):
     with Step("run", steps):
         if arms:
             rc, to = run_logged(kb + ["run", *arms, "--kinds", "route", "-k", str(k), "--timeout", str(timeout), "--all",
-                                      "--only", bid, "--name", "base", "-j", "1"], log, genv,
+                                      "--only", bid, "--name", f"base-{hc[:8]}", "-j", "1"], log, genv,
                                 timeout=len(todo) * k * (timeout + 1800) + 3600)
             if rc != 0:
                 bugs.add("harness", "run_timeout" if to else "run_error", _first_error(tail(log, 200)) or f"rc={rc}",
@@ -905,7 +1058,7 @@ def _job_group(bid, row, hc, kae, items, human, ws, env, log, kicad, a, size):
     human_run = find_run(bid, human["id"], 0, task_id) if human else (None, None)
     adirs = {}
     for m, att in todo:
-        rn = "base" if m["recipe"]["runner"]["type"] != "command" else f"cmd-{m['id']}"
+        rn = f"base-{hc[:8]}" if m["recipe"]["runner"]["type"] != "command" else f"cmd-{m['id']}"
         adirs[(m["id"], att)] = work / "results" / rn / f"m{m['id']}" / m["recipe"]["kind"] / bid / f"attempt-{att}"
     human_adir = adirs.get((human["id"], 0)) if human else None
     human_types = {}
@@ -956,7 +1109,7 @@ def _job_group(bid, row, hc, kae, items, human, ws, env, log, kicad, a, size):
         if ph and ph.get("error"):
             rb.add("physics", "physics_error", ph["error"], signature=f"physics:{_normalize(ph['error'])}",
                    evidence=[f"evals/{evs['physics']}.json"], traceback=ph.get("traceback"))
-        name = _write_run(bid, m, att, tid(m), hc, aj, adir, ph, evs, rb.items + bugs.items, steps, a)
+        name = _write_run(bid, m, att, tid(m), hc, aj, adir, ph, evs, rb.items + bugs.items, steps, a, phc)
         bugs.items = []  # board-level bugs go with the first run written
         if name:
             made.append(name)
@@ -984,7 +1137,7 @@ def _board_json(bid, row):
         write_json(p, row)
 
 
-def _write_run(bid, m, att, task_id, hc, aj, adir, ph, evs, bugs, steps, a):
+def _write_run(bid, m, att, task_id, hc, aj, adir, ph, evs, bugs, steps, a, phc=None):
     """Archive one run (output, logs, evaluations, bugs) atomically under the board."""
     suffix = f".repro-{datetime.now().strftime('%Y%m%dT%H%M%S')}" if a.repro else ""
     dest = board_dir(bid) / "runs" / run_name(m, att, suffix)
@@ -1014,7 +1167,7 @@ def _write_run(bid, m, att, task_id, hc, aj, adir, ph, evs, bugs, steps, a):
     if (adir / "score_error.log").exists():
         shutil.copy2(adir / "score_error.log", tmp / "score_error.log")
     run = dict(schema=SCHEMA, run=dest.name, board=bid, method_id=m["id"], method_name=m["name"], attempt=att,
-               task_id=task_id, harness_commit=hc, experiment=a.experiment, kaeq_job=os.environ.get("KAEQ_JOB"),
+               task_id=task_id, harness_commit=hc, task_prepared_by=phc or hc, experiment=a.experiment, kaeq_job=os.environ.get("KAEQ_JOB"),
                finished=now(), java_tool_options=os.environ.get("JAVA_TOOL_OPTIONS") if m["recipe"]["runner"]["type"] != "reference" else None,
                status=aj.get("status"), error=aj.get("error"), runtime_s=aj.get("runtime_s"), over_time=aj.get("over_time"),
                method_usage=aj.get("method_usage"), adapter_meta=aj.get("adapter_meta"), load_avg=[aj.get("load_avg_start"), aj.get("load_avg_end")],
@@ -1796,6 +1949,9 @@ def main():
     s.add_argument("--attempts", type=int, default=1)
     s.add_argument("--harness", default="HEAD", help="revision for prepare, the human reference and physics briefs")
     s.add_argument("--kae", default="origin/claude/vigilant-mayer-i91rrr", help="revision with the kae package (physics)")
+    s.add_argument("--env", action="append", metavar="KEY=VALUE",
+                   help="job environment that changes no result, e.g. KAE_STEP_CACHE=/var/tmp/$USER/step-cache "
+                        "(not part of any method's identity)")
     s.set_defaults(f=cmd_exp_create)
     s = ep.add_parser("submit")
     s.add_argument("name"), s.add_argument("--only"), s.add_argument("--limit", type=int)
@@ -1814,6 +1970,8 @@ def main():
     s.add_argument("--attempt", type=int, default=0)
     s.add_argument("--harness"), s.add_argument("--kae")
     s.add_argument("--repro", action="store_true", help="write a reproduction next to the original run")
+    s.add_argument("--content-only", action="store_true",
+                   help="only prepare the tasks and record their content and that of the methods' older tasks")
     s.set_defaults(f=cmd_job)
     s = sub.add_parser("board", help="every run and score of one board")
     s.add_argument("id")

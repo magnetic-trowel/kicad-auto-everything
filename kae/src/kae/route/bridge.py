@@ -28,7 +28,7 @@ from pathlib import Path
 
 from kae.board import pcbnew_io
 
-from . import constraints, drc, freerouting, specctra, translate
+from . import constraints, drc, freerouting, specctra, stepcache, translate
 
 def check_import(ses_path, res):
     """Compare what a session holds (specctra.session_counts) with what KiCad's import put
@@ -136,6 +136,17 @@ DEFAULT_OPTS = dict(
     pad_shapes="kicad",      # pin shapes in the DSN: "kicad" (KiCad's export: rounded corners and arcs as
                              # chords inside the outline, up to 4 um at r 0.25 mm, 10 um on custom pads) or
                              # "outside" (polygons that contain the pad's copper, translate.circumscribe_pins)
+    import_tails=False,      # arm D: in each repair round, rule D tails (exact check only) on the tracks the
+                             # session import added; a tail the round's DRC names goes back to its raw shape
+    finish=False,            # at the end, when time is left: kae.route.finish (stage 7: rule D tails, taut arcs,
+                             # power copper, one journaled DRC gate; never worse). Off by default: the restart
+                             # portfolio runs it once on the kept board (restart.py --finish), not per attempt
+    finish_parts=None,       # with finish: its parts (default finish.PARTS: tails, taut, power)
+    finish_min_s=60.0,       # with finish: run it only with this much time left
+    power_copper=False,      # power copper alone, through finish (parts ["power"]): widen rails and grounds,
+                             # ground vias at decap/IC pads, stitch pours, kept only where DRC is no worse
+    pad_trim=None,           # Freerouting's centre ends cut back to the pad edge, through finish (part "trim",
+                             # last); None = when the pad_entry setting is "edge"
 )
 
 
@@ -159,6 +170,7 @@ def severities(board_path):
 
 def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None, log=_log):
     t0 = time.monotonic()
+    fork = stepcache.fork_context(input_path, seed, time_s, opts)   # KAE_STEP_CACHE: fork points
     opts = {**DEFAULT_OPTS, **(opts or {})}
     input_path, output_path = Path(input_path).resolve(), Path(output_path).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -279,6 +291,7 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             report["import_check"] = imp["import_check"]
             report.setdefault("hazards", []).extend(imp["hazards"])
             report["status"] = "routed"
+        stepcache.save_fork(fork, "routed", {"board": output_path, "ses": run.ses}, time.monotonic() - t0)
         # the input's locked tracks and vias (pre-routes): exported as fixed wiring, never
         # returned by Freerouting, kept as they are by KiCad's import; the repair loop never
         # rips, widens or unlocks them
@@ -287,6 +300,7 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
 
         # 5: DRC and repair
         diag_s = min(float(opts.get("blocked_s") or 0.0), 0.05 * time_s) if opts.get("blocked") else 0.0
+        final_rep = None
         if opts.get("repair") and left() > 30:
             from . import repair
             report["repair"] = repair.loop(input_path, output_path, wd, p, info, opts,
@@ -301,6 +315,14 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             staged = drc.stage_board(output_path, input_path, wd / "drc")
             rep = drc.run(staged, wd / "drc" / "drc.json", timeout=max(10, left() - 5))
             report["drc"] = drc.summary(rep)
+        stepcache.save_fork(fork, "repaired", {"board": output_path}, time.monotonic() - t0)
+        parts = finish_parts(opts, p)
+        if parts and left() > float(opts.get("finish_min_s") or 60.0):
+            report["finish"] = finish_hook(output_path, input_path, wd / "finish", parts, time_s=left() - 10,
+                                           base_report=final_rep if opts.get("repair") else None, log=log)
+            report.setdefault("hazards", []).extend(report["finish"].pop("hazards", None) or [])
+        elif parts:
+            report["finish"] = dict(skipped=f"time: {left():.0f} s left", parts=parts)
         if report.get("blocked_packages"):
             # packages no routing can escape under the board's rules (escape.certificate), in front
             # of the per-connection diagnosis
@@ -310,6 +332,7 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             for c in blk["packages"]:
                 report.setdefault("hazards", []).extend(c.get("hazards") or [])
             blk["summary"] = [c["summary"] for c in blk["packages"]] + list(blk.get("summary") or [])
+        stepcache.save_fork(fork, "final", {"board": output_path}, time.monotonic() - t0, report)
         return report
     finally:
         report["opts"] = {k: v for k, v in opts.items()
@@ -319,6 +342,43 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             shutil.rmtree(wd, ignore_errors=True)
         else:
             report["workdir"] = str(wd)
+
+
+def finish_parts(opts, plan=None):
+    """The finish parts an attempt runs at its end: opts finish (finish_parts, else all), else the
+    legacy single passes routed through it (power_copper -> "power", pad_trim -> "trim")."""
+    if opts.get("finish"):
+        from . import finish
+        return list(opts.get("finish_parts") or finish.PARTS)
+    parts = ["power"] if opts.get("power_copper") else []
+    trim = opts.get("pad_trim")
+    if trim if trim is not None else getattr(plan, "pad_entry", "centre") == "edge":
+        parts.append("trim")
+    return parts
+
+
+def finish_hook(output_path, project_board, workdir, parts, time_s, base_report=None, log=_log):
+    """kae.route.finish on the routed `output_path` (with `project_board`'s rules), replacing it when
+    the gate kept a change. `base_report`: the repair loop's DRC of that board (the gate reuses it).
+    Returns the finish report without its journal and gate rounds."""
+    from . import finish
+    wd = Path(workdir)
+    try:
+        rep = finish.run(output_path, wd / "out.kicad_pcb", project=project_board, opts=dict(parts=tuple(parts)),
+                         workdir=wd / "work", time_s=time_s, base_report=base_report, log=log)
+    except Exception as e:      # noqa: BLE001 - a post-pass never costs the routed board
+        from kae import hazards as H
+        log(f"finish: skipped: {type(e).__name__}: {e}")
+        return dict(error=f"{type(e).__name__}: {e}", hazards=[H.make(
+            "finish_failed", "warn", "data", f"The finish stage failed and was skipped: {type(e).__name__}: {e}"[:300],
+            objects=["finish"], fix="Report the board; it is handed back as routed, without rule D tails, taut "
+                                    "arcs or power copper.")])
+    if rep.get("kept"):
+        Path(output_path).write_text((wd / "out.kicad_pcb").read_text(encoding="utf-8"), encoding="utf-8")
+    for k in ("journal", "gate_rounds"):
+        rep.pop(k, None)
+    shutil.rmtree(wd / "work", ignore_errors=True)
+    return rep
 
 
 def diagnose(output_path, input_path, original_input, info, plan, drc_report, sev, wd, deadline, log=_log, opts=None):

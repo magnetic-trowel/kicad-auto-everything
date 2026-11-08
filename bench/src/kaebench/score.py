@@ -4,16 +4,50 @@
 reference rules.
 
 The scorer never judges the file a method wrote. It transplants only what the task lets
-a method change into a fresh copy of the task input: tracks, arcs and vias for routing;
+a method change into a fresh copy of the task input: tracks, arcs and vias for routing,
+plus, in route and joint tasks, the copper zones a method adds and pads' own zone connection;
 footprint poses (position, rotation, side) for placement. Edits to anything else (rules,
-outline, keepouts, zones, pads, layers, nets) therefore cannot change a score. They are
-still detected, and make the result invalid:
+outline, keepouts, the task's zones, other pad properties, layers, nets) therefore cannot
+change a score. They are still detected, and make the result invalid:
 
   route  placement, pad nets, every other board object untouched; routing only on the
          board's copper layers (copper on a new net is kept and counted: it cannot
-         connect anything)
+         connect anything); added zones legal (below)
+  joint  as place (added zones and pads' zone connection excepted: never in the placement that
+         is judged), then as route, added zones included (joint and joint-fixed tasks)
   place  pad nets and every non-pose property untouched; locked footprints unmoved; no
          footprints added or removed; no copper added
+
+Added zones (route, joint and joint-fixed tasks, score v10; pcbnew_ops._added_zones). In joint
+tasks the placement half ignores them (and pads' zone connection) and judges legality on the
+placement alone; the routing half transplants and checks them onto that placement exactly as
+in a route task. A route method may add copper
+pours. A zone the task input does not have (by uuid; teardrops are routing and stay ignored)
+is transplanted with everything it carries (outline, layers, net, priority, clearance, pad
+connection and thermal settings, minimum width, island removal) but not its fill: DRC refills
+every zone of the rebuilt board (--refill-zones), and the uncapped unconnected count fills
+them too, at the start and the end alike, so a pour that joins pads counts as connecting them.
+Integrity (`zones`; any violation makes the result invalid and is listed in zone_problems):
+  - a copper zone, not a rule area or keepout (those switch DRC checks off locally);
+  - only on the board's enabled copper layers;
+  - on a net the task has, by name: no new nets and no net-less zones (floating copper connects
+    nothing and is not routing);
+  - inside the board's outer outline (grown by 10 um for arc rounding; cut-outs inside it may be
+    covered, the fill clears them);
+  - outside every rule area that forbids copper pours on a shared layer (the method cuts its
+    outline around them). This checks the outline; DRC (items_not_allowed) still checks the
+    refilled copper against every keepout, and copper clearance, edge clearance and width;
+  - where it overlaps another zone on a shared layer, a strictly different priority, so the fill
+    never depends on uuid order (KiCad 10.0.7's filler deadlocks on overlapping zones of
+    different nets that tie on priority and uuid);
+  - a uuid no other zone has.
+The task's own zones must stay exactly as given (outline, net, layers, settings; not deleted):
+an edit is a foreign change (`untouched`). A pad's own zone connection (zone_connect, e.g. solid
+on a heat pad) may change; it is transplanted, and every other pad property stays as given.
+No cap on count or area: area is bounded by the outline, and an output whose refill makes DRC
+exceed KAE_DRC_TIMEOUT fails to score like any other. `copy` also lists added zones whose
+outline matches a human zone on the same net and a shared layer (IoU >= 0.8); one such zone
+makes the output a suspect copy.
 
 Clean pass = valid, fully connected, and no error-level DRC violations (board's own
 severities; library-environment checks excluded). `clean_strict` / `legal_strict` also need
@@ -33,7 +67,7 @@ from .boardfiles import board_path, install_rules, unconnected_ignored
 
 # 8: unconnected counted by pcbnew where the project ignores the check (_uncapped)
 # 9: route placement integrity with the place side's pose tolerance (transplant-routing)
-# 10: taken by the unmerged route-zones branch (route and joint methods may add copper zones)
+# 10: route and joint tasks may add copper zones and set pads' zone connection (see the docstring)
 # 11: clean_strict / legal_strict / errors_strict (fixed-severity profile, STRICT_CHECKS)
 SCORE_VERSION = 11
 # KiCad 10's DRC report stops listing unconnected items at 499 and other violations at 199
@@ -96,7 +130,7 @@ def _fresh_dir(d):
     return d
 
 
-def _rebuild(op, output_board, input_board, rules_dir, scoring_dir, reference_board=None):
+def _rebuild(op, output_board, input_board, rules_dir, scoring_dir, reference_board=None, flags=()):
     """Transplant the allowed changes of output_board into input_board (pcbnew op), install
     the reference rules beside the result. Returns (staged board path, transplant report).
 
@@ -111,7 +145,7 @@ def _rebuild(op, output_board, input_board, rules_dir, scoring_dir, reference_bo
     shutil.copy2(output_board, board_path(method_dir))
     install_rules(Path(input_board).parent, method_dir)
     extra = [reference_board] if reference_board else []
-    tr = tools.run_ops(op, board_path(method_dir), input_board, staged, *extra)
+    tr = tools.run_ops(op, board_path(method_dir), input_board, staged, *extra, *flags)
     (scoring_dir / "rebuild.json").write_text(json.dumps(tr, indent=1))  # what was transplanted, what else changed
     if tr.get("loadable"):
         install_rules(rules_dir, scoring_dir)
@@ -161,10 +195,11 @@ def _copy_fields(tr, allow_copy):
 
 
 def score_routing(output_board, input_board, input_stats, start_unconnected, ref_stats,
-                  rules_dir, scoring_dir, reference_board=None, allow_copy=False):
-    """Score a routed board against its unrouted input and the human reference."""
+                  rules_dir, scoring_dir, reference_board=None, allow_copy=False, allow_zones=False):
+    """Score a routed board against its unrouted input and the human reference. allow_zones:
+    the method may add copper zones and set pads' zone connection (route tasks)."""
     staged, tr = _rebuild("transplant-routing", output_board, input_board, rules_dir, scoring_dir,
-                          reference_board)
+                          reference_board, flags=("--zones",) if allow_zones else ())
     if not tr.get("loadable"):
         return _unloadable(tr, clean=False, completion=0.0)
     st, drc = _measure(staged, scoring_dir)
@@ -178,13 +213,18 @@ def score_routing(output_board, input_board, input_stats, start_unconnected, ref
         layers=tr["bad_layer"] == 0,
         untouched=foreign["count"] == 0,
     )
+    zones = {}
+    if allow_zones:
+        integrity["zones"] = tr["n_zone_problems"] == 0
+        zones = dict(zones_added=tr["zones_added"], zone_problems=tr["zone_problems"],
+                     pad_zone_connections=tr["pad_zone_connections"])
     valid = all(integrity.values())
     completion = max(0.0, min(1.0, 1.0 - unconnected / max(1, start)))
     ref_wl = ref_stats.get("track_length_mm") or 0
     sdrc, strict = _strict_fields(staged, scoring_dir, drc)
     return dict(
         valid=valid, integrity=integrity, foreign=foreign, **_copy_fields(tr, allow_copy),
-        new_net_items=tr["new_net_items"],
+        new_net_items=tr["new_net_items"], **zones,
         clean=valid and unconnected == 0 and drc["errors"] == 0,
         clean_strict=valid and unconnected == 0 and drc["errors"] == 0 and sdrc["errors"] == 0, **strict,
         completion=round(completion, 4) if valid else 0.0,
@@ -206,7 +246,8 @@ def score_route_task(task_dir, output_board, scoring_dir, record, allow_copy=Fal
     return score_routing(output_board, board_path(task_dir / "route" / "input"), t["input_stats"],
                          t["input_drc"]["unconnected"], record["reference"]["stats"],
                          task_dir / "reference", scoring_dir,
-                         reference_board=board_path(task_dir / "reference"), allow_copy=allow_copy)
+                         reference_board=board_path(task_dir / "reference"), allow_copy=allow_copy,
+                         allow_zones=True)
 
 
 def score_place_task(task_dir, placed_board, scoring_dir, record, allow_copy=False, kind="place"):
@@ -258,7 +299,7 @@ def score_joint_task(task_dir, output_board, scoring_dir, record, allow_copy=Fal
     ref_board = board_path(task_dir / "reference")
     placed_dir = scoring_dir / "placement"
     staged_p, tp = _rebuild("transplant-placement", output_board, board_path(task_dir / input_kind / "input"),
-                            task_dir / "reference", placed_dir, ref_board)
+                            task_dir / "reference", placed_dir, ref_board, flags=("--zones",))
     if not tp.get("loadable"):
         return _unloadable(tp, clean=False, legal=False, completion=0.0)
     pst, pdrc = _measure(staged_p, placed_dir)
@@ -271,7 +312,7 @@ def score_joint_task(task_dir, output_board, scoring_dir, record, allow_copy=Fal
         untouched=tp["foreign"]["count"] == 0,
     )
     s = score_routing(output_board, staged_p, pst, start, record["reference"]["stats"], task_dir / "reference",
-                      scoring_dir / "routing", reference_board=ref_board, allow_copy=allow_copy)
+                      scoring_dir / "routing", reference_board=ref_board, allow_copy=allow_copy, allow_zones=True)
     if not s.get("valid") and s.get("integrity", {}).get("loadable") is False:
         return s
     outside = outside_count(pst["placement"], record["reference"].get("pads_outside", {}))

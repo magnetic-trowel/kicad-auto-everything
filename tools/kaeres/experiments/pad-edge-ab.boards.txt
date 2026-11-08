@@ -1,0 +1,4 @@
+circuitmonkey-chips-0123-class-d-amp-max98365
+zephray-nekoink-pcb-2
+lenaschimmel-bestelampe-controller
+greatscottgadgets-ubertooth-ubertooth-one

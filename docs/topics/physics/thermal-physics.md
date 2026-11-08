@@ -88,6 +88,7 @@ Consequences:
 - **Neighbouring heat adds linearly,** which no chart captures.
 - **IPC-2221's exponents are physics-plausible.** For narrow traces I ∝ ΔT^0.5·A^0.5; for wide traces I ∝ A·t^−0.5. The 0.44 exponent absorbs the TCR.
 - **So use a network:** per-net line conductance from stackup and planes, plus superposed part heat, plus the TCR fixed point. IPC-2221 is the conservative fallback (TM18); log which one bound.
+- **How `heat.track` applies the chart** (`kae.excite.dc.track_currents`): current is the DC flux through a grid line across the track, exact for a raster staircase at any angle or offset. The width is the track's, or its net's copper across it (board geometry). Cells counted along a perpendicular gave 0.7–2× the current, so the rise moved up to 3× when a route merely shifted [C].
 
 **TCR feedback** [C, §E]. At constant current, ΔT = ΔT₀/(1 − αΔT₀) with α = 0.00393/K.
 - A constant-R estimate of 40 K becomes 47.5 K; 100 K becomes 165 K.

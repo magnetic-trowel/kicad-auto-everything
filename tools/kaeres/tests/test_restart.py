@@ -172,3 +172,32 @@ def test_judge_reports_unconnected_items_a_project_ignores(tmp_path):
     pro.write_text("{}")
     restart.report_unconnected(pro)                       # no severities: left alone
     assert pro.read_text() == "{}"
+
+
+def test_final_pass_runs_last_mile_then_finish(tmp_path):
+    """--final then --finish: the last mile's board is judged (its drc.json is the finish's @DRC@),
+    the finish runs on the board kept and replaces it when no worse; both times are reserved."""
+    finish = ("test -s @DRC@ && grep -q OPEN=0 @BEST@ && test @DRC_S@ && "
+              "sed 's/OPEN=0/OPEN=0 finished/' @BEST@ > @OUT@ && "
+              "echo '{\"parts\": {\"ran\": [\"tails\", \"taut\"], \"skipped\": {\"power\": \"time\"}}, \"drc_runs\": 1}'")
+    r, out, summary = _run(tmp_path, "echo '(kicad_pcb OPEN=2)' > @OUT@",
+                           "echo '(kicad_pcb OPEN=0)' > @OUT@", time_s=300,
+                           extra=["--finish", finish, "--finish-s", "20", "--first-s", "1000"])
+    assert r.returncode == 0, r.stdout + r.stderr
+    kinds = [d["k"] for d in summary["attempt_log"]]
+    assert kinds == [0, "final", "finish"]
+    fin, fz = summary["attempt_log"][1], summary["attempt_log"][2]
+    assert fin["kept"] and fz["kept"] and fz["resumed_from"] == "final"
+    assert "finished" in out.read_text()
+    assert summary["finish"]["parts"]["skipped"] == {"power": "time"} and summary["finish"]["drc_runs"] == 1
+    # reserved from the start: the last mile's 20 s and the finish's 20 s, each with a judgement and 10 s
+    assert summary["attempt_log"][0]["budget"] <= 300 - 2 * (20 + 10) - 30
+    assert fin["budget"] >= 20 and fz["budget"] >= 20
+
+
+def test_finish_runs_on_a_clean_board_and_is_not_kept_when_worse(tmp_path):
+    r, out, summary = _run(tmp_path, "echo '(kicad_pcb OPEN=0)' > @OUT@", "",
+                           extra=["--finish", "echo '(kicad_pcb OPEN=1)' > @OUT@", "--finish-s", "20"])
+    assert r.returncode == 0, r.stdout + r.stderr
+    fz = summary["attempt_log"][-1]
+    assert fz["k"] == "finish" and not fz["kept"] and "OPEN=0" in out.read_text()

@@ -788,7 +788,7 @@ def test_wide_loop_hops_are_trimmed_within_the_tolerance(tmp_path):
             assert rt.width >= (m.spec.get("_floor") or {}).get(k, 0.0) - 1e-9 or rt.width == w0[(m.id, k)]
             narrowed += rt.width < w0[(m.id, k)] - 1e-6
             tracks = [it for it in m.copper if it.kind == "track" and it.owner == (m.id, k)]
-            assert tracks and all(abs(it.width - rt.width) < 1e-9 for it in tracks)
+            assert tracks and {round(it.width, 9) for it in tracks} == {round(rt.seg_w(i), 9) for i in range(len(rt.segs))}
     assert narrowed >= 1
     for it in sp.routed:
         if it.kind == "track":
@@ -824,8 +824,10 @@ def test_every_join_is_at_a_centre_or_a_corner(tmp_path):
     """Freerouting joins a wire to a pad or via only at its centre and to another wire only
     at a corner (lambdakb: a decap stub KiCad saw connected was an open connection for the
     bridge). A track ending on another track's body splits that body there; one ending off a
-    pad's centre gets a neck to it; both exactly legal; the owners' copper lists follow."""
-    s = F.session(tmp_path, corner_joins=False).route()
+    pad's centre gets a neck to it; both exactly legal; the owners' copper lists follow. (With
+    rule D ends, pad_entry "centreline", no centre piece is added: translate.tie_pins ties them
+    in the DSN; test_route_plan_rules.)"""
+    s = F.session(tmp_path, corner_joins=False, pad_entry="centre").route()
     sp = s.space
     body = max((it for it in sp.routed if it.kind == "track" and it.net != "GND"), key=lambda it: it.geom.length)
     layer = next(iter(body.layers))
