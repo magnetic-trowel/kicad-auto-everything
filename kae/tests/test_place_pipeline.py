@@ -550,3 +550,14 @@ def test_ladder_ranks_by_electrical_errors_then_total_and_bounds_the_diagnosis()
     st = State(P)
     d = exact.diagnose(P, st, exact.ExactModel(P, st), P.mov[0], deadline=time.monotonic() - 1.0)
     assert d["reason"] == "unknown"
+
+
+def test_board_mask_apertures_reach_the_zone_keepout_under_every_severity():
+    """zones.py's keep-out reads Problem.fixed_mask, set only while solder_mask_bridge is an error:
+    no severity mode (either rung of the ladder included) may drop it."""
+    from kae.place.problem import Problem
+    b = kicad_file.load(FIXTURE)
+    for sev in ("strict", "level_c", "strict_then_level_c", "board"):
+        P = Problem.build(b, severity=sev)
+        assert P.is_error("solder_mask_bridge"), sev
+        assert isinstance(P.fixed_mask, list)

@@ -41,6 +41,7 @@ import numpy as np
 from . import clusters, cpsat, edges, seed as seedmod
 from .anneal import Annealer, make_annealer
 from . import exact as exactmod
+from . import zones as zonesmod
 from .legalize import exact_check, legalize
 from .problem import PLACE_SEVERITY, Problem, fixed_text
 from .state import State, grid_violations
@@ -153,7 +154,7 @@ def _escalate(P, st, workers, seed, log, time_s, relax_ok=False, hard_end=None):
     return steps
 
 
-def _seed_state(P, macros, net_w, seed, log, partition=False, jitter=0.0):
+def _seed_state(P, macros, net_w, seed, log, partition=False, jitter=0.0, zones=None, zone_w=0.0):
     """Quadratic + spread: an initial state (macros at their best layout). `partition`
     spreads by recursive bisection of the free cells (density-feasible, for big boards)
     instead of pairwise repulsion. `jitter` > 0 moves every object by a normal offset of
@@ -166,6 +167,18 @@ def _seed_state(P, macros, net_w, seed, log, partition=False, jitter=0.0):
     anchors = seedmod.connector_anchors(P, objs, pos, weight=5.0 * wmax)
     if anchors:
         pos = seedmod.quadratic(P, objs, owner, net_w, anchors=anchors)
+    if zones is not None and zone_w > 0:
+        # parts with pads on a fixed zone's net toward that zone (kae.place.zones), twice:
+        # the second pass from where the first one put them
+        for _ in range(2):
+            za = zonesmod.seed_anchors(zones, P, objs, pos, weight=zone_w * wmax)
+            if not za:
+                break
+            pos = seedmod.quadratic(P, objs, owner, net_w, anchors={**za, **anchors})
+    # big packages (or macros) with many pads on fixed zones go where their zones are, and stay
+    lay_k = {i: off[2] for mac in macros for i, off in mac.layouts[0].offsets.items()}
+    pinned = zonesmod.pin_packages(zones, P, objs, pos, rot_of=lay_k) if (zones is not None and zone_w > 0) else {}
+    pin_spread = {o: (x, y, box) for o, (x, y, _, box) in pinned.items()}
     if jitter > 0:
         x0, y0, x1, y1 = P.outline.bounds
         rng = np.random.default_rng(seed)
@@ -173,7 +186,7 @@ def _seed_state(P, macros, net_w, seed, log, partition=False, jitter=0.0):
         pos[:, 0] = np.clip(pos[:, 0], x0, x1)
         pos[:, 1] = np.clip(pos[:, 1], y0, y1)
     if partition:
-        pos = seedmod.partition_spread(P, objs, pos)
+        pos = seedmod.partition_spread(P, objs, pos, pinned=pin_spread)
     else:
         pos = seedmod.spread(P, objs, pos, owner, net_w, seed=seed)
     st = State(P)
@@ -187,6 +200,11 @@ def _seed_state(P, macros, net_w, seed, log, partition=False, jitter=0.0):
             X, Y = P.grid_of(pos[o, 0] + dx, pos[o, 1] + dy)
             st.X[i], st.Y[i] = X, Y
             st.K[i] = lay_of.get(i, (0, 0, 0))[2] if i in lay_of else 0
+    for o, (_, _, poses, _) in pinned.items():
+        for i, (X, Y, k) in poses.items():
+            st.X[i], st.Y[i], st.K[i] = X, Y, k
+    # the regional floorplan keeps them (it minimizes HPWL alone)
+    P.zone_pinned = {i for o in pinned for i in pinned[o][2]}
     return st, objs
 
 
@@ -684,13 +702,23 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
         stage("macros", t)
     net_w = {net.i: net.weight for net in P.nets}
 
+    # ---- fixed copper zones (kae.place.zones): the seed's anchors and annealer's table (None
+    # when off or nothing to price), and the report's (every part, both terms, any weights)
+    t = time.monotonic()
+    zone_pull = float(setting("zone_pull", board_path, opts))
+    zone_keep = float(setting("zone_keepout", board_path, opts))
+    zone_tab = zonesmod.build(P, pull=zone_pull, keepout=zone_keep) if (zone_pull > 0 or zone_keep > 0) else None
+    zone_rep = zone_tab if (zone_tab is not None and zone_pull > 0 and zone_keep > 0) else zonesmod.build(P)
+    stage("zones", t)
+
     # ---- seed: quadratic + spread, then CP-SAT floorplan
     t = time.monotonic()
     free_macros = [m for m in macros if not m.anchored]
     n_items = len(free_macros) + len(P.mov) - sum(len([i for i in m.members if P.parts[i].movable])
                                                    for m in free_macros)
     big = n_items > FLOORPLAN_MAX_ITEMS
-    st, _ = _seed_state(P, free_macros, net_w, seed, log, partition=big, jitter=seed_jitter)
+    st, _ = _seed_state(P, free_macros, net_w, seed, log, partition=big, jitter=seed_jitter,
+                        zones=zone_tab, zone_w=zone_pull)
     for mac in macros:
         if mac.anchored:   # members start at their layout around the locked anchor
             a = P.parts[mac.anchor]
@@ -773,12 +801,14 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
         t = time.monotonic()
         rep["regional_floorplan"] = seedmod.regional_refine(
             P, st, free_macros, net_w, time_s=min(60.0, 0.15 * (deadline - time.monotonic())), workers=workers,
-            seed=seed, log=log)
+            seed=seed, log=log, hold=getattr(P, "zone_pinned", ()))
         stage("regional_floorplan", t)
     seed_state = st.copy()
     seed_legal = not grid_violations(seed_state)
     rep["seed"] = dict(legal=seed_legal, hpwl=round(st.hpwl(), 2))
 
+    if zone_rep is not None:
+        rep["zones_seed"] = _zone_summary(zonesmod.report(P, seed_state, zone_rep))
     # ---- anneal
     final = seed_state
     if anneal:
@@ -822,6 +852,12 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
         if grids:
             kw["silk"] = exactmod.soft_grid(*grids)
             kw["w_silk"] = 1.0
+        # the board's fixed copper zones (kae.place.zones): pads over their own nets' zones,
+        # other nets' pads out of outer zones they would bridge
+        if zone_tab is not None and float(kw.get("w_zone", 1.0) or 0.0) > 0:
+            kw.setdefault("w_zone", 1.0)
+            kw["zones"] = zone_tab
+            rep["zone_term"] = dict(zone_tab.info, w_zone=kw["w_zone"])
         ann = make_annealer(P, st.copy(), terms=terms, macros=[m for m in macros if not m.anchored], seed=seed,
                             log=log, **kw)
         if anneal_args:
@@ -936,6 +972,8 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
         stage("silk_fix", t)
     rep.update(grid_verdict(P, st, rep["exact"]))
     body_hazards(rep, P, st)
+    if zone_rep is not None:
+        rep["zones"] = zonesmod.report(P, st, zone_rep)
     rep["hpwl"] = round(st.hpwl(), 2)
     rep["hpwl_signal"] = round(st.hpwl(signal_only=True), 2)
     res = Result(poses={}, report=rep, state=st, problem=P, terms=report_terms, order=order, brief=brief)
@@ -954,6 +992,10 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
     if edge_mode >= 1:
         edge_hazards(rep, board, poses)
     return res
+
+
+def _zone_summary(r):
+    return {k: v for k, v in r.items() if k != "by_net"}
 
 
 def _pin_edge_connectors(board, brief, held, fixed, angle_step, seed, rep, log):
@@ -1107,7 +1149,8 @@ def local_replace(board, parts, window_mm=None, time_s=30.0, seed=0, physics=Tru
     rep = dict(parts=[P.parts[i].ref for i in sub], window=window)
     if sub:
         ann = make_annealer(P, st.copy(), terms=terms, seed=seed, w_phys=1.0 if terms is not None else 0.0,
-                            order=order, subset=sub, window=window, log=log, cong_history=cong_history)
+                            order=order, subset=sub, window=window, log=log, cong_history=cong_history,
+                            **zonesmod.annealer_args(P))
         if moves_per_part:
             rep["anneal"] = ann.run(cpu_s=1e9, max_moves=int(moves_per_part) * len(sub), deadline=None)
         else:

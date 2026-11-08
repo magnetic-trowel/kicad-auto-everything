@@ -225,6 +225,18 @@ DEFAULTS = dict(
                                    # certificates, kae.route.blocked): kae.route.fab.PROFILES
     escape_fanout=0,               # placement: 1 also reserves the dog-bone via sites of each ball grid on the
                                    # other side (no part there covers them); 0: off
+    zone_pull=0.0,                 # placement (kae.place.zones): weight of pads off their own net's fixed copper
+                                   # zone (all of them off = zone_pull x the seed HPWL), also the seed's pull and
+                                   # package pins; 0: off. Off by default: zone-ab (48 boards, 3 seeds) at 3 left
+                                   # 4.7 % more open (polarfire, sdi-mipi, nekoink worse): zone nets were 11-51 of
+                                   # 168-545 opens without it, the router reaches planes by vias, and the pull cost
+                                   # signal routing. Movable pads over their zone after 300 s, off / 1 / 3
+                                   # (human): polarfire 139-151 / 268-283 / 265-361 of 465 (387), nekoink
+                                   # 52-56 / 108-114 / 115-117 of 226 (196), gecko5 1-2 / 46-52 / 52-55 of 73
+                                   # (61); HPWL no worse (polarfire 12.7k at 3 vs 15.8k off, same seed)
+    zone_keepout=1.0,              # placement: weight of pads whose mask opening would bridge another net's
+                                   # fixed outer-layer zone or sit in a board-level mask aperture with another
+                                   # net (each 0.1 x this; gecko5: all staged DRC errors, 14 -> 0); 0: off
 )
 
 
