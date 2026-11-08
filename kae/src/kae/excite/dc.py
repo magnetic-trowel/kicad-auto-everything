@@ -91,10 +91,13 @@ class Plan:
 
 
 def _pads(board):
-    """{ref: [(number, net, pintype, pinfunction)]}."""
+    """{ref: [(number, net, pintype, pinfunction)]}. Footprints that share a reference are one part (a module's
+    edge pins and its back pins, a split symbol): their pads are merged, as the copper model's pad tokens (REF.NUM,
+    kae.em.kicad) merge them. Keeping only the last footprint lost a Teensy's supply and ground pins."""
     out = {}
     for f in board.footprints:
-        out[f.ref] = [(p.number, p.net, p.pintype or "", (p.pinfunction or "").split("/")[0].strip()) for p in f.pads if p.net]
+        out.setdefault(f.ref, []).extend((p.number, p.net, p.pintype or "", (p.pinfunction or "").split("/")[0].strip())
+                                         for p in f.pads if p.net)
     return out
 
 
