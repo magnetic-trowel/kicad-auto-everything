@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""The physics set's evaluator fixes (docs/topics/physics/functional-evaluation.md, 'Coverage of the physics set'):
+"""The physics set's evaluator fixes (docs/topics/physics/physics-set-coverage.md):
 the schematic's pin facts reach the evaluator, parts that supply and consume are loads, a self-powered module still
 heats the board, split footprints are one part, radios are found by part number, and big boards coarsen their raster."""
 import pytest
@@ -213,3 +213,23 @@ def test_the_window_holds_copper_routed_beyond_the_outermost_pad():
     assert w[2] >= 17.0 + 0.25 and w[0] <= x - 3
     b.outline = [box(0, 0, 40, 30)]
     assert board_window(b) == (0, 0, 40, 30)
+
+
+def test_feeds_that_feed_each_other_are_broken_at_the_link_the_pins_deny(tmp_path):
+    """An intent fact read an LDO backwards (AMP_VDD from PCM_AVDD through U2) while the pins say PCM_AVDD from AMP_VDD:
+    the two feeds formed a cycle with no way in, and the DC band was void. The link the pins contradict is dropped and
+    the connector on its rail feeds it."""
+    nets = ["AMP_VDD", "GND", "PCM_AVDD"]
+    j1 = [_pad("1", 0, 1, "AMP_VDD"), _pad("2", 1, 2, "GND")]
+    u2 = [_pad("1", 0, 1, "AMP_VDD", "VIN", "power_in"), _pad("2", 1, 2, "GND", "GND", "power_in"),
+          _pad("3", 2, 3, "PCM_AVDD", "VOUT", "power_out")]
+    u1 = [_pad("1", 0, 3, "PCM_AVDD", "AVDD", "power_in"), _pad("2", 1, 2, "GND", "AGND", "power_in")]
+    b = _board(tmp_path, nets, [_fp("J1", "Conn_01x02", "Connector:Header_1x02", 10, j1, 1),
+                                _fp("U2", "TJ9198GSF5-3.3", "Package_TO_SOT_SMD:SOT-23-5", 25, u2, 2),
+                                _fp("U1", "PCM5102", "Package_SO:TSSOP-20", 45, u1, 3)])
+    intent = {"nets": {"AMP_VDD": {"source": "U2", "from": "PCM_AVDD", "kind": "linear", "V_V": 3.3},
+                       "PCM_AVDD": {"source": "U2", "from": "AMP_VDD", "kind": "linear", "V_V": 3.3}}}
+    pl, _, _, _ = _plan(b, intent)
+    assert pl.feeds["PCM_AVDD"]["ref"] == "U2" and pl.feeds["PCM_AVDD"]["rin"] == "AMP_VDD"
+    assert pl.feeds["AMP_VDD"] == dict(kind="external", ref="J1", out=["J1.1"], gnd=["J1.2"], rating=pl.feeds["AMP_VDD"].get("rating"))
+    assert any("cycle" in n for n in pl.notes)

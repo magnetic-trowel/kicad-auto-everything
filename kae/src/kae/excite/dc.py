@@ -223,6 +223,40 @@ def plan(board, brief, bd, P, srcs, intent=None):
             if kind in ("ic", "module"):
                 pl.notes.append(f"{r}: source {src_ref} has no supply pin on another rail; taken as the board's input")
             pl.feeds[r] = dict(kind="external", ref=src_ref, out=on(src_ref, r), gnd=gnd_pads(src_ref))
+    # feeds that feed each other in a cycle (AMP_VDD from PCM_AVDD through U2, PCM_AVDD from AMP_VDD through U2: an
+    # intent fact read the regulator backwards) have no way in for their current, and the DC flow cannot close.
+    # Power cannot circulate among regulators, so one link is wrong: the one whose part's pins least say it outputs on
+    # its rail and takes its input from the other (power_out or an OUT name there, power_in or an IN name on its input)
+    # is dropped, the intent's fact before the brief's; the rail it fed is then fed by a connector on it with a ground
+    # pad (the board's way in), else by nothing.
+    def evidence(r, f):
+        out_ = sum(1 for _, nt, pt, fn in pads.get(f["ref"], []) if nt == r and (pt == "power_out" or OUT_PIN.match(fn)))
+        in_ = sum(1 for _, nt, pt, fn in pads.get(f["ref"], []) if nt == f.get("rin") and (pt == "power_in" or SUPPLY_PIN.match(fn)))
+        bad = sum(1 for _, nt, pt, fn in pads.get(f["ref"], []) if nt == r and (pt == "power_in" or SUPPLY_PIN.match(fn)))
+        return (bool(out_) + bool(in_) - bool(bad), r not in over)
+    for _ in range(len(pl.feeds)):
+        cyc = None
+        for r0 in sorted(pl.feeds):
+            seen, x = [], r0
+            while x in pl.feeds and x not in seen and pl.feeds[x]["kind"] in ("linear", "switching"):
+                seen.append(x)
+                x = pl.feeds[x].get("rin")
+            if x == r0 and seen:
+                cyc = seen
+                break
+        if not cyc:
+            break
+        r = min(cyc, key=lambda q: (evidence(q, pl.feeds[q]), q))
+        f = pl.feeds.pop(r)
+        conns = [(sum(1 for _, nt, _, _ in pp if nt == r), ref) for ref, pp in pads.items()
+                 if (parts.get(uuid_of.get(ref)) or {}).get("kind") == "connector" and any(nt == r for _, nt, _, _ in pp)
+                 and gnd_pads(ref)]
+        if conns:
+            ref = max(conns)[1]
+            pl.feeds[r] = dict(kind="external", ref=ref, out=on(ref, r), gnd=gnd_pads(ref))
+        pl.notes.append(f"{r}: feeds {' -> '.join(cyc)} form a cycle with no way in; {f['ref']} as {r}'s source from "
+                        f"{f.get('rin')} contradicts its pins most and is dropped"
+                        + (f"; {pl.feeds[r]['ref']} (a connector on it) feeds it" if r in pl.feeds else ""))
     # a regulator whose input net has no feed of its own: the DC flow enters the board at it (its input
     # current has nowhere to come from in the copper); its loss still comes from its input's voltage
     for r, f in pl.feeds.items():
