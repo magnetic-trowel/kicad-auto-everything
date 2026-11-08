@@ -58,6 +58,37 @@ def ledger_for(bd, brief, srcs, intent=None):
     return P, L
 
 
+def board_window(b, margin=3.0):
+    """The field solve's window: the pads' extent plus `margin` mm, grown to hold the board outline and every piece of
+    copper (tracks, arcs, vias, zones) with 0.5 mm to spare. The pads alone cut off copper routed beyond the
+    outermost pad (a backplane's 5 V feed looping around its last connector), and the evaluator then found the
+    rail open where KiCad finds it connected. With an outline, a layout's copper lies inside it, so every layout of
+    one placement gets the same window (and raster)."""
+    from kae.board import transform
+    xs, ys = [], []
+    for fp in b.footprints:
+        for p in fp.pads:
+            x, y = transform.pad_xy(fp, p)
+            xs.append(x), ys.append(y)
+    x0, y0, x1, y1 = min(xs) - margin, min(ys) - margin, max(xs) + margin, max(ys) + margin
+    boxes = [o.bounds for o in (getattr(b, "outline", None) or []) if not o.is_empty]
+    for t in getattr(b, "tracks", None) or []:
+        pts = [t.start, t.end] + ([t.mid] if getattr(t, "mid", None) is not None else [])
+        w = t.width / 2 + 0.5
+        boxes.append((min(p[0] for p in pts) - w, min(p[1] for p in pts) - w, max(p[0] for p in pts) + w,
+                      max(p[1] for p in pts) + w))
+    for v in getattr(b, "vias", None) or []:
+        r = v.size / 2 + 0.5
+        boxes.append((v.x - r, v.y - r, v.x + r, v.y + r))
+    for z in getattr(b, "zones", None) or []:
+        if getattr(z, "net", None) and getattr(z, "outline", None) is not None and not z.outline.is_empty:
+            bx = z.outline.bounds
+            boxes.append((bx[0] - 0.5, bx[1] - 0.5, bx[2] + 0.5, bx[3] + 0.5))
+    for bx in boxes:
+        x0, y0, x1, y1 = min(x0, bx[0]), min(y0, bx[1]), max(x1, bx[2]), max(y1, bx[3])
+    return (x0, y0, x1, y1)
+
+
 def coarsen_pitch(window, pitch, n_layers, max_cells):
     """(pitch, note): the raster pitch doubled until the window's cells (nx ny layers) fit max_cells, and why. The
     window is the board's pad extent, the same for every layout of one placement, so two layouts of a board always
@@ -129,13 +160,7 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
     if dcp:
         pads |= dcp.dc_pads
     if window is None:
-        from kae.board import transform
-        xs, ys = [], []
-        for fp in b.footprints:
-            for p in fp.pads:
-                x, y = transform.pad_xy(fp, p)
-                xs.append(x), ys.append(y)
-        window = (min(xs) - 3, min(ys) - 3, max(xs) + 3, max(ys) + 3)
+        window = board_window(b)
     n_cu = len(b.stackup.gaps) + 1 if getattr(b, "stackup", None) is not None else 2
     pitch, pitch_note = coarsen_pitch(window, pitch, n_cu, max_cells)
     if pitch_note:

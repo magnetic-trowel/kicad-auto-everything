@@ -188,3 +188,20 @@ def test_a_fuse_conducts(tmp_path):
     bd = M.build(b, br)
     e = [e for e in bd.circuit.elems if e.name == "F1"]
     assert len(e) == 1 and e[0].kind == "R" and e[0].kind in DC.DC_KINDS
+
+
+def test_the_window_holds_copper_routed_beyond_the_outermost_pad():
+    """The window was the pads' extent plus 3 mm: a backplane's 5 V track looping 4 mm past its last connector was cut
+    off, and the evaluator found the rail open where KiCad finds it connected (no score)."""
+    from types import SimpleNamespace as NS
+    from shapely.geometry import box
+    from kae.excite.evaluate import board_window
+    fp = NS(ref="J1", x=10.0, y=10.0, rot=0.0, side="F", pads=[NS(number="1", lx=0.0, ly=0.0, net="5V")])
+    b = NS(footprints=[fp], outline=[], vias=[], zones=[],
+           tracks=[NS(start=(10.0, 10.0), end=(17.0, 10.0), width=0.5, mid=None)])
+    from kae.board import transform
+    x, y = transform.pad_xy(fp, fp.pads[0])
+    w = board_window(b)
+    assert w[2] >= 17.0 + 0.25 and w[0] <= x - 3
+    b.outline = [box(0, 0, 40, 30)]
+    assert board_window(b) == (0, 0, 40, 30)
