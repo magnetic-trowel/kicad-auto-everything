@@ -84,6 +84,9 @@ def main():
     ap.add_argument("--hogs", type=int, default=2, help="busy loops sharing those CPUs in the loaded run")
     ap.add_argument("--workdir", required=True)
     ap.add_argument("--timeout", type=float, default=7200)
+    ap.add_argument("--warmup", type=int, default=1,
+                    help="discarded runs first (numba compiles its cache on the first run: without one, "
+                         "the first measured run pays the compile and the second does not)")
     ap.add_argument("cmd", nargs=argparse.REMAINDER)
     a = ap.parse_args()
     cmd = a.cmd[1:] if a.cmd[:1] == ["--"] else a.cmd
@@ -97,6 +100,9 @@ def main():
     wd.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ, KAE_BUDGET="work", OMP_NUM_THREADS="1", KAE_WORKERS="1")
     res = {}
+    for k in range(a.warmup):
+        r, dt = run(cmd, wd / f"warmup{k}.kicad_pcb", cpus, 0, env, a.timeout)
+        print(f"warm-up {k}: rc {r.returncode}, {dt:.0f} s wall", flush=True)
     for name, hogs in (("alone", 0), ("loaded", a.hogs)):
         out = wd / f"{name}.kicad_pcb"
         r, dt = run(cmd, out, cpus, hogs, env, a.timeout)
