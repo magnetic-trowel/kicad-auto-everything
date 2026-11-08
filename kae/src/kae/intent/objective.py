@@ -270,9 +270,12 @@ def evaluate(ev, intent=None, brief=None):
     the unclaimed observations against their references, and questions. Deterministic; no physics runs."""
     intent = load(intent)
     if brief is None:
+        from kae.board import pinfacts as PF
         from kae.board.kicad_file import load as load_board
         from kae.circuit import brief as B
-        brief = B.build(load_board(ev["board"]))
+        bd_ = load_board(ev["board"])
+        PF.apply(bd_, ev.get("pins"))          # the pin facts the evaluator used: the same sections
+        brief = B.build(bd_)
     secs = SE.apply(SE.from_brief(brief), intent.get("sections"), brief)
     obs = observations(ev, intent)
     cur = intent["currency"]

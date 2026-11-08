@@ -73,8 +73,11 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
     from kae.em import solve as ES
     from kae.em.kicad import BoardMesh
     from .beliefs import corners
+    from kae.board import pinfacts as PF
     t0 = time.time()
     b = b or load(path)
+    # the schematic's pin facts the intent was compiled with (operating facts `pins`): the same circuit
+    n_pins = PF.apply(b, (intent or {}).get("pins"))
     brief = brief or B.build(b)
     bd = M.build(b, brief)
     srcs = S.add_all(bd, brief)
@@ -348,7 +351,7 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
                 part_power_W={k: round(v, 6) for k, v in sorted(part_power.items())},
                 solver_stats=solver_stats,
                 notes=notes + [f"pad {p}: not in the copper model" for p in missing][:20],
-                assumptions=bd.assumptions)
+                assumptions=bd.assumptions, pins=(intent or {}).get("pins") or None)
 
 
 def _dc_system(holder, op):

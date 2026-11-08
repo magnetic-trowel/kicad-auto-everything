@@ -19,8 +19,11 @@ from . import sections as SE
 
 def _brief(ev):
     from kae.board.kicad_file import load
+    from kae.board import pinfacts as PF
     from kae.circuit import brief as B
-    return B.build(load(ev["board"]))
+    b = load(ev["board"])
+    PF.apply(b, ev.get("pins"))         # the pin facts the evaluator used (operating facts `pins`)
+    return B.build(b)
 
 
 def catalog(ev, brief):

@@ -5,7 +5,9 @@
   OPERATING  kae.excite.evaluate --intent: what the board does electrically. cells.<cell id>.{V_V,
              f_sw_Hz, I_A, t_i_s}, parts.<ref>.{I_A, I_sustained_A} (loads and output connectors; the sustained draw sets temperatures), nets.<rail>.source,
              requirements.thermal.{T_amb_C, airflow_h_W_m2K, heatsinks}, requirements.assembly.{process,
-             hand_solder_ok, reflow_only_parts}. Each replaces one of the evaluator's priors.
+             hand_solder_ok, reflow_only_parts}. Each replaces one of the evaluator's priors. With --pintypes,
+             pins.<ref>.<pad> = [type, name]: the schematic's pin facts the summary was built with, which the
+             evaluator applies too (kae.board.pinfacts), so both see the same rails, regulators and cells.
   INTENT     kae.intent: what matters. Standing priorities on every board (copper loss = power loss and
              efficiency; ripple), the spec's limits (rail tolerance -> drop.rail, rail and IC ripple ->
              supply.peak, sensitive pins -> pickup.peak, switch ratings -> overshoot.peak hard, track heat),
@@ -477,15 +479,25 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("spec"), ap.add_argument("summary")
     ap.add_argument("--intent", required=True), ap.add_argument("--operating", required=True)
+    ap.add_argument("--pintypes", help="kaeres.pintypes/1 file the summary was built with (board_summary.py --pintypes): "
+                                       "carried into the operating facts as `pins`, so the evaluator sees the same circuit")
     a = ap.parse_args(argv)
+    import os
+    from kae.board import pinfacts as PF
     from kae.intent import objective as OBJ
     it, op = compile_spec(json.load(open(a.spec)), json.load(open(a.summary)))
+    if a.pintypes and os.path.exists(a.pintypes):
+        pins = PF.from_pintypes(json.load(open(a.pintypes)))
+        if pins:
+            op["pins"] = pins
+            op["provenance"]["why"]["pins"] = ("pin types and names from the board's schematic (kaeres.pintypes/1), as "
+                                               "the summary the spec was written from saw them")
     OBJ.load(dict(it))
     for path, obj in ((a.intent, it), (a.operating, op)):
         with open(path, "w") as f:
             json.dump(obj, f, indent=1)
             f.write("\n")
-    print(f"terms {len(it['terms'])}, cells {len(op['cells'])}, loads {len(op['parts'])}, rejected {len(op['provenance']['rejected'])}")
+    print(f"terms {len(it['terms'])}, pins {len(op.get('pins') or {})}, cells {len(op['cells'])}, loads {len(op['parts'])}, rejected {len(op['provenance']['rejected'])}")
 
 
 if __name__ == "__main__":
