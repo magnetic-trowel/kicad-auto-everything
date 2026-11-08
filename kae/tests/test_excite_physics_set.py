@@ -177,3 +177,14 @@ def test_a_net_tie_joins_its_nets_and_a_load_on_a_rail_of_unknown_voltage_still_
     pl.volts = {"N$20": None}
     heat = HT.part_heat(SimpleNamespace(part_kind={"D1": ("led", None, "")}), pl, {("dc:D1@N$20", "I_A"): 0.02}, {}, {})
     assert heat == {"D1": pytest.approx(0.066)}
+
+
+def test_a_fuse_conducts(tmp_path):
+    """A fuse had no circuit element, so a rail fed through one was open at DC and its board had no DC band."""
+    b = _board(tmp_path, ["VIN", "VF"], [_fp("F1", "500mA", "Fuse:Fuse_1206_3216Metric", 10,
+                                              [_pad("1", 0, 1, "VIN"), _pad("2", 1, 2, "VF")], 1)])
+    br = B.build(b)
+    assert next(p for p in br["parts"].values() if p["ref"] == "F1")["kind"] == "fuse"
+    bd = M.build(b, br)
+    e = [e for e in bd.circuit.elems if e.name == "F1"]
+    assert len(e) == 1 and e[0].kind == "R" and e[0].kind in DC.DC_KINDS

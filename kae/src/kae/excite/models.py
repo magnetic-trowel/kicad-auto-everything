@@ -77,6 +77,7 @@ RADIAL = ((5.0, 10e-9, 0.3), (6.3, 10e-9, 0.13), (8.0, 20e-9, 0.15), (12.5, 20e-
           (999.0, 34e-9, 0.04))                                                         # (<= D mm, ESL, ESR)
 AXIAL = (20e-9, 0.3)
 PKG_L = 1.0e-9                  # IC pin: bond wire plus lead
+FUSE_R = 0.1                    # ohm, a fuse's or resettable PTC's cold resistance (class prior)
 PKG_R = 5e-3
 DIE_C = {"logic": 1e-9, "memory": 5e-9, "mcu": 5e-9, "fpga": 50e-9, "opamp": 20e-12, "regulator_linear": 1e-9,
          "regulator_switching": 1e-9, "adc_dac": 1e-9, "reference": 50e-12, "motor_driver": 2e-9, "": 1e-9}
@@ -353,6 +354,12 @@ def _part(bd, ref, part, pins, kind, sub, role, rec, in_cell):
             bd.assumptions.append(f"{ref}: value '{part.value}' unread; 1 kOhm assumed")
         a, b = tw
         c.z(ref, a.net, b.net, _rl(max(R, 1e-4), 0.5e-9), tok(a), tok(b), "R")
+    elif kind == "fuse" and len(tw) == 2:
+        # a fuse or resettable PTC conducts: its cold resistance (class prior: tens of mOhm for a cartridge, 0.1-1 Ohm
+        # for a small polyfuse); left out, it opened every rail fed through it
+        a, b = tw
+        c.z(ref, a.net, b.net, _rl(FUSE_R, 2e-9), tok(a), tok(b), "R")
+        bd.assumptions.append(f"{ref}: fuse at {FUSE_R * 1e3:g} mOhm cold resistance (class prior)")
     elif kind == "inductor" and len(tw) == 2:
         L = V.inductance(part.value) or 10e-6
         a, b = tw
