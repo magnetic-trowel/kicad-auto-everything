@@ -49,3 +49,14 @@ def test_pin_facts_ride_in_the_operating_facts(tmp_path):
             "--pintypes", str(pt)])
     op = json.loads((tmp_path / "o.json").read_text())
     assert op["pins"] == {"U1": {"2": ["power_in", "3V3"]}}
+
+
+def test_two_sensitive_pins_on_one_part_make_one_limit_on_its_victim_side():
+    """Two spec entries on one part were two part-scoped limits that tie in kae.intent as soon as any pickup on that
+    part is observed (the radio bonnet's RF victim): one limit, the strictest, scoped to the victim side."""
+    spec = {"schema": "kae.board-spec/1", "rails": [], "loads": [],
+            "sensitive": [{"ref": "U1", "max_noise_mV": 5, "what": "ADC input"},
+                          {"ref": "U1", "max_noise_mV": 2, "what": "reference pin"}]}
+    it, _ = I.compile_spec(spec, SUMMARY)
+    v = [t for t in it["terms"] if t["id"].startswith("V")]
+    assert len(v) == 1 and v[0]["where"] == {"to_part": "U1"} and v[0]["max"] == "2 mV" and "reference pin" in v[0]["why"]

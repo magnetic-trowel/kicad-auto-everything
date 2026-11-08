@@ -275,9 +275,16 @@ def compile_spec(spec, summary):
         if obs_id and str(obs_id).startswith("victim:"):
             where = {"observer": obs_id}
         elif part and S.ref(part, w):
-            where = {"part": part}
+            where = {"to_part": part}           # noise into the part's pins, not the part's own noise elsewhere
         else:
             S.rejected.append(f"{w}: needs a victim:... section id or a part ref")
+            continue
+        # two limits on one scope tie in kae.intent (equal specificity): the strictest stands for both
+        dup = next((t for t in terms if t["obs"] == "pickup.peak" and t.get("where") == where and t["tier"] == "limit"), None)
+        if dup is not None:
+            if mx < float(dup["max"].split()[0]):
+                dup.update(max=f"{mx:g} mV", source=f"{v.get('what') or 'sensitive pin'}: {mx:g} mV")
+            dup["why"] += f"; also {why(v, v.get('what') or 'sensitive pin')}"
             continue
         terms.append(dict(id=f"V{i}", tier="limit", obs="pickup.peak", where=where, max=f"{mx:g} mV", rate="10 mW_eq/mV",
                           source=f"{v.get('what') or 'sensitive pin'}: {mx:g} mV", why=why(v, v.get("what") or "sensitive pin")))
