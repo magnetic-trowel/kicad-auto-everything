@@ -81,3 +81,40 @@ Control arm (d) on these 80 boards: about 53 CPU-h (from `aa-joint`). Four arms 
   sqrt(213/80): about 5 pp. Still report-only: the decision rule is unchanged.
 - Smoke record (plumbing only, not results): experiments `j1-chassis-smoke` and `j1-chassis-smoke2`. Loop reports are stored;
   all four arms show the intended flags in their reports; KiCad scored every run; the inputs have no copper.
+
+## Addendum 2: extension rule and J11 (2026-11-08, written while the 80 boards run; no J1 result of the 80 was read)
+This addendum replaces the `Costs` limit (the 300 CPU-h cap is withdrawn), the "Physics ties / Opens tie" definitions of the
+decision rule, and the J11 reasoning above. Everything else stands.
+
+**1. The 80 boards stay.** No resubmission and no change to the running jobs. They are the first batch.
+
+**2. Outcomes of each decision.** The four tests are (b) vs (d) and (c) vs (d), each on physics and on opens, each paired against (d), at
+family alpha 0.05 (Bonferroni, 0.0125 each). A test ends as **different**, **equivalent** or **undecided**.
+
+*How looks are handled.* The J21 bound is a fixed-n bound, so it is not valid on its own once extending depends on what was seen. Decisions use
+anytime-valid evidence, which stays valid under any number of looks and stops. The sign-flip test at the final n is reported, descriptively only.
+- Physics. Unit: `x = ln(Σu_arm / Σu_d)` on both-routed boards (definition in Addendum 1), one per board per batch; ties at the tested value are dropped.
+  For a hypothesised ratio θ, with `S` of `n` units above `ln θ`, a batch's e-value is `2^n · B(S+½, n−S+½) / B(½,½)`. The evidence is the product over
+  batches, and θ is rejected at evidence >= 80. **Different** needs θ = 1 rejected and the observed median outside the J21 floor for that test's n
+  (excluding identical pairs, next smaller table entry; n < 20 has no floor and cannot be different). **Equivalent** needs every θ outside
+  [1/1.06, 1.06] rejected. The margin is fixed at 1.06, the J21 floor at the set this test was designed for (n about 38), because the floor shrinks with n and would be a moving target.
+  Note that a true effect of the size of the earlier 0.955 module-stage figure would count as equivalent.
+- Opens. Unit: `d = (o_arm − o_d) / (o_arm + o_d + 1)`, in (−1, 1), on all boards both arms ran. A two-sided hedged-capital confidence sequence for the mean of `d`
+  (Waudby-Smith and Ramdas, JRSS B 2024), level 0.0125, boards in sha256(seed, id) order within each batch. **Different**: the sequence excludes 0 and total opens differ by more than 3 %.
+  **Equivalent**: the sequence lies within ±0.03 and total opens are within 3 %. The ±0.03 on `d` is about ±6 % in per-board ratio, looser than the 3 % on totals, so both are required.
+
+**3. Extension.** After each batch, compute per arm pair the number of both-routed boards and its J21 bound, and classify the four tests. While any test is undecided, run the next stage, and repeat until
+each is different or equivalent. A true effect sitting at the margin can take unbounded data, so after every round report the confidence sequences; the user decides whether to continue. That is a report, not a cap.
+- *Stage 2: the remaining 129 merit boards.* The 213 merit boards minus the 80 minus the 4 smoke boards, whose results were read and so are excluded. This includes boards over 500 pads. Same four methods (ids unchanged,
+  harness 74fd46c), k = 1, arms interleaved board by board, a new experiment `j1-chassis-ext` so kaeres keeps runs per batch. Big boards need the job timeout and memory estimated for them; retry time-outs before reading.
+- *Stage 3 and later: more seeds.* One further attempt per round on one pre-fixed board set: all 209 boards with results, chosen before any round so looks cannot select it (`--attempts N`, new experiment with `--reuse-runs`; attempt N−1 is the round's data, read from
+  the run folders, since results.csv holds attempt 0 only). Each round is one batch, one unit per board. Attempts are of the kae arms: never a Freerouting seed sweep on its own.
+
+A batch is its own e-value so that load drift between batches cannot enter within a pair. Limits: the both-routed set depends on the arms' own outcomes, so physics claims hold for boards both arms route; the J21 floor comes from an older evaluator
+and a seed-0 A/A, so it is approximate.
+
+**4. `--screen` (J11), restored.** It was left out only for the cost cap. A fifth arm cannot be side by side with the jobs already queued, so J11 is a **separate interleaved pair**, experiment `j1-screen`, same harness:
+`kae j1 joint twin` (the arm (d) recipe registered with `--param replicate=j1-screen`, so its control runs side by side instead of reusing (d)'s runs) against `kae j1 joint screen` (the same recipe plus `--screen` on `restart.py`, which then replaces the `--resume` schedule with
+successive halving). Boards: the same 80, k = 1, the same outcomes and extension rule, as one pair (physics and opens at 0.025 each). If `--screen` is different beyond the floor on physics or opens, the ladder's no-screen verdict is limited to that wrapper, and (a) with `--screen` is added as a further pair to check whether the chassis conclusion holds under it.
+
+Nothing in this addendum is submitted yet; the extension and `j1-screen` are triggered after the 80 are complete.
