@@ -72,3 +72,12 @@ No default changes in this experiment: the outcome is a recommendation.
 ## Costs
 Control arm (d) on these 80 boards: about 53 CPU-h (from `aa-joint`). Four arms plus scoring and physics: about
 240 CPU-h. Limit 300 CPU-h: above it the experiment is not submitted.
+
+## Addendum, before the full submission (2026-11-08, after two smokes on 4 boards outside the 80; no result of the 80 boards was seen)
+- Physics: "both-fully-routed" means, in both arms, `unconnected` 0, `n_missing` 0 and `n_open` 0 for the board. If fewer than
+  20 boards qualify for an arm pair, physics is inconclusive for that pair. (The smokes showed boards whose modules all score
+  "missing" for every arm and the human: a flat Σu floor. They are excluded by this definition, not judged.)
+- cp1 noise: "about 3 pp at this n" above is the A/A noise at n = 213 (95 % CI -1.4 to +2.8 pp). At 80 boards scale it by
+  sqrt(213/80): about 5 pp. Still report-only: the decision rule is unchanged.
+- Smoke record (plumbing only, not results): experiments `j1-chassis-smoke` and `j1-chassis-smoke2`. Loop reports are stored;
+  all four arms show the intended flags in their reports; KiCad scored every run; the inputs have no copper.
