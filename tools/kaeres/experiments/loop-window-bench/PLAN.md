@@ -57,3 +57,7 @@ If a primary is undecided at 40 boards, run `boards-extension.txt` as a second b
 
 ## Costs (information only)
 Natural arms about B each, window arms about 3-5 B each, on an average B of about 1,300 s, less when a board finishes early: about 200-300 CPU-h for the first batch.
+
+## Addendum, before the full submission (2026-11-09, after the smoke; no run of the 40 boards exists)
+Smoke: experiment `loop-window-bench-smoke`, arms `ctl`, `w2 ctl`, `w2 all`, on two boards of `boards-extension.txt` (sparkfun-edison-micro-sd-block, protocentral-tinyecg), which are therefore dropped from the extension batch. Read as plumbing only: all six runs finished inside their timeouts, KiCad scored them, the flags reached the loop (`skip_unfixable_drc`, `window_deadline_s`, greedy no longer out of time and parts reverted with the J4 flags), and the stored logs hold the full loop report. No decision rule, arm or board set changed.
+One thing to read for in the results: with `revert_illegal` on, a window can still end illegal after all its moved parts are restored, when the incumbent poses are themselves grid-illegal (seen on a board with 64 `copper_edge_clearance` errors). "Illegal after repair" is reported as is; J4's pass rule is unchanged.
