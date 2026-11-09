@@ -1,0 +1,7 @@
+circuitmonkey-chips-0123-class-d-amp-max98365
+cmnybo-chip-lcd-dip-chip-lcd-dip
+dimoustroufis-librewave-ecp5-librewave-ecp5
+protocentral-protocentral-tinyecg-max30001-pc-tinyecg-max30001
+sparkfun-sparkfun-three-phase-motor-driver-tmc6300-sparkfun-tmc6300-breakout
+sparkfunx-sparkx-smol-esp32-sparkx-smol-esp32
+ut8ifg-ptt-usb-cable-ptt-usb-cable
