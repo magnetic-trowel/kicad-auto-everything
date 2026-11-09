@@ -93,6 +93,29 @@ def test_replace_window_moves_only_window_parts_legally():
     assert again.poses == res.poses                              # seeded
 
 
+def test_revert_illegal_restores_parts_until_legal():
+    from kae.joint.replace import _revert_illegal
+    from kae.place.problem import Problem
+    from kae.place.state import State, grid_violations
+    b = load(FIXTURE)
+    P = Problem.build(b)
+    P.set_margin(0.0)
+    st = State(P)
+    a, c = P.mov[0], P.mov[1]
+    home = {}
+    for i in (a, c):
+        p = P.parts[i]
+        X, Y = P.grid_of(p.x0, p.y0)
+        st.X[i], st.Y[i], st.K[i] = X, Y, 0
+        home[i] = (int(X), int(Y), 0)
+    assert not grid_violations(st, parts=[a, c])
+    st.X[c], st.Y[c], st.K[c] = st.X[a], st.Y[a], st.K[a]   # c on top of a
+    bad = grid_violations(st, parts=[a, c])
+    assert bad
+    restored = _revert_illegal(P, st, home, bad)
+    assert restored == [P.parts[c].ref] and not grid_violations(st, parts=[a, c])
+
+
 def test_stages_geometry_and_finish_without_kicad(tmp_path):
     import shutil
 
