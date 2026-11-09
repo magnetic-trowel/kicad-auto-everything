@@ -118,3 +118,11 @@ and a seed-0 A/A, so it is approximate.
 successive halving). Boards: the same 80, k = 1, the same outcomes and extension rule, as one pair (physics and opens at 0.025 each). If `--screen` is different beyond the floor on physics or opens, the ladder's no-screen verdict is limited to that wrapper, and (a) with `--screen` is added as a further pair to check whether the chassis conclusion holds under it.
 
 Nothing in this addendum is submitted yet; the extension and `j1-screen` are triggered after the 80 are complete.
+
+## Addendum 3: implementation notes (2026-11-09, written before reading any result of the 80 boards)
+`analyze.py` implements Addendum 2. Details it fixes, none chosen from data:
+- Physics units also need at least one module and Σu > 0 in both arms: a board with no modules has no physics value. J21's floor uses its "excluding identical" column; the n used is the non-identical unit count.
+- Opens units are boards where both arms produced a scored run; a board where one arm failed is excluded and counted (`missing pair`), not imputed.
+- The hedged-capital bets are truncated at 3/4 (Waudby-Smith and Ramdas give 1/2 or 3/4; Addendum 2 did not say which).
+- If a test meets both the "different" and "equivalent" conditions (a small difference within the margin), it is called equivalent.
+- Structural limit: the wealth per unit is at most ln(1 + 1.5 x 0.015) = 0.0223, and rejecting needs ln(2/0.0125) = 5.08, so opens equivalence cannot be reached below about 228 units even with zero variance. At 80 boards and at 209 the opens tests are therefore "different" or "undecided", never "equivalent". Addendum 2's margin stands: a seed round is what can reach it.
