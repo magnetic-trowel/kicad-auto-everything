@@ -198,6 +198,13 @@ class _Pins:
         return nets
 
 
+def count(P, st):
+    """Ratsnest crossings of a State (the report's `crossings`)."""
+    view = _Pins(P, st)
+    view.frozen = {net.i for net in P.nets if net.kind in ("ground", "power") and len(net.pins) > 40}
+    return Crossings(P, view).total
+
+
 def swap_pairs(P, st, hold=(), per_part=8):
     """Interchangeable pairs (equal shape_key) to try: each part with its nearest `per_part`
     same-shape parts, so a footprint used a hundred times on a dense board is still covered

@@ -1011,6 +1011,11 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
         rep["zones"] = zonesmod.report(P, st, zone_rep)
     rep["hpwl"] = round(st.hpwl(), 2)
     rep["hpwl_signal"] = round(st.hpwl(signal_only=True), 2)
+    try:
+        from .crossings import count as crossing_count
+        rep["crossings"] = crossing_count(P, st)       # ratsnest crossings of the placement, HPWL's blind spot
+    except Exception as e:      # noqa: BLE001 - a report field; never lose the placement
+        rep["crossings"] = f"error: {type(e).__name__}: {e}"
     res = Result(poses={}, report=rep, state=st, problem=P, terms=report_terms, order=order, brief=brief)
     final_physics(res)
     if report_terms is not None and "physics_error" not in rep:

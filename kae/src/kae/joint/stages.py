@@ -159,6 +159,7 @@ class KaeStages:
         b = self._load(out)
         info = dict(place=dict(seconds=round(time.monotonic() - t0, 1), legal=legal, hpwl=rep.get("hpwl"),
                                scorecard=(rep.get("scorecard") or {}).get("total"), budget_s=rep.get("budget_s"),
+                               crossings=rep.get("crossings"), untangle=rep.get("untangle"),
                                stops=place_stops(rep)))
         return Layout(board=str(out), poses=self._all_poses(b), info=info)
 
