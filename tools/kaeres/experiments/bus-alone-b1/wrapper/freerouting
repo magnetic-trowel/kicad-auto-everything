@@ -1,0 +1,22 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Bus-alone wrapper (experiment bus-alone-b1): filter the DSN down to this board's bus nets, then run this install's
+# Freerouting unchanged. kaebench's adapter runs Freerouting with cwd=<...>/<board id>/attempt-N, which names the board;
+# every other net's pins stay in the DSN as obstacles without a net. The list is $install/busnets/<board id>.txt.
+D=$(cd "$(dirname "$0")" && pwd)
+BID=$(basename "$(dirname "$PWD")")
+DSN=""
+prev=""
+for a in "$@"; do
+  if [ "$prev" = "-de" ]; then DSN=$a; fi
+  prev=$a
+done
+LIST="$D/../busnets/$BID.txt"
+if [ ! -s "$LIST" ]; then
+  echo "bus-alone wrapper: no bus net list for board '$BID' at $LIST" >&2
+  exit 7
+fi
+python3 "$D/filter_dsn.py" "$DSN" "$LIST" || exit 7
+exec "$D/freerouting.real" "$@"

@@ -575,7 +575,7 @@ def exp_dir(name):
 
 # environment an experiment may set for its jobs without changing any method's identity: settings
 # that change no result (KAE_STEP_CACHE: kae's step cache replays identical steps, time charged)
-RESULT_NEUTRAL_ENV = ("KAE_STEP_CACHE",)
+RESULT_NEUTRAL_ENV = ("KAE_STEP_CACHE", "KAERES_SKIP_PHYSICS")
 
 
 def exp_env(a):
@@ -1092,7 +1092,7 @@ def _job_group(bid, row, hc, kae, items, human, ws, env, log, kicad, a, size, ph
         if sb is not None:
             boards[f"{mid}.{att}"] = sb
     phys = {}
-    if boards:
+    if boards and not env.get("KAERES_SKIP_PHYSICS"):   # diagnostics whose boards are not routed designs (bus-alone-b1)
         kd, kv = code_dir(kae), code_dir(kae).with_name(code_dir(kae).name + ".venv-kae")
         pout = ws / f"physics-{hc[:8]}.json"
         with Step("physics", steps):
