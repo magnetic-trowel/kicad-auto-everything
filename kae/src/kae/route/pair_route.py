@@ -892,6 +892,53 @@ def post_pass(routed_path, out_path, time_s=120.0, opts=None, log=_log):
     return rep
 
 
+def copper_survival(reserved_path, routed_path):
+    """Share of the pair copper in `reserved_path` (the board after route_pairs) still present in `routed_path`:
+    per routed pair net, length of the reserved tracks whose midpoint lies within 5 um of a same-net track on the
+    same layer, and reserved vias within 5 um of a via of the net. Measures a soft reservation; returns
+    {length_mm, kept_mm, share, vias, vias_kept, nets}."""
+    pts = load(reserved_path)
+    rt = load(routed_path)
+    new = {t.net for t in pts.tracks if t.locked} | {v.net for v in pts.vias if v.locked}
+    if not new:     # unlocked reservation: the board after pairs holds only pair copper for these nets, unless escapes share them
+        new = {t.net for t in pts.tracks} | {v.net for v in pts.vias}
+    tol = 0.005
+    by = {}
+    for t in rt.tracks:
+        by.setdefault((t.net, t.layer), []).append((t.start, t.end))
+    L = kept = 0.0
+    nets = {}
+    for t in pts.tracks:
+        if t.net not in new:
+            continue
+        ln = math.dist(t.start, t.end)
+        L += ln
+        m = ((t.start[0] + t.end[0]) / 2, (t.start[1] + t.end[1]) / 2)
+        hit = any(_dist_seg(m, a, b) <= tol for a, b in by.get((t.net, t.layer), ()))
+        kept += ln if hit else 0.0
+        e = nets.setdefault(t.net, [0.0, 0.0])
+        e[0] += ln
+        e[1] += ln if hit else 0.0
+    rv = [(v.net, v.x, v.y) for v in rt.vias]
+    vn = vk = 0
+    for v in pts.vias:
+        if v.net not in new:
+            continue
+        vn += 1
+        vk += 1 if any(n == v.net and math.hypot(x - v.x, y - v.y) <= tol for n, x, y in rv) else 0
+    return dict(length_mm=round(L, 2), kept_mm=round(kept, 2), share=round(kept / L, 4) if L else None, vias=vn, vias_kept=vk,
+                nets={n: round(k / l, 3) if l else None for n, (l, k) in nets.items()})
+
+
+def _dist_seg(p, a, b):
+    ax, ay = a
+    bx, by = b
+    dx, dy = bx - ax, by - ay
+    l2 = dx * dx + dy * dy
+    t = 0.0 if l2 <= 0 else max(0.0, min(1.0, ((p[0] - ax) * dx + (p[1] - ay) * dy) / l2))
+    return math.hypot(p[0] - ax - t * dx, p[1] - ay - t * dy)
+
+
 def route_pairs(board_path, out_path, time_s=120.0, opts=None, log=_log, board=None, info=None, sev=None):
     """Pairs of `board_path` routed and locked into a copy at `out_path`. Returns a JSON-able report."""
     t0 = time.monotonic()
@@ -937,10 +984,11 @@ def route_pairs(board_path, out_path, time_s=120.0, opts=None, log=_log, board=N
                                  skew=res.skew, length=res.length, width=res.width, gap=res.gap, vias=res.vias, stitch=res.stitch,
                                  spines=res.spines))
         if res.status == "routed":
+            lock = not o.get("unlocked")   # pairs_unlocked: laid as ordinary copper (see bridge wire_type)
             for (net, layer, w, a, b) in res.tracks:
-                tracks.append((net, layer, w, a, b, W.new_uuid(), True, None))
+                tracks.append((net, layer, w, a, b, W.new_uuid(), lock, None))
             for (net, x, y, D, d, uid) in res.via_rec:
-                vias.append((net, x, y, D, d, uid, True))
+                vias.append((net, x, y, D, d, uid, lock))
     W.append_items(board_path, out_path, tracks=tracks, vias=vias)
     for ext in (".kicad_pro", ".kicad_dru", ".kicad_prl"):
         s = board_path.with_suffix(ext)

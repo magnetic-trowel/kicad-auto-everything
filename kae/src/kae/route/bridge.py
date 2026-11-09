@@ -137,6 +137,13 @@ DEFAULT_OPTS = dict(
                              # plate on the other face): seconds kept from the repair rounds for their pass and DRC
     pairs="off",             # "first": differential pairs routed and locked before the rest (kae.route.pair_route);
                              # "post": re-laid as pairs after the general route, kept when KiCad finds it no worse
+    wire_type="route",       # how unlocked pre-routes go to Freerouting (translate.set_wire_types):
+                             # "route" (KiCad's, fixed walls), "shove_fixed", "normal" (both rippable)
+    wire_scope="all",        # "pairs": only the nets of the pairs routed first get wire_type
+    unlock_imported=False,   # after Freerouting, unlock the wires it returned locked ((type protect) walls
+                             # imported locked): the repair rounds and last mile may then rip escape stubs
+    pairs_stage="before_escapes",  # "after_escapes": pairs first run after the plane escapes
+    pairs_own_budget=False,  # the pair router's time is not taken from the rest of the budget
     pairs_s=180.0,           # with pairs: seconds for the pair router at most (a quarter of the budget at most)
     pairs_post_reserve_s=240.0,  # with pairs="post": kept from the repair rounds for the pass, its last mile and DRC
     pad_shapes="kicad",      # pin shapes in the DSN: "kicad" (KiCad's export: rounded corners and arcs as
@@ -190,9 +197,12 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
         return time_s - (time.monotonic() - t0)
 
     try:
-        if opts.get("pairs") == "first":
+        if opts.get("pairs") == "first" and opts.get("pairs_stage", "before_escapes") == "before_escapes":
             # differential pairs routed as pairs first, locked, the rest routed around them (pair_route)
+            t1 = time.monotonic()
             input_path = _pairs_first(input_path, wd, opts, report, left, log)
+            if opts.get("pairs_own_budget"):
+                t0 += time.monotonic() - t1
         # 1-2: export and plan
         kdsn = wd / "kicad.dsn"
         info = pcbnew_io.export_dsn(input_path, kdsn)
@@ -237,6 +247,13 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
                 info = pcbnew_io.export_dsn(input_path, kdsn)
                 p = constraints.plan(info, input_path, opts)
             report["plane_escapes"]["seconds"] = round(time.monotonic() - te, 1)
+        if opts.get("pairs") == "first" and opts.get("pairs_stage") == "after_escapes":
+            t1 = time.monotonic()
+            input_path = _pairs_first(input_path, wd, opts, report, left, log)
+            if opts.get("pairs_own_budget"):
+                t0 += time.monotonic() - t1
+            info = pcbnew_io.export_dsn(input_path, kdsn)
+            p = constraints.plan(info, input_path, opts)
         p.plane_policy = plane_policy(opts)
         p.plane_cost = opts.get("plane_cost")
         p.strict_planes = opts.get("strict_planes") or []
@@ -244,6 +261,14 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
         p.pad_shapes = opts.get("pad_shapes") or "kicad"
         tree = specctra.read(kdsn)
         report["translate"] = translate.apply(tree, p, info)
+        if (opts.get("wire_type") or "route") != "route":
+            scope = opts.get("wire_scope") or "all"
+            nets = None
+            if scope == "pairs":
+                nets = {n for pr in (report.get("pairs") or {}).get("pairs", ()) if pr.get("status") == "routed"
+                        for n in (pr["p"], pr["n"])}
+            report["wire_types"] = dict(translate.set_wire_types(tree, opts["wire_type"], nets=nets),
+                                        type=opts["wire_type"], scope=scope)
         first, hist_path = route_first(opts)
         opts["route_first"] = first
         report["permuted"] = translate.permute(tree, seed, first=first)
@@ -297,6 +322,8 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             specctra.write(ses, ses_k)
             imp = import_session(input_path, ses_k, output_path)
             routed = imp.get("routing") or []
+            if opts.get("pairs") == "first":
+                _pairs_survival(wd / "pairs" / "pairs.kicad_pcb", output_path, report, "after_freerouting", log)
             report["import_check"] = imp["import_check"]
             report.setdefault("hazards", []).extend(imp["hazards"])
             report["status"] = "routed"
@@ -304,6 +331,13 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
         # the input's locked tracks and vias (pre-routes): exported as fixed wiring, never
         # returned by Freerouting, kept as they are by KiCad's import; the repair loop never
         # rips, widens or unlocks them
+        if opts.get("unlock_imported"):
+            # walls Freerouting returned as (type protect): KiCad locked them, but they are not the input's
+            # pre-routes, so the repair rounds and last mile may rip them
+            from .critical_write import routing
+            kept = {r["uuid"] for r in routing(input_path) if r.get("locked")}
+            routed = [dict(r, locked=bool(r.get("locked") and r["uuid"] in kept)) for r in routed]
+            pcbnew_io.edit_routing(output_path, output_path, unlock_all=True, keep_locked=sorted(kept))
         opts["fixed_uuids"] = sorted(r["uuid"] for r in routed if r.get("locked"))
         report["fixed_items"] = len(opts["fixed_uuids"])
 
@@ -366,6 +400,8 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             for c in blk["packages"]:
                 report.setdefault("hazards", []).extend(c.get("hazards") or [])
             blk["summary"] = [c["summary"] for c in blk["packages"]] + list(blk.get("summary") or [])
+        if opts.get("pairs") == "first" and (report.get("pairs") or {}).get("counts", {}).get("routed"):
+            _pairs_survival(wd / "pairs" / "pairs.kicad_pcb", output_path, report, "final", log)
         stepcache.save_fork(fork, "final", {"board": output_path}, time.monotonic() - t0, report)
         return report
     finally:
@@ -396,6 +432,15 @@ def _pairs_first(input_path, wd, opts, report, left, log):
     log(f"pairs first: {c.get('routed', 0)} routed, {c.get('failed', 0)} failed, {c.get('skipped', 0)} skipped of "
         f"{c.get('detected', 0)} ({got.get('seconds')} s)")
     return dst
+
+
+def _pairs_survival(pairs_board, output_path, report, stage, log):
+    """Share of the pair copper laid before routing (`pairs_board`) still in `output_path`, into report["pairs"]."""
+    from . import pair_route
+    try:
+        report.setdefault("pairs", {}).setdefault("survival", {})[stage] = pair_route.copper_survival(pairs_board, output_path)
+    except Exception as e:  # noqa: BLE001 - a measurement must not cost the board
+        log(f"pair survival: {type(e).__name__}: {e}")
 
 
 def _pairs_post(output_path, input_path, wd, opts, report, left, log, seed, base_rep=None):
