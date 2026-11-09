@@ -286,7 +286,7 @@ def evaluate(ev, intent=None, brief=None):
     missing = list((ev.get("total") or {}).get("not_computed") or []) if not complete else []
     status = dict(schema="kae.status/1", observedGeneration=intent["generation"], board=ev.get("board"),
                   complete=complete, currency=cur, defaults=intent["defaults"], terms=[], unclaimed=[],
-                  questions=[], sections=sorted(secs), not_computed=missing)
+                  questions=[], sections=sorted(secs), not_computed=missing, stackup=ev.get("stackup"))
     if intent["defaults"] == "legacy/u":
         if not complete:
             status["tiers"] = None

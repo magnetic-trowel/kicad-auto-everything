@@ -249,3 +249,27 @@ def test_a_radio_the_operating_facts_name_is_a_clocked_aggressor(tmp_path):
     bd.radios = {"U1": "bluetooth"}
     core = [s for s in S.add_all(bd, br) if s.kind == "core"]
     assert [s.name for s in core] == ["core:U1:+3V3"] and core[0].meta["I"] == S.DYNAMIC["mcu"][0]
+
+
+def test_a_board_without_a_stackup_is_reported_and_takes_the_common_build():
+    """No stackup block: a warned assumption, not silence. A 4-layer board gets thin prepreg under the outer layers
+    (stackup.md's reference stacks), whatever copper a layout uses; other counts keep the even split; a file's stands."""
+    from types import SimpleNamespace as NS
+    from kae.board.model import Stackup
+    from kae.excite.evaluate import assume_stackup
+
+    def board(n, source="default", used=()):
+        cu = ["F.Cu"] + [f"In{i}.Cu" for i in range(1, n - 1)] + ["B.Cu"]
+        d = (1.6 - 0.035 * n - 0.02) / (n - 1)
+        return NS(stackup=Stackup(copper=cu, cu_thickness=[0.035] * n, gaps=[d] * (n - 1), er=[4.5] * (n - 1), thickness=1.6, source=source),
+                  tracks=[NS(layer=l) for l in used], zones=[])
+    su, hz, text = assume_stackup(board(4, used=["In1.Cu", "In2.Cu"]))
+    assert su.gaps[0] == su.gaps[2] == 0.2 and su.gaps[1] == pytest.approx(1.04) and su.source == "assumed"
+    assert hz[0]["code"] == "stackup_assumed" and hz[0]["severity"] == "warn" and "states none" in text
+    assert assume_stackup(board(4))[0].gaps == su.gaps                  # empty inner layers change nothing
+    su, hz, _ = assume_stackup(board(2))
+    assert su.gaps == [pytest.approx(1.51)] and hz[0]["severity"] == "info"
+    su, _, _ = assume_stackup(board(6, used=["In1.Cu", "In2.Cu", "In3.Cu", "In4.Cu"]))
+    assert len(set(round(g, 6) for g in su.gaps)) == 1
+    b = board(4, source="file")
+    assert assume_stackup(b) == (b.stackup, [], None)

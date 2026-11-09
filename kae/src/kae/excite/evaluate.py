@@ -58,6 +58,38 @@ def ledger_for(bd, brief, srcs, intent=None):
     return P, L
 
 
+OUTER_PREPREG_MM = 0.2    # 4-layer build without a stackup: L1-L2 and L3-L4 (docs/topics/rules/stackup.md: OSH Park 7.87 mil
+                          # with a 39 mil core; Ott S/G/P/S, signal-plane < 0.010", core > 0.040")
+
+
+def assume_stackup(b):
+    """(the stackup the field solve uses, hazards, assumption text) for a board. A file's stackup stands. Without one
+    (KiCad's default is an even split) a 4-layer board takes the common fab build, thin prepreg under the outer
+    layers and the rest as core, since an even split reads loops over the inner planes about 2.4 times too tall.
+    Other layer counts keep the even split: no fab build is documented for them. Only the declared layer count
+    decides, never which layers a layout's copper uses, so every layout of a board gets one stack."""
+    from kae.board.model import Stackup
+    su = b.stackup
+    if su.source == "file":
+        return su, [], None
+    n = len(su.copper)
+    body = su.thickness - 0.035 * n - 0.02
+    gaps = [body / max(1, n - 1)] * (n - 1)
+    how = "KiCad's even split"
+    if n == 4:
+        gaps = [OUTER_PREPREG_MM, body - 2 * OUTER_PREPREG_MM, OUTER_PREPREG_MM]
+        how = f"the common 4-layer build ({OUTER_PREPREG_MM:g} mm prepreg under the outer layers, the rest core)"
+    new = Stackup(copper=list(su.copper), cu_thickness=[0.035] * n, gaps=gaps, er=[4.5] * (n - 1),
+                  thickness=su.thickness, source="assumed")
+    text = f"stackup: the board states none; {n} copper layers, {', '.join(f'{g:.3g}' for g in gaps)} mm dielectrics ({how})"
+    hz = dict(code="stackup_assumed", severity="warn" if n > 2 else "info", category="data",
+              message=f"{text}. Loop inductance scales with the dielectric height, so absolute inductive harms rest on this.",
+              objects=[], evidence=dict(copper_layers=n, gaps_mm=[round(g, 4) for g in gaps],
+                                        source="docs/topics/rules/stackup.md (reference stacks)"),
+              fix="State the board's stackup in the KiCad board setup.")
+    return new, [hz], text
+
+
 def board_window(b, margin=3.0):
     """The field solve's window: the pads' extent plus `margin` mm, grown to hold the board outline and every piece of
     copper (tracks, arcs, vias, zones) with 0.5 mm to spare. The pads alone cut off copper routed beyond the
@@ -127,6 +159,7 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
     b = b or load(path)
     # the schematic's pin facts the intent was compiled with (operating facts `pins`): the same circuit
     n_pins = PF.apply(b, (intent or {}).get("pins"))
+    b.stackup, stack_hz, stack_text = assume_stackup(b)
     brief = brief or B.build(b)
     bd = M.build(b, brief)
     bd.radios = dict((intent or {}).get("radios") or {})        # the operating facts' radios
@@ -231,6 +264,9 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
         for sn in [sn for sn in last if max(bands[sn].values()) <= f]:
             del last[sn]
     notes = ([pitch_note] if pitch_note else []) + list(mesh_notes)
+    if stack_text:
+        notes.append(stack_text)
+        bd.assumptions.append(stack_text)
     if n_pins:
         notes.append(f"pins: {n_pins} pads took their pin type and name from the operating facts (the schematic's)")
     uncomputed = []
@@ -382,6 +418,7 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
     apply_tcr(harms, tcr, tot, notes, hazards)
     harms.sort(key=lambda h: -(h["u_hi"] or 0))
     hazards += bias_hazards(harms, pitch)
+    hazards += stack_hz
     # each cell's parasitic ring: its copper loop with the switch node's capacitance
     rings = []
     for pr in pairs:
@@ -407,7 +444,7 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
                 part_power_W={k: round(v, 6) for k, v in sorted(part_power.items())},
                 solver_stats=solver_stats,
                 notes=notes + [f"pad {p}: not in the copper model" for p in missing][:20],
-                assumptions=bd.assumptions, pins=(intent or {}).get("pins") or None)
+                assumptions=bd.assumptions, stackup=dict(source=b.stackup.source, gaps_mm=list(b.stackup.gaps)), pins=(intent or {}).get("pins") or None)
 
 
 def _dc_system(holder, op):
