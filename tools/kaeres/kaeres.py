@@ -1651,6 +1651,15 @@ def method_table(rows, names, title):
     return out + [""]
 
 
+def _bus_section(rows, name):
+    """Report-only bus scorecard tables when the experiment's runs have them (tools/kaeres/busreport.py)."""
+    try:
+        import busreport
+        return busreport.section_for_experiment(rows, name)
+    except ImportError:
+        return []
+
+
 def cmd_exp_report(a):
     e = load_exp(a.name)
     d = exp_dir(a.name)
@@ -1735,6 +1744,7 @@ def cmd_exp_report(a):
             per[r["method"]].update(json.loads(r["errors_by_type"]))
     for typ in sorted(set().union(*per.values()), key=lambda t: -sum(per[n][t] for n in names))[:25]:
         rep.append(f"| {typ} | " + " | ".join(str(per[n][typ]) for n in names) + " |")
+    rep += _bus_section(rows, a.name)
     rep += ["", "### Router final states", "", "| method | COMPLETED | TIMED_OUT | other | none |", "|---|---|---|---|---|"]
     for m in ms.values():
         fs = Counter((r["final_state"] or "none") for r in rows if r["method_id"] == m["id"] and r["attempt"] == 0)
@@ -2068,6 +2078,9 @@ def main():
     s.add_argument("--content-only", action="store_true",
                    help="only prepare the tasks and record their content and that of the methods' older tasks")
     s.set_defaults(f=cmd_job)
+    s = sub.add_parser("bus", help="report-only bus scorecard over stored runs: bus submit | report (tools/kaeres/busreport.py)")
+    s.set_defaults(f=lambda a: subprocess.call([sys.executable, str(HERE / "busreport.py"), *a.rest]))
+    s.add_argument("rest", nargs=argparse.REMAINDER)
     s = sub.add_parser("board", help="every run and score of one board")
     s.add_argument("id")
     s.set_defaults(f=cmd_board)
