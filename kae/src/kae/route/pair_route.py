@@ -22,6 +22,10 @@ A pair is one transmission line, so it is searched as one object and only then s
 6. **Return path** (`stitch`). Where a pair of vias changes the reference plane, a ground via is
    placed beside each signal via when the plane is on both layers.
 
+`post_pass` re-lays a routed board's pairs in place; with `rip` a pair that does not fit may rip other nets'
+unlocked copper near it, priced per cell like the last mile's rip-up (`_route_ripping`), and the ripped nets are left
+for the last mile.
+
 Everything is written locked (`kae.route.critical_write`): the bridge routes around it. A pair
 whose spine or fan-ins do not close is left to the bridge, with a reason in the report. Widths,
 gaps and clearances are the board's: the net class's diff_pair_width and diff_pair_gap, then a
@@ -66,6 +70,10 @@ DEFAULTS = dict(
     bump_mm=0.0,                    # 0: height from the skew, at most bump_max
     bump_max=1.5,                   # tallest skew bump (mm)
     stitch=True,                    # ground vias beside a via pair that changes reference plane
+    rip=False,                      # post_pass: a pair that does not fit may rip other nets' unlocked copper (H7)
+    max_rip=40,                     # with rip: tracks and vias ripped for one pair at most
+    rip_margin=2.0,                 # with rip: mm around the pair's pads whose foreign unlocked copper may be ripped
+    rip_cost=20.0,                  # with rip: per envelope cell of foreign copper crossed (lastmile.RIP_COST)
 )
 
 
@@ -365,7 +373,9 @@ class Router:
         self.log = log
         self.board = board
         self.sp = Space(board, info, sev=sev, opts=self.o)
-        self.fan = GridRouter(self.sp, res=self.o["fan_res"], via_cost=3.0, pad_entry="centre")
+        from .lastmile import _SoftRouter
+        self.fan = _SoftRouter(self.sp, res=self.o["fan_res"], via_cost=3.0, pad_entry="centre")
+        self.soft = []                  # [(item, cost per cell)]: foreign copper a search may cross (post_pass rip)
 
     # ------------------------------------------------------------------ pairs and ends
     def _pads_of(self, net):
@@ -449,8 +459,12 @@ class Router:
         except Exception:  # noqa: BLE001
             pitch_vv = D + (sp.settings.get("min_clearance") or 0.2)
         pitch_vv = max(pitch_vv, d + (sp.settings.get("hole_to_hole") or 0.25)) + 2 * TOL
-        env = PairGrid(sp, pitch_vv, no_ref_cost=self.o["no_ref_cost"], res=self.o["res"], via_cost=self.o["via_cost"])
+        env = (_SoftPairGrid if self.soft else PairGrid)(sp, pitch_vv=pitch_vv, no_ref_cost=self.o["no_ref_cost"], res=self.o["res"],
+                                                         via_cost=self.o["via_cost"])
         env.max_cells = 2_000_000
+        if self.soft:
+            env.soft = self.soft
+        self.fan.soft = self.soft
         planes = self.plane_layers()
         layers = [l for l in sp.cu if l not in planes]
         # join ends nearest-first (Prim)
@@ -860,6 +874,13 @@ def post_pass(routed_path, out_path, time_s=120.0, opts=None, log=_log):
         except Exception as e:  # noqa: BLE001 - keep the pair's old copper
             log(f"pair {pr.p}/{pr.n}: {type(e).__name__}: {e}")
             res = PairResult(pr.p, pr.n, pr.tier, pr.interface, status="failed", reason=f"{type(e).__name__}: {e}"[:200])
+        ripped = []
+        if res.status != "routed" and o.get("rip") and time.monotonic() - t0 <= time_s:
+            got, ripped = _route_ripping(r, pr, o, log)
+            if got is not None and got.status == "routed":
+                res = got
+            elif got is not None:
+                res.reason = f"{res.reason}; rip: {got.reason}"[:400]
         if res.status != "routed":
             for it in old:
                 r.sp.existing.append(it)
@@ -867,7 +888,9 @@ def post_pass(routed_path, out_path, time_s=120.0, opts=None, log=_log):
                     r.sp.items[l].append(it)
             r.sp.invalidate()
         else:
-            remove += [it.uuid for it in old]
+            remove += [it.uuid for it in old] + [it.uuid for it in ripped]
+            if ripped:
+                rep.setdefault("ripped", []).append(dict(p=pr.p, items=len(ripped), nets=sorted({it.net for it in ripped})))
             for (net, layer, w, a, b) in res.tracks:
                 tracks.append((net, layer, w, a, b, W.new_uuid(), False, None))
             for (net, x, y, D, d, uid) in res.via_rec:
@@ -890,6 +913,53 @@ def post_pass(routed_path, out_path, time_s=120.0, opts=None, log=_log):
     rep["counts"].update(c, tracks=len(tracks), vias=len(vias))
     rep["seconds"] = round(time.monotonic() - t0, 2)
     return rep
+
+
+def _route_ripping(r, pr, o, log=_log):
+    """post_pass with rip-up (H7): the pair's spine, legs and fan-ins may cross other nets' unlocked copper near its
+    pads and along its ends' box (`rip_margin`), priced per cell (`rip_cost`); the copper the new pair breaks a rule
+    against is ripped (at most `max_rip` items), the rest restored. Returns (PairResult or None, ripped items); the
+    ripped nets are left open for the last mile."""
+    from shapely.geometry import box
+    from . import lastmile as LM
+    sp = r.sp
+    ends = r.ends(pr.p, pr.n)
+    if len(ends) < 2:
+        return None, []
+    xs = [x.pos[0] for e in ends for x in (e[0], e[1])]
+    ys = [x.pos[1] for e in ends for x in (e[0], e[1])]
+    m = float(o.get("rip_margin", 2.0))
+    win = box(min(xs) - m, min(ys) - m, max(xs) + m, max(ys) + m)
+    cand = {id(it): it for l in sp.cu for it in sp.query(l, win.bounds)
+            if it.kind in ("track", "via") and it.net not in (pr.p, pr.n) and not it.locked and it.owner == "existing"
+            and it.geom.intersects(win)}
+    cand = list(cand.values())
+    if not cand:
+        return None, []
+    sp.remove(cand)
+    r.soft = [(it, float(o.get("rip_cost", 20.0))) for it in cand]
+    try:
+        res = r.route(pr)
+    except Exception as e:  # noqa: BLE001
+        log(f"pair {pr.p}/{pr.n} (rip): {type(e).__name__}: {e}")
+        res = PairResult(pr.p, pr.n, pr.tier, pr.interface, status="failed", reason=f"{type(e).__name__}: {e}"[:200])
+    finally:
+        r.soft = []
+        r.fan.soft = []
+    if res.status != "routed":
+        LM._restore(sp, cand)
+        return res, []
+    new = {rec[1] for rec in res.items}
+    keep = [it for it in cand if not LM._conflicts(sp, it, new)]
+    LM._restore(sp, keep)
+    kept = {id(it) for it in keep}
+    ripped = [it for it in cand if id(it) not in kept]
+    if len(ripped) > int(o.get("max_rip", 40)):
+        r._rollback(res)
+        LM._restore(sp, ripped)
+        res.status, res.reason = "failed", f"would rip {len(ripped)} items"
+        return res, []
+    return res, ripped
 
 
 def copper_survival(reserved_path, routed_path):
@@ -1002,3 +1072,14 @@ def route_pairs(board_path, out_path, time_s=120.0, opts=None, log=_log, board=N
     rep["counts"].update(c, tracks=len(tracks), vias=len(vias))
     rep["seconds"] = round(time.monotonic() - t0, 2)
     return rep
+
+
+def _soft_pair_grid():
+    from .lastmile import _SoftRouter
+
+    class SoftPairGrid(_SoftRouter, PairGrid):
+        """PairGrid whose cost also prices `soft` foreign copper per cell (post_pass rip)."""
+    return SoftPairGrid
+
+
+_SoftPairGrid = _soft_pair_grid()
