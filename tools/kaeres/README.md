@@ -104,6 +104,30 @@ Lessons from experiments that ran and measured nothing (2026-11):
   `kae.route.drc` count past it with pcbnew. Freerouting stops on its own time limit, so on big boards
   its result moves with host load; compare arms on the boards where a control did not move.
 
+Lessons from the decide-ab campaign (2026-11, 17 experiments; plan and analysis scripts on branch
+`decide-ab`, `experiments/decide-ab/`):
+- **No `{` or `}` in a method's shell.** `--command` goes through `str.format`, so the shell's
+  `${in%.kicad_pcb}` is read as a template field: every run of area-cost-ab failed with `KeyError: 'in%'`,
+  and the report shows 0 / 0 / 0 rather than an error. Use `$(echo {input} | sed ...)` and smoke it.
+- **Size the kaeq timeout for the hardest board, and retry time-outs before reading results.** A job
+  runs every arm of one board in turn, so a time-out drops its later arms, mostly on the dense boards
+  where arms differ most. 58 of 224 ladder jobs timed out at 2 h and an interim read was misleading.
+  `kaeq retry --owner exp-<name> --timeout 6h`, then analyse only boards every arm finished.
+- **Know the noise before claiming a difference.** The A/A (`aa-joint`: one joint-loop method under two
+  names, 213 merit boards, k = 1) moved cp1 by 0.5 pp, 95 % CI −1.4 to +2.8 pp, with 5 boards flipped.
+  With about 200 boards, effects under about 3 pp are not visible in cp1.
+- **Test determinism before relying on k = 1.** area-cost-ab assumed kae-plain was deterministic, but
+  only 22 of the ~53 boards that could not differ came out identical across arms: time-budgeted steps
+  vary with host load.
+- **Pick a metric close to the change.** Placement legality changes showed large effects in
+  `legal_strict`, placement shorts per board and hazard counts, while cp1 did not move. Count boards
+  with placement shorts per arm, not only totals; one board can dominate a total.
+- **Reuse an arm only when its code path is unchanged.** A new arm at a later commit can be compared
+  with older control runs only if the change cannot reach them (the ladder fix touched only the
+  ladder path); otherwise rerun every arm at one commit.
+- **kaeq's CPU column counts the job's own process.** A restart-wrapped job can show hours of wall
+  time and seconds of CPU while its children work; check `ps` of the children before calling it hung.
+
 ## Per board job
 
 1. **Preflight.** KiCad's Python must import pcbnew. If it can't, the job exits 75 and kaeq retries it; this is an infrastructure failure, not a board result.
