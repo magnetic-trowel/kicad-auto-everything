@@ -15,7 +15,7 @@ Freerouting is deterministic in DSN item order, and its failures on our boards a
 - Portfolio (`portfolio.run`):
   1. Waves of `parallel` separate `python -m <router> route` processes, each with its own seed = DSN item-order permutation (`translate.permute` in the [bridge](kae-freerouting-bridge.md)) plus the fork's `item_order_seed`.
   2. Wave budget starts at `first_s`, multiplied by `growth` (default 2) each wave: 60, 120, 240 s, …, so a board needing a long attempt still gets one.
-  3. First clean attempt (0 errors, 0 unconnected, read from the attempt's JSON report `repair.final`, else `drc`) stops the rest; otherwise the best (errors, unconnected) is kept when time runs out.
+  3. First clean attempt (0 errors, 0 unconnected, read from the attempt's JSON report `repair.final`, else `drc`) stops the rest; otherwise the best (errors, unconnected) is kept when time runs out. Since the 2026-11 bug audit, attempts rank by (unconnected, errors beyond the input's own), stop on the first board routed fully, and the kept board gets a final last mile with reserved time ([last mile and restarts](../../topics/routing/last-mile-and-restarts.md)); the results below predate that.
   4. Attempts get `GRACE_S` = 30 s to write their board and a `MARGIN_S` = 15 s safety margin; the run stops early if all attempts of a wave fail at once.
   5. `--router M[:ARGS]` may be repeated; attempts cycle through the listed routers ([mixed portfolio](kae-routing-dead-ends.md#5-mixed-router-portfolio-critical-router-first-bridge-second-not-finished), not finished).
 

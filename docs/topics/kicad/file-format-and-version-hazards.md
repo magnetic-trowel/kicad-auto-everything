@@ -38,6 +38,11 @@ Other write failures [P]:
 
 Use a byte-preserving CST file layer (POA's `_cst.py` is reusable under our GPL-3.0-or-later); atomic writes; validate values before writing; serialize mutations; never write through `SaveBoard` or whole-object setters; in file mode confirm the format stamp is unchanged after each write [I].
 
+**What kae does** (decisions and measurements: [kae-board-model § Writing boards](../../research/placement/kae-board-model.md#writing-boards)) [C]:
+- Poses, SES imports and routing edits go through KiCad's plain reader and writer (`PCB_IO_MGR`), not `LoadBoard`/`SaveBoard` and not a byte splice: the import and `FOOTPRINT::Flip` exist only inside KiCad. No fallback to `LoadBoard`/`SaveBoard`.
+- Every such write is re-read and compared with the board in memory (stamp, item counts, every pad's, routing item's and zone's net). Changed copper or nets never reach the destination; a format upgrade or changed drawing counts become `data` hazards in the report.
+- The text writers (`kae.route.critical_write`) refuse boards stamped 20241229 or lower instead of version-gating their output.
+
 ## Live versus saved divergence
 | Case | Detail [P] |
 |---|---|

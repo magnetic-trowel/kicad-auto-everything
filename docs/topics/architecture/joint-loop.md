@@ -1,7 +1,7 @@
 # The joint loop: routing feedback into local re-placement
 
 Scope: design of `kae.joint`: place and route the whole board once, then repair **windows** (a few parts and the nets touching them) where routing failed, DRC complained or a module's routed physics shifted; parameters, feedback, windows, congestion penalty, rip-up, acceptance rule, budgets. Not here: measured numbers and the evidence behind each design rule -> [kae-joint-loop](../../research/joint/kae-joint-loop.md); theory -> [joint-place-route](../physics/joint-place-route.md); the month-plan precursor -> [month-plan](month-plan.md#the-joint-loop-modules-routed-physics-re-tweak).
-Keys: `kae.joint`, `kae.route.incremental`, `joint_stops.py`, windows, feedback spots, `CongestionHistory`, RUDY, `cong_history`, shortfall bump, rip-up, guard pours, `route_open`, `lastmile.close`, lexicographic acceptance, per-item physics slack, finishing stage, `--route-parallel`, `freerouting._Slot`, Starfish
+Keys: `kae.joint`, `kae.route.incremental`, `joint_stops.py`, windows, feedback spots, `CongestionHistory`, RUDY, `cong_history`, shortfall bump, rip-up, guard pours, `route_open`, `lastmile.close`, kept-board last mile, `kae.route.blocked`, hazards, `eff_tiebreak`, lexicographic acceptance, per-item physics slack, finishing stage, `--route-parallel`, `freerouting._Slot`, Starfish
 
 ## Why a loop, and why windows
 
@@ -31,7 +31,11 @@ The placer cannot see where the router will fail; the router cannot move a part.
 
 **Finishing stage (step 7)** runs in its reserve: it brings the staged pipeline's completion without giving up the module copper. If connections stay open, a second finishing try releases the critical copper of the modules on their corridors, priced by the acceptance rule. The staged baseline (`--max-iters 0`) has no finishing stage.
 
+**The kept board always gets a last mile:** with ≤ 60 s left for step 7, `lastmile.close` runs on its open nets instead, for at least 60 s, into the write reserve if need be (OUTPUT is renamed into place).
+
 **Scaling with budget.** Tries per window = 2 + one per 30 min; module-stage time = 5 % of the budget. Window router budget starts at 60 s, doubles after each window whose router ran out of time (cap 5 % of the budget), halves back after a fast one.
+
+**Report** (`kae.joint.cli`, JSON). `final.blocked` is [`kae.route.blocked`](../../../kae/src/kae/route/blocked.py)'s diagnosis of the final board's open connections, from the finishing bridge or run at the end (≤ 30 s), with the BGA escape certificates; iteration 0 skips it when a finish follows. A check that did not run reads `null` (`checked`, `note` say why). An error after OUTPUT was written gives status `partial`. The report closes with `hazards` and `hazard_summary` ([hazards](hazards.md)): nested flags, unchecked steps, modules over allocation, writer checks, and a recheck of OUTPUT with safety checks forced on (`--recheck`).
 
 **`--route-parallel P`** (default 1 = all of the above). With P > 1 the finishing stage is [`kae.route.portfolio`](../../../kae/src/kae/route/portfolio.py): the current placement, the loop's routing removed, routed by P parallel, growing, differently seeded restarts of `critical_cli --last-mile-soft` (listed first, so its clean board is preferred) and the bridge; judged on the incumbent's modules; no release try. A window left with ≤ 8 open connections, and not stopped by its clock, gets two more seeded `route_open` runs at once, keeping the one with the fewest open.
 
@@ -44,11 +48,11 @@ The placer cannot see where the router will fail; the router cannot move a part.
 Spot weights (match the acceptance order): placement 4, unrouted 3, other errors 2, physics 1 + rise + cover loss.
 
 **Windows.**
-- Content: the spot's own unlocked parts + unlocked parts whose centres lie within a 2 mm margin of the region they and the spot's points span, nearest first; ≤ 8 parts and ≤ 35 % of the board's movable parts (≥ 3). (Cap reason: a 12-part window on a 15-part board was a global re-place, [evidence](../../research/joint/kae-joint-loop.md#results).)
+- Content: the spot's own unlocked parts + unlocked parts whose centres lie within a 2 mm margin of the region they and the spot's points span, nearest first; ≤ 6 parts and ≤ 35 % of the board's movable parts (≥ 3). (Cap reason: a 12-part window on a 15-part board was a global re-place, [evidence](../../research/joint/kae-joint-loop.md#results).)
 - Never move: locked parts, parts carrying Edge.Cuts, staged parts. On a first attempt parts with > 12 connected pads stay fixed too, unless nothing smaller can move (moving an MCU rips up every net it has).
 - Overlapping windows merge while the union stays within the part cap.
 - **Re-route window:** a spot with no movable part within reach: no part moves; nets touching the region are ripped up and the bridge routes them in a new order. Its retry is a normal, larger window.
-- **Retries:** a rejected window is retried up to its try count, larger (margin ×1.5, at most twice), congestion weight ×1.5, physics weight ×2. An accepted window resets every count (the board changed). On odd retries the window's modules are not redone: their nets go to the bridge, since their locked copper and guard pours may be what blocks the corridor.
+- **Retries:** a rejected window is retried up to its try count, larger (margin ×1.5 and 2 more parts per retry, at most twice, never past the 35 % share), congestion weight ×1.5, physics weight ×2. An accepted window resets every count (the board changed). On odd retries the window's modules are not redone: their nets go to the bridge, since their locked copper and guard pours may be what blocks the corridor.
 
 ## Congestion penalty
 
@@ -59,7 +63,7 @@ Spot weights (match the acceptance order): placement 4, unrouted 3, other errors
   `u_b = (D_nets + D_escape + h_b·S_b) / S_b`
 
   The extra demand never moves with a part, so both engines (reference `Annealer`, compiled `FastAnnealer`) stay exactly incremental.
-- In a window: congestion weight doubled (30 → 60); parts named by an unrouted connection bumped 0.25 mm (`Problem.bump`, more occupancy on every side); routing margin 0.3 mm. Both bumps dropped if they make the window illegal.
+- In a window: congestion weight doubled (30 → 60); parts named by an unrouted connection bumped 0.25 mm (`Problem.bump`, more occupancy on every side); routing margin 0.3 mm. Both bumps dropped if they make the window illegal. Why this is not bloat, and its A/B: [kae-joint-loop](../../research/joint/kae-joint-loop.md).
 - The re-anneal also carries the placer's physics terms and protection-order rules; nets of the window's unrouted connections weigh 2× (`local_replace(net_weights=…)`).
 - Legality stays hard and closes with the placer's own loop: KiCad placement errors → exact constraints (`exact.kicad_feedback`) → grid legality → greedy legalizer → exact check repaired by `exact.repair(allowed=window parts)`. The rip-up region grows to cover wherever that repair moved a part. An illegal window is discarded before any routing.
 - Annealer runs a fixed move count (6,000 per part), so a window is reproducible whenever its time budget does not bind.
@@ -90,7 +94,7 @@ Because `route_open`'s cost grows with open connections (Freerouting ≈ 1–2 C
 | 2 | completion and DRC: unconnected + errors, then unconnected | neither may rise; a board that becomes clean is kept; another strict gain is kept if physics rises ≤ 10 % per item gained |
 | 3 | routed physics: Σ_modules min(u, 5), a module without a value counted as 3 | with equal completion and DRC, must fall by > 0.5 % |
 
-Otherwise the candidate is reverted (dropped). The clean rule and per-item slack are the user's decision (confirmed after the first A/B) and the default; a flat 10 % slack reverted a board-cleaning window on ch552g ([evidence](../../research/joint/kae-joint-loop.md#results)).
+Thresholds scale by max(1, Σu); copper length and vias are reported, a tie-break only with `--set eff_tiebreak=1` ([why](../../research/joint/kae-joint-loop.md#idea-and-how-it-works)). Otherwise the candidate is reverted (dropped). The clean rule and per-item slack are the user's decision (confirmed after the first A/B) and the default; a flat 10 % slack reverted a board-cleaning window on ch552g ([evidence](../../research/joint/kae-joint-loop.md#results)).
 
 ## Determinism and budgets
 

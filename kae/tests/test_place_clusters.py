@@ -216,3 +216,43 @@ def test_macro_members_may_sit_in_different_cover_rectangles():
     it = Item(members=[0, 1], variants=[{0: (25, 0, 0), 1: (0, 25, 0)}])
     _, boards = _rects_of(P, it, 0)
     assert allowed_boxes(P, boards)
+
+
+def _xtal_macro(d_min):
+    P, ref = _problem()
+    u = {r: p.uuid for r, p in ref.items()}
+    s = {"kind": "crystal", "ic": u["U2"], "xin": "1", "crystal": u["Y1"], "load_caps": [], "nets": ["SIG2"]}
+    if d_min:
+        s["budget"] = {"d_min": {"value": d_min, "unit": "mm", "class": "E5", "basis": "test"}}
+    ss = clusters.structures(P, {"structures": [s]})
+    assert len(ss) == 1
+    lay = clusters.micro_place(P, ss[0].members, ss, ref["U2"].i, time_s=2.0, top_k=1, workers=1)[0]
+
+    def pin(i, num):
+        dx, dy, k = lay.offsets[i]
+        kk = next(q for q, pd in enumerate(P.parts[i].fp.pads) if pd.number == num)
+        x, y = P.parts[i].rots[k].pins[kk]
+        return dx * P.g + float(x), dy * P.g + float(y)
+    (ax, ay), (bx, by) = pin(ref["U2"].i, "1"), pin(ref["Y1"].i, "1")
+    return ss[0], float(np.hypot(ax - bx, ay - by))
+
+
+def test_crystal_macro_keeps_the_vendor_minimum_distance():
+    """crystals-clocks.md XTAL-DMIN (ESP32 >= 2.7 mm): the macro pulls the crystal close, but
+    no closer than the brief's budget.d_min from the IC's oscillator pin."""
+    _, d0 = _xtal_macro(None)
+    assert d0 < 2.7                                   # unconstrained, the proxy pulls it in
+    st, d = _xtal_macro(2.7)
+    assert st.min_sep and d >= 2.7
+    assert d < d0 + 3.0                               # still short
+
+
+def test_xin_load_cap_pulls_harder_than_the_xout_one():
+    """crystals-clocks.md XTAL-CAP: the XIN cap is placed first and closest."""
+    P, ref = _problem()
+    u = {r: p.uuid for r, p in ref.items()}
+    s = {"kind": "crystal", "ic": u["U2"], "xin": "1", "crystal": u["Y1"], "load_caps": [u["U5"], u["R1"]],
+         "load_caps_xin": [u["U5"]], "load_caps_xout": [u["R1"]], "nets": ["SIG2"]}
+    st = clusters.structures(P, {"structures": [s]})[0]
+    w = {P.parts[a[0]].ref: wt for a, b, wt in st.segs if P.parts[b[0]].ref == "Y1"}
+    assert w["U5"] > w["R1"]

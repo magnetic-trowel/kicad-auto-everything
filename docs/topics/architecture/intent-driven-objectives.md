@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: CC-BY-4.0 -->
 # Intent-driven objectives: how the commander tells kae what "better" means
 
-Scope: design of kae's internal objective, set by the commander's declared intent. Not here: operating conditions as a SPICE testbench -> [intent-interchange](intent-interchange.md); geometric constraints and specificity -> [constraint-ir](constraint-ir.md); W × Z decomposition -> [physics-driven-design](physics-driven-design.md); reduced-model frequency range -> [physics-frequency-coverage](physics-frequency-coverage.md).
+Scope: design of kae's internal objective, set by the commander's declared intent. Not here: router changes, build status and acceptance tests -> [intent-driven-objectives-build](intent-driven-objectives-build.md); operating conditions as a SPICE testbench -> [intent-interchange](intent-interchange.md); geometric constraints and specificity -> [constraint-ir](constraint-ir.md); W × Z decomposition -> [physics-driven-design](physics-driven-design.md); reduced-model frequency range -> [physics-frequency-coverage](physics-frequency-coverage.md).
 Keys: intent, objective, exchange rate, mW_eq, lexicographic tiers, ε-constraint, CVaR20, catalogue, observable, knob, what_if, status, elicitation, neutral/1, sections, boundaries, kae.intent/1, phi(u), PHI_SLOPE_CAP, MCP, CEL, out_of_model
 
 Tags: [P] primary source read, [S] secondary or search summary, [M] measured here, [I] our inference.
@@ -108,8 +108,9 @@ Top-level keys: `schema`, `generation`, `currency`, `defaults`, `environment`, `
 ```
 
 Rules:
-- Every term needs a `why`. A limit needs a `source`, else it is marked `assumed`; an assumed limit is reported against, not priced, unless the intent gives it a `rate`.
-- Specificity: part-scoped term > section-scoped > board-scoped, as in [constraint-ir](constraint-ir.md#eight-design-rules). Ties are errors, returned with both term ids.
+- Every term says why (`why` or `source`). A bound without a `source` is priced as written but marked `assumed` in its row and in `assumed_limits`. A `limit` needs a `rate`; an unpriced bound is a `report` term (`load` rejects a rate-less limit rather than downgrade it). A `hard` term takes no rate.
+- Temperatures: °C is absolute for `temp.junction`, a rise for `heat.track` (IPC-2221's wording); K is a rise only, rejected against an absolute temperature.
+- Specificity: part-scoped term > section-scoped > board-scoped, as in [constraint-ir](constraint-ir.md#eight-design-rules). Ties are errors, returned with both term ids. Terms compete only within one tier and bound side, so a `min` and a `max` term make a window (`objective.resolve` lists which `where` keys are part or section scope).
 - Exchange rates are explicit and local: "20 mW_eq/dB" = paying 20 mW of loss for 1 dB of GNSS margin is acceptable. kae checks only units and sign. Lacking a rate, the LLM reads each term's marginal cost along the knobs from `evaluate` and answers pairwise ("is 1 dB worth more than 20 mW?"), Keeney–Raiffa style [I].
 
 Defaults when silent (`neutral/1`), each emitted as a synthetic term with id `D*` so it shows in the status like any other term:
@@ -119,6 +120,7 @@ Defaults when silent (`neutral/1`), each emitted as a synthetic term with id `D*
 | connectivity, DRC, clearances, creepage | hard | legality, not preference |
 | part ratings with a source (V_max of a switch, T_j max) | hard, worst corner | a rating is a fact |
 | total copper dissipation | cost, 1 mW_eq/mW, CVaR20 | energy is absolute: no guessed bound; this one cost gives every board a neutral optimum (no needless loss, no broken ratings) |
+| copper area (router widths only) | `knobs.route.area_cost` 0.2 mW_eq/mm², reported as defaulted | bounds w* = √(k_R ρ / (t a)); between the always-on economic value (0.05–0.12) and human layouts (≈ 0.6); chosen by A/B (0.2 completed most, same physics): basis and A/B in [field-solver-routing-and-intent](../../research/physics/field-solver-routing-and-intent.md) |
 | drop, heating, supply noise, victim pickup | reported, unpriced, against the old priors labelled `reference` | the user rejected assumed bounds as prices |
 | cable common mode | reported as a layout-only *transfer* quantity (nH of shared path per connector pair, V/A), no CISPR verdict | no cable is assumed; priced only when `environment.cables` declares one |
 | radiated loop emission | reported in dBµV/m at 10 m next to CISPR 32 B, unpriced | enclosure unknown |
@@ -133,7 +135,7 @@ minimize lexicographically   ( H_hard,  H_limit,  C )
   C       = Σ_cost-terms rate_t · agg_t(x_t)  +  Σ_limit-terms-with-target rate_t · max(0, agg_t(x_t) − target_t)
 ```
 
-- Tiers with rates: a hard term (a switch's rating) is never bought; within limits and costs, trading is the job. Limits have ε-constraint semantics: once met they cost nothing unless they carry a `target`. The cost tier still minimizes every priced quantity, avoiding goal programming's dominated solutions.
+- Tiers with rates: a hard term (a switch's rating) is never bought; within limits and costs, trading is the job. Limits have ε-constraint semantics: once met they cost nothing unless they carry a `target`. The cost tier still minimizes every priced quantity, avoiding goal programming's dominated solutions. The router keeps the tier: it picks candidate routes by (hard violation, cost), as `objective.key` ranks layouts; a violated hard term only steers the path search (`route.Policy.HARD_SLOPE`, an exact-penalty slope [Nocedal & Wright, *Numerical Optimization*, §17.2]). In the output, a violated hard term is a `block` hazard, one the router cannot compute (e.g. `temp.junction`) a `warn`.
 - Corners per term: `agg` ∈ {`worst` (hard terms, limits from ratings), `cvar20` (costs), `typ`}. Each term picks its own corners, so the worst ripple corner and the worst loss corner may be different operating points: pessimistic but traceable. A `joint` option keeps today's CVaR over the sum for terms the intent groups.
 - Traceability: every contribution to H or C is a row (term id, observable instance, corner set, value, unit, rate, contribution) plus the dominant cause (an (aggressor, observer) pair, a harmonic, a track or a ledger parameter); the objective is reproduced from the rows exactly.
 - Failure modes: rates from nothing reproduce today's bug, so the status shows each term's share of C and flags any term above 80 % whose rate is marked `guess`. Per-dB rates pay steeply near zero coupling, so dB terms clip at the model's noise floor. An infeasible limit tier is reported with its binding terms while the router minimizes H_limit.
@@ -182,36 +184,9 @@ Limit sources:
 - Switcher spurs penetrate planes; distance, filters and ferrites are the remedies [P] ([TI SLVAF16A](https://ti.com/document-viewer/lit/html/SLVAF16A/GUID-A58B5D95-DA4C-4AF1-B04F-78255512C2E2)).
 - PA ripple: no vendor number found; spurs sit at the ripple frequency and track its amplitude [S] ([US 7132891](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/7132891)), so the limit comes from the PA datasheet via `facts`.
 
-## How the router consumes intent
+## How the router consumes intent, build order, acceptance tests
 
-`pnr.PhysRouter` separates the field solve (`solve_fields`, cached by `_sig`) from the weights (`_weights`); prices are W × Z ([physics-driven-design](physics-driven-design.md)). Intent changes only W:
-
-| Requirement | Today | With intent |
-|---|---|---|
-| any term | `phi_prime(u)` per (observer, aggressor) pair, capped at 5 | ∂C/∂x_t = `rate_t` (cost) or `rate_t·[x_t > max_t]` plus a hinge-smoothing barrier (limit); `PHI_SLOPE_CAP` deleted |
-| loss, drop | `_dc_per_ohm` (harm/Ω) → `_dc_width` ladder | same code in mW_eq/Ω; `knobs.route.width.*` clamp the ladder |
-| heating | IPC-2221 floor at `dcp.dT_max` | floor from the intent's limit, or none if heating is a cost |
-| band coupling | one 10 MHz band, or `--spectral` weights from all harmonics | spectral weights only from harmonics inside each term's band, times the rate |
-| cable CM | `UNPRICED = ("cm",)` | declared cables only, after the pending coupling check |
-| thermal to heatsink | none | new knob `route.via_array[region]`, priced by ∂θ/∂via (`kae.em.thermal`) |
-| return continuity, decap priority | `_cut_costs`; placer | same code, weighted by the terms' rates |
-
-Incremental follow: a new generation recomputes `_weights` without new field solves; nets whose weighted price moved by more than a threshold (start at 20 %) are re-routed, largest change first; `_route_verified` still guards each candidate.
-
-## Code changes, in order
-
-1. `kae/src/kae/intent/` (new): schema, units, AST, specificity, `neutral/1`, errors as fixes. Tests: unit mismatch and tied specificity rejected with messages; deterministic compile.
-2. Observations instead of u: `observe.py`, `dc.py`, `heat.py`, `wideband.py`, `capacitive.py` emit `Observation(id, scope, unit, per-corner values, band, basis, rests_on)`. `TOL`, `LOSS_SHARE`, `DROP_SHARE`, `DT_MAX` become `reference` values; cable `cm` only for declared cables.
-3. `kae/src/kae/excite/objective.py`: tiers, per-term aggregation, contribution rows, replacing the sums in `evaluate.py`, `wideband.py`, `heat.py`. A `legacy/u` profile reproduces today's totals as a regression gate.
-4. [Status report](#status-what-the-llm-reads), with `buys` from pnr prices and questions from `Ledger.flagged` plus environment unknowns.
-5. `pnr.py`: the [router changes](#how-the-router-consumes-intent).
-6. Server surface: `describe`, `evaluate`, `route`, `what_if` over [mcp-tool-surface-spec](../kicad/mcp-tool-surface-spec.md).
-
-Acceptance tests:
-- Ranking flips with intent: the boost board's human and 0.2 mm router layouts under intent A (plastic case, no cables, loss cost) and B (1.5 m unshielded cables on J1, J2 with a CISPR 32 B rate). A must prefer the human layout; B may prefer the router's; both name the dominant term.
-- No intent → `neutral/1`; copper loss decides.
-- Traceability: rows sum to the objective; each cites a term id. Incremental: one rate change re-routes only nets whose price moved.
-- `score.py` and cp1/cpk untouched: this is kae's internal objective.
+Intent changes only W in the router's W × Z prices, and hard terms stay a lexicographic tier ([objective](#objective-formulation)); a new generation re-routes only nets whose price moved. The router table, what is built and what is not, and the acceptance tests (ranking flips on the boost board under two intents, `neutral/1`, traceable rows, `score.py` untouched) are in [intent-driven-objectives-build](intent-driven-objectives-build.md).
 
 ## Open questions
 

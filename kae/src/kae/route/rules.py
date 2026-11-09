@@ -20,7 +20,8 @@ resolution itself, which this module ports:
 
 Conditions are KiCad's expression language (pcbnew/pcbexpr_*.cpp): A./B. properties,
 functions, ==, != (string compares are case-insensitive and honour * and ? wildcards; an
-undefined value compares false both ways), <, >, &&, ||, !, numbers with units.
+undefined value compares false both ways), <, >, &&, ||, !, numbers with units (conditions
+compute in nm, as KiCad's do, so a bare number is nm).
 Geometry-dependent functions (intersectsArea, intersectsCourtyard, enclosedByArea, ...)
 cannot be known before routing; `evaluate(..., geometric=True|False)` decides them, and
 `strictest()` takes the tighter result of both, so a relaxation inside an area is ignored
@@ -33,11 +34,17 @@ override and local (clearances in mm), layers. Values are mm.
 """
 import fnmatch
 import re
+import sys
+from pathlib import Path
 from dataclasses import dataclass, field
 
 from kae.board import sexpr
 
 UNITS = {"mm": 1.0, "mil": 0.0254, "in": 25.4, "um": 0.001, "nm": 1e-6, "deg": 1.0}
+# Conditions compute as KiCad does, in its internal units: lengths in nm, angles in degrees, so a
+# bare number is nm (A.Width > 200000 is 0.2 mm) (drc-rule-language-reference.md: unitless = nm)
+COND_UNITS = {u: (1.0 if u == "deg" else f * 1e6) for u, f in UNITS.items()}
+LENGTH_KEYS = {"width", "hole_x", "hole_y"}   # item values in mm that conditions see in nm
 CLEARANCE_TYPES = ("clearance", "hole_clearance", "edge_clearance", "physical_clearance",
                    "physical_hole_clearance", "courtyard_clearance", "silk_clearance")
 GEOMETRIC = {"intersectsarea", "insidearea", "enclosedbyarea", "intersectscourtyard",
@@ -74,8 +81,7 @@ def tokenize(text):
             raise ValueError(f"cannot parse rule condition at {text[i:i + 20]!r}")
         i = m.end()
         if m.group("num") is not None:
-            out.append(("num", float(m.group("num")) * UNITS.get(m.group("unit") or "mm", 1.0)
-                        if m.group("unit") else float(m.group("num")), m.group("unit")))
+            out.append(("num", float(m.group("num")) * COND_UNITS.get(m.group("unit"), 1.0), m.group("unit")))
         elif m.group("str") is not None:
             out.append(("str", re.sub(r"\\(.)", r"\1", m.group("str")), None))
         elif m.group("id") is not None:
@@ -86,7 +92,10 @@ def tokenize(text):
 
 
 class _Parser:
-    """Recursive descent: or > and > not > comparison > additive > term > unary > primary."""
+    """Recursive descent in KiCad's precedence (common/libeval_compiler/grammar.lemon), lowest
+    first: && < || < comparison (non-associative) < ! < + - < * / < unary minus < primary.
+    Not C's: `a && b || c` is `a && (b || c)` and `!x == y` is `(!x) == y`
+    (docs/topics/kicad/drc-rule-language-reference.md)."""
 
     def __init__(self, toks):
         self.t, self.i = toks, 0
@@ -107,38 +116,38 @@ class _Parser:
         return tok
 
     def parse(self):
-        e = self.orexpr()
+        e = self.andexpr()
         if self.i != len(self.t):
             raise ValueError(f"trailing tokens {self.t[self.i:]}")
         return e
 
-    def orexpr(self):
-        e = self.andexpr()
-        while self.peek("op", "||"):
-            self.take()
-            e = ("or", e, self.andexpr())
-        return e
-
     def andexpr(self):
-        e = self.notexpr()
+        e = self.orexpr()
         while self.peek("op", "&&"):
             self.take()
-            e = ("and", e, self.notexpr())
+            e = ("and", e, self.orexpr())
+        return e
+
+    def orexpr(self):
+        e = self.cmp()
+        while self.peek("op", "||"):
+            self.take()
+            e = ("or", e, self.cmp())
+        return e
+
+    def cmp(self):
+        e = self.notexpr()
+        for op in ("==", "!=", "<=", ">=", "<", ">"):
+            if self.peek("op", op):
+                self.take()
+                return ("cmp", op, e, self.notexpr())
         return e
 
     def notexpr(self):
         if self.peek("op", "!"):
             self.take()
             return ("not", self.notexpr())
-        return self.cmp()
-
-    def cmp(self):
-        e = self.add()
-        for op in ("==", "!=", "<=", ">=", "<", ">"):
-            if self.peek("op", op):
-                self.take()
-                return ("cmp", op, e, self.add())
-        return e
+        return self.add()
 
     def add(self):
         e = self.term()
@@ -163,7 +172,7 @@ class _Parser:
     def primary(self):
         if self.peek("op", "("):
             self.take()
-            e = self.orexpr()
+            e = self.andexpr()
             self.take("op", ")")
             return e
         tok = self.take()
@@ -180,7 +189,7 @@ class _Parser:
                     self.take()
                     args = []
                     while not self.peek("op", ")"):
-                        args.append(self.orexpr())
+                        args.append(self.andexpr())
                         if self.peek("op", ","):
                             self.take()
                     self.take("op", ")")
@@ -250,6 +259,8 @@ def _prop(ctx, which, attr):
     v = item[key]
     if key == "netclass":
         return ("netclass", v, item.get("constituents") or v.split(","))
+    if key in LENGTH_KEYS and isinstance(v, (int, float)) and not isinstance(v, bool):
+        return v * 1e6
     return v
 
 
@@ -270,7 +281,7 @@ def _eq(a, b):
     if isinstance(a, bool) or isinstance(b, bool):
         return float(a) == float(b)
     if isinstance(a, (int, float)) and isinstance(b, (int, float)):
-        return abs(a - b) < 1e-9
+        return abs(a - b) < 1e-6   # lengths are nm here
     if isinstance(a, str) and isinstance(b, str):
         return _str_eq(a, b)
     return False
@@ -476,7 +487,7 @@ def read_dru(path):
                 if v is not None:
                     setattr(d, k, parse_length(v))
             cons.append(d)
-        cond = sexpr.value(r, "condition", "") or ""
+        cond = sexpr.last_value(r, "condition", "") or ""   # KiCad keeps the last condition
         out.append(dict(name=r[1] if len(r) > 1 and isinstance(r[1], str) else "", condition=cond,
                         layer=sexpr.value(r, "layer", "") or "", constraints=cons,
                         severity=sexpr.value(r, "severity", None)))
@@ -501,7 +512,11 @@ class Board:
     nets: set = field(default_factory=set)
     rules: list = field(default_factory=list)       # implicit + custom, in KiCad's order
     errors: list = field(default_factory=list)      # conditions that failed to compile
+    dru_rejected: str = ""                          # why KiCad drops the .kicad_dru (no custom rules)
     unsupported: set = field(default_factory=set)   # functions met but not modelled
+    ignored: dict = field(default_factory=dict)     # ctype -> floor: clearance checks the project turns off
+    soft_floor: dict = field(default_factory=dict)  # ctype -> floor for a clearance whose winning custom
+                                                    # rule is not error severity (constraints.rule_board)
 
 
 def build(copper, settings, netclasses, nets, dru_path=None):
@@ -541,7 +556,12 @@ def build(copper, settings, netclasses, nets, dru_path=None):
                                  [Constraint("diff_pair_gap", min=s.get("min_clearance", 0.0), opt=nc["dp_gap"])],
                                  implicit=True, source=f"netclass:{name}", netclass=name))
             if nc.get("clearance") is not None and nc["dp_gap"] < nc["clearance"]:
-                specific.append(Rule(f"netclass '{name}' (diff pair)", compile_condition("AB.isCoupledDiffPair()"),
+                # measured on KiCad 10.0.7 (aifryz sensor-hub, Default gap 0.09 < clearance 0.2): two
+                # coupled tracks 0.093 mm apart pass, a pad of one net 0.093 mm from a track of the
+                # other is a 0.2 mm netclass violation, so the narrower gap holds between tracks
+                # and vias only
+                specific.append(Rule(f"netclass '{name}' (diff pair)",
+                                     compile_condition("AB.isCoupledDiffPair() && A.Type != 'Pad' && B.Type != 'Pad'"),
                                      None, [Constraint("clearance", min=nc["dp_gap"])],
                                      implicit=True, source=f"netclass:{name}", netclass=name))
         if nc.get("via_diameter") is not None:
@@ -563,6 +583,14 @@ def build(copper, settings, netclasses, nets, dru_path=None):
     clearance_rules.sort(key=lambda r: r.constraints[0].min if r.constraints[0].min is not None else 0.0)
     rules += clearance_rules + specific
     if dru_path:
+        # KiCad drops the whole file on any parse error and its DRC runs with net-class and
+        # board rules only (drc-rule-language-reference.md); route against what it checks
+        from kae.board.dru_check import rejection
+        b.dru_rejected = rejection(dru_path, Path(dru_path).with_suffix(".kicad_pcb")) or ""
+        if b.dru_rejected:
+            print(f"warning: KiCad drops this rules file ({b.dru_rejected}); routing with net-class "
+                  f"and board rules only, as KiCad's DRC will", file=sys.stderr, flush=True)
+    if dru_path and not b.dru_rejected:
         for r in read_dru(dru_path):
             try:
                 cond = compile_condition(r["condition"])
@@ -585,8 +613,12 @@ def _matches_layer(rule, layer):
     return bool(rule.layers(layer))
 
 
-def evaluate(board, ctype, a, b=None, layer=None, geometric=False):
-    """EvalRules(ctype, a, b, layer): the winning Constraint (min/opt/max in mm)."""
+NON_ERROR = ("ignore", "warning", "info", "exclusion")   # severities kaebench does not count as errors
+
+
+def evaluate(board, ctype, a, b=None, layer=None, geometric=False, custom=True):
+    """EvalRules(ctype, a, b, layer): the winning Constraint (min/opt/max in mm).
+    custom=False: as if the board had no .kicad_dru rules."""
     s = board.settings
     a_nc, b_nc = _non_copper(a), _non_copper(b)
     out = Constraint(ctype)
@@ -595,12 +627,17 @@ def evaluate(board, ctype, a, b=None, layer=None, geometric=False):
         ob = b.get("override") if b is not None and b.get("connected") and not a_nc else None
         if oa is not None or ob is not None:
             val = max(v for v in (oa, ob) if v is not None)
-            if val:
+            # an override of zero or less is no override: KiCad falls through to the net class
+            # (ubertooth U3's thermal vias, pad clearance -0.099 mm: KiCad 10.0.7 requires the
+            # 0.2 mm class clearance, the port had floored -0.099 at the board minimum, 0.128)
+            if val > 0:
                 floor = s.get("min_clearance", 0.0) if ctype == "clearance" else s.get("hole_clearance", 0.0)
                 out.min, out.rule = max(val, floor), "local override"
                 return out
     winner = None
     for rule in board.rules:
+        if not custom and rule.source == "custom":
+            continue
         for c in rule.constraints:
             if c.type != ctype:
                 continue
@@ -657,9 +694,10 @@ def _cond(board, rule, ctype, a, b, layer, geometric):
 
 def strictest(board, ctype, a, b=None, layer=None):
     """The tighter of evaluate(geometric=False) and evaluate(geometric=True): the larger
-    minimum and the smaller maximum."""
-    c0 = evaluate(board, ctype, a, b, layer, geometric=False)
-    c1 = evaluate(board, ctype, a, b, layer, geometric=True)
+    minimum and the smaller maximum. A custom rule that is not error severity does not bind
+    (_soften)."""
+    c0 = _soften(board, evaluate(board, ctype, a, b, layer, geometric=False), ctype, a, b, layer, False)
+    c1 = _soften(board, evaluate(board, ctype, a, b, layer, geometric=True), ctype, a, b, layer, True)
     out = c0.copy()
     if c1.min is not None and (out.min is None or c1.min > out.min):
         out.min, out.rule = c1.min, c1.rule + " (inside its area)"
@@ -671,3 +709,24 @@ def strictest(board, ctype, a, b=None, layer=None):
     if floor is not None and out.min is not None and out.min > floor:
         out.min, out.rule = floor, f"{ctype} not checked on this board (floor {floor} mm)"
     return out
+
+
+def _soften(board, c, ctype, a, b, layer, geometric):
+    """A winning custom rule with (severity ignore|warning|exclusion): KiCad still lets it
+    override earlier rules but reports no error for it, so its limit must not bind the router
+    (drc-rule-language-reference.md, Severity). A clearance keeps only the floor kept for a
+    clearance check the project turns off (Board.soft_floor, as Board.ignored); any other
+    constraint falls back to the net-class and board-setup limits."""
+    if c.implicit or c.severity is None or str(c.severity).lower() not in NON_ERROR:
+        return c
+    why = f"{c.rule} (severity {c.severity}"
+    floor = (getattr(board, "soft_floor", None) or {}).get(ctype)
+    if floor is not None:
+        if c.min is not None and c.min > floor:
+            c.min, c.rule = floor, why + f": floor {floor} mm)"
+        return c
+    base = evaluate(board, ctype, a, b, layer, geometric, custom=False)
+    c.min = None if c.min is None or base.min is None else min(c.min, base.min)
+    c.max = None if c.max is None or base.max is None else max(c.max, base.max)
+    c.rule = why + ": board and net-class limits)"
+    return c

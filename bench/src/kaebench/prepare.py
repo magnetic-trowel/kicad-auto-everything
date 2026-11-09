@@ -43,7 +43,17 @@ TASK_KINDS = ("route", "place", "place-fixed")
 # 8: place-fixed classifier rules 4 (the user's judgement calls); other kinds unchanged
 # 9: place-fixed classifier rules 5: castellated edge pads and 4UCONN connectors are connectors
 #    (14 parts on 4 of the 213 merit boards changed class); other kinds unchanged
-TASK_SPEC = 9
+# 10: KiCad's uuid generator is seeded from the sha256 of each file prepare loads, so the uuids
+#    KiCad invents for objects a file stores none for (KiCad 5/6 boards, missing or partial
+#    tstamps, pads before KiCad 9), and the save order that follows them, are the same every
+#    time: the same source bytes give byte-identical task files. Before, each preparation of
+#    such a board drew random uuids, and an output stored from one preparation, re-scored
+#    against another, showed unchanged objects as removed and added (invalid). Boards that
+#    store every uuid give the same files as under spec 9, except that the teardrop zones
+#    (saved without uuid) of a place-fixed reference now keep one order; tasks of earlier
+#    specs stay valid on their own, but outputs are scored only against the task they were
+#    made from
+TASK_SPEC = 10
 # Oldest spec each task kind is still valid under (spec 5 changed only place tasks).
 MIN_TASK_SPEC = {"route": 4, "place": 5, "joint": 5, "place-fixed": 9, "joint-fixed": 9}
 # The task input each kind starts from (joint = place and route, from the place task's input).

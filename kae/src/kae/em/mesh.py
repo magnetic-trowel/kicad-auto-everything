@@ -20,9 +20,13 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from kae import materials as MAT
+
 MM = 1e-3
-SIGMA_CU = 5.8e7          # S/m, annealed copper at 20 C
-PLATING = 25e-6           # m, via barrel wall
+SIGMA_CU = MAT.SIGMA_CU   # S/m, annealed copper at T_REF_C (kae.materials)
+ALPHA_CU = MAT.ALPHA_CU   # 1/K, copper's resistance temperature coefficient at T_REF_C (kae.materials)
+T_REF_C = MAT.T_REF_C     # C, the temperature SIGMA_CU holds at
+PLATING = MAT.VIA_PLATING_MM * 1e-3   # m, via barrel wall (IPC-6012 class 2 average, kae.materials)
 
 
 @dataclass
@@ -324,16 +328,53 @@ class Mesh:
     def port(self, name, plus, minus):
         self.ports.append((name, plus, minus))
 
+    def thin_cells(self, layer):
+        """(ny, nx) bool: copper cells of `layer` in features of their own net narrower than 3 cells (the cells a
+        3 x 3 morphological opening of the net's copper removes; a thin track beside another net's pour counts)."""
+        lab = self.lab[layer]
+        ny, nx = lab.shape
+        pad = np.full((ny + 2, nx + 2), -2, lab.dtype)
+        pad[1:-1, 1:-1] = lab
+        sh = [(dj, di) for dj in (-1, 0, 1) for di in (-1, 0, 1)]
+        # interior: the whole 3 x 3 window holds the cell's own net
+        inner = lab >= 0
+        for dj, di in sh:
+            inner &= pad[1 + dj:1 + dj + ny, 1 + di:1 + di + nx] == lab
+        il = np.full((ny + 2, nx + 2), -3, lab.dtype)
+        il[1:-1, 1:-1] = np.where(inner, lab, -3)
+        # kept by the opening: some interior cell of the same net within the 3 x 3 window
+        kept = np.zeros((ny, nx), bool)
+        for dj, di in sh:
+            kept |= il[1 + dj:1 + dj + ny, 1 + di:1 + di + nx] == lab
+        return (lab >= 0) & ~kept
+
+    def resolution(self, nets=None):
+        """{net: (cells in features narrower than 3 cells, copper cells)} over every layer, for `nets` (default
+        all)."""
+        ids = None if nets is None else {self.nets.index(n) for n in nets if n in self.nets}
+        out = {}
+        for l in range(len(self.layers)):
+            lab = self.lab[l]
+            thin = self.thin_cells(l)
+            ks, n_all = np.unique(lab[lab >= 0], return_counts=True)
+            n_thin = np.bincount(lab[thin], minlength=int(ks.max()) + 1 if len(ks) else 0)
+            for k, n in zip(ks, n_all):
+                if ids is not None and int(k) not in ids:
+                    continue
+                t, a = out.get(self.nets[k], (0, 0))
+                out[self.nets[k]] = (t + int(n_thin[k]), a + int(n))
+        return out
+
     def check(self):
-        """Resolution warnings: copper features narrower than 3 cells on any layer."""
-        from scipy import ndimage
+        """Resolution warnings: copper features narrower than 3 cells (per net) on any layer. Their R and self
+        inductance are exact (paint_line: a sub-cell track's bars carry its width and length); their coupling,
+        the return current under them and their edges are resolved only to a cell."""
         out = []
         for l, lay in enumerate(self.layers):
             occ = self.lab[l] >= 0
             if not occ.any():
                 continue
-            thin = occ & ~ndimage.binary_opening(occ, structure=np.ones((3, 3)))
-            frac = thin.sum() / occ.sum()
+            frac = self.thin_cells(l).sum() / occ.sum()
             if frac > 0.02:
                 out.append(f"{lay.name}: {frac:.0%} of copper cells are in features narrower than 3 cells "
                            f"({3 * self.pitch:g} mm); refine the pitch for them")
@@ -423,6 +464,9 @@ class Network:
             subs += lay.subs()
         self.subs = subs
         self.sub_of = sub_of
+        self.layer_of_sub = np.zeros(len(subs), np.int64)
+        for l, ss in enumerate(sub_of):
+            self.layer_of_sub[ss] = l
 
         # bars -> filaments, per orientation: arrays (s, j, i, a, b, R)
         self.fil = {}
@@ -452,12 +496,16 @@ class Network:
                         if th:
                             thin_w[q], lscale[q] = th
                             wfac[q] = m.pitch / th[0]
+                # a narrow bar's self-inductance correction belongs to the whole bar (its stack of nsub filaments):
+                # the same value c couples every pair of the stack (Network.Lc_off), so a uniform current sees
+                # c I^2 at any nsub (a per-filament self correction alone gave the stack c / nsub)
+                dL = _thin_dL(m.pitch * MM, thin_w * MM, lscale, lay.t * MM)
                 for s in sub_of[l]:
                     zb, ts = subs[s]
                     S.append(np.full(len(jj), s))
                     J.append(jj), I.append(ii), A.append(na), B.append(nb)
                     R.append(wfac * lscale / (m.sigma * ts))     # p / (sigma w t), times the path's length scale
-                    LC.append(_thin_dL(m.pitch * MM, thin_w * MM, lscale, ts))
+                    LC.append(dL)
             cat = (lambda xs, dt: np.concatenate(xs).astype(dt) if xs else np.zeros(0, dt))
             self.fil[o] = dict(s=cat(S, np.int64), j=cat(J, np.int64), i=cat(I, np.int64),
                                a=cat(A, np.int64), b=cat(B, np.int64), R=cat(R, float), Lc=cat(LC, float))
@@ -472,7 +520,7 @@ class Network:
                     continue
                 h = abs(za - zb)
                 r = v.drill / 2 * MM
-                R = h / (m.sigma * np.pi * 2 * r * v.plating)
+                R = h / (m.sigma * MAT.barrel_area_mm2(v.drill, v.plating / MM) * MM * MM)   # pi (d + t) t
                 vs.append((na, nb, v.x * MM, v.y * MM, min(za, zb), max(za, zb), r, R))
         self.vseg = np.array(vs, float).reshape(-1, 8)
         self.lump = [(self.term_node[q.a], self.term_node[q.b], q) for q in m.lumped
@@ -490,7 +538,45 @@ class Network:
                                  np.zeros(len(self.lump))])
         # self-inductance correction of sub-cell tracks (the FFT operator sees p-wide bars)
         self.Lc = np.concatenate([self.fil["x"]["Lc"], self.fil["y"]["Lc"], np.zeros(len(self.vseg) + len(self.lump))])
+        self.Lc_off = self._stack_coupling()
         self._components()
+
+    def _stack_coupling(self):
+        """(n_br, n_br) sparse: the narrow bars' correction c between the different filaments of one stack (same
+        orientation, layer and cell); None when every layer has one filament or no bar is narrow."""
+        import scipy.sparse as sp
+        rows, cols, vals = [], [], []
+        layer_of = self.layer_of_sub
+        for o in ("x", "y"):
+            f = self.fil[o]
+            k = np.nonzero(f["Lc"] != 0)[0]
+            if not len(k):
+                continue
+            key = (layer_of[f["s"][k]] * (self.m.ny + 1) + f["j"][k]) * (self.m.nx + 1) + f["i"][k]
+            order = np.argsort(key, kind="stable")
+            ks = key[order]
+            starts = np.r_[0, np.nonzero(np.diff(ks))[0] + 1]
+            sizes = np.diff(np.r_[starts, len(k)])
+            for size in np.unique(sizes):
+                if size < 2:
+                    continue
+                grp = k[order[starts[sizes == size][:, None] + np.arange(size)[None]]]     # (n stacks, size)
+                a = np.repeat(grp, size, axis=1).ravel()
+                b = np.tile(grp, (1, size)).ravel()
+                off = a != b
+                rows.append(self.off[o] + a[off]), cols.append(self.off[o] + b[off])
+                vals.append(f["Lc"][a[off]])
+        if not rows:
+            return None
+        return sp.csr_matrix((np.concatenate(vals), (np.concatenate(rows), np.concatenate(cols))),
+                             shape=(self.n_br, self.n_br))
+
+    def Lc_apply(self, I):
+        """The narrow bars' inductance correction times branch currents I ((n_br,) or (n_br, P))."""
+        out = (self.Lc * I.T).T
+        if self.Lc_off is not None:
+            out = out + self.Lc_off @ I
+        return out
 
     def _components(self):
         from scipy.sparse import coo_matrix

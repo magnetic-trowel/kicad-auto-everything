@@ -53,10 +53,11 @@ Full rule-pack contract: [datasheet-to-constraints.md](datasheet-to-constraints.
 [I]
 - **Area:** shoelace area of ordered pad centroids, plus a routed-path-aware variant (through pads and tracks, area += via count × a board-thickness term).
 - **Inductance:** L ≈ µ0·h·length/width over a plane, or rank ordering when uncalibrated.
-- **Inputs:** pad gap, trace W/L, via count and length to the reference plane, plane depth (deeper = higher L, per Archambeault). Via L ≈ (h/5)(ln(4h/d)+1) nH (Rohm/Johnson).
+- **Inputs:** pad gap, trace W/L, via count and length to the reference plane, plane depth (deeper = higher L, per Archambeault). Via L ≈ (h/5)(ln(4h/d)+1) nH (Rohm/Johnson; h, d in mm).
+  - **Caveat:** that is 0.2h[ln(2h/r)+1], a loop with an implied return about 2e·h ≈ 5.4h away [I], not the via's partial inductance. kae uses the Rosa partial 0.2(h·asinh(h/r) − √(h²+r²) + r) nH ([`fastloop.m_self`](../../../kae/src/kae/physics/fastloop.py); [Rosa 1908](https://nvlpubs.nist.gov/nistpubs/bulletin/04/nbsbulletinv4n1p149_A2b.pdf)) inside a loop solve that adds the plane mutuals. 1.6 mm via, 0.3 mm drill: 1.30 nH (Johnson) vs 0.69 nH (Rosa); 2–6× across 0.2–1.6 mm vias ([open-solvers § F1](../physics/open-solvers.md#f1-closed-forms-µs-vectorizable)). Use the Johnson value only as a rough loop figure.
 - **Calibration anchors:** decap mounting (Axotron 0402, Archambeault plane depth) -> [decoupling-pdn](decoupling-pdn.md#mounting-inductance-data); loops (SNVA803 and EPC for absolute nH, AN-139 for the plane-distance trend only) -> [hot-loops](power/hot-loops.md#lateral-vs-vertical-loops), [AN-139 table](power/hot-loops.md#measured-loop-inductance-vs-plane-distance).
 - **Budgets to judge against:** SLAA896 per-pin pH totals (750–1150 pH; pin-to-pin 250–650 pH) ([power/class-d-audio.md](power/class-d-audio.md)); EPC overshoot/efficiency data.
-- **Outputs:** nH; overshoot = L·di/dt (warn >0.2 × V_DS,max); efficiency impact.
+- **Outputs:** nH; overshoot = L·di/dt against peak ≤ 0.85 × V_abs (block above V_abs; [hot-loops](power/hot-loops.md#hot-loop-principle)); efficiency impact.
 
 ## Safety-spacing engine
 [I] ([isolation-creepage.md](isolation-creepage.md)):

@@ -158,3 +158,47 @@ def test_pnr_prices_a_trunk_hop_with_every_island_beyond_it():
     assert len(out["failed"]) == 2
     assert calls[:2] == [("cur", ["P1", "P2"]), ("dc", ["P1", "P2"])]
     assert calls[2:] == [("cur", ["P2"]), ("dc", ["P2"])]
+
+
+def test_thin_cells_is_a_per_net_opening():
+    """Mesh.thin_cells: the cells a 3 x 3 opening of each net's own copper removes (a 2-cell track beside another
+    net's pour is thin; the old whole-layer opening merged it into the pour)."""
+    from scipy import ndimage
+    m = Mesh.over(0, 0, 10, 5, 0.25, [Layer("F", 0, 0.035, 1)])
+    m.rect(0, "POUR", 0, 0, 10, 2.5)
+    m.rect(0, "TRK", 0, 2.5, 10, 3.0)          # 2 cells wide, touching the pour
+    m.rect(0, "WIDE", 2, 3.5, 6, 5)
+    thin = m.thin_cells(0)
+    ref = np.zeros_like(thin)
+    for k in range(len(m.nets)):
+        occ = m.lab[0] == k
+        ref |= occ & ~ndimage.binary_opening(occ, structure=np.ones((3, 3)))
+    assert (thin == ref).all()
+    res = m.resolution(["TRK", "POUR"])
+    assert res["TRK"][0] == res["TRK"][1] > 0
+    assert res["POUR"][0] < 0.05 * res["POUR"][1] and "WIDE" not in res
+    assert any("narrower than 3 cells" in w for w in m.check())
+
+
+def test_narrow_bar_correction_is_independent_of_nsub():
+    """A trace narrower than its cells (0.3 mm on 0.25 mm cells: partly covered edge cells) over a plane, at
+    1 kHz (uniform current through the thickness): its loop inductance must not depend on how many filaments
+    split the copper. The narrow-bar correction used to be applied per filament only, so a stack of n carried
+    1/n of it (-3% at nsub 2, -6% at 8 on this loop)."""
+    def loop(nsub):
+        m = Mesh.over(0, -2, 9, 2, 0.25, [Layer("T", 0.135, 0.035, nsub), Layer("G", 0, 0.035, nsub)])
+        m.rect(1, "GND", 0, -2, 9, 2)
+        m.rect(0, "S", 1, -0.15, 8, 0.15)
+        X, Y = m.centres()
+        near = (X > 1) & (X < 1.25) & (abs(Y) < 0.15)
+        far = (X > 7.75) & (X < 8) & (abs(Y) < 0.15)
+        m.terminal("s", 0, mask=near, net="S")
+        m.terminal("g", 1, mask=near)
+        m.terminal("se", 0, mask=far, net="S")
+        m.terminal("ge", 1, mask=far)
+        m.part("se", "ge")
+        m.port("p", "s", "g")
+        return S.solve(m, [1e3], tol=1e-10, maxiter=3000)["L"][0, 0, 0]
+    L1 = loop(1)
+    for n in (2, 4):
+        assert loop(n) == pytest.approx(L1, rel=2e-3)

@@ -44,12 +44,12 @@ def _jit(f):
 
 # iparams indices
 I_NCX, I_NCY, I_HX, I_HY, I_HB, I_CAP, I_HOFF, I_CX, I_CY, I_STAMP, I_NSTAMP, I_OVERFLOW, I_CONG, \
-    I_WIN, I_WX0, I_WX1, I_WY0, I_WY1 = range(18)
+    I_WIN, I_WX0, I_WX1, I_WY0, I_WY1, I_ZC, I_ZK, I_ZD = range(21)
 # fparams indices
 F_G, F_OX, F_OY, F_CB, F_CX0, F_CY0, F_SUP, F_TGT, F_NORM, F_A0, F_S0, F_W0, F_SLACK, F_BAR, F_WWL, F_WDISP, \
-    F_WCONG, F_WORD, F_OMARGIN, F_NMOV, F_WLAB, F_WSILK = range(22)
+    F_WCONG, F_WORD, F_OMARGIN, F_NMOV, F_WLAB, F_WSILK, F_WZONE = range(23)
 # totals
-T_WL, T_LEG, T_CONG, T_ORDER, T_DISP, T_LAB, T_SILK = range(7)
+T_WL, T_LEG, T_CONG, T_ORDER, T_DISP, T_LAB, T_SILK, T_ZONE = range(8)
 
 Eng = namedtuple("Eng", [
     "ip", "fp", "tot",
@@ -63,7 +63,7 @@ Eng = namedtuple("Eng", [
     "in_s", "sc_pins_x", "sc_pins_y", "sc_nets", "sc_nb", "sc_nc", "sc_box", "sc_has", "sc_dens",
     "sc_rules", "sc_open", "sc_pbx", "sc_pby", "sc_oX", "sc_oY", "sc_oK",
     "turn", "ring", "snap", "n_ortho", "ownp_ptr", "ownp_r", "n_ownp",
-    "Lab", "Soft",
+    "Lab", "Soft", "Zmap", "Zent",
 ])
 # Lab (n, kmax + 2, 2) float: per rotation the label target origin, then (rx, ry), (weight, 0).
 # Soft (n, kmax, MS + 1, 11) int: row p < MS: source rect a, b, c, d, its class, its weight x
@@ -71,6 +71,9 @@ Eng = namedtuple("Eng", [
 # extent. Two packed fields, not twelve: every kernel call passes Eng by value, and each field
 # costs (12 more fields cost ~10% move rate).
 SOFT_W = 1000.0
+# Zmap (maps, nzx, nzy) uint16 and Zent (rows, 4) float: kae.place.zones.ZoneTerm's maps and
+# entries (ip I_ZC: zone cell in grid steps, I_ZK: rotations per part in the headers, I_ZD:
+# the distance in zone cells where the pull's slope saturates).
 
 
 # ============================================================================ kernels
@@ -431,6 +434,40 @@ def _lab_part(E, i):
 
 
 @_jit
+def _zone_part(E, i):
+    """Zone term of part i (kae.place.zones.ZoneTerm.part)."""
+    h = i * E.ip[I_ZK] + E.K[i]
+    s = int(E.Zent[h, 0])
+    n = int(E.Zent[h, 1])
+    if n == 0:
+        return 0.0
+    c = E.ip[I_ZC]
+    dz = E.ip[I_ZD]
+    nzx = E.Zmap.shape[1]
+    nzy = E.Zmap.shape[2]
+    X = E.X[i]
+    Y = E.Y[i]
+    tot = 0.0
+    for e in range(s, s + n):
+        cx = (X + int(E.Zent[e, 0])) // c
+        cy = (Y + int(E.Zent[e, 1])) // c
+        m = int(E.Zent[e, 2])
+        w = E.Zent[e, 3]
+        v = -1
+        if cx >= 0 and cx < nzx and cy >= 0 and cy < nzy:
+            v = int(E.Zmap[m, cx, cy])
+        if w > 0.0:
+            if v < 0:
+                tot += w
+            elif v > 0:
+                f = v / dz
+                tot += w * (0.5 + 0.5 * (f if f < 1.0 else 1.0))
+        elif v > 0:
+            tot -= w
+    return tot
+
+
+@_jit
 def _silk_pair(E, i, j):
     """Silk overlap of parts i and j (anneal.Annealer._silk_pair), cells^2."""
     MS = E.Soft.shape[2] - 1
@@ -504,14 +541,18 @@ def try_move(E, S, nX, nY, nK, ns, T, lam, extra, u, commit_always):
     # the label and soft-overlap terms cost nothing when off (no call: each passes E by value)
     use_silk = E.fp[F_WSILK] != 0.0
     use_lab = E.fp[F_WLAB] != 0.0
+    use_zone = E.fp[F_WZONE] != 0.0
     silk_old = _silk(E, S, ns, ss) if use_silk else 0.0
     disp_old = 0
     lab_old = 0.0
+    zone_old = 0.0
     for a in range(ns):
         i = S[a]
         disp_old += abs(E.X[i] - E.Xs[i]) + abs(E.Y[i] - E.Ys[i])
         if use_lab:
             lab_old += _lab_part(E, i)
+        if use_zone:
+            zone_old += _zone_part(E, i)
     # touched nets and rules
     nn = 0
     nr = 0
@@ -578,11 +619,14 @@ def try_move(E, S, nX, nY, nK, ns, T, lam, extra, u, commit_always):
     silk_new = _silk(E, S, ns, ss) if use_silk else 0.0
     disp_new = 0
     lab_new = 0.0
+    zone_new = 0.0
     for a in range(ns):
         i = S[a]
         disp_new += abs(E.X[i] - E.Xs[i]) + abs(E.Y[i] - E.Ys[i])
         if use_lab:
             lab_new += _lab_part(E, i)
+        if use_zone:
+            zone_new += _zone_part(E, i)
     wl_new_nets = 0.0
     for t in range(nn):
         j = E.sc_nets[t]
@@ -683,6 +727,7 @@ def try_move(E, S, nX, nY, nK, ns, T, lam, extra, u, commit_always):
              + E.fp[F_WDISP] * (disp_new - disp_old) * E.fp[F_G] / (E.fp[F_NMOV] * E.fp[F_S0])
              + E.fp[F_WLAB] * (lab_new - lab_old) * E.fp[F_G] / (E.fp[F_NMOV] * E.fp[F_S0])
              + E.fp[F_WSILK] * (silk_new - silk_old) / E.fp[F_A0]
+             + E.fp[F_WZONE] * (zone_new - zone_old)
              + E.fp[F_WCONG] * d_cong
              + E.fp[F_WORD] * (ord_new - ord_old)
              + extra)
@@ -694,6 +739,7 @@ def try_move(E, S, nX, nY, nK, ns, T, lam, extra, u, commit_always):
         E.tot[T_DISP] += disp_new - disp_old
         E.tot[T_LAB] += lab_new - lab_old
         E.tot[T_SILK] += silk_new - silk_old
+        E.tot[T_ZONE] += zone_new - zone_old
         return True, delta
     # ---- revert
     if E.ip[I_CONG] == 1:
@@ -1035,13 +1081,13 @@ def build(ann, hash_cap=None):
         part_rules += lst
     maxpins = max(1, int(np.max(np.diff(part_pin_ptr))) if n else 1) * 2 + 2
     maxnets = max(1, len(nets)) + 2
-    ip = np.zeros(18, np.int64)
+    ip = np.zeros(21, np.int64)
     if getattr(ann, "window", None) is not None:
         ip[I_WIN] = 1
         ip[I_WX0], ip[I_WX1], ip[I_WY0], ip[I_WY1] = ann.window
     ip[I_NCX], ip[I_NCY], ip[I_HX], ip[I_HY], ip[I_HB], ip[I_CAP], ip[I_HOFF] = P.ncx, P.ncy, HX, HY, HB, hash_cap, hoff
     ip[I_CX], ip[I_CY], ip[I_CONG] = cx, cy, 1 if use_cong else 0
-    fp = np.zeros(22)
+    fp = np.zeros(23)
     fp[F_G], fp[F_OX], fp[F_OY] = g, P.ox, P.oy
     fp[F_CB], fp[F_CX0], fp[F_CY0], fp[F_SUP], fp[F_TGT], fp[F_NORM] = cb, cx0, cy0, sup, tgt, norm
     fp[F_A0], fp[F_S0], fp[F_W0] = ann.A0, ann.S0, ann.W0
@@ -1077,8 +1123,16 @@ def build(ann, hash_cap=None):
                 ext = max(ext, abs(r[0]), abs(r[1]), abs(r[2]), abs(r[3]))
         Soft[i, 0, MS, 2] = sd
         Soft[i, 0, MS, 3] = ext
+    Z = getattr(ann, "zones", None)
+    fp[F_WZONE] = ann.w.get("zone", 0.0) if Z is not None else 0.0
+    if Z is not None:
+        ip[I_ZC], ip[I_ZK], ip[I_ZD] = Z.c, Z.kmax, Z.dz
+        Zmap, Zent = np.ascontiguousarray(Z.maps, np.uint16), np.ascontiguousarray(Z.ent, np.float64)
+    else:
+        ip[I_ZC], ip[I_ZK], ip[I_ZD] = 1, 1, 1
+        Zmap, Zent = np.zeros((1, 1, 1), np.uint16), np.zeros((max(1, n), 4))
     E = Eng(
-        ip=ip, fp=fp, tot=np.zeros(7),
+        ip=ip, fp=fp, tot=np.zeros(8),
         X=np.array(ann.X, np.int64), Y=np.array(ann.Y, np.int64), K=np.array(ann.K, np.int64),
         Xs=np.array(ann.Xs, np.int64), Ys=np.array(ann.Ys, np.int64), movable=movable, side=side, nrot=nrot,
         own=own, gbrd=gbrd, opp_ptr=opp_ptr, opp_r=opp_r, brd_ptr=brd_ptr, brd_r=brd_r,
@@ -1103,7 +1157,7 @@ def build(ann, hash_cap=None):
         sc_pbx=np.zeros(NP + 2, np.int64), sc_pby=np.zeros(NP + 2, np.int64),
         sc_oX=np.zeros(n + 2, np.int64), sc_oY=np.zeros(n + 2, np.int64), sc_oK=np.zeros(n + 2, np.int64),
         turn=turn, ring=ring, snap=snap, n_ortho=n_ortho, ownp_ptr=ownp_ptr, ownp_r=ownp_r, n_ownp=n_ownp,
-        Lab=Lab, Soft=Soft,
+        Lab=Lab, Soft=Soft, Zmap=Zmap, Zent=Zent,
     )
     # initial state: rects, pins, nets, RUDY boxes, rules, totals
     for i in P.mov:
@@ -1140,6 +1194,7 @@ def build(ann, hash_cap=None):
     E.tot[T_DISP] = float(sum(abs(ann.X[i] - ann.Xs[i]) + abs(ann.Y[i] - ann.Ys[i]) for i in ann.mov))
     E.tot[T_LAB] = float(sum(_lab_part(E, i) for i in ann.mov))
     E.tot[T_SILK] = float(ann.silk_total()) if silk and fp[F_WSILK] > 0 else 0.0
+    E.tot[T_ZONE] = float(sum(_zone_part(E, i) for i in ann.mov)) if Z is not None else 0.0
     return E
 
 
@@ -1281,7 +1336,8 @@ class FastAnnealer:
         lab = E.tot[T_LAB] * self.P.g / (max(1, len(self.ann.mov)) * self.S0)
         return (w["wl"] * float(_wl_cost(E, E.tot[T_WL])) + lam * E.tot[T_LEG] / self.A0 + w["disp"] * disp
                 + w["phys"] * self.phys / self.nstruct + E.fp[F_WCONG] * E.tot[T_CONG] + w["order"] * E.tot[T_ORDER]
-                + w.get("label", 0.0) * lab + w.get("silk", 0.0) * E.tot[T_SILK] / self.A0)
+                + w.get("label", 0.0) * lab + w.get("silk", 0.0) * E.tot[T_SILK] / self.A0
+                + w.get("zone", 0.0) * E.tot[T_ZONE])
 
     def terms_report(self):
         E = self.E
@@ -1298,6 +1354,8 @@ class FastAnnealer:
                        labels_off=sum(1 for i in self.ann.labels if _lab_part(E, i) > 0))
         if self.ann.silk:
             out.update(silk=round(float(E.tot[T_SILK]) / self.A0, 5))
+        if self.ann.zones is not None:
+            out.update(zone=round(float(E.tot[T_ZONE]), 5))
         return out
 
     def order_violations(self):

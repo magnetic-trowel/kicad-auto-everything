@@ -46,6 +46,70 @@ class PcbnewError(RuntimeError):
     pass
 
 
+class PcbnewRefused(PcbnewError):
+    """The bridge refused an edit before writing anything (e.g. an added track on a net or
+    layer the board does not have); `detail` is its JSON answer."""
+
+    def __init__(self, msg, detail):
+        super().__init__(msg)
+        self.detail = detail
+
+
+KICAD10_STAMP_MIN = kicad_file.NAMED_NETS_AFTER + 1   # first KiCad 10 board format stamp
+_COPPER_COUNTS = ("footprints", "pads", "tracks", "arcs", "vias", "zones", "footprint_zones", "nets")
+
+
+def write_hazards(res, op):
+    """Hazards (the shared report schema) for what the bridge's post-write check found in
+    the file `op` wrote: a format upgrade (the output no longer opens in the KiCad that
+    wrote the input), drawings the writer merged because they duplicated another exactly
+    (POA measured 554 -> 552 on vme-wren; 24 of 98 gr_poly on a KiCad 7 corpus board), and
+    non-copper drawings it lost. A file whose copper items, copper drawings or nets differ
+    never gets this far: the bridge refuses to move it into place and the call raises
+    PcbnewError."""
+    chk = (res or {}).get("write_check") or {}
+    out = []
+    if not chk:
+        return out
+    path = res.get("path") or ""
+    s_in, s_out = chk.get("stamp_in"), chk.get("stamp_out")
+    if s_in != s_out:
+        out.append(dict(
+            code="kicad_format_upgraded", severity="warn", category="data",
+            message=(f"KiCad 10 wrote the {op} output in its own format (stamp {s_out}); the input was "
+                     f"stamp {s_in}, so KiCad 9 or older cannot open the output."),
+            objects=[path], evidence=dict(stamp_in=s_in, stamp_out=s_out, op=op),
+            fix="Open and keep working on the output in KiCad 10, or re-save the input in KiCad 10 "
+                "before running kae so input and output share a format."))
+    changed = chk.get("counts_changed") or {}
+    merged, lost = int(chk.get("drawings_merged") or 0), int(chk.get("drawings_lost") or 0)
+    if merged:
+        cu = int(chk.get("copper_drawings_merged") or 0)
+        out.append(dict(
+            code="kicad_write_merged_duplicate_drawings", severity="warn", category="data",
+            message=(f"KiCad's writer kept one copy of {merged} drawings that exactly duplicated another "
+                     f"({cu} on copper layers) in the {op} output; the board's geometry is unchanged."),
+            objects=[path], evidence=dict(merged=merged, copper=cu, op=op),
+            fix="None needed; remove the duplicates in the input to silence this."))
+    other = {k: v for k, v in changed.items() if k not in _COPPER_COUNTS and k != "drawings"}
+    if lost or other:
+        out.append(dict(
+            code="kicad_write_lost_items", severity="warn", category="data",
+            message=(f"KiCad's writer dropped {lost} non-copper drawings from the {op} output"
+                     f"{' and changed ' + str(other) if other else ''}; silkscreen, fab or user-layer "
+                     f"content may be missing."),
+            objects=[path], evidence=dict(lost=lost, counts_changed=other,
+                                          examples=[e for e in chk.get("examples") or [] if e[0] == "drawing"],
+                                          op=op),
+            fix="Compare the output's drawings with the input's before using it."))
+    return out
+
+
+def _with_hazards(res, op):
+    res["hazards"] = write_hazards(res, op)
+    return res
+
+
 def _env_cmd(name):
     v = os.environ.get(name)
     return shlex.split(v) if v else None
@@ -101,10 +165,13 @@ def _result(op, status, rc, stderr, out):
     if status is None:
         raise PcbnewError(f"pcbnew {op} produced no result (rc={rc}): {stderr[-800:]}")
     if not status.get("ok"):
-        detail = ""
+        detail, obj = "", {}
         if os.path.exists(out):
             with open(out) as f:
-                detail = json.dumps(json.load(f))[:800]
+                obj = json.load(f)
+            detail = json.dumps(obj)[:800]
+        if obj.get("unknown_nets") or obj.get("unknown_layers"):
+            raise PcbnewRefused(f"pcbnew {op} refused: {status.get('error')} {detail}", obj)
         raise PcbnewError(f"pcbnew {op} failed: {status.get('error')} {detail}")
     with open(out) as f:
         return json.load(f)
@@ -388,7 +455,7 @@ def _pose_list(poses):
             for p in poses]
 
 
-def write_poses(src_path, dst_path, poses, allow_locked=False, timeout=900):
+def write_poses(src_path, dst_path, poses, allow_locked=False, timeout=900, keep_upright=None):
     """Write `dst_path` = `src_path` with footprints moved to `poses`, through pcbnew.
 
     poses: {fp_uuid: (x, y, rot, side)} (values may also be dicts, or poses a list of
@@ -401,6 +468,11 @@ def write_poses(src_path, dst_path, poses, allow_locked=False, timeout=900):
     KiCad's plain reader and writer (PCB_IO_MGR.Load/Save) are used, with no connectivity
     (pcbnew.LoadBoard/SaveBoard's would give copper under a moved pad that pad's net), and
     only `dst_path` is written, no project files. Returns {moved, flipped}.
+
+    keep_upright (default: env KAE_WRITER_KEEP_UPRIGHT=1, else False) turns a footprint with
+    FOOTPRINT::Rotate instead of SetOrientation, so KiCad's KeepUpright rule turns footprint
+    texts that would read upside down by 180 degrees (and swaps their justification), as
+    KiCad's own rotate command does. Off by default: an A/B arm (kae-board-model.md).
 
     The older argument order write_poses(src_path, poses, dst_path) is also accepted.
     """
@@ -415,13 +487,16 @@ def write_poses(src_path, dst_path, poses, allow_locked=False, timeout=900):
         pj = os.path.join(d, "poses.json")
         with open(pj, "w") as f:
             json.dump(items, f)
-        flags = ["--allow-locked"] if allow_locked else []
-        return _run("write-poses", lambda out: [_abs(src_path), pj, out, _abs(dst_path), *flags], timeout)
+        if keep_upright is None:
+            keep_upright = os.environ.get("KAE_WRITER_KEEP_UPRIGHT", "0") == "1"
+        flags = (["--allow-locked"] if allow_locked else []) + (["--keep-upright"] if keep_upright else [])
+        return _with_hazards(
+            _run("write-poses", lambda out: [_abs(src_path), pj, out, _abs(dst_path), *flags], timeout), "placement")
 
 
 def resave(path_in, path_out, timeout=900):
     """pcbnew load + plain save, nothing changed (the baseline for structural diffs)."""
-    return _run("resave", lambda out: [_abs(path_in), out, _abs(path_out)], timeout)
+    return _with_hazards(_run("resave", lambda out: [_abs(path_in), out, _abs(path_out)], timeout), "re-save")
 
 
 # ----------------------------------------------------------------------------- routing
@@ -435,9 +510,26 @@ def export_dsn(path, dsn_path, probes=True, timeout=900):
 
 
 def import_ses(path, ses_path, dst_path, timeout=900):
-    """KiCad's Specctra session import into `path`, written to `dst_path` with the plain
-    writer (unlocked routing is replaced, locked routing kept). Returns {routing}."""
-    return _run("import-ses", lambda out: [_abs(path), _abs(ses_path), out, _abs(dst_path)], timeout)
+    """KiCad's Specctra session import into `path` (read with the plain reader), written to
+    `dst_path` with the plain writer (unlocked routing is replaced, locked routing kept).
+    Items that were on the board before keep their nets even where KiCad's connectivity
+    rebuild moved them to an overlapping pad's net (listed in `renetted`). Returns
+    {routing, kept (uuids of the items that were there before), renetted, write_check,
+    hazards}. kae.route.bridge.import_session also checks the session's wires and vias
+    against what landed."""
+    res = _run("import-ses", lambda out: [_abs(path), _abs(ses_path), out, _abs(dst_path)], timeout)
+    _with_hazards(res, "routed")
+    if res.get("renetted"):
+        rn = res["renetted"]
+        res["hazards"].append(dict(
+            code="preroute_overlaps_foreign_pad", severity="warn", category="electrical",
+            message=(f"{len(rn)} pre-existing tracks or vias overlap a pad of another net: KiCad's import "
+                     f"moved them onto that pad's net and kae put them back; the board has a short there "
+                     f"unless DRC says otherwise."),
+            objects=sorted({r["net"] for r in rn} | {r["import_net"] for r in rn})[:20],
+            evidence=dict(items=rn[:20], count=len(rn)),
+            fix="Move or delete those pre-routes (they are locked in the input), or check the pad's net."))
+    return res
 
 
 def edit_routing(path, dst_path, delete=(), widths=None, lock_all=False, unlock_all=False, add=(),
@@ -445,13 +537,16 @@ def edit_routing(path, dst_path, delete=(), widths=None, lock_all=False, unlock_
     """Delete tracks and vias by uuid, set track widths ({uuid: mm}), add tracks
     ([{net, layer, a: [x, y], b: [x, y], width}], mm, canonical layer names), lock or unlock
     all routing (unlock_all leaves the uuids in `keep_locked` locked); written to `dst_path`
-    with the plain writer. Returns {removed, widened, added, routing}."""
+    with the plain writer. An added track on a net the board does not have, or on a layer
+    that is not one of its copper layers, fails the call (PcbnewError listing them) before
+    anything is written. Returns {removed, widened, added, routing, write_check, hazards}."""
     with tempfile.TemporaryDirectory(prefix="kae-edit-", dir=_tmpdir()) as d:
         ej = os.path.join(d, "edits.json")
         with open(ej, "w") as f:
             json.dump(dict(delete=list(delete), width=dict(widths or {}), lock_all=lock_all,
                            unlock_all=unlock_all, add=list(add), keep_locked=list(keep_locked)), f)
-        return _run("edit-routing", lambda out: [_abs(path), ej, out, _abs(dst_path)], timeout)
+        return _with_hazards(_run("edit-routing", lambda out: [_abs(path), ej, out, _abs(dst_path)], timeout),
+                             "routing edit")
 
 
 def zone_fills(path, timeout=900):

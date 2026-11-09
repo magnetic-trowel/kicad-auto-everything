@@ -204,7 +204,7 @@ def _free_raster(P, side, extra=()):
     return free
 
 
-def partition_spread(P, objs, pos, target=0.8):
+def partition_spread(P, objs, pos, target=0.8, pinned=None):
     """Density-feasible spreading by recursive bisection (quadratic placement followed by
     recursive partitioning, after Gordian): per side, the board's free cells (inside the
     outline, not under a fixed obstacle) are cut in proportion to the area of the objects on
@@ -212,7 +212,9 @@ def partition_spread(P, objs, pos, target=0.8):
     until each region holds one object, which goes to the centroid of its region's free
     cells. The quadratic order and neighbourhoods survive, density follows the board's shape,
     and objects of the other side do not compete for space. Front objects go first; the cells
-    their drilled (through) parts take are then closed on the back. Returns positions (n, 2)."""
+    their drilled (through) parts take are then closed on the back. `pinned` {object: (x, y,
+    grid rect)}: objects that stay at (x, y), their rect closed to the rest (kae.place.zones
+    pin_packages). Returns positions (n, 2)."""
     from .problem import sat
     g = P.g
     n = len(objs)
@@ -224,11 +226,15 @@ def partition_spread(P, objs, pos, target=0.8):
     sides = [_object_side(P, members) for (members, _, _, _) in objs]
     through = [any(P.parts[i].tht for i in members) for (members, _, _, _) in objs]
     extra_back = []
+    pinned = pinned or {}
+    for o, (x, y, rect) in pinned.items():
+        out[o] = (x, y)
     for side in (0, 1):
-        ids = [o for o in range(n) if sides[o] == side]
+        ids = [o for o in range(n) if sides[o] == side and o not in pinned]
+        pin_rects = [rect for o, (x, y, rect) in pinned.items() if sides[o] == side or through[o]]
         if not ids:
             continue
-        free = _free_raster(P, side, extra_back if side == 1 else ())
+        free = _free_raster(P, side, (extra_back if side == 1 else []) + pin_rects)
         if not free.any():
             continue
         F = sat(free)
@@ -316,14 +322,17 @@ def floorplan(P, items, time_s, workers=2, seed=0, w_wl=1.0, w_disp=0.2, net_w=N
     return sol, model
 
 
-def regional_refine(P, st, macros, net_w, time_s, workers=1, seed=0, log=None, max_items=30, margin_mm=2.0):
+def regional_refine(P, st, macros, net_w, time_s, workers=1, seed=0, log=None, max_items=30, margin_mm=2.0,
+                    hold=()):
     """Floorplan a big board region by region (the global CP-SAT floorplan handles at most
     FLOORPLAN_MAX_ITEMS items): the items (unanchored macros as rigid layouts x 4 rotations,
     single parts) are cut by recursive bisection of their centres into regions of at most
     `max_items`; each region is re-placed by CP-SAT inside its window (plus margin_mm),
     minimizing weighted HPWL with a little displacement, with every part outside it fixed (an
     obstacle, and a fixed pin of the nets it shares). Legal in, legal out: a region keeps its
-    placement unless CP-SAT returns one. Returns a report."""
+    placement unless CP-SAT returns one. `hold`: parts that stay where they are (fixed
+    geometry for the regions, as parts outside them), e.g. packages pinned over their zones.
+    Returns a report."""
     import time as _time
     from . import clusters
     from .state import grid_violations
@@ -339,8 +348,9 @@ def regional_refine(P, st, macros, net_w, time_s, workers=1, seed=0, log=None, m
         anchors.append(a)
         for i in mac.members:
             owner[i] = len(items) - 1
+    hold = set(hold)
     for i in P.mov:
-        if i not in owner:
+        if i not in owner and i not in hold:
             items.append(cpsat.single(P, i, int(st.X[i]), int(st.Y[i]), int(st.K[i])))
             anchors.append(i)
             owner[i] = len(items) - 1

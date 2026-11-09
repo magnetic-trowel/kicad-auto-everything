@@ -88,7 +88,7 @@ for (cap_pin, ic_pin, dmax) in decaps:               # hard L1 ball = 4 linear c
 - Use CP-SAT for cluster placement (≤~50 parts with hard decap/keep-out/alignment), min-displacement legalization, constraint-heavy windows; hint it from analytical/SA placement [C/I].
 - Monolithic only ≤~100 parts at 0.5 mm; otherwise cluster (IC + passives) → soft macros with ≥2 aspect variants → top-level floorplan → windowed LNS on a window sub-model (free parts as variables, neighbours fixed, external pins constant) [C].
 - At scale fix orientations upstream (rules, LLM, continuous-placer argmax); keep one packing subsolver worker (area-energetic + energetic + timetabling, 5,000 pairs) [C].
-- 0.5 mm global grid (0.1 mm: first-feasible 12× slower at N=100); "opt2" at N ≥ 100 (one instance); disconnected-region splitting when keep-outs split the board; lexicographic symmetry breaking for identical decaps [C].
+- 0.5 mm global grid (0.1 mm: first-feasible 12× slower at N=100; solver bench. kae instead picks 0.025–0.25 mm by board span and keeps each model ≤ 40 items, [kae-placer](../../research/placement/kae-placer.md)); "opt2" at N ≥ 100 (one instance); disconnected-region splitting when keep-outs split the board; lexicographic symmetry breaking for identical decaps [C].
 
 ## Open questions
 

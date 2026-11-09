@@ -545,12 +545,13 @@ def drop_joins(board, out, rep, report, types=None):
     return bad
 
 
-def _write(sp, board, out, remove=(), locked=True):
-    """`out` = `board` without `remove` (uuids) plus the space's new copper (`locked` or not);
-    returns the new copper's uuids."""
+def _write(sp, board, out, remove=(), locked=True, lock=frozenset()):
+    """`out` = `board` without `remove` (uuids) plus the space's new copper (`locked` or not;
+    the uuids in `lock` locked whatever `locked` says); returns the new copper's uuids."""
     tracks = [(it.net, next(iter(it.layers)), it.width, tuple(it.geom.coords[0]), tuple(it.geom.coords[-1]),
-               it.uuid, locked) for it in sp.routed if it.kind == "track"]
-    vias = [(it.net, it.geom.x, it.geom.y, it.width, it.drill, it.uuid, locked) for it in sp.routed if it.kind == "via"]
+               it.uuid, locked or it.uuid in lock) for it in sp.routed if it.kind == "track"]
+    vias = [(it.net, it.geom.x, it.geom.y, it.width, it.drill, it.uuid, locked or it.uuid in lock)
+            for it in sp.routed if it.kind == "via"]
     W.edit(board, out, remove=list(remove)) if remove else W.edit(board, out)
     if tracks or vias:
         W.append_items(out, out, tracks=tracks, vias=vias)
@@ -582,14 +583,36 @@ def _commit(sp, rt):
         it = sp.add_via(rt.net, x, y, owner=("lastmile", ""))
         it.uuid = W.new_uuid()
         new.append(it)
-    for l, a, b2 in rt.segs:
-        it = sp.add_track(rt.net, l, rt.width, a, b2, owner=("lastmile", ""))
+    for i, (l, a, b2) in enumerate(rt.segs):
+        it = sp.add_track(rt.net, l, rt.seg_w(i), a, b2, owner=("lastmile", ""))
         it.uuid = W.new_uuid()
         new.append(it)
     return new
 
 
 # ----------------------------------------------------------------------------- plane escapes
+def ground_vias(sp, board, plan, fp, brief=None, log=print):
+    """Arm E (docs/topics/routing/routing-stages.md, stage 3): power_copper's ground vias at the
+    SMD ground pads of capacitors and decoupled ICs (power_copper.ground_via_pads, the same
+    selection and placement, lay_ground_vias), laid before routing so their sites are reserved
+    rather than fitted afterwards (plane_escapes writes them locked). Necked lands (the plan's PadRule.neck) keep the via off the
+    land as in power copper. Committed to `sp`; returns the number of vias."""
+    from . import power_copper as PC
+    if brief is None:
+        from kae.circuit.brief import build
+        brief = build(board)
+    _power, ground, _sw, _victims = PC.classify(brief, board.nets)
+    pads = PC.ground_via_pads(sp, brief, ground)
+    rules = getattr(plan, "pad_rules", None) or {}
+    necks = {id(it): rules[it.idx].neck for it in pads if it.idx in rules and rules[it.idx].neck is not None}
+    n = sum(1 for _ in PC.lay_ground_vias(sp, pads, fp, necks, dict(PC.DEFAULTS), owner="escape-gvia"))
+    for it in sp.routed:
+        if not it.uuid:
+            it.uuid = W.new_uuid()
+    log(f"plane escapes: {n} ground vias at {len(pads)} decap and IC ground pads (arm E)")
+    return n
+
+
 ESCAPE_MARGINS = (0.5, 1.5)        # mm windows for a pad's escape to its plane: short ones only (a 3 mm one
                                    # took a channel on fm4dd i2c24io: 5 -> 10 open)
 
@@ -632,6 +655,9 @@ def plane_escapes(board, info, plan, fills, out, sev=None, log=print, deadline=N
             rep["dog_bones"] = escape.dog_bones(sp, info, log=log)    # after the plan: it plans the bare board
         else:
             rep["dog_bones"] = (sum(p.get("vias_laid", 0) for p in esc["packages"]), esc["wanted"])
+    from . import constraints as CN
+    if fp and CN.setting_env("escape_ground_vias", board, escape_opts):
+        rep["ground_vias"] = ground_vias(sp, b, plan, fp, log=log)
     for net in sorted(fp):
         if deadline is not None and time.monotonic() > deadline:
             break
@@ -667,7 +693,10 @@ def plane_escapes(board, info, plan, fills, out, sev=None, log=print, deadline=N
             rep["escaped"] += 1
     # unlocked: ordinary copper the router may move or rip where a signal needs the room (locked,
     # one escape on fm4dd i2c24io took a channel: 5 -> 10 open)
-    rep["added"] = _write(sp, board, out, locked=False)
+    # arm E's ground vias and their pad-to-via tracks are written locked: a reserved site, fixed
+    # wiring for Freerouting, never ripped or unlocked by the repair loop (bridge fixed_uuids)
+    gv = {it.uuid for it in sp.routed if isinstance(it.owner, tuple) and it.owner[:1] == ("escape-gvia",)}
+    rep["added"] = _write(sp, board, out, locked=False, lock=gv)
     log(f"plane escapes: {rep['escaped']} escaped, {rep['failed']} left to the router "
         f"({', '.join(f'{n} {a}/{a + f}' for n, (a, f) in rep['nets'].items() if a or f)})")
     return rep

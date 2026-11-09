@@ -646,3 +646,171 @@ def test_a_block_supply_named_after_its_block_stays_a_rail():
              C('C1', '100nF', 'VCC_CLK', 'GND'), C('C2', '10uF', 'VCC_CLK', 'GND')]
     nl, r = roles_of(parts)
     assert 'VCC_CLK' in r.rails
+
+
+def test_negative_rail_voltage_intervals_contain_their_value():
+    """A Belief's interval holds its value (physics-core-v2-api Belief): intervals built from abs(v) gave
+    -12 V the interval [11.4, 12.6]."""
+    parts = [fp('J1', 'EuroPower', 'Connector_IDC:IDC-Header_2x05', [('1', '-12V_IN', '-12V', 'passive'), ('3', 'GND', 'GND', 'passive'),
+                                                                    ('9', '+12V_IN', '+12V', 'passive')]),
+             D('D1', '1N4001', '+12V', '+12V_IN'), D('D2', '1N4001', '-12V_IN', '-12V'),
+             C('C1', '22uF', '+12V', 'GND', lib='Capacitor_THT:CP_Radial_D5.0mm_P2.50mm'),
+             C('C2', '22uF', 'GND', '-12V', lib='Capacitor_THT:CP_Radial_D5.0mm_P2.50mm'),
+             IC('U1', 'LM2664', 'Package_TO_SOT_SMD:SOT-23-6', [('1', 'OUT', '-5V', 'power_out'), ('2', 'GND', 'GND', 'power_in')]),
+             C('C3', '10uF', '-5V', 'GND'),
+             IC('U2', 'LM7905', 'Package_TO_SOT_THT:TO-220-3_Vertical', [('1', 'GND', 'GND', 'power_in'), ('2', 'VI', '-12V', 'power_in'),
+                                                                        ('3', 'VO', 'VEE', 'power_out')]),
+             C('C4', '10uF', 'VEE', 'GND')]
+    nl, r = roles_of(parts)
+    assert r.nets['VEE'].attrs['volts']['value'] == -5.0        # from the regulator's part number
+    seen = 0
+    for n in ('-12V', '-12V_IN', '-5V', '+12V', 'VEE'):
+        vb = r.nets[n].attrs.get('volts') or {}
+        if vb.get('value') is None or not vb.get('interval'):
+            continue
+        lo, hi = vb['interval']
+        assert lo <= vb['value'] <= hi, (n, vb)
+        seen += vb['value'] < 0
+    assert seen >= 4
+
+
+# ------------------------------------------------------------------------------- net-role layering (docs/topics/llm/net-role-classification.md)
+def test_interface_keywords_are_anchored_and_sidebands_are_low_speed():
+    from kae.circuit.roles import name_iface
+    for s in ('HDMI_HPD', 'CEC', 'DDC_SCL', 'PCIE_PERST', 'CLKREQ', 'PCIE_CLKREQ_N', 'CSI_EN', 'DSI_RESET', 'MIPI_PWDN', 'SFP_LOS',
+              'USB3_SBU1'):
+        assert name_iface(s)[1] == 'ls', s
+    for s in ('PLL_LOCKED', 'CASE_TEMP', 'PHRASE', 'PODT', 'LED_A1', 'ADDR0', 'ROM_A13', 'CLASS_TX', 'FEEDPWR'):
+        assert name_iface(s)[1] != 'gbps', s
+    assert name_iface('USB_DP') == ('usb2', 'hs') and name_iface('USB_DM') == ('usb2', 'hs')
+    for s, want in (('PCIE_TX0_P', 'pcie'), ('PETP0', 'pcie'), ('DDR_DQ0', 'ddr'), ('DQ5', 'ddr'), ('DDR_CKE', 'ddr'), ('RAS_N', 'ddr'),
+                    ('CKE0', 'ddr'), ('HDMI_D0_P', 'hdmi'), ('TMDS_CLK_N', 'hdmi'), ('CSI0_D1_P', 'mipi'), ('SSTX_P', 'usb3'),
+                    ('LPDDR4_DQS0_T', 'ddr')):
+        assert name_iface(s) == (want, 'gbps'), s
+
+
+def _soc_ddr_hdmi_pcie():
+    soc = IC('U1', 'SOC', 'Package_BGA:BGA-100', [
+        ('A1', 'DDR_DQ0', 'DDR_DQ0', 'bidirectional'), ('A2', 'HDMI_TX0_P', 'HDMI_D0_P', 'output'), ('A3', 'HDMI_TX0_N', 'HDMI_D0_N', 'output'),
+        ('A4', 'PCIE_TX0_P', 'PCIE_TX0_P', 'output'), ('A5', 'PCIE_TX0_N', 'PCIE_TX0_N', 'output'), ('A6', 'GPIO1', 'HDMI_HPD', 'bidirectional'),
+        ('A7', 'GPIO2', 'PLL_LOCKED', 'bidirectional'), ('A8', 'GPIO3', 'PCIE_PERST', 'bidirectional'), ('A9', 'GPIO4', 'ROM_A13', 'bidirectional'),
+        ('B1', 'VDD', '+1V8', 'power_in'), ('B2', 'VSS', 'GND', 'power_in')])
+    ram = IC('U2', 'MT41K256', 'Package_BGA:BGA-96', [('C1', 'DQ0', 'DDR_DQ0', 'bidirectional'), ('C2', 'VDD', '+1V8', 'power_in'),
+                                                      ('C3', 'VSS', 'GND', 'power_in')])
+    hdmi = fp('J1', 'HDMI_A', 'Connector_Video:HDMI_A_Molex_208658-1001_Horizontal',
+              [('1', 'HDMI_D0_P', 'D0+', 'passive'), ('3', 'HDMI_D0_N', 'D0-', 'passive'), ('19', 'HDMI_HPD', 'HPD', 'passive'),
+               ('2', 'GND', 'GND', 'passive')])
+    m2 = fp('J2', 'M.2', 'Connector_PCBEdge:BUS_PCIexpress_x1', [('1', 'PCIE_TX0_P', 'PETp0', 'passive'),
+                                                                    ('2', 'PCIE_TX0_N', 'PETn0', 'passive'),
+                                                                    ('3', 'PCIE_PERST', 'PERST#', 'passive'), ('4', 'GND', 'GND', 'passive')])
+    return [soc, ram, hdmi, m2, C('C1', '100nF', '+1V8', 'GND'), C('C2', '100nF', '+1V8', 'GND')]
+
+
+def test_gigabit_names_need_a_second_fact_and_sidebands_are_not_high_speed():
+    nl, r = roles_of(_soc_ddr_hdmi_pcie())
+    for n in ('HDMI_HPD', 'PLL_LOCKED', 'PCIE_PERST', 'ROM_A13'):
+        assert r.nets[n].role != 'high_speed', (n, r.nets[n])
+    for n in ('DDR_DQ0', 'HDMI_D0_P', 'HDMI_D0_N', 'PCIE_TX0_P', 'PCIE_TX0_N'):
+        assert r.nets[n].role == 'high_speed', (n, r.nets[n])
+    assert {(p.p, p.n, p.interface) for p in r.pairs} >= {('HDMI_D0_P', 'HDMI_D0_N', 'hdmi'), ('PCIE_TX0_P', 'PCIE_TX0_N', 'pcie')}
+
+
+def test_designer_net_classes_establish_roles_on_their_own():
+    """Explicit intent is the first layer: a Power, ground, high-speed or diff class sets the role without a name match."""
+    mcu = IC('U1', 'MCU', 'Package_QFP:LQFP-48', [('1', 'PA1', 'SIG_X', 'bidirectional'), ('4', 'VDD', '+3V3', 'power_in'),
+                                                 ('5', 'VSS', 'GND', 'power_in'), ('6', 'VSSA', 'RET', 'power_in')])
+    ldo = IC('U2', 'LT3045', 'Package_SON:DFN-10', [('1', 'IN', 'LINEAR_HS', 'power_in'), ('2', 'GND', 'GND', 'power_in'),
+                                                   ('3', 'OUT', '+3V3', 'power_out')])
+    conn = fp('J1', 'Conn_01x03', 'Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical',
+              [('1', 'LINEAR_HS', '', 'passive'), ('2', 'SIG_P', '', 'passive'), ('4', 'RET', '', 'passive')])
+    conn2 = fp('J2', 'Conn_01x01', 'Connector_PinHeader_2.54mm:PinHeader_1x01_P2.54mm_Vertical', [('1', 'SIG_N', '', 'passive')])
+    # the pair's members share no IC or connector and carry no interface word: the names alone do not make a pair,
+    # the class does
+    parts = [mcu, ldo, conn, conn2, C('C1', '10uF', '+3V3', 'GND'), C('C2', '100nF', '+3V3', 'GND'),
+             R('R1', '0', 'SIG_P', 'X1'), R('R2', '0', 'SIG_N', 'X2')]
+    classes = {'SIG_X': 'HighSpeed_90R', 'LINEAR_HS': 'Power', 'RET': 'GND', 'SIG_P': 'DIFF_100R', 'SIG_N': 'DIFF_100R'}
+    nl, r = roles_of(parts, netclasses=classes)
+    assert r.nets['SIG_X'].role == 'high_speed', r.nets['SIG_X']
+    assert r.nets['LINEAR_HS'].role == 'rail', r.nets['LINEAR_HS']
+    assert r.nets['RET'].role == 'ground', r.nets.get('RET')
+    assert any({p.p, p.n} == {'SIG_P', 'SIG_N'} and p.confidence > 0.9 for p in r.pairs)     # MODERATE class: 0.73
+    # without the classes the names alone decide, and none of these names makes those roles
+    nl, r = roles_of(parts)
+    assert r.nets['SIG_X'].role != 'high_speed' and r.nets['LINEAR_HS'].role != 'rail'
+    assert not any({p.p, p.n} == {'SIG_P', 'SIG_N'} for p in r.pairs)
+
+
+def test_a_mixed_power_and_ground_class_does_not_make_a_rail_a_ground():
+    parts = buck_board()
+    nl, r = roles_of(parts, netclasses={'+3V3': 'PWR_GND', '+12V': 'PWR_GND', 'GND': 'PWR_GND'})
+    assert r.nets['+3V3'].role == 'rail' and r.nets['GND'].role == 'ground'
+
+
+def test_an_analog_word_alone_or_with_a_control_suffix_is_not_analog():
+    mcu = IC('U1', 'MCU', 'Package_QFP:LQFP-48', [('1', 'PA1', 'TEMP_ALERT', 'bidirectional'), ('2', 'PA2', 'MIC_EN', 'output'),
+                                                 ('3', 'PA3', 'NTC_EN', 'output'), ('4', 'PA4', 'TEMP', 'bidirectional'),
+                                                 ('5', 'VDD', '+3V3', 'power_in'), ('6', 'VSS', 'GND', 'power_in'),
+                                                 ('7', 'PA5', 'ADC_VBAT', 'bidirectional')])
+    hdr = fp('J1', 'Conn_01x05', 'Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical',
+             [('1', 'TEMP_ALERT', '', 'passive'), ('2', 'MIC_EN', '', 'passive'), ('3', 'NTC_EN', '', 'passive'), ('4', 'TEMP', '', 'passive'),
+              ('5', 'GND', '', 'passive')])
+    parts = [mcu, hdr, C('C1', '100nF', '+3V3', 'GND'), C('C2', '10uF', '+3V3', 'GND'),
+             R('R1', '100k', '+3V3', 'ADC_VBAT'), C('C3', '100nF', 'ADC_VBAT', 'GND')]
+    nl, r = roles_of(parts)
+    for n in ('TEMP_ALERT', 'MIC_EN', 'NTC_EN', 'TEMP'):
+        assert r.nets[n].role != 'analog', (n, r.nets[n])
+    assert r.nets['ADC_VBAT'].role == 'analog'          # the name with its RC filter
+
+
+def test_zdiff_windows_match_the_interface_docs_they_cite():
+    """docs/topics/rules/interfaces/{usb3-usb4-typec,hdmi-dp,ddr,mipi}.md; vendor conflicts are listed in the basis."""
+    from kae.circuit.roles import ZDIFF, ZDIFF_SRC
+    assert ZDIFF['usb3'] == (90.0, 76.5, 103.5)          # 90 ohm +-15% default; vendor windows do not intersect
+    assert ZDIFF['hdmi'] == (100.0, 90.0, 110.0)         # SLLA414A +-15% intersected with AM57xx 90-110
+    assert ZDIFF['ddr'] == (100.0, 95.0, 105.0)          # SPRABI1D 100 ohm +-5% on DQS and CK
+    assert ZDIFF['mipi'][1:] == (85.0, 100.0)            # Qualcomm 70-100 intersected with TI 85-115
+    for k, (z, lo, hi) in ZDIFF.items():
+        assert lo <= z <= hi and k in ZDIFF_SRC
+    assert 'Qualcomm' in ZDIFF_SRC['mipi'] and 'TI' in ZDIFF_SRC['mipi']
+    assert 'conflict' in ZDIFF_SRC['usb3'] and 'Microchip' in ZDIFF_SRC['usb3']
+
+
+def test_an_analog_name_decides_where_no_ic_pin_is_named():
+    """An unannotated board (KiCad 5, imports): its IC pins carry neither name nor type, so the pin layer is silent
+    and the designer's name decides; control suffixes and KiCad's generated names still do not count."""
+    mcu = IC('U1', 'AT91SAM3S', 'Package_QFP:LQFP-100', [('1', '', 'VREF', ''), ('2', '', 'STACK-CURRENT', ''),
+                                                          ('3', '', 'TEMP_ALERT', ''), ('4', '', '+3V3', ''), ('5', '', 'GND', ''),
+                                                          ('6', '', 'Net-(FB1-Pad2)', ''), ('7', '', 'ADC_CS', ''),
+                                                          ('8', '', 'UP5K_CSN', ''), ('9', '', 'PROG_B', ''), ('10', '', 'AUDIO_MUTE', ''),
+                                                          ('11', '', 'ADC_DRDY', '')])
+    hdr = fp('J1', 'Conn_01x02', 'Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical',
+             [('1', 'Net-(FB1-Pad1)', '', ''), ('2', 'GND', '', '')])
+    parts = [mcu, hdr, C('C1', '100nF', '+3V3', 'GND'), C('C2', '10uF', '+3V3', 'GND'), C('C3', '100nF', 'VREF', 'GND'),
+             R('R1', '10', 'STACK-CURRENT', 'GND'), R('R2', '10k', '+3V3', 'TEMP_ALERT'),
+             fp('J3', 'Conn_01x05', 'Connector_PinHeader_2.54mm:PinHeader_1x05_P2.54mm_Vertical',
+                [('1', 'ADC_CS', '', ''), ('2', 'UP5K_CSN', '', ''), ('3', 'PROG_B', '', ''), ('4', 'AUDIO_MUTE', '', ''), ('5', 'ADC_DRDY', '', '')]),
+             fp('FB1', 'FB', 'Inductor_SMD:L_0603_1608Metric', [('1', 'Net-(FB1-Pad1)', '', ''), ('2', 'Net-(FB1-Pad2)', '', '')]),
+             C('C10', '330nF', 'AUDIO_IN', 'Net-(C10-Pad2)', lib='Capacitor_THT:C_Rect_L7.2mm_W3.5mm_P5.00mm'),
+             fp('J2', 'AUDIO', 'Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical', [('1', 'AUDIO_IN', '', ''), ('2', 'GND', '', '')])]
+    nl, r = roles_of(parts)
+    for n in ('VREF', 'STACK-CURRENT', 'AUDIO_IN'):
+        assert r.nets[n].role == 'analog', (n, r.nets[n])
+        assert any('only layer' in e.fact for e in r.nets[n].evidence)
+    for n in ('TEMP_ALERT', 'Net-(FB1-Pad1)', 'Net-(FB1-Pad2)', 'ADC_CS', 'UP5K_CSN', 'PROG_B', 'AUDIO_MUTE', 'ADC_DRDY'):
+        assert r.nets[n].role != 'analog', (n, r.nets[n])
+
+
+def test_an_analog_name_on_a_named_logic_pin_still_needs_a_second_fact():
+    mcu = IC('U1', 'ESP32-S3', 'RF_Module:ESP32-S3-WROOM-1', [('1', 'IO18', 'ADC_BAT', 'bidirectional'),
+                                                              ('2', '3V3', '+3V3', 'power_in'), ('3', 'GND', 'GND', 'power_in')])
+    nl, r = roles_of([mcu, C('C1', '100nF', '+3V3', 'GND'), C('C2', '10uF', '+3V3', 'GND'),
+                      fp('J1', 'Conn', 'Connector_PinHeader_2.54mm:PinHeader_1x01_P2.54mm_Vertical', [('1', 'ADC_BAT', '', '')])])
+    assert r.nets['ADC_BAT'].role != 'analog'
+
+
+def test_a_chargers_current_setting_pin_is_analog():
+    chg = IC('U4', 'LTC4054ES5-4.2', 'Package_TO_SOT_SMD:TSOT-23-5', [('1', 'CHRG', 'Net-(D2-K)', 'open_collector'),
+                                                                      ('2', 'GND', 'GND', 'power_in'), ('3', 'BAT', 'VBAT', 'power_out'),
+                                                                      ('4', 'VCC', 'VBUS', 'power_in'), ('5', 'PROG', 'Net-(U4-PROG)', 'bidirectional')])
+    nl, r = roles_of([chg, R('R4', '2k', 'Net-(U4-PROG)', 'GND'), C('C1', '1uF', 'VBUS', 'GND'), C('C2', '1uF', 'VBAT', 'GND')])
+    assert r.nets['Net-(U4-PROG)'].role == 'analog', r.nets['Net-(U4-PROG)']

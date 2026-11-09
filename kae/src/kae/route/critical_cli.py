@@ -9,6 +9,7 @@
                                      [--soft complete,pad|none] [--skip ID,ID] [--planes cost|keep|strict|allow]
                                      [--pad-shapes kicad|outside] [--last-mile-soft] [--bridge-opt KEY=VALUE]
                                      [--rounds N] [--physics-fidelity fast|exact|multi] [--physics-k K]
+                                     [--intent FILE]
                                      [--workdir DIR] [--keep] [--report FILE]
     python -m kae.route.critical_cli physics BOARD [--brief FILE] [--physics-fidelity fast|exact|multi]
 
@@ -24,11 +25,14 @@ is the last line of stdout. As a kaebench method:
 `--physics-fidelity` (kae.physics.exact): exact evaluates every routed loop of the module
 stage and the recheck by PEEC; multi searches with the closed forms and re-scores each
 decision's fast top `--physics-k` (4) by PEEC, the recheck by PEEC; fast (default) as before.
-Exit status: 0 when an output was written, 2 otherwise.
+Both reports end with "hazards" and "hazard_summary" (kae.hazards); `route` rechecks OUTPUT
+with the safety checks forced on (--recheck, kae.board_hazards), `physics` flags modules over
+their allocation (u > 1). Exit status: 0 when an output was written, 2 otherwise.
 """
 import argparse
 import json
 import sys
+import time
 
 
 def _bridge_opts(items):
@@ -87,10 +91,16 @@ def main(argv=None):
                         "when routed physics holds (the joint loop's rule; critical.soft_critical)")
     r.add_argument("--bridge-opt", action="append", default=[], metavar="KEY=VALUE",
                    help="another kae.route.bridge DEFAULT_OPTS entry, e.g. rounds=auto, router_share=auto")
+    r.add_argument("--opt", action="append", default=[], metavar="KEY=VALUE",
+                   help="another kae.route.critical DEFAULTS entry (checked), e.g. rail_over_cap=1, via_A=1.0")
     r.add_argument("--budgets", help="board.budgets.json from `kae.sim.cli budgets`: simulated allocations")
+    r.add_argument("--intent", help="intent file (JSON, as kae.em.pnr --intent): its requirements dT_max_K and "
+                                    "drop_share size the critical copper (default 10 K, 2 %%)")
     r.add_argument("--workdir")
     r.add_argument("--keep", action="store_true")
     r.add_argument("--report")
+    from kae.board_hazards import add_arguments as recheck_args
+    recheck_args(r)
     p = sub.add_parser("physics", help="routed physics of a finished board's modules")
     p.add_argument("board")
     p.add_argument("--brief")
@@ -101,6 +111,8 @@ def main(argv=None):
     EX.configure(a.physics_fidelity, a.physics_k)
     from kae.cli import _numba_cache
     _numba_cache()
+    t0 = time.monotonic()
+    log = lambda m: print(f"[kae.crit] {m}", file=sys.stderr, flush=True)   # noqa: E731
     if a.cmd == "route":
         from kae.route import critical
         opts = dict(rails=a.rails, kinds=tuple(k for k in a.kinds.split(",") if k), keep=a.keep,
@@ -124,11 +136,20 @@ def main(argv=None):
             opts["trim_tol"] = a.trim_tol
         if a.budgets:
             opts["budgets"] = a.budgets
+        for k, v in _bridge_opts(a.opt).items():
+            if k not in critical.DEFAULTS:
+                raise SystemExit(f"--opt {k}: not a kae.route.critical option ({', '.join(sorted(critical.DEFAULTS))})")
+            opts[k] = v
+        if a.intent:
+            from kae.excite.beliefs import load_intent
+            opts.update(critical.intent_opts(load_intent(a.intent)))
         rep = critical.run(a.input, a.output, seed=a.seed, time_s=a.time, opts=opts, rounds=a.rounds,
                            workdir=a.workdir, bridge=not a.no_bridge,
                            bridge_opts=dict(_bridge_opts(a.bridge_opt), planes=a.planes, pad_shapes=a.pad_shapes))
         if a.physics_fidelity != "fast":
             rep["physics_fidelity"] = EX.summary()
+        from kae.board_hazards import finish
+        finish(rep, a.output, a.input, kind="route", mode=a.recheck, deadline=t0 + float(a.time), log=log)
         text = json.dumps(rep, default=str)
         if a.report:
             with open(a.report, "w") as f:
@@ -138,7 +159,11 @@ def main(argv=None):
     if a.cmd == "physics":
         from kae.route.critical_recheck import board_physics
         brief = json.load(open(a.brief)) if a.brief else None
-        print(json.dumps(board_physics(a.board, brief=brief), default=str), flush=True)
+        from kae.board_hazards import static_hazards
+        from kae.hazards import finalize, physics_hazards
+        ph = board_physics(a.board, brief=brief)
+        finalize(ph, extra=physics_hazards(ph) + static_hazards(a.board, brief=brief))
+        print(json.dumps(ph, default=str), flush=True)
         return 0
     return 2
 

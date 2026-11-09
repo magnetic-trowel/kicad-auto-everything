@@ -251,6 +251,23 @@ def test_rule_severities_come_from_the_project(tmp_path):
     assert type(r).from_dict(r.to_dict()).severities == r.severities
 
 
+def test_kae_text_variables_and_pad_fab_property(tmp_path):
+    """Rules.kae_vars holds the project's KAE_* text variables (kae's own overrides, e.g.
+    KAE_PLACE_SEVERITY); Pad.fab holds a pad's fabrication property ('castellated')."""
+    p = tmp_path / "v.kicad_pcb"
+    txt = FIXTURE.read_text()
+    i = txt.index('(pad "')
+    j = txt.index("(layers", i)
+    p.write_text(txt[:j] + "(property pad_prop_castellated) " + txt[j:])
+    pro = json.loads(FIXTURE.with_suffix(".kicad_pro").read_text())
+    pro["text_variables"] = {"KAE_PLACE_SEVERITY": "board", "REV": "A"}
+    p.with_suffix(".kicad_pro").write_text(json.dumps(pro))
+    b = kicad_file.load(p)
+    assert b.rules.kae_vars == {"KAE_PLACE_SEVERITY": "board"}
+    fabs = [q.fab for f in b.footprints for q in f.pads]
+    assert fabs.count("castellated") == 1 and fabs.count("") == len(fabs) - 1
+
+
 def test_footprint_copper_and_mask_graphics(tmp_path):
     """Footprint.graphics holds copper and mask graphics (with stroke widths) per library layer,
     so placement legality can see logos and mask apertures that KiCad's DRC sees."""

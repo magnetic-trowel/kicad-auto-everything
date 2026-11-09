@@ -67,7 +67,45 @@ class Reduced:
             self.E[b, len(ports) + j] = 1.0
         self.V = np.zeros((self.nb + self.sys0.nfree, 0))
         self.freqs = []
+        # snapshot frequencies at which some port's solve stopped at its iteration limit (its solution
+        # entered the basis anyway); `build` sets converged and estimated_error
+        self.unconverged = []
+        self.converged = None
+        self.estimated_error = None
         self.lo = self.net.off["l"]
+        self.skin = None                        # per-layer resistance blocks once skin_correction() is on
+
+    def skin_correction(self, on=True):
+        """Evaluate the model with each copper layer's resistance times kae.em.skin.correction(f, t, nsub): the
+        crowding through the thickness that nsub filaments cannot hold (one-sided surface impedance; validity in
+        kae.em.skin). Off during build: the error estimate compares the model with the full system as meshed."""
+        if not on:
+            self.skin = None
+            return
+        net = self.net
+        VI = self.V[:self.nb]
+        lay = np.full(self.nb, -1)
+        for o in ("x", "y"):
+            f = net.fil[o]
+            lay[net.off[o]:net.off[o] + len(f["a"])] = net.layer_of_sub[f["s"]]
+        blocks = []
+        for l, L in enumerate(net.m.layers):
+            k = np.nonzero(lay == l)[0]
+            if len(k):
+                blocks.append((VI[k].T @ (net.R[k, None] * VI[k]), L.t * 1e-3, L.nsub))
+        self.skin = blocks
+
+    def G_R_at(self, f):
+        """The reduced copper resistance at f (with the skin correction when it is on)."""
+        if not self.skin or f <= 0:
+            return self.G_R
+        if self.skin[0][0].shape != self.G_R.shape:     # the basis grew since: the blocks follow it
+            self.skin_correction()
+        from .skin import correction
+        G = self.G_R.copy()
+        for B, t, n in self.skin:
+            G += (correction(f, t, n) - 1.0) * B
+        return G
 
     def _vec(self, inj):
         s = np.zeros(self.sys0.nfree, complex)
@@ -83,7 +121,11 @@ class Reduced:
         solution's port impedances stay in self.last_Z (a free check of the model before it). sy: f's
         System when the caller already has it."""
         sy = sy or (getattr(self, "_sys", None) or {}).pop(f, None) or ES.System(self.op, f)   # f leaves the grid
-        X, its = sy.solve_many(self.P, tol=tol, maxiter=3000, E=self.E)
+        X, its, conv = sy.solve_many(self.P, tol=tol, maxiter=3000, E=self.E, with_converged=True)
+        if not conv.all():
+            self.unconverged.append(f)
+            self.log(f"reduce: snapshot {f / 1e6:.4g} MHz: {int((~conv).sum())} of {conv.size} ports did not "
+                     f"converge in 3000 iterations")
         X = np.concatenate([X[:self.nb], X[self.nb:] / sy.kap])
         self.last_Z = self.P.T @ X[self.nb:] - self.E.T @ X[:self.nb]
         self._extend(np.concatenate([X.real, X.imag], 1))
@@ -102,7 +144,9 @@ class Reduced:
 
         def one(f):
             sy = ES.System(self.op, f)
-            X, its = sy.solve_many(self.P[:, uniq], tol=tol, maxiter=3000, E=self.E[:, uniq])
+            X, its, conv = sy.solve_many(self.P[:, uniq], tol=tol, maxiter=3000, E=self.E[:, uniq], with_converged=True)
+            if not conv.all():
+                self.unconverged.append(f)
             X = np.concatenate([X[:self.nb], X[self.nb:] / sy.kap])
             X = X[:, back]
             return np.concatenate([X.real, X.imag], 1), its, self.P.T @ X[self.nb:] - self.E.T @ X[:self.nb]
@@ -138,7 +182,7 @@ class Reduced:
         R = net.R.copy()
         R[self.lo:] = 0.0                       # lumped parts enter through z_l(w)
         self.G_R = VI.T @ (R[:, None] * VI)
-        self.G_Lc = VI.T @ (net.Lc[:, None] * VI)
+        self.G_Lc = VI.T @ net.Lc_apply(VI)
         # L V_I only for the columns new since the last projection (the basis only grows)
         old = getattr(self, "LV", None)
         k0 = 0 if old is None else old.shape[1]
@@ -210,7 +254,7 @@ class Reduced:
 
     def A(self, f):
         w = 2 * np.pi * f
-        return (self.G_R + 1j * w * (self.G_L + self.G_Lc) + self.Vl.T @ (self._zl(f)[:, None] * self.Vl)
+        return (self.G_R_at(f) + 1j * w * (self.G_L + self.G_Lc) + self.Vl.T @ (self._zl(f)[:, None] * self.Vl)
                 - self.G_D - self.G_D.T)
 
     def _solve(self, f, B):
@@ -242,7 +286,7 @@ class Reduced:
         Z = self.Pr.T @ Y
         quad = (lambda G: np.real(np.einsum("ij,ik,kj->j", Y.conj(), G, Y)))
         Il = self.Vl @ Y
-        return dict(Y=Y, Z=Z, delivered=0.5 * np.real(Z[cols, range(len(cols))]), copper=0.5 * quad(self.G_R),
+        return dict(Y=Y, Z=Z, delivered=0.5 * np.real(Z[cols, range(len(cols))]), copper=0.5 * quad(self.G_R_at(f)),
                     parts=0.5 * np.abs(Il) ** 2 * self._zl(f).real[:, None],
                     magnetic=0.25 * quad(self.G_L + self.G_Lc))
 
@@ -272,7 +316,10 @@ class Reduced:
         I, phi = X[:self.nb], X[self.nb:] * sy.kap
         # the residual without an FFT: L X_I = (L V_I) Y, kept from the projection
         w = 2 * np.pi * f
-        top = sy.kap * (sy.zdiag[:, None] * I + 1j * w * (self.LV @ Y)) - sy.D @ phi
+        LI = self.LV @ Y
+        if self.net.Lc_off is not None:
+            LI = LI + self.net.Lc_off @ I
+        top = sy.kap * (sy.zdiag[:, None] * I + 1j * w * LI) - sy.D @ phi
         rhs = np.concatenate([sy.kap * self.E[:, need].astype(complex), -self.P[:, need]])
         r = rhs - np.concatenate([top, -(sy.DT @ I)])
         # Z_kj - Z_r,kj = -u_k^T r_j / kap exactly (the scaled system is complex symmetric, A u_k = b_k), and
@@ -296,7 +343,12 @@ class Reduced:
         true error there (before the snapshot joins it) calibrates the estimate: the stopping test uses
         the estimate times the largest ratio of true to estimated error seen so far (the estimator's
         dual error is one preconditioner application, typically pessimistic). snap_tol: the snapshots' solver
-        tolerance; keep_factors: see below."""
+        tolerance; keep_factors: see below.
+
+        Sets self.converged: False when the build stopped at max_snapshots with the calibrated estimate still
+        at or above tol, or when a snapshot's solve stopped at its iteration limit (self.unconverged: their
+        frequencies; such a snapshot also served as the 'true' error that calibrates the estimate).
+        self.estimated_error: the calibrated estimate at the stop."""
         t0 = time.time()
         # grid: the number of points (default 4.2 a decade: 25 over 1 kHz .. 300 MHz, 33 from 10 Hz)
         grid = grid or int(np.ceil(4.2 * np.log10(fmax / fmin))) + 1
@@ -345,6 +397,13 @@ class Reduced:
                      + (f" at {fw / 1e6:.4g} MHz" if fw else "")
                      + (f", calibrated {cw:.1e} (factor {cal:.2g})" if cal is not None else ""))
             if cw < tol or fw is None or len(self.freqs) >= max_snapshots:
+                # stopped by the snapshot limit, the error estimate is still above tol: not converged
+                self.estimated_error = cw
+                self.converged = (cw < tol or fw is None) and not self.unconverged
+                if not self.converged:
+                    self.log(f"reduce: NOT CONVERGED: estimated error {cw:.1e} against tol {tol:.0e}"
+                             + (f"; snapshots with unconverged solves at {[round(g / 1e6, 4) for g in self.unconverged]} MHz"
+                                if self.unconverged else ""))
                 break
             Zr = self.Z(fw)[np.ix_(rows, cols)]
             S = np.abs(Zr) if scale is None else scale(fw)

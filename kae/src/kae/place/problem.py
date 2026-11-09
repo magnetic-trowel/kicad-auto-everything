@@ -44,6 +44,32 @@ ROTS = (0.0, 90.0, 180.0, 270.0)
 COURTYARD_EXCESS = 0.25   # mm around pads for footprints that draw no courtyard
 GRID_LADDER = (0.025, 0.05, 0.1, 0.2, 0.25)
 EPS = 1e-6
+# Placement legality profile (kae-exact-legality.md, "Severities"). FIXED_ERROR_CHECKS are errors
+# whatever the board's project says: a part that collides, sits on another net's copper, crowds
+# the board edge or enters a rule area is a defect on any board (DFM-01/02 in dfm-fab-limits.md).
+# Per-object waivers still work: custom .kicad_dru rules, KiCad's own exemptions (castellated and
+# edge-connector pads at the edge), violations inside one footprint.
+#   "level_c" (default): on a project that waives courtyards_overlap, courtyards are kept at
+#     IPC-7351 density Level C instead of as drawn: each is taken in by Level B's excess minus
+#     Level C's (0.25 - 0.10 mm), so neighbours' margins may overlap (the human layouts of such
+#     boards do: half their courtyard overlaps are < 10% of the smaller courtyard) but no part
+#     sits on or under another. On every other project it is the same as "strict". KiCad cannot
+#     check partial overlap (it skips a negative courtyard_clearance), so the scorer's
+#     legal_strict flags those margins; each such placement carries a warn hazard.
+#   "strict": drawn courtyards everywhere (a dense waiving board may then not fit: git4dcc d24).
+#   "board": the project's severities decide, as before.
+#   "strict_then_level_c" (default): kae.place.pipeline.place runs "strict" and falls back to
+#     "level_c" only when strict leaves placement errors (the severity ladder). A single Problem
+#     cannot ladder: built with this mode (the joint loop's windows) it is "level_c", the profile
+#     that accepts whatever either rung placed.
+FIXED_ERROR_CHECKS = ("courtyards_overlap", "copper_edge_clearance", "items_not_allowed", "clearance",
+                      "shorting_items", "hole_clearance")
+PLACE_SEVERITY = "strict_then_level_c"
+LADDER_MODE = "strict_then_level_c"
+COURTYARD_LEVEL_C_SHRINK = 0.25 - 0.10
+# pads KiCad leaves out of the copper-to-edge check (drc_test_provider_edge_clearance.cpp):
+# castellated pads and edge-connector ("connect") pads
+EDGE_EXEMPT_FAB = ("castellated",)
 
 _GROUND_RE = re.compile(r"^(A|D|P|S|C|PWR|SIG|CHASSIS|EARTH)?(GND|VSS|GROUND|0V)\w*$|^(EARTH|PE|SHIELD)$", re.I)
 _POWER_RE = re.compile(
@@ -262,6 +288,12 @@ def _turn_tables(angles):
     for t, k in enumerate(order):
         ring[k] = (order[t - 1], order[(t + 1) % len(order)])
     return turn, ring
+
+
+def edge_exempt(pad):
+    """KiCad's copper-to-edge check skips this pad: a castellated pad (its fabrication
+    property) or an edge-connector pad (type 'connect'), drc_test_provider_edge_clearance.cpp."""
+    return pad.kind == "connect" or getattr(pad, "fab", "") in EDGE_EXEMPT_FAB
 
 
 def keepout_sides(ko):
@@ -547,18 +579,24 @@ class Problem:
 
     # ------------------------------------------------------------------ construction
     @classmethod
-    def build(cls, board, grid=None, net_kinds=None, rotations=ROTS, held=(), angle_step=None):
+    def build(cls, board, grid=None, net_kinds=None, rotations=ROTS, held=(), angle_step=None, severity=None):
         """net_kinds: optional {net name: 'ground'|'power'|'signal'|role} (from the brief).
         held: footprint uuids kept where they are and left out of the nets (e.g. staged parts
         that carry Edge.Cuts, whose place on the board the task does not tell).
         angle_step: also offer every multiple of this many degrees to parts that may turn
-        freely (not heatsink-mount packages); the right angles stay the first rotations."""
+        freely (not heatsink-mount packages); the right angles stay the first rotations.
+        severity: 'level_c' (FIXED_ERROR_CHECKS are errors whatever the project says, with
+        courtyards at IPC Level C where the project waives them), 'strict' (drawn courtyards
+        everywhere), 'board' (the project's severities) or 'strict_then_level_c' (here the same
+        as 'level_c'; the ladder is kae.place.pipeline.place's); None: the project's
+        KAE_PLACE_SEVERITY text variable, else the KAE_PLACE_SEVERITY environment variable,
+        else PLACE_SEVERITY."""
         P = cls()
         P.board = board
         P.held = set(held)
         P.angle_step = angle_step
         P._rules(board)
-        P._severities(board)
+        P._severities(board, severity)
         if not P.is_error("copper_edge_clearance"):
             P.edge_clearance = 0.0              # the project does not check copper against the edge
         # rule areas a footprint owns move with it (occupancy pieces of the part, see _part);
@@ -579,17 +617,85 @@ class Problem:
         P._straddle_check()
         return P
 
-    def _severities(self, board):
+    def _severities(self, board, mode=None):
         """DRC rule severities of the board's project (kae.board Rules.severities, from the
-        .kicad_pro): a check the project sets to 'warning' or 'ignore' is no error, so legality
-        does not need it (e.g. courtyards_overlap: ignore lets courtyards overlap and only
-        copper counts)."""
+        .kicad_pro). In the 'board' mode a check the project sets to 'warning' or 'ignore' is no
+        error, so legality does not need it (courtyards_overlap: ignore lets courtyards overlap
+        and only copper counts). In 'level_c' and 'strict' FIXED_ERROR_CHECKS stay
+        errors; `downgraded` lists the ones the project had downgraded (reported as hazards)."""
         r = getattr(board, "rules", None)
         self.severity = dict(getattr(r, "severities", None) or {}) if r is not None else {}
+        if mode is None:
+            # every Problem.build without an explicit mode (the joint loop's window re-placement)
+            # follows the project's variable, else the environment, else the default
+            import os
+            mode = (getattr(r, "kae_vars", None) or {}).get("KAE_PLACE_SEVERITY") or \
+                os.environ.get("KAE_PLACE_SEVERITY") or PLACE_SEVERITY
+        mode = str(mode).strip().lower()
+        mode = mode.replace("-", "_")
+        if mode == LADDER_MODE:
+            mode = "level_c"        # one Problem cannot ladder (pipeline.place does)
+        if mode not in ("strict", "level_c", "board"):
+            raise ValueError(f"place severity {mode!r}: '{LADDER_MODE}', 'strict', 'level_c' or 'board'")
+        self.severity_mode = mode
+        self.downgraded = {c: self.severity[c] for c in FIXED_ERROR_CHECKS
+                           if self.severity.get(c, "error") != "error"}
+        self.cy_shrink = COURTYARD_LEVEL_C_SHRINK if (mode == "level_c" and "courtyards_overlap" in self.downgraded) \
+            else 0.0
+        if mode in ("strict", "level_c"):
+            for c in FIXED_ERROR_CHECKS:
+                self.severity[c] = "error"
 
     def is_error(self, check):
-        """The project reports `check` as an error (KiCad's default when the project is silent)."""
+        """Legality needs `check`: the project reports it as an error (KiCad's default when the
+        project is silent), or the strict or level_c profile makes it one (_severities)."""
         return (getattr(self, "severity", {}) or {}).get(check, "error") == "error"
+
+    def severity_hazards(self):
+        """Hazards (shared schema) for the checks the board's project downgrades: in the strict
+        and level_c modes kae kept them as errors (info: the placement may differ from what the project
+        allows); in the board mode kae dropped them (warn: parts may collide, crowd the edge or
+        sit in a rule area, and nothing in kae or KiCad's DRC with these settings says so)."""
+        out = []
+        what = {"courtyards_overlap": ("assembly", "parts may overlap one another (courtyards and bodies)"),
+                "copper_edge_clearance": ("manufacturing", "pads may come closer to the board edge than the "
+                                          "edge clearance, where routing or v-scoring can cut them"),
+                "items_not_allowed": ("manufacturing", "parts may sit inside rule areas (keepouts)"),
+                "clearance": ("electrical", "pads of different nets may sit closer than the clearance"),
+                "shorting_items": ("electrical", "pads of different nets may touch"),
+                "hole_clearance": ("manufacturing", "drilled holes may come closer to other copper than "
+                                   "the hole clearance")}
+        for c, sev in sorted(getattr(self, "downgraded", {}).items()):
+            cat, risk = what[c]
+            if self.severity_mode in ("strict", "level_c"):
+                shrink = c == "courtyards_overlap" and self.cy_shrink > 0
+                out.append(dict(code="project_check_kept_strict", severity="warn" if shrink else "info", category=cat,
+                                message=(f"The board's project sets {c} to '{sev}'; kae kept courtyards as obstacles "
+                                         f"but at IPC-7351 Level C density: each courtyard taken in by "
+                                         f"{self.cy_shrink:.2f} mm, so neighbouring courtyards may overlap by up to "
+                                         f"{2 * self.cy_shrink:.2f} mm (KiCad would flag them were the check on)."
+                                         if shrink else
+                                         f"The board's project sets {c} to '{sev}'; kae placed with it as an error "
+                                         "anyway, so the placement is legal under either setting."),
+                                objects=[c], evidence=dict(check=c, project=sev, used="error",
+                                                           courtyard_shrink_mm=self.cy_shrink if shrink else 0.0,
+                                                           source="kae.place.problem.FIXED_ERROR_CHECKS; IPC-7351 "
+                                                                  "courtyard excess B 0.25 / C 0.10 mm"),
+                                fix=("Re-place with --severity strict for full courtyards, or "
+                                     "--severity board to follow the project (parts may then sit on one another)."
+                                     if shrink else
+                                     "If the project's waiver is intended (stacked alternates, parts under a "
+                                     "module), re-place with KAE_PLACE_SEVERITY=board (kae place --severity board).")))
+            elif c in ("clearance", "shorting_items"):
+                continue        # the exact model checks pad clearance in both modes (exact._pair)
+            else:
+                out.append(dict(code="project_check_ignored", severity="warn", category=cat,
+                                message=f"The board's project sets {c} to '{sev}', so kae did not check it: {risk}.",
+                                objects=[c], evidence=dict(check=c, project=sev, used=sev,
+                                                           source=".kicad_pro rule_severities"),
+                                fix="Re-place with the default profile (kae place --severity level_c or strict), "
+                                    "or confirm every such case is intended."))
+        return out
 
     def _rules(self, board):
         r = board.rules
@@ -700,10 +806,11 @@ class Problem:
     def _part(self, i, fp, name_to_net, rotations):
         s = transform.side_sign(fp.side)
         has_cy = bool(fp.courtyard)
+        fcy, fcy_back = self._courtyards(fp)
         # without a courtyard the body stands in, pads or not: a logo's copper and mask
         # graphics bridge other parts' pads (stickhub); relax_bodies frees it when the board is
         # too full (a mechanical lid's body covered a whole interposer)
-        cy = polys_lib_rect(fp.courtyard) or polys_lib_rect(fp.body)
+        cy = polys_lib_rect(fcy) or polys_lib_rect(fp.body)
         pads = fp.pads
         pad_rects = [pad_lib_rect(p) for p in pads]
         # pads inflated by the clearance they need from other copper (see module docstring)
@@ -731,7 +838,7 @@ class Problem:
         cy_pieces = []
         if cy is not None and self.is_error("courtyards_overlap"):
             if has_cy:
-                u = shapely.union_all(fp.courtyard)
+                u = shapely.union_all(fcy)
                 bx0, by0, bx1, by1 = u.bounds
                 # at most 4 strips (they touch, so they are not clustered back into one box)
                 cy_pieces = poly_cover_rects(u, max(1e-3, (bx1 - bx0) / 4.0)) or [cy]
@@ -782,10 +889,10 @@ class Problem:
         far = [k for k, p in enumerate(pads) if not is_drilled(p) and _on_far_copper(p, fp.side)]
         lib_opp = _cluster_rects([rect_union([infl[k], rect_grow(hole_lib_rect(pads[k]), self.clr_min / 2)])
                                   for k in drilled] + [infl[k] for k in far])
-        if fp.courtyard_back and self.is_error("courtyards_overlap"):
-            ub = shapely.union_all(fp.courtyard_back)
+        if fcy_back and self.is_error("courtyards_overlap"):
+            ub = shapely.union_all(fcy_back)
             lib_opp += poly_cover_rects(ub, max(1e-3, (ub.bounds[2] - ub.bounds[0]) / 4.0)) or \
-                [polys_lib_rect(fp.courtyard_back)]
+                [polys_lib_rect(fcy_back)]
         lib_opp = [r for r in lib_opp if r is not None] + ko_opp + g_far
         cut = edge_cut_lib_rect(fp)
         if cut is not None and frame:
@@ -806,18 +913,20 @@ class Problem:
             lib_cut = None
         # every pad, bare NPTH holes included, keeps the copper-to-edge clearance (conservative:
         # whether KiCad exempts bare holes is unverified, and agreement with KiCad comes first)
-        cu_rects = list(pad_rects) + [polys_lib_rect([q]) for ly in ("F.Cu", "B.Cu") for q in gr.get(ly, ())
-                                      if not q.is_empty]
+        # (KiCad skips castellated and edge-connector pads in that check: they only stay inside)
+        exempt = [r for r, q in zip(pad_rects, pads) if edge_exempt(q)]
+        cu_rects = [r for r, q in zip(pad_rects, pads) if not edge_exempt(q)] + \
+            [polys_lib_rect([q]) for ly in ("F.Cu", "B.Cu") for q in gr.get(ly, ()) if not q.is_empty]
         holes = []
         copper = rect_union(cu_rects)
         if any(p.shape == "custom" for p in pads) and cy is not None:
             copper = rect_union([copper, cy])   # primitives are not in the model: assume the courtyard
         lib_edge = rect_union([rect_grow(copper, self.edge_clearance + 0.002) if copper is not None else None,
-                               rect_union(holes)])
+                               rect_union(holes), rect_union(exempt)])
         lib_board_full = rect_union([lib_edge, cy if cy is not None else lib_own, lib_cut])
         lib_board_pads = rect_union([lib_edge if lib_edge is not None else lib_own, lib_cut])
         # pad groups that must each lie inside (a module may bridge a cut-out with its pad rows)
-        groups = _cluster_rects([rect_grow(r, self.edge_clearance + 0.002) for r in cu_rects] +
+        groups = _cluster_rects([rect_grow(r, self.edge_clearance + 0.002) for r in cu_rects] + exempt +
                                 [h for h in holes if h is not None], max_n=4)
         if lib_cut is not None:
             groups.append(lib_cut)
@@ -848,6 +957,20 @@ class Problem:
         part.shape_key = (fp.lib_id, fp.side, tuple(np.round(local.ravel(), 4)),
                           tuple(round(v, 4) for v in lib_own))
         return part
+
+    def _courtyards(self, fp):
+        """The footprint's courtyards (own side, other side) as legality uses them: drawn, or
+        taken in by cy_shrink (level_c profile on a project that waives courtyards_overlap)."""
+        d = getattr(self, "cy_shrink", 0.0)
+        if not d:
+            return fp.courtyard, fp.courtyard_back
+        def take_in(polys):
+            out = []
+            for p in polys or ():
+                q = p.buffer(-d, join_style="mitre")
+                out += [g for g in getattr(q, "geoms", [q]) if not g.is_empty]
+            return out or list(polys or ())    # a courtyard thinner than 2 d stays as drawn
+        return take_in(fp.courtyard), take_in(fp.courtyard_back)
 
     def _rot(self, part, rot, local, lib_board):
         s = part.s
@@ -1008,6 +1131,54 @@ class Problem:
                 self._fixed_obstacles(self.board)
             self.set_margin(self.margin)
             self.notes.append(f"bodies relaxed to pads: {', '.join(out[:10])}")
+        return out
+
+    def relaxed_body_hazards(self, st, min_area=0.05):
+        """Hazards (shared schema) for the parts relax_bodies freed: one per relaxed part, 'block'
+        when its body (the box of its fab drawing and pads) overlaps another part's courtyard or
+        body on its side at the final poses (a USB receptacle over 0402s cannot be assembled; a
+        display on headers can, and kae cannot tell them apart), else 'info'."""
+        relaxed = [p for p in self.parts if getattr(p, "relaxed", False)]
+        if not relaxed:
+            return []
+
+        def extent(p):
+            x, y, rot, side = st.pose(p.i) if p.movable else (p.x0, p.y0, p.rot0, p.side)
+            g = p.fp.courtyard or p.fp.body
+            if not g:
+                return None
+            return shapely.union_all([transform.place_geom(q, x, y, rot, side) for q in g])
+        ext = {p.i: extent(p) for p in self.parts if not p.decor}
+        out = []
+        for p in relaxed:
+            a = ext.get(p.i)
+            hits = []
+            for q in self.parts:
+                b = ext.get(q.i)
+                if q.i == p.i or a is None or b is None:
+                    continue
+                if q.side != p.side and not q.tht:
+                    continue
+                ov = a.intersection(b).area
+                if ov > min_area:
+                    hits.append((q.ref, round(float(ov), 2)))
+            if hits:
+                out.append(dict(code="body_overlap", severity="block", category="assembly",
+                                message=f"{p.ref} ({p.fp.lib_id}) has no courtyard; to fit the board kae let its body "
+                                        f"overlap {', '.join(r for r, _ in hits[:8])}. That is buildable only if "
+                                        f"{p.ref} stands off the board above them (a display or module on headers).",
+                                objects=[p.ref] + [r for r, _ in hits],
+                                evidence=dict(overlap_mm2=dict(hits), body_mm2=round(float(a.area), 2),
+                                              source="footprint F.Fab box and pads (no courtyard)"),
+                                fix=f"If {p.ref} sits on the board, re-place with relax_bodies off and "
+                                    "accept fewer parts placed, or give its footprint a courtyard; otherwise "
+                                    "confirm the stand-off height clears the parts below."))
+            else:
+                out.append(dict(code="body_relaxed", severity="info", category="assembly",
+                                message=f"{p.ref} has no courtyard and its body was not treated as an obstacle; "
+                                        "no other part ended up under it.",
+                                objects=[p.ref], evidence=dict(body_mm2=round(float(a.area), 2) if a is not None else None),
+                                fix="None needed; re-place with relax_bodies off to keep the body as an obstacle."))
         return out
 
     def bump(self, i, mm):

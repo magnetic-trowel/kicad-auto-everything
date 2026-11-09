@@ -8,6 +8,7 @@ Keys: PathFinder, negotiated congestion, pres_fac, acc_fac, history cost, VPR, V
 2. PathFinder (b_n + h_n)·p_n with the VPR default schedule is a sound start for an in-house router, after normalizing base costs (see below).
 3. Pure lattice PathFinder (OrthoRoute) fails on ordinary boards (PCBWorld CP 0.02, run without board rules); negotiation works best inside a detailed router (FanoutNet MCR) or as a coarse global planner.
 4. Learned schedules (VLSI): CQL 1.56× faster convergence; LSTM variant −92% DRVs. No PCB-specific schedule study exists; transfer is unproven.
+5. kae's one test was a non-standard variant: `lastmile_region.py` (experimental, off) left 8-15 conflicts on fm4dd after 20 rounds, but with present price 2.0 from round 1 ×1.5, per-net history multiplied into the price, every net re-routed each round and a 20-round cap ([kae-closing-open-connections](../../research/routing/kae-closing-open-connections.md)) [C]. The VPR schedule, per-cell history and offender-only reroute are untested on PCBs here.
 
 ## PathFinder cost and VPR defaults
 

@@ -22,8 +22,9 @@ tools/research/physics/pt_validate_kernels.py):
   perpendicular pairs vanish, oblique pairs use Gauss-Legendre quadrature.
 * `mutual_polylines`: Neumann mutual between two open or closed polylines with images
   (aggressor-victim coupling).
-* `patch_coupling`: mutual capacitance between small copper patches over a plane from
-  potential coefficients with images; the far field is eps0 A_a A_v / (2 pi r^3)
+* `patch_coupling`: mutual capacitance between small copper patches on a grounded dielectric
+  slab (microstrip) from potential coefficients, with the slab's image series (`slab_g`); with
+  parallel-plate self capacitances the far field is eps0 A_a A_v / (2 pi r^3) at any eps_r
   (lens SY, D1).
 * `fin_kernel`: steady temperature rise of a convectively cooled board (thin fin),
   P K0(r/lambda) / (2 pi G_s), plus adiabatic-edge images for a rectangular board.
@@ -259,19 +260,59 @@ def mutual_polylines(pa, pv, plane=True, n=4, closed_a=False, closed_v=False):
     return MU0_4PI * float(m)
 
 
-def patch_coupling(Aa, Av, r, ha, hv, Ca=None, Cv=None, eps_r=1.0):
-    """Mutual capacitance (pF) between two small patches of areas Aa, Av (mm^2) at heights
-    ha, hv over a grounded plane, centre distance r (mm).
+def slab_g(r, h, eps_r=1.0, rel=1e-6):
+    """4 pi eps0 times the potential (1/mm) at the surface of a grounded dielectric slab (thickness h,
+    permittivity eps_r, air above) at distance r from a unit point charge on that surface:
 
-    First order in the potential coefficients with images:
-        p_av = (1/(4 pi eps)) (1/r - 1/sqrt(r^2 + (ha + hv)^2)),  C_av ~ C_a C_v p_av
-    with C_a, C_v the patches' own capacitances to the plane (default eps A / h). The far
-    field (r >> h) is eps0 A_a A_v / (2 pi r^3), independent of h (lens SY D1)."""
+        g = 2/(eps_r + 1) sum_k (-K)^k [1/sqrt(r^2 + (2kh)^2) - 1/sqrt(r^2 + (2(k+1)h)^2)],
+        K = (eps_r - 1)/(eps_r + 1)
+
+    (the static image series of the slab's spectral Green's function 1/(eps0 k (1 + eps_r coth kh))).
+    Near the charge (r << h) g -> 1/(eps_eff r) with eps_eff = (eps_r + 1)/2, the mean of the two half
+    spaces; far from it (r >> h) the field runs down through the slab and g -> 2 h^2/(eps_r^2 r^3).
+    At eps_r = 1 it is the single plane image, 1/r - 1/sqrt(r^2 + 4h^2). r may be an array."""
+    r = np.maximum(np.asarray(r, float), 1e-6)
+    K = (eps_r - 1.0) / (eps_r + 1.0)
+    n = 1 if abs(K) < 1e-12 else min(2000, int(math.ceil(math.log(rel) / math.log(abs(K)))) + 1)
+    out = np.zeros_like(r)
+    for k in range(n):
+        out += (-K) ** k * (1.0 / np.hypot(r, 2 * k * h) - 1.0 / np.hypot(r, 2 * (k + 1) * h))
+    out *= 2.0 / (eps_r + 1.0)
+    return float(out) if out.ndim == 0 else out
+
+
+def patch_coupling(Aa, Av, r, ha, hv, Ca=None, Cv=None, eps_r=1.0):
+    """Mutual capacitance (pF) between two small patches of areas Aa, Av (mm^2) on a grounded dielectric
+    slab (permittivity eps_r, air above; microstrip), heights ha, hv over the plane, centre distance
+    r (mm; may be an array).
+
+    First order in the potential coefficients:
+        p_av = slab_g(r, (ha + hv)/2, eps_r) / (4 pi eps0),  C_av ~ C_a C_v p_av
+    with C_a, C_v the patches' own capacitances to the plane (default the parallel plate
+    eps0 eps_r A / h; pass the fringing-inclusive one, e.g. cprime_hj(w, h, eps_r) x length, for strips
+    narrower than a few h, where the plate alone is 2-3x low).
+
+    The dielectric: the coupling field runs partly through air and partly through the slab, so p_av
+    takes the slab's own Green's function, not 1/eps0 eps_r. Near (r << h) that is an effective
+    permittivity (eps_r + 1)/2; far (r >> h) p_av ~ h^2/(2 pi eps0 eps_r^2 r^3), so with plate C_a, C_v
+    the far field is eps0 A_a A_v / (2 pi r^3), independent of eps_r and h (lens SY D1). A single
+    effective permittivity eps_eff in p_av instead reads the far field eps_r^2/eps_eff too high (7x at
+    FR-4). An earlier version took 1/(4 pi eps0) in p_av: C grew as eps_r^2 (1.8x high at eps_r 4.5).
+
+    Accuracy as kae.sim.extract uses it (patches no longer than the lines' spacing, C_a from cprime_hj,
+    a two-conductor correction), against the layered BEM kae.em.static for two parallel strips 5-10 mm
+    long at eps_r 1 and 4.5 (kae/tests/test_sim.py checks h = 0.2 mm, w = 0.2 mm):
+    - edge gaps of 3 h and more, w/h 1-1.5: within 6 %;
+    - gaps of h/2 to 2 h: 5-25 % low, the closer the lower: there the first-order (weak coupling) and
+      point-patch approximations break down (not fitted: the regime is left as it reads);
+    - thin strips high over the plane (w/h 0.17, h = 1.5 mm): 7-22 % low at every gap, the strips' end
+      fringing, which a per-length C_a omits.
+    Inner layers (stripline) are outside the model.
+    """
     eps = EPS0 * eps_r
     Ca = eps * Aa / max(ha, 1e-6) if Ca is None else Ca
     Cv = eps * Av / max(hv, 1e-6) if Cv is None else Cv
-    r = max(r, 1e-6)
-    p = (1.0 / r - 1.0 / math.sqrt(r * r + (ha + hv) ** 2)) / (4.0 * math.pi * EPS0)
+    p = slab_g(r, 0.5 * (ha + hv), eps_r) / (4.0 * math.pi * EPS0)
     return Ca * Cv * p
 
 

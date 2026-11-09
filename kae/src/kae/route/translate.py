@@ -244,6 +244,89 @@ def dsn_pins(tree):
     return out
 
 
+def _padstack_geoms(ps, dsn_l):
+    """{DSN layer: shapely shape} of a padstack's shapes in padstack coordinates (DSN units)."""
+    from shapely.geometry import LineString, Point
+    out = {}
+    for sh in findall(ps, "shape"):
+        node = sh[1] if len(sh) > 1 and isinstance(sh[1], list) else None
+        if node is None or len(node) < 3 or str(node[1]) not in dsn_l:
+            continue
+        try:
+            v = [float(t) for t in node[2:] if not isinstance(t, list)]
+        except ValueError:
+            continue
+        kind, g = node[0], None
+        if kind == "circle" and v:
+            g = Point(v[1] if len(v) > 2 else 0.0, v[2] if len(v) > 2 else 0.0).buffer(v[0] / 2, quad_segs=16)
+        elif kind == "rect" and len(v) >= 4:
+            g = Polygon([(v[0], v[1]), (v[2], v[1]), (v[2], v[3]), (v[0], v[3])])
+        elif kind == "polygon" and len(v) >= 7:
+            g = Polygon(list(zip(v[1::2], v[2::2])))
+        elif kind == "path" and len(v) >= 3:
+            pts = list(zip(v[1::2], v[2::2]))
+            g = (LineString(pts) if len(pts) > 1 else Point(pts[0])).buffer(max(v[0], 1e-6) / 2, quad_segs=16)
+        if g is not None:
+            g = g if g.is_valid else g.buffer(0)
+            if not g.is_empty:
+                out[str(node[1])] = g
+    return out
+
+
+def netless_pin_keepouts(tree, plan, cu):
+    """Netless pins (NPTH holes KiCad exports as pins, netless copper pads) as keepouts.
+
+    KiCad keeps a netless pad netless, but the fork, reading a DSN, gives a netless pin that
+    overlaps a netted pad of its footprint that pad's net (connectNetlessPadsToTheirFootprintsNet,
+    whenever the input is not KiCad's JSON), and then routes to it: tracks onto tactile-switch
+    NPTH pegs (adafruit magtag SW1, SW3, X4) and netless ferrite pads (ubertooth FB2, FB3), which
+    KiCad reports as shorts. A keepout of the pin's shape, in the pin's own clearance class
+    (plan.pin_class, which already holds the hole clearance of an NPTH), is the same obstacle and
+    carries no net. Pins are converted per image and pin id only when every placement's pin is
+    netless and classed. Removes them from the library and returns ([Obstacle], {(ref, pin)})."""
+    from .constraints import Obstacle
+    lib = find(tree, "library")
+    struct = find(tree, "structure")
+    network = find(tree, "network")
+    placement = find(tree, "placement")
+    if lib is None or struct is None or network is None or placement is None:
+        return [], set()
+    dsn_l = [str(l[1]) for l in findall(struct, "layer")]
+    if len(dsn_l) != len(cu):
+        return [], set()
+    netted = {str(t) for n in findall(network, "net") for pn in findall(n, "pins") for t in pn[1:]}
+    img_of = {}
+    for comp in findall(placement, "component"):
+        for pl in findall(comp, "place"):
+            if len(pl) > 1:
+                img_of[str(pl[1])] = str(comp[1])
+    pins = dsn_pins(tree)
+    ok = {}                                      # (image, pin id) -> every placement netless and classed
+    for ref, num, _ps, _side, _m in pins:
+        key = (img_of.get(ref), num)
+        good = f"{ref}-{num}" not in netted and (ref, num) in plan.pin_class and ref != OBSTACLE_REF
+        ok[key] = ok.get(key, True) and good
+    stacks = {str(ps[1]): ps for ps in findall(lib, "padstack") if len(ps) > 1}
+    obs, gone = [], set()
+    for ref, num, psn, side, m in pins:
+        if not ok.get((img_of.get(ref), num)) or psn not in stacks:
+            continue
+        for dl, g in _padstack_geoms(stacks[psn], dsn_l).items():
+            i = dsn_l.index(dl)
+            if side == "back":
+                i = len(cu) - 1 - i
+            geo = _apply_affine(g, m)
+            obs.append(Obstacle("keepout", cu[i], geo, plan.pin_class[(ref, num)], f"netless pin {ref}-{num}"))
+        gone.add((ref, num))
+    drop = {(img_of.get(r), n) for r, n in gone}
+    for im in findall(lib, "image"):
+        for p in list(findall(im, "pin")):
+            rest = [c for c in p[2:] if not isinstance(c, list)]
+            if rest and (str(im[1]), str(rest[0])) in drop:
+                S.remove(im, p)
+    return obs, gone
+
+
 def _pad_copper(pad, layer):
     from shapely.ops import unary_union
     rings = pad.get("poly") if "poly" in pad else (pad.get("poly_by_layer") or {}).get(layer)
@@ -422,6 +505,62 @@ def snap_wiring(tree, pads=None, tol_um=SNAP_TOL_UM):
     return summary, snaps
 
 
+TIE_W_MM = 0.05            # width of a pin tie: inside any pad, so no obstacle to other nets
+
+
+def tie_pins(tree, info, names_of):
+    """Freerouting joins a trace to a pin only at the pin's exact centre (Trace.getNormalContacts:
+    a pin counts when the trace's end equals DrillItem.getCenter; getTraceConnectionShape is the
+    centre point), so a wire that ends at a pad's edge reads as a tail and its pin as open.
+    Every wiring end that lies inside a same-net pad's copper on its layer, off the pin's
+    centre, therefore gets a `(type fix)` wire from that end to the centre, TIE_W_MM wide.
+    Fixed wiring is never written to the session (SesWriter.writeNet), so the routed board
+    keeps its edge entry. Returns the number of ties."""
+    from shapely import affinity
+    from shapely.geometry import Point
+    wiring = find(tree, "wiring")
+    if wiring is None:
+        return 0
+    scale = S.unit_scale(tree)
+    eps = 1e-3 * scale                      # 1 um
+    centres = dsn_pin_centres(tree)
+    pads = {}                               # (net, DSN layer name) -> [(copper in DSN units, centre)]
+    for pd in (info or {}).get("pads") or []:
+        net, pos = pd.get("net"), pd.get("pos")
+        if not net or not pos or not centres.get(net):
+            continue
+        q = (pos[0] * scale, -pos[1] * scale)
+        c = min(centres[net], key=lambda x: math.dist(x, q))
+        if math.dist(c, q) > 2 * SNAP_TOL_UM * 1e-3 * scale:
+            continue
+        for l in pd.get("layers") or []:
+            g = _pad_copper(pd, l)
+            if g is None or g.is_empty:
+                continue
+            g = affinity.affine_transform(g, [scale, 0, 0, -scale, 0, 0])
+            pads.setdefault((net, names_of.get(l, l)), []).append((g, c))
+    ties = []
+    for w in findall(wiring, "wire"):
+        path, net = find(w, "path"), find(w, "net")
+        if path is None or net is None or len(path) < 7:
+            continue
+        cands = pads.get((str(net[1]), str(path[1])))
+        if not cands:
+            continue
+        try:
+            xy = [float(v) for v in path[3:]]
+        except (TypeError, ValueError):
+            continue
+        for e in ((xy[0], xy[1]), (xy[-2], xy[-1])):
+            for g, c in cands:
+                if math.dist(e, c) > eps and g.contains(Point(e)):
+                    ties.append(["wire", ["path", path[1], fmt(TIE_W_MM * scale), fmt(e[0]), fmt(e[1]),
+                                          fmt(c[0]), fmt(c[1])], ["net", net[1]], ["type", "fix"]])
+                    break
+    wiring.extend(ties)
+    return len(ties)
+
+
 def plane_layers(info, share=PLANE_SHARE):
     """{inner copper layer: net} of the layers where one net's zones (not rule areas, not
     teardrops) cover at least `share` of the board outline."""
@@ -537,6 +676,9 @@ def apply(tree, plan, info):
     def lname(l):
         return names_of.get(l, l)
     summary["layer_names"] = {c: d for c, d in names_of.items() if c != d}
+    if getattr(plan, "pad_entry", "centre") != "centre":
+        # rule D ends kae's grid copper on a land's long centre line, off the pin centre
+        summary["pin_ties"] = tie_pins(tree, info, names_of)
     # all-power boards get signal layers
     kinds = [find(l, "type") for l in layers]
     if kinds and all(k is not None and len(k) > 1 and k[1] == "power" for k in kinds):
@@ -614,7 +756,9 @@ def apply(tree, plan, info):
     image = ["image", OBSTACLE_IMAGE]
     place = ["place", OBSTACLE_REF, "0", "0", "front", "0"]
     n_ko = 0
-    for ob in plan.obstacles:
+    netless, netless_pins = netless_pin_keepouts(tree, plan, cu)
+    summary["netless_pins_as_keepouts"] = len(netless_pins)
+    for ob in list(plan.obstacles) + netless:
         for main, windows in _shape_nodes(ob, lname, cu):
             name = f"ko{n_ko}"
             n_ko += 1
@@ -662,7 +806,7 @@ def apply(tree, plan, info):
                 if isinstance(c, list) and c and c[0] == "pin":
                     pl.remove(c)
             for (cref, pin), cls in plan.pin_class.items():
-                if cref == ref:
+                if cref == ref and (cref, pin) not in netless_pins:
                     pl.append(["pin", Q(pin), ["clearance_class", cls]])
                     pins_set += 1
     summary["pins_classed"] = pins_set
@@ -705,6 +849,11 @@ def apply(tree, plan, info):
             network.append(["class_class", ["classes", oname, n], *_class_rule_nodes(None, vals, cu, lname)])
     summary["classes"] = len(plan.classes)
     summary["obstacle_classes"] = len(plan.obstacle_classes)
+    # ---- rule D entries and rail classes for kae's Freerouting fork (fr_entry; off by default)
+    from . import fr_entry
+    fe = fr_entry.apply(tree, plan, info, lname)
+    if fe:
+        summary["fr_entry"] = fe
     return summary
 
 
@@ -833,7 +982,43 @@ def fix_session(ses_tree, plan):
     snaps = getattr(plan, "wire_snaps", None) or {}
     if snaps:
         out["points_restored"] = _unsnap(net_out, snaps, scale)
+    zl = drop_repeated_points(net_out)
+    if zl:
+        out["zero_length_points"] = zl
     return out
+
+
+def drop_repeated_points(net_out):
+    """Remove a wire path's points that repeat the one before (after the session's rounding), and
+    wires left with a single point. Freerouting writes a corner whose rational coordinates round
+    to its neighbour's as a second point; KiCad imports that as a zero-length track, which its DRC
+    reports as `tracks_crossing` against any track within about a millimetre (magtag BATT_MON,
+    aifryz ETH_TXN). Returns the points removed."""
+    n = 0
+    for net in findall(net_out or [], "net"):
+        for w in list(findall(net, "wire")):
+            for p in findall(w, "path"):
+                if len(p) < 5:
+                    continue
+                head, coords = p[:3], p[3:]
+                pts, keep = [], []
+                for i in range(0, len(coords) - 1, 2):
+                    try:
+                        q = (round(float(coords[i])), round(float(coords[i + 1])))
+                    except (TypeError, ValueError):
+                        pts = None
+                        break
+                    if keep and keep[-1][0] == q:
+                        n += 1
+                        continue
+                    keep.append((q, (coords[i], coords[i + 1])))
+                if pts is None:
+                    continue
+                if len(keep) < 2:
+                    S.remove(net, w)
+                    break
+                p[:] = head + [c for _q, xy in keep for c in xy]
+    return n
 
 
 def _unsnap(net_out, snaps, scale):

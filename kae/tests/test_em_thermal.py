@@ -111,3 +111,17 @@ def test_a_cooling_variant_solved_on_the_base_factor_matches_its_own_factorizati
         fresh = TH.Thermal(m, [1.6], h=h, sinks=[(1, g * mask)]).solve(Q, t_sinks=[t])
         var = base.variant(h=h, sinks=[(1, g * mask)]).solve(Q, t_sinks=[t])
         assert np.allclose(var, fresh, rtol=1e-6, atol=1e-6)
+
+
+def test_via_barrel_conducts_through_its_annulus():
+    """A via's barrel between two layers: k_cu pi (d + t) t / gap, t the IPC-6012 class 2 plating
+    (kae.materials; it was pi d t at 25 um)."""
+    from kae import materials as MAT
+    m = Mesh.over(0, 0, 4, 4, 1.0, [Layer("T", 1.6, 0.035, 1), Layer("B", 0, 0.035, 1)])
+    m.via(2.5, 2.5, [0, 1], "A", drill=0.3)
+    th = TH.Thermal(m, [1.6], h=10.0, k_fr4=0.0, k_fr4_in=0.0)
+    j, i = m.cell(2.5, 2.5)
+    a, b = th.idx[0, j, i], th.idx[1, j, i]
+    g = -th.A[a, b]
+    assert g == pytest.approx(TH.K_CU * MAT.barrel_area_mm2(0.3, 0.020) * 1e-6 / 1.6e-3, rel=1e-9)
+    assert MAT.VIA_PLATING_MM == 0.020 and TH.H_AIR == 10.0

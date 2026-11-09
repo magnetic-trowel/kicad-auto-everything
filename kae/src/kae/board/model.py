@@ -154,6 +154,7 @@ class Pad(_Dict):
     outline: object = None           # Polygon | MultiPolygon | None: copper of shapes beyond rect/roundrect/circle/oval (trapezoid, chamfered
     #                                  rectangle, custom: anchor + primitives), pad frame, library convention,
     #                                  centred on the shape (offset applied by kae.place.legalize.pad_shape)
+    fab: str = ""                    # fabrication property: castellated | bga | testpoint | heatsink | ... ('' = none)
     layer_shapes: dict = field(default_factory=dict)  # padstack overrides: copper layer -> {shape, size,
     #                                                   offset, rratio, outline} (KiCad 9+ front/inner/back)
 
@@ -331,11 +332,13 @@ class Rules(_Dict):
     netclass_patterns: list = field(default_factory=list)  # [(pattern, netclass)]
     custom: list = field(default_factory=list)  # .kicad_dru rules: {'name', 'condition', 'layer', 'constraints'}
     severities: dict = field(default_factory=dict)  # DRC check -> 'error' | 'warning' | 'ignore' (.kicad_pro)
+    kae_vars: dict = field(default_factory=dict)    # the project's KAE_* text variables (kae's own overrides)
     mask_margin: float = 0.0         # board (setup) pad_to_mask_clearance: pads' default mask expansion
     mask_min_width: float = 0.0      # board (setup) solder_mask_min_width: thinner webs bridge
     mask_to_copper: float = 0.0      # .kicad_pro solder_mask_to_copper_clearance (mask opening to other copper)
     mask_bridges_in_footprints: bool = False  # board (setup) allow_soldermask_bridges_in_footprints
     source: str = ""                 # where the numbers came from
+    dru_rejected: str = ""           # why KiCad drops the .kicad_dru (then no custom rules, as in KiCad)
 
     _to = {"netclasses": lambda v: {k: c.to_dict() for k, c in v.items()}}
     _from = {"netclasses": lambda v: {k: NetClass.from_dict(c) for k, c in v.items()},

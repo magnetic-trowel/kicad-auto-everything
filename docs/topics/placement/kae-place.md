@@ -23,6 +23,14 @@ Source [`kae/src/kae/place/`](../../../kae/src/kae/place/), entry `kae place IN 
 - Budget: finish in min(0.85·time − 10 s, 20 s + 3 s per movable part); annealer counts CPU seconds; CP-SAT wall seconds with `--workers` threads; split C median 11.7k moves/s ([split C sweep](../../../bench/results/2026-10-23-place-split-c-e171267.md)) [C].
 - Each numba kernel gets the engine's state tuple by value: every extra field costs move rate (12 fields ≈ 10%), so label and silk data are packed into two arrays [C].
 
+## Defaults decided in 2026-11
+
+- **Severity ladder** (`--severity`, default `strict_then_level_c`). Courtyards, copper-to-edge, rule areas, clearance, shorts and hole clearance are errors whatever the project says. On a project that waives courtyard overlap, kae places with drawn courtyards (`strict`, no body relaxation) in 55% of `--time`; only if that leaves placement errors (the exact check, or KiCad's verdict after the KiCad rounds) does it place again with courtyards taken in 0.15 mm (IPC Level C, `level_c`), body relaxation last. Each rung keeps 15% of its share for its KiCad loop; a rung KiCad judged beats one it did not, else level_c is kept unless strict was better by KiCad's counts. On 113 waiving boards strict was legal under the real rules on 46% of runs against level_c's 28%, but left 12 boards with placement shorts against 6. `strict`, `level_c`, `board` remain options -> [exact legality](../../research/placement/kae-exact-legality.md).
+- **Body relaxation** (`relax_bodies`, default `escalate`: only when legalization fails; `off`, `auto`).
+- **Report hazards.** The report closes with `hazards` and `hazard_summary` ([hazards](../architecture/hazards.md)): each relaxed part gets `body_overlap` (block) when its body lies over another part, else `body_relaxed` (info), plus `severity_fallback` and `connector_off_edge`. The written board is rechecked with the safety checks forced on (`--recheck`), whatever profile the placer used.
+- **Edge connectors** (`connector_edge`, default 2). Plain `place` pins free USB, barrel, RJ, video and SMA/BNC parts to the outer edge, facing out; the old "connector edge pull" term was dropped only for `*-fixed` tasks -> [fixed interface](../../research/placement/kae-fixed-interface.md#edge-connectors-in-plain-place-mode-2026-11).
+- **Off by default:** RUDY congestion (`place_w_cong` 0, [routability estimators](../../research/placement/kae-routability-estimators.md)) and the routing margin (`place_margin` 0, [kae placer](../../research/placement/kae-placer.md)), both equal to their old values on A/B placement-decide-staged; escape bands (`escape_band` 0, escape-ab3) -> [escape keep-outs](../../research/placement/escape-keepouts.md).
+
 ## Where the rest lives
 
 | Subject | Page |

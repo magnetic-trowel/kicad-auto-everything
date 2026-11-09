@@ -19,7 +19,21 @@ between two sets of same-net copper (pads, committed tracks and vias) inside a w
    to the target cells, through vias where allowed.
 3. **Geometry.** The cell path becomes one polyline per layer, then string-pulled: each
    straight shortcut is kept only if `Space.track_violations` finds nothing (exact shapely
-   distances); ends are moved onto the pad centres when that is legal.
+   distances).
+
+**Pad ends (rule D, `pad_entry` "centreline", the default).** A pad end's goal is the set of
+approach anchors of the plan's rule for that pad (constraints.PadRule.targets, i.e.
+pad_entry.centreline_targets from release points all round the land): the search ends in a cell
+at an anchor a, and the track then runs straight from a to its end on the land's long centre
+line, crossing the outline within 10 degrees of its normal, adding no copper past the land and
+leaving the solder-mask web to other nets' openings. Where the plan necks the land (a small
+two-terminal part, power_copper.neck_rule) the final piece is the neck, and the wider copper
+ends neck_len + w/2 off the outline; a track wider than the land is necked to the widest entry
+that fits (pad_entry.neck_width). Every piece before the final one keeps off the land. The land
+itself and a band of w/2 around it cost extra (ENTRY_PENALTY_MM per crossing), so the old entry
+(into a free cell of the pad, then onto its centre when legal) is taken only where no anchor is
+reachable, or when a route through an anchor does not verify. With `pad_entry` "centre" every
+pad end is the old entry (the A/B arm).
 
 A pad none of whose cells is free (a 0.4 mm-pitch QFN pin 0.2 mm wide, 0.2 mm from its
 neighbours at 0.2 mm clearance: the one legal track is exactly as wide as the pad, centred on
@@ -45,6 +59,9 @@ import shapely
 from shapely.geometry import LineString, Point, Polygon, box
 
 from .critical_space import EXACT_TOL, INF, TOL
+
+ENTRY_PENALTY_MM = 2.0     # extra cost (mm of track) of entering a pad other than through a rule-D anchor
+GOAL_TRIES = 3             # rule-D anchors whose route fails verification, tried before the old entry
 
 _SRC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "critical_kernels.py")
 
@@ -352,9 +369,19 @@ class Route:
     length: float = 0.0
     expansions: int = 0
     res: float = 0.0
+    necks: dict = field(default_factory=dict)  # seg index -> neck width (the final piece into a necked land)
+    entries: list = field(default_factory=list)  # how each pad end was reached: "straight", "long", "axial",
+                                                 # "radial" (rule D), "centre" / "centre_acute" (the old entry),
+                                                 # "physics_exception" (the old entry, kept for the module's physics)
+    goals: list = field(default_factory=list)    # rule-D approaches used (connect drop_goals keys)
 
     def layers(self):
         return sorted({s[0] for s in self.segs})
+
+    def seg_w(self, i):
+        """Width of segment i: the route's width, or its neck (never wider than the width)."""
+        n = self.necks.get(i)
+        return self.width if n is None else min(n, self.width)
 
 
 @dataclass
@@ -370,6 +397,7 @@ class Anchor:
     kind: str = "pad"
     by_layer: dict | None = None      # layer -> copper on that layer (pads with an SMD twin)
     centres: dict | None = None       # layer -> a point of that copper (where a track may end)
+    pad: int | None = None            # info pad index (the plan's PadRule); found by position when None
 
     def geom_on(self, layer):
         g = (self.by_layer or {}).get(layer, self.geom)
@@ -384,15 +412,22 @@ class GridRouter:
     """Routes single connections in a Space (see the module docstring)."""
 
     def __init__(self, space, res=0.05, max_cells=1_500_000, halo=0.4, halo_cost=0.6, pour_cost=0.4,
-                 via_cost=1.5, max_exp=4_000_000):
+                 via_cost=1.5, max_exp=4_000_000, pad_entry=None):
         self.sp = space
+        # "centreline": pad ends by the plan's rule D (module docstring); "centre": they snap onto
+        # pad centres (Space.pad_entry from the pad_entry setting by default; "edge" reads as rule D)
+        mode = pad_entry or getattr(space, "pad_entry", "centreline")
+        self.pad_entry = "centreline" if mode == "edge" else mode
+        self._goal_cache = {}
         self.res = res
         self.max_cells = max_cells
         self.halo, self.halo_cost, self.pour_cost = halo, halo_cost, pour_cost
         self.via_cost = via_cost
         self.max_exp = max_exp
         self.K = kernels()
-        self.stats = dict(calls=0, found=0, expansions=0, cells=0)
+        self.stats = dict(calls=0, found=0, expansions=0, cells=0, entries={}, necks=0, goal_retries=0,
+                          fallback_old_entry=0, fallback_crossing=0, lands_kept_out=0, neck_leaf=0)
+        self._cross, self._blocked_any, self._had_goals = {}, False, False
         # escape corridors of dense ICs' signal pins [(geometry, layer, net)]: other nets'
         # tracks pay escape_cost per cell inside them, their vias are not placed there
         self.escapes = []
@@ -585,7 +620,41 @@ class GridRouter:
 
     # ------------------------------------------------------------------ connect
     def connect(self, net, sources, targets, width, layers, layer_factor=None, via=True, window=None,
-                via_cost=None, skip=(), max_len=None, avoid=(), phys=None, _aligned=False):
+                via_cost=None, skip=(), max_len=None, avoid=(), phys=None, entry=None, drop_goals=(), count=True):
+        """Route one track of `width` between anchor sets (see _connect). Stages, each tried only when
+        the one before found nothing and had something to give up: other lands of the net and
+        necked lands that already have copper kept out of the search (`_free` False), then those
+        lands free (a counter `fallback_crossing`).
+        `entry`: None / "rule" (rule D, the old entry only as the fallback), "old" (the old entry
+        only: a candidate for a caller that prices both, critical_modules.route_hop).
+        `drop_goals`: rule-D approaches (Route.goals keys) not to use, for a second candidate.
+        `count` False: the caller counts the route it keeps (count_route)."""
+        if count:
+            self.stats["calls"] += 1
+        kw = dict(layer_factor=layer_factor, via=via, window=window, via_cost=via_cost, skip=skip,
+                  max_len=max_len, avoid=avoid, phys=phys)
+        self._blocked_any, self._had_goals = False, False
+        self._drop_goals = set(drop_goals or ())
+        legacy = entry == "old"
+        rt = self._connect(net, sources, targets, width, layers, _legacy=legacy, **kw)
+        if rt is None and self._blocked_any:
+            rt = self._connect(net, sources, targets, width, layers, _free=True, _legacy=legacy, **kw)
+            if rt is not None and count:
+                self.stats["fallback_crossing"] += 1
+        self._drop_goals = set()
+        if rt is not None and count:
+            self._count(rt)
+        return rt
+
+    def count_route(self, rt, calls=1):
+        """Count a route a caller kept out of several candidates (connect(count=False))."""
+        self.stats["calls"] += calls
+        if rt is not None:
+            self._count(rt)
+
+    def _connect(self, net, sources, targets, width, layers, layer_factor=None, via=True, window=None,
+                 via_cost=None, skip=(), max_len=None, avoid=(), phys=None, _aligned=False, _legacy=False,
+                 _drop=None, _tries=0, _free=False, _entry="rule"):
         """Route one track of `width` from any source anchor to any target anchor on the
         given layers (vias between them when `via`), keeping the track centre `r` away from
         each (geometry, r, layer) in `avoid`. Returns a Route or None. When the sources or
@@ -593,9 +662,11 @@ class GridRouter:
         smallest pad's centre is a cell centre, and searched once more: a fine-pitch pin
         leaves only a sliver between its neighbours' clearances, which a coarse grid misses
         (siderakb ergo-snm: SCLK at U4's 0.4 mm-pitch pin 34 has 0.025 mm to spare each side
-        for a 0.15 mm track, the 0.078 mm grid of a 100 mm window found no cell in it)."""
+        for a 0.15 mm track, the 0.078 mm grid of a 100 mm window found no cell in it).
+        Pad ends follow rule D (module docstring) unless pad_entry is "centre"; a route through
+        an anchor that does not verify is searched again without that anchor (GOAL_TRIES), then
+        with the old entry only."""
         sp = self.sp
-        self.stats["calls"] += 1
         grid = window or self.window(list(sources) + list(targets))
         layers = [l for l in sp.cu if l in layers]
         if not layers:
@@ -611,16 +682,50 @@ class GridRouter:
                     m_ = np.zeros((grid.ny, grid.nx), bool)
                     grid.within(g, r, m_)
                     cost[li][m_] = INF
+        cross = {}
+        if self.pad_entry == "centreline" and not _free:
+            sources, targets, cross = self._lands_out(grid, net, sources, targets, layers, width)
+            for li, l in enumerate(layers):
+                for g in cross.get(l, ()):
+                    m_ = np.zeros((grid.ny, grid.nx), bool)
+                    grid.within(g, width / 2.0 + TOL, m_)
+                    cost[li][m_] = INF
+            if cross:
+                self._blocked_any = True
+        self._cross = cross
         flat = cost.reshape(-1)
         if via and nl > 1:
             vmask = self.via_allowed(grid, net, sp.cu).reshape(-1)
         else:
             vmask = np.zeros(plane, bool)
+        # rule D: each pad end's approach anchors are goals; the land and a band around it cost
+        # extra, so the old entry is taken only where no anchor is reachable
+        goal_src, goal_dst = {}, {}
+        if self.pad_entry == "centreline" and not _legacy:
+            drop = _drop or set()
+            for anchors, gd in ((sources, goal_src), (targets, goal_dst)):
+                for a in anchors:
+                    if a.kind != "pad":
+                        continue
+                    for li, l in enumerate(layers):
+                        if l not in a.layers:
+                            continue
+                        got = self._goals(net, a, l, width)
+                        if not got:
+                            continue
+                        land, goals = got
+                        self._penalize(grid, cost[li], land, width)
+                        for goal in goals:
+                            if goal["key"] in getattr(self, "_drop_goals", ()):
+                                continue
+                            for kk in self._disc_cells(grid, goal["a"], li, flat, plane):
+                                if kk not in drop:
+                                    gd.setdefault(int(kk), goal)
         # a pad whose every cell is blocked (a track as wide as the pad, centred on it, is the
         # only legal way out, with no room left for the raster's margins) is left through an
         # escape: a straight piece from its centre, checked exactly, to a free cell
         esc_src, esc_dst = {}, {}
-        src = []
+        src = [np.array(list(goal_src), np.int64)] if goal_src else []
         for a in sources:
             for li, l in enumerate(layers):
                 if l in a.layers:
@@ -634,6 +739,18 @@ class GridRouter:
         src = np.unique(np.concatenate(src)) if src else np.zeros(0, np.int64)
         dst = np.zeros(nl * plane, bool)
         tb = []
+
+        def bound(k):
+            if k.size:
+                r = k % plane
+                tb.append((r % grid.nx).min())
+                tb.append((r % grid.nx).max())
+                tb.append((r // grid.nx).min())
+                tb.append((r // grid.nx).max())
+        if goal_dst:
+            k = np.array(list(goal_dst), np.int64)
+            dst[k] = True
+            bound(k)
         for a in targets:
             for li, l in enumerate(layers):
                 if l in a.layers:
@@ -644,35 +761,32 @@ class GridRouter:
                             esc_dst.setdefault(int(kk), pts[::-1])
                         k = np.array([kk for kk, _ in found], np.int64)
                     dst[k] = True
-                    if k.size:
-                        r = k % plane
-                        tb.append((r % grid.nx).min())
-                        tb.append((r % grid.nx).max())
-                        tb.append((r // grid.nx).min())
-                        tb.append((r // grid.nx).max())
+                    bound(k)
         self.stats["cells"] += int(nl * plane)
         if src.size == 0 or not dst.any():
             c = None if _aligned else _finest_centre(sources if src.size == 0 else targets, layers)
             g2 = grid.aligned(*c) if c is not None else None
             if g2 is None:
                 return None
-            return self.connect(net, sources, targets, width, layers, layer_factor=layer_factor, via=via, window=g2,
-                                via_cost=via_cost, skip=skip, max_len=max_len, avoid=avoid, phys=phys,
-                                _aligned=True)
+            return self._connect(net, sources, targets, width, layers, layer_factor=layer_factor, via=via, window=g2,
+                                 via_cost=via_cost, skip=skip, max_len=max_len, avoid=avoid, phys=phys,
+                                 _aligned=True, _legacy=_legacy, _drop=_drop, _tries=_tries, _free=_free,
+                                 _entry=_entry)
+        special = set(esc_src) | set(esc_dst) | set(goal_src) | set(goal_dst)
         hit = src[dst[src]]
         if hit.size:
             # a shared cell touches both ends only when it is a real anchor cell of both: an
-            # escape cell is free board reached by a piece _geometry has yet to emit (two
-            # same-net balls 0.15 mm apart whose escapes meet in the cell between them were
-            # counted routed with no copper)
-            if any(k not in esc_src and k not in esc_dst for k in hit.tolist()):
+            # escape cell (or a rule-D anchor) is free board reached by a piece _geometry has yet
+            # to emit (two same-net balls 0.15 mm apart whose escapes meet in the cell between
+            # them were counted routed with no copper)
+            if any(k not in special for k in hit.tolist()):
                 return Route(net=net, width=width, res=grid.res)     # already touching
             for k in hit.tolist():
                 rt = self._geometry(grid, net, width, layers, np.array([k], np.int64), sources, targets,
-                                    esc_src, esc_dst)
+                                    esc_src, esc_dst, goal_src, goal_dst)
                 if rt is not None and (max_len is None or rt.length <= max_len):
                     rt.res = grid.res
-                    self.stats["found"] += 1
+                    self._had_goals = bool(goal_src or goal_dst)
                     return rt
             dst = dst.copy()
             dst[hit] = False          # those meetings do not verify: search for another way
@@ -696,9 +810,32 @@ class GridRouter:
                                       int(tx0), int(tx1), int(ty0), int(ty1), int(self.max_exp))
         self.stats["expansions"] += int(nexp)
         if path.size == 0:
+            # the old entry's cells were goals too (at a price): no path to them either, unless
+            # the search ran out of expansions on the dearer board
+            if (goal_src or goal_dst) and nexp > self.max_exp:
+                self.stats["fallback_old_entry"] += 1
+                return self._connect(net, sources, targets, width, layers, layer_factor=layer_factor, via=via,
+                                     window=window, via_cost=via_cost, skip=skip, max_len=max_len, avoid=avoid,
+                                     phys=phys, _aligned=_aligned, _legacy=True, _free=_free, _entry=_entry)
             return None
-        rt = self._geometry(grid, net, width, layers, path, sources, targets, esc_src, esc_dst)
+        rt = self._geometry(grid, net, width, layers, path, sources, targets, esc_src, esc_dst, goal_src, goal_dst)
         if rt is None:
+            ends = [int(k) for k in (path[0], path[-1]) if int(k) in goal_src or int(k) in goal_dst]
+            if ends:
+                # a route through a rule-D anchor that does not verify: without that anchor, and after
+                # GOAL_TRIES of them, the old entry
+                drop = set(_drop or ()) | {k for k in ends}
+                for k in ends:
+                    g = goal_src.get(k) or goal_dst.get(k)
+                    drop |= {kk for kk, gg in list(goal_src.items()) + list(goal_dst.items()) if gg is g}
+                self.stats["goal_retries"] += 1
+                legacy = _tries + 1 >= GOAL_TRIES
+                if legacy:
+                    self.stats["fallback_old_entry"] += 1
+                return self._connect(net, sources, targets, width, layers, layer_factor=layer_factor, via=via,
+                                     window=window, via_cost=via_cost, skip=skip, max_len=max_len, avoid=avoid,
+                                     phys=phys, _aligned=_aligned, _legacy=legacy, _drop=None if legacy else drop,
+                                     _tries=_tries + 1, _free=_free, _entry=_entry)
             return None
         if phys is not None:
             rt.search = (grid, layers, path, ph)          # what the physics search priced (kae.em.pnr.explain)
@@ -706,8 +843,182 @@ class GridRouter:
         rt.res = grid.res
         if max_len is not None and rt.length > max_len:
             return None
-        self.stats["found"] += 1
+        self._had_goals = bool(goal_src or goal_dst)
         return rt
+
+    def _count(self, rt):
+        self.stats["found"] += 1
+        for k in rt.entries:
+            self.stats["entries"][k] = self.stats["entries"].get(k, 0) + 1
+        self.stats["necks"] += len(rt.necks)
+
+    # ------------------------------------------------------------------ lands kept out
+    def _lands_out(self, grid, net, sources, targets, layers, width):
+        """(sources, targets, {layer: [land]}): the lands of `net` the route may not pass over.
+        - Every other land of the net in the window (neither a source nor a target): a route
+          across it would enter it uncontrolled (ubertooth: 8 overhanging pass-throughs).
+        - A necked land (PadRule.neck) that already has copper of its net, dropped from the
+          anchors when other anchors remain: a second track would chain the route through the
+          neck, which is sized for the land's own current only (a decap carries no DC); the
+          route joins that land's track instead (counter `neck_leaf`)."""
+        sp = self.sp
+        rules = getattr(sp.plan, "pad_rules", None) or {}
+        box_ = _box(grid)
+        bounds = (grid.x0, grid.y0, grid.x1, grid.y1)
+
+        def has_copper(it, l):
+            for x in sp.query(l, it.geom.bounds, 0.0):
+                if x.net == net and x.kind in ("track", "via") and x.geom.distance(it.geom) <= x.r + 1e-6:
+                    return True
+            return False
+
+        def necked(a):
+            if a.kind != "pad":
+                return None
+            for l in a.layers:
+                if l not in layers:
+                    continue
+                r = self._rule_of(net, a, l)
+                if r is not None and r.neck is not None and width > r.neck + 1e-9:
+                    it = next((x for x in sp.query(l, a.geom_on(l).bounds, 0.0)
+                               if x.kind == "pad" and x.idx == r.idx), None)
+                    if it is not None and has_copper(it, l):
+                        return a.geom_on(l), l
+            return None
+        cross = {}
+        out = []
+        for anchors in (sources, targets):
+            keep, dropped = [], []
+            for a in anchors:
+                got = necked(a)
+                (dropped if got is not None else keep).append((a, got))
+            if dropped and keep:
+                for _a, (g, l) in dropped:
+                    cross.setdefault(l, []).append(g)
+                self.stats["neck_leaf"] += len(dropped)
+                out.append([a for a, _ in keep])
+            else:
+                out.append(list(anchors))
+        sources, targets = out
+        ends = [(l, a.geom_on(l)) for a in list(sources) + list(targets) for l in a.layers]
+        for l in layers:
+            mine = [g for ll, g in ends if ll == l]
+            for it in sp.query(l, bounds, width):
+                if it.kind != "pad" or it.net != net or not it.geom.intersects(box_):
+                    continue
+                if any(it.geom is g or it.geom.distance(g) < 1e-6 for g in mine):
+                    continue
+                if any(it.geom is g for g in cross.get(l, ())):
+                    continue
+                cross.setdefault(l, []).append(it.geom)
+                self.stats["lands_kept_out"] += 1
+        return sources, targets, cross
+
+    # ------------------------------------------------------------------ rule D goals
+    def _rule_of(self, net, a, layer):
+        """The plan's PadRule for pad anchor `a` on `layer`, or None."""
+        plan = self.sp.plan
+        rules = getattr(plan, "pad_rules", None)
+        if not rules:
+            return None
+        if a.pad is not None:
+            return rules.get(a.pad)
+        g = a.geom_on(layer)
+        best = None
+        for it in self.sp.query(layer, g.bounds, 0.0):
+            if it.kind != "pad" or it.net != net or it.idx < 0 or it.idx not in rules:
+                continue
+            if it.geom is a.geom or it.geom is g:
+                return rules[it.idx]
+            if it.pos is not None and g.covers(Point(it.pos)) and it.geom.intersects(g):
+                d = math.dist(it.pos, (g.centroid.x, g.centroid.y))
+                if best is None or d < best[0]:
+                    best = (d, rules[it.idx])
+        return best[1] if best else None
+
+    def _goals(self, net, a, layer, w):
+        """(land, [goal]) of a pad anchor on `layer` for a track of width w: every rule-D
+        approach (PadRule.targets from release points all round the land, the neck applied), each
+        goal dict(a, end, kind, wn, w, keep, land, rule, layer); None without a rule or a target.
+        Kept per pad, layer and width."""
+        rule = self._rule_of(net, a, layer)
+        if rule is None:
+            return None
+        land = a.geom_on(layer)
+        if land is None or land.is_empty or land.geom_type not in ("Polygon", "MultiPolygon"):
+            return None
+        key = (rule.idx, layer, round(w, 5), tuple(round(v, 4) for v in land.bounds))
+        hit = self._goal_cache.get(key)
+        if hit is not None:
+            return hit or None
+        from . import pad_entry as PE
+        if land.geom_type == "MultiPolygon":
+            land = max(land.geoms, key=lambda x: x.area)
+        min_w = self.sp.width_limits(net, layer)[0] or 0.0
+        wn0, stub0 = rule.width_at(w, min_w)
+        c, u, v, W, H = PE.pad_frame(land)
+        R = W + H + 2.0
+        rels = []
+        half = (W - H) / 2 if W - H > PE.SQUARE_TOL * W else 0.0
+        for t in sorted({-half, 0.0, half}):
+            for sv in (1.0, -1.0):
+                rels.append((c[0] + t * u[0] + sv * R * v[0], c[1] + t * u[1] + sv * R * v[1]))
+        n_dir = 16 if land.area < PE.ROUND_AREA * W * H else 8
+        for k in range(n_dir):
+            th = 2 * math.pi * k / n_dir
+            ct, st = math.cos(th), math.sin(th)
+            rels.append((c[0] + R * (ct * u[0] + st * v[0]), c[1] + R * (ct * u[1] + st * v[1])))
+        mask = rule.mask_on(layer)
+        goals, seen = [], set()
+        for rel in rels:
+            wn, stub = wn0, stub0
+            ts = rule.targets(rel, wn, land=land, layer=layer, stub=stub)
+            if not ts:
+                # wider than any entry: the widest that fits, never below the need (pad_entry.neck_width)
+                fit, ts2 = PE.neck_width(land, rel, wn, rule.need, min_w, stub=PE.NECK_LEN + w / 2,
+                                         max_deg=10.0, mask=mask)
+                if fit is not None and fit < wn - 1e-9:
+                    ts, wn, stub = ts2, fit, PE.NECK_LEN + w / 2
+            if not ts and rule.need > 0:
+                # the current needs the width: the wide copper stays (the plan raised the land hazard)
+                ts, wn, stub = rule.targets(rel, w, land=land, layer=layer, check_overhang=False), w, None
+            for aa, end, kind in ts:
+                k2 = (round(aa[0], 4), round(aa[1], 4), round(end[0], 4), round(end[1], 4), round(wn, 4))
+                if k2 in seen:
+                    continue
+                seen.add(k2)
+                keep = (w / 2 + PE.NECK_LEN - 1e-3) if wn < w - 1e-9 else w / 2
+                goals.append(dict(a=tuple(aa), end=tuple(end), kind=kind, wn=wn, w=w, keep=keep, land=land,
+                                  rule=rule, layer=layer, key=(rule.idx, layer) + k2))
+        out = (land, goals) if goals else ()
+        if len(self._goal_cache) > 20000:
+            self._goal_cache.clear()
+        self._goal_cache[key] = out
+        return out or None
+
+    def _penalize(self, grid, cost, land, w):
+        """Raise the cost of the land's cells and of a band of w/2 around it (finite cells only)
+        so that entering it other than through an anchor costs about ENTRY_PENALTY_MM."""
+        r = w / 2 + 0.5 * grid.res
+        m = np.zeros(cost.shape, bool)
+        grid.within(land, r, m)
+        n = max(1.0, r / grid.res)
+        m &= np.isfinite(cost)
+        cost[m] += ENTRY_PENALTY_MM / (grid.res * (n + 1.0))
+
+    def _disc_cells(self, grid, p, li, flat, plane):
+        """Free cells within 0.75 cell of point p on layer index li, nearest first."""
+        ci, cj = grid.ij(*p)
+        out = []
+        for dj in (-1, 0, 1):
+            for di in (-1, 0, 1):
+                i, j = ci + di, cj + dj
+                if grid.inside(i, j):
+                    kk = li * plane + j * grid.nx + i
+                    d = math.dist(grid.xy(i, j), p)
+                    if d <= 0.75 * grid.res + 1e-9 and np.isfinite(flat[kk]):
+                        out.append((d, kk))
+        return [kk for _, kk in sorted(out)]
 
     def _escapes(self, grid, net, width, a, layer, li, cost, plane):
         """Ways out of pad anchor `a` on `layer` when none of its cells is free: [(flat cell
@@ -787,7 +1098,8 @@ class GridRouter:
         return out
 
     # ------------------------------------------------------------------ path -> geometry
-    def _geometry(self, grid, net, width, layers, path, sources, targets, esc_src=None, esc_dst=None):
+    def _geometry(self, grid, net, width, layers, path, sources, targets, esc_src=None, esc_dst=None,
+                  goal_src=None, goal_dst=None):
         sp = self.sp
         plane = grid.nx * grid.ny
         runs = []      # [layer, [pts]]
@@ -796,6 +1108,12 @@ class GridRouter:
         path_l = path.tolist()
         pre = (esc_src or {}).get(path_l[0]) if path_l else None
         post = (esc_dst or {}).get(path_l[-1]) if path_l else None
+        gpre = (goal_src or {}).get(path_l[0]) if path_l else None
+        gpost = (goal_dst or {}).get(path_l[-1]) if path_l else None
+        if gpre is not None:
+            pre = None
+        if gpost is not None:
+            post = None
         for k in path_l:
             li, r = divmod(k, plane)
             j, i = divmod(r, grid.nx)
@@ -812,29 +1130,102 @@ class GridRouter:
             runs[0][1] = list(pre) + runs[0][1]
         if runs and post:
             runs[-1][1] = runs[-1][1] + list(post)
+        if runs and gpre is not None:
+            runs[0][1] = [gpre["a"]] + runs[0][1]
+        if runs and gpost is not None:
+            runs[-1][1] = runs[-1][1] + [gpost["a"]]
         # a route through an escape holds pieces with no room beyond the requirement: it is
         # verified without our margin (KiCad's requirement exactly)
         tol = EXACT_TOL if (pre or post) else TOL
-        segs = []
+        segs, necks, entries = [], {}, []
         for ri, (l, pts) in enumerate(runs):
             pts = _merge_collinear(pts)
-            if ri == 0 and not pre:
+            first, last = ri == 0, ri == len(runs) - 1
+            head, tail = first and not pre and gpre is None, last and not post and gpost is None
+            keep = [(g["land"], g["keep"]) for g, on in ((gpre, first), (gpost, last)) if g is not None and on]
+            keep += [(g, width / 2) for g in (self._cross or {}).get(l, ())]
+            if head:
                 pts = self._snap_end(net, l, width, pts, sources, first=True)
-            if ri == len(runs) - 1 and not post:
+            if tail:
                 pts = self._snap_end(net, l, width, pts, targets, first=False)
-            pts = self._pull(net, l, width, pts, tol)
-            for a, b in zip(pts[:-1], pts[1:]):
-                if math.dist(a, b) > 1e-6:
-                    segs.append((l, a, b))
-        # exact verification of every piece
-        for l, a, b in segs:
-            if sp.track_violations(net, l, width, a, b, first=True, tol=tol):
+            pts = self._pull(net, l, width, pts, tol, keep=keep)
+            if any(g.distance(LineString([u, v])) < r - 1e-6 for u, v in zip(pts[:-1], pts[1:]) for g, r in keep):
+                return None                     # a piece before the final one runs over the land
+            lead = trail = None
+            if first and gpre is not None:
+                lead = self._final(net, l, gpre, pts[1] if len(pts) > 1 else None, tol)
+                if lead is None:
+                    return None
+                if lead[1]:
+                    pts = pts[1:]           # straight in from the point before the anchor: no corner
+                pts = [lead[0]] + pts
+                entries.append(lead[2])
+            elif first and not pre and self._ends_at_pad(pts[0], sources, l):
+                entries.append(self._old_kind(pts[0], pts[1] if len(pts) > 1 else None, sources, l))
+            if last and gpost is not None:
+                q = pts[-2] if len(pts) > 1 and not (lead is not None and len(pts) <= 2) else None
+                trail = self._final(net, l, gpost, q, tol)
+                if trail is None:
+                    return None
+                if trail[1]:
+                    pts = pts[:-1]
+                pts = pts + [trail[0]]
+                entries.append(trail[2])
+            elif last and not post and self._ends_at_pad(pts[-1], targets, l):
+                entries.append(self._old_kind(pts[-1], pts[-2] if len(pts) > 1 else None, targets, l))
+            if not (lead is not None and not lead[1] and gpre["wn"] < width - 1e-9) and \
+                    not (trail is not None and not trail[1] and gpost["wn"] < width - 1e-9):
+                pts = _merge_collinear(pts)     # a straight end in line with the rest is one piece
+            n0 = len(segs)
+            for u, v in zip(pts[:-1], pts[1:]):
+                if math.dist(u, v) > 1e-6:
+                    segs.append((l, u, v))
+            if lead is not None and not lead[1] and gpre["wn"] < width - 1e-9 and len(segs) > n0:
+                necks[n0] = gpre["wn"]
+            if trail is not None and not trail[1] and gpost["wn"] < width - 1e-9 and len(segs) > n0:
+                necks[len(segs) - 1] = gpost["wn"]
+        # exact verification of every piece (the final piece into a necked land at the neck)
+        for i, (l, a, b) in enumerate(segs):
+            w = necks.get(i, width)
+            if sp.track_violations(net, l, w, a, b, first=True, tol=tol):
                 return None
         for (x, y) in vias:
             if sp.via_violations(net, x, y, first=True):
                 return None
         length = sum(math.dist(a, b) for _, a, b in segs)
-        return Route(net=net, width=width, segs=segs, vias=vias, length=length)
+        rt = Route(net=net, width=width, segs=segs, vias=vias, length=length, necks=necks, entries=entries)
+        rt.goals = [g["key"] for g in (gpre, gpost) if g is not None]
+        return rt
+
+    def _final(self, net, layer, goal, p, tol):
+        """The final piece of a rule-D end: (end, straight, kind). From the anchor a by default;
+        straight from p (the point before a) when the rule offers a straight entry from p (within
+        10 degrees of the outline normal, no corner) at the full width and that piece is legal.
+        None when the piece from a is not legal at its width."""
+        rule, land, w = goal["rule"], goal["land"], goal["w"]
+        if p is not None and goal["wn"] >= w - 1e-9 and math.dist(p, goal["a"]) > 1e-6:
+            for _a2, end2, kind in rule.targets(p, w, land=land, layer=layer):
+                if kind == "straight" and not self.sp.track_violations(net, layer, w, p, end2, first=True, tol=tol):
+                    return (tuple(end2), True, "straight")
+        if self.sp.track_violations(net, layer, goal["wn"], goal["a"], goal["end"], first=True, tol=tol):
+            return None
+        return (goal["end"], False, goal["kind"])
+
+    def _old_kind(self, end, prev, anchors, layer):
+        """"centre", or "centre_acute" when the old entry's piece crosses the land more than 45
+        degrees off its normal (an acid trap)."""
+        from . import pad_entry as PE
+        if prev is None:
+            return "centre"
+        for a in anchors:
+            if a.kind == "pad" and layer in a.layers and a.geom_on(layer).distance(Point(end)) <= 1e-6:
+                ang = PE.entry_angle(a.geom_on(layer), prev, end)
+                return "centre_acute" if ang is not None and ang > 45.0 else "centre"
+        return "centre"
+
+    def _ends_at_pad(self, p, anchors, layer):
+        return any(a.kind == "pad" and layer in a.layers and a.geom_on(layer).distance(Point(p)) <= 1e-6
+                   for a in anchors)
 
     def boxes_in(self, rt, reach=1.5, radius=3.5):
         """Other nets' single-layer pads that a route `rt` walls off: pads within `reach` of
@@ -924,18 +1315,27 @@ class GridRouter:
                 return [c] + pts if first else pts + [c]
         return pts
 
-    def _pull(self, net, layer, w, pts, tol=TOL):
-        """String pulling: keep the farthest straight shortcut that is exactly legal."""
+    def _pull(self, net, layer, w, pts, tol=TOL, keep=()):
+        """String pulling: keep the farthest straight shortcut that is exactly legal and keeps
+        each (land, r) of `keep` at least r from its centre line (rule-D lands: only the final
+        piece enters them)."""
         if len(pts) <= 2:
             return pts
         sp = self.sp
         out = [pts[0]]
         i = 0
         n = len(pts)
+
+        def clear(a, b):
+            if not keep:
+                return True
+            seg = LineString([a, b])
+            return all(g.distance(seg) >= r - 1e-6 for g, r in keep)
         while i < n - 1:
             cand = i + 1
             for j in range(n - 1, i + 1, -1):
-                if not sp.track_violations(net, layer, w, pts[i], pts[j], first=True, tol=tol):
+                if clear(pts[i], pts[j]) and \
+                        not sp.track_violations(net, layer, w, pts[i], pts[j], first=True, tol=tol):
                     cand = j
                     break
             out.append(pts[cand])
