@@ -1,13 +1,9 @@
 # Analog IC constraint placement as a constraint vocabulary (MAGICAL, ALIGN)
 
-**TL;DR**
-- Analog flows split constraints into **soft penalties during global placement** and **hard equalities/orders in LP/ILP legalization** — the pattern to copy for LLM-authored PCB constraints.
-- **ALIGN's typed JSON schema** (Hard / User / Soft constraints) is a ready vocabulary; PCB proximity rules map to `PlaceCloser`/`Order`/`Align`/`PlaceOnBoundary`, symmetric sub-circuits to `SymmetricBlocks`.
-- ALIGN's **constraint-preserving sequence-pair perturbations** guarantee order/symmetry by construction instead of penalizing violations.
-- LayoutCopilot is the closest "LLM drives a layout tool" precedent: 93.75% command-generation correctness with a multi-agent pipeline and 11 commands.
-- No PCB paper yet reuses symmetry islands or sequence-pair-with-symmetry formulations.
+Scope: analog IC constraint placement (MAGICAL, ALIGN) as a constraint vocabulary for PCB placement. Not here: legalizers -> [legalization](legalization.md).
+Keys: MAGICAL, ALIGN, soft penalty, hard constraint, LP/ILP legalization, typed JSON schema, PlaceCloser, Order, Align, PlaceOnBoundary, SymmetricBlocks, constraint-preserving sequence pair, symmetry island, LayoutCopilot
 
-## Key facts
+## Methods and results
 
 **MAGICAL placer** (Xu et al., ICCAD'19; [PDF](https://yibolin.com/publications/papers/ANALOG_ICCAD2019_Xu.pdf) [P]; [repo](https://github.com/magical-eda/MAGICAL), BSD-3)
 - Global placement minimizes f_WL + a·f_OL + b·f_BND + c·f_SYM with nonlinear conjugate gradient; HPWL and max/min smoothed by log-sum-exp; f_SYM mirrors each pair about a shared axis and puts self-symmetric devices on it; weights rise each iteration until penalties fall below thresholds.
@@ -36,19 +32,18 @@
 - Multi-level multi-agent RL exploring asymmetric placements (DAC'25 LBR); ACDC 10k-sample synthetic symmetric grid benchmark for LLMs [S].
 - Template retargeting: IPRAIL extracts a structural template from a tuned layout and re-applies it under new sizes/rules (0.25 → 0.18 µm op-amps) [S].
 
-## Recommendations for our system
-- **Compile every LLM constraint twice**: smooth penalty with LLM-tunable weight in global placement; exact linear constraint in legalization; report infeasible subsets back ([legalization](legalization.md)) [I].
+## Use in kae
+- **Compile every LLM constraint twice** (the analog split: soft penalties in global placement, hard equalities/orders in LP/ILP legalization): smooth penalty with LLM-tunable weight in global placement; exact linear constraint in legalization; report infeasible subsets back ([legalization](legalization.md)) [I].
 - Base our PCB constraint vocabulary on ALIGN + PCB additions (hard: fixed, on_edge, keepout, side, rot_allowed, inside, clearance; soft: near(pin), ring, align, order, symmetric, group, spread, away_from, loop_compact) — see [LLM-guided placement](llm-guided-placement.md) [I].
 - Mapping: decap/crystal/ESD proximity → PlaceCloser/Order/Align/PlaceOnBoundary; differential front ends, half-bridge legs, RF chains → SymmetricBlocks [I].
-- Use constraint-preserving SP moves for small module floorplans; enumerate order-consistent SPs for tiny blocks [I].
+- Use constraint-preserving SP moves (order/symmetry guaranteed by construction, not penalized) for small module floorplans; enumerate order-consistent SPs for tiny blocks [I].
 - Copy LayoutCopilot's intent classifier → analyzer (knowledge base) → refiner (user negotiation) → adapter (KiCad calls / DSL) pattern [I].
 - Template retargeting: extract a structural template from datasheet/past layouts and re-run it as a relative-placement program ([scene-layout transplants](scene-layout-transplants.md)) [I].
 
-## Conflicts and open questions
+## Open questions
+- No PCB paper yet reuses symmetry islands or sequence-pair-with-symmetry formulations.
 - Ma et al. 2011 and Xu et al. ISPD'19 not read in full.
 - How MAGICAL's one-symmetry-per-device rule interacts with PCB parts in multiple groups is untested.
 
 ## Sources
-- research notes: [placement_algorithms.md § Q2, Q6](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/placement_algorithms.md); [cross_domain_ideas.md § Q10](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/cross_domain_ideas.md); [verification_papers.md § 1 row 23, § 2.11](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_papers.md)
-
-See also: [llm-guided-placement](llm-guided-placement.md) · [legalization](legalization.md) · [algorithm-families](algorithm-families.md)
+- [placement_algorithms.md § Q2, Q6](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/placement_algorithms.md); [cross_domain_ideas.md § Q10](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/cross_domain_ideas.md); [verification_papers.md § 1 row 23, § 2.11](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_papers.md)

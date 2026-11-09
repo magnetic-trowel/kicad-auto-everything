@@ -1,16 +1,17 @@
 # Proposed benchmark plan for our placer/router
 
-**TL;DR**
-- **Routing**: PCBWorld D3 under its @5 protocol, against Freerouting re-run at 2.5.0 (not only the published 2.1.0 numbers) and KRT.
-- **Placement**: Cypress small benchmarks under the Cypress protocol, plus placement-stripped PCBWorld boards routed by a fixed router and compared with the human placement routed the same way.
-- **Extra tracks** beyond routing/placement: intent conformance, physics checks, human-relative diagnostics, synthetic unit suites, and a checklist track seeded with known-bad boards.
-- **Hygiene**: pinned KiCad version, per-board licence manifest, private recent held-out split, and no method ever scoring itself (re-open saved files, re-run DRC).
-- **Build the harness first.** It now exists ([harness](harness.md); development plan in [dev-eval-plan](dev-eval-plan.md)) and doubles as the agent's verification loop, which practitioners say LLM tools lack.
+Scope: proposed benchmark tracks (routing, placement, intent, physics, human-relative, unit suites, hygiene, checklist, trust, blind review, controlled comparison) and corpus recipe. Not here: harness implementation -> [harness.md](harness.md); development/evaluation plan -> [dev-eval-plan.md](dev-eval-plan.md); metric definitions -> [quality-metrics.md](quality-metrics.md); public benchmarks -> [benchmarks.md](benchmarks.md).
+Keys: benchmark plan, PCBWorld D3, @5 protocol, Cypress protocol, placement-stripped, intent track, physics track, unit suites, hygiene, held-out split, checklist track, seeded faults, trust track, blind expert review, controlled comparison, corpus recipe, licence manifest
+Tags: [P] primary; [I] inference. Items 1–7 from the constraints/benchmarks note; 8–11 added from workflow and practitioner research [I].
 
-## Key facts
+## Benchmark plan rules
+1. Routing: PCBWorld D3 under its @5 protocol, vs Freerouting re-run at 2.5.0 (not only the published 2.1.0 numbers) and KRT. Placement: Cypress small benchmarks under the Cypress protocol, plus placement-stripped PCBWorld boards routed by a fixed router vs the human placement routed the same way.
+2. Hygiene: pinned KiCad version, per-board licence manifest, private recent held-out split, no method ever scoring itself (re-open saved files, re-run DRC).
+3. Implement the harness before the agent; the same scripts score benchmark runs and gate the agent's own state transitions ([../workflow/expert-state-machine.md](../workflow/expert-state-machine.md)) [I]. It now exists ([harness](harness.md)) and doubles as the agent's verification loop, which practitioners say LLM tools lack.
+4. Keep the harness outside the agent's write scope: a practitioner's agent rewrote its scoreboard ([../workflow/trust-requirements.md](../workflow/trust-requirements.md)) [I].
+5. Publish only licence-clean boards; record each board's licence in a manifest (`docs/topics/licensing/`) [I].
 
-Tags: [P] primary; [I] inference. Items 1–7 come from the constraints/benchmarks note. Items 8–11 are additions from the workflow and practitioner research [I].
-
+## Benchmark tracks
 | # | Track | Content | Scoring |
 |---|---|---|---|
 | 1 | Routing leaderboard | PCBWorld D3-A/B, later D3-C | @5 CP / Pot. / Rout. / DRV / WL / Via / Time / Parse-fail, against published Freerouting (0.80/0.78) and KRT (0.74/0.20). Also re-run Freerouting 2.5.0, since the published baseline is 2.1.0 (VK). The published numbers come from KiCad 9.0.8, Freerouting 2.1.0 at `-mp 10`, 99 D3-A and 10 D3-B boards, 4-seed means, so they are not a same-version, same-suite baseline. kaebench's `cpk` is any-clean@k, not PCBWorld's Φ-selected CP@5, and can only be ≥ it ([quality-metrics.md](quality-metrics.md)) |
@@ -25,7 +26,7 @@ Tags: [P] primary; [I] inference. Items 1–7 come from the constraints/benchmar
 | 10 | Blind expert review [I] | A sample of outputs mixed with human boards | Acceptance rate and review time; used to calibrate the convention metrics ([looks-right-metrics.md](looks-right-metrics.md)) |
 | 11 | Controlled comparison [I] | Human vs Freerouting-only vs LLM-orchestrated layout on identical netlists | Eventually fabricated boards with measurements. Practitioners report no such study |
 
-### Construction recipe for our own corpus
+## Construction recipe for our own corpus
 
 Follow the PCBWorld recipe [P]:
 1. Convert boards to the current KiCad version.
@@ -36,13 +37,7 @@ Follow the PCBWorld recipe [P]:
 
 Then add placement-stripped variants and intent annotations [I].
 
-## Recommendations for our system
-
-- **Implement the harness before the agent.** The same scripts score benchmark runs and gate the agent's own state transitions ([../workflow/expert-state-machine.md](../workflow/expert-state-machine.md)) [I].
-- **Keep the harness outside the agent's write scope.** A practitioner's agent rewrote its scoreboard; see [../workflow/trust-requirements.md](../workflow/trust-requirements.md) [I].
-- **Publish only licence-clean boards**, and record each board's licence in a manifest (licensing area: `docs/topics/licensing/`) [I].
-
-## Conflicts and open questions
+## Open questions
 
 - Licences of PCBWorld D3, PCBench and the Cypress benchmarks need per-board verification.
 - IR checkers (pad distance, via-to-plane, loop area, layer switches) need implementation and validation against Quilter-style PRC definitions and openEMS before the intent and physics tracks are trustworthy.
@@ -51,9 +46,7 @@ Then add placement-stripped variants and intent annotations [I].
 
 ## Sources
 
-- research notes: [constraints_verification_benchmarks.md § Q4, Q6C](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/constraints_verification_benchmarks.md)
-- research notes: [practitioner_discussions.md § Q2b, Q5 Gaps](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/practitioner_discussions.md)
+- [constraints_verification_benchmarks.md § Q4, Q6C](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/constraints_verification_benchmarks.md); [practitioner_discussions.md § Q2b, Q5 Gaps](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/practitioner_discussions.md)
 - corrections: [verification_kicad_and_tools.md § 5 (#9)](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_kicad_and_tools.md)
 - corrections (VP): [verification_papers.md § 1 (#7, #8, #37)](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_papers.md)
 
-See also: [benchmarks.md](benchmarks.md), [quality-metrics.md](quality-metrics.md)

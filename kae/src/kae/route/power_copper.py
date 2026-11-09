@@ -50,6 +50,8 @@ import shapely
 from shapely.geometry import LineString, Point
 from shapely.ops import unary_union
 
+from kae import materials as MAT
+
 from . import arcs as A
 from . import critical_write as W
 
@@ -82,6 +84,7 @@ DEFAULTS = dict(
                               # the land area and the via") or "track" (on the land's routed track, neck_len away,
                               # no second entry; see docs/research/routing/kae-power-copper.md)
     neck_via_gap=0.25,        # mm, via edge to a necked land (Eurocircuits)
+    land_cap=True,            # every other SMD land: grown copper within neck_len at most the land's width
     share=True,               # competing power/ground nets share room at w ~ I (False: first come, first served,
                               # highest current first)
     current_margin=3.0,       # a net's operating current x this sizes its IPC width (when above max_width)
@@ -110,7 +113,7 @@ VTOL = 0.03          # mm: vector mode's margin over each requirement (polygonal
 
 
 # ----------------------------------------------------------------------------- pure rules
-def ipc_width(current_a, dt_k=10.0, t_mm=0.035, external=True):
+def ipc_width(current_a, dt_k=10.0, t_mm=MAT.CU_1OZ_MM, external=True):
     """IPC-2221 track width (mm) for `current_a` at a `dt_k` rise: I = k*dT^0.44*A^0.725, A in mil^2."""
     if current_a <= 0:
         return 0.0
@@ -194,13 +197,18 @@ def neck_rule(land_w, process, series_current_a=0.0, margin=DEFAULTS["current_ma
     """Width (mm) grown copper may have within neck_len of a two-terminal part's land, or None (no
     limit). The neck is the land class's NECK_TABLE width for the process, never below what the
     part's own series current needs (IPC-2221 at margin x I): a fuse, ferrite or shunt in a rail
-    keeps its width. A part to ground (a decap) carries no DC and is necked."""
+    keeps its width. A part to ground (a decap) carries no DC and is necked. A class the process does
+    not neck (1206 and up in reflow, every class in wave) is capped at its land width."""
     w = NECK_TABLE.get(process, NECK_TABLE["reflow"]).get(pkg_class(land_w))
-    if w is None:
-        return None
-    w = min(w, land_w)
     need = current_need(series_current_a, margin)
-    return None if need >= land_w else max(w, need)
+    if need >= land_w:
+        return None           # the current needs more than the land: no neck (land_enlarged_by_track)
+    if w is None:
+        # a class the process does not neck still gets no copper wider than its land near it: copper
+        # beside the land is exposed land under the mask opening or a heat sink under mask, and on one
+        # terminal of two it unbalances the joint (1206 caps fed by 3 mm rails: 9-11 mm^2 per land)
+        return land_w
+    return max(min(w, land_w), need)
 
 
 def current_need(current_a, margin=DEFAULTS["current_margin"]):
@@ -213,8 +221,7 @@ def land_necks(lands, power, ground, current, process, margin=DEFAULTS["current_
     lands of two-terminal SMD parts. `lands`: {part: [(key, smd, net, land width)]}, one entry per
     copper pad; `current`: {net: A} (net_currents). A part with no ground pad and a power pad is in
     series with a rail (fuse, ferrite, shunt, jumper) and carries the rail's current; a land whose
-    neck_rule is None (wave, 1206+ in reflow, or a series current that needs more than the land)
-    gets no neck. The one implementation PowerCopper._necks and constraints.plan both use."""
+    neck_rule is None (a series current that needs more than the land) gets no neck. The one implementation PowerCopper._necks and constraints.plan both use."""
     necks, series_a = {}, {}
     for _part, cu in lands.items():
         if len(cu) != 2 or not all(smd for _k, smd, _n, _w in cu):
@@ -552,6 +559,7 @@ class PowerCopper:
         asm = ((op or {}).get("requirements") or {}).get("assembly") or {}
         self.hand_solder = bool(asm.get("hand_solder_ok")) or asm.get("process") == "hand"
         self.process = process_of(asm)
+        self.caps = {}
         self.necks = self._necks() if self.o.get("neck", True) else {}
         za = self.o.get("zone_above_a")
         self.zone_nets = ({n for n in self.power | self.ground if self.current.get(n, 0.0) > float(za)}
@@ -597,9 +605,9 @@ class PowerCopper:
                 if id(it) in seen or it in ignore:
                     continue
                 seen.add(id(it))
-                if l == layer and it.kind == "pad" and it.net == net and id(it) in self.necks:
+                if l == layer and it.kind == "pad" and it.net == net and (id(it) in self.necks or id(it) in self.caps):
                     # necked land: f < 0 carries the neck width (see _allowed_half, _legal)
-                    out.append((it.geom, 0.0, self.o["neck_len"], -self.necks[id(it)]))
+                    out.append((it.geom, 0.0, self.o["neck_len"], -self.necks.get(id(it), self.caps.get(id(it)))))
                     continue
                 ex = self._extra(it, l, layer)
                 if l == layer:
@@ -1129,11 +1137,45 @@ class PowerCopper:
         return out
 
     def _necks(self):
-        """{id(pad Item): neck width} for the lands of two-terminal SMD parts the process necks
-        (land_necks)."""
+        """{id(pad Item): neck width} for the lands of two-terminal SMD parts (land_necks). Lands that get
+        no neck because their series current needs more than the land go to self.unnecked (hazards)."""
         lands = {fp: [(id(p), p.smd, p.net, _short_side(p.geom)) for p in pads if p.kind == "pad"]
                  for fp, pads in self.sp.pads_by_fp.items()}
-        return land_necks(lands, self.power, self.ground, self.current, self.process, self.o["current_margin"])[0]
+        self.caps = {}
+        necks, series = land_necks(lands, self.power, self.ground, self.current, self.process, self.o["current_margin"])
+        if self.o.get("land_cap", True):
+            # every other SMD land (IC pins, parts with alternate pads) gets no grown copper wider than
+            # itself within neck_len: a 2.5 mm ground track into a 0.6 mm SOIC pin is a bridge and
+            # wicking risk (route-finish-ab stage 1: 16 mm^2 on one pin); the land's own copper and
+            # the router's track are untouched
+            for fp, pads in self.sp.pads_by_fp.items():
+                for p in pads:
+                    if p.kind == "pad" and p.smd and id(p) not in necks and id(p) not in series:
+                        self.caps[id(p)] = _short_side(p.geom)
+        self.unnecked = []
+        for fp, pads in self.sp.pads_by_fp.items():
+            for p in pads:
+                if p.kind == "pad" and id(p) in series and id(p) not in necks:
+                    self.unnecked.append((fp, p, series[id(p)]))
+        return necks
+
+    def land_hazards(self):
+        """land_enlarged_by_track for each unnecked two-terminal land a widened track enters wider than it."""
+        from . import pad_entry as PE
+        out = []
+        for fp, p, amps in getattr(self, "unnecked", []):
+            land_w = _short_side(p.geom)
+            widest = 0.0
+            for pieces in self.edits.values():
+                for pc_ in pieces:
+                    a, b, w = pc_[:3]
+                    if w > land_w + 1e-9 and LineString([a, b]).buffer(w / 2).intersects(p.geom):
+                        widest = max(widest, w)
+            if widest:
+                ref, num = p.owner if isinstance(p.owner, tuple) else (None, None)
+                out.append(PE.land_hazard(ref, num, p.net, widest, land_w,
+                                          current_need(amps, self.o["current_margin"]), amps))
+        return out
 
     def vector_or_widen(self):
         if self.o.get("mode") == "vector":
@@ -1315,6 +1357,7 @@ def run(input_path, output_path, opts=None, workdir=None, timeout=1800, log=prin
         for u in set(groups.values()):
             kind_of[u] = dict(kind=pc.group_kind(u) or ("zone" if any(z[3] == u for z in pc.zones) else "vector"))
         return dict(board=str(inp), planned=pc.stats, kept=dict(pc.stats), kinds=kinds, reverted=0, gate=False,
+                    hazards=pc.land_hazards(),
                     nets=dict(power=sorted(pc.power), ground=sorted(pc.ground), switch=sorted(pc.switch),
                               victims=sorted(pc.victims), zones=sorted(pc.zone_nets)),
                     plan_s=round(t_plan, 2), total_s=round(time.monotonic() - t0, 2),
@@ -1406,7 +1449,7 @@ def run(input_path, output_path, opts=None, workdir=None, timeout=1800, log=prin
                 stitch_vias=sum(1 for v in pc.vias if v[6] == "stitch" and v[5] not in skip) if "stitch" in kinds else 0,
                 vector_strips=sum(1 for x in pc.vector for k in x[2] if k[3] not in skip) if "vector" in kinds else 0,
                 vector_zones=sum(1 for z in pc.zones if z[3] not in skip) if "vector" in kinds else 0)
-    return dict(board=str(inp), planned=pc.stats, kept=kept, kinds=kinds, reverted=len(skip),
+    return dict(board=str(inp), planned=pc.stats, kept=kept, kinds=kinds, reverted=len(skip), hazards=pc.land_hazards(),
                 drc_in=base, drc_out=final or base, rounds=rounds,
                 nets=dict(power=sorted(pc.power), ground=sorted(pc.ground), switch=sorted(pc.switch),
                           victims=sorted(pc.victims)),
@@ -1423,8 +1466,11 @@ def hook(output_path, project_board, workdir, opts=None, timeout=900, log=print)
     try:
         rep = run(staged, wd / "out.kicad_pcb", opts=opts, workdir=wd / "pass", timeout=timeout, log=log)
     except Exception as e:      # noqa: BLE001 - a post-pass never costs the routed board
+        from kae import hazards as H
         log(f"[power-copper] skipped: {type(e).__name__}: {e}")
-        return dict(error=f"{type(e).__name__}: {e}")
+        return dict(error=f"{type(e).__name__}: {e}", hazards=[H.make(
+            "power_copper_failed", "warn", "data", f"Power copper failed and was skipped: {type(e).__name__}: {e}"[:300],
+            objects=["power_copper"], fix="Report the board; rails and grounds keep their routed widths.")])
     if any(rep["kept"].values()):
         text = (wd / "out.kicad_pcb").read_text(encoding="utf-8")
         Path(output_path).write_text(text, encoding="utf-8")

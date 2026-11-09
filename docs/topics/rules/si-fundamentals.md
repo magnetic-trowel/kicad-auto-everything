@@ -1,31 +1,19 @@
 # SI fundamentals: return paths, reference planes, rise time, crosstalk
 
-*Evidence tags:*
-- [P]: read in the primary source (an app note, an author's article, or code).
-- [S]: snippet or secondary source.
-- [V]: unverified vendor or project claim.
-- [I]: our inference.
+Scope: return paths, reference planes and discontinuities, rise time / critical length / termination / stubs, crosstalk. Not here: diff-pair specifics -> [diff-pairs.md](diff-pairs.md); stackup -> [stackup.md](stackup.md); checkers -> [checkers-si-emi.md](checkers-si-emi.md).
+Keys: return path, reference plane, split, slot, antipad, return via, stitching capacitor, rise time, t_r, critical length, t_r/6, t_r/2, termination, via stub, backdrill, 0.3/Gbps, quarter-wave, crosstalk, NEXT, FEXT, K = 1/(1+(D/H)²), guard trace, ground fill, knee frequency
+Tags: [P] primary (app note, author article, code), [S] snippet/secondary, [V] unverified vendor/project claim, [I] inference. VR statuses (from `verification_rules.md`, which overrides the catalogs): VERIFIED = number matches; +CTX = matches but a condition was dropped; CORRECTED = source says otherwise; CONTESTED = primary sources disagree; NOT RETR. = not retrievable.
 
-*VR statuses come from `verification_rules.md`, which overrides the catalogs:*
-- VERIFIED: the number matches the source.
-- +CTX: the number matches, but a condition was dropped.
-- CORRECTED: the source says something different.
-- CONTESTED: primary sources disagree.
-- NOT RETR.: the source could not be retrieved.
+## SI design rules
+1. Return current flows in the adjacent plane under the trace (80% within ±3h microstrip, 99% stripline): every fast net, and each leg of a pair, needs continuous reference copper along its full length.
+2. Build the reference-layer map first (stackup + zone fills; [checkers-si-emi.md](checkers-si-emi.md) checker A); express edge, void, crosstalk and stitching rules in units of h. Never use bare slogans such as "3W".
+3. Give every net a t_r (IBIS, part family, or LLM estimate flagged as assumption). t_r parameterises critical-length flags (t_r/6 review, t_r/2 must-terminate; threshold CONTESTED), stub limits, skew budgets ([diff-pairs.md](diff-pairs.md)), knee frequency 1/(πt_r) or 0.5/t_r, stitching pitch.
+4. Router: follow Ott's layer-change order 1→4; auto-insert a GND via within ~1–2 mm (≤200 mil; rate-scaled to ~1.3 mm at PCIe Gen5) at same-net reference changes; refuse P↔G reference changes unless the user approves a stitching cap (≤1 µF, only where a split crossing is unavoidable); a via through the same plane is fine.
+5. Never auto-insert terminations: slow the edge first; recommend slew control or series R and flag the net for SI review.
+6. Stubs on SerDes ≳3 Gb/s: < min(15 mil, 0.3/Gbps in).
+7. Spacing: `D ≥ H·√(1/K − 1)` per layer, stricter K for I/O and analog victims; reduce h first. No guard traces or ground fill by default.
 
-**TL;DR**
-- High-frequency return current flows in the adjacent plane, directly under the trace: 80% within ±3h for microstrip, 99% for stripline. So every fast net, and each leg of a pair, needs continuous reference copper under its full length.
-- Breaks in that copper (gaps, slots made by merged antipads, reference changes) force a detour. The detour causes a reflection, ground bounce and EMI. Rules that follow from this:
-  - Use Ott's layer-change order.
-  - Place a return via within ≤200 mil, scaled with data rate down to about 1.3 mm at PCIe Gen5.
-  - Use stitching capacitors (≤1 µF) only where a split crossing is unavoidable.
-- Electrical length is judged against **rise time**, not clock period. At t_r/6, flag the net for SI review; at t_r/2, it must be terminated (the threshold is CONTESTED). Slow the edges before adding termination. On SerDes links ≳3 Gb/s, keep via stubs below min(15 mil, 0.3/Gbps in).
-- Crosstalk follows K = 1/(1+(D/H)²). Reduce h first, then set spacing from a crosstalk budget. Guard traces and ground fill are never defaults.
-- Express every rule in units of h (taken from the stackup) and per-net t_r. Never use bare slogans such as "3W".
-
-## Key facts
-
-### Where return current flows
+## Where return current flows
 | Fact | Value | Source |
 |---|---|---|
 | Return path location | Above the frequency where ωL dominates, the return runs "directly underneath the signal currents" (the lowest loop inductance). Bogatin's Rule #7: "always use a continuous return path adjacent to every signal path" | [Bogatin/LeCroy](https://www.teledynelecroy.com/oscilloscope/blog/signal-return-paths-signal-and-power-integrity-tutorial/) [P]; [SIJ 20 rules](https://www.signalintegrityjournal.com/blogs/4-eric-bogatin-signal-integrity-journal-technical-editor/post/1539-bogatins-20-rules-for-engineers) [P; VERIFIED] |
@@ -38,7 +26,7 @@
 | Common mode | A via that changes reference planes "greatly magnif[ies]" common-mode current | [Archambeault](https://www.sigcon.com/Pubs/edn/ReducingEmissions.htm) [P] |
 | Loop area | The return follows least inductance at MHz and least resistance at kHz. "Radiation is NOT proportional to loop area": well-designed long lines need not radiate | [LearnEMC](https://learnemc.com/the-most-important-emc-design-guidelines) [P] |
 
-### Discontinuities: splits, slots, voids, reference changes
+## Discontinuities: splits, slots, voids, reference changes
 - **Bogatin's "trifecta" for a split:**
   1. a reflection;
   2. ground bounce and shared-path crosstalk;
@@ -89,7 +77,7 @@
   - Never filter by routing over a gap, or by putting a ferrite on ground.
 - **Clemson:** longer gaps give more common-mode current [S; NOT RETR.].
 
-### Rise time, critical length, termination, stubs
+## Rise time, critical length, termination, stubs
 - **Critical length (CONTESTED):**
   - Johnson: a line needs termination at somewhere between 1/10 and 1/3 of t_r. At ½ t_r expect "severe overshoot and ringing"; he simulates anything over 1/6 ([Johnson](https://www.sigcon.com/Pubs/news/3_14.htm) [P]).
   - LearnEMC and ADI MT-097: terminate at ≥t_r/2. MT-097's conservative variant is 2 in per ns; 2" of microstrip at Er 4 is about 270 ps ([MT-097](https://www.analog.com/media/en/training-seminars/tutorials/MT-097.pdf) [P]).
@@ -117,7 +105,7 @@
   - TI: enter through-hole receptacles on the bottom layer, and SMT receptacles on top with no vias [VERIFIED].
 - **SerDes:** zero test points and zero stubs. VR reclassifies this as a P0 "zero", not "minimise".
 
-### Crosstalk
+## Crosstalk
 - **Johnson** ([Noise Isolation](https://www.sigcon.com/Pubs/news/2_13.htm) [P]):
   - Worst-case NEXT is **K = 1/(1+(D/H)²)**, where D is the centre-to-centre separation.
   - When 2·T_coupled < t_r, K scales down in proportion. D/H = 100 gives 80 dB.
@@ -136,44 +124,14 @@
   - Ott pairs H and V layers on a shared plane.
   - Cross analog and digital at right angles [S].
 
-## Recommendations for our system
-- **Build the reference-layer map first**, from the stackup plus zone fills: [checkers-si-emi.md](checkers-si-emi.md) checker A. Then express edge, void, crosstalk and stitching rules in units of h.
-- **Give every net a t_r:** from IBIS, from the part family, or as an LLM estimate flagged as an assumption. t_r parameterises:
-  - the critical-length flags (t_r/6, t_r/2);
-  - stub limits;
-  - skew budgets ([diff-pairs.md](diff-pairs.md));
-  - the knee frequency, 1/(πt_r) or 0.5/t_r;
-  - the stitching pitch.
-- **Router policy:**
-  - Follow Ott's order 1→4.
-  - Auto-insert a GND via within about 1–2 mm (≤200 mil) when the reference changes between same-net planes.
-  - Refuse P↔G reference changes unless the user approves a stitching capacitor.
-  - Treat a via that passes through the same plane as fine.
-- **Never auto-insert terminations.** Recommend slew control or a series R, and flag the net for SI review.
-- **Spacing:** D ≥ H·√(1/K − 1) per layer, with a stricter K for I/O and analog victims. No guard traces or fill by default.
-
-## Conflicts and open questions
+## Open questions
 - **Termination threshold:** t_r/2 (LearnEMC, ADI) vs 1/6 (Johnson). Resolve as "review" vs "must terminate".
 - Bogatin's NEXT and FEXT rules of thumb could not be retrieved; Johnson's formula stands in.
-- **Open:**
-  - No primary source quantifies how much removing unused pads shortens a stub.
-  - Parallel-termination placement was not researched.
-  - No primary source gives emissions in dB as a function of slot length.
+- No primary source quantifies how much removing unused pads shortens a stub.
+- Parallel-termination placement not researched.
+- No primary source gives emissions in dB vs slot length.
 
 ## Sources
-- Research notes:
-  - [rules_highspeed_emi.md § 1, 5, 6](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_highspeed_emi.md)
-  - [verification_rules.md § 1A, 2](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md)
-  - [interface_rule_packs.md § 9](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/interface_rule_packs.md)
-- Primary sources:
-  - Ott tech tips (https://hott.shielddigitaldesign.com/techtips/index.html)
-  - Johnson (https://www.sigcon.com/Pubs/edn/)
-  - TI SPRAAR7J (https://www.ti.com/lit/pdf/spraar7)
-  - LearnEMC (https://learnemc.com/pcb-layout)
-
-See also:
-- [stackup.md](stackup.md)
-- [diff-pairs.md](diff-pairs.md)
-- [emc-placement.md](emc-placement.md)
-- [checkers-si-emi.md](checkers-si-emi.md)
-- [myths-and-contested.md](myths-and-contested.md)
+- [rules_highspeed_emi.md § 1, 5, 6](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_highspeed_emi.md); [verification_rules.md § 1A, 2](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md); [interface_rule_packs.md § 9](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/interface_rule_packs.md)
+- Ott tech tips https://hott.shielddigitaldesign.com/techtips/index.html; Johnson https://www.sigcon.com/Pubs/edn/; TI SPRAAR7J https://www.ti.com/lit/pdf/spraar7; LearnEMC https://learnemc.com/pcb-layout
+- See also [emc-placement.md](emc-placement.md), [myths-and-contested.md](myths-and-contested.md).

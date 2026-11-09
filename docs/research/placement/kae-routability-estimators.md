@@ -1,5 +1,8 @@
 # Routability estimators for the kae placer (dead end)
 
+Scope: defensive publication of the routability estimators tried inside the kae placer (all negative) and why. Not here: router-in-the-loop alternative -> [joint loop](../joint/kae-joint-loop.md).
+Keys: RUDY, Congestion, w_cong, pad gaps, net crossings, pour access, corridor overflow, cut capacity, channel term, w_chan, CHAN_W, pour fragmentation, pour.py, MST track estimate, probe-select, --probe-jitter, --probe-parallel, connector edge pull, free angles, --angles, anglepolish.py
+
 **Status:** did not work (congestion, pour fragmentation, probe-select, edge pull); untested (free angles).
 **First published:** 2026-10-22, commit [537d08f](https://github.com/magnetic-trowel/kicad-auto-everything/commit/537d08feff641d222ae645461b953c66ae414227) on branch `claude/vigilant-mayer-i91rrr` (channel term [11bb4e3](https://github.com/magnetic-trowel/kicad-auto-everything/commit/11bb4e3ebf3d07e0ce3e199582854d3872ab273f), pour fragmentation [07a2fdd](https://github.com/magnetic-trowel/kicad-auto-everything/commit/07a2fdd8c16d5981faa7d4be8ed0ca2d62072e5b), probe-select [f61812b](https://github.com/magnetic-trowel/kicad-auto-everything/commit/f61812b0f611b2c410873ddea637f53915898fd2)).
 
@@ -7,7 +10,7 @@ Our placements route worse than the human ones on dense boards (split C: 30/78 c
 
 ## Idea and how it works
 
-**RUDY congestion** (`place/cost.py`, `Congestion`). On a coarse bin grid each net spreads w + h of its pin bounding box uniformly over the box. The x and y weights are separable, so a net's demand is an outer product and moves are incremental. Pins add escape demand; pads with clearance halos remove supply. Supply per bin = layers x bin area / track pitch x (1 - beta * blocked). Cost = mean over bins of max(0, u - 0.5)^2 with u = demand / supply. RUDY stays in the annealer cost (`w_cong`) and is the base for the joint loop's congestion history ([kae-joint-loop](../joint/kae-joint-loop.md)). Its weight in the placer (`place_w_cong`, 30) has never been ablated. It went from 0.3 to 30 in [613e5ba](https://github.com/magnetic-trowel/kicad-auto-everything/commit/613e5ba51864a173efbc99e2ad8a415832160e13) together with the escape-demand rewrite of the cost, without a recorded sweep. The only evidence for it is across boards: in `cost.py`'s calibration it scores a peak AUC of 0.84 on 55 split-A placements and Spearman +0.42 over 75 human boards, and plain signal HPWL per layer-area does as well (+0.61). Within one board, which is how the annealer uses it, it showed no signal (Results). Outside sources split the same way: kicad-tools found RUDY at chance (0.46-0.57 pairwise), while circuit-skills found a congestion maximum at 0.72 pairwise over 64 boards ([learning_from_layout_data](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/learning_from_layout_data.md)). On 13 merit boards with 25-141 footprints (the P6 sample in [kae-exact-legality](kae-exact-legality.md)), the unweighted overflow was 0 at the seed on 9 and at most 0.004 on the rest, so x30 it stays below 0.13 against a wirelength term of 0.4-1.0. Off dense boards the term barely steers. The A/B (0 / 10 / 30) is specified in [`placement-decide-ab.sh`](../../../tools/kaeres/experiments/placement-decide-ab.sh).
+**RUDY congestion** (`place/cost.py`, `Congestion`). On a coarse bin grid each net spreads w + h of its pin bounding box uniformly over the box. The x and y weights are separable, so a net's demand is an outer product and moves are incremental. Pins add escape demand; pads with clearance halos remove supply. Supply per bin = layers x bin area / track pitch x (1 - beta * blocked). Cost = mean over bins of max(0, u - 0.5)^2 with u = demand / supply. RUDY stays in the annealer cost (`w_cong`) and is the base for the joint loop's congestion history ([kae-joint-loop](../joint/kae-joint-loop.md)). Its weight in the placer (`place_w_cong`, 30) has never been ablated. It went from 0.3 to 30 in [613e5ba](https://github.com/magnetic-trowel/kicad-auto-everything/commit/613e5ba51864a173efbc99e2ad8a415832160e13) together with the escape-demand rewrite of the cost, without a recorded sweep. The only evidence for it is across boards: in `cost.py`'s calibration it scores a peak AUC of 0.84 on 55 split-A placements and Spearman +0.42 over 75 human boards, and plain signal HPWL per layer-area does as well (+0.61). Within one board, which is how the annealer uses it, it showed no signal (Results). Outside sources split the same way: kicad-tools found RUDY at chance (0.46-0.57 pairwise), while circuit-skills found a congestion maximum at 0.72 pairwise over 64 boards ([learning_from_layout_data](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/learning_from_layout_data.md)). On 13 merit boards with 25-141 footprints (the P6 sample in [kae-exact-legality](kae-exact-legality.md)), the unweighted overflow was 0 at the seed on 9 and at most 0.004 on the rest, so x30 it stays below 0.13 against a wirelength term of 0.4-1.0. Off dense boards the term barely steers. The A/B placement-decide-staged (kae staged, 213 merit boards, k = 2, 2026-11-07) found no difference: cp1 0.305 / 0.310 / 0.305 for weights 0 / 10 / 30, and completion 0.941 / 0.943 / 0.942. Each paired difference is 1–2 boards, inside the A/A noise of ±2 pp. The weight is now 0 (off) by default.
 
 **Variants studied:** pad gaps, net crossings, pour access, corridor overflow, cut capacity (demand across a cut line vs tracks that fit through it), and a **channel term** `w_chan`: soft halos around pads so a track fits between neighbouring parts' pads.
 
@@ -25,7 +28,7 @@ Estimators were measured on three dense sensor boards (paw3395, badjeff-pmw3610,
 
 ## Results
 
-All from [kae-place](../../topics/placement/kae-place.md), section "Negative results"; small n (1-3 boards, 3 router seeds).
+Study measurements (no results file); small n (1-3 boards, 3 router seeds).
 
 | estimator | result |
 |---|---|
@@ -34,14 +37,14 @@ All from [kae-place](../../topics/placement/kae-place.md), section "Negative res
 | cut capacity | failed human validation (human boards above capacity route); not built |
 | channel term `w_chan`, paw3395 (unconnected, 3 router seeds) | 11/10/10 -> 9/9/2 at weight 1 -> 2/5/3 at weight 3; not validated on human boards; off (`CHAN_W = 0`) |
 | pour fragmentation, pads only | human baseline 334/412 pours need nothing; every paw3395 and siderakb placement (ours and human) is one piece: islands appear only once tracks exist |
-| pour fragmentation + MST tracks | human 54/76 small two-layer pours need nothing; the most split paw3395 placement (w_chan 3, 6 pads stranded) routes among the best; on siderakb the estimate points the wrong way; the routed human paw3395 is as fragmented as ours |
+| pour fragmentation + MST tracks | human 54/76 small two-layer pours need nothing; the most split paw3395 placement (w_chan 3, 6 pads stranded) routes among the best, while two unsplit placements route at 3.7 and 6.7 unconnected; on siderakb the estimate points the wrong way; the routed human paw3395 is as fragmented as ours |
 | probe-select, paw3395 (mean unconnected, 900 s finals) | probe 3: 4.7; w_chan 3 + probe 3: 11.0; + jitter 0.15: 7.7; probe 5 + jitter: 3.7; vs w_chan 3 alone 3.3, human 0 |
 | edge pull (human edge rates) | USB, barrel, audio 100%; headers 69%; mounting holes 84%; term dropped (rates not reproducible: re-measured on 11,668 boards in [kae-fixed-interface](kae-fixed-interface.md): USB 93%, barrel 80%, audio 61% within 2 mm) |
 | free angles | no recorded paired result |
 
 ## Verdict
 
-Did not work. Reasons we found:
+Did not work. Reasons:
 - On PCBs, RUDY-style demand ranks routability near chance. Our reading (not tested separately): failures come from local escape geometry (caps in the strip between sensor pins and the board edge, a locked sensor taking half the board) that box-spread demand does not see.
 - Fragmentation of pours only shows once tracks exist, so a pre-route estimate has nothing to count.
 - A 90-140 s probe route reports 7-20 open connections and its ranking does not carry over to a 900 s route; each candidate gets only 46-76 s of placement; the physics slack excluded the best-probing candidate; and jitter barely diversifies candidates because the CP-SAT floorplan pulls seeds back together.

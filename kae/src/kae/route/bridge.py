@@ -133,6 +133,8 @@ DEFAULT_OPTS = dict(
     blocked=True,            # at the end, diagnose the connections still open (kae.route.blocked): the report's
                              # "blocked" names the board rule (or kae default) that makes each impossible
     blocked_s=30.0,          # with blocked: seconds kept for it at most (taken from the repair rounds)
+    thermal_via_s=60.0,      # with thermal vias to place (kae.route.thermal_vias: a hot part over a heat-sink
+                             # plate on the other face): seconds kept from the repair rounds for their pass and DRC
     pad_shapes="kicad",      # pin shapes in the DSN: "kicad" (KiCad's export: rounded corners and arcs as
                              # chords inside the outline, up to 4 um at r 0.25 mm, 10 um on custom pads) or
                              # "outside" (polygons that contain the pad's copper, translate.circumscribe_pins)
@@ -301,12 +303,33 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
         # 5: DRC and repair
         diag_s = min(float(opts.get("blocked_s") or 0.0), 0.05 * time_s) if opts.get("blocked") else 0.0
         final_rep = None
+        from . import thermal_vias
+        try:
+            hot = thermal_vias.planned(original_input, opts)[0]
+        except Exception as e:  # noqa: BLE001 - unreadable operating facts: no thermal vias
+            log(f"thermal vias: {type(e).__name__}: {e}")
+            hot = []
+        tv_s = min(float(opts.get("thermal_via_s") or 0.0), 0.1 * time_s) if hot else 0.0
         if opts.get("repair") and left() > 30:
             from . import repair
             report["repair"] = repair.loop(input_path, output_path, wd, p, info, opts,
-                                           deadline=t0 + time_s - 10 - diag_s, log=log)
+                                           deadline=t0 + time_s - 10 - diag_s - tv_s, log=log)
             final_rep = report["repair"].pop("_report", None)
             report.setdefault("hazards", []).extend(report["repair"].pop("hazards", None) or [])
+            if hot and left() > 20:
+                # after the repair and last-mile rounds, which judge connections only: the hot parts'
+                # thermal vias and solid heat pads, judged by KiCad's DRC like a round (kae.route.thermal_vias)
+                report["thermal_vias"] = thermal_vias.run(input_path, output_path, wd, p, info, opts,
+                                                          deadline=t0 + time_s - 10 - diag_s,
+                                                          best=report["repair"].get("final"), log=log)
+                tv_rep = report["thermal_vias"].pop("_report", None)
+                if report["thermal_vias"].get("thermal"):
+                    # the push-back: what each hot part's heat path costs, what was done, what would
+                    # change it (kae.route.thermal_vias.pushback), beside "blocked"
+                    report["thermal"] = report["thermal_vias"]["thermal"]
+                if report["thermal_vias"].get("kept"):
+                    report["repair"]["final"] = report["thermal_vias"]["after"]
+                    final_rep = tv_rep or final_rep
             if diag_s and final_rep and (report["repair"].get("final") or {}).get("unconnected"):
                 report["blocked"] = diagnose(output_path, input_path, original_input, info, p, final_rep, sev, wd,
                                              deadline=time.monotonic() + max(5.0, left() - 8), log=log, opts=opts)
@@ -367,8 +390,12 @@ def finish_hook(output_path, project_board, workdir, parts, time_s, base_report=
         rep = finish.run(output_path, wd / "out.kicad_pcb", project=project_board, opts=dict(parts=tuple(parts)),
                          workdir=wd / "work", time_s=time_s, base_report=base_report, log=log)
     except Exception as e:      # noqa: BLE001 - a post-pass never costs the routed board
+        from kae import hazards as H
         log(f"finish: skipped: {type(e).__name__}: {e}")
-        return dict(error=f"{type(e).__name__}: {e}")
+        return dict(error=f"{type(e).__name__}: {e}", hazards=[H.make(
+            "finish_failed", "warn", "data", f"The finish stage failed and was skipped: {type(e).__name__}: {e}"[:300],
+            objects=["finish"], fix="Report the board; it is handed back as routed, without rule D tails, taut "
+                                    "arcs or power copper.")])
     if rep.get("kept"):
         Path(output_path).write_text((wd / "out.kicad_pcb").read_text(encoding="utf-8"), encoding="utf-8")
     for k in ("journal", "gate_rounds"):

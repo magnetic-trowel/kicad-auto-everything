@@ -189,35 +189,66 @@ DEFAULTS = dict(
     escape_ground_vias=0,          # arm E (routing-stages.md): 1 lays power_copper's ground vias at decap and IC
                                    # ground pads in lastmile.plane_escapes, before routing, so the site is
                                    # reserved; 0: off (power copper fits them afterwards); env KAE_ESCAPE_GROUND_VIAS
-    escape_band=1,                 # placement (kae.place.escape_band): the surface escapes of each ball grid
+    escape_band=0,                 # placement (kae.place.escape_band): the surface escapes of each ball grid
                                    # and fine-pitch ring kept free of parts that are not its own (1: a soft
-                                   # annealer term; 2: hard occupancy against every part; 0: off)
+                                   # annealer term; 2: hard occupancy against every part; 0: off). Off: on
+                                   # escape-ab3 (63 merit boards x 3 seeds) soft left open connections unchanged
+                                   # (ring boards -1.5%, grid boards +19% in total, per-board median +-0%) and hard
+                                   # was worse on the grids (+11%); soft trims ~1 DRC error per run
     escape_band_w=1.0,             # weight of the soft band term (overlap / mean part area, as silk)
     escape_band_scale=1.0,         # band depth per side = scale x escapes on that side x (track + clearance)
     escape_band_max_mm=2.5,        # mm: the deepest band on one side
     escape_ring_pitch=0.5,         # mm: pad rings (QFN, QFP) at most this fine get bands
-    place_severity="level_c",      # placement legality: "level_c" keeps courtyards, copper-to-edge, rule areas,
-                                   # clearance, shorts and hole clearance errors whatever the project says,
-                                   # courtyards at IPC Level C where it waives them; "strict" drawn courtyards
-                                   # everywhere; "board" follows the project (kae.place.problem)
+    place_severity="strict_then_level_c",  # placement legality: courtyards, copper-to-edge, rule areas,
+                                   # clearance, shorts and hole clearance are errors whatever the project says.
+                                   # "strict_then_level_c" (default) places with drawn courtyards and, only when
+                                   # that leaves placement errors, again with courtyards at IPC Level C where
+                                   # the project waives them (kae.place.pipeline LADDER); "strict" and
+                                   # "level_c" one rung each; "board" follows the project (kae.place.problem)
     relax_bodies="escalate",       # placement: "escalate" (default) frees a courtyard-less part to its pads only when
                                    # legalization fails (each such overlap a body_overlap block hazard); "off" never;
                                    # "auto" also up front on a board over 95% full (kae.place.pipeline)
-    place_w_cong=30.0,             # placement: weight of the annealer's RUDY + pin-escape congestion term
-                                   # (kae.place.cost.Congestion). Never ablated inside the placer; RUDY ranks
-                                   # PCB routability near chance (docs/research/placement/
-                                   # kae-routability-estimators.md). A/B arms 0 / 10 / 30 (audit P5)
-    place_margin=-1.0,             # placement: routing room between movable parts, mm (Problem.set_margin);
+    place_w_cong=0.0,              # placement: weight of the annealer's RUDY + pin-escape congestion term
+                                   # (kae.place.cost.Congestion). Off: the placement-decide-staged A/B (213
+                                   # merit boards, k=2) found 0 / 10 / 30 equal (cp1 0.305 / 0.310 / 0.305,
+                                   # completion 0.941-0.943), so the simpler setting wins; RUDY also ranks PCB
+                                   # routability near chance (docs/research/placement/kae-routability-estimators.md)
+    place_margin=0.0,              # placement: routing room between movable parts, mm (Problem.set_margin);
                                    # negative = auto (Problem.auto_margin: 2 x (0.7 - utilization), 0..1 mm).
-                                   # A/B arms -1 / 0 (audit P10)
+                                   # 0: placement-decide-staged found auto and 0 equal (cp1 0.305 both,
+                                   # completion 0.942 / 0.941), so the formula with no source is dropped
     connector_edge=2,              # placement: user-facing connectors kae places (kae.place.edge_check:
                                    # USB, barrel, audio, RJ/modular, video/D-sub; at or near 100 % on an
                                    # edge on human boards) 2: pinned to the edge facing out after the seed,
                                    # 1: only the connector_off_edge hazard, 0: neither (audit P4)
     fab="jlcpcb",                  # the fab whose classes clip and label suggested relaxations (escape
                                    # certificates, kae.route.blocked): kae.route.fab.PROFILES
+    operating="",                  # placement and routing: the board's operating facts (JSON: requirements.thermal
+                                   # heat sinks, parts' P_sustained_W; kae.place.heat); "" none
+    heat_pull_w=1.0,               # placement: label-term weight per sustained W pulling a hot part into a region sink
+    heat_min_W=0.25,               # placement and routing: parts dissipating less are not pulled (placement) and
+                                   # get no thermal vias (routing)
+    thermal_vias=1,                # routing (kae.route.thermal_vias): 1: each part dissipating heat_min_W or more
+                                   # gets vias from its thermal pad and pour pads into the same net's copper on
+                                   # the other face (a region sink's face, else the net's pour there); 0: off
+    thermal_via_pitch=1.0,         # mm: grid pitch of thermal vias (the board's same-net via pitch still applies)
+    thermal_via_max=16,            # thermal vias per part at most
+    thermal_via_in_pad=1,          # 1: thermal vias inside an exposed pad (as critical routing's plane vias); 0:
+                                   # only on the pour around it (for assembly that cannot plug vias in pads)
     escape_fanout=0,               # placement: 1 also reserves the dog-bone via sites of each ball grid on the
                                    # other side (no part there covers them); 0: off
+    zone_pull=0.0,                 # placement (kae.place.zones): weight of pads off their own net's fixed copper
+                                   # zone (all of them off = zone_pull x the seed HPWL), also the seed's pull and
+                                   # package pins; 0: off. Off by default: zone-ab (48 boards, 3 seeds) at 3 left
+                                   # 4.7 % more open (polarfire, sdi-mipi, nekoink worse): zone nets were 11-51 of
+                                   # 168-545 opens without it, the router reaches planes by vias, and the pull cost
+                                   # signal routing. Movable pads over their zone after 300 s, off / 1 / 3
+                                   # (human): polarfire 139-151 / 268-283 / 265-361 of 465 (387), nekoink
+                                   # 52-56 / 108-114 / 115-117 of 226 (196), gecko5 1-2 / 46-52 / 52-55 of 73
+                                   # (61); HPWL no worse (polarfire 12.7k at 3 vs 15.8k off, same seed)
+    zone_keepout=1.0,              # placement: weight of pads whose mask opening would bridge another net's
+                                   # fixed outer-layer zone or sit in a board-level mask aperture with another
+                                   # net (each 0.1 x this; gecko5: all staged DRC errors, 14 -> 0); 0: off
 )
 
 

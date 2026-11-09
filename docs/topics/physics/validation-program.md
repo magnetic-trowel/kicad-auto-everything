@@ -1,21 +1,18 @@
 # Validation program: anchoring physics-first in measurement
 
-**TL;DR**
-- **Every computed number in the physics docs is model against model.** This program anchors them in measurement, in the order that most changes decisions. By value of information (VOI), two claims lead robustly [C]:
-  - the thesis itself: physics-first beats competent rule-following;
-  - the return-current band ℓ_m(f) (lenses VP, SY, LS), which decides a solver build and how to protect precision nodes.
-  
-  Claims whose robust action is cheap (world node, via spreading) should be acted on, not tested.
-- **The first board, VAL-1, is the main experiment.** It has a 12 V buck, an ESP32-S3 module with USB 2.0 and a 24-bit ADC, on 4 layers with a fixed USB-C connector and fixed holes. It is laid out twice, rule-following (R) and physics-first (P). Variants by population (snubbers, edge rate, connector edge, bonds, a ground-current injector) turn most budgets into differential predictions. Design-stage examples [C]: overshoot 36% vs 5%; PDN |Z| at 100 MHz 0.68 vs 0.065 Ω; ADC offset 364 µV/A vs < 1% of that with a Kelvin tie.
-- **Five coupons settle disputes that flip rules,** with predictions 13× to 28 dB apart ([validation-coupons](validation-coupons.md)).
-- **The computational track needs no hardware.** A pilot floor census of 14 nets on four open boards: within the zones as drawn, pour shape wastes a median 4%. Thermal-relief connections cost 7–48% on the one board that uses them. Re-partitioning the planes would remove 107 of 135 mW, almost all of it on one 12 V strip. The copper leverage is front-loaded.
-- **Kill criteria are explicit.** Say which result falsifies which part of the philosophy, and report physics apart from cp1/cpk.
+Scope: the measurement plan that anchors physics-first numbers: VOI ranking of claims, the two-arm first board VAL-1 with registered predictions and pass rules, assimilation, the computational track (floor census, mutation benchmark, router audit, cross-solver checks), kill criteria, schedule. Not here: coupon geometries and predictions -> [validation-coupons](validation-coupons.md); verified-by-method claims -> [verification-and-limits](verification-and-limits.md).
+Keys: validation program, value of information, EVPI, engineer-weeks, VAL-1, IN27, rule-following arm R, physics-first arm P, Freerouting arm F, registered predictions, coverage, sharpness, interval score, assimilation, common factors, model discrepancy, floor census, partition-level avoidable loss, thermal-relief cost, mutation benchmark, router audit, cross-solver, kill criteria, LM coupon, val_voi_rank.py, val_board.py, val_floor_census.py
+
+**Results:**
+- Every computed number in the physics docs is model against model; this program anchors them in the order that most changes decisions. By VOI two claims lead robustly [C]: the thesis (physics-first beats competent rule-following) and the return-current band ℓ_m(f). Claims whose robust action is cheap (world node, via spreading): act, don't test.
+- VAL-1 is laid out twice, rule-following (R) and physics-first (P); population variants turn most budgets into differential predictions.
+- Five coupons settle rule-flipping disputes ([validation-coupons](validation-coupons.md)).
+- Pilot floor census: copper leverage is front-loaded (partition ≫ shape) [C].
+- Kill criteria are explicit (§5); physics is reported apart from cp1/cpk.
 
 Tags: [P] primary, [S] secondary, [I] inference, [C] computed by [val_voi_rank.py](../../../tools/research/physics/val_voi_rank.py), [val_board.py](../../../tools/research/physics/val_board.py), [val_floor_census.py](../../../tools/research/physics/val_floor_census.py) and the coupon scripts. VAL-1 values are design-stage: the registered numbers are recomputed from the frozen copper.
 
-## Key facts
-
-### 1. What is worth testing
+## 1. What is worth testing
 
 For each claim, A acts as if it holds and B does not. EVPI = n·min(p·r_A, (1−p)·r_B) over 50 future boards, in engineer-weeks (EW), from elicited inputs [I] ([lens-in](lens-in.md) E1). The ranking, not the numbers, is the result. "Robust" is P(top 3) when every input varies ×/÷3 [C].
 
@@ -36,7 +33,7 @@ Three lessons:
 - **Architecture claims outrank layout claims.** Rows 1–6 decide what gets built; the rest decide rules.
 - **Experiments by value per cost** [C]: LM coupon 6.6/EW ≫ FP 2.5 > SS, CM 1.7 > VAL-1 1.4 (largest absolute value, 11.5 EW) ≈ NL, census 1.4 > router audit 1.3 ≈ mutation benchmark 1.2 > cross-solver 0.7 ≫ VC 0.4, ET 0.15.
 
-### 2. The first board, VAL-1 (IN27)
+## 2. The first board, VAL-1 (IN27)
 
 **Design.** Both arms share everything except layout and layer assignment.
 
@@ -97,11 +94,11 @@ A class that ranks well but misses levels is fit for ranking, not compliance (IN
 3. **Store posteriors** per fab, stackup and enclosure class in a versioned registry.
 4. **Re-register for the next board of the class.** Success means the error shrinks while coverage holds. Post-build data cannot improve this board's layout, only the next one's ([verification-and-limits](verification-and-limits.md) §1).
 
-### 3. Coupons
+## 3. Coupons
 
 LM, FP (with VC), SS, CM and NL, with geometries, predictions and pass rules in [validation-coupons](validation-coupons.md). They share the VAL-1 order, and VAL-1 carries the same R_s strips to test coupon-to-board transfer.
 
-### 4. Computational track (no hardware; start now)
+## 4. Computational track (no hardware; start now)
 
 **Pilot floor census** [C, val_floor_census]. Fourteen nets on four open boards (oasis, aftonsparv, BLDCM-Power, Pi5 PCIe), with current patterns assumed by inspection. Floors at equal area, each compared with the same copper on its own grid, under three freedoms: shape (own zones), routing (other tracks movable), partition (other zones' fills negotiable). Beckmann is the shape-free bound ([lens-vp](lens-vp.md) D1).
 
@@ -120,16 +117,9 @@ Readings:
 - **Caveats.** Assumed currents; single-net floors that ignore other nets' needs; raster scope (0.15/0.25 mm; [verification-and-limits](verification-and-limits.md) §1).
 - **Next.** Run the 112 qualified boards, with DC currents from the schematic operating point.
 
-**Mutation benchmark** (PC29–31, IN36, V5):
-- At least 8 operators × 50 qualified boards, each with benign twins.
-- Oracle labels: F1 everywhere, F2 on a sample. Equivalent mutants are dropped.
-- Operators come from real escapes, written by someone other than the critic's author ([physics-critics](physics-critics.md), circularity).
-- Metrics: recall at the site, false alarms on twins, Spearman between the critic's value and the oracle's Δ.
+**Mutation benchmark** (PC29–31, IN36, V5; protocol in [physics-critics](physics-critics.md#5-the-drc-clean-but-physically-wrong-benchmark)): ≥ 8 operators × 50 qualified boards, each with benign twins; oracle labels F1 everywhere, F2 on a sample; equivalent mutants dropped; operators from real escapes, written by someone other than the critic's author; metrics recall at the site, false alarms on twins, Spearman of critic value vs oracle Δ.
 
-**Router audit.** Run the critics on Freerouting and reference attempts over the qualified suite. Registered:
-- Freerouting perforates `signal`-typed planes;
-- it produces more RET-VIA findings than the human board;
-- a `power`-typed DSN variant (PC44, new run name) removes most of the perforation.
+**Router audit** on Freerouting and reference attempts over the qualified suite, registered: Freerouting perforates `signal`-typed planes; it produces more RET-VIA findings than the human board; a `power`-typed DSN variant (PC44, new run name) removes most of the perforation.
 
 **Cross-solver checks.** Each is pre-registered and from an independent lineage (IN E6):
 - **openEMS:** SS geometries, FP tiles (radiation and launches) and ET terminations;
@@ -138,14 +128,9 @@ Readings:
 
 Agreement lowers a coupon's VOI; disagreement makes it decisive.
 
-**Harness integration** ([CLAUDE.md](../../../CLAUDE.md), [physics-critics](physics-critics.md) §4):
-- A separate `physics-report <run> <baseline>` reads attempt directories and writes `physics/ledger.json` and `scorecard.json`.
-- It prints cp1, cpk, completion and error counts unchanged, beside the physics columns, the floor census included.
-- It never touches score.py, potential() or cp1/cpk.
-- Comparisons use the same KiCad version, manifest, suite, critic version and role files.
-- Registered predictions become golden values in the regression suite (gap 20), versioned so that no script changes them silently.
+**Harness integration** ([CLAUDE.md](../../../CLAUDE.md), [physics-critics](physics-critics.md#4-fitting-it-into-kaebench-without-touching-the-score)): `physics-report <run> <baseline>` as specified there (writes `physics/ledger.json` and `scorecard.json`), plus the floor census columns. Registered predictions become golden values in the regression suite (gap 20), versioned so no script changes them silently.
 
-### 5. Kill criteria
+## 5. Kill criteria
 
 | Result | Falsifies | Then |
 |---|---|---|
@@ -163,7 +148,7 @@ Agreement lowers a coupon's VOI; disagreement makes it decisive.
 
 **What does not falsify.** Absolute EMI misses up to ~15 dB with correct rankings, which lens IN expects. One-board results, which bind only their class.
 
-## Recommendations for our system
+## 6. Schedule
 
 1. **Weeks 0–2:**
    - run the census on the qualified suite;
@@ -178,7 +163,7 @@ Agreement lowers a coupon's VOI; disagreement makes it decisive.
    - assimilate common factors before reading any model-form residual.
 4. **Throughout:** treat each later prototype as a registered experiment (IN27). Keep an evidence ledger that cites the measurement registry, not scripts.
 
-## Conflicts and open questions
+## Open questions
 
 - **The VOI inputs are elicited,** and VOI shares are prior-driven: lens IN's off-board share is 33–84% under its priors and 10–49% under other plausible ones ([verification-and-limits](verification-and-limits.md) §1). Only rankings that survive ×/÷3 are claimed.
 - **VAL-1 is one board class with one designer per arm.** Designer skill confounds the arms; a second R designer, or the F arm, bounds it.
@@ -193,4 +178,4 @@ Agreement lowers a coupon's VOI; disagreement makes it decisive.
 - Lens inputs: [lens-in](lens-in.md), [lens-vp](lens-vp.md), [lens-ct](lens-ct.md), [lens-sy](lens-sy.md), [lens-ls](lens-ls.md), [lens-th](lens-th.md), [lens-cd](lens-cd.md).
 - Verification: [verification-and-limits](verification-and-limits.md).
 
-See also: [validation-coupons](validation-coupons.md) · [research-gaps](research-gaps.md) · [physics-critics-validation](physics-critics-validation.md) · [solver-ladder](solver-ladder.md) · [benchmark-plan](../verification/benchmark-plan.md)
+- Related: [research-gaps](research-gaps.md), [physics-critics-validation](physics-critics-validation.md), [solver-ladder](solver-ladder.md#5-calibration-against-f4), [benchmark-plan](../verification/benchmark-plan.md).

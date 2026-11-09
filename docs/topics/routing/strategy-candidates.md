@@ -1,12 +1,11 @@
 # Routing strategy candidates for kaebench
 
-**TL;DR**
-- Ordered by the split C failure diagnosis in [dev-eval-plan](../verification/dev-eval-plan.md). Cheap wins come first: budgets with partial output, DSN fidelity, seeded diversity.
-- New engines next: fastroute, then KRT in a portfolio. A home-grown PathFinder router is gated on measured congestion.
-- Every gain below is a hypothesis [I] unless tagged [P]/[M]; every row has a kill criterion.
+Scope: ranked routing strategies for kaebench with effort, expected gain and kill criterion. Not here: the evaluation plan and split C failure diagnosis -> [dev-eval-plan](../verification/dev-eval-plan.md).
+Keys: R1, R2, R3, R4, R5, R6, R7, R9, budgets, partial output, DSN fidelity, seeded diversity, best-of-k, fastroute, DRC-driven repair, portfolio selector, oracle portfolio, PCBWorld-Engine, negotiated-congestion router, kill criterion
 
-## Key facts
+Order: cheap wins first (budgets with partial output, DSN fidelity, seeded diversity), then new engines (fastroute, then KRT in a portfolio); a home-grown PathFinder router is gated on measured congestion. Gains are hypotheses [I] unless tagged [P]/[M].
 
+## Strategy table
 
 | ID | Strategy | Reuse (licence) | Effort | Expected [tag] | Kill |
 |---|---|---|---|---|---|
@@ -21,9 +20,6 @@
 
 **Order:** R1 → diagnosis → R2 → R3 → R4 → R5 → R6. R7 and R9 are gated.
 
-
 ## Sources
 
-See [dev-eval-plan § Sources](../verification/dev-eval-plan.md#sources).
-
-See also: [dev-eval-plan](../verification/dev-eval-plan.md), [harness](../verification/harness.md)
+- [dev-eval-plan § Sources](../verification/dev-eval-plan.md#sources); [harness](../verification/harness.md)

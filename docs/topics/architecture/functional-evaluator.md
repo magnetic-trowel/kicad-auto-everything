@@ -1,38 +1,27 @@
 # Functional evaluator: code architecture (`kae.sim`)
 
-**TL;DR**
-- **`kae.sim` judges a routed board by circuit simulation.** For every test in a testbench, ngspice runs:
-  - the ideal circuit (each net one node);
-  - the routed circuit (the test's nets replaced by their extracted copper);
-  
-  each at every corner of the test's parameter intervals. Out come verdicts, the layout's effect (routed minus ideal), capability, and questions for an LLM or a human.
-- **Extraction (`extract.py`) turns copper into R, L, C, mutual L and coupling C,** built on the repo's closed forms (Hammerstad–Jensen L′ and C′, Grover/Neumann mutuals with plane images, patch coupling). There are two profiles: `signal` (line C, coupling, 0.5–5 mm sections) and `power` (long R–L sections, pour and via parasitics).
-- **The simulator never sees a KiCad name.** `names.py` generates every node and element name, and the evaluator rejects anything it cannot resolve. A missing measurement is a failure, never a silent pass.
-- **Built and tested:**
-  - 8 modules, 19 unit tests (analytic R and L of a track, I × R drop end to end through ngspice, coupling sign, format round trip);
-  - runs on two corpus boards (§7).
-  
-  No existing module, score or evaluator changed.
+Scope: code, extraction, decks, budgets, CLI and runs of `kae.sim`: ngspice runs each testbench test on the ideal circuit (each net one node) and the routed circuit (test nets replaced by extracted copper) at every corner of its parameter intervals. Not here: semantics, check catalogue, verdict definitions -> [functional-evaluation](../physics/functional-evaluation.md); testbench format and its history -> [intent-interchange](intent-interchange.md); kernels and exactness classes -> [physics-engine-design](physics-engine-design.md).
+Keys: kae.sim, testbench.tb.cir, autotb, extract.py, signal profile, power profile, lmax, lmin, names.py, ideal deck, routed deck, layout effect, capability, `incomplete`, `unknown`, `error`, `kae_pdiss`, `questions`, kae.sim.budget, `budgets`, board.budgets.json, `Vloop`, cell_body_floor, stand-in, hot loop, pt_mesh_loop, Gear, rshunt, e_sw, p_loss, ardor, argo, chesslab powerboard, astro-cat
 
-Semantics: [functional-evaluation](../physics/functional-evaluation.md). Format and its history: [intent-interchange](intent-interchange.md). Kernels and exactness classes: [physics-engine-design](physics-engine-design.md). Tags: [M] measured here, [I] design choice.
+Tags: [M] measured here, [I] design choice.
 
-## Key facts
+Status: 8 modules, 19 unit tests (analytic track R and L, I × R drop end to end through ngspice, coupling sign, format round trip), corpus runs in §7; no existing module, score or evaluator changed [M]. The simulator never sees a KiCad name; a missing measurement is a failure, never a silent pass.
 
-### 1. Modules
+## 1. Modules
 
 | Module | Role |
 |---|---|
-| [`testbench.py`](../../../kae/src/kae/sim/testbench.py) | the testbench format: parse (errors carry line numbers), render, SPICE numbers |
-| [`autotb.py`](../../../kae/src/kae/sim/autotb.py) | a default testbench from the board and its brief, no LLM: rail DC drop and load step, I2C, switching cells (buck, boost, half-bridge and motor-driver phases) and their hot loops, differential-pair delay and skew |
-| [`design.py`](../../../kae/src/kae/sim/design.py) | the board's passives as elements: values from the value field, ESR and ESL by package (E5), ferrites as R + L |
-| [`schematic.py`](../../../kae/src/kae/sim/schematic.py) | values and fields from a KiCad 6+ schematic through `kicad-cli sch export netlist` |
+| [`testbench.py`](../../../kae/src/kae/sim/testbench.py) | testbench format: parse (errors carry line numbers), render, SPICE numbers |
+| [`autotb.py`](../../../kae/src/kae/sim/autotb.py) | default testbench from board + brief, no LLM: rail DC drop and load step, I2C, switching cells (buck, boost, half-bridge, motor-driver phases) and their hot loops, differential-pair delay and skew |
+| [`design.py`](../../../kae/src/kae/sim/design.py) | board passives as elements: values from the value field, ESR and ESL by package (E5), ferrites as R + L |
+| [`schematic.py`](../../../kae/src/kae/sim/schematic.py) | values and fields from a KiCad 6+ schematic via `kicad-cli sch export netlist` |
 | [`extract.py`](../../../kae/src/kae/sim/extract.py) | copper → Network of R, L, C, K between node keys; copper islands per net |
-| [`names.py`](../../../kae/src/kae/sim/names.py) | safe, case-proof, dot-free simulator names, kept both ways |
+| [`names.py`](../../../kae/src/kae/sim/names.py) | generates every node and element name: safe, case-proof, dot-free, kept both ways; unresolvable names rejected |
 | [`ngspice.py`](../../../kae/src/kae/sim/ngspice.py) | batch runs (PATH or the KiCad container); reads `.meas`; keeps warnings and errors |
-| [`evaluate.py`](../../../kae/src/kae/sim/evaluate.py) | decks per test, mode and corner; parallel runs; verdicts, capability, questions |
-| [`cli.py`](../../../kae/src/kae/sim/cli.py) | `testbench`, `evaluate`, `questions` |
+| [`evaluate.py`](../../../kae/src/kae/sim/evaluate.py) | decks per test, mode, corner; parallel runs; verdicts, capability, questions |
+| [`cli.py`](../../../kae/src/kae/sim/cli.py) | `testbench`, `evaluate`, `questions`, `budgets` |
 
-### 2. Data flow
+## 2. Data flow
 
 ```
 board.kicad_pcb ─┬─ load (+ pintypes.json, + schematic values when the footprints carry none)
@@ -44,68 +33,54 @@ testbench.tb.cir ┴─ tests ─▶ per test × corner ────────
   ─▶ verdicts (ideal, routed), layout effect, capability, incomplete/unknown/error ─▶ eval.json ─▶ questions
 ```
 
-### 3. Extraction
+## 3. Extraction
 
-**Per piece of copper:**
+Built on the repo's closed forms: Hammerstad–Jensen L′ and C′, Grover/Neumann mutuals with plane images, patch coupling.
 
 | Piece | Model |
 |---|---|
-| Track of length l, width w, at height h over the nearest plane layer of any net | R = ρl/(wt); L = L′(w, h)·l; C = C′(w, h, ε_r)·l split to both ends. Split into sections of at most `lmax`, so delay √(LC) and impedance √(L/C) follow the line |
+| Track, length l, width w, height h over the nearest plane layer of any net | R = ρl/(wt); L = L′(w, h)·l; C = C′(w, h, ε_r)·l split to both ends; sections ≤ `lmax`, so delay √(LC) and impedance √(L/C) follow the line |
 | Via | barrel R and partial self-L between the layers it joins |
-| Pour of a non-ground net | the copper graph's pour links (2 mm strips) for R and L; plate capacitance εA/h over its contacts (coarse) |
-| Ground net | its pours are the reference node; tracks and vias between pads and pours are extracted |
-| Neighbours (signal profile) | same-layer pieces of different nets within 1 mm: mutual L with plane images (K, clamped at ±0.9) and coupling C from patch potential coefficients over the dielectric slab (within 6 % of the layered field solver `kae.em.static` at gaps of 3 h and more, up to 25 % low near h) |
-
-**Profiles:**
+| Pour of a non-ground net | copper graph's pour links (2 mm strips) for R and L; plate capacitance εA/h over its contacts (coarse) |
+| Ground net | pours = reference node; tracks and vias between pads and pours extracted |
+| Neighbours (signal profile) | same-layer pieces of other nets within 1 mm: mutual L with plane images (K clamped at ±0.9), coupling C from patch potential coefficients over the dielectric slab (within 6 % of the layered field solver `kae.em.static` at gaps ≥ 3 h, up to 25 % low near h) |
 
 | Profile | Sections | Short pieces (< lmin) | Line C | Coupling | Used by |
 |---|---|---|---|---|---|
-| `signal` | ≤ 5 mm | R only (L and C to the ends), lmin 0.5 mm | yes | yes | I2C, pairs |
-| `power` | ≤ 20 mm | none | no (0.1 pF/mm against µF of decoupling) | no | rails, converters |
+| `signal` | 0.5–5 mm (lmin 0.5 mm) | R only (L and C to the ends) | yes | yes | I2C, pairs |
+| `power` | long R–L sections ≤ 20 mm, pour and via parasitics | none | no (0.1 pF/mm against µF of decoupling) | no | rails, converters |
 
-**Reduction and robustness:**
-- **Micrometre pieces:** the copper graph splits tracks at junctions into pieces micrometres long. As full sections they put femtofarads behind micro-ohms and the matrix goes near-singular: ngspice reported "timestep too small" at 2 ps [M]. Short pieces keep their resistance and drop only their negligible inductance. All R are at least 0.1 mΩ.
-- **Connectivity:** the copper graph ([`kae.route.copper`](../../../kae/src/kae/route/copper.py)) connects items as KiCad does: shapes that collide on a shared layer, with round-ended tracks, jumper pad groups, net-carrying copper shapes and pours that are one conductor each. On 150 human boards it splits 5 nets that KiCad reports connected, where the earlier graph split 353 [M]. Custom pad primitives are still modelled as the pad's rectangle.
-- **Copper islands:** each test's pins are checked against the copper islands before simulating. A split test is reported as `incomplete`, with the stranded pins listed, and its routed runs are skipped. A load on an island has no return but the 10¹² Ω leak, and the solver would chase 10¹¹ V.
+- **Micrometre pieces:** the copper graph splits tracks at junctions into µm-long pieces; as full sections they put fF behind µΩ, the matrix goes near-singular, ngspice reported "timestep too small" at 2 ps [M]. Short pieces keep R, drop only their negligible L. All R ≥ 0.1 mΩ.
+- **Connectivity:** copper graph ([`kae.route.copper`](../../../kae/src/kae/route/copper.py)) connects items as KiCad does: shapes colliding on a shared layer, round-ended tracks, jumper pad groups, net-carrying copper shapes, pours one conductor each. On 150 human boards it splits 5 nets KiCad reports connected; the earlier `NetGraph` split 353 (overlapping round track ends, pours with distant contact clusters, jumper pads, net copper shapes) [M]. Custom pad primitives are still modelled as the pad's rectangle.
+- **Copper islands:** test pins are checked against copper islands first; a split test is `incomplete` (stranded pins listed, routed runs skipped), since a load on an island returns only through the 10¹² Ω leak and the solver would chase 10¹¹ V.
+- **Limits:** ideal plane under each piece (slots and splits are for geometric checks); power planes as AC ground for line C; no broadside coupling across layers; no pad copper or thermal spokes; no skin effect; coarse pours (a sheet solver, the engine's K2 operator, would replace the 2 mm strip mesh).
 
-**Limits:** ideal plane under each piece (slots and splits are for geometric checks); power planes as AC ground for line C; no broadside coupling across layers; no pad copper or thermal spokes; no skin effect; coarse pours.
+## 4. Decks
 
-### 4. Decks
+- **Ideal deck:** every pin of a net on one node; ground nets = node 0. **Routed deck:** each pin of an extracted net is its own node, joined by extracted copper.
+- **Board passives** enter a test only if every terminal is on a test net, ground or a testbench-named net (else e.g. a capacitor's ESL feeds an undriven node).
+- **Guards** [M]: KiCad names → generated names; `<…>` tokens resolving to nothing are an error; `v(a,b)` becomes a B-source probe (batch `.meas` cannot read it); `.option rshunt=1e12 method=gear`; every requested `.meas` must come back.
+- **Dissipation:** a test naming `kae_pdiss` in its `.control` block gets a vector of the power in every board resistance (copper, resistors, capacitor ESR, inductor DCR), computed after the run, never as a probe node. Loss is summed over dissipating elements, never from sources' delivered power: that also counts energy still flowing into bus capacitors while the off-board feed settles (≈ 100 µs vs a 12-period run) and gave −3.5 W on a 1 W cell [M].
 
-- **Ideal deck:** every pin of a net on one node; ground nets are node 0.
-- **Routed deck:** each pin of an extracted net is its own node, joined by the extracted copper.
-- **Board passives** enter a test only when every terminal is on one of the test's nets, on ground, or on a net the testbench names. A capacitor into an undriven net would leave its ESL feeding a node that nothing holds.
-- **Guards** [M]:
-  - KiCad names → generated names;
-  - `<…>` tokens that resolve to nothing are an error;
-  - `v(a,b)` becomes a B-source probe, because batch `.meas` cannot read it;
-  - `.option rshunt=1e12 method=gear`;
-  - every requested `.meas` must come back.
-- **Dissipation:** a test that names `kae_pdiss` in its `.control` block gets a vector holding the power in every resistance the deck holds from the board: copper, resistors, capacitor ESR, inductor DCR. It is computed after the run, never as a probe node. Loss is summed from the dissipating elements, never from the sources' delivered power. That would also count energy still flowing into the bus capacitors while the off-board feed settles, which takes about 100 µs against a 12-period run, and it gave −3.5 W on a 1 W cell [M].
+## 5. Verdicts
 
-### 5. Verdicts
+Verdict rules (pass / fail / marginal per requirement per mode; test status `unknown`, `incomplete`, `error`, else the worst requirement) → [functional-evaluation](../physics/functional-evaluation.md#5-inputs-verdicts-unknowns).
 
-- **Per requirement, per mode:**
-  - pass: it holds at every corner;
-  - fail: it holds at none;
-  - marginal: otherwise.
-- **Test status:** `unknown` (the testbench says what is missing), `incomplete` (copper islands), `error` (a measurement did not return), else the worst requirement.
-- **Capability:**
-  - `rail_dc`: the load multiple at which the first pin reaches its bound, from the line through the low and high corners (DC with current loads is linear);
-  - `i2c`: the fastest mode whose limit holds, or, with the pull-up off board, the bus capacitance and the largest pull-up per mode;
-  - `pair`: delay and skew;
-  - `cell`: the layout's power loss per corner, routed minus ideal dissipation, also as a share of the output;
-  - `loop`: hot-loop inductance, routed and ideal, and their difference.
-- **`questions`** ranks:
-  1. marginal verdicts and their prior inputs;
-  2. unknowns;
-  3. verdicts resting on priors alone.
+| Capability | Reported |
+|---|---|
+| `rail_dc` | load multiple at which the first pin reaches its bound, from the line through low and high corners (DC with current loads is linear) |
+| `i2c` | fastest mode whose limit holds; with pull-up off board, bus capacitance and largest pull-up per mode |
+| `pair` | delay and skew |
+| `cell` | layout's power loss per corner, routed − ideal dissipation, also as share of output |
+| `loop` | hot-loop inductance routed and ideal, and their difference |
 
-### 5a. Budgets (`kae.sim.budget`)
+`questions` ranks: (1) marginal verdicts and their prior inputs; (2) unknowns; (3) verdicts resting on priors alone.
+
+## 5a. Budgets (`kae.sim.budget`)
 
 `kae.sim.cli budgets` sweeps a series inductance at each cell's loop insertion point to derive a budget for the placer and critical router; it is applied only when trusted, achievable and stand-in independent, and only with `critical_cli route --budgets`, never by evaluators. None passed on the smoke boards. The boost loop's measures (router closed form vs mesh reference vs SPICE extraction) are cross-checked there too: [functional-evaluator-budgets](functional-evaluator-budgets.md).
 
-### 6. Command line
+## 6. Command line
 
 ```
 python -m kae.sim.cli testbench BOARD.kicad_pcb [--pintypes F] [--schematic ROOT.kicad_sch] -o board.tb.cir
@@ -116,64 +91,68 @@ python -m kae.sim.cli questions eval.json
 
 `--input` builds the brief from the task's input board, so two layouts of one task share their tests.
 
-### 7. Results [M]
+## 7. Results [M]
 
-- **`balazsbencs-ardor-ardor-io`** (Raspberry Pi HAT, 99 footprints, fully connected; values from its schematic):
-  - 8 tests, 44 simulations, 6 s. Rails +5V_PI and +5V_A (derived through ferrite FB101) pass DC drop and load step.
-  - Copper adds about 8 mV to the ferrite's 11 mV on +5V_A at the load prior, with capability 7.2× the prior before the first op-amp pin reaches 3%.
-  - The I2C buses measure about 11.4 pF routed (9.9 pF from pins), which allows pull-ups up to about 31 kΩ in Fast-mode.
-  - Four tests are unknown: I2C pull-ups off board, and +3V3_PI with no recognised load.
-- **`azlan-works-argo-argo-v2`** (CM carrier, 80 footprints): the human board is unfinished.
-  - KiCad reports 132 unconnected items, including GND, VBUS and the buck's switch node. The tests that touch them come back `incomplete`, with the stranded pins listed.
-  - 50 tests, 199 simulations, 338 s.
-  - 23 differential pairs report delay and skew: 75–260 ps routed against a 100 ps driver-and-load ideal. CRX1 has 30 ps of intra-pair skew, USB31_TX 6 ps.
-  - Two pairs still time out, and one reports a singular matrix at a ground node.
-- **Switching cells** (stand-ins; no LLM, no schematic):
-  - `acarpm-chesslab-powerboard`, an MT3608 boost from a 3.7 V cell to 5 V. Hot loop (D3, C5, IC1 ground): 2.7 nH routed against 1.0 nH for the capacitor alone. The cell dissipates 0.28 W ideal and 0.29 W routed. Conduction rises by 15 mW, while the edges lose less (5.1 against 9.8 nJ a period, because the loop's inductance slows the turn-on current). The switch node peaks at 8.5 V routed against 5.6 V ideal, so it is marginal on the prior bound, which needs the MT3608's switch rating to judge.
-  - `aarondennis-mup-astro-cat-hardware-astro-cat`, a DRV88xx with four motor phases on 12 V, PWM prior 20 kHz. Hot loop 1.66 nH against 0.24 nH for four capacitors in parallel. Loss is 0.22 W ideal and 0.23 W routed, with conduction 0.206 W against I²·R_on = 0.200 W. Each phase rings to 26 V against 11.9 V ideal, an upper bound (see Stand-in fidelity).
-  - Every corner of both boards converges. Each corner takes 1–3 minutes routed.
-- **LLM pilot on ardor** (one agent, 146k tokens, about 10 web lookups, 9 minutes). It replaced the priors with cited datasheet intervals and bounds:
-  - ADS1115, OPA2320, TPA6132A2, Omron G5V-1, H11L1M;
-  - the Raspberry Pi's 1.8 kΩ I2C pull-ups, which the schematic confirms with "Pi has them".
-  
-  Result: 4 pass / 4 unknown became 8 pass / 0 unknown. It found 8 errors in the automatic testbench:
-  1. loads behind a ferrite on +3V3_PI missed;
-  2. a relay's current returned at a contact pin instead of through its coil and driver;
-  3. an IC's current returned at a grounded input instead of PGND;
-  4. rail trees split into separate tests;
-  5. the I2C bus stopped at a 33 Ω series resistor;
-  6. resistor loads (pull-ups, dividers) ignored;
-  7. audio-rate loads stepped in nanoseconds;
-  8. two ideal sources on one rail make the ideal deck singular.
+**`balazsbencs-ardor-ardor-io`** (Raspberry Pi HAT, 99 footprints, fully connected; values from its schematic): 8 tests, 44 simulations, 6 s.
+- Rails +5V_PI and +5V_A (derived through ferrite FB101) pass DC drop and load step. Copper adds ≈ 8 mV to the ferrite's 11 mV on +5V_A at the load prior; capability 7.2× the prior before the first op-amp pin reaches 3%.
+- I2C buses ≈ 11.4 pF routed (9.9 pF from pins): pull-ups up to ≈ 31 kΩ in Fast-mode.
+- 4 tests unknown: I2C pull-ups off board; +3V3_PI with no recognised load.
 
-### 8. Next
+**`azlan-works-argo-argo-v2`** (CM carrier, 80 footprints; human board unfinished): 50 tests, 199 simulations, 338 s.
+- KiCad reports 132 unconnected items, incl. GND, VBUS and the buck's switch node; tests touching them are `incomplete` with stranded pins listed.
+- 23 differential pairs: 75–260 ps routed vs a 100 ps driver-and-load ideal; intra-pair skew CRX1 30 ps, USB31_TX 6 ps.
+- 2 pairs still time out; 1 reports a singular matrix at a ground node.
 
-1. ~~Fix the pilot's eight generator errors.~~ Done: supply trees through ferrites, fuses and small resistors (also finding supplies the brief did not name); an IC's current returns at its ground pin nearest the supply pin, other loads at the reference; only logic ICs step in ns; dividers simulated and pull-ups counted at V/R; I2C lines followed through series resistors; parallel ideal sources merged. On ardor the automatic testbench now judges the 3.3 V tree (it was unknown); only the off-board I2C pull-ups still need an outside fact.
-2. Add crosstalk victim tests on routed copper, leakage and creepage, the excitation and radiator inventories with the source-to-radiator check, and the antenna feed. Fix the known limits:
-   - ~~add boost and half-bridge stand-ins~~ (done: generic cells and the hot-loop test); next flyback, buck-boost, charge pumps, LDO and load-switch dissipation, and creepage and clearance against working voltage;
-   - find the cause of the slow and singular signal runs (scaling the couplings to keep the inductance matrix positive definite did not cure them).
-3. Hook into kaeres as a new evaluator (the evaluator id hashes the code tree), beside the legacy `physics_total`. Report per category, never inside cp1, cpk or `score.py`.
-4. Re-run the routed-physics baselines under the new connectivity (it changes the evaluator id); model custom pad primitives.
-5. Before KiCad 11, port the SWIG `pcbnew` users (the fills, the board writer) to the IPC API.
+**Switching cells** (stand-ins; no LLM, no schematic). Every corner of both boards converges; 1–3 min per corner routed.
 
-## Conflicts and open questions
+| Board | Cell | Hot loop routed vs caps alone | Loss ideal / routed | Other |
+|---|---|---|---|---|
+| `acarpm-chesslab-powerboard` | MT3608 boost, 3.7 V cell → 5 V; loop D3, C5, IC1 ground | 2.7 nH vs 1.0 nH | 0.28 / 0.29 W | conduction +15 mW; edges lose less (5.1 vs 9.8 nJ/period: loop L slows turn-on current); switch node peaks 8.5 V routed vs 5.6 V ideal: marginal on the prior bound (needs MT3608's switch rating) |
+| `aarondennis-mup-astro-cat-hardware-astro-cat` | DRV88xx, 4 motor phases on 12 V, PWM prior 20 kHz | 1.66 nH vs 0.24 nH (4 caps parallel) | 0.22 / 0.23 W | conduction 0.206 W vs I²·R_on = 0.200 W; each phase rings to 26 V vs 11.9 V ideal (upper bound, §9) |
 
-- **Stand-in fidelity:** the cell stand-in has log-linear switches (50 mΩ to 1 MΩ), body diodes (20 mΩ, 10 ns transit time), 100 pF across each switch, and the inductor or winding held as a constant current source. It gives the copper's share of loss and the hot-loop ring, but not control behaviour or ripple. The ring's peak is an upper bound, for three reasons: the SPICE diode recovers abruptly where body diodes recover softly; C_oss is linear and lossless; and copper and capacitor resistance stay at their DC values (no skin effect). The loop inductance does not depend on any of these. Vendor or Verilog-A models would replace the stand-in.
-- **Numerics, checked by refinement** [M]: every change to how a cell is solved is checked against a finer reference, and one that alters the circuit's physics is not accepted.
-  - **Integration:** the Gear method holds p_loss within 0.01% from a 0.25 ns step down to 2 ps. Trapezoidal moved the peak by up to 3.5×, which is numerical ringing, so it is not used.
-  - **Step:** the step is the smaller of T_SW/20 and 0.25 ns, forced everywhere. That is within 0.2% of a 25 ps reference; leaving the step to error control read the peak 6% low.
-  - **Loss:** loss is computed after the run, in a `.control` block, from the converged waveforms. As a B-source probe node, the v·i sum stalled solves that converge without it, because it carries the solver's sub-nA noise. An aborted run reports nothing, never a partial-waveform value.
-  - **Diode resistance:** without its series resistance the diode is a bare exponential on a ring with Q ≈ 30, and Newton fails. Restored at 20 mΩ, every corner converges, and the result moves by under 1.5% between 5 and 20 mΩ.
-  - **C_oss loss:** at 1 ns edges, four of the fixture's nine corners failed to converge with any solver setting, even `itl4=500`, and a 0 V link placed in the loop flipped the typical corner. The cell was at the edge of convergence: an ideal C_oss ringing with Q ≈ 30. Real C_oss charges through the switch's spreading resistance (its hysteresis loss), which is what damps measured switch-node rings to Q ≈ 3–10. With 0.05 Ω, the low end of 0.05–1 Ω, every corner converges. Loss moves under 0.5%, and the peak drops 0.2% (fixture), 0.2% (boost) and 1.5% (motor driver); at 1 Ω the motor driver's peak is 10% lower.
-  - **Low frequencies:** the cell is simulated at max(F_SW, 300 kHz). With a constant winding current, a period's loss is conduction (read on the settled middles of the on and off intervals) plus edge energy `e_sw`, and `p_loss` = p_cond + e_sw·F_SW. Each ring decays in about 25 ns, against flats of at least 1 µs.
-- **Frequency priors** when the part table has none: motor drivers 1–100 kHz (typical 20 kHz), discrete half-bridges 20–500 kHz, integrated converters 150 kHz–3 MHz. A single 0.3–3 MHz prior had put motor drivers at converter frequencies, where a 100 ns edge and its dead time left a negative on-time, and the switch never turned on.
-- **Coarse pours:** a sheet solver (the engine's K2 operator) would replace the 2 mm strip mesh.
-- **Runtime:** most signal tests take about a second per corner, but a few large pairs reach the 300 s cap. Power tests take milliseconds to seconds.
-- **LLM cost:** about 150k tokens per board for the questions-only pass. A per-part fact cache should lower it on later boards.
+**LLM pilot on ardor** (one agent, 146k tokens, ≈ 10 web lookups, 9 min): replaced priors with cited datasheet intervals and bounds (ADS1115, OPA2320, TPA6132A2, Omron G5V-1, H11L1M; the Raspberry Pi's 1.8 kΩ I2C pull-ups, confirmed by the schematic's "Pi has them"). 4 pass / 4 unknown → 8 pass / 0 unknown. Found 8 errors in the automatic testbench, all fixed:
+
+| Error | Fix |
+|---|---|
+| loads behind a ferrite on +3V3_PI missed; rail trees split into separate tests | supply trees through ferrites, fuses, small resistors (also finds supplies the brief did not name) |
+| a relay's current returned at a contact pin, not through coil and driver; an IC's current at a grounded input, not PGND | IC current returns at its ground pin nearest the supply pin, other loads at the reference |
+| I2C bus stopped at a 33 Ω series resistor | I2C lines followed through series resistors |
+| resistor loads (pull-ups, dividers) ignored | dividers simulated, pull-ups counted at V/R |
+| audio-rate loads stepped in ns | only logic ICs step in ns |
+| two ideal sources on one rail make the ideal deck singular | parallel ideal sources merged |
+
+On ardor the automatic testbench now judges the 3.3 V tree (was unknown); only the off-board I2C pull-ups still need an outside fact.
+
+## 8. Next
+
+1. Add crosstalk victim tests on routed copper, leakage and creepage, excitation and radiator inventories with the source-to-radiator check, antenna feed. Stand-ins: boost and half-bridge done (generic cells, hot-loop test); next flyback, buck-boost, charge pumps, LDO and load-switch dissipation, creepage and clearance vs working voltage. Find the cause of slow and singular signal runs (scaling couplings to keep the inductance matrix positive definite did not cure them).
+2. Hook into kaeres as a new evaluator (evaluator id hashes the code tree) beside legacy `physics_total`; report per category, never inside cp1, cpk or `score.py` (deployment rule canonical in [functional-evaluation](../physics/functional-evaluation.md#6-trusting-the-evaluator)).
+3. Re-run routed-physics baselines under the new connectivity (it changes the evaluator id); model custom pad primitives.
+4. Before KiCad 11, port the SWIG `pcbnew` users (fills, board writer) to the IPC API.
+
+## 9. Cell stand-in and numerics
+
+**Stand-in:** log-linear switches (50 mΩ to 1 MΩ), body diodes (20 mΩ, 10 ns transit), 100 pF across each switch, inductor or winding held as a constant current source. Gives the copper's share of loss and the hot-loop ring, not control behaviour or ripple. Ring peak is an upper bound: SPICE diode recovers abruptly (body diodes softly); C_oss linear and lossless; copper and capacitor R at DC values (no skin effect). Loop inductance depends on none of these. Vendor or Verilog-A models would replace it.
+
+**Numerics, checked by refinement** [M]: every change to how a cell is solved is checked against a finer reference; one that alters the circuit's physics is rejected.
+
+| Choice | Evidence |
+|---|---|
+| Gear integration | holds p_loss within 0.01% from 0.25 ns step down to 2 ps; trapezoidal moved the peak by up to 3.5× (numerical ringing), not used |
+| Step = min(T_SW/20, 0.25 ns), forced everywhere | within 0.2% of a 25 ps reference; step left to error control read the peak 6% low |
+| Loss after the run, in `.control`, from converged waveforms | a B-source probe node for the v·i sum carries sub-nA solver noise and stalled solves that converge without it; an aborted run reports nothing, never a partial-waveform value |
+| Diode series R 20 mΩ | without it the diode is a bare exponential on a Q ≈ 30 ring and Newton fails; with it every corner converges; result moves < 1.5% between 5 and 20 mΩ |
+| C_oss loss 0.05 Ω (low end of 0.05–1 Ω) | at 1 ns edges 4 of the fixture's 9 corners failed with any solver setting, even `itl4=500`, and a 0 V link in the loop flipped the typical corner (ideal C_oss ringing at Q ≈ 30). Real C_oss charges through the switch's spreading resistance (hysteresis loss), which damps measured switch-node rings to Q ≈ 3–10. With 0.05 Ω every corner converges; loss moves < 0.5%; peak drops 0.2% (fixture), 0.2% (boost), 1.5% (motor driver); at 1 Ω the motor driver's peak is 10% lower |
+| Simulated at max(F_SW, 300 kHz) | constant winding current: loss per period = conduction (settled middles of on and off intervals) + edge energy `e_sw`; `p_loss` = p_cond + e_sw·F_SW; each ring decays in ≈ 25 ns vs flats ≥ 1 µs |
+| Frequency priors when the part table has none | motor drivers 1–100 kHz (typical 20 kHz), discrete half-bridges 20–500 kHz, integrated converters 150 kHz–3 MHz. A single 0.3–3 MHz prior had put motor drivers at converter frequencies, where a 100 ns edge and its dead time left a negative on-time and the switch never turned on |
+
+## Open questions
+
+- **Runtime:** most signal tests ≈ 1 s per corner, but a few large pairs reach the 300 s cap; power tests ms to s.
+- **LLM cost:** ≈ 150k tokens per board for the questions-only pass; a per-part fact cache should lower it on later boards.
 
 ## Sources
 
 - Code and tests: [`kae/src/kae/sim/`](../../../kae/src/kae/sim/), [`kae/tests/test_sim.py`](../../../kae/tests/test_sim.py).
 - Reused: [`critical_recheck.py`](../../../kae/src/kae/route/critical_recheck.py) (RoutedBoard, fills), [`copper.py`](../../../kae/src/kae/route/copper.py) (NetGraph), [`kernels.py`](../../../kae/src/kae/physics/kernels.py), [`fastloop.py`](../../../kae/src/kae/physics/fastloop.py), [`priors.py`](../../../kae/src/kae/physics/priors.py), [`brief.py`](../../../kae/src/kae/circuit/brief.py).
-
-See also: [functional-evaluation](../physics/functional-evaluation.md), [intent-interchange](intent-interchange.md), [physics-critics](../physics/physics-critics.md), [physics-engine-design](physics-engine-design.md).
+- Related: [physics-critics](../physics/physics-critics.md).

@@ -236,16 +236,34 @@ def test_finish_end_to_end_on_a_fixture_board(tmp_path):
     assert all(e["stage"] in ("tails", "taut", "power") for e in rep["journal"])
 
 
-def test_entries_of_one_pass_in_conflict_are_merged():
-    """Taut moves N2 away and N1 into the room it left: reverting N2 alone would put it back on N1's
-    new copper, so the two are one entry (either order in the diff)."""
+def test_entries_of_one_pass_in_conflict_depend_or_merge():
+    """Taut moves N2 away and N1 into the room it left: N1 depends on N2 (reverting N2 reverts N1).
+    Two nets that each moved into the other's room are one entry."""
     t0 = _board(_seg("A", "N1", (0, 0), (5, 0)), _seg("B", "N2", (0, 1), (5, 1)), _seg("C", "N3", (0, 9), (5, 9)))
     t1 = _board(_seg("A2", "N1", (0, 0), (5, 1)), _seg("B2", "N2", (0, 1), (5, 2)), _seg("C2", "N3", (0, 9), (5, 8)))
     jr = J.Journal(t0, margin=0.2).add(J.diff_entries("taut", t0, t1))
-    assert len(jr.entries) == 2
-    big = next(e for e in jr.entries if "|" in e.net)
-    assert big.net == "N1|N2" and set(big.after) == {"A2", "B2"} and sorted(big.meta["merged"])
-    assert set(J.items(jr.text({big.id}))) == {"A2", "B2", "C"}
+    assert len(jr.entries) == 3
+    assert jr.by_id["taut:net:N1"].deps == {"taut:net:N2"}
+    assert jr.dependants({"taut:net:N2"}) == {"taut:net:N1", "taut:net:N2"}
+    assert [e.id for e in jr.entries].index("taut:net:N2") < [e.id for e in jr.entries].index("taut:net:N1")
+    # a swap: each into the other's place
+    s0 = _board(_seg("A", "N1", (0, 0), (5, 0)), _seg("B", "N2", (0, 3), (5, 3)))
+    s1 = _board(_seg("A2", "N1", (0, 3), (5, 3.1)), _seg("B2", "N2", (0, 0), (5, 0.1)))
+    jr = J.Journal(s0, margin=0.2).add(J.diff_entries("taut", s0, s1))
+    assert len(jr.entries) == 1 and jr.entries[0].net == "N1|N2"
+
+
+def test_a_long_chain_of_conflicts_is_not_one_entry():
+    """Twelve nets each shifted into its neighbour's room, the last into the first's: a 12-cycle,
+    above MERGE_CAP, stays twelve entries in a dependency order (pumpbot built a 63-net entry)."""
+    n = 12
+    t0 = _board(*[_seg(f"S{i}", f"N{i}", (0, 2 * i), (5, 2 * i)) for i in range(n)])
+    t1 = _board(*[_seg(f"T{i}", f"N{i}", (0, 2 * ((i + 1) % n)), (5, 2 * ((i + 1) % n) + 0.05)) for i in range(n)])
+    jr = J.Journal(t0, margin=0.2).add(J.diff_entries("taut", t0, t1))
+    assert len(jr.entries) == n
+    pos = {e.id: k for k, e in enumerate(jr.entries)}
+    assert all(pos[d] < pos[e.id] for e in jr.entries for d in e.deps)
+    assert len(jr.dependants({jr.entries[-1].id})) < n
 
 
 def test_reordered_board_has_the_same_items():

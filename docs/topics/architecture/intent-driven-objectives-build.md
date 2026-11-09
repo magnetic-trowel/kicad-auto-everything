@@ -2,8 +2,10 @@
 <!-- SPDX-License-Identifier: CC-BY-4.0 -->
 # Intent-driven objectives: router changes, build order and acceptance tests
 
-**TL;DR**
-- Split from [intent-driven-objectives](intent-driven-objectives.md), which defines the catalogue, the intent document, the tiered objective and the status. This doc is how kae would build it.
+Scope: how kae builds intent-driven objectives: router changes, build order and acceptance tests. Not here: the catalogue, the intent document, the tiered objective and the status -> [intent-driven-objectives](intent-driven-objectives.md).
+Keys: intent router, W × Z prices, incremental re-route, `buys`, band-selective weights, lexicographic hard tier, copper policy, intent build order
+
+**Results**
 - Intent changes only the weights W of the router's W × Z prices; field solves are reused, so a new intent generation re-routes only nets whose price moved.
 - Built: the intent package, observations with references, the tiered objective and the router's copper policy with its lexicographic hard tier; not built: `buys`, band-selective weights, incremental re-route, the server surface.
 
@@ -15,13 +17,15 @@ Tags: [M] measured here, [I] our inference.
 
 | Requirement | With intent (before: `phi_prime(u)` capped at 5, harm/Ω widths) |
 |---|---|
-| any term | ∂C/∂x_t = `rate_t` (cost) or `rate_t·[x_t > max_t]` (limit); hard terms: [§6](intent-driven-objectives.md) |
+| any term | ∂C/∂x_t = `rate_t` (cost) or `rate_t·[x_t > max_t]` (limit); hard terms: [objective](intent-driven-objectives.md#objective-formulation) |
 | loss, drop | closed-form widths in mW_eq/Ω (`kae.intent.route`); `knobs.route.width.*` clamp the ladder |
 | heating | IPC-2221 floor from the intent's limit, or none if heating is a cost |
 | band coupling | spectral weights only from harmonics inside each term's band, times the rate |
 | cable CM | declared cables only |
 | thermal to heatsink | new knob `route.via_array[region]`, priced by ∂θ/∂via (`kae.em.thermal`) |
 | return continuity, decap priority | `_cut_costs` and the placer, weighted by the terms' rates |
+
+Before intent: `phi_prime(u)` per (observer, aggressor) pair capped at `PHI_SLOPE_CAP` = 5; `_dc_per_ohm` (harm/Ω) → `_dc_width` ladder; an IPC-2221 floor at `dcp.dT_max`; one 10 MHz band, or `--spectral` weights from all harmonics; cable CM unpriced (`UNPRICED = ("cm",)`).
 
 **Incremental follow:** a new generation recomputes `_weights` without new solves and re-routes nets whose price moved over 20 %, largest change first; `_route_verified` still guards each candidate.
 
@@ -37,7 +41,7 @@ Tags: [M] measured here, [I] our inference.
 
 ## Conflicts and open questions
 
-See [intent-driven-objectives § Conflicts and open questions](intent-driven-objectives.md#conflicts-and-open-questions).
+See [intent-driven-objectives § Conflicts and open questions](intent-driven-objectives.md#open-questions).
 
 ## Sources
 

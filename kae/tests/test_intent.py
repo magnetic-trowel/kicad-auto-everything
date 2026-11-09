@@ -134,7 +134,7 @@ def test_the_copper_policy_widens_with_current_and_follows_the_area_knob():
     w = [p.width("VIN", [i] * 5, 0.035, 0.2, ladder, 0.2, None)[0] for i in (0.05, 0.3, 1.0)]
     assert w[0] == 0.2 and w[0] < w[1] < w[2]
     # w* = sqrt(k rho / (t a)): four times the area cost halves the width
-    q = IR.Policy({"knobs": {"route.area_cost": 0.2}})
+    q = IR.Policy({"knobs": {"route.area_cost": 4 * IR.AREA_COST}})
     assert q.width("VIN", [0.3] * 5, 0.035, 0.2, ladder, 0.2, None)[0] < w[1]
     # a heating limit floors the width at IPC-2221's
     h = IR.Policy({"terms": [{"id": "H", "tier": "hard", "obs": "heat.track", "max": "5 K", "why": "w"}],

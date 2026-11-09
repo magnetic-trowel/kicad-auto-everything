@@ -1,5 +1,8 @@
 # Exact physics in the optimizer before routing (dead end) and the fidelity switch
 
+Scope: defensive publication of the study pricing placement moves with exact physics (PEEC, FV), the eight designs evaluated, the `--physics-fidelity` switch and its A/B. Not here: theory -> [exact-physics-options](../../topics/physics/exact-physics-options.md), [exact-physics-in-kae](../../topics/physics/exact-physics-in-kae.md); engine -> [physics-engine-design](../../topics/architecture/physics-engine-design.md).
+Keys: exact physics, PEEC, finite volume, FV thermal, decision flips, route floor, cf, cfm, multi-fidelity top-K, Schur windows, learned surrogate, --physics-fidelity fast|exact|multi, exact.pick, exact.configure, loop_value, ThermalFV, Green's function table, supernodal Cholesky, physics engine
+
 **Status:** did not work for placement decisions; the exact evaluator works as a tool (`--physics-fidelity`); cached thermal FV untested in the placer; physics engine design only.
 **First published:** 2026-10-23, commit [c5c53c4](https://github.com/magnetic-trowel/kicad-auto-everything/commit/c5c53c40404a972ba3ede1e0d3ab1a5dcc3e58a0) on branch `claude/vigilant-mayer-i91rrr` (designs and polish [6d731a8](https://github.com/magnetic-trowel/kicad-auto-everything/commit/6d731a8168626034c1c30f3954f8e346a2507f53); fidelity switch [0591403](https://github.com/magnetic-trowel/kicad-auto-everything/commit/05914032a3de8de6a67ff4f0680e70dda33f23c4), A/B [92afed4](https://github.com/magnetic-trowel/kicad-auto-everything/commit/92afed425d64f665ec8783cf806f37f94d3cd24a)).
 
@@ -13,7 +16,12 @@ Would the placer choose better if it priced moves with exact physics (PEEC loop 
 
 **Designs evaluated** (`ex_*` scripts): (a) a global exact `delta` in the annealer; (b) multi-fidelity top-K (fast ranks, exact re-scores the best K); (c) per-structure bias correction; (d) Schur-complement windows; (e) exact only where copper exists (after routing); (f) a learned surrogate for the residual; (g) asynchronous exact evaluation on 50 cores; (h) placement-invariant operators (FV with cached source fields, a Green's-function table).
 
-**Fidelity switch** (`kae.physics.exact`, design (e) then (b)). `loop_value(lp)` evaluates the routed-loop network that the module stage and the routed recheck already build (strips at a height over the reference plane, vertical pieces, KCL-tied alternatives) by PEEC: each strip split into nw filaments across its width (filament < h/3, <= 60, >= 1.2 t), vias as 6-filament rings, partial inductances by Neumann's integral (Grover closed forms for parallel filaments, zero for perpendicular, Gauss-Legendre graded toward the closest approach for oblique or crossing ones), images with reversed current; loop L = the minimum magnetic energy under the pieces' current sums and the KCL rows with non-negative alternatives. Filament-matrix blocks are cached per piece pair (warm quotes about 1-2 ms). `--physics-fidelity fast|exact|multi`: `exact` makes `Loop.value` PEEC; `multi` re-scores the fast top K (default 4) of each decision with `exact.pick(cands, rescore)`; final reported values are PEEC; `exact.configure(mode, k)` makes the joint loop's acceptance physics exact.
+**Fidelity switch** (`kae.physics.exact`, design (e) then (b)). `loop_value(lp)` evaluates by PEEC (inductive limit, as `pw_peec` and `ex_exact.peec_solve`) the routed-loop network that the module stage and the routed recheck already build (strips at a height over the reference plane, vertical pieces, KCL-tied alternatives):
+- strip of width w at height h -> nw filaments across the width (filament width < h/3, nw <= 60, none thinner than 1.2 t), t = 35 µm, placed at h + t/2; vertical piece (via) -> 6-filament ring (25 µm plating);
+- partial inductances by Neumann's integral: parallel filaments by Grover's closed form (self terms at GMD 0.2235(w + t)), perpendicular = 0, oblique by Gauss-Legendre along one filament of the analytic integral along the other, graded geometrically toward the closest approach (touching and crossing filaments);
+- images: mirrored end points, current reversed;
+- each piece carries its element's current, free to crowd across its filaments; loop L = minimum magnetic energy under the pieces' current sums and the Loop's KCL rows, alternative currents >= 0 as in `Loop`;
+- filament-matrix blocks cached per piece pair, so a via search reuses its hops' blocks (warm quote about 1-2 ms, near closed-form cost). `--physics-fidelity fast|exact|multi`: `exact` makes `Loop.value` PEEC; `multi` re-scores the fast top K (default 4) of each decision with `exact.pick(cands, rescore)`; final reported values are PEEC; `exact.configure(mode, k)` makes the joint loop's acceptance physics exact.
 
 **ThermalFV with cached source fields** (design (h)). The thermal operator (zones as placed, FR-4, convection) does not change when parts move, so a 2.5-D finite-volume model is factored once; the field of each 1 W source is solved once per source pose and cached; a victim move only reads fields, a source move costs one solve.
 
@@ -35,9 +43,25 @@ Would the placer choose better if it priced moves with exact physics (PEEC loop 
 | A/B at 92afed4, critical router, A+B, 33 boards, k = 2, 1800 s | fast vs multi: cp1 0.667 / 0.667, cpk 0.697 / 0.697; 50 decisions re-scored (226 PEEC calls, 1.1 s), **0 changed** | [physics-fidelity-92afed4](../../../bench/results/2026-10-24-physics-fidelity-92afed4.md) |
 | `multi` in the joint loop, 6 boards, 2 seeds, local | not better (14 / 10 vs 11 / 8 unconnected; noise) | [joint-loop-b6](../../../bench/results/2026-10-24-joint-loop-b6.md) |
 | ThermalFV | unit-tested (rises within 1e-9 of the FV reference); not wired into the placer | [exact-physics-in-kae](../../topics/physics/exact-physics-in-kae.md) |
-| engine benchmarks (whole-board DC operators of 3 open boards) | compiled Cholesky refactors 6-13x faster than SuperLU at 0.08-0.8M nodes in about half the memory; Schur window 1.6 s at 281k nodes vs 51 s for a Green block; quotes 25-110 us; commit 20-60 ms; within 1e-10 of brute force | [physics-engine-design](../../topics/architecture/physics-engine-design.md) |
+| engine benchmarks | compiled Cholesky 6-13x faster than SuperLU; Schur window 1.6 s vs 51 s Green block at 281k nodes; quotes 25-110 us; commit 20-60 ms; within 1e-10 of brute force | [below](#engine-benchmarks) |
 
 All numbers compare models with models (PEEC, FV); none is a measurement.
+
+### Engine benchmarks
+
+Whole-board DC operators (all nets, layers, vias) of BLDCM-Power (32 mm, 4 layers), bms-c1 (134 × 69 mm, 4 layers), linecard (184 × 92 mm, 6 layers); one core of a shared 4-core VM (load 1-7; ±30%); `eng_*` scripts below; window 1,600 nodes on all layers; SciPy unless marked. Design they inform: [physics-engine-design](../../topics/architecture/physics-engine-design.md#performance).
+
+| Board, cell (nodes) | Build | Factor: SuperLU / compiled | Solve | Schur window | Green block | Rank-8 update, CHOLMOD |
+|---|---|---|---|---|---|---|
+| BLDCM-Power, 0.2 mm (76k) | 0.8 s | 0.21 / 0.03 s | 6 ms | 1.0 s | 10 s | 3 ms |
+| BLDCM-Power, 0.1 mm (281k) | 2.6 s | 1.2 / 0.18 s | 31 ms | 1.6 s | 51 s | 22-34 ms |
+| linecard, 0.35 mm (682k) | 19 s | 9.3 / 0.92 s | 140 ms | 8.6 s | 226 s | 91 ms |
+| bms-c1, 0.2 mm (810k) | 10-15 s | 6.9-7.2 / 0.78 s | 120 ms | 7.6 s | 233 s | 71-82 ms |
+
+- **Scaling** (22k-810k nodes): factor time ∝ n^1.1-1.4, fill ∝ n^1.1-1.5; 18-31 nonzeros per node under AMD = 0.2-0.4 GB per million nodes per real band, 2x complex. METIS saves up to 22% fill but orders slower than AMD factors.
+- **Backends:** faer (Rust, MIT) refactors real-board operators 6-13x faster than SuperLU at 0.08-0.8M nodes and equal fill, in about half the memory; CHOLMOD adds rank-k up/downdates (rank 8: 3-91 ms at 76k-810k nodes vs 0.03-0.9 s compiled refactor, 0.2-9 s SuperLU).
+- **Build:** point-sampled rasterization (6-11M points/s, 19 per cell) takes 17 of linecard's 19 s once assembly is linear; quadratic branch indexing (fixed) had added 52 s.
+- **Windows:** quotes 25-110 µs per window quote; committed rank-8 edit 20-60 ms at |W| = 1,600 vs 0.3-0.4 s to re-invert; within 10⁻¹⁰ of brute force.
 
 ## Verdict
 

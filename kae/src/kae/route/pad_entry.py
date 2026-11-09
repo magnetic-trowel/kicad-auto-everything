@@ -520,8 +520,9 @@ def neck_width(pad, release, width, need=0.0, min_w=0.0, step=0.01, **kw):
 def land_hazard(ref, pad_name, net, width, land_w, need, current_a):
     """The hazard (kae.hazards schema, branch decide-2611) for a track kept wider than the land it
     enters because its current needs the width."""
+    from kae import hazards as H
     obj = [o for o in (f"{ref}.{pad_name}" if ref and pad_name else ref, net) if o]
-    return dict(code="land_enlarged_by_track", severity="warn", category="assembly",
+    return H.make("land_enlarged_by_track", "warn", "assembly",
                 message=(f"land effectively enlarged: tombstone and solder-wicking risk; the {width:.3f} mm track "
                          f"into {ref or '?'} pad {pad_name or '?'} ({net}) is wider than the {land_w:.3f} mm land, and "
                          f"its current needs {need:.3f} mm"),

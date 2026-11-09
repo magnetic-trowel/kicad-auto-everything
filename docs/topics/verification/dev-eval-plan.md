@@ -1,33 +1,30 @@
 # Development and evaluation plan for placers and routers on a shared benchmark host
 
-**TL;DR**
-- **Fix the harness first (weeks 1–2).** Code review found defects that would mislead every comparison:
-  - Place tasks move locked parts, so 24–40 of the 112 qualified boards can't be won.
-  - The placement-legality list misnames copper-to-edge clearance.
-  - A Freerouting timeout throws away the partial board.
-  - Best-of-k attempts are nested runs of one seed.
-  - KiCad 10 DRC caps how many items it reports, which skews completion.
-  - Integrity checks miss layers, outline, zones and pad geometry.
-- **Routing:** cheap wins first (budgets with partial output, DSN fidelity, seeded diversity), then second engines, repair and a gated portfolio ([routing/strategy-candidates](../routing/strategy-candidates.md)).
-- **Placement:** geometry kit, CP-SAT-legalized seed, SA, then router-probe-in-the-loop repair, the strategy most likely to matter [I] ([placement/strategy-candidates](../placement/strategy-candidates.md)).
-- **LLM work starts at week 8,** after measured, LLM-free headroom. Every LLM arm runs against zero-token controls: heuristic, random, shuffled, compute-matched best-of-N and an oracle. The LLM only emits configurations and intents, never coordinates.
-- **Shared host:** at most 50 cores and about 96 GB, enforced with a cgroup and not only with `-j`. Workdir on local NVMe. The local corpus (`~/kae-boards`, 13,749 boards) has 2,412 drc-clean boards across 1,663 repos, enough to resolve 2–3 pp effects. Cores, not boards, now bound how often the full set can run.
+Scope: status (2026-10-21), harness defects H1–H12 and their fixes, phased plan 0–4 (harness trust, baselines, routing and placement strategies, LLM in the loop, physics/corpus/sealed test). Not here: evaluation protocol (metrics, statistics, resolving power) and host compute rules -> [dev-eval-protocol.md](dev-eval-protocol.md); harness -> [harness.md](harness.md); strategy details -> [../routing/strategy-candidates.md](../routing/strategy-candidates.md), [../placement/strategy-candidates.md](../placement/strategy-candidates.md).
+Keys: dev-eval plan, harness defects, H1, H5, H6, H12, score v2, SCORE_VERSION, task_spec 2, red-team, suites v1, smoke, dev, dev-200, val, sealed test, A/A flip rate, split C diagnosis, PCBWorld reproduction, KRT adapter, R1–R9, P0–P7, LLM arms, B0–B4, oracle, intent-replay, contamination, routed-not-clean track
+Tags: [P] primary, [V] vendor or self-report, [I] inference, [M] measured in this repo. Synthesized from three research passes over the docs, harness code and recent sources. Every gain estimate is a hypothesis to test.
 
-Status 2026-10-21. Synthesized from three research passes over the docs, the harness code and recent sources. Tags: [P] primary, [V] vendor or self-report, [I] inference, [M] measured in this repo. Every gain estimate below is a hypothesis to test.
+## Plan summary
+1. Fix the harness first (weeks 1–2): defects H1–H12 below would mislead every comparison (locked parts moved → 24–40 of 112 qualified boards unwinnable; misnamed copper-to-edge type; timeouts discard the partial board; best-of-k = nested runs of one seed; KiCad 10 DRC item caps skew completion; integrity missed layers, outline, zones, pad geometry).
+2. Routing: cheap wins first (budgets with partial output, DSN fidelity, seeded diversity), then second engines, repair and a gated portfolio ([routing/strategy-candidates](../routing/strategy-candidates.md)).
+3. Placement: geometry kit, CP-SAT-legalized seed, SA, then router-probe-in-the-loop repair, the strategy most likely to matter [I] ([placement/strategy-candidates](../placement/strategy-candidates.md)).
+4. LLM work starts at week 8, after measured LLM-free headroom; every LLM arm runs against zero-token controls (heuristic, random, shuffled, compute-matched best-of-N, oracle). The LLM emits only configurations and intents, never coordinates.
+5. Shared host (status 2026-10-21): ≤50 cores, ~96 GB, enforced by a cgroup, not only `-j`; workdir on local NVMe. Local corpus (2026-10-21 snapshot; current counts → [local-board-corpus](../data/local-board-corpus.md)) 13,749 boards, 2,412 drc-clean across 1,663 repos: enough for 2–3 pp effects; cores, not boards, bound how often the full set can run ([dev-eval-protocol.md](dev-eval-protocol.md)).
+6. Week 1 order: (1) 0.10 resource control and local workdir; (2) 0.1 + 0.2 + 0.4 as scoring v2 (separate commits); (3) 0.5 partial output; (4) 0.3 integrity and sandbox; (5) 0.9 red team; (6) baseline re-run. Week 2: stats/compare, suites v1, noise floor. Ask before launching any run longer than the smoke suite on the shared host. Commit only code, suites and summarized results; never boards.
 
-## Key facts
-
-### Where we start
+## Where we start
 
 | Item | State |
 |---|---|
 | Host | Shared benchmark host: 128 threads, 251 GB, 2 NUMA nodes, **shared**. Budget: ≤ 50 cores, ≤ 96 GB. `$HOME` is NFS, local NVMe has 356 GB free |
 | Toolchain | `kaebench doctor` passes: KiCad 10.0.7 (Apptainer image), Freerouting 2.5.0 |
-| Corpus | `~/kae-boards` (local only, never committed): 13,749 KiCad-10-loadable boards, 10,902 fully routed, 2,412 drc-clean (2-layer 2,028, 4-layer 332, 6+ 52; median 27 footprints, p90 111; 1,663 repos; 193 noncommercial, private evaluation only). The committed benchmark manifest has 297, of which 112 qualified ([harness](harness.md)) |
+| Corpus | local board corpus `kae-boards` (never committed): 13,749 KiCad-10-loadable boards, 10,902 fully routed, 2,412 drc-clean (2-layer 2,028, 4-layer 332, 6+ 52; median 27 footprints, p90 111; 1,663 repos; 193 noncommercial, private evaluation only). The committed benchmark manifest has 297, of which 112 qualified ([harness](harness.md)) |
 | Routing baseline | Freerouting 2.5.0, k = 1, 600 s: A 0.62, B 0.35 with adapter fixes. C 0.04 with the **stock** adapter only; the fixed adapter has never run on C [M] |
 | Placement baseline | None run. The place track has defects (below) |
 
-### Harness defects found (verified in code unless marked)
+## Harness defects found
+Verified in code unless marked.
+
 
 | # | Defect | Where | Effect |
 |---|---|---|---|
@@ -46,9 +43,7 @@ Status 2026-10-21. Synthesized from three research passes over the docs, the har
 
 Doc correction: Freerouting's "92.4% of 979 boards" (2.6.0-RC4) covers tiers A+B only. RC3 reached 69.5% on tier C with 360-minute budgets [P]. Applied in [freerouting](../routing/freerouting.md).
 
-## Plan
-
-### Phase 0: trust the harness (weeks 1–2)
+## Phase 0: trust the harness (weeks 1–2)
 
 **Rule.** Scoring and integrity changes (`score.py`, `prepare.py`, `tools.summarize_drc`) go in separate commits that say why. They bump a `SCORE_VERSION` recorded per attempt, per CLAUDE.md. Batch them into one scoring-v2 release so the baselines are re-run once.
 
@@ -75,7 +70,9 @@ Doc correction: Freerouting's "92.4% of 979 boards" (2.6.0-RC4) covers tiers A+B
 
 **Kill:** A/A above 5% after fixes means no comparisons until budgets are deterministic: pass counts, iterations and tokens rather than wall clock.
 
-### Phase 1: baselines and diagnosis (weeks 3–4)
+*Divergence, kept:* every method is budgeted in wall seconds (`--timeout`, `--time`), because that is how an LLM commanding kae spends time, and kae's routers, Freerouting and restart portfolios have no common deterministic unit. In exchange each attempt records its CPU-seconds (`method_usage.cpu_s`; kaeres also records the job step's cgroup CPU), so a parallel arm is read against its CPU: the restart portfolio at P = 4 used 6,199 CPU s in a 1,186 s run on gamaphy-freedom-rp2040, about 5× a single-process arm. A CPU-matched control is a best-of-N of the baseline at the same CPU total. Until the launcher became a subreaper, rusage lost every sandboxed (`--command`) method's CPU, because bwrap exits without reaping its pid 1; those older rows read ~0.
+
+## Phase 1: baselines and diagnosis (weeks 3–4)
 
 Re-run on scoring v2 with the same KiCad, manifest and suite. Register the results in `bench/results/BASELINES.md`:
 - `reference`, `noop`, `freerouting`, `freerouting-stock` on route;
@@ -110,15 +107,15 @@ Commit the cause table as summarized results.
 
 **Second engine:** a KRT adapter (MIT; reads `.kicad_pcb` directly, so no DSN loss). PCBWorld measured 0.74 on D3-A and 0.20 on D3-B [P]. Weak single baselines mislead.
 
-### Phase 2a: routing strategies (weeks 3–8)
+## Phase 2a: routing strategies (weeks 3–8)
 
 R1 budgets with partial output → split C diagnosis → R2 DSN fidelity pack → R3 seeded diversity → R4 fastroute → R5 DRC-driven repair → R6 portfolio selector, built only if the oracle portfolio from logs shows ≥ 0.05. R7 (PNS residual completion, blocked on KiCad 9) and R9 (own PathFinder router, only if congestion causes ≥ 40% of C failures) are gated. Mechanisms, reuse, effort, expected gains and kill criteria: [routing/strategy-candidates](../routing/strategy-candidates.md).
 
-### Phase 2b: placement strategies (weeks 3–10)
+## Phase 2b: placement strategies (weeks 3–10)
 
 Baselines B0–B5 first (noop, reference + probe, random + legalizer, pyplacer, kicad-tools, Cypress). Then P0 geometry kit → P1 constructive seed + CP-SAT legalizer → P2 slot/orientation clean-up → P3 multi-seed SA → P4 router-probe-in-the-loop repair. P5 Cypress is time-boxed to 3 days for a CPU build; P6 analytical placer and P7 weight tuning are gated. Prerequisites: mechanical anchors, signal-only HPWL, and KRT as a second probe. Details and kill criteria: [placement/strategy-candidates](../placement/strategy-candidates.md).
 
-### Phase 3: LLM in the loop (weeks 8–13, only after headroom is shown)
+## Phase 3: LLM in the loop (weeks 8–13, only after headroom is shown)
 
 **Headroom first (CPU only):**
 - **Hindsight oracle:** per-board best config from the R3 grid, minus the best single global config. This tests "setup is the bottleneck" ([deeppcb](../landscape/deeppcb.md) [V]).
@@ -158,7 +155,7 @@ Levers under +5 pp of oracle headroom are dropped. Under +10 pp, they are not wo
 - Add `commit_date` to the manifest for a time-split suite.
 - Keep `test` ids out of anything the model sees.
 
-### Phase 4: physics, corpus, sealed test (weeks 10–16)
+## Phase 4: physics, corpus, sealed test (weeks 10–16)
 
 - **Intent and physics MVP,** reference-relative. Each checker is validated by V1 mutants: decap pin distance, diff-pair skew, power-net minimum width, vias per pair ([critic-stack](critic-stack.md)).
 - **Use the routed-but-not-clean boards** (8,490 of the 10,902 routed): a reference-relative track that scores "no DRC error instances beyond the human layout's". It is a new metric, so it goes in its own commit next to `clean`, never replacing it. Add commit dates for the time-split suite ([open-board-sources](../data/open-board-sources.md)).
@@ -167,94 +164,7 @@ Levers under +5 pp of oracle headroom are dropped. Under +10 pp, they are not wo
   - $ per extra clean board;
   - summarized results in `bench/results/`.
 
-## Evaluation protocol
-
-**Metrics:**
-- **Gate:** `valid` under whitelist integrity.
-- **Primary:** `cp1_mean`, the clean rate averaged over all attempts. Always report `cp1` and `cpk` too.
-- **Secondary:**
-  - unbiased cp@5;
-  - completion (uncapped);
-  - per-net clean rate (sensitive on C);
-  - errors by type;
-  - timeouts and infra errors, reported separately.
-- **Guardrails, fixed in advance:** median `wl_ratio` ≤ +5%, mean via delta per connection ≤ +10%, on clean boards only.
-- **Placement:**
-  - gate: `legal` (fixed-severity profile);
-  - primary: probe `cp1_mean` with a fixed probe;
-  - also probe completion relative to the human placement.
-
-**Statistics:**
-- The board is the unit, paired across methods.
-- Exact McNemar for binary outcomes; sign-flip permutation for fractional ones.
-- 95% CIs by bootstrap clustered by repo.
-- One primary per experiment; secondaries Holm-corrected.
-- Every comparison lists the flipped boards and their error types.
-- Minimum claimable effect = max(MDE, 2 × the A/A flip rate).
-
-**Resolving power** (α = 0.05, power 0.8, 10–25% discordant boards):
-
-| Boards | Detectable effect |
-|---|---|
-| 2,412 drc-clean boards | 2–3 pp |
-| ≈ 1,200-board test split | 3–4 pp |
-| ≈ 200-board dev subset | 6–10 pp |
-| 112 boards (old manifest) | 8–13 pp |
-| Splits A or B alone | almost nothing |
-| 5 pp effects | need 250–780 boards |
-
-**Attempts:**
-- Deterministic engines: k = 5 *configs*, a portfolio rather than seeds.
-- LLM arms: k = 3 on dev, 5 on val/test.
-- More boards beat more attempts.
-
-## Compute on the benchmark host
-
-- **Hard caps.** Wrap every session in `systemd-run --user --scope -p AllowedCPUs=<lease> -p MemoryMax=96G -p MemoryHigh=88G` (verified to work on this host). The lease is within cores 0–49, recorded in a lease file so our concurrent sessions don't overlap.
-- **Freerouting:**
-  - `JAVA_TOOL_OPTIONS="-Xmx3g -XX:ActiveProcessorCount=1 -XX:+UseSerialGC"`, with `-mt 1`;
-  - verify the jpackage launcher honours it.
-  - Peak heap is 0.4–1.2 GB per board [P].
-- **KiCad DRC threads:** cap with the advanced-config `MaximumThreads` in a harness-private `KICAD_CONFIG_HOME`; verify the name in 10.0.7. Score in a separate pool of ≤ 6 × 4 threads.
-- **Disk:** move the workdir and `KAE_HOME` to local NVMe (`/var/tmp/$USER/kae-work`, `APPTAINER_BIND=/var/tmp/$USER`). Record this in `CLAUDE.local.md`. Every attempt starts about 5 KiCad processes from the 2.5 GB image, which is slow over NFS.
-- **Concurrency to start** (re-tune after measuring peak RSS on the 10 largest boards):
-
-  | Workload | Concurrency |
-  |---|---|
-  | Freerouting on A/B | 40 |
-  | Freerouting on C | 24–32 |
-  | Placers with 4-worker CP-SAT | 12 |
-  | LLM arms | 8–16, rate-limited |
-
-- **Wall-clock is noisy here.** Budget in deterministic units (passes, iterations, tokens), with `prlimit --cpu`. Keep wall timeouts as a 3× safety net. Run baseline and candidate interleaved in the same window.
-  - *Divergence, kept:* every method is budgeted in wall seconds (`--timeout`, `--time`), because that is how an LLM commanding kae spends time, and kae's routers, Freerouting and restart portfolios have no common deterministic unit. In exchange each attempt records its CPU-seconds (`method_usage.cpu_s`; kaeres also records the job step's cgroup CPU), so a parallel arm is read against its CPU: the restart portfolio at P = 4 used 6,199 CPU s in a 1,186 s run on gamaphy-freedom-rp2040, about 5× a single-process arm. A CPU-matched control is a best-of-N of the baseline at the same CPU total. Until the launcher became a subreaper, rusage lost every sandboxed (`--command`) method's CPU, because bwrap exits without reaping its pid 1; those older rows read ~0.
-- **Cost scale:**
-
-  | Run | Core-hours | Wall time |
-  |---|---|---|
-  | Smoke (8 boards, k = 1) | — | < 10 min |
-  | dev A+B (k = 3) | — | 20–40 min |
-  | `dev-200` route run (k = 3) | ≈ 60 | ≈ 1.5 h |
-  | Prepare all 2,412 drc-clean boards | ≈ 40 | ≈ 1 h |
-  | Full drc-clean route run (k = 3) [I] | ≈ 700 | ≈ 15 h, overnight; phase gates only |
-  | C diagnosis | 40–80 | 2–3.5 h |
-
-  With 2,412 boards, cores are the binding limit: iterate on `dev-200`, read `val` weekly and `test` once per gate.
-
-## Recommendations for our system
-
-- **Week 1 order:**
-  1. 0.10 resource control and local workdir;
-  2. 0.1 + 0.2 + 0.4 as scoring v2 (separate commits);
-  3. 0.5 partial output;
-  4. 0.3 integrity and sandbox;
-  5. 0.9 red team;
-  6. the baseline re-run.
-- **Week 2:** stats/compare, suites v1, noise floor.
-- **Ask before launching** any run longer than the smoke suite on the shared host.
-- **Commit** only code, suites and summarized results; never boards.
-
-## Conflicts and open questions
+## Open questions
 
 - **Locked-board count:** 24–39 vs 40 boards depending on the parser. Settle it with the Phase 0 reference run.
 - **Unverified items:**
@@ -275,6 +185,4 @@ Levers under +5 pp of oracle headroom are dropped. Under +10 pp, they are not wo
 - KiCad 10 DRC: [drc_engine.cpp](https://gitlab.com/kicad/code/kicad/-/blob/10.0/pcbnew/drc/drc_engine.cpp), [advanced_config](https://docs.kicad.org/doxygen/advanced__config_8cpp.html)
 - fastroute: [repo](https://github.com/parisxmas/fastroute). KRT: [repo](https://github.com/drandyhaas/KiCadRoutingTools), [placement-optimization.md](https://github.com/drandyhaas/KiCadRoutingTools/blob/main/docs/placement-optimization.md). kicad-tools: [placement_score_calibration.md](https://github.com/rjwalters/kicad-tools/blob/main/docs/research/placement_score_calibration.md). autolayout: [ROADMAP](https://github.com/bwattendorf/autolayout/blob/main/ROADMAP.md)
 - Placers: [Cypress](https://github.com/NVlabs/Cypress), [pyplacer](https://github.com/ajokela/pyplacer), [VeoPlace](https://arxiv.org/pdf/2603.28733), [OmniLayout](https://arxiv.org/abs/2607.03261)
-- Statistics: Miller, [Adding Error Bars to Evals](https://arxiv.org/abs/2411.00640); Chen et al. 2021 unbiased pass@k (arXiv 2107.03374); Agarwal et al. 2021 (arXiv 2108.13264)
-
-See also: [benchmark-plan](benchmark-plan.md), [harness](harness.md), [evaluation-stack](evaluation-stack.md), [hybrid-architecture-options](../architecture/hybrid-architecture-options.md), [original ideas](../../ideas/original/README.md)
+- See also [benchmark-plan](benchmark-plan.md), [evaluation-stack](evaluation-stack.md), [hybrid-architecture-options](../architecture/hybrid-architecture-options.md), [original ideas](../../ideas/original/README.md).

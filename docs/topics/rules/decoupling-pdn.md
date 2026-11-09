@@ -1,15 +1,18 @@
 # Decoupling and PDN: mounting inductance, target impedance, flat profiles
 
-**TL;DR**
-- **Mounting loop inductance sets high-frequency decoupling, not capacitor value.** That means pads, vias and depth to the plane pair. In the same package, 0.1 µF and 47 µF MLCCs have the same ESL. Implement "smallest closest" as "**lowest mounting inductance closest**".
-- **"Three values per pin" is a myth.** Equal-ESL values create anti-resonance peaks. Damp with ESR or controlled-ESR bulk instead of adding decade values.
-- **Target impedance Z_t = ΔV/I_transient is necessary but not sufficient.** Use only the transient share of the budget, aim for a flat profile, and keep peaks ≤1.57 × Z_t for a robust design (≤3 × is tolerated in practice). Watch for "rogue waves" from several high-Q peaks.
-- **Derate MLCCs for DC bias.** Run ferrite beads at about 20% of rated current and check bead + cap resonance against f_sw.
-- **No open-source PDN impedance tool was found.** A lumped-RLC screener fed with geometry-derived mounting inductance is buildable and differentiating.
+Scope: decoupling (mounting inductance, values, myths), target impedance and flat profiles, plane cavities, MLCC/bead components, PDN workflow and rule IDs. Not here: trace/via current -> [power/high-current.md](power/high-current.md); return stitching -> [si-fundamentals.md](si-fundamentals.md#discontinuities-splits-slots-voids-reference-changes); estimator code -> [checkers-power.md](checkers-power.md).
+Keys: decoupling, bypass, PDN, mounting inductance, ESL, ESR, three capacitor values myth, anti-resonance, target impedance, Z_t, flat profile, 1.57 × Z_t, rogue wave, cavity mode, f₁₀, plane capacitance, DC bias, MLCC derating, ferrite bead, SimSurfing, K-SIM, PDN-01, PDN-12
 
-## Key facts
+## Decoupling and PDN rules
+1. Mounting loop inductance (pads, vias, depth to plane pair) sets HF decoupling, not capacitor value: same-package 0.1 µF and 47 µF MLCCs have the same ESL. Implement "smallest closest" as "**lowest mounting inductance closest**", ranked with the [loop-inductance estimator](checkers-power.md) (package, pad-to-via distance, via length to the plane pair); alternate orientation in clusters.
+   - Built so far (`kae.circuit.roles.cap_class`, `CAP_CLASS = 'package'`): a non-polarized chip of 0603 or smaller counts as HF at any value, so a load's pin may be paired with it ([comprehension](../physics/comprehension.md) §3.3). Larger and through-hole bodies fall back to value (≤ 1 µF), and polarized bodies are never HF. Who owns a capacitor, and what a converter loop or bias pin takes, still goes by value, because there the charge it holds matters and humans lay out that way: the ownership eval holds at 74.67% (1,378 caps), and pin pairings rise from 289 to 295: the 6 new ones (4.7–10 µF 0402) sit 1.3–3.7 mm from their pin in the human layouts. `CAP_CLASS = 'value'` restores the old classes.
+   - Basis [P]: Archambeault's connection-inductance table ([IEEE EMC Society Newsletter, 2009](https://forum.hsbne.org/uploads/default/original/2X/9/946bf58f4e03f86ead589fbf62e3db9c2a1a6ec0.pdf)) rises 0402 < 0603 < 0805 at every via depth (0.9 / 1.1 / 1.2 nH at 10 mil). It puts body ESL at 0.2–0.5 nH "depending on the size". Bogatin, Smith and Sandler (above) give a 10 µF and a 0.1 µF MLCC in one body "exactly the same high frequency impedance".
+2. "Three values per pin" is a myth: equal-ESL values create anti-resonance peaks; damp with ESR or controlled-ESR bulk instead of adding decade values.
+3. `Z_t = ΔV/I_transient` is necessary, not sufficient: transient share of the budget only, flat profile, peaks ≤1.57 × Z_t robust (≤3 × tolerated); watch for "rogue waves" from several high-Q peaks.
+4. Pre-layout BOM checks: MLCC DC-bias derating; bead at ~20% of rated current; bead + cap resonance vs f_sw. Add beads only on explicit requirement, always with the resonance check.
+5. No open-source PDN impedance tool was found: build the lumped-RLC screener (workflow below) fed with geometry-derived mounting inductance; cheap enough to run per placement.
 
-**Myths vs reality.**
+## Decoupling myths vs reality
 - **Archambeault**, "PCB Power Decoupling Myths Debunked" (IEEE EMC chapter 2012, [slides](https://ewh.ieee.org/r3/enc/emcs/archive/2012-10-10b_DecouplingMyths.pdf)) [P]: "It's really the inductance that matters!"
   - Use the largest C the package allows.
   - The IC draws charge from between the planes; the caps replenish it.
@@ -28,7 +31,7 @@
 - **Jim Williams AN47** ([MIT mirror](https://www.mit.edu/~6.331/an47fa.pdf)) [P]: bypassing is "by far the most common error"; "the right (wrong) combination of supply line parasitics and paralleled dissimilar capacitors can produce a resonant, ringing response".
 - **LearnEMC** [P]: with power and ground planes, "no traces should be used to connect to power or ground"; use a via adjacent to the pad. Hubing calls "decoupling caps on both sides of a plane gap" not-so-good: "Don't gap the ground plane!"
 
-**Mounting-inductance data.**
+## Mounting-inductance data
 - **Axotron** ([blog](https://axotron.se/blog/inductance-of-some-decoupling-layouts/)) [S], VR VERIFIED. Setup: 8-layer board, P–G 75 µm, top-to-plane ~300 µm, bottom ~1200 µm.
 
   | Layout | Top side | Bottom side |
@@ -44,7 +47,7 @@
   - 50 mil pad-to-via: 1.4 → 4.6 nH over the same depths.
   - Spreading on a 10" wide plane: cap 10" from the IC = 545 pH, 1" = 154 pH. Narrow planes raise L sharply.
 
-**Target impedance and beyond.**
+## Target impedance and beyond
 - Z_t = ΔV/I_transient. Example: 1 V × 5% / 10 A = **5 mΩ**.
 - Bands: the VRM covers up to ~100 kHz, board caps the middle, package/die ≳50 MHz. Board mounting inductance sets a floor ([ICD](https://www.icd.com.au/articles/TargetZ_Design007-Feb2018.pdf); [MPS](https://media.monolithicpower.com/mps_cms_document/a/i/aip_meeting-the-impedance-mask_strategies-for-pdn-design-and-optimization_r1.0.pdf); [Altium PDN guide](https://files.resources.altium.com/sites/default/files/2022-02/PDN%20Simulation%20and%20Analysis%20Guide.pdf)) [S].
 - **"Target Impedance Is Not Enough"** (Smith, Sandler & Bogatin; [SIJ 2019](https://www.signalintegrityjournal.com/articles/1083-target-impedance-is-not-enough)) [P]:
@@ -64,7 +67,7 @@
   - Plane capacitance ≈ 38 pF/cm² at d = 0.1 mm, εr 4.3 [I]. Ott: plane capacitance is insufficient below ~500 MHz [P].
 - **Tools:** Murata SimSurfing and KEMET K-SIM give DC-bias, temperature and frequency models with SPICE/S2P export. Both are vendor-locked [S].
 
-**Components.**
+## MLCC and ferrite-bead components
 - **MLCC DC bias** [S], not re-verified:
   - 0402/0603 X7R at 50–60% of rated V loses 30–50%; 1206/1210 lose 10–20%.
   - A 10 µF 6.3 V 0402 X5R ≈ 1.5 µF at 5 V.
@@ -75,12 +78,11 @@
   - Damping on the ADP5071 example: (A) series 10 Ω in the cap path, which degrades HF bypass; (B) 10 Ω across the bead; (C) C_DAMP 1 µF + R_DAMP 2 Ω.
   - Weir ([slides](https://emcfastpass.com/wp-content/uploads/2017/04/PDN_Ferrite_Beads.pdf)) [P]: above 30–40% of rated current, L drops 50%+.
   - MT-101: 0.1 µF + 1 nH resonates at 16 MHz; damp with ~10 Ω in the line or a bead (resistive above 100 kHz).
-- **Trace and via current:** see [power/high-current.md](power/high-current.md) (IPC-2221 0.30 mm/A at 10 °C; conservative via table).
-- **Return stitching** (cross-ref HS/EMI):
-  - TI: GND via "within 200 mil (center-to-center, closer is better)" of a reference-changing signal via; Gen5 50 mil; EMA ≥2 within 100–200 mil [P]. The 1 mm / 50 mil blog figures are secondary.
-  - Stitching caps: **≤1 µF, at split crossings** (TI). VR CORRECTED the 1–10 nF / 50 mil claim.
+- **Trace and via current** -> [power/high-current.md](power/high-current.md#trace-width).
+- **Return stitching** (GND via distance at reference changes, stitching caps at split crossings) -> [si-fundamentals.md](si-fundamentals.md#discontinuities-splits-slots-voids-reference-changes).
 
-**PDN workflow** (RPA §17) [I]. Each step is code, not LLM judgement:
+## PDN workflow
+RPA §17 [I]. Each step is code, not LLM judgement:
 1. **Rails** from BOM and datasheets: V, ΔV, I_transient (or I_max × activity), band. Z_t = fraction·ΔV/I.
 2. **Model:**
    - VRM = R + L above its bandwidth;
@@ -91,7 +93,8 @@
 4. **Fix:** same-value caps (lower ESL), ESR-chosen values, or a controlled-ESR bulk cap (C ≈ L/R²). Never pile on decade values.
 5. **Cavity modes:** compute f₁₀/f₀₁ from the outline; flag clock harmonics or edges within ±10% of a mode; stitch and decouple at mode maxima (edges, corners).
 
-**Rules** (RPA §2, §17) [I]:
+## PDN rule IDs
+RPA §2, §17 [I].
 
 | ID | Rule | Numeric | Check | Sev |
 |---|---|---|---|---|
@@ -107,20 +110,12 @@
 | PDN-11 | Cavity mode vs clock/edge spectrum | f₁₀ formula | Outline + netlist clocks | S3 |
 | PDN-12 | Plane pairs high in the stack, thin, no long thin necks | — | Stack-up position; neck width/length | S3 |
 
-## Recommendations for our system
-- **Build the open-source lumped-RLC PDN screener** (step list above). It is cheap enough to run per placement.
-- **Rank decoupling placement by estimated mounting L** (package, pad-to-via distance, via length to the plane pair) using the [loop-inductance estimator](checkers-power.md). Alternate orientation in clusters.
-  - Built so far (`kae.circuit.roles.cap_class`, `CAP_CLASS = 'package'`): a non-polarized chip of 0603 or smaller counts as HF at any value, so a load's pin may be paired with it ([comprehension](../physics/comprehension.md) §3.3). Larger and through-hole bodies fall back to value (≤ 1 µF), and polarized bodies are never HF. Who owns a capacitor, and what a converter loop or bias pin takes, still goes by value, because there the charge it holds matters and humans lay out that way: the ownership eval holds at 74.67% (1,378 caps), and pin pairings rise from 289 to 295: the 6 new ones (4.7–10 µF 0402) sit 1.3–3.7 mm from their pin in the human layouts. `CAP_CLASS = 'value'` restores the old classes.
-  - Basis [P]: Archambeault's connection-inductance table ([IEEE EMC Society Newsletter, 2009](https://forum.hsbne.org/uploads/default/original/2X/9/946bf58f4e03f86ead589fbf62e3db9c2a1a6ec0.pdf)) rises 0402 < 0603 < 0805 at every via depth (0.9 / 1.1 / 1.2 nH at 10 mil). It puts body ESL at 0.2–0.5 nH "depending on the size". Bogatin, Smith and Sandler (above) give a 10 µF and a 0.1 µF MLCC in one body "exactly the same high frequency impedance".
-- **Pre-layout BOM checks:** DC-bias derating, bead current ratio, bead resonance vs f_sw.
-- **Add beads only on explicit requirement,** and always run the resonance check.
-
-## Conflicts and open questions
+## Open questions
 - **"Smallest closest":** MT-101 (2009) vs Bogatin (2020) and Archambeault (2012). Default to mounting L; context switch for legacy designs.
 - **No authoritative cap-to-pin maximum distance exists.** The mm values are heuristics; prefer the inductance estimate.
 - **Not read in full:** Keysight and Novak. MLCC derating figures are secondary.
 
 ## Sources
-- research notes: [rules_power_rf_analog_dfm.md § 2, § 17, § 19](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_power_rf_analog_dfm.md); [verification_rules.md § 1B, § 2](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md)
+- [rules_power_rf_analog_dfm.md § 2, § 17, § 19](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_power_rf_analog_dfm.md); [verification_rules.md § 1B, § 2](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md)
 
 See also: [checkers-power.md](checkers-power.md), [power/high-current.md](power/high-current.md), [power/class-d-audio.md](power/class-d-audio.md), [analog-mixed-signal.md](analog-mixed-signal.md)

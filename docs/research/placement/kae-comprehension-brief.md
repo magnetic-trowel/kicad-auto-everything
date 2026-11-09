@@ -1,5 +1,8 @@
 # Circuit comprehension: the kae physics brief
 
+Scope: defensive publication of `kae.circuit.brief`: evidence model, net roles, name-first pin semantics, unannotated pins, structures, evaluation. Not here: inference rules and placer use -> [comprehension](../../topics/physics/comprehension.md).
+Keys: physics brief, kae.brief/1, kae.circuit.brief, evidence model, log-odds, STRONG/MODERATE/WEAK, net roles, rail voltage, pin_sem, name-first, unannotated pins, commutation cell, power path, decap ownership, caps_p, pin/nearest_pin/nearest_load, rail groups, protection chain, placement_order, E5 Beliefs, cm_comprehension_eval.py, cm_pin_type_robustness.py
+
 **Status:** worked; capacitor ownership on shared rails partial.
 **First published:** 2026-10-22, commit [64a6858](https://github.com/magnetic-trowel/kicad-auto-everything/commit/64a6858cca92b72ead01cdf56e3b5667a71cb2bc) on branch `claude/vigilant-mayer-i91rrr` (evidence model in [39f8d17](https://github.com/magnetic-trowel/kicad-auto-everything/commit/39f8d1707be0300dfce0d6b81d33dd09b494c4f0); unannotated pins [dfe6260](https://github.com/magnetic-trowel/kicad-auto-everything/commit/dfe626056d1087259702fe786b4a098f85c0cbee) on branch `physics-unannotated-pins`).
 
@@ -35,20 +38,50 @@
 
 ## Results
 
-| measure | result | source |
+### Measured accuracy
+
+#### Weak labels from the human placement [C]
+
+Brief built without positions on 112 boards; the human layout scores it. Ownership truth = nearest candidate owner's pin.
+
+| Measure | First report | Final | No sheet names | Random tie order | Baseline |
+|---|---|---|---|---|---|
+| Ownership, all owners (1,373 caps, 74 boards) | 73.1% | **74.7%** (per board 70.5%) | 62.9% | 61.3% | 38.0% |
+| … rail-group caps paired by nearest load | | **76.0%** | 64.3% | 64.0% | |
+| Pin pairings > 10 mm | 33.2% of 1,457 | **11.6%** of 284 | 14.5% | 12.1% | |
+| Hot loops < 5th pct of random (64) | 76.6% | **81.3%** (< 1st: 40.6%) | 73.4% | 71.9% | 5% |
+| Power-path loops < 5th pct (21) | | 52% | | | 5% |
+| Crystal to IC (31) | 4.7 mm | 4.7 mm; 87% within 12 mm | | | |
+| TVS nearer the connector (269 chains) | 60.2% | 59.5% | | | 50% |
+
+- Analog nets after the name gate (2026-11, [roles.py](../../../kae/src/kae/circuit/roles.py) `_signal_roles`): a name decides alone only where no IC pin is named; charger PROG/ISET pins count; bus and control suffixes veto. 32-board sample: 7 real analog nets recovered (Vref, AUDIO_IN/OUT, ADC, STACK-CURRENT, SENSOR_TRACK, a PROG pin), 0 of 11 false positives back (8 ferrite nets, TEMP_ALERT, BATTERY_SENSE_ENABLE, a comparator output); ADC_BAT on a named ESP32 GPIO stays `signal`. 400 random corpus boards: analog 506 -> 675, none lost; about 6 of 169 gains read as false (MIX_BP, TEMP_HUM, SPDIF_TX, AUDIO_LDOO).
+- Rail groups: 8 on 5 boards, 62 caps; reference-order allocation 61% right, nearest-load pairing 90%.
+- Power paths by class: load switches, muxes, reverse-polarity FETs, BMS bank at percentile ≤ 0.02; low-side and ideal-diode at 0.14–0.15 (caps at the rail source, or loop through a cable).
+- Calibration: monotone, underconfident below 0.7. Reported < 0.5 → right 55%; 0.5–0.7 → 77%; ≥ 0.9 → 92%.
+- No gain from: rank-order term, penalty on a cell's second cap, quotas scaled under shortage, "ICs before LEDs" on ties, first-capacitor round for converters (beaten by donation).
+
+#### Manual audit [I]
+
+Structure-level counts. Dev boards are training data; held-out boards audited with code frozen.
+
+| Structure | Dev, 10 boards (after fixes): P / R | Held-out, 3 boards (before fixes): P / R |
 |---|---|---|
-| capacitor ownership agreeing with the human layout (1,373 caps on 74 of the 112 suite boards) | 74.7% (per board 70.5%) vs 38.0% for the simplest baseline; 76.0% with rail groups | [comprehension](../../topics/physics/comprehension.md) |
-| pin pairings > 10 mm from the human pose | 33.2% -> 11.6% | same |
-| 64 hot loops vs random placement | 81.3% below the 5th percentile (40.6% below the 1st) | same |
-| power-path loops below the 5th percentile | 52% | same |
-| crystal to IC, human layouts | median 4.7 mm | same |
-| TVS nearer the connector than the protected IC in human layouts | 59.5% (weak label) | same |
-| manual audit | dev 10 boards: cells 10/10; held-out 3 boards: cells 2/4 (before fixes); sensitive-net recall 13/33 | same |
-| all pin types deleted | 99.45% of net roles kept, rail-set Jaccard 0.93, decap-group Jaccard 0.93 (before name-first: 0.993 / 0.92 / 0.90) | same |
-| pin types flipped against names | 0.998-1.0 (was 0.95 on rails); partly circular test | same |
-| unannotated pins, 40 unannotated boards | boards with physics modules 12 -> 27, decaps 26 -> 133; 40 annotated boards unchanged | commit [dfe6260](https://github.com/magnetic-trowel/kicad-auto-everything/commit/dfe626056d1087259702fe786b4a098f85c0cbee) |
-| analog nets after the name gate (2026-11): a name decides alone only where no IC pin is named; charger PROG/ISET pins; bus and control suffixes veto | 32-board sample: 7 real analog nets recovered (Vref, AUDIO_IN/OUT, ADC, STACK-CURRENT, SENSOR_TRACK, a PROG pin), 0 of 11 false positives back (8 ferrite nets, TEMP_ALERT, BATTERY_SENSE_ENABLE, a comparator output); ADC_BAT on a named ESP32 GPIO stays `signal`. 400 random corpus boards: analog 506 -> 675, none lost; about 6 of 169 gains read as false (MIX_BP, TEMP_HUM, SPDIF_TX, AUDIO_LDOO) | [roles.py](../../../kae/src/kae/circuit/roles.py) `_signal_roles` |
-| run time | median 0.1 s per board | same doc |
+| Commutation cells | 10/10, 10/10 | 2/4, 2/4 |
+| Crystals, feedback dividers, antennas | 11/11, 11/11 | 3/3, 3/3 |
+| Kelvin shunts | 8/8, 8/8 | 0/0, 0/1 |
+| Protected chains | 12/14 | 18/18 |
+| Decap groups (IC, rail) | 47/48, 47/50 | 25/25 |
+| Rails | 50/50 (3 voltages, 3 sources wrong) | 27/27 (same) |
+| Sensitive nets | not counted | 13/15, 13/33 |
+
+#### Pin types that contradict names [C][I]
+
+- All pin types deleted: net roles 99.45%, rail-set Jaccard 0.93, decap-group Jaccard 0.93 (before name-first rules: 0.993, 0.92, 0.90).
+- Types flipped against names (supply names typed input; EN, VIN+ typed power_in): 0.998–1.0 (was 0.95 on rails). Partly circular test.
+- Six held-out boards (3 above + 3 never opened, chosen for contradicting types): only 4 IC pins typed against their name, all 4 handled now (3 before). Commoner failures, each fixed with a test: missing types and unparsed names (ADV7280 with every pin `passive` and an `MVDD` supply; `V_{DD}` markup; module supply pins wired straight to a header).
+
+- Unannotated pins, 40 unannotated boards: boards with physics modules 12 -> 27, decaps 26 -> 133; 40 annotated boards unchanged ([dfe6260](https://github.com/magnetic-trowel/kicad-auto-everything/commit/dfe626056d1087259702fe786b4a098f85c0cbee)).
+- All 26 power paths found are real [C][I]. Run time median 0.1 s per board.
 
 Small n: the held-out audit rests on 3 boards (6 for the pin-type test), the unannotated-pins check on 40+40 boards with no placement or routing result on top.
 

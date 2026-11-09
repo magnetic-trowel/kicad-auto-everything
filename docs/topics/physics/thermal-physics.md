@@ -1,27 +1,17 @@
 # Thermal and electro-thermal physics of the board
 
-**TL;DR**
-- **A board is a 2-D fin.** Two numbers describe it. The sheet conductance G_s = Σ k·t gives the near-field slope P/(2πG_s): 5.6 K per watt per e-fold of distance on 2-layer 1 oz. The spreading length λ = √(G_s/h_total) is 38 mm on 2-layer 1 oz in still air, 46 mm on a 4-layer board with planes and 8 mm on bare FR-4. A board smaller than about 2λ is nearly isothermal plus local peaks. On such a board, spacing hot parts lowers the mean rise little; total power over total area sets the floor [C]. Spacing still moves a neighbour's peak by 10–20% (E5) and matters for fatigue, current hogging and plumes ([lens-th](lens-th.md)).
-- **TI's rules decompress exactly.**
-  - 15.3 cm²/W is an isothermal two-sided plate with h ≈ 8 W/m²K per side; "500 °C·cm²/W" is 1/(2h) at h = 10.
-  - 261 °C/W is barrel conduction of a 12 mil via with a 17.5 µm wall through 1.6 mm.
-  - SLVA959's 5.73 °C/W would need a 0.95 mm solid copper rod.
-  - Our finite-volume (FV) solver needs 12.1 cm² for a 40 K rise at h = 10 [C].
-- **Vias matter only when heat must change layers.** If a top pour already touches the exposed pad (EP), 9 EP vias cut the pad rise by only 13%. If the top copper is just the EP, they cut it by 58% (126 → 53 K). Going from 1 oz to 2 oz copper cuts it by 22%. A cut across the heat flow costs 20–30× as much as the same cut along it [C].
-- **Placement scoring can be exact and cheap.** The heat equation is linear, so superposition is exact. A shift-invariant kernel alone underestimates by 2–3× on a 60×40 mm board. Adding a lattice of edge images brings it within about 2% of a full solve [C].
-- **Electro-thermal and precision effects are the real layout drivers near sensitive parts.**
-  - Copper's +0.39%/K gives ΔT = ΔT₀/(1 − αΔT₀): no steady state above ΔT₀ ≈ 254 K, so the conductor fuses.
-  - 0.5–2 K/mm gradients within 10 mm of a 1 W source put tens of µV of thermocouple error across a 2-terminal part lying along the gradient.
-  - Electrolytic life halves per +10 K; a 32 kHz crystal shifts −13.6 ppm at +20 K.
+Scope: the board as a 2-D fin (G_s, λ), heat-transfer coefficients, TI thermal rules decompressed, IPC-2221/2152 vs a thermal network, TCR feedback, heatsinks and standoffs, pulsed loads, placement scoring by superposition, temperature-sensitive victims. Not here: dissipation, noise, electro-thermal stability theory -> [lens-th](lens-th.md); copper current physics -> [power-copper](power-copper.md).
+Keys: fin, sheet conductance G_s = Σ k·t, spreading length λ = √(G_s/h_total), K₀ kernel, heat-transfer coefficient h, natural convection, radiation, emissivity, 15.3 cm²/W, 261 K/W via, thermal via fill, copper weight, cuts across heat flow, IPC-2221, IPC-2152, line conductance, TCR fixed point, fusing 254 K, TIM, metal standoff, diffusion length √(αt), image lattice kernel, superposition, Arrhenius electrolytic, 32 kHz crystal ppm/K², voltage reference stress, thermocouple error, Seebeck, isotherm alignment
 
-## Key facts
+**Results**
+- A board is a 2-D fin with spreading length λ (table below). Below ~2λ a board is nearly isothermal plus local peaks: spacing hot parts lowers the mean rise little (total power / total area sets the floor), still moves a neighbour's peak 10–20% (E5) and matters for fatigue, current hogging, plumes ([lens-th](lens-th.md)) [C]. Express every thermal spacing in units of λ (per region, from stackup and local copper fraction); below ~2λ stop spreading hot parts for the mean rise (still price neighbour peaks; current-hogging parts want proximity); maximise connected copper, edge exposure and metal-standoff paths; use moats to protect victims.
+- Vias matter only when heat must change layers; a cut across the heat flow costs 20–30× the same cut along it [C].
+- Placement scoring by superposition is exact and cheap once edge images are added (within ~2% of a full solve) [C].
+- Electro-thermal and precision effects (TCR fusing, Seebeck offsets in gradients, electrolytic life, crystal drift) drive layout near sensitive parts; numbers in the victims section.
 
-All [C] numbers come from three scripts:
-- [tm_board_thermal_fv.py](../../../tools/research/physics/tm_board_thermal_fv.py): a multi-layer FV solver with via barrels and h on both faces. Defaults are k_Cu 390, FR-4 k_xy 0.8 and k_z 0.3 W/mK, 1.6 mm board, h = 10 W/m²K per side.
-- [tm_thermal_analytic.py](../../../tools/research/physics/tm_thermal_analytic.py).
-- [tm_solder_reflow.py](../../../tools/research/physics/tm_solder_reflow.py).
+[C] scripts: [tm_board_thermal_fv.py](../../../tools/research/physics/tm_board_thermal_fv.py) (multi-layer finite-volume (FV) solver with via barrels and h on both faces; defaults k_Cu 390, FR-4 k_xy 0.8, k_z 0.3 W/mK, 1.6 mm board, h = 10 W/m²K per side), [tm_thermal_analytic.py](../../../tools/research/physics/tm_thermal_analytic.py), [tm_solder_reflow.py](../../../tools/research/physics/tm_solder_reflow.py). Record h assumptions explicitly in the IR `heat_path` (orientation, enclosure, airflow, mask vs bare emissivity): they move results ±40% ([physics-ir](physics-ir.md)).
 
-### The board as a fin
+## The board as a fin
 
 Steady state is G_s∇²T = h_total·T − q, where h_total is both faces. A point source in an infinite sheet gives T(r) = P/(2πG_s)·K₀(r/λ). That is ln-like inside λ and exponential beyond it. The FV solver matches K₀ within 4% at 5–40 mm, so it validates [C].
 
@@ -44,7 +34,7 @@ Steady state is G_s∇²T = h_total·T − q, where h_total is both faces. A poi
 
 At 10 mm a neighbour sees 40% of the source's own rise. The ~4–5 K floor is P/(2hA_board).
 
-### Heat-transfer coefficients
+## Heat-transfer coefficients
 
 [C], [tm_thermal_analytic.py](../../../tools/research/physics/tm_thermal_analytic.py) §B, H. These are laminar natural-convection correlations for a 50 mm plate in 25 °C air, plus linearised radiation 4εσT³.
 
@@ -57,9 +47,9 @@ At 10 mm a neighbour sees 40% of the source's own rise. The ~4–5 K floor is P/
 - **Radiation is roughly half the cooling in still air.** Solder mask emits at ε ≈ 0.9–0.95; bare copper and ENIG at 0.03–0.1 ([vendor guide](https://www.allpcb.com/allelectrohub/ir-temperature-sensors-for-non-contact-pcb-testing-a-practical-guide) [S]). Stripping mask off a spreader "for cooling" loses about 40% of its h, so keep mask on spreaders [C].
 - **Forced air at 1–2 m/s gives h ≈ 20–50,** which shrinks λ by about √3.
 
-### Decompressing the TI thermal rules
+## Decompressing the TI thermal rules
 
-| Rule ([thermal.md](../rules/thermal.md)) | Physics | Our check | Verdict |
+| Rule (values and sources: [thermal.md](../rules/thermal.md)) | Physics | Our check | Verdict |
 |---|---|---|---|
 | ≥15.3 cm²/W two-sided copper for 40 K | Isothermal plate: A = 1/(2hΔT) = 12.5 cm² at h = 10, or 15.2 at h = 8.2 | FV, 1 W in a 3×3 mm EP, stitched pours: 40 K at 12.1 cm² (35 mm square) [C, E1] | Physics. Valid while the pour side is < λ. Beyond ~2λ extra area does nothing; at 64 cm² the rise is still 27.6 K |
 | 261 °C/W per 12 mil via | R = L/(k·π·t_p·(d−t_p)): 1.6 mm, 0.305 mm, 17.5 µm → 260 K/W [C] | 0.3 mm with 25 µm (IPC class 2/3 typical) → 190 K/W; one L1→L2 hop in 0.2 mm → 24 K/W [C] | Physics. Use the real plating and the real path length |
@@ -68,6 +58,8 @@ At 10 mm a neighbour sees 40% of the source's own rise. The ~4–5 K floor is P/
 | No cuts across heat flow | Directional resistance in the flux field | 20 × 0.5 mm cut at 5 mm: across the flow +0.87 K (top layer), +1.61 K (both layers); along the flow +0.04 to +0.06 K [C, E4]; TI +5.5 vs +1.5 K [P] | Physics. Score cuts by flux·normal (TM5) |
 | SLVA959 5.73 °C/W per via | Would need 0.72 mm² of copper, a 0.95 mm solid rod | [C] §A | Error, as flagged in [motor-drivers](../rules/power/motor-drivers.md) |
 
+TI's "500 °C·cm²/W" is 1/(2h) at h = 10. Replace fixed rules with conditional physics: via counts by ∂T/∂N_via; copper weight by ∂T/∂oz against the fab spacing penalty (47 µm + 1.65·t, [hv-and-manufacturing-physics](hv-and-manufacturing-physics.md)); cuts by a flux-direction penalty instead of "no cuts".
+
 **Fills** [C, §A]:
 - 0.3 mm, 25 µm, 1.6 mm via, epoxy-filled: 190 K/W, no gain.
 - Conductive paste: 185 K/W.
@@ -75,7 +67,7 @@ At 10 mm a neighbour sees 40% of the source's own rise. The ~4–5 K floor is P/
 - Copper-filled: 58 K/W, a 3.3× gain.
 - The "6–8× better filled vias" claim ([thermal.md](../rules/thermal.md) [S]) holds only against thinner plating.
 
-### IPC-2221/2152 as a thermal model vs a thermal network
+## IPC-2221/2152 as a thermal model vs a thermal network
 
 **Where the charts come from.**
 - IPC-2221's I = k·ΔT^0.44·A^0.725 descends from 1956 National Bureau of Standards (NBS) curves, which were "tentative" and poorly controlled ([PCD&F](https://pcdandf.com/pcdesign/index.php/2009-archive-articles/5731-determining-current-carrying-capacity) [S]).
@@ -95,7 +87,7 @@ Consequences:
 - **A plane under the trace roughly halves the rise.** IPC-2152 found the same [S].
 - **Neighbouring heat adds linearly,** which no chart captures.
 - **IPC-2221's exponents are physics-plausible.** For narrow traces I ∝ ΔT^0.5·A^0.5; for wide traces I ∝ A·t^−0.5. The 0.44 exponent absorbs the TCR.
-- **So use a network:** per-net line conductance from stackup and planes, plus superposed part heat, plus the TCR fixed point. The chart is the fallback (TM18).
+- **So use a network:** per-net line conductance from stackup and planes, plus superposed part heat, plus the TCR fixed point. IPC-2221 is the conservative fallback (TM18); log which one bound.
 - **How `heat.track` applies the chart** (`kae.excite.dc.track_currents`): current is the DC flux through a grid line across the track, exact for a raster staircase at any angle or offset. The width is the track's, or its net's copper across it (board geometry). Cells counted along a perpendicular gave 0.7–2× the current, so the rise moved up to 3× when a route merely shifted [C].
 
 **TCR feedback** [C, §E]. At constant current, ΔT = ΔT₀/(1 − αΔT₀) with α = 0.00393/K.
@@ -104,7 +96,7 @@ Consequences:
 - IR drop at 40 K above ambient is 16% higher than the 20 °C value most calculators print.
 - **Built** in the evaluator's heat band (`kae.excite.heat.tcr_solve`): each cell's copper heat scales by 1 + α(T_amb + ΔT − 20 °C) on the board's own conduction network, iterated to the fixed point; the DC band's copper loss and drops take the same factor; a loop gain ≥ 1 (no fixed point) is the block hazard `thermal_runaway_copper`. Effect on real boards: [field-solver-accuracy](../../research/physics/field-solver-accuracy.md).
 
-### Heatsinks, interfaces and alternative paths
+## Heatsinks, interfaces and alternative paths
 
 [C, §H]:
 
@@ -120,7 +112,7 @@ Consequences:
 - **Package tops are poor paths.** θ_JT of plastic packages is 50–200 °C/W, so heat-sink EP parts from the board bottom ([thermal.md](../rules/thermal.md) [P]).
 - **A floating heatsink is a capacitively coupled antenna.** Ground it deliberately; see [emc-placement](../rules/emc-placement.md).
 
-### Pulsed loads: diffusion length, not area
+## Pulsed loads: diffusion length, not area
 
 Diffusion length is √(αt) [C, §I]:
 
@@ -133,7 +125,7 @@ Diffusion length is √(αt) [C, §I]:
 
 For a pulse shorter than about 1 s, only copper within a few mm of the source and above the first dielectric stores the heat. Local copper mass (thicker copper, a copper coin, a local pour on the same layer) beats spreading area. Board area acts only on 10–100 s time scales.
 
-### Placement scoring by superposition
+## Placement scoring by superposition
 
 Test case: four sources (1.0, 0.5, 0.8 and 0.3 W) on a 60×40 mm 2-layer board with planes [C, E6]:
 
@@ -145,9 +137,9 @@ Test case: four sources (1.0, 0.5, 0.8 and 0.3 W) on a 60×40 mm 2-layer board w
 
 - **Edges are adiabatic, so mirror sources represent them.** On small boards the image lattice carries most of the answer.
 - **This validates OP23** in [optimization](../../ideas/physics-first/optimization.md).
-- **Non-uniform copper breaks shift invariance.** Use the kernel for proposals and one FV solve (~1 s at 0.5 mm grid, 2 layers) for accepted moves.
+- **Non-uniform copper breaks shift invariance.** Use the kernel for proposals and one FV solve (~1 s at 0.5 mm grid, 2 layers) for accepted moves; THERM-DT and THERM-COUPLE ([physics-critics-catalog](physics-critics-catalog.md)) do the same and report ΔT in K and victim drift in ppm, µV or life fraction, never in mm.
 
-### Temperature-sensitive victims
+## Temperature-sensitive victims
 
 | Victim | Physics | Sensitivity | Layout lever |
 |---|---|---|---|
@@ -167,24 +159,13 @@ Test case: four sources (1.0, 0.5, 0.8 and 0.3 W) on a 60×40 mm 2-layer board w
 
 Rotating the part 90° puts both terminals on one isotherm and removes the first-order term. This is the physical reason for thermally symmetric precision layouts. The same physics makes a matched pair's two inputs see equal temperatures when they straddle a symmetry axis of the heat field.
 
-### Other electro-thermal couplings
+## Other electro-thermal couplings
 
 - **Positive feedback:** silicon MOSFET R_DS(on) rises about 0.5–0.8%/K (typical datasheet curves [I]), and copper 0.39%/K. Hot copper next to a FET raises both losses.
 - **Current-sense errors:** the shunt TCR (50–100 ppm/K) plus copper in the sense path (3900 ppm/K) ([current-sense-kelvin](../rules/power/current-sense-kelvin.md)).
 - **Intentional coupling:** a protection NTC must sit thermally close to the part it protects. The placer needs both "repel" and "attract" thermal relations (TM17).
 
-## Recommendations for our system
-
-1. **Express every thermal spacing in units of λ.** Compute λ per region from the stackup and local copper fraction (§fin table). Below about 2λ, the placer stops spreading hot parts for the mean rise (it still prices neighbour peaks, and current-hogging parts want proximity). It maximises connected copper, edge exposure and metal-standoff paths, and uses moats to protect victims.
-2. **THERM-DT and THERM-COUPLE** ([physics-critics-catalog](physics-critics-catalog.md)) should use the image-lattice kernel for proposals and the FV solver for accepted states. Report ΔT in K and victim drift in ppm, µV or life fraction, never in mm.
-3. **Replace fixed rules with conditional physics.**
-   - Via counts: compute ∂T/∂N_via.
-   - Copper weight: compute ∂T/∂oz and weigh it against the fab spacing penalty (47 µm + 1.65·t; see [hv-and-manufacturing-physics](hv-and-manufacturing-physics.md)).
-   - Cuts: use a flux-direction penalty instead of "no cuts".
-4. **Size high-current traces with the line-conductance network and the TCR fixed point.** Keep IPC-2221 as the conservative fallback, and log which one bound.
-5. **Record h assumptions explicitly in the IR `heat_path`:** orientation, enclosure, airflow, emissivity of mask vs bare copper. They move results by ±40% ([physics-ir](physics-ir.md)).
-
-## Conflicts and open questions
+## Open questions
 
 - **λ definition:** ours, 38 mm on 2L 1 oz, counts two copper layers plus FR-4. [rule-genealogy-power-analog-thermal](rule-genealogy-power-analog-thermal.md) uses one layer (21–29 mm). Use the stackup-specific G_s.
 - **The 15.3 cm²/W rule is conservative for one ~1 W source in our model** (26% above our FV answer). It turns anti-conservative for multi-watt sources on 1 oz and in enclosures, as [rule-genealogy-power-analog-thermal](rule-genealogy-power-analog-thermal.md) notes: in E1 the rise saturates near 27 K/W beyond 64 cm², so 3 W cannot meet 40 K on any 1 oz area.
@@ -203,4 +184,4 @@ Rotating the part 90° puts both terminals on one isotherm and removes the first
 - Emissivity: https://www.allpcb.com/allelectrohub/ir-temperature-sensors-for-non-contact-pcb-testing-a-practical-guide [S]
 - Scripts: [tm_board_thermal_fv.py](../../../tools/research/physics/tm_board_thermal_fv.py), [tm_thermal_analytic.py](../../../tools/research/physics/tm_thermal_analytic.py)
 
-See also: [hv-and-manufacturing-physics](hv-and-manufacturing-physics.md), [thermal-hv-mfg ideas](../../ideas/physics-first/thermal-hv-mfg.md), [../rules/thermal.md](../rules/thermal.md), [../rules/power/high-current.md](../rules/power/high-current.md), [power-copper](power-copper.md), [physics-critics-catalog](physics-critics-catalog.md)
+See also: [hv-and-manufacturing-physics](hv-and-manufacturing-physics.md), [thermal-hv-mfg ideas](../../ideas/physics-first/thermal-hv-mfg.md), [../rules/thermal.md](../rules/thermal.md), [../rules/power/high-current.md](../rules/power/high-current.md)

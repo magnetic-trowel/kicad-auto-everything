@@ -5,7 +5,7 @@
 
 Shows the machine's CPU and memory as the scheduler sees them, what the next job is waiting for,
 and per owner (experiment/session): priority, running jobs, CPU and RAM in use, memory set aside,
-queued and finished counts, progress, throughput and an ETA if the current rate holds.
+queued and finished counts, progress, throughput and when each owner should finish (the queue replayed forward).
 
   kaeqtop                 refresh every 5 s (Ctrl-C quits)
   kaeqtop -n 2 --jobs 30  faster, and list more running jobs
@@ -80,6 +80,9 @@ class Sampler:
         return out
 
 
+MODEL = [None, 0.0]   # (runtime_model fit, when)
+
+
 def frame(c, cfg, sampler, args, width):
     now = time.time()
     L = []
@@ -104,8 +107,16 @@ def frame(c, cfg, sampler, args, width):
              f"queue jobs {ours_cpu:.1f}, everything else {others:.1f} | jobs may use {pinned} CPUs, {rcpu} kept free")
     if "runnable" in bsys:
         rq = bsys["runnable"]
-        L.append(f"     threads ready to run: {rq:.0f} for {threads - rcpu} CPUs jobs may use"
-                 + ("  << oversubscribed: jobs wait for a CPU, no new starts until this drops" if rq > threads - rcpu else ""))
+        qv, q = bsys.get("runq_qv", rq), bsys.get("runq_q")
+        rc = bsys.get("runq_class") or {}
+        L.append(f"     threads ready to run: {rq:.0f} now"
+                 + (f" (queue jobs: timed {rc.get('timed', 0)}, batch {rc.get('batch', 0)}, of them at idle priority, "
+                    f"taking only spare CPU: {rc.get('idle', 0)})" if rc else "")
+                 + (f", {qv:.0f} at the {q * 100:.0f}th percentile of {cfg.get('runq_window_s', 120) // 60} min (what batch starts go by;"
+                    f" last {cfg.get('runq_adapt_s', 300) // 60} min: oversubscribed {bsys.get('runq_over', 0):.0%},"
+                    f" CPUs idle while jobs wait {bsys.get('runq_idle', 0):.0%})" if q else "")
+                 + f" | {threads - rcpu} CPUs jobs may use"
+                 + ("  << oversubscribed: no new batch starts" if qv > threads - rcpu else ""))
     mi = kaeq.meminfo()
     total, avail = mi["MemTotal"], bsys.get("avail", mi["MemAvailable"])
     ours_rss, unreal = bsys.get("ours_rss", 0.0), bsys.get("unrealized", 0.0)
@@ -115,7 +126,20 @@ def frame(c, cfg, sampler, args, width):
     L.append(f"RAM  {bar((total - avail) / total, bw)} {gb(total - avail)}/{gb(total)} used: queue jobs {gb(ours_rss)} now, "
              f"{gb(unreal)} more set aside for their peaks | {gb(avail)} free, {gb(rmem)} kept free")
     pooled_now = bsys.get("pooled_owners") or []
-    if bsys.get("mem_rise") is not None and str(bsys.get("mem_mode")) == "measured":
+    ls = bsys.get("lease") if str(bsys.get("mem_mode")) == "lease" else None
+    if ls:
+        st = ls.get("stalled") or []
+        L.append(f"     leases: {ls.get('jobs', 0)} jobs hold {gb(ls.get('granted', 0))} (memory.high), use {gb(ls.get('used', 0))}; "
+                 f"unused grants {gb(ls.get('unused', unreal))}, of which set aside {gb(unreal - ls.get('buffer', 0))}"
+                 f" + {gb(ls.get('buffer', 0))} growth buffer"
+                 + (f"; timed jobs' forecast growth {gb(ls['timed_held'])} (z {ls.get('z', 0):.2f})"
+                    if ls.get("timed_held") is not None else "")
+                 + (f"; squeezable credit {gb(ls['credit'])}" if ls.get("credit") else "")
+                 + (f"; compressed, waiting: {', '.join('#%d' % i for i in ls['compressed'])} (no starts)"
+                    if ls.get("compressed") else "")
+                 + (f"  << {len(st)} job(s) waiting at their grant for memory: no new starts ({', '.join('#%d' % i for i in st[:6])})"
+                    if st else ""))
+    elif bsys.get("mem_rise") is not None and str(bsys.get("mem_mode")) == "measured":
         L.append(f"     measured: running jobs together grew at most {gb(bsys['mem_rise'])} in any hour of the last "
                  f"{dur(bsys.get('mem_hist_s', 0))}; set aside {gb(unreal)} (that x {cfg['mem_rise_margin']}, at least the "
                  f"biggest single job's {gb(bsys.get('mem_single', 0))}, + {gb(bsys.get('mem_warm', 0))} for jobs warming up)"
@@ -127,7 +151,7 @@ def frame(c, cfg, sampler, args, width):
         L.append(f"     pooled: set aside {gb(unreal)} instead of {gb(upeak)} (every job at its peak at once), saving "
                  f"{gb(max(0, upeak - unreal))}; owners marked *, measured correlation: "
                  + (", ".join(f"{o} {r:.2f} ({n} pairs)" for o, (r, n) in sorted(rho.items())) or "not yet"))
-    L.append(f"     room for new jobs: {gb(max(0, room))}  (free - set aside - kept free)"
+    L.append(f"     room for new jobs: {gb(max(0, room))}  (free - {'set aside - growth buffer' if ls else 'set aside'} - kept free)"
              + ("   << memory is the limit" if room < 4096 else ""))
     if bsys.get("disk_cap"):
         L.append(f"Disk scratch {gb(bsys.get('disk', 0))}/{gb(bsys['disk_cap'])}"
@@ -139,9 +163,9 @@ def frame(c, cfg, sampler, args, width):
         per_owner[j["owner"]] = per_owner.get(j["owner"], 0) + 1
     ratio = bsys.get("mem_ratio") or {}
 
-    def need(j):  # as the daemon: --mem scaled by the owner's learned peak/--mem
+    def need(j):  # as the daemon: --mem scaled by the owner's median peak/--mem (not capped at --mem)
         q = ratio.get(j["owner"])
-        return j["mem_mb"] if q is None else min(j["mem_mb"], max(256.0, j["mem_mb"] * q * cfg["mem_learn_margin"]))
+        return j["mem_mb"] if q is None else max(256.0, j["mem_mb"] * q * cfg["mem_learn_margin"])
 
     if queued:
         queued.sort(key=lambda j: (-j["prio"], per_owner.get(j["owner"], 0), j["submitted"]))
@@ -187,7 +211,20 @@ def frame(c, cfg, sampler, args, width):
     pooled = set(bsys.get("pooled_owners") or [])
     pw = max(10, min(20, width - 120))
     ow = max(12, min(26, max([len(o) for o in owners] + [5])))
-    L.append(f"{'OWNER':<{ow}} PRIO RUN  CPU   RAM  ASIDE  QUEUED   DONE  FAIL  {'PROGRESS':<{pw + 7}} DONE/h 1h  3h   ETA (at 3h rate)")
+    # forecast: the queue replayed forward (kaeq.forecast_queue) with each job's expected run time
+    allq = c.execute("SELECT * FROM jobs WHERE state='queued'").fetchall()
+    if now - MODEL[1] > 600:                  # the run-time model: refit every 10 minutes
+        MODEL[:] = [kaeq.runtime_model(c), now]
+    edur = kaeq.expected_durations(c, list(running) + list(allq), now, MODEL[0])
+    guess = {j["owner"] for j in list(running) + list(allq) if edur[j["id"]][1] in ("guess", "board~")}
+    fmem = {j["id"]: need(j) for j in allq}
+    fmem.update({j["id"]: max(need(j), use.get(j["id"], (0.0, 0))[0]) for j in running})
+    fcpu = {j["id"]: float(j["cpus"]) for j in list(running) + list(allq)}
+    pool = bsys.get("pinned") or (threads - rcpu)
+    fc = kaeq.forecast_queue(running, allq, {k: v[0] for k, v in edur.items()}, fmem, fcpu,
+                             sum(fmem[j["id"]] for j in running) + max(0.0, room), pool - others, now)
+    L.append(f"{'OWNER':<{ow}} PRIO RUN  CPU   RAM  ASIDE  QUEUED   DONE  FAIL  {'PROGRESS':<{pw + 7}} DONE/h 1h  3h   "
+             "FINISH (queue replayed; ~ = some run times guessed)")
     tot_run = tot_q = 0
     for o in owners:
         s = rows[o]
@@ -201,11 +238,12 @@ def frame(c, cfg, sampler, args, width):
         left = run + q
         if not left:
             eta = "finished"
-        elif r3:
-            secs = left / (r3 / 3) * 3600
-            eta = f"{dur(secs)}  ({eta_clock(secs, now)})"
+        elif o in fc:
+            first, fin = fc[o]
+            eta = (("~" if o in guess else "") + f"{dur(fin - now)}  ({eta_clock(fin - now, now)})"
+                   + (f", starts in {dur(first - now)}" if first else ""))
         else:
-            eta = "stalled" if run == 0 else "no finishes in 3h"
+            eta = "not within 14 days at this rate"
         pr = ",".join(str(p) for p in sorted(prios.get(o, []), reverse=True)) or "-"
         name = (o[:ow - 1] + "*") if o in pooled else o[:ow]
         L.append(f"{name:<{ow}} {pr:>4} {run:>3} {cpu:5.1f} {gb(ram):>5} {gb(aside.get(o, 0)):>5} {q:>7} {done:>6} {bad:>5}  "
@@ -224,25 +262,34 @@ def frame(c, cfg, sampler, args, width):
         L.append("Problems in the last 24 h: " + ", ".join(f"{o} {n} {st}" for o, st, n in probs)
                  + "   (details: kaeq result --owner OWNER)")
 
-    # running jobs
+    # running jobs: the top args.jobs by CPU, then the top args.jobs by RAM
+    def job_line(j):
+        rss, cores = use.get(j["id"], (0.0, None))
+        el = kaeq.active_for(j, now)        # what --timeout counts: time frozen for memory is left out
+        fz = kaeq.frozen_for(j, now)
+        nfz = j["freezes"] if "freezes" in j.keys() else 0   # (a database the new daemon has not upgraded yet)
+        frz = (("*" if j["frozen_since"] else "") + f"{dur(fz)}/{nfz}x") if nfz else "-"
+        cpu = "  -  " if cores is None else f"{cores:5.1f}"
+        return (f"  {j['id']:>6} {j['owner'][:ow]:<{ow}} {cpu} {gb(rss):>6}/{gb(j['mem_mb']):<6} {dur(el):>7} "
+                f"{dur(j['timeout_s']):>7} {frz:>9} {'B' if (j['qos'] if 'qos' in j.keys() else '') == 'batch' else 'T'}"
+                f"  {j['name'] or j['cmd'][:60]}")
+
     if args.jobs and running:
-        L.append("")
-        L.append(f"RUNNING JOBS (top {min(args.jobs, len(running))} of {len(running)} by CPU)")
-        L.append(f"  {'ID':>6} {'OWNER':<{ow}} {'CPU':>5} {'RAM':>6}/{'DECL':<6} {'TIME':>7} {'LIMIT':>7}  NAME")
-        order = sorted(running, key=lambda j: -(use.get(j["id"], (0, 0))[1] or 0))
-        for j in order[:args.jobs]:
-            rss, cores = use.get(j["id"], (0.0, None))
-            el = now - (j["started"] or now)
-            cpu = "  -  " if cores is None else f"{cores:5.1f}"
-            L.append(f"  {j['id']:>6} {j['owner'][:ow]:<{ow}} {cpu} {gb(rss):>6}/{gb(j['mem_mb']):<6} {dur(el):>7} "
-                     f"{dur(j['timeout_s']):>7}  {j['name'] or j['cmd'][:60]}")
+        n = min(args.jobs, len(running))
+        head = f"  {'ID':>6} {'OWNER':<{ow}} {'CPU':>5} {'RAM':>6}/{'DECL':<6} {'ACTIVE':>7} {'LIMIT':>7} {'FROZEN':>9} C  NAME"
+        for what, key in (("CPU", lambda j: -(use.get(j["id"], (0, 0))[1] or 0)),
+                          ("RAM", lambda j: -use.get(j["id"], (0.0, 0))[0])):
+            L.append("")
+            L.append(f"RUNNING JOBS (top {n} of {len(running)} by {what})")
+            L.append(head)
+            L += [job_line(j) for j in sorted(running, key=key)[:n]]
     return [line[:width] for line in L]
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("-n", "--interval", type=float, default=5.0, help="seconds between refreshes (default 5)")
-    ap.add_argument("--jobs", type=int, default=15, help="running jobs to list (0 = none)")
+    ap.add_argument("--jobs", type=int, default=5, help="running jobs to list, by CPU and by RAM (0 = none)")
     ap.add_argument("--all", action="store_true", help="also owners with nothing active or finished in 3 h")
     ap.add_argument("--once", action="store_true", help="print one frame and exit")
     args = ap.parse_args()

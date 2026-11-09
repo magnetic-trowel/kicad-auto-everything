@@ -23,7 +23,9 @@ operating corner, each with its scope) are matched by the intent's terms:
   values clipped to it), the same for every layout: left unpriced, it let the worse of two layouts escape
   its term whenever only that one crossed the cap. The status lists them under "implausible", with the reason.
 - where: scope filters (glob patterns): section, from, to (a boundary: from a section's sources into
-  another section's observers), observer, source, kind, rail, load, net, part, connector.
+  another section's observers), observer, source, kind, rail, load, net, part, to_part, connector. part matches
+  either side of a pair (the aggressor's parts or the victim's); to_part only the victim's (a noise limit on a
+  radio's own pins must not price the radio's noise into other parts).
 - agg over corners: worst (default for hard and limit), cvar20 (mean of the worst fifth; default for cost), typ.
 - combine over matched instances: each (default for hard and limit: each instance against the limit),
   sum (default for cost), max.
@@ -82,14 +84,14 @@ KINDS = {
     "emission.cable_E": ("dBuV/m", "Field at 10 m from a declared cable driven by cable_cm.v (Ott 12-7: "
                          "E = 1.26e-6 f l I / r capped at 2 x 60 I / r, I = V / 150 Ohm), per connector pair with a declared cable."),
 }
-SCOPE_KEYS = ("section", "from", "to", "observer", "source", "kind", "rail", "load", "net", "part", "connector")
+SCOPE_KEYS = ("section", "from", "to", "observer", "source", "kind", "rail", "load", "net", "part", "to_part", "connector")
 
 
 class IntentError(ValueError):
     pass
 
 
-PART_KEYS = ("part", "load", "net", "rail", "connector")       # name board members
+PART_KEYS = ("part", "to_part", "load", "net", "rail", "connector")       # name board members
 SECTION_KEYS = ("section", "from", "to", "source", "observer")  # name structures (sections)
 PRICED = ("hard", "limit", "cost")
 
@@ -220,6 +222,7 @@ def _match(t, ob, secs):
                 "rail": [sc.get("rail")], "load": [sc.get("load")],
                 "net": sc.get("nets", []) + sc.get("to_nets", []) + sc.get("from_nets", []),
                 "part": sc.get("parts", []) + sc.get("to_parts", []) + sc.get("from_parts", []),
+                "to_part": sc.get("parts", []) + sc.get("to_parts", []),       # the victim's side only
                 "connector": sc.get("connectors", [])}[k]
         if not any(v and fnmatch.fnmatch(str(v), p) for v in vals for p in pats):
             return False
@@ -270,9 +273,12 @@ def evaluate(ev, intent=None, brief=None):
     the unclaimed observations against their references, and questions. Deterministic; no physics runs."""
     intent = load(intent)
     if brief is None:
+        from kae.board import pinfacts as PF
         from kae.board.kicad_file import load as load_board
         from kae.circuit import brief as B
-        brief = B.build(load_board(ev["board"]))
+        bd_ = load_board(ev["board"])
+        PF.apply(bd_, ev.get("pins"))          # the pin facts the evaluator used: the same sections
+        brief = B.build(bd_)
     secs = SE.apply(SE.from_brief(brief), intent.get("sections"), brief)
     obs = observations(ev, intent)
     cur = intent["currency"]
@@ -280,7 +286,7 @@ def evaluate(ev, intent=None, brief=None):
     missing = list((ev.get("total") or {}).get("not_computed") or []) if not complete else []
     status = dict(schema="kae.status/1", observedGeneration=intent["generation"], board=ev.get("board"),
                   complete=complete, currency=cur, defaults=intent["defaults"], terms=[], unclaimed=[],
-                  questions=[], sections=sorted(secs), not_computed=missing)
+                  questions=[], sections=sorted(secs), not_computed=missing, stackup=ev.get("stackup"))
     if intent["defaults"] == "legacy/u":
         if not complete:
             status["tiers"] = None

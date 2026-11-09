@@ -1,28 +1,16 @@
 # PDN and commutation: loop geometry, parallel vias and caps, plane spreading, Kelvin and gate loops, eddy currents
 
-*Tags: [P] primary, [S] secondary, [V] vendor claim, [I] inference, [C] computed by us.*
-*Scripts: [pw_peec.py](../../../tools/research/physics/pw_peec.py) (filament PEEC with an image plane), [pw_sheet.py](../../../tools/research/physics/pw_sheet.py) (2-D Laplace: plane and terminal spreading, via clusters), [pw_eddy.py](../../../tools/research/physics/pw_eddy.py) (Dodd–Deeds coil over a copper sheet), [pw_cells.py](../../../tools/research/physics/pw_cells.py) (current sharing, ringing). Copper shapes, AC resistance and node/branch classes: [power-copper](power-copper.md).*
+Scope: commutation-loop inductance, via clusters and current sharing, decap mounting and orientation, plane-pair spreading and IR drop, Kelvin sense error, gate loops, eddy currents under inductors. Not here: copper shapes, AC resistance, node/branch classes -> [power-copper](power-copper.md); target impedance -> [decoupling-pdn](../rules/decoupling-pdn.md).
+Keys: hot loop, commutation loop, loop inductance, height × squares μ0·h·N□, lateral vs vertical loop, internal-vertical, via cluster spreading inductance, logarithmic in pitch, reverse-return feed, Tichelmann, current sharing, decap mounting inductance, via-in-pad, side vias, alternating orientation, plane-pair spreading, Peaceman, IR drop, decap reach, Kelvin L_err, ESL compensation, gate loop, common-source inductance, eddy current under inductor, Dodd–Deeds, f_ext, inductor cut-out, N7, N8
 
-**TL;DR**
-- **With a plane within about 0.2 mm, "loop area" stops predicting loop inductance.** In a 4 × 2 mm lateral loop over a plane 0.1 mm down [C]:
-  - widening the go/return gap 0.2 → 4 mm only moves L 0.89 → 1.35 nH;
-  - plane distance 0.1 → 1.5 mm moves it 0.93 → 4.1 nH;
-  - conductor width moves it 1.74 → 0.75 nH (0.5 → 4 mm).
+**Results**
+- With a plane within ~0.2 mm, "loop area" stops predicting loop L; the metric is Σ μ0·h·dl/w (height × squares; exact for wide copper, microstrip L′ for narrow), the same Laplace solve as IR drop (§1). Replace area with PEEC nH in N7 (ms per evaluation, image plane), with a terminal-width term, layer choice (lateral, vertical, internal-vertical) and symmetric split cells as a template; [hot-loops](../rules/power/hot-loops.md) mm² tiers are soft scores.
+- Parallel vias and caps are coupled: cluster outer size beats via count, decap orientation matters (§2, §3). N8 optimises via-cluster spread and decap orientation (site L from PEEC, spreading L from a one-off Laplace map per rail), not count; count vias for DC ampacity separately.
+- Kelvin, gate and inductor coupling are computable (§5–§7): keep the plane under inductors (MPS), never cut a body-sized hole.
 
-  The right metric is Σ μ0·h·dl/w (height × squares; exact for wide copper, microstrip L' for narrow), the same Laplace solve as IR drop.
-- **Internal-vertical loops beat lateral loops by about 3.5×** (0.27 vs 0.93 nH, same footprint, 0.1 mm dielectric) [C], matching EPC's "about 65% lower". A through-board vertical loop is worse (2.2 nH) and rises 71% from 0.8 to 1.6 mm board thickness (EPC: up to 80%). Widening a loop helps only up to W ≈ terminal width + loop length; past that, widen the terminals (more caps across).
-- **Parallel vias and caps are coupled.** In a plane pair, 4 vias at 0.6 mm pitch give 0.71× one via's spreading inductance, not 0.25×; 4 vias at 2 mm give 0.51× [C]. The cluster's outer size matters more than via count. Alternating decap orientation is 16–39% lower than same-orientation, more so with deeper planes. Side vias match via-in-pad. N8 should optimise cluster geometry and orientation, not count.
-- **Plane-pair spreading inductance is μ0·d·N□.** 157 pH for 1 inch at d = 75 µm reproduces Archambeault's 154 pH [C]. IR drop, spreading L and decap reach come from one solver.
-- **Kelvin, gate and inductor coupling are computable** [C]:
-  - a 2512 shunt's sense voltage carries 0.55–0.87 nH of inductive error, depending on the sense route, so the L/R corner of a 1 mΩ shunt is 180–290 kHz;
-  - a GaN gate loop must stay under ~0.34 nH; a 10 mm loop is 2–6 nH;
-  - a plane under a shielded inductor costs about 0.2% of L and under 1 mW, and under an open drum core up to ~6% and ~24 mW.
+[C] scripts: [pw_peec.py](../../../tools/research/physics/pw_peec.py) (filament PEEC with an image plane), [pw_sheet.py](../../../tools/research/physics/pw_sheet.py) (2-D Laplace: plane and terminal spreading, via clusters), [pw_eddy.py](../../../tools/research/physics/pw_eddy.py) (Dodd–Deeds coil over a copper sheet), [pw_cells.py](../../../tools/research/physics/pw_cells.py) (current sharing, ringing).
 
-  So keep the plane, as MPS advises, and never cut a body-sized hole (§7).
-
-## Key facts
-
-### 1. Commutation-loop geometry
+## 1. Commutation-loop geometry
 
 PEEC filaments with a perfect image plane (inductive limit), validated against closed forms (wire over plane 1–7%; wide strip over plane 1–4% of μ0·h·l/(w+2h)). Image-plane PEEC agrees with FastHenry within 1.3% (4 loops, w/h 0.3–5, 100 MHz; [open-solvers](open-solvers.md)). Loop: l = 4 mm from cap to switch pair, conductor w = 2 mm [C, `pw_peec.py loops`].
 
@@ -34,15 +22,15 @@ PEEC filaments with a perfect image plane (inductive limit), validated against c
 | Through-board vertical | 0.79 / 1.58 mm | 1.35 / 2.31 (+71%) |
 | w = 6 mm, l = 3 mm: internal vertical vs lateral | 0.1 mm | 0.072 vs 0.645 |
 
-**Anchors** ([hot-loops](../rules/power/hot-loops.md)):
+**Anchors.** Measured values and sources: [hot-loops](../rules/power/hot-loops.md#lateral-vs-vertical-loops) (SNVA803, EPC WP010) and [AN-139 Table 1](../rules/power/hot-loops.md#measured-loop-inductance-vs-plane-distance). Our model on the same cases:
 
-| Anchor | Measured | Our model |
+| Anchor | Our model | Agreement |
 |---|---|---|
-| SNVA803: ~20 mm² lateral, plane under | >1 nH | 1.0–1.1 nH (18–24 mm², plane 0.1 mm) |
-| SNVA803: vertical "2 mm²" | <0.5 nH | 0.27–0.46 nH (h 0.1–0.2 mm) |
-| EPC: internal vertical vs best conventional | ~65% lower | 71% lower |
-| EPC: vertical loop, 31 → 62 mil board | up to +80% | +71% |
-| AN-139: 100 mm loop vs plane distance, ratio to 0.12 mm (none / 1.5 / 0.5 / 0.27) | 14.4 / 3.2–4.1 / 1.77 / 1.61 | 17.5 / 6.2 / 3.0 / 1.9 (3 mm trace; measured curve flatter, geometry and fixture unknown) |
+| SNVA803 ~20 mm² lateral, plane under | 1.0–1.1 nH (18–24 mm², plane 0.1 mm) | matches |
+| SNVA803 vertical "2 mm²" | 0.27–0.46 nH (h 0.1–0.2 mm) | matches |
+| EPC internal vertical vs best conventional | 71% lower | EPC ~65% |
+| EPC vertical loop, 31 → 62 mil board | +71% | EPC up to +80% |
+| AN-139 100 mm loop vs plane distance, ratio to 0.12 mm (none / 1.5 / 0.5 / 0.27) | 17.5 / 6.2 / 3.0 / 1.9 (3 mm trace) | measured curve flatter; geometry and fixture unknown |
 
 **Scaling laws** [C, `pw_peec.py scaling`, `pw_sheet.py terminal`]:
 - **Overlapped or vertical loops:** L ≈ μ0·h·N□ + via and terminal terms. For a plate of length l between terminal rows of width a, L stops falling once the plate is wider than about a + l:
@@ -68,7 +56,7 @@ PEEC filaments with a perfect image plane (inductive limit), validated against c
 - EPC's >4% efficiency loss for 0.4 → 2.9 nH at 1 MHz: ½·ΔL·I²·f at an assumed 20 A gives 0.5 W, about half of 4% of 24 W; overshoot-driven slower switching plausibly explains the rest [I].
 - Snubber: R ≈ √(L/C_oss) and C ≈ 3–4 × C_oss, so extracted L sets the BOM.
 
-### 2. Vias: parallel count, pitch and current sharing
+## 2. Vias: parallel count, pitch and current sharing
 
 Spreading inductance into a plane pair (d = 0.1 mm) from an N-via cluster to a ring 10 mm away [C, `pw_sheet.py cluster`; one via checks against (1/2π)·ln(R/r) within 2%]:
 
@@ -86,7 +74,7 @@ Spreading inductance into a plane pair (d = 0.1 mm) from an N-via cluster to a r
 
   MLCCs at 100 MHz (0.5 nH each) show the same 10.1 vs 1.8; 10 mΩ FETs give 2.1 vs 1.16. What matters is bus impedance comparable to device impedance.
 
-### 3. Decoupling capacitors: mounting, orientation, spreading
+## 3. Decoupling capacitors: mounting, orientation, spreading
 
 0402 on the top side, plane at depth h, cap body modelled as a bar [C, `pw_peec.py caps`]. Values in nH:
 
@@ -97,7 +85,7 @@ Spreading inductance into a plane pair (d = 0.1 mm) from an N-via cluster to a r
 | 2 vias per pad, beside the pads | 0.44 | 0.56 | 0.88 |
 | Via-in-pad / 2 per pad | 0.40 / 0.40 | 0.57 / 0.53 | 1.09 / 0.92 |
 
-- **Against Axotron** (h ≈ 0.3 mm: 0.63 tracks, 0.44 via-in-pad, [decoupling-pdn](../rules/decoupling-pdn.md)) the ranking matches; absolute values run 1.3–2× high because the body is a solid bar.
+- **Against Axotron** (h ≈ 0.3 mm, values in [decoupling-pdn](../rules/decoupling-pdn.md#mounting-inductance-data)) the ranking matches; absolute values run 1.3–2× high because the body is a solid bar.
 - **Side vias equal via-in-pad** at no plugging cost, and win once the plane is deep.
 - **Two caps at 1 mm pitch** (end vias):
 
@@ -109,17 +97,17 @@ Spreading inductance into a plane pair (d = 0.1 mm) from an N-via cluster to a r
   This quantifies Archambeault's "alternate power/ground pins", which matters most on deep planes and 2-layer boards.
 - **Plane-pair spreading** [C, `pw_sheet.py spread`; 100 × 100 mm plane, Peaceman sub-cell vias r = 0.15 mm]: 1.12/1.34/1.67/1.98 squares at 5/10/25.4/50 mm, L = 105/126/157/187 pH at d = 75 µm.
   - It tracks the infinite-plane (1/π)·ln(D/r) until the edges intervene.
-  - It reproduces Archambeault's 154 pH at 1 inch but not 545 pH at 10 inches (276 pH at 9 inches on a 10 × 10 inch plane; anchor geometry unknown).
-- **Plane-pair capacitance** is 38 pF/cm² at 0.1 mm (εr 4.3). Target impedance, flat profiles and the 1.57×Z_t peak criterion: [decoupling-pdn](../rules/decoupling-pdn.md).
+  - It reproduces Archambeault's 1-inch value (157 vs 154 pH) but not the 10-inch one (276 pH at 9 inches on a 10 × 10 inch plane vs 545 pH; anchor geometry unknown; values in [decoupling-pdn](../rules/decoupling-pdn.md#mounting-inductance-data)).
+- **Plane-pair capacitance** is 38 pF/cm² at 0.1 mm (εr 4.3), from ε·A/d. Target impedance, flat profiles and the peak criterion are rule values: [decoupling-pdn](../rules/decoupling-pdn.md#target-impedance-and-beyond).
 
-### 4. PDN islands and IR drop
+## 4. PDN islands and IR drop
 
 - **One solve per rail.** Feed the regulator pad and sink the loads to get the IR drop (R_s·N□) and the current-density map. The same mask with the IC as sink and d as the plane spacing gives every candidate decap site's spreading L(x) = μ0·d·N□(x). Decap reach is a screened length of 4–24 mm ([cross-domain-lessons](cross-domain-lessons.md)).
-- **Shape islands from the field.** In a full pour, 50% of the loss sits in 19% of the area. Trimming 28% of the area costs +9% R ([power-copper §3](power-copper.md#3-trace-vs-pour-vs-plane)); optimised shapes: [copper-shape-synthesis](copper-shape-synthesis.md). DC- and HF-optimal shapes coincide over an unbroken plane and differ across slots.
+- **Shape islands from the field:** loss concentrates in a small share of a full pour, so trimming is cheap ([power-copper §3](power-copper.md#3-trace-vs-pour-vs-plane)); optimised shapes: [copper-shape-synthesis](copper-shape-synthesis.md). DC- and HF-optimal shapes coincide over an unbroken plane and differ across slots.
 - **Grid economics.** A via of radius r inside a grid cell Δx adds (1/2π)·ln(0.198·Δx/r) squares (Peaceman's well model from reservoir simulation), so a 1 mm grid can model 0.3 mm vias on a whole board [C].
-- **Via fields are necks:** antipads multiply plane R by 1.8–5× (D/p 0.6–0.9). Check every BGA and connector field on the rail path ([power-copper §3](power-copper.md#3-trace-vs-pour-vs-plane)).
+- **Via fields are necks** (antipad multiplier table: [power-copper §3](power-copper.md#3-trace-vs-pour-vs-plane)): check every BGA and connector field on the rail path.
 
-### 5. Kelvin sensing and sense loops
+## 5. Kelvin sensing and sense loops
 
 The measured voltage is V = φ(s₁) − φ(s₀) − jω∫A·dl along the sense wires, with φ the PEEC node potential and A from all currents. 2512 shunt with its resistive element 0.3 mm above top copper, plane 0.2 mm below [C, `pw_peec.py kelvin`]:
 
@@ -143,9 +131,9 @@ The measured voltage is V = φ(s₁) − φ(s₀) − jω∫A·dl along the sens
   | 30 mm² (3 mm wide) | 17 mV | 0.43 mV |
   | 1 mm² (0.1 mm wide) | 1.5 mV | 0.02 mV |
 
-  The fall-off is roughly 1/d³ over a plane, so distance and loop area are worth more than the vendor 1–2 mm keep-outs suggest; the budget for a 20 mV shunt signal decides.
+  The fall-off is roughly 1/d³ over a plane, so distance and loop area are worth more than the vendor 1–2 mm keep-outs suggest; the budget for a 20 mV shunt signal decides. Replace fixed keep-outs with a victim ledger: M from each high-di/dt loop to each sensitive loop (FB, sense, gate return, reference) against a mV budget. Kelvin critic: compute the routed sense path's L_err and emit τ_RC = L_err/R as a BOM constraint.
 
-### 6. Gate loops and common-source inductance
+## 6. Gate loops and common-source inductance
 
 - **Gate loop** 10 mm long, 0.5 mm traces [C, `pw_peec.py gate`]:
   - split traces on one layer with a 1 mm / 0.2 mm gap: 5.9 / 4.7 nH;
@@ -155,7 +143,7 @@ The measured voltage is V = φ(s₁) − φ(s₀) − jω∫A·dl along the sens
   - 18.8 nH for 5 Ω and 3 nF (Si): generous.
 - **Common-source inductance** couples the power loop into the gate loop: 0.2 nH × 5 A/ns = 1 V off the gate drive. A Kelvin source net tie removes it ([gate-drive-bootstrap](../rules/power/gate-drive-bootstrap.md)).
 
-### 7. Eddy currents under inductors (the contested rule)
+## 7. Eddy currents under inductors (the contested rule)
 
 The winding is modelled as an air-coil equivalent (radii 1.5–3 mm, 0.5–3.5 mm above the board) over one copper layer, using the Dodd–Deeds spectral solution. The perfect-conductor limit equals −M(image) to 4 digits [C, `pw_eddy.py`].
 
@@ -180,19 +168,10 @@ The winding is modelled as an air-coil equivalent (radii 1.5–3 mm, 0.5–3.5 m
   - MPS: copper "somewhat reduces the effective inductance of the coil (typically less than 5%)", and a plane on the component side keeps the field off the bottom and cables ([Hedrich](https://media.monolithicpower.com/mps_cms_document/2/0/2019-aip-pcb-design-for-low-emi-dc-dc-converters_r1.0.pdf) [P]).
   - A grounded sheet raised peak current ~8% only with an unshielded inductor ([MPS article via repost](https://www.linkedin.com/pulse/beneficial-lay-copper-under-dc-power-supply-livia-qiu) [S]).
   - A usenet bench test: 22 µH SRU1048 at 500 kHz, −3%, and −1.5% with a 10 mm hole ([thread](https://www.electronics-related.com/showthread/sci.electronics.design/524048-3.php) [S]).
-- **Resolution.** Rohm's "no ground under the inductor" protects L and Q for open-flux cores close to a plane. TI's "keep L2, clear top copper" limits SW → VOUT capacitance. MPS's "copper under the coil" buys H-field shielding. They are one trade with different weights. Default to a solid plane. Never cut a body-sized hole: its rim still carries eddy current, so loss rises 1.05–1.4× and most shielding is lost. Only a cut-out ≥ 2–3× the winding radius cuts loss and ΔL (to 3–50%, 0.5–2 MHz), and it unshields lower layers; consider it only for open drum cores within ~0.5 mm, at high ripple, with no EMI requirement [C, [da_inductor_cutout.py](../../../tools/research/physics/da_inductor_cutout.py)].
+- **Resolution.** Rohm's "no ground under the inductor" protects L and Q for open-flux cores close to a plane. TI's "keep L2, clear top copper" limits SW → VOUT capacitance. MPS's "copper under the coil" buys H-field shielding. They are one trade with different weights. Default to a solid plane. Never cut a body-sized hole: its rim still carries eddy current, so loss rises 1.05–1.4× and most shielding is lost. Only a cut-out ≥ 2–3× the winding radius cuts loss and ΔL (to 3–50%, 0.5–2 MHz), and it unshields lower layers; consider it only for open drum cores within ~0.5 mm, at high ripple, with no EMI requirement [C, [da_inductor_cutout.py](../../../tools/research/physics/da_inductor_cutout.py)]. Copper-under-inductor selector: inputs shield class, ripple, f_sw, plane depth, cut-out radius; outputs ΔL and P_eddy; default keep the plane; never offer a body-sized cut-out.
 
-## Recommendations for our system
+## Open questions
 
-- **N7 objective.** Replace area with PEEC nH (ms per evaluation, image plane). Add a terminal-width term, layer choice (lateral, vertical, internal-vertical) and symmetric split cells as a template.
-- **N8 objective.** Optimise via-cluster spread and decap orientation, with site L from PEEC and spreading L from a one-off Laplace map per rail. Count vias for DC ampacity separately.
-- **Victim ledger.** M from each high-di/dt loop to each sensitive loop (FB, sense, gate return, reference), checked against a mV budget, replaces fixed keep-outs.
-- **Kelvin critic.** Compute the routed sense path's L_err and emit τ_RC = L_err/R as a BOM constraint.
-- **Copper-under-inductor selector.** Inputs: shield class, ripple, f_sw, plane depth, cut-out radius. Output: ΔL and P_eddy. Default: keep the plane; never offer a body-sized cut-out.
-
-## Conflicts and open questions
-
-- **[hot-loops](../rules/power/hot-loops.md) tiers in mm²** are soft scores; area is a poor proxy over a close plane, so prefer nH.
 - **f_ext values and the cut-out model are assumptions** (the latter axisymmetric, air-core). Calibrate with one LCR measurement per inductor family, with and without plane and cut-out, or a magnetostatic FEM.
 - **The Kelvin L_err assumes the taps sit at the element ends.**
 - **Licences.** FastHenry is non-commercial and Ki-PIDA AGPL ([open-solvers](open-solvers.md)); our PEEC and Laplace solvers (GPL-3.0-or-later), padne and KiPI (GPL-3.0) are safe.
@@ -204,4 +183,4 @@ The winding is modelled as an air-coil equivalent (radii 1.5–3 mm, 0.5–3.5 m
 - C. V. Dodd, W. E. Deeds, J. Appl. Phys. 39(6):2829 (1968), [doi:10.1063/1.1656680](https://doi.org/10.1063/1.1656680) [S]; A. E. Ruehli, IBM J. R&D 16(5), 1972 [S]; F. W. Grover, *Inductance Calculations*, 1946 [S]; D. W. Peaceman, SPE J. 18(3), 1978 [S]
 - Anchors via [hot-loops](../rules/power/hot-loops.md) and [decoupling-pdn](../rules/decoupling-pdn.md): TI SNVA803, EPC WP010, AN-139, Axotron, Archambeault [P per those docs]
 
-See also: [power-copper](power-copper.md), [copper-shape-synthesis](copper-shape-synthesis.md), [open-solvers](open-solvers.md), [fields-si-emi](fields-si-emi.md), [physics-critics](physics-critics.md), [../rules/decoupling-pdn.md](../rules/decoupling-pdn.md), [../rules/power/current-sense-kelvin.md](../rules/power/current-sense-kelvin.md), [power ideas](../../ideas/physics-first/power.md)
+See also: [copper-shape-synthesis](copper-shape-synthesis.md), [open-solvers](open-solvers.md), [fields-si-emi](fields-si-emi.md), [physics-critics](physics-critics.md), [../rules/decoupling-pdn.md](../rules/decoupling-pdn.md), [../rules/power/current-sense-kelvin.md](../rules/power/current-sense-kelvin.md), [power ideas](../../ideas/physics-first/power.md)

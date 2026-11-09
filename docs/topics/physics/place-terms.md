@@ -1,11 +1,7 @@
 # Place terms: what a placement spends, estimated fast
 
-**TL;DR**
-- **One currency.** Each structure reports spend over allocation, u = v/a, priced by φ(u): linear below budget, a quadratic barrier above, logarithmic beyond 10×. Allocations are the brief's budgets or documented E5 priors.
-- **Loops.** Partial inductances with plane images are within 5% (median; max 9.4%) of PEEC on 324 routed loops. Straight hops are stretched by an expected detour 1 + c√ℓ fitted on 69 human boards' copper; routed/estimate is then 1.00 for hot loops and surge paths (like for like), 1.07 for decaps [C].
-- **Other terms** (median error against a finer solver) [C]: coupling 10–11%, crystal C′ 4%, thermal fin 7%, ESD path 3.4%.
-- **Human boards (112).** Shuffles score worse than the human in 87–99% for every term but thermal (41%; 93% counting all terms). Decap budgets sit at the careful-designer loop: median u 0.82, 35% over, 6% beyond 2× [C].
-- **Speed.** `delta` on sparkfun-xrp (387 parts): median 40 µs, p90 137 µs (was 131 µs, 2.1 ms); over 82 boards, median 22 µs, p90 70 µs [C].
+Scope: the fast placement physics terms of `kae.physics.place_terms` (one currency u = v/a with barrier φ; loop, decap, coupling, crystal, thermal, world terms), their closed forms, validation, human-board results and speed. Not here: exact physics instead -> [exact-physics-options](exact-physics-options.md); the brief -> [comprehension](comprehension.md); PDN and loop physics -> [pdn-and-commutation](pdn-and-commutation.md).
+Keys: place terms, Terms(board, brief), total, delta, breakdown, spend, allocation, u = v/a, φ(u) barrier, β = 4, u_sat = 10, loop inductance images, Grover, GMD, Hammerstad–Jensen strip self term, detour 1 + c√ℓ, decap clusters, n_IC·Z_t, L_c, coupling quadrupole, crystal pulling, thermal fin K0, heat balance theorem, cable CM, ESD surge path 5.3 nH, human-board perturbation, pt_validate_kernels.py, pt_routed_calib.py, pt_human_perturb.py
 
 Code: [`kae.physics.place_terms`](../../../kae/src/kae/physics/place_terms.py) (`Terms(board, brief)`: `total`, `delta`, `breakdown`, `parts`, `structures_of`); kernels [`_kernels.py`](../../../kae/src/kae/physics/_kernels.py); priors [`priors.py`](../../../kae/src/kae/physics/priors.py). The brief is [comprehension](comprehension.md). Tags: [C] computed by the scripts under Sources; [S] secondary.
 
@@ -68,15 +64,15 @@ The detour grows with distance (decap hops 1.13 below 2 mm, 1.67 beyond 15 mm). 
 
 Like for like uses the reference's definitions: a cell loop through the brief loop's capacitor only (Terms: owned caps in parallel, 1.46), a protector via through the whole board (Terms: to the plane, 1.44), a crystal pulled by the whole trace capacitance (Terms: (ΔC1 + ΔC2)/4, 4.0).
 
-Outliers were estimator faults: an outer pour taken for the return plane (bldcm U2) and a hop across an outline notch (doorman D3).
+Outliers were estimator faults: an outer pour taken for the return plane (bldcm U2, 3.8 → 1.2) and a hop across an outline notch that found no plane (doorman D3, 0.15 → 0.52).
 
 ## 3. Decoupling (b)
 
 - *Clusters.* Power pins cluster at 1.6 mm, each returning through its nearest ground pin. Parts without one (inductors, diodes, fuses) close through the plane under the power pin; split_supply returns on V−.
 - *Pairing* follows the brief. With 'pin', the pin's paired caps and the spec's other owned caps act in parallel, so the nearest dominates. With 'nearest_pin', each cap is charged its loop to the IC's nearest pin cluster at the current poses. Unowned caps (caps_p < 0.5) and 'nearest_load' caps go to the nearest load pin on the rail (in a rail group, of its loads).
-- *Pours.* When rail and ground zones join the cap's pads to the power pin and the return at the current poses, L = L_mount,cap + L_mount,IC + (μ0d/π)·ln(D/r), mountings down to the nearer layer of the pair. Inner pairs first, then thinner dielectrics; else straight hops. The spreading term matches a sheet solve (0.4% median) with r the via radius (0.15 mm); the code's r = 0.3 (`pour_r_eff`) reads 17–27% low at 2–10 mm, A/B pending [C]. On 41 routed decaps in pour mode, routed/estimate is 1.04, against 0.94 for straight hops [C].
-- *Budgets.* An IC's transient splits over all its power pins on every rail, so each pin may present n_IC·Z_t (Z_t = 5%·V/I) up to the 100 MHz handover to the package; a 100 nF 0402 (ESL 0.5 nH) meets that while L_loop ≤ L_pin − ESL (3–8 nH per MCU pin). The budget is held between L_c, the loop with the capacitor beside its pin (four rotations, evaluated on the board), and 2L_c: u = 1 marks careful practice, since the loop also carries HF current that radiates. Stability (VCAP, LDO output) and module bulk capacitors get max(10 nH, L_c): at the regulator's crossover (≤ 1 MHz) 10 nH adds 63 mΩ, below LDO ESR windows (0.1–1 Ω).
-- *Human boards* (1,471 structures): median u 0.82 (p10 0.44, p90 1.61). Load caps are 39% over budget (median u 0.88), VCAP bypass 23% (64% and u 3.2 under the HF rule), regulator outputs 2%, converter outputs 5%.
+- *Pours.* When, at the current poses, a rail zone joins the power pin and the cap's rail pad and a ground zone joins the cap's ground pad and the return, L = L_mount,cap + L_mount,IC + (μ0d/π)·ln(D/r), mountings down to the nearer layer of the pair. Inner pairs come first (an outer pour under the parts is perforated by their pads), then thinner dielectrics; otherwise the straight-hop loop applies, for near and far caps alike. The spreading term matches a sheet solve to 0.4% median with r the via radius (0.15 mm); the code's r = 0.3 (`pour_r_eff`) reads 17–27% low at 2–10 mm, A/B pending [C]. On 41 routed decaps in pour mode, routed/estimate is 1.04, against 0.94 for straight hops [C].
+- *Budgets.* An IC's transient splits over all its power pins on every rail, so each pin may present n_IC·Z_t (Z_t = 5%·V/I) up to the 100 MHz handover to package and die capacitance; before, a 100-pin MCU's lone VDDA pin carried all 300 mA (0.9 nH). A 100 nF 0402 (ESL 0.5 nH) meets that target while L_loop ≤ L_pin − ESL, 3–8 nH per MCU pin, so it rarely binds. The budget is therefore held between L_c, the loop with the capacitor beside its pin (four rotations, evaluated on the board), and 2L_c: u = 1 marks careful practice, since the loop also carries HF current that radiates and couples. Stability capacitors (VCAP, LDO output) and module bulk capacitors get max(10 nH, L_c): they need C and ESR at the regulator's crossover (≤ 1 MHz), where 10 nH adds 63 mΩ, below LDO ESR windows of 0.1–1 Ω.
+- *Human boards:* the budget sits at careful practice (median u 0.82) -> [perturbation study](../../research/placement/kae-physics-terms.md#human-board-perturbation-study).
 
 ## 4. Coupling (c)
 
@@ -108,43 +104,11 @@ C′(w, h, εr) times the XIN and XOUT nets' half-perimeters, stretched by 1 + 0
 
 ## 8. Human boards: does the physics prefer the human placement? [C]
 
-On the 112 kaebench boards, each term's parts get three 1–5 mm translations, three rotations and 20 random shuffles. Share is worse/(worse + better) over *material* moves (≥ 1% of an allocation) of *credible* structures (some component's hops all ≤ 15 mm); brackets give decided counts.
-
-| Term | Boards | Translate worse | Rotate worse | Shuffle worse | Shuffle, all terms |
-|---|---|---|---|---|---|
-| decap | 78 | 86% (2574) | 82% (1640) | 97% (1485) | 92% |
-| crystal | 24 | 81% (165) | 91% (147) | 99% (480) | 98% |
-| antenna | 6 | 83% (171) | 77% (87) | 98% (112) | 99% |
-| commutation | 30 | 80% (261) | 72% (188) | 99% (562) | 88% |
-| power path | 14 | 75% (24) | 64% (14) | 95% (140) | 85% |
-| ESD | 27 | 57% (284) | 78% (221) | 97% (434) | 92% |
-| world CM | 32 | 66% (103) | 46% (80) | 87% (617) | 91% |
-| coupling | 32 | 59% (822) | 62% (530) | 90% (640) | 95% |
-| thermal | 52 | 44% (378) | – | 41% (899) | 93% |
-
-Only thermal shuffles beat the human, by spreading heat. Where human boards spend their budgets (over-budget share before the routed-copper calibration and decap priors in brackets; then the share over half and over twice the budget):
-
-| Term | Structures | Median spend (p90) | Median u | Over budget | > 0.5× | > 2× |
-|---|---|---|---|---|---|---|
-| commutation | 63 | 2.7 (9.5) nH | 1.41 | 68% (57%) | 75% | 32% |
-| power path | 21 | 8.7 (27) nH | 0.34 | 19% | 33% | 14% |
-| decap | 1471 | 2.9 (7.7) nH | 0.82 | 35% (29%) | 87% | 6% |
-| coupling | 243 | 0.24 (32) mV | 0.18 | 26% (25%) | 37% | 21% |
-| crystal | 29 | 2.9 (7.7) ppm | 0.58 | 24% (21%) | 62% | 7% |
-| thermal (excess) | 284 | 7.6 (36) K | 0.41 | 29% (27%) | 45% | 11% |
-| ESD | 487 | 4.7 (31) nH | 0.89 | 46% (28%) | 74% | 21% |
-| world CM | 272 | 0.0001 (0.11) µA | 0.00002 | 0.4% (0.4%) | 0% | 0% |
-| antenna | 25 | 0.84 (3.8) dB | 1.68 | 68% (68%) | 80% | 44% |
-
-On the same briefs, detours alone raise ESD from 28% to 46%, hot loops 62% to 68%, crystals 21% to 24%. Decaps fell from 29% to 11% under the per-IC split and stability prior, then rose to 35% under the careful-layout budget; the share beyond 2× stayed at 6%.
-
-Of 2,321 material better-than-human local moves, the estimator or brief explains 506 (22%): *assignment* 274 (the part sits > 15 mm from every human partner: bulk caps paired as HF, far protectors), *unroutable* 135 (no single-layer route, mostly BGA escapes) and *route* 97 (no longer better once grid-routed around other nets' pads). The human explains 1,815: *trade-offs* 920 that worsen other physics or wirelength (coupling 393, thermal 181) and *slack* 895 that worsens nothing (decap 481).
+Perturbation study on 112 boards (shuffles worse than human for every term but thermal; where human boards spend their budgets; 2,321 better-than-human moves triaged) -> [kae-physics-terms](../../research/placement/kae-physics-terms.md#human-board-perturbation-study).
 
 ## 9. Performance [C]
 
-Caches are invalidated per sub-term. Every coupling sub-term a move touches goes to one kernel call; cable pickup beyond its window is exactly zero; a thermal move updates one column and row. A cap serving the nearest of n loads caches each candidate loop against its parts' pose ids, so a load move that keeps the cap's nearest load costs only the search.
-
-`delta` on random single-part moves (numba, shared 4-core host): sparkfun-xrp (87 physics parts) median 40 µs, p90 137 µs, p99 0.68 ms, from 131 µs, 2.1 ms and 7.4 ms. Over 29,040 moves on 82 boards: median 22 µs, p90 70 µs, p99 0.32 ms (slowest p90 0.36 ms, buspirate5). `delta` equals the `total` difference to 2.4e-7. Construction: 9 / 35 ms median on splits B / C (max 0.39 s), plus 0.5–0.8 s once for numba. The Python fallback is about 12× slower.
+Caches are invalidated per sub-term. Every coupling sub-term a move touches goes to one kernel call; cable pickup beyond its window is exactly zero; a thermal move updates one column and row. A cap serving the nearest of n loads caches each candidate loop against its parts' pose ids, so a load move that keeps the cap's nearest load costs only the search. Timings -> [kae-physics-terms](../../research/placement/kae-physics-terms.md#delta-speed).
 
 ## 10. Priors that matter, and open questions
 
@@ -155,4 +119,4 @@ Within a term rankings ignore the budget (u is linear below it); budgets balance
 - Grover, *Inductance Calculations* [S]; Ruehli 1972 [S]; Hammerstad and Jensen 1980 [S]; Ott, *EMC Engineering* [S]; Abramowitz and Stegun 9.8 [S].
 - Scripts: [pt_validate_kernels.py](../../../tools/research/physics/pt_validate_kernels.py), [pt_routed_calib.py](../../../tools/research/physics/pt_routed_calib.py), [pt_human_perturb.py](../../../tools/research/physics/pt_human_perturb.py), [pt_grid_route.py](../../../tools/research/physics/pt_grid_route.py); solvers [pw_peec.py](../../../tools/research/physics/pw_peec.py), [pw_sheet.py](../../../tools/research/physics/pw_sheet.py), [fe_field2d.py](../../../tools/research/physics/fe_field2d.py), [tm_board_thermal_fv.py](../../../tools/research/physics/tm_board_thermal_fv.py).
 
-See also: [pdn-and-commutation](pdn-and-commutation.md), [fields-si-emi](fields-si-emi.md), [thermal-physics](thermal-physics.md), [lens-sy](lens-sy.md), [schematic-to-physics](schematic-to-physics.md), [joint-place-route](joint-place-route.md), [physics-in-the-loop-optimization](physics-in-the-loop-optimization.md), [exact-physics-options](exact-physics-options.md) (using exact physics instead).
+- Related: [fields-si-emi](fields-si-emi.md), [thermal-physics](thermal-physics.md), [lens-sy](lens-sy.md), [schematic-to-physics](schematic-to-physics.md), [joint-place-route](joint-place-route.md), [physics-in-the-loop-optimization](physics-in-the-loop-optimization.md).

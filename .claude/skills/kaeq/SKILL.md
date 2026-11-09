@@ -29,5 +29,12 @@ Default owner is `repo@branch`; failures print `repo@branch:sha`.
 Workflow: submit -> start `kaeq wait` in the background -> keep working. When it exits
 (1 = problems printed, 0 = all done, 2 = timeout: just call it again), fix what it
 reports, `kaeq retry`, and start `kaeq wait` again. Estimate `--cpus`/`--mem` honestly:
-a job whose RSS exceeds 1.5x `--mem` is killed and auto-requeued with a corrected value.
+`--mem` is a job's starting memory grant. A job that needs more is not killed: a timed job gets it first (a batch job makes room); a batch job pauses at its
+grant, frozen, until the queue can give it more (1 GB or 25%, more when much is free) and gets it back when it
+frees memory, so
+declare the typical need, not the worst case. Jobs are `--class batch` by default: packed tight, and may be paused (frozen, their memory compressed) when
+memory runs short. Use `--class timed` for timing, benchmark, optimization and speed work, whose results depend on
+the time it gets: never paused, CPU priority over batch jobs. (kaeres experiment runs are submitted as timed.) Time frozen does not count towards `--timeout`;
+`kaeq usage` shows per owner the time active, frozen, CPU used and work lost to requeues. (Without the cgroup memory controller, the old rule applies:
+RSS over 1.5x `--mem` is killed and requeued with a corrected value.)
 Do not use `--retries` for deterministic test failures. Details: `tools/kaeq/README.md`.

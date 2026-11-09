@@ -1,114 +1,42 @@
 # Research: routing BGAs and dense regions to 100%, or proving we can't
 
-**Status:** literature and internet survey, 2026-10-31. Nothing here is implemented or measured yet. Every gain below is a hypothesis [I].
+Scope: ranked plan for closing open connections in BGA ball fields and proving infeasibility under the board's own rules. Not here: method detail -> [BGA survey](bga-routing-survey.md), [dense-region math](routing-cross-domain-and-math.md), [certificates](routing-infeasibility-certificates.md).
+Keys: BGA, dense region, open connections, ring cut, gap cut, C0, C2, C3, C4, C5, Yan–Wong escape planner, MAPF-LNS2 window repair, convergence kit, floating terminals, duality bound, via sites as variables, TritonRoute clips, pair-aware escape, pseudo-pins, rules-escape, work item (1), work item (2)
 
-The question: our remaining open connections cluster in the main BGA's ball field and escape ring. Human layouts on the same boards:
-- escape about 2× as many balls;
-- use the bottom layer more;
-- route less inside the ball field.
+**Status:** literature and internet survey, 2026-10-31. Nothing implemented or measured; every gain is a hypothesis [I].
 
-Which methods would close these connections? And when a board's own rules make routing impossible, how do we prove it and compute the relaxation that would fix it?
-
-| Doc | Contents |
-|---|---|
-| [bga-routing-survey](bga-routing-survey.md) | EDA escape models in implementable detail: Yan–Wong network, MonoSAT encoding, layer bounds, diff-pair and variable-rule escape, ML 2023–26. Commercial tools, patents and vendor rules |
-| [routing-cross-domain-and-math](routing-cross-domain-and-math.md) | Convergence in FPGA routers, VLSI detailed routing, global routing, RDL, MAPF-LNS2 and other domains; disjoint-paths, Okamura–Seymour, river-routing and homotopy theory |
-| [routing-infeasibility-certificates](routing-infeasibility-certificates.md) | Capacity model from KiCad rules; a six-tier certificate ladder; relaxations as KiCad edits; reporting to the LLM |
-
-Placement: these docs assume they sit next to the existing `docs/topics/routing/` docs and link them by sibling path.
+Problem: our remaining open connections cluster in the main BGA's ball field and escape ring. Human layouts on the same boards escape ~2× as many balls, use the bottom layer more, route less inside the ball field. Question: which methods close these connections, and when the board's own rules make routing impossible, how to prove it and compute the fixing relaxation.
 
 ## What was searched
 
-**EDA literature.**
-- ICCAD, DAC, TCAD, ISPD, ASP-DAC, TODAES and ISQED, 2000–2026: the Wong, Ozdal, Yan, Kong, Chang, Ho, Lee, Lin, Chen and Dong lines.
-- Read in full: Tan Yan's thesis, Bayless's thesis, Wang–Shi–Cheng ICCAD'06, Luo–Wong ASP-DAC'08, Tomioka–Takahashi ASP-DAC'08 and GPCB.
-
-**Commercial practice.**
-- Tools: Allegro (SPECCTRA fanout, AiBT, GRE, X AI), Xpedition (Sketch Router), Altium (Fanout, ActiveRoute), Zuken Dragon EX, Quilter, DeepPCB, JITX and Flux.
-- Patents from Cadence and Mentor/Siemens.
-- Vendor guides: AMD UG1099, Intel AN 114 (snippets only) and IPC-2226.
-
-**Neighbouring domains.**
-- VPR, RWRoute and HUS, nextpnr router2; TritonRoute, its WXL variant, OpenROAD drt and Dr. CU.
-- GRIP, BonnRoute, FastRoute, NTHU-Route, NCTU-GR, CUGR and GPU global routers; InFO and RDL routing.
-- MAPF-LNS2 and CBS symmetry reasoning.
-- Optical RWA, railway path allocation, robotics braids, quantum and microfluidic wiring.
-
-**Math.**
-- Disjoint paths: Robertson–Seymour, Schrijver, Cygan et al.
-- Okamura–Seymour and its extensions; flow–cut gaps; the Japanese theorem.
-- Cole–Siegel, Leiserson–Maley and Maley; Schrijver's homotopic theorems.
-- Channel density and flux; book embedding, circle and permutation graphs; braids.
-
-**Limits.**
-- Several primary texts were reached only as abstracts and are tagged [S]: the Liu–Chang matching-based escape (DAC'23/TCAD'25), Lei–Mak, NeuroEscape, CRoute, NCTU-GR and Intel AN 114.
-- Nothing was fetched from robots-restricted hosts.
+- EDA literature: ICCAD, DAC, TCAD, ISPD, ASP-DAC, TODAES, ISQED 2000–2026 (Wong, Ozdal, Yan, Kong, Chang, Ho, Lee, Lin, Chen, Dong lines). Read in full: Tan Yan's thesis, Bayless's thesis, Wang–Shi–Cheng ICCAD'06, Luo–Wong ASP-DAC'08, Tomioka–Takahashi ASP-DAC'08, GPCB.
+- Commercial: Allegro (SPECCTRA fanout, AiBT, GRE, X AI), Xpedition (Sketch Router), Altium (Fanout, ActiveRoute), Zuken Dragon EX, Quilter, DeepPCB, JITX, Flux; Cadence and Mentor/Siemens patents; AMD UG1099, Intel AN 114 (snippets only), IPC-2226.
+- Neighbouring domains: VPR, RWRoute, HUS, nextpnr router2; TritonRoute, WXL, OpenROAD drt, Dr. CU; GRIP, BonnRoute, FastRoute, NTHU-Route, NCTU-GR, CUGR, GPU global routers; InFO/RDL; MAPF-LNS2, CBS symmetry; optical RWA, railway path allocation, robotics braids, quantum and microfluidic wiring.
+- Math: disjoint paths (Robertson–Seymour, Schrijver, Cygan et al.); Okamura–Seymour and extensions; flow–cut gaps; the Japanese theorem; Cole–Siegel, Leiserson–Maley, Maley; Schrijver homotopic theorems; channel density and flux; book embedding, circle and permutation graphs; braids.
+- Limits: reached only as abstracts [S]: Liu–Chang matching-based escape (DAC'23/TCAD'25), Lei–Mak, NeuroEscape, CRoute, NCTU-GR, Intel AN 114. Nothing fetched from robots-restricted hosts.
 
 ## Top 10 ideas, ranked for our case
 
-Ranking basis: expected effect on a KiCad board under its own DRC rules, with Freerouting plus our numba grid router, against the effort.
+Ranking: expected effect on a KiCad board under its own DRC rules, with Freerouting plus our numba grid router, against effort.
 
-1. **Ring and gap cut certificates from the board's rules (C0).** Effort 3–5 days; new module, extends `kae.route.blocked`.
-   - Compute each gap's track capacity from the board's own widths, clearances and via sizes (formula in [certificates](routing-infeasibility-certificates.md#capacity-model-from-the-boards-own-rules)).
-   - Then compare, for every ring and every row or column cut of each BGA, the nets that must leave against the slots available on all layers.
-   - It costs microseconds and is sound when capacities round up.
-   - It separates boards that are impossible under their rules from boards where our search failed, which is the first thing the controlling LLM needs.
-   - Its relaxation thresholds (track width, clearance, via size, layers) are closed-form.
-   - Validate it at once: every human layout that passes DRC must pass C0. That also exposes bugs in our capacity model.
-   - Add the Wang–Shi–Cheng and UG1099 layer estimates as context lines.
-2. **Escape planner on the Yan–Wong tile network, with its min cut (C2).** Effort 1.5–2 weeks; replaces the fixed dog-bone pre-pass on branch `rules-escape`, and is work item (1).
-   - Build the five-node network per signal layer with capacities from the rules, and treat dog-bone via sites as blocking.
-   - Run OR-Tools min-cost flow with the top layer for outer rings and the bottom layer, through a dog-bone, for the next rings, as humans and vendor guides do.
-   - Decompose the flow into per-ball escapes, write them as protected wires before Freerouting, and let Freerouting route from the escape ends.
-   - It directly targets "humans escape 2× more balls and use the bottom layer", it is exact for single-layer and via-in-pad escape, and the min cut is a named certificate.
-   - Relaxation what-ifs are reruns that take under a second.
-3. **Window repair as MAPF-LNS2, not global PathFinder.** Effort 1–2 weeks; reuses the `lastmile.py` and `critical_grid.py` A*, and replaces greedy rip-up inside BGA windows. This is work item (2).
-   - Route every window net with conflicts allowed.
-   - Then repeatedly re-plan 4–16 conflicting nets, picked adaptively from collision-graph components, the nets blocking a boxed-in pad, and random nets. Use lexicographic A* on (conflicts, cost).
-   - Accept only moves that do not raise the number of conflicting pairs.
-   - This gives the monotone progress our region negotiation lacked (a non-standard PathFinder variant: per-net history, every net re-routed each round, 20 rounds; see [pathfinder-negotiated-congestion](pathfinder-negotiated-congestion.md#conflicts-and-open-questions)). On MAPF instances where prioritized planning with restarts failed, it solved 300 agents in seconds.
-4. **Convergence kit, if PathFinder is kept.** Effort 2–4 days on top of item 3 or the planned window router.
-   - History-centric costs: nextpnr's constant present weight 5 and history 0.5, or the HUS switch from present ×2 to ×1.1 and history 1 to 2.
-   - Connection-based reroute, seeded shuffles, dynamic boxes, best-so-far state.
-   - A VPR-style log-linear predictor with a low floor, which stops non-converging runs and hands them to the certificates.
-   - These are shipped fixes for exactly the oscillation we saw.
-5. **Floating window terminals.** Effort 3–5 days.
-   - Fixed border crossings inherited from Freerouting can make a window infeasible by themselves.
-   - Model each net's crossing as an interval of the border on any allowed layer (one super-terminal), then re-stitch outside with the last mile.
-   - It is also required for window certificates to be sound for the whole board.
-6. **Duality lower bound from negotiation prices (C3 for free).** Effort 3–5 days once item 3 or 4 exists.
-   - After each negotiation round, compute each net's exact cheapest route under the current prices. GAMER-style row and column sweeps in numba suit this.
-   - If Σ costs exceeds Σ prices, the window is infeasible even fractionally (min-max resource sharing weak duality).
-   - The prices with the largest d·c name the bottleneck, and Σ d·Δc ≥ 1 − λ* bounds the relaxation needed.
-   - This turns "ran out of iterations" into a proof or into "keep going".
-7. **Via sites as variables (MonoSAT pattern) in CP-SAT, with assumption literals per rule (C5).** Effort 3–5 weeks; small or residual windows only.
-   - Encode via types from the stackup as blocking clauses, cell exclusivity and per-net flow.
-   - UNSAT gives a core over rule literals. MaxSAT, or CP-SAT minimising relaxation literals, gives the cheapest fix, for example via-in-pad on these balls or w = 0.09 in the courtyard.
-   - This is the only exact "why" with a minimal relaxation, but it is expensive. Use it after items 1–6 have narrowed the window.
-8. **TritonRoute-style clip schedule for large BGAs.** Effort 1–2 weeks; generalises item 3's window into tiles.
-   - Clips 6–10 ball pitches wide with offsets shifted per pass.
-   - Route, DRC and context boxes; pin-access via reservation for every ripped net.
-   - Decaying marker history, and a 3×3 cost portfolio on stubborn tiles.
-   - Use it when one window is too big to solve as a whole.
-9. **Fixed-topology cut test after Freerouting (C4).** Effort 1 week.
-   - Run the Cole–Siegel/Schrijver test per layer on the routed topology.
-   - If rules-level tiers C0–C3 pass and C4 fails, the fix is re-topologising (rip-up the named nets), not relaxing rules.
-   - It tells the pipeline which of items 3 and 7 to run, and names the cut.
-10. **Pair-aware escape and swap-aware planning.** Effort 1–2 weeks each.
-    - Yan–Wu–Ma–Wong's optimal single-pair escape routine (min-cost 2-flow to a merge tile) as a pair search in the last mile. Merged pairs count as one 2-track unit in capacities.
-    - Treat breakout endpoints as pseudo-pins (US 8,103,988), so that LLM-chosen pin, bank or bit swaps are evaluated on escape order.
-    - Use the LDS and circle-clique layer bounds to show what a swap saves.
+| # | Idea | Effort | Mechanism | Why |
+|---|---|---|---|---|
+| 1 | Ring and gap cut certificates from the board's rules (C0) | 3–5 d; new module, extends `kae.route.blocked` | Gap track capacity from board widths/clearances/via sizes ([formula](routing-infeasibility-certificates.md#capacity-model-from-the-boards-own-rules)); for every ring and every row/column cut of each BGA compare nets that must leave vs slots on all layers; add Wang–Shi–Cheng and UG1099 layer estimates as context lines | Microseconds; sound when capacities round up; separates "impossible under rules" from "our search failed"; closed-form relaxation thresholds (track width, clearance, via size, layers). Validate: every human layout passing DRC must pass C0 (also exposes capacity-model bugs) |
+| 2 | Escape planner on the Yan–Wong tile network with its min cut (C2) | 1.5–2 w; replaces fixed dog-bone pre-pass on branch `rules-escape`; work item (1) | Five-node network per signal layer, rule-derived capacities, dog-bone via sites blocking; OR-Tools min-cost flow, top layer for outer rings, bottom via dog-bone for next rings; decompose into per-ball escapes written as protected wires before Freerouting, which routes from escape ends → [survey](bga-routing-survey.md#escape-pipeline-for-kae) | Targets "humans escape 2× more balls and use the bottom layer"; exact for single-layer and via-in-pad; min cut = named certificate; relaxation what-ifs rerun in < 1 s |
+| 3 | Window repair as MAPF-LNS2, not global PathFinder | 1–2 w; reuses `lastmile.py`/`critical_grid.py` A*, replaces greedy rip-up inside BGA windows; work item (2) | Route all window nets with conflicts allowed; repeatedly re-plan 4–16 conflicting nets picked adaptively (collision-graph components, nets blocking a boxed-in pad, random); lexicographic A* on (conflicts, cost); accept only if conflicting pairs do not rise → [math § 5](routing-cross-domain-and-math.md#5-mapf-beyond-what-we-have) | Monotone progress our region negotiation lacked (a non-standard PathFinder variant: per-net history, every net re-routed each round, 20 rounds; [pathfinder](pathfinder-negotiated-congestion.md), Results 5); on MAPF it solved 300 agents in seconds where prioritized planning with restarts failed |
+| 4 | Convergence kit, if PathFinder is kept | 2–4 d on top of 3 or the window router | History-centric costs (nextpnr present 5, history 0.5; or HUS present ×2 → ×1.1, history 1 → 2); connection-based reroute; seeded shuffles; dynamic boxes; best-so-far state; VPR-style log-linear predictor with low floor handing non-converging runs to certificates → [math § 1](routing-cross-domain-and-math.md#1-fpga-routers-convergence-machinery) | Shipped fixes for the oscillation we saw |
+| 5 | Floating window terminals | 3–5 d | Each net's border crossing = interval of the border on any allowed layer (one super-terminal); re-stitch outside with the last mile | Fixed crossings inherited from Freerouting can alone make a window infeasible; required for window certificates to be sound for the whole board |
+| 6 | Duality lower bound from negotiation prices (C3 for free) | 3–5 d once 3 or 4 exists | After each round, each net's exact cheapest route under current prices (GAMER-style row/column sweeps in numba); Σ costs > Σ prices ⇒ infeasible even fractionally (min-max resource sharing weak duality); prices with largest d·c name the bottleneck; Σ d·Δc ≥ 1 − λ* bounds the needed relaxation | Turns "ran out of iterations" into a proof or "keep going" |
+| 7 | Via sites as variables (MonoSAT pattern) in CP-SAT with assumption literals per rule (C5) | 3–5 w; small/residual windows only | Via types from the stackup as blocking clauses, cell exclusivity, per-net flow; UNSAT core over rule literals; MaxSAT or CP-SAT minimizing relaxation literals gives the cheapest fix (e.g. via-in-pad on these balls, or w = 0.09 in the courtyard) | Only exact "why" with minimal relaxation; expensive, run after 1–6 narrow the window |
+| 8 | TritonRoute-style clip schedule for large BGAs | 1–2 w; generalizes 3 into tiles | Clips 6–10 ball pitches, offsets shifted per pass; route/DRC/context boxes; pin-access via reservation for every ripped net; decaying marker history; 3×3 cost portfolio on stubborn tiles | When one window is too big to solve whole |
+| 9 | Fixed-topology cut test after Freerouting (C4) | 1 w | Cole–Siegel/Schrijver test per layer on the routed topology | C0–C3 pass + C4 fails ⇒ re-topologize (rip up the named nets), not relax rules; picks between 3 and 7; names the cut |
+| 10 | Pair-aware escape and swap-aware planning | 1–2 w each | Yan–Wu–Ma–Wong optimal single-pair escape (min-cost 2-flow to a merge tile) as last-mile pair search; merged pairs = one 2-track unit; breakout endpoints as pseudo-pins (US 8,103,988) so LLM pin/bank/bit swaps are evaluated on escape order; LDS and circle-clique bounds show what a swap saves | — |
 
 ## Try first
 
-- **1, then 2:** they share the gap-graph builder.
-- **3 with 4's schedule and 5:** the window reroute.
-
-Reasons:
-- Item 1 is days of work and answers the controlling LLM's first question with a proof. The human layouts give a free check that the capacity model is sound.
-- Item 2 attacks the measured cause, too few balls escaped and the bottom layer unused, at the stage commercial tools also treat separately. Its min cut is the certificate for work item (1).
-- Item 3 replaces the PathFinder variant that did not converge with a loop whose progress is monotone, and floating terminals remove a likely source of false infeasibility.
+- 1, then 2 (they share the gap-graph builder): 1 answers the controlling LLM's first question with a proof in days, and human layouts check the capacity model for free; 2 attacks the measured cause (too few balls escaped, bottom layer unused) at the stage commercial tools also separate; its min cut is the certificate for work item (1).
+- 3 with 4's schedule and 5 (the window reroute): replaces the non-converging PathFinder variant with monotone progress; floating terminals remove a likely source of false infeasibility.
 
 ## Related
 
-[escape-routing](escape-routing.md) · [pathfinder-negotiated-congestion](pathfinder-negotiated-congestion.md) · [topological-routing](topological-routing.md) · [layer-assignment-and-vias](layer-assignment-and-vias.md) · [strategy-candidates](strategy-candidates.md)
+[escape routing](escape-routing.md) · [PathFinder](pathfinder-negotiated-congestion.md) · [topological](topological-routing.md) · [layer assignment](layer-assignment-and-vias.md) · [strategy candidates](strategy-candidates.md)

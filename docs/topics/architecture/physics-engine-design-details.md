@@ -1,16 +1,13 @@
-# Physics engine design, details: types, algorithms, licences, tests, API
+# Physics engine design, details: types, API, licences, tests, build order
 
-**TL;DR**
-- **Types:** frozen dataclasses for epochs, scopes, pieces, edits, quotes and events; arrays for discretizations, operators and windows; `.npz` tables for passports. Belief and Exactness live in `kae.units`, the rest in `kae.physics`.
-- **Algorithms:** quotes on a window inverse; Kron-reduced windows from a factorization with the window last; rank-k up/downdates for commits; selected inversion for leverage; pivot-free complex LDLᵀ with a residual check.
-- **Discretization:** strips, P1 quadtree tiles, Peaceman wells, contracted electrodes; refinement studies and primal–dual certificates.
-- **Every dependency** is GPL-3.0-compatible or kept out of shipped code; **every kernel** has an independent check; **three clients** share one session API.
+Scope: reference for the `kae.physics` engine: frozen types, `PhysicsSession` API, dependency licences, correctness matrix, calibration, build order E0–E5. Design rationale, algorithms and measured costs -> [physics-engine-design](physics-engine-design.md).
+Keys: Exactness E0–E5, Belief, EpochKey, ModelScope, DirtyRegion, Piece, WorldConductor, Discretization, Operator, Factorization protocol, WindowModel, Edit, TopoEvent, Quote, passports .npz, ledger.json, PhysicsSession, EditBatch, QuoteBatch, CommitResult, physics actors, licence gate, CHOLMOD licence, faer, Triangle excluded, cuDSS, correctness matrix, metamorphic tests, mutation benchmark, calibration, E4 Belief, schema v0, build order E0–E5
 
-Tags as in [physics-engine-design](physics-engine-design.md), whose decisions this specifies.
+Tags as in [physics-engine-design](physics-engine-design.md).
 
-## Key facts
+## Types
 
-### A. Types
+Freeze these as schema v0 in M0, with the `.npz` passport layout documented in `schemas/`. Belief and Exactness live in `kae.units`, the rest in `kae.physics`: frozen dataclasses for epochs, scopes, pieces, edits, quotes, events; arrays for discretizations, operators, windows; `.npz` tables for passports.
 
 ```python
 # kae.units
@@ -146,113 +143,13 @@ class Quote:
 # ledger.json holds the Beliefs they cite.
 ```
 
-`Job`, `Passport`, `Mode`, `Floor`, `RegimeCell` and `ClosedLoopBudget` keep the fields of [physics-core-v2-api](../physics/physics-core-v2-api.md) §2, with ids replacing embedded objects.
+`Job`, `Passport`, `Mode`, `Floor`, `RegimeCell`, `ClosedLoopBudget` keep the fields of [physics-core-v2-api](../physics/physics-core-v2-api.md) §2, with ids replacing embedded objects.
 
-### B. Algorithms and update rules
+Implement `Factorization` for SuperLU and CHOLMOD first and test both against each other on every regression board.
 
-**Quotes (K4).** For an edit removing branches B (incidence A_B, admittances y_B) with port injections U = Y⁻¹E:
-- S_B = A_Bᵀ·Y⁻¹·A_B; ΔZ = Vᵀ(diag(1/y_B) − S_B)⁻¹V with V = A_BᵀU; λ = eig(diag(y_B)·S_B); r = max|λ|.
-- An addition of z between nodes m, n: ΔZ = −ΔφΔφᵀ/(z + Z_th), Z_th = aᵀY⁻¹a.
-- Inside a window, every Y⁻¹ entry comes from G_W, so a quote needs no solve. A singular Woodbury matrix is a K1 event (λ = 1): infinite if a terminal is cut off, finite if copper merely floats.
+## API signatures
 
-**Windows.**
-- K_W = Y_WW − Y_WR·Y_RR⁻¹·Y_RW is the trailing block L_WW·L_WWᵀ of a factorization ordered R (by AMD), then W; it is pivot-free and agreed with the boundary-solve form to 5×10⁻¹⁴ on bms-c1 [C]. Sources outside W enter as ŝ_W = s_W − Y_WR·Y_RR⁻¹·s_R.
-- A commit Y + A·D·Aᵀ inside W updates G' = G − GA(D⁻¹ + AᵀGA)⁻¹AᵀG and φ' = G'ŝ: 20–60 ms for rank 8 at |W| = 1,600, against 0.3–0.4 s to re-invert [C]. An edit outside W marks it stale; one factorization refreshes it.
-- Default: 1,600–3,200 nodes on all layers (a 3 mm square at 0.1 mm, 6 mm at 0.2 mm, on 4 layers), |∂W| ≈ 190–260; larger regions take several windows.
-
-**Global commits.** C = A_B·diag(√|y_B|) is a downdate (removal) or update (addition) of the Cholesky factor (Davis–Hager), touching only the columns on the edit's elimination-tree paths. The engine refactors numerically when the accumulated update flops exceed one refactorization. A K1 event changes the ground set, so it re-analyses (a new epoch).
-
-**AC factorization (K2, K3).** Pivot-free LDLᵀ on the symmetric pattern, then one step of iterative refinement; if ‖Yx − b‖/‖b‖ still exceeds 10⁻¹⁰, refactor with threshold pivoting, which near-resonant bands may need. At the skeleton's 900 MHz anti-resonance, symmetric-mode SuperLU stayed within 4×10⁻¹¹ of refactoring ([physics-core-v2](../physics/physics-core-v2.md)) [C].
-
-**Leverage.** M1 uses the 48-solve Johnson–Lindenstrauss sketch for every branch, plus exact values for loaded and series pieces ([real-board-passports](../physics/real-board-passports.md)). M4 computes Z = Y⁻¹ on the pattern of L by the Takahashi recurrences (column by column from the last), then ρ_b = y_b(Z_aa + Z_bb − 2Z_ab) for every branch; removals of pieces whose nodes share a supernode come from the same Z [I].
-
-**Certificates (K5).** The primal φ with Dirichlet terminals overestimates conductance, and the dual stream function ψ (one unknown constant per hole) overestimates resistance; together they bracket R (Prager–Synge), and the element gap ∫_K |σ∇φ − J_ψ|²/σ drives refinement. The Beckmann bound R_s·W₁²/A and the Frank–Wolfe floor follow [vp_floors](../../../tools/research/physics/vp_floors.py).
-
-**Modes (K6).** Reduce to ports and modes passively (PRIMA-type Krylov projection); solve the dense generalized eigenproblem; channel shares follow from Rayleigh quotients, 1/Q_k = x*R_k x/(ω·x*M x).
-
-**Morphology (K7).** A signed exact Euclidean distance transform per tile gives the width map (2 × SDF on ridges), which sets both legality and cell size. Necks are ridge minima below w_min. Legalization uses Clipper offsets (close by the gap, then open by the width) and is accepted only if K1's invariants are unchanged or the change is intended.
-
-**Beliefs (K8).** Var y = sᵀΣs, with Σ correlating inputs that share an idealization (lineage); inverse-variance fusion within a lineage class; EVPPI by nested Monte Carlo ([in_emi_voi](../../../tools/research/physics/in_emi_voi.py)).
-
-### C. Discretization rules
-
-**Strips.**
-- Nodes sit at polyline vertices, at junctions with tracks, vias and pads, and at most every min(1 mm, 4w).
-- A segment's conductance is w/(R_s·Δs).
-- A sharp 90° bend's corner square counts 0.5587 squares, 0.441 below the centreline count ([vp_floors](../../../tools/research/physics/vp_floors.py) `bracket`).
-- At a pad or pour, the end node links to the sheet nodes across the track width, each in proportion to its share of the width.
-
-**Tiles.**
-- Each 64 × 64 finest-cell tile holds a 2:1-balanced quadtree whose leaves span 1–16 finest cells; a leaf splits while h > w_local/3 or h > h_max.
-- Coverage per triangle comes from exact clipping of the copper polygons (Clipper2).
-- P1 edge weights are ½(cot α + cot β): ½ per leg of a right isosceles triangle, 0 across its hypotenuse.
-- Hanging nodes are resolved by the standard right-isosceles templates, so every triangle stays non-obtuse.
-
-**Vias and electrodes.**
-- A barrel with r_w < h/2 joins each layer's nearest node by Peaceman's conductance; otherwise its annulus nodes are contracted into the barrel node.
-- Pads with an equipotential terminal are contracted.
-- Barrel segments carry ρ·l/(π(d + t)t) with plating t = 20 µm unless the stackup says otherwise.
-
-**AC and HF grids.** The inductive-limit stack window keeps one grid across layers, with cells at most half the smallest gap; its outer-field thickness, which moved L by 14% in [real-board-passports](../physics/real-board-passports.md), goes into the scope. Telegrapher sheets use cells ≤ min(ℓ_m/2, λ/20); PEEC uses ≥ 31 graded filaments where w/h > 10 ([verification-and-limits](../physics/verification-and-limits.md)).
-
-**Refinement study.**
-- Each reported Belief is recomputed at h/2 inside its dirty window plus 2 mm.
-- Value ± |Δ| becomes its discretization spread (E3 when the Richardson ratio is consistent, otherwise flagged).
-
-**Sandwich bracket.**
-- The inner raster holds only cells entirely inside the copper; the outer raster holds every cell touching it.
-- R(outer, primal) ≤ R_true ≤ R(inner, dual) for self terms (Rayleigh plus Prager–Synge).
-- On the annulus test it held at every resolution, with a width of 84% at 4 cells across, 39% at 8, 19% at 16, 9.4% at 32 and 4.7% at 64 [C].
-
-**Boundary-fitted certificates.**
-- A constrained Delaunay mesh of the budget's region (spade, MIT/Apache-2.0, or CGAL, GPL-3.0+) carries P1 primal and dual on the same mesh.
-- It is refined by the element gap until the bracket is below the budget's margin divided by z.
-
-### D. Licences
-
-| Dependency | Use | Licence | Status |
-|---|---|---|---|
-| numpy | arrays | BSD-3-Clause (bundled 0BSD, MIT, Zlib, CC0) [C: metadata] | ship |
-| SciPy | sparse, SuperLU, ARPACK, EDT | BSD-3-Clause [C] | ship |
-| Shapely, GEOS | polygons | BSD-3-Clause [C]; LGPL-2.1+ [S] | ship |
-| Clipper2 / pyclipper | robust offsets | BSL-1.0 / MIT [S] | ship |
-| contourpy | contours for legalization | BSD-3-Clause [C] | ship |
-| pyamg | AMG for large thermal models | MIT [C] | ship |
-| scikit-rf | Touchstone, vector fitting | BSD-3-Clause | ship |
-| scikit-sparse 0.5 | CHOLMOD bindings | BSD-2-Clause [C] | ship |
-| CHOLMOD | factorization, up/downdate | Core, Cholesky, Partition LGPL-2.1+; Supernodal, Modify, MatrixOps GPL-2.0+ [S] | ship (GPL-3.0 combined) |
-| AMD, CAMD, COLAMD | orderings | BSD-3-Clause [S] | ship |
-| METIS 5.x | nested dissection | Apache-2.0 [S] | ship |
-| OpenBLAS | dense kernels | BSD-3-Clause [S] | ship |
-| faer, gemm, pulp, dyn-stack | Rust factorization | MIT [C: Cargo.toml] | ship (`kae-fast`) |
-| PyO3, rayon | bindings, threads | MIT or Apache-2.0 [C for rayon] | ship |
-| spade or CGAL 2D | constrained Delaunay | MIT or Apache-2.0 / GPL-3.0+ [S] | ship |
-| MUMPS | complex symmetric LDLᵀ with Schur output, if adopted | CeCILL-C [S] | ship |
-| JAX | placement kernels, surrogates | Apache-2.0 | ship |
-| ngspice, Xyce, openEMS, Palace, FasterCap, PyPEEC | external engines | per [open-solvers](../physics/open-solvers.md) | ship or subprocess |
-| FastHenry | calibration decks | non-commercial notice | internal only |
-| Ki-PIDA, Konnect | reference | AGPL-3.0 | reference only |
-| Triangle (Shewchuk), `triangle`, `meshpy` | — | non-commercial clause [S] | excluded |
-| MKL PARDISO, pypardiso | — | proprietary | excluded |
-| NVIDIA cuDSS | — | proprietary | excluded |
-
-### E. Correctness
-
-| Level | Test | Tolerance | Measured [C] |
-|---|---|---|---|
-| E1 algebra | Woodbury, Thevenin, Tellegen, Foster against refactoring, 1,000 random edits per operator kind (DC, thermal, stack inductance, telegrapher, PEEC mesh) | c·ε·κ (κ from `rcond`); 10⁻¹⁰ after contraction | window vs direct 7×10⁻¹⁶–9×10⁻¹⁵; window commit vs refactoring 4×10⁻¹³–8×10⁻¹¹; up/downdate vs SuperLU 2×10⁻¹¹–10⁻⁹ |
-| E0 events | λ = 1 at every K1 disconnect of a grown cut; discretization islands and holes equal the polygons' | exact | skeleton λ = 1.00000 |
-| E2 bounds | DC first-order bounds on all tile removals; brackets contain closed forms (annulus, L-bend 0.5587, notched strip) | never violated | 0/444 and 0/296; 5/5 resolutions |
-| E3 forms | Peaceman 0.1985; strip over a plane μ0hl/w; via pair in a plate pair; complex images; cut law | 10⁻³; 0.7%; 5×10⁻⁵; 3.5%; 6 digits | 0.1985 |
-| Goldens | `rt_*` scripts frozen; they never import `kae` | as registered | — |
-| Refinement | h → h/2 on every regression board | change inside the reported spread | — |
-| Metamorphic | lattice-step translation and 90° rotation leave Beliefs within 10⁻⁹; mirror symmetry; Z_qp = Z_pq to 10⁻¹²; doubling copper thickness halves R; a floating island changes nothing | as stated | — |
-| Mutation | planted DRC-neutral faults (≥ 8 operators, ≥ 50 boards) move a job verb or binding Belief by more than its spread; benign twins do not | recall ≥ 90%, false alarms ≤ 5% (build plan) | 31/31 and 0/7 ([physics-critics](../physics/physics-critics.md)) |
-| Cross-solver | FastHenry (internal), padne and KiPI (DC), openEMS or Palace slices | recorded as model-form spread | PEECN vs FastHenry 1.3% |
-
-**Calibration as Beliefs.** A measurement is a record (coupon or board id, instrument, uncertainty, conditions). A calibration model per (stackup, fab, structure class) holds a bias and a conformal residual spread over the measured features (w/h, f/f_x, ℓ/ℓ_m). Applied to an E1 or E3 value it yields an E4 Belief whose lineage names scope and calibration, valid inside the hull of those features; outside, the raw Belief is reported with validity "out" and its model-form spread. Registered predictions ([validation-program](../physics/validation-program.md)) are scored against the same records.
-
-### F. API
+One `PhysicsSession` per board inside the session server ([system-design](system-design.md) §2) serves three clients; every return is a Belief or a container of them. LLM and human calls are the read-only facade of [physics-core-v2-api](../physics/physics-core-v2-api.md) §4, answered from caches and stamped with `board_rev`, epoch and scope ids.
 
 ```python
 class PhysicsSession:                        # one per board, inside the session server
@@ -291,22 +188,72 @@ class WindowModel:                           # held by an optimizer worker
     def refresh(self) -> None: ...                                # one factorization, W last
 ```
 
-`EditBatch` packs edits as padded branch-index arrays with admittance changes, so a batch is one vectorized expression; `QuoteBatch` is a columnar Belief container (one exactness, scope and lineage per column), so arrays cross the package boundary as Beliefs. `CommitResult` carries the new `rev`, events, passport diffs and whether the epoch changed. Physics actors answer `solve`, `schur`, `updown`, `refactor` and `passports` messages keyed by (operator, band, epoch) and refuse stale revisions.
+- `EditBatch`: edits as padded branch-index arrays with admittance changes, so a batch is one vectorized expression.
+- `QuoteBatch`: columnar Belief container (value arrays per budget sharing one exactness, scope and lineage per column), so arrays cross the package boundary as Beliefs at array speed.
+- `CommitResult`: new `rev`, events, passport diffs, whether the epoch changed.
+- Critics and reports read `passports` as `.npz` tables plus board-physics-model `views`.
+- Physics actors answer `solve`, `schur`, `updown`, `refactor`, `passports` messages keyed by (operator, band, epoch) and refuse stale revisions.
 
-## Recommendations for our system
+## Licences
 
-1. Freeze these types as schema v0 in M0, with the `.npz` passport layout documented in `schemas/`.
-2. Implement `Factorization` for SuperLU and CHOLMOD first, and test both against each other on every regression board.
-3. Make the E-level matrix of §E the CI gate for `kae.physics`.
+Every dependency is GPL-3.0-compatible or kept out of shipped code. Re-check rows tagged [S] at the M0 licence gate.
 
-## Conflicts and open questions
+| Dependency | Use | Licence | Status |
+|---|---|---|---|
+| numpy | arrays | BSD-3-Clause (bundled 0BSD, MIT, Zlib, CC0) [C: metadata] | ship |
+| SciPy | sparse, SuperLU, ARPACK, EDT | BSD-3-Clause [C] | ship |
+| Shapely, GEOS | polygons | BSD-3-Clause [C]; LGPL-2.1+ [S] | ship |
+| Clipper2 / pyclipper | robust offsets | BSL-1.0 / MIT [S] | ship |
+| contourpy | contours for legalization | BSD-3-Clause [C] | ship |
+| pyamg | AMG for large thermal models | MIT [C] | ship |
+| scikit-rf | Touchstone, vector fitting | BSD-3-Clause | ship |
+| scikit-sparse 0.5 | CHOLMOD bindings | BSD-2-Clause [C] | ship |
+| CHOLMOD | factorization, up/downdate | Core, Cholesky, Partition LGPL-2.1+; Supernodal, Modify, MatrixOps GPL-2.0+ [S] | ship (GPL-3.0 combined) |
+| AMD, CAMD, COLAMD | orderings | BSD-3-Clause [S] | ship |
+| METIS 5.x | nested dissection | Apache-2.0 [S] | ship |
+| OpenBLAS | dense kernels | BSD-3-Clause [S] | ship |
+| faer, gemm, pulp, dyn-stack | Rust factorization | MIT [C: Cargo.toml] | ship (`kae-fast`) |
+| PyO3, rayon | bindings, threads | MIT or Apache-2.0 [C for rayon] | ship |
+| spade or CGAL 2D | constrained Delaunay | MIT or Apache-2.0 / GPL-3.0+ [S] | ship |
+| MUMPS | complex symmetric LDLᵀ with Schur output, if adopted | CeCILL-C [S] | ship |
+| JAX | placement kernels, surrogates | Apache-2.0 | ship |
+| ngspice, Xyce, openEMS, Palace, FasterCap, PyPEEC | external engines | per [open-solvers](../physics/open-solvers.md) | ship or subprocess |
+| FastHenry | calibration decks | non-commercial notice | internal only |
+| Ki-PIDA, Konnect | reference | AGPL-3.0 | reference only |
+| Triangle (Shewchuk), `triangle`, `meshpy` | — | non-commercial clause [S] | excluded |
+| MKL PARDISO, pypardiso | — | proprietary | excluded |
+| NVIDIA cuDSS | — | proprietary | excluded |
 
-- **Untested on real boards:** stream-function duals on copper with holes (one unknown constant per hole), and selected inversion for multi-node pieces, which relies on supernodes aligned with tiles [I].
-- **Licences tagged [S]** must be re-checked at the M0 licence gate.
+## Correctness matrix
+
+Make this E-level matrix the CI gate for `kae.physics`. Every kernel has an independent check.
+
+| Level | Test | Tolerance | Measured [C] |
+|---|---|---|---|
+| E1 algebra | Woodbury, Thevenin, Tellegen, Foster against refactoring, 1,000 random edits per operator kind (DC, thermal, stack inductance, telegrapher, PEEC mesh) | c·ε·κ (κ from `rcond`); 10⁻¹⁰ after contraction | window vs direct 7×10⁻¹⁶–9×10⁻¹⁵; window commit vs refactoring 4×10⁻¹³–8×10⁻¹¹; up/downdate vs SuperLU 2×10⁻¹¹–10⁻⁹ |
+| E0 events | λ = 1 at every K1 disconnect of a grown cut; discretization islands and holes equal the polygons' | exact | skeleton λ = 1.00000 |
+| E2 bounds | DC first-order bounds on all tile removals; brackets contain closed forms (annulus, L-bend 0.5587, notched strip) | never violated | 0/444 and 0/296; 5/5 resolutions |
+| E3 forms | Peaceman 0.1985; strip over a plane μ0hl/w; via pair in a plate pair; complex images; cut law | 10⁻³; 0.7%; 5×10⁻⁵; 3.5%; 6 digits | 0.1985 |
+| Goldens | `rt_*` scripts frozen; they never import `kae` | as registered | — |
+| Refinement | h → h/2 on every regression board | change inside the reported spread | — |
+| Metamorphic | lattice-step translation and 90° rotation leave Beliefs within 10⁻⁹; mirror symmetry; Z_qp = Z_pq to 10⁻¹²; doubling copper thickness halves R; a floating island changes nothing | as stated | — |
+| Mutation | planted DRC-neutral faults (≥ 8 operators, ≥ 50 boards) move a job verb or binding Belief by more than its spread; benign twins do not | recall ≥ 90%, false alarms ≤ 5% (build plan) | 31/31 and 0/7 ([physics-critics](../physics/physics-critics.md)) |
+| Cross-solver | FastHenry (internal), padne and KiPI (DC), openEMS or Palace slices | recorded as model-form spread | PEECN vs FastHenry 1.3% |
+
+**Calibration as Beliefs.** A measurement is a record (coupon or board id, instrument, uncertainty, conditions). A calibration model per (stackup, fab, structure class) holds a bias and a conformal residual spread over the measured features (w/h, f/f_x, ℓ/ℓ_m). Applied to an E1 or E3 value it yields an E4 Belief whose lineage names scope and calibration, valid inside the hull of those features; outside, the raw Belief is reported with validity "out" and its model-form spread. Registered predictions ([validation-program](../physics/validation-program.md)) are scored against the same records.
+
+## Build order E0–E5
+
+| Step | Build | Accept when |
+|---|---|---|
+| E0 (M0) | `units` Belief, ModelScope; physics types; K1 on polygons; K4 on a generic operator; contraction | identities within 10⁻¹⁰ of refactoring on 1,000 random edits (skeleton; c·ε·κ on BLDCM-Power); λ = 1 exactly at disconnects; DC bounds hold; metamorphic tests to 10⁻⁹ |
+| E1 (M1) | DC and thermal builder: strips, P1 tiles, wells, linear assembly; CHOLMOD backend | removal quotes within 10⁻⁹ of brute force on 3 real boards; annulus inside its bracket and within 0.5%; via well within 1%; islands equal K1's on 112/112 boards |
+| E2 (M1) | passports (`.npz`), leverage, K5; HF stack window; Schur windows | [real-board-passports](../physics/real-board-passports.md) reproduced within 1%; scorecard median ≤ 2, p90 ≤ 10 CPU-min, ≤ 4 GB on ≥ 106/112 boards |
+| E3 (M2) | complex K2 with residual check; K6; merged K3; physics actors | f_p within 2% of ls_post_lattice; Q = h/δ; K3 within 3.5% of ls_thin_sheet and 1.3% of PEECN; `what_if` ≤ 50 ms p95; refresh ≤ 2 s p95 |
+| E4 (M2–M3) | K7 legalizer; K8; boundary-fitted brackets | vp_floors and in_emi_voi reproduced; legalization keeps K1 invariants; brackets contain closed forms |
+| E5 (M4) | `kae-fast`: faer, quote kernel, rasterizer, selected inversion | rank-1 quote ≤ 2 µs; build ≤ 2 s per million copper cells; exact leverage of every branch in ≤ 3 factorizations' time |
 
 ## Sources
 
 - [C]: [eng_board_scaling](../../../tools/research/physics/eng_board_scaling.py), [eng_window_schur](../../../tools/research/physics/eng_window_schur.py), [eng_compiled_cholesky](../../../tools/research/physics/eng_compiled_cholesky.py), [eng_discretization](../../../tools/research/physics/eng_discretization.py); [pc2_core_skeleton](../../../tools/research/physics/pc2_core_skeleton.py); [rb_board_passports](../../../tools/research/physics/rb_board_passports.py).
-- [S]: Davis and Hager (1999), up/downdate; Takahashi, Fagan, Chin (1973), selected inversion; Peaceman (1978), wells; Prager and Synge (1947), brackets; Odabasioglu, Celik, Pileggi (1998), PRIMA; Felzenszwalb and Huttenlocher (2012), distance transforms.
-
-See also: [physics-engine-design](physics-engine-design.md) · [system-design](system-design.md) · [physics-core-v2-api](../physics/physics-core-v2-api.md) · [open-solvers](../physics/open-solvers.md) · [verification-and-limits](../physics/verification-and-limits.md)
+- Related: [open-solvers](../physics/open-solvers.md), [verification-and-limits](../physics/verification-and-limits.md).

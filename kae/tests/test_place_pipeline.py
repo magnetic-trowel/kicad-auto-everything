@@ -342,17 +342,222 @@ def test_relax_bodies_off_skips_the_step_and_relaxed_overlaps_are_hazards():
     assert j[0]["code"] in ("body_overlap", "body_relaxed")
 def test_congestion_weight_and_margin_are_settings_and_physics_is_traced():
     """Audit P5/P10: place_w_cong and place_margin (kae.route.constraints.DEFAULTS, so --set
-    and KAE_ text variables reach them) default to the current behaviour (30, auto) and switch
-    the RUDY term and the routing margin off at 0; P6: the report traces physics per stage."""
+    and KAE_ text variables reach them) default to off (0) since placement-decide-staged found
+    0 / 10 / 30 and auto / 0 equal; the old behaviour (30, auto) is still reachable as settings.
+    P6: the report traces physics per stage."""
     from kae.place.pipeline import place
     from kae.route.constraints import DEFAULTS
-    assert DEFAULTS["place_w_cong"] == 30.0 and DEFAULTS["place_margin"] < 0
+    assert DEFAULTS["place_w_cong"] == 0.0 and DEFAULTS["place_margin"] == 0.0
     b = kicad_file.load(FIXTURE)
-    on = place(b, seed=0, time_s=10, physics=True, workers=1).report
+    off = place(b, seed=0, time_s=10, physics=True, workers=1).report
+    assert off["margin_set"] == 0.0 and off["margin_mm"] == 0.0 and off["w_cong"] == 0.0
+    stages = [t["stage"] for t in off.get("physics_trace", [])]
+    assert stages[:2] == ["seed", "anneal"] and all("total_linear" in t for t in off["physics_trace"])
+    on = place(kicad_file.load(FIXTURE), seed=0, time_s=10, physics=True, workers=1,
+               opts=dict(place_w_cong=30, place_margin=-1)).report
     assert "margin_set" not in on and on["w_cong"] == 30.0
-    stages = [t["stage"] for t in on.get("physics_trace", [])]
-    assert stages[:2] == ["seed", "anneal"] and all("total_linear" in t for t in on["physics_trace"])
-    off = place(kicad_file.load(FIXTURE), seed=0, time_s=10, physics=True, workers=1,
-                opts=dict(place_w_cong=0, place_margin=0)).report
-    assert off["margin_set"] == 0.0 and off["margin_mm"] == 0.0
-    assert off["w_cong"] == 0.0
+
+
+def _row_board(tmp_path, width, waive=True):
+    """Four 0402 resistors (courtyards 2.6 x 2.0 mm, IPC Level C 2.3 x 1.7) chained by nets on a
+    board 2 mm tall: copper-to-edge (0.3 mm) leaves one row, so the drawn courtyards need
+    3 x 2.6 mm of the 7.28 mm the pads can use on a 9.4 mm board (no fit), Level C 3 x 2.3 mm."""
+    import critical_fixtures as cf
+    parts = [(f"R{k + 1}", "1k", "Resistor_SMD:R_0402_1005Metric", 101.0 + 0.5 * k, 101.0, 0.0,
+              [("1", f"N{k}", -0.48, 0.0, 0.56, 0.62, "smd", 0.0, "", "passive"),
+               ("2", f"N{k + 1}", 0.48, 0.0, 0.56, 0.62, "smd", 0.0, "", "passive")], (1.3, 1.0)) for k in range(4)]
+    old = cf.PARTS, cf.SIZE
+    cf.PARTS, cf.SIZE = parts, (float(width), 2.0)
+    try:
+        p = cf.write_board(tmp_path / f"row{width}{'w' if waive else ''}")
+    finally:
+        cf.PARTS, cf.SIZE = old
+    if waive:
+        pro = json.loads(p.with_suffix(".kicad_pro").read_text())
+        pro["board"]["design_settings"]["rule_severities"] = {"courtyards_overlap": "ignore"}
+        p.with_suffix(".kicad_pro").write_text(json.dumps(pro))
+    return p
+
+
+def test_severity_ladder_falls_back_to_level_c_when_strict_cannot_fit(tmp_path, monkeypatch):
+    """strict_then_level_c (the default): drawn courtyards cannot fit the row, so strict leaves
+    placement errors; level_c places again, legal with no shorts, and is kept with an info
+    severity_fallback hazard naming the parts that share courtyard margin. (The occupancy test
+    that skips strict a priori is off here, so strict runs and fails.)"""
+    from kae.place import pipeline
+    from kae.place.pipeline import ELECTRICAL, place, placement_errors
+    monkeypatch.setattr(pipeline, "LADDER_MAX_UTIL", 10.0)
+    p = _row_board(tmp_path, 9.4)
+    res = place(kicad_file.load(p), seed=0, time_s=30.0, physics=False, workers=2, board_path=str(p))
+    rep = res.report
+    lad = rep["severity_ladder"]
+    assert rep["severity_used"] == "level_c" and res.problem.cy_shrink > 0.1
+    assert lad["mode"] == "strict_then_level_c" and lad["rungs"] == 2 and lad["chosen"] == "level_c"
+    assert lad["strict"]["legal"] is False and lad["strict"]["relax_bodies"] == "off" and lad["fallback"]["errors"] > 0
+    errs = placement_errors(res)
+    assert errs == {} and not any(errs.get(t) for t in ELECTRICAL)
+    hz = [h for h in rep["hazards"] if h["code"] == "severity_fallback"]
+    assert len(hz) == 1 and hz[0]["severity"] == "info" and hz[0]["evidence"]["used"] == "level_c"
+    assert hz[0]["evidence"]["margin_pairs"] and set(hz[0]["objects"]) <= {"R1", "R2", "R3", "R4"}
+
+
+def test_severity_ladder_skips_strict_when_drawn_courtyards_overfill_the_board(tmp_path):
+    """Drawn courtyards cover more than the board (the row: 1.1): strict cannot fit, so it is
+    not tried and level_c gets the whole time (altmode-friend, d24, rp2040-stamp, openaio: 1.03
+    to 2.0 in the A/B, never legal under strict)."""
+    import time
+    from kae.place.pipeline import place, placement_errors
+    p = _row_board(tmp_path, 9.4)
+    seen = []
+
+    def verify(r, end):
+        seen.append((r.report["severity_used"], end))
+        r.report["kicad_verdict"] = dict(errors=0, by_type={})
+        return dict(clean=True)
+    t0 = time.monotonic()
+    res = place(kicad_file.load(p), seed=0, time_s=40.0, physics=False, workers=2, board_path=str(p), verify=verify)
+    lad = res.report["severity_ladder"]
+    assert "skipped" in lad["strict"] and max(lad["strict"]["utilization"]) > 1.0
+    assert res.report["severity_used"] == "level_c" and lad["chosen"] == "level_c" and lad["fallback"]["source"] == "occupancy"
+    assert [s for s, _ in seen] == ["level_c"] and seen[0][1] <= t0 + 40.0 + 0.5    # one rung, the whole time
+    assert placement_errors(res) == {}
+    hz = [h for h in res.report["hazards"] if h["code"] == "severity_fallback"]
+    assert len(hz) == 1 and hz[0]["evidence"]["strict_skipped"]
+
+
+def test_severity_ladder_never_prefers_a_rung_kicad_did_not_judge(tmp_path, monkeypatch):
+    """openaio: the strict rung's KiCad loop never ran (no time), and its exact check counted 3
+    electrical findings against the judged level_c rung's 11; the scorer then found 38-55
+    shorts on strict. An unjudged rung loses to a judged one whatever the counts."""
+    from kae.place import pipeline
+    from kae.place.pipeline import place
+    p = _row_board(tmp_path, 12.0)
+    calls = []
+
+    def verify(r, end):
+        calls.append(r.report["severity_used"])
+        if r.report["severity_used"] == "strict":
+            r.report["exact"] = [dict(type="clearance", refs=["R1"], parts=[0], detail="")]
+            return dict(clean=None)                     # KiCad did not run
+        r.report["kicad_verdict"] = dict(errors=11, by_type={"shorting_items": 11})
+        return dict(clean=False)
+    res = place(kicad_file.load(p), seed=0, time_s=60.0, physics=False, workers=2, board_path=str(p), verify=verify)
+    assert calls == ["strict", "level_c"]
+    lad = res.report["severity_ladder"]
+    assert lad["chosen"] == "level_c" and lad["strict"]["kicad_verified"] is False and lad["level_c"]["kicad_verified"]
+    assert pipeline.rung_rank(res)[0] == 0
+
+
+def test_severity_ladder_rungs_end_inside_their_shares(tmp_path):
+    """Each rung keeps the end of its share for the caller's KiCad loop: the placement part of
+    the strict rung ends by 55% of the time less that reserve, and the whole run inside the time
+    (pico-ice: an unbounded diagnosis ran the level_c rung past the caller's timeout)."""
+    import time
+    from kae.place.pipeline import LADDER_KICAD_MIN_S, LADDER_STRICT_SHARE, place
+    p = _row_board(tmp_path, 12.0)
+    T = 80.0
+    marks = []
+
+    def verify(r, end):
+        marks.append((r.report["severity_used"], time.monotonic(), end))
+        r.report["kicad_verdict"] = dict(errors=1, by_type={"courtyards_overlap": 1})
+        return dict(clean=False)
+    t0 = time.monotonic()
+    place(kicad_file.load(p), seed=0, time_s=T, physics=False, workers=2, board_path=str(p), verify=verify)
+    (s1, at1, end1), (s2, at2, end2) = marks
+    assert s1 == "strict" and abs(end1 - (t0 + LADDER_STRICT_SHARE * T)) < 1.0
+    assert at1 <= end1 - LADDER_KICAD_MIN_S + 2.0           # strict placed within its share less the reserve
+    assert s2 == "level_c" and at2 <= end2 - LADDER_KICAD_MIN_S + 2.0 and end2 <= t0 + T + 0.5
+
+
+def test_severity_ladder_keeps_strict_when_it_fits(tmp_path):
+    """A row with room for the drawn courtyards: strict is legal, no fallback, no hazard."""
+    from kae.place.pipeline import place, placement_errors
+    p = _row_board(tmp_path, 12.0)
+    res = place(kicad_file.load(p), seed=0, time_s=30.0, physics=False, workers=2, board_path=str(p))
+    lad = res.report["severity_ladder"]
+    assert res.report["severity_used"] == "strict" and lad["rungs"] == 1 and lad["fallback"] is None
+    assert placement_errors(res) == {} and res.problem.cy_shrink == 0.0
+    assert not [h for h in res.report["hazards"] if h["code"] == "severity_fallback"]
+
+
+def test_severity_ladder_is_one_strict_rung_where_the_project_keeps_courtyards(tmp_path):
+    """Without a courtyard waiver level_c is strict: one rung, relax_bodies as set (here the
+    body relaxation is the next softening step, there is no Level C rung before it)."""
+    from kae.place.pipeline import place, resolve_severity
+    p = _row_board(tmp_path, 9.4, waive=False)
+    b = kicad_file.load(p)
+    assert resolve_severity(b, str(p)) == "strict_then_level_c"
+    res = place(b, seed=0, time_s=20.0, physics=False, workers=2, board_path=str(p))
+    lad = res.report["severity_ladder"]
+    assert res.report["severity_used"] == "strict" and lad["rungs"] == 1 and "note" in lad
+    assert res.report["relax_bodies"] == "escalate"
+
+
+def test_severity_ladder_trigger_takes_kicads_verdict_and_keeps_the_better_rung(tmp_path):
+    """The caller's verify (kae.cli: write + KiCad loop) judges each rung within its share of
+    the time: strict's ends at 55% of it, level_c's at the end. KiCad's placer errors
+    (kicad_verdict) fire the fallback even when the exact check is clean; a level_c rung that
+    leaves shorts loses to a strict one that leaves only courtyard overlaps."""
+    import time
+    from kae.place.pipeline import LADDER_STRICT_SHARE, place
+    p = _row_board(tmp_path, 12.0)
+    calls = []
+    verdicts = iter([{"courtyards_overlap": 2}, {"shorting_items": 1}])
+
+    def verify(r, end):
+        calls.append((r.report["severity_used"], end))
+        r.report["kicad_verdict"] = dict(errors=1, by_type=next(verdicts))
+        return dict(clean=False)
+    t0 = time.monotonic()
+    res = place(kicad_file.load(p), seed=0, time_s=60.0, physics=False, workers=2, board_path=str(p), verify=verify)
+    assert [c[0] for c in calls] == ["strict", "level_c"]
+    assert calls[0][1] <= t0 + LADDER_STRICT_SHARE * 60.0 + 0.5 and calls[1][1] <= t0 + 60.0 + 0.5
+    lad = res.report["severity_ladder"]
+    assert lad["fallback"]["by_type"] == {"courtyards_overlap": 2} and lad["fallback"]["source"] == "exact check and KiCad DRC"
+    assert lad["chosen"] == "strict" and res.report["severity_used"] == "strict" and res.verified == dict(clean=False)
+    hz = [h for h in res.report["hazards"] if h["code"] == "severity_fallback"]
+    assert len(hz) == 1 and hz[0]["evidence"]["used"] == "strict"
+
+
+def test_a_single_problem_takes_the_ladder_as_level_c(tmp_path):
+    """Problem.build cannot ladder: the default mode (the joint loop's windows) is level_c."""
+    import pytest
+    from kae.place.pipeline import resolve_severity
+    from kae.place.problem import Problem
+    p = _row_board(tmp_path, 9.4)
+    b = kicad_file.load(p)
+    assert Problem.build(b).severity_mode == "level_c"
+    assert Problem.build(b, severity="strict_then_level_c").severity_mode == "level_c"
+    assert resolve_severity(b, opts={"place_severity": "strict"}) == "strict"
+    with pytest.raises(ValueError):
+        resolve_severity(b, opts={"place_severity": "loose"})
+
+
+def test_ladder_ranks_by_electrical_errors_then_total_and_bounds_the_diagnosis():
+    """rung_key: fewer shorts and clearance errors beat fewer errors in all (soldiercrab:
+    strict 36 electrical in 56 against level_c 25 in 78). close_loop/diagnose with a deadline
+    stop trying spots when it passes (the ladder's rungs; pico-ice spent 70 s a part)."""
+    import time
+    from kae.place import exact
+    from kae.place.pipeline import rung_key
+    from kae.place.problem import Problem
+    from kae.place.state import State
+    strict = {"shorting_items": 18, "clearance": 18, "courtyards_overlap": 2, "solder_mask_bridge": 18}
+    level_c = {"shorting_items": 16, "clearance": 9, "solder_mask_bridge": 52, "items_not_allowed": 1}
+    assert rung_key(level_c) < rung_key(strict) and rung_key({"courtyards_overlap": 9}) < rung_key(level_c)
+    P = Problem.build(kicad_file.load(FIXTURE))
+    st = State(P)
+    d = exact.diagnose(P, st, exact.ExactModel(P, st), P.mov[0], deadline=time.monotonic() - 1.0)
+    assert d["reason"] == "unknown"
+
+
+def test_board_mask_apertures_reach_the_zone_keepout_under_every_severity():
+    """zones.py's keep-out reads Problem.fixed_mask, set only while solder_mask_bridge is an error:
+    no severity mode (either rung of the ladder included) may drop it."""
+    from kae.place.problem import Problem
+    b = kicad_file.load(FIXTURE)
+    for sev in ("strict", "level_c", "strict_then_level_c", "board"):
+        P = Problem.build(b, severity=sev)
+        assert P.is_error("solder_mask_bridge"), sev
+        assert isinstance(P.fixed_mask, list)

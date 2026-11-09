@@ -1,13 +1,15 @@
 # Gate drive, bootstrap and driver-supply decoupling
 
-**TL;DR**
-- **Driver next to the FET.** Gate and return are routed as a pair, wide and short. The Kelvin source return is top priority, because common-source inductance causes false turn-on and ringing.
-- **EPC overshoot-free criterion:** L_G ≤ ¼·(R_G + R_Source)²·C_GS.
-- **Bootstrap (CORRECTED):** C_boot **≥** 10 × C_g and C_VDD **≥** 10 × C_boot. These are minimums, not "about 10×". Place them at the driver pins. For GaN drivers TI SLUAAM3 puts the smaller VDD cap nearest; otherwise rank by mounting inductance ([../decoupling-pdn.md](../decoupling-pdn.md)).
-- **The driver-supply (INTVCC) loop is a second hot loop,** about 20 dB below the input loop.
-- **Edge-rate control** (series bootstrap R) is a deliberate EMI-vs-efficiency knob.
+Scope: gate-driver placement, gate loop and Kelvin source, bootstrap/VDD sizing, INTVCC loop, edge-rate knob. Not here: main hot loop -> [hot-loops.md](hot-loops.md); motor predrivers -> [motor-drivers.md](motor-drivers.md); cap ranking by mounting inductance -> [../decoupling-pdn.md](../decoupling-pdn.md).
+Keys: gate drive, gate driver, bootstrap, C_boot, C_VDD, Kelvin source, common-source inductance, CSI, L_G bound, GaN, eGaN, INTVCC, WP008, SLUAAM3, SLUA887A, PWR-11, PWR-12, MOT-03
 
-## Key facts
+## Gate-drive checks to emit
+- BOM: `C_boot ≥ 10 × C_g`, `C_VDD ≥ 10 × C_boot` (CORRECTED: minimums, not "about 10×") with FET Q_g/C_g from datasheets (LLM extraction, code compare). Cap order at driver pins: GaN smaller VDD cap nearest (SLUAAM3), else by mounting inductance ([../decoupling-pdn.md](../decoupling-pdn.md)).
+- Gate + return as a pseudo differential pair (coupled routing); Kelvin source pin used when the FET has one (top priority: common-source inductance → false turn-on, ringing).
+- INTVCC/VDD decoupling loop as a second `loop_area`, ranked after the main hot loop.
+- EPC bound `L_G ≤ ¼·(R_G + R_Source)²·C_GS` from extracted R_G, C_GS vs estimated trace inductance.
+
+## Gate-drive evidence by source
 - **EPC WP008** ([PDF](https://epc-co.com/epc/Portals/0/epc/documents/papers/eGaN%20FET%20Drivers%20and%20Layout%20Considerations.pdf)) [P], VERIFIED + formula:
   - Avoid "long narrow leads … by widening and shortening the traces".
   - Overshoot is avoided if L_G ≤ ¼·(R_G + R_Source)²·C_GS.
@@ -19,10 +21,11 @@
 - **AN-136** (EDN reprint) [S]: give the top-FET gate trace and the SW trace a minimal shared loop area; run the bottom-FET gate trace next to a PGND trace; keep current-sense traces away from switching nodes.
 - **Motor predrivers** ([TI SLVA959B](https://www.ti.com/lit/pdf/slva959)) [P]: gate traces start at 20 mil for 1 oz; route the HS gate trace as close as possible to the SW (SHx) trace; see [motor-drivers.md](motor-drivers.md).
 - **Half-bridge gate loop** [I]: driver OUT → gate → Kelvin source → driver return; bootstrap loop C_BOOT ↔ HB/HS. The gate loop must not share power-source inductance.
-- **INTVCC loop:** AN-139 measured >20 dB less RF energy than the input-cap loop, so it ranks second. Shield it with a solid plane on the next layer ([hot-loops.md](hot-loops.md)).
+- **INTVCC loop:** ranks second after the input-cap loop; shield it with a solid next-layer plane -> [hot-loops](hot-loops.md#second-hot-loop).
 - **Edge-rate trade:** a series resistor in the bootstrap path lowers dV/dt and EMI at an efficiency cost ([Richtek AN045](https://www.richtek.com/Design%20Support/Technical%20Document/AN045)) [S].
 
-**Rules** (RPA §1):
+## Gate-drive rule IDs
+RPA §1.
 
 | ID | Rule | Check | Class |
 |---|---|---|---|
@@ -30,16 +33,10 @@
 | PWR-12 | Boot cap at BOOT/SW, VDD bypass at the driver pins (smaller nearest for GaN drivers, SLUAAM3); C_boot ≥10 C_g, C_VDD ≥10 C_boot | Pad distance + schematic value check | S2, soft strong |
 | MOT-03 | Gate ≥20 mil @ 1 oz, paired with SHx / LS source | Parallel-run coupling; width | S2 |
 
-## Recommendations for our system
-- **Schematic (BOM) check** of the bootstrap and VDD ratios, using the FET Q_g/C_g from datasheets (LLM extraction, code compare).
-- **Treat gate and return as a pseudo differential pair** (coupled routing). Verify the Kelvin source pin is used when the FET has one.
-- **Add the INTVCC/VDD decoupling loop** as a second `loop_area` constraint, ranked after the main hot loop.
-- **Compute the EPC L_G bound** from extracted R_G and C_GS, and compare it with estimated trace inductance.
-
-## Conflicts and open questions
-- **No numeric gate-trace length limit** exists beyond "wide, short" and the EPC inequality.
+## Open questions
+- No numeric gate-trace length limit beyond "wide, short" and the EPC inequality.
 
 ## Sources
-- research notes: [rules_power_rf_analog_dfm.md § 1, § 11](../../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_power_rf_analog_dfm.md); [verification_rules.md § 1B, § 2](../../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md)
+- [rules_power_rf_analog_dfm.md § 1, § 11](../../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_power_rf_analog_dfm.md); [verification_rules.md § 1B, § 2](../../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md)
 
 See also: [hot-loops.md](hot-loops.md), [motor-drivers.md](motor-drivers.md), [buck.md](buck.md)

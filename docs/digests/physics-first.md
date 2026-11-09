@@ -1,64 +1,44 @@
 # Digest: physics-first placement and routing
 
-Every statement links to the doc with the numbers and caveats. The philosophy is in [physics/README](../topics/physics/README.md); the ~890 ideas are in the [catalog](../ideas/physics-first/README.md). [C] means computed by our scripts: quasi-static, model against model, not yet measured.
+Scope: physics-first conclusions; [C] = computed, model against model, never measured. Not here: rule packs -> [rules-hs-emi-interfaces](rules-hs-emi-interfaces.md), [rules-power-rf-analog-dfm](rules-power-rf-analog-dfm.md); evaluation stack -> [practice-evaluation](practice-evaluation.md). Ideas: [catalog](../ideas/physics-first/README.md); runs: [research/physics](../research/physics/README.md).
+Keys: physics-first, gentleness G, F1–F7, T1–T13, derivation audit, conductor passport, cut law, edit spectrum, ℓ_m, R–L crossover, copper damping, tuned snubber, return-path EMF, physics scorecard, red team, kill criteria, coupons, reduced-order model, intent objective
 
 ## The idea
-- **A circuit is Maxwell at zeroth order, and layout adds a series of corrections.** The series converges only inside the nearest natural mode (gentleness G). Keep each part of the realization invisible, known (budgeted with σ) or designed (a line, a damper, a sense path, an antenna). Match or damp to stay gentle. → [foundations](../topics/physics/foundations.md)
-- **Seven principles plus damage:**
-  - conservation and topology, with a world node;
-  - linear, reciprocal media;
-  - extremum;
-  - symmetry;
-  - locality and scale;
-  - dissipation and fluctuation;
-  - decisions under belief;
-  - extremes and accumulation (damage).
-  
-  → [foundations](../topics/physics/foundations.md), [derivations](../topics/physics/foundations-derivations.md)
-- **132 of 160 rules of thumb derive from them** (51 everywhere, 81 within a regime). Of the rest, 12 are habit and wrong, 9 are convention, 5 are legal and 2 are material data. Only 12 of 67 quoted numbers derive. → [derivation-audit](../topics/physics/derivation-audit.md), [table](../topics/physics/derivation-audit-table.md), [rule-basis-set](../topics/physics/rule-basis-set.md)
+- Circuit = Maxwell at zeroth order; layout corrections converge only while ρ(G) < 1; keep each part invisible, known (σ-budgeted) or designed; match or damp to stay gentle. → [zeroth order](../topics/physics/foundations.md#the-circuit-is-the-zeroth-order)
+- Seven principles F1–F7 (conservation/topology with a world node, linear media, extremum, symmetry, locality, dissipation, belief) plus damage. → [principles](../topics/physics/foundations.md#seven-first-principles)
+- 132 of 160 rules of thumb derive (51 everywhere, 81 within a regime); 12 habit-wrong, 9 convention, 5 legal, 2 not derivable; only 12 of 67 quoted numbers derive. → [coverage](../topics/physics/derivation-audit.md#coverage-c-da_coverage)
 
 ## What changes
-- **Thirteen design theorems replace slogans:**
-  - impedance level (Z0 toward ΔV/ΔI; damp with R = Z0);
-  - self vs interaction objectives;
-  - exact edit pricing;
-  - budgets on closed loops;
-  - the world as a node;
-  - exact topology;
-  - band-limited plane mirrors;
-  - designed dissipation;
-  - loss vs damage.
-  
-  → [foundations](../topics/physics/foundations.md) §4
-- **What a conductor is doing:** the per-piece, per-band column of exact counterfactuals on every budget. It is computable with one factorization per band. → [lens-cd](../topics/physics/lens-cd.md), [real-board-passports](../topics/physics/real-board-passports.md)
-- **Self terms have certified floors:** pour shapes on four open boards sit a median 4% above theirs. Losses come from reliefs and partitioning [C]. → [lens-vp](../topics/physics/lens-vp.md), [validation-program](../topics/physics/validation-program.md)
-- **Exact cut law (derived four independent ways):** a slit costs (2/π)·R_s·ln sec(πx/2). The edit spectrum Σ c/(1 − λ) prices any finite edit exactly; first order holds only while λ ≪ 1. → [lens-ct](../topics/physics/lens-ct.md), [lens-sy](../topics/physics/lens-sy.md), [physics-core-v2](../topics/physics/physics-core-v2.md)
-- **The R–L crossover is a length band:** ℓ_m = R_s/(π·μ0·f). Converter fundamentals return locally; the open regime is DC to tens of kHz near precision analog. → [lens-ls](../topics/physics/lens-ls.md), [lens-vp](../topics/physics/lens-vp.md)
-- **Planes break E/M duality:** height is a lever for loops, not for wide dv/dt copper. Guards do little over thin dielectric. → [lens-sy](../topics/physics/lens-sy.md)
-- **Damping:**
-  - Copper does not damp hot-loop rings, though it damps plane pairs below ~30 MHz.
-  - Tuned snubbers reach the same Q at a third of the loss.
-  - Every loss is also a noise source.
-  
-  → [lens-th](../topics/physics/lens-th.md)
-- **Off-board conductors** (cable, enclosure, heatsink) carry much of the value of information (10–84% by prior). → [lens-in](../topics/physics/lens-in.md), [lens-ct](../topics/physics/lens-ct.md)
+- Theorems T1–T13 replace slogans. → [derivation tree](../topics/physics/foundations.md#design-theorems-the-derivation-tree)
+- T1 (restated by the red team): first order a line is a pure delay for any Z0; Z0 = ΔV/ΔI minimizes stored energy; damp with R = Z0. → [T1](../topics/physics/foundations.md#theorem-t1-impedance-level)
+- A conductor's passport = its exact counterfactuals on every budget, per band, from one factorization per band. → [passport](../topics/physics/lens-cd.md#7-what-each-conductor-is-doing-the-passport)
+- Certified floors: pours on 4 real boards sit a median 4% above theirs; loss comes from reliefs and partitioning [C]. → [lens-vp](../topics/physics/lens-vp.md#use-in-kae)
+- Cut law ΔR = (2/π)R_s·ln sec(πx/2) holds to 6 digits under an independent Galerkin check; the four lenses' agreement is not independent evidence. → [verified](../topics/physics/verification-and-limits.md#1-claims-verified-by-an-independent-method)
+- Edit spectrum ΔZ = Σ c_i/(1 − λ_i) prices any finite edit exactly; first order holds only while λ ≪ 1. → [edit spectrum](../topics/physics/physics-core-v2.md#4-the-edit-spectrum-when-cheap-physics-holds)
+- R–L crossover is a length band, ℓ50 ≈ ℓ_m/2 with ℓ_m = R_s/(π·μ0·f), valid for ℓ ≥ 6h; the open regime is DC to tens of kHz near precision analog. → [lens-vp](../topics/physics/lens-vp.md#lens-vp-variational-principles-and-energy), [mirroring](../topics/physics/lens-sy.md#3-more-derivations-checked-against-computed-numbers-c)
+- Planes break E/M duality: height is a lever on loops, not wide dv/dt copper; guards do little over thin dielectric. → [lens-sy](../topics/physics/lens-sy.md#lens-sy-symmetry-reciprocity-and-duality)
+- Copper cannot damp hot-loop rings above ~50 MHz but does damp plane pairs below ~30 MHz on thin cores; Q 10–20 → ~1 buys 12–21 dB at the ring band; a tuned snubber matches textbook Q at a third of the loss. → [lens-th](../topics/physics/lens-th.md#2-derivation-map-then-derivations)
+- Off-board unknowns carry 33–84% of VOI under the original prior, 10–49% under others. → [lens-in](../topics/physics/lens-in.md#5-the-measurement-program-as-experiment-design)
 
 ## Domain physics
-- **Power:** classify copper by waveform; height × squares, not area; via clusters by perimeter; keep the plane under shielded inductors. → [power-copper](../topics/physics/power-copper.md), [pdn-and-commutation](../topics/physics/pdn-and-commutation.md)
-- **SI/EMI:**
-  - The return-path EMF replaces about a dozen plane rules.
-  - One worked case: removing a slot gives 24 dB, slower edges 3 dB.
-  - Co-located cables give 6–48 dB by orientation.
-  
-  → [fields-si-emi](../topics/physics/fields-si-emi.md), [fields-emi-budget](../topics/physics/fields-emi-budget.md), [rf-geometry](../topics/physics/rf-geometry.md)
-- **Thermal, HV, fab:** spreading lengths, kernel-plus-images placement scoring, HV corner fields, altitude as air density, fab limits as process physics. → [thermal-physics](../topics/physics/thermal-physics.md), [hv-and-manufacturing-physics](../topics/physics/hv-and-manufacturing-physics.md)
+- Power: classify copper by waveform; near a plane loop L is height × squares, not area. → [classify](../topics/physics/power-copper.md#1-node-and-branch-classification-the-decision-procedure), [loops](../topics/physics/pdn-and-commutation.md#1-commutation-loop-geometry)
+- SI/EMI: one return-path EMF replaces about a dozen plane rules; in one worked case removing a slot buys 24–38 dB, edge rate 2.5–3 dB, cable points on one edge 6–48 dB by orientation. → [metric](../topics/physics/fields-si-emi.md#3-the-one-metric-return-path-emf), [dB ranking](../topics/physics/fields-emi-budget.md#3-what-buys-db-in-order-this-case)
+- Thermal: superposition with edge images scores placements within ~2% of a full solve [C]. → [superposition](../topics/physics/thermal-physics.md#placement-scoring-by-superposition)
+- HV and fab: spacing is three insulation problems; altitude is Paschen similarity; fab limits are process physics. → [HV/mfg](../topics/physics/hv-and-manufacturing-physics.md#insulation-is-three-physics-problems)
 
 ## The machine
-- **Physics core v2:** Piece/Passport/Job on an extended graph with world conductors. It has 8 kernels sharing one factorization per band; every number is a Belief with an exactness class. → [physics-core-v2](../topics/physics/physics-core-v2.md), [API](../topics/physics/physics-core-v2-api.md)
-- **Joint placement and routing on a topology-carrying state,** used as a refiner: on toy boards it improves its start by 18% and ties an equal-CPU restart portfolio. → [joint-place-route](../topics/physics/joint-place-route.md), [experiment](../topics/physics/joint-place-route-experiment.md)
-- **A physics scorecard separate from cp1/cpk,** with a DRC-equivalent mutation benchmark. → [physics-critics](../topics/physics/physics-critics.md)
-- **Comprehension before placement:** from the board file alone, `kae.circuit` names hot loops, power paths, decoupling, crystal loops, protection chains and victims with confidence and evidence. Hot loops are found reliably; capacitor ownership on shared rails is right 75% of the time (38% baseline), and pin pairings are stated only where the netlist decides them. → [comprehension](../topics/physics/comprehension.md)
+- Formal problem J ≈ ⟨W, Z(D)⟩, three solver tiers: feasible [I], no measured ground truth. → [feasibility](../topics/architecture/physics-driven-design.md#7-feasibility)
+- Engine (not built): one operator per band factored once per epoch; Schur windows; rank-k commits. → [engine](../topics/architecture/physics-engine-design.md#results)
+- One Galerkin reduced model covers DC to the quasi-static limit (R2 gate passed on boost and chaac); hop-port prices scored better on two bands, worse wideband. → [R2](../topics/architecture/physics-frequency-coverage.md#r2-on-boost-passed), [hop ports](../topics/architecture/physics-hop-ports.md#pricing-a-hop-through-the-port-of-the-connection-it-replaces-stage-r4b)
+- Intent sets the objective (lexicographic tiers, exchange rates) because assumed bounds were hidden exchange rates; intent widths beat the human on copper loss on boost; locked power routing blocks dense boards. → [objective](../topics/architecture/intent-driven-objectives.md#objective-formulation), [runs](../research/physics/field-solver-routing-and-intent.md#what-did-not-work)
+- Fast place terms rank like PEEC at ~10k moves/s; exact physics before routing changed few decisions. → [terms](../research/placement/kae-physics-terms.md#verdict), [exact](../research/placement/kae-exact-physics-before-routing.md#verdict)
+- Joint place-and-route is a refiner: −18% vs its own start (10/10), ties an equal-CPU restart portfolio (5/10). → [experiment](../topics/physics/joint-place-route-experiment.md#results-c)
+- The physics scorecard sits beside cp1/cpk and never feeds them; a DRC-clean-but-physically-wrong mutation benchmark tests the critics. → [critics](../topics/physics/physics-critics.md#5-the-drc-clean-but-physically-wrong-benchmark)
+- On 112 suite boards one via carries a whole rail on 102/335 rails; Freerouting doubles the worst rail drop (median ×1.9) [C]. → [suite](../research/physics/physics-critics-and-passports.md#results)
+- `kae.circuit` brief (netlist only) finds hot loops reliably; capacitor ownership 74.7% vs 38.0% baseline. → [accuracy](../research/placement/kae-comprehension-brief.md#weak-labels-from-the-human-placement-c)
+- `kae.sim` compares ideal and routed circuits in ngspice at every corner. → [kae.sim](../topics/architecture/functional-evaluator.md#7-results-m)
 
 ## Truth
-- **Verification:** the core maths (cut law, wire medium, floors, duality, thermal lengths) holds under independent methods. Every computed number must pass an independent method, a refinement study and a validated reference. → [verification-and-limits](../topics/physics/verification-and-limits.md)
-- **Validation:** a VOI-ranked coupon panel (ℓ_m coupon first) and a pre-registered two-arm first board (rules vs physics), with 11 kill criteria. → [validation-program](../topics/physics/validation-program.md), [coupons](../topics/physics/validation-coupons.md)
+- Red team: ~1/4 of load-bearing claims wrong, overstated or circular (12 kHz mirroring, "copper never damps", Z0-matching invisibility, 40 dB cable benefit). → [red team](../research/physics/redteam-corrections.md#results)
+- Each computed number needs an independent method, a refinement study and a reference validated where the optimizer selects. → [verification](../topics/physics/verification-and-limits.md#verification-and-limits)
+- Validation plan: VOI-ranked coupons (LM first), pre-registered two-arm board VAL-1, 11 kill criteria; nothing fabricated. → [kill criteria](../topics/physics/validation-program.md#5-kill-criteria), [coupons](../topics/physics/validation-coupons.md#2-the-panel-ranked)

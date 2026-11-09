@@ -94,24 +94,46 @@ def cmd_place(a):
         except ValueError as e:
             raise SystemExit(str(e))
         _log(f"fixed at their input pose: {len(kw['fixed'])} parts ({','.join(fix_classes) or 'by reference'})")
+    on_disk = []           # the severity ladder's rungs, in the order their poses were written
+
+    def verify(r, end):
+        # a rung of the severity ladder: written and judged by KiCad's DRC loop within its share
+        t1 = time.monotonic()
+        r.report["writer"] = write(a.input, a.output, r.poses, mode=a.writer, log=_log)
+        r.report["write_s"] = round(time.monotonic() - t1, 2)
+        on_disk.append(r)
+        clean, wr = (None, None)
+        if r.state is not None:
+            clean, wr = _kicad_loop(a, r, t0, write, end=end)
+        if wr is not None:
+            r.report["writer"] = wr
+        return dict(clean=clean)
     if a.probe_select and a.probe_select > 1:
         res = _probe_select(a, board, kw, t0, write)
     else:
-        res = place(board, seed=a.seed, time_s=a.time, **kw)
+        res = place(board, seed=a.seed, time_s=a.time, verify=verify if a.drc != "off" else None, **kw)
     res.report["stages_run"] = sorted({"seed", "legalize"} | ({"anneal"} if anneal else set()))
-    t1 = time.monotonic()
-    wrep = write(a.input, a.output, res.poses, mode=a.writer, log=_log) if res.poses else None
-    if wrep is None:
-        import shutil
-        shutil.copy2(a.input, a.output)
-        wrep = dict(writer="copy", moved=0)
-    res.report["writer"] = wrep
-    res.report["write_s"] = round(time.monotonic() - t1, 2)
     kicad_clean = None
+    if res.verified is not None:
+        # the ladder judged each rung; the kept one is written again if a later rung overwrote it
+        kicad_clean = res.verified.get("clean")
+        if on_disk and on_disk[-1] is not res:
+            res.report["writer"] = write(a.input, a.output, res.poses, mode=a.writer, log=_log)
+            res.report["severity_ladder"]["rewritten"] = True
+    else:
+        t1 = time.monotonic()
+        wrep = write(a.input, a.output, res.poses, mode=a.writer, log=_log) if res.poses else None
+        if wrep is None:
+            import shutil
+            shutil.copy2(a.input, a.output)
+            wrep = dict(writer="copy", moved=0)
+        res.report["writer"] = wrep
+        res.report["write_s"] = round(time.monotonic() - t1, 2)
+        if a.drc != "off" and res.poses and res.state is not None:
+            kicad_clean, wrep2 = _kicad_loop(a, res, t0, write)
+            if wrep2 is not None:
+                res.report["writer"] = wrep2
     if a.drc != "off" and res.poses and res.state is not None:
-        kicad_clean, wrep2 = _kicad_loop(a, res, t0, write)
-        if wrep2 is not None:
-            res.report["writer"] = wrep2
         from kae.place.pipeline import body_hazards
         body_hazards(res.report, res.problem, res.state)
     # what the writer's post-write check found in the file it wrote (format upgrade, changed items),
@@ -134,7 +156,8 @@ def cmd_place(a):
         _log(f"could not write {side}: {e}")
     if a.report:
         Path(a.report).write_text(json.dumps(res.report, indent=1, default=str))
-    _log(f"wrote {a.output} with {wrep.get('writer')} in {res.report['total_s']}s; legal={legal}")
+    _log(f"wrote {a.output} with {(res.report.get('writer') or {}).get('writer')} in {res.report['total_s']}s; "
+         f"legal={legal}, severity {res.report.get('severity_used')}")
     return 0 if legal else 3
 
 
@@ -142,13 +165,15 @@ DRC_RETRIES = 2                      # kicad-cli runs again after dying on a sig
 _DRC_SIGNAL = __import__("re").compile(r"rc=-\d+")
 
 
-def _kicad_loop(a, res, t0, write):
+def _kicad_loop(a, res, t0, write, end=None):
     """KiCad's DRC on the written placement, fed back until it is clean (kae.place.exact:
     kicad_feedback -> repair -> write again), within the caller's time. The best placement
     KiCad has judged (clean, else fewest placement errors) is kept: when the loop ends on a
     worse verdict, or on a repair KiCad has not judged (time, a DRC failure), that one is
-    written again (report: kicad_written_round). Returns (clean or None when KiCad could not
-    run, the last writer report or None)."""
+    written again (report: kicad_written_round). `end` (monotonic seconds): when the loop's
+    share of the time ends (a rung of the severity ladder), else t0 + a.time. Report:
+    kicad_verdict, the placer's errors by type on the board as written. Returns (clean or None
+    when KiCad could not run, the last writer report or None)."""
     import tempfile
     try:
         from kae.route import drc as kdrc
@@ -164,10 +189,12 @@ def _kicad_loop(a, res, t0, write):
     tmp = tempfile.mkdtemp(prefix="kae-drc-")
     rounds, clean, wrep = [], None, None
     before = st.poses()
-    best = None            # (placement errors, round, X, Y, K, poses) KiCad judged
+    best = None            # (placement errors, round, X, Y, K, poses, by type) KiCad judged
     judged = None          # errors of the board as written now (None: not judged yet)
+    judged_types = {}
+    limit = (t0 + 0.97 * float(a.time)) if end is None else (end - 0.03 * float(a.time))
     for it in range(a.drc_rounds + 1):
-        left = t0 + 0.97 * float(a.time) - time.monotonic()
+        left = limit - time.monotonic()
         if left < 15.0:
             rounds.append(dict(round=it, skipped="time"))
             break
@@ -183,7 +210,7 @@ def _kicad_loop(a, res, t0, write):
                 from kae.place.problem import FIXED_ERROR_CHECKS
                 kdrc.promote_severities(staged, [c for c in FIXED_ERROR_CHECKS
                                                  if not (c == "courtyards_overlap" and P.cy_shrink > 0)])
-            left = t0 + 0.97 * float(a.time) - time.monotonic()
+            left = limit - time.monotonic()
             try:
                 report = kdrc.run(staged, Path(staged).parent / "drc.json",
                                   timeout=max(10.0, min(600.0, (left - 5.0) if it == 0 else 0.5 * left)))
@@ -201,15 +228,17 @@ def _kicad_loop(a, res, t0, write):
             break
         fb = X.kicad_feedback(P, st, report)
         rounds.append(dict(round=it, errors=fb["errors"], by_type=fb["by_type"], fixed_only=fb["fixed_only"],
+                           placer_by_type=fb.get("placer_by_type", {}),
                            seconds=round(time.monotonic() - t, 1), **({"crashes": crashes} if crashes else {})))
         _log(f"KiCad DRC round {it}: {fb['errors']} placement errors {fb['by_type']}")
         clean = fb["errors"] == fb["fixed_only"]
         judged = fb["errors"] - fb["fixed_only"]
+        judged_types = dict(fb.get("placer_by_type", {}))
         if best is None or judged < best[0]:
-            best = (judged, it, st.X.copy(), st.Y.copy(), st.K.copy(), dict(res.poses))
+            best = (judged, it, st.X.copy(), st.Y.copy(), st.K.copy(), dict(res.poses), judged_types)
         if clean or it == a.drc_rounds:
             break
-        left = t0 + 0.97 * float(a.time) - time.monotonic()
+        left = limit - time.monotonic()
         rounds[-1]["repair"] = X.repair(P, st, time_s=max(3.0, min(120.0, 0.4 * left)), log=_log)
         rounds[-1]["repair"].pop("findings", None)
         rep_r = rounds[-1]["repair"]
@@ -217,7 +246,7 @@ def _kicad_loop(a, res, t0, write):
             # the repair re-placed parts without the silkscreen: the silk pass again (pic-
             # programmer with its interface fixed: 40 parts evicted, 18 silk errors after)
             try:
-                left = t0 + 0.97 * float(a.time) - time.monotonic()
+                left = limit - time.monotonic()
                 rep_r["silk_fix"] = X.fix_silk(P, st, time_s=max(2.0, min(30.0, 0.15 * left)), log=_log)
             except Exception as e:      # noqa: BLE001 - a polish pass; never lose the placement
                 rep_r["silk_fix"] = dict(error=f"{type(e).__name__}: {e}")
@@ -229,13 +258,16 @@ def _kicad_loop(a, res, t0, write):
     written = None if judged is None else rounds[-1]["round"] if "errors" in rounds[-1] else None
     if not clean and best is not None and (judged is None or judged > best[0]):
         # the loop ended worse than a placement KiCad already judged: write that one again
-        _, written, X0, Y0, K0, poses0 = best
+        _, written, X0, Y0, K0, poses0, judged_types = best
+        judged = best[0]
         st.X[:], st.Y[:], st.K[:] = X0, Y0, K0
         res.poses = poses0
         wrep = write(a.input, a.output, res.poses, mode=a.writer, log=_log)
         clean = best[0] == 0
         _log(f"KiCad DRC: wrote round {written}'s placement again ({best[0]} placement errors)")
     res.report["kicad_written_round"] = written
+    if judged is not None:
+        res.report["kicad_verdict"] = dict(errors=judged, by_type=judged_types, round=written)
     res.report["kicad_drc"] = rounds
     res.report["kicad_verified"] = clean is not None
     res.report["exact"] = exact_check(P, st)
@@ -409,11 +441,13 @@ def main(argv=None):
                          "probe leaves the fewest open connections on (physics within 10%%; off by default)")
     sp.add_argument("--fix", default="", metavar="REF[,REF...]",
                     help="keep these parts at their input pose (fixed obstacles, as locked parts)")
-    sp.add_argument("--severity", default=None, choices=("strict", "level_c", "board"),
-                    help="placement legality: 'level_c' (default) keeps courtyards, copper-to-edge, rule areas, "
-                         "clearance, shorts and hole clearance errors whatever the project says, with courtyards "
-                         "at IPC Level C (0.15 mm in) where the project waives them; 'strict' drawn courtyards "
-                         "everywhere; 'board' follows the project's severities (also: KAE_PLACE_SEVERITY)")
+    sp.add_argument("--severity", default=None, choices=("strict_then_level_c", "strict", "level_c", "board"),
+                    help="placement legality: courtyards, copper-to-edge, rule areas, clearance, shorts and hole "
+                         "clearance are errors whatever the project says. 'strict_then_level_c' (default) places "
+                         "with drawn courtyards in 55%% of the time and, only if that leaves placement errors, "
+                         "again with courtyards at IPC Level C (0.15 mm in) where the project waives them; "
+                         "'strict' or 'level_c' one of the two; 'board' follows the project's severities "
+                         "(also: KAE_PLACE_SEVERITY)")
     sp.add_argument("--relax-bodies", default=None, choices=("off", "escalate", "auto"),
                     help="parts without a courtyard: 'off' (default) keeps their bodies as obstacles; 'escalate' "
                          "frees them to their pads when legalization fails; 'auto' also up front on a board over "

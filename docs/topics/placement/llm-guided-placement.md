@@ -1,13 +1,16 @@
 # LLM/VLM-guided placement (PCBAgent, ModuPlace, Li DAC'26, VeoPlace, MAGE)
 
-**TL;DR**
-- Best-supported loop: **LLM → hierarchy, sides, constraints/relations, weights, priorities → numeric placer → exact legalizer → metrics + feature-rich conflict list → LLM**. Never let the LLM emit final coordinates.
-- **Hierarchy matters most** (ModuPlace's largest ablation); a fine-tuned 7B model writes better constraint graphs than zero-shot GPT-4o/Claude-3.5.
-- Frontier LMMs place with good *connectivity* (OmniLayout RR up to 0.95) but bad *pad-level legality* (79.82% overlap) — they belong at the intent level.
-- **Weak anchors win**: VeoPlace's VLM regions help at λ_A = 0.01 and over-constrain at 0.1–1.0; random regions hurt, so the semantics matter. Images are optional (text-only vs image-only differ <0.8%).
-- Persist the LLM's relations as the re-solvable design-intent artifact (RAC: 89.5% re-solve pass after resizes; PCB-Migrator).
+Scope: LLM/VLM-guided PCB placement systems and the loop they support. Not here: LLM routing -> [LLM routing evidence](../routing/llm-routing-evidence.md); scene-layout transplants -> [scene layout](scene-layout-transplants.md).
+Keys: PCBAgent, ModuPlace, Li DAC'26, VeoPlace, MAGE, OmniLayout, hierarchy, constraint graph, fine-tuned 7B, weak anchors, λ_A, VLM regions, RAC, PCB-Migrator, design intent, NSLW
 
-## Key facts
+**Results**
+1. Best-supported loop: **LLM → hierarchy, sides, constraints/relations, weights, priorities → numeric placer → exact legalizer → metrics + feature-rich conflict list → LLM**. Never let the LLM emit final coordinates.
+2. **Hierarchy matters most** (ModuPlace's largest ablation); a fine-tuned 7B model writes better constraint graphs than zero-shot GPT-4o/Claude-3.5.
+3. Frontier LMMs place with good *connectivity* but bad *pad-level legality* ([OmniLayout](benchmarks-and-metrics.md#methods-and-results)): they belong at the intent level.
+4. **Weak anchors win** (VeoPlace): strong anchors over-constrain; random regions hurt, so the semantics matter; images are optional.
+5. Persist the LLM's relations as the re-solvable design-intent artifact ([RAC re-solve](../llm/interfaces-relations-vs-coordinates.md#rac-relational-agent-contract); PCB-Migrator).
+
+## Methods and results
 
 **PCBAgent** (ASP-DAC'25; HKUST/Huawei/CUHK; [PDF](https://www.cse.cuhk.edu.hk/~byu/papers/C247-ASPDAC2025-PCBAgent.pdf) [P], VP-verified)
 - Formulation: min HPWL + λ/NSLW s.t. overlap = beyond-boundary = insufficient-spacing = 0. **Surface Layer Wire**: 2-pin connection fanning toward the nearest edges, crossing no component, with overlapping pad projections.
@@ -35,7 +38,7 @@
 - Prompt output contract: **HISTORY SUMMARY** (archetypes, largest-macro analysis, ≥3 principles marked "hypothesis" if weak) → **STRATEGY** (exactly one change to the best archetype, "exploratory" if weak) → **REGIONS** (largest first). Context = **Top Stratified** (K-means on placements, rank-softmax τ = 0.43 over cluster bests, top-C of one cluster); greedy-best context worst.
 - Results: DREAMPlace improved on all 8 Superblue designs (**0.5–4.4%**, Gemini 3.6 Flash); ChiPFormer 9/10 benchmarks (peak −32.2%, Gemini 2.5 Flash); **Qwen3-VL 8B/30B-A3B match Gemini**; no-image/no-text/shuffled <0.8% change; random regions sharply degrade; anchor-to-best ≈ DREAMPlace alone.
 
-**MAGE** (UCSD, VLSI, Claude Opus 4.6; [arXiv 2607.18536](https://arxiv.org/pdf/2607.18536) [P]): 6 phases/8 sub-agents — retrieval; **families of structurally similar groups**; group boxes with mandatory flyline-render visual gate (stop <2% or 5 iterations); feasibility (area, packing, channel spacing; recursive split); **reference placement per family, then transform-and-merge**; stateless independent auditor; optional Go-With-The-Winners tournament. vs commercial placers +29.7% rWL, +3.8–4.5% power; vs human "comparable"; vs Hier-RTLMP −9.8% rWL. Removing vision worsens WNS 40.5% and TNS 133% (rWL +2.3%). $220–509 per tournament, ~10 h.
+**MAGE** (UCSD, VLSI, Claude Opus 4.6; [arXiv 2607.18536](https://arxiv.org/pdf/2607.18536) [P]): 6 phases/8 sub-agents — retrieval; **families of structurally similar groups**; group boxes with mandatory flyline-render visual gate (stop <2% or 5 iterations); feasibility (area, packing, channel spacing; recursive split); **reference placement per family, then transform-and-merge**; stateless independent auditor; optional Go-With-The-Winners tournament. vs commercial placers +29.7% rWL, +3.8–4.5% power; vs human "comparable"; vs Hier-RTLMP −9.8% rWL. Vision ablation (timing, not wirelength) -> [vision-feedback](../llm/vision-feedback.md#evidence). $220–509 per tournament, ~10 h.
 
 **Trace** (commercial, KiCad): Claude analyzes schematic (groups, critical nets, thermal, edge parts, proximity rules) → floorplan variants → SA [S].
 
@@ -43,8 +46,8 @@
 
 **Steerable representations** an LLM can author or read: weighted multi-term costs (Cypress JSON knobs + tuner, PA-ICM α/β/γ, Hier-RTLMP weights); declarative constraints (ALIGN JSON, HiePlace priorities/spacing/alignment); hierarchy and relative-position graphs (HMT/CCG, offset constraint graphs, NS-Place relative positions); region anchors/fences; orders/seeds; raster masks; conflict lists with features. A KiCad AI guide warns API moves skip courtyard checks — run DRC each pass ([pcbeditor.com](https://pcbeditor.com/kicad-ai) [S]).
 
-## Recommendations for our system
-- **Typed relation bundle as the LLM's only write API** (ordinal magnitudes, joint realization; RAC/VP synthesis): `group`, `region(group, rule_area)`, `side(part, top|bottom)`, `near(part, part.pin, tight|close|loose)`, `ring(ic, refs, priority)`, `align`, `order`, `symmetric(a, b, axis)`, `board_edge`, `orient_toward`, `keepout`, `spread(heat)`, `away_from`, `loop_compact(nets)`, plus hard `fixed`, `on_edge`, `inside`, `clearance`, `rot_allowed`. Compile each soft relation twice (penalty + exact constraint) ([analog](analog-constraint-placement.md), [legalization](legalization.md)) [I].
+## Use in kae
+- **Typed relation bundle as the LLM's only write API** (vocabulary incl. placement-side terms -> [relation vocabulary](../llm/interfaces-relations-vs-coordinates.md#relation-vocabulary)). Compile each soft relation twice (penalty + exact constraint) ([analog](analog-constraint-placement.md), [legalization](legalization.md)) [I].
 - **Hierarchy first**: KiCad sheets → netlist clusters → LLM names modules and sets side, region/edge, adjacency; RAG over datasheet layout sections; optional subgraph-matched reuse [I].
 - **LLM assigns sides** ([sides](sides-thermal-emc-reuse.md)); calibrate tight/close/loose mm per component class from human boards (e.g., PCBWorld D3) [I].
 - Feedback: multi-tier metric report + **structured text conflict list with features and admissible relaxations**; incremental re-optimization of affected parts only (PCBAgent) [I].
@@ -54,12 +57,10 @@
 - Images later: text/relation channel first; renders for structure-level critique only [I].
 - Determinism and explainability: fix seeds; log the relation set, weights and solver versions; write a per-module "why" listing the binding constraints; apply results via IPC as one undo step, respect locked footprints, run DRC after each pass [I].
 
-## Conflicts and open questions
+## Open questions
 - No study compares LLM-authored vs expert-authored PCB constraint sets beyond ModuPlace's graph similarity and OmniLayout's relational metric.
 - No published system yet combines frontier LLM + constraint DSL + PCB-aware analytical engine + router-in-the-loop on an open benchmark; RAC tasks are small/synthetic.
 - PCBAgent's and ModuPlace's prompts/code are unreleased; mm calibration of ordinal classes is unpublished.
 
 ## Sources
-- research notes: [placement_algorithms.md § Q3, Q5, Q6, Q8](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/placement_algorithms.md); [verification_papers.md § 2.2, 2.3, 2.6, 2.8, 2.12, § 3](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_papers.md); [cross_domain_ideas.md § Q7](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/cross_domain_ideas.md)
-
-See also: [scene-layout-transplants](scene-layout-transplants.md) · [routing/llm-routing-evidence](../routing/llm-routing-evidence.md) · [analog-constraint-placement](analog-constraint-placement.md) · [benchmarks-and-metrics](benchmarks-and-metrics.md)
+- [placement_algorithms.md § Q3, Q5, Q6, Q8](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/placement_algorithms.md); [verification_papers.md § 2.2, 2.3, 2.6, 2.8, 2.12, § 3](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_papers.md); [cross_domain_ideas.md § Q7](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/cross_domain_ideas.md)

@@ -47,6 +47,7 @@ from . import critical_write as W
 
 HEADS = ("segment", "arc", "via", "zone")
 ERROR_LIMIT = 199      # KiCad 10 drc_engine: violations reported per check at most (clearance and opens: more)
+MERGE_CAP = 8          # entries of one pass merged at most (a dependency cycle larger than this stays apart)
 INPUT_SAMPLES = 4      # DRC runs of the input at most, to bound a noisy check's count
 BUCKET = 0.5           # mm: position bucket of a violation (neighbouring buckets match too)
 MARGIN = 0.5           # mm: new copper this close to another net's removed copper builds on its removal
@@ -108,6 +109,45 @@ def geom(head, block):
     mid = _xy(block, "mid") if head == "arc" else None
     line = LineString([a, mid, b] if mid else [a, b]) if a != b or mid else Point(a)
     return layers, line.buffer(w / 2, quad_segs=4)
+
+
+def _sccs(n, edges):
+    """Strongly connected components of the graph k -> edges[k] (iterative Tarjan), each a list."""
+    index, low, on, st, out, cnt = {}, {}, set(), [], [], [0]
+    for root in range(n):
+        if root in index:
+            continue
+        work = [(root, iter(sorted(edges[root])))]
+        index[root] = low[root] = cnt[0]
+        cnt[0] += 1
+        st.append(root)
+        on.add(root)
+        while work:
+            v, it = work[-1]
+            w = next(it, None)
+            if w is not None:
+                if w not in index:
+                    index[w] = low[w] = cnt[0]
+                    cnt[0] += 1
+                    st.append(w)
+                    on.add(w)
+                    work.append((w, iter(sorted(edges[w]))))
+                elif w in on:
+                    low[v] = min(low[v], index[w])
+                continue
+            work.pop()
+            if work:
+                low[work[-1][0]] = min(low[work[-1][0]], low[v])
+            if low[v] == index[v]:
+                comp = []
+                while True:
+                    w = st.pop()
+                    on.discard(w)
+                    comp.append(w)
+                    if w == v:
+                        break
+                out.append(comp)
+    return out
 
 
 def clearance_margin(project_board, default=0.2, cap=MARGIN):
@@ -175,10 +215,13 @@ class Journal:
 
     def add(self, entries):
         """Append one pass's entries, working out what each built on: items it removes that an earlier
-        entry wrote, and other nets' copper that an entry of an earlier pass removed within `margin` of
-        what it writes. Within one pass the changes were planned against each other in an order the
-        diff does not keep, so two of its entries in such a conflict (either way round) are merged into
-        one: kept or reverted together (taut: net A tightened into room net B left)."""
+        entry wrote, and other nets' copper that an earlier entry removed within `margin` of what it
+        writes. Within one pass the diff loses the order the changes were planned in, so such a conflict
+        between two of its entries is a dependency (A wrote into room B freed: reverting B reverts A).
+        Entries that depend on each other in a cycle (strongly connected) are merged into one, up to
+        MERGE_CAP entries; a larger cycle is not merged (one violation would revert dozens of nets:
+        pumpbot built a 63-net entry by chaining) and keeps only its edges along the pass's order, the
+        gate's DRC judging what is left. The pass's entries are then stored in dependency order."""
         from shapely import STRtree
         entries = list(entries)
         for e in entries:
@@ -192,13 +235,7 @@ class Journal:
                     mine.append((k, e.net, layers, g))
         removed = [(r, True) for r in self._removed] + [(r, False) for r in mine]
         tree = STRtree([r[3] for r, _ in removed]) if removed else None
-        parent = list(range(len(entries)))
-
-        def find(x):
-            while parent[x] != x:
-                parent[x] = parent[parent[x]]
-                x = parent[x]
-            return x
+        inner = [set() for _ in entries]          # k -> entries of this pass k built on
         for k, e in enumerate(entries):
             for u in e.before:
                 if u in self.writer:
@@ -220,24 +257,64 @@ class Journal:
                     if earlier:
                         e.deps.add(who)
                     else:
-                        parent[find(k)] = find(who)
-        groups = {}
-        for k in range(len(entries)):
-            groups.setdefault(find(k), []).append(entries[k])
-        merged = []
-        for k in sorted(groups):
-            g = groups[k]
-            if len(g) == 1:
-                merged.append(g[0])
-                continue
-            nets = sorted({x.net for x in g})
-            m = Entry(g[0].id, g[0].stage, "|".join(nets), {}, {}, dict(merged=[x.id for x in g]))
-            for x in g:
-                m.before.update(x.before)
-                m.after.update(x.after)
-                m.deps |= x.deps
-            merged.append(m)
-        for e in merged:
+                        inner[k].add(who)
+        comps = _sccs(len(entries), inner)
+        comp_of = {k: c for c, ks in enumerate(comps) for k in ks}
+        groups = []                                # (members, Entry)
+        for ks in comps:
+            if len(ks) == 1 or len(ks) <= MERGE_CAP:
+                g = [entries[k] for k in sorted(ks)]
+                if len(g) == 1:
+                    groups.append(([ks[0]], g[0]))
+                    continue
+                nets = sorted({x.net for x in g})
+                m = Entry(g[0].id, g[0].stage, "|".join(nets), {}, {}, dict(merged=[x.id for x in g]))
+                for x in g:
+                    m.before.update(x.before)
+                    m.after.update(x.after)
+                    m.deps |= x.deps
+                groups.append((sorted(ks), m))
+            else:
+                for k in sorted(ks):
+                    groups.append(([k], entries[k]))
+        gid = {}
+        for n, (ks, e) in enumerate(groups):
+            for k in ks:
+                gid[k] = n
+        # edges between groups; inside an unmerged cycle only those along the pass's order
+        need = {n: set() for n in range(len(groups))}
+        for k, ws in enumerate(inner):
+            for w in ws:
+                a, b = gid[k], gid[w]
+                if a == b:
+                    continue
+                if comp_of[k] == comp_of[w] and w > k:
+                    continue
+                need[a].add(b)
+        order, state = [], {}
+
+        def visit(n):
+            stack = [(n, iter(sorted(need[n])))]
+            state[n] = 1
+            while stack:
+                x, it = stack[-1]
+                nxt = next((y for y in it if state.get(y) != 2), None)
+                if nxt is None:
+                    state[x] = 2
+                    order.append(x)
+                    stack.pop()
+                elif state.get(nxt) != 1:
+                    state[nxt] = 1
+                    stack.append((nxt, iter(sorted(need[nxt]))))
+                # a back edge (left by a merged cycle's members) is dropped
+        for n in range(len(groups)):
+            if n not in state:
+                visit(n)
+        placed = set()
+        for n in order:
+            e = groups[n][1]
+            e.deps |= {groups[m][1].id for m in need[n] if m in placed}
+            placed.add(n)
             self.entries.append(e)
             self.by_id[e.id] = e
             for u in e.after:

@@ -705,6 +705,12 @@ def run(input_path, output_path, seed=0, time_s=900.0, opts=None, bridge_opts=No
         if bridge and left() > 30:
             from . import bridge as BR
             r0 = wd / "routed0.kicad_pcb"
+            # the heat facts reach the bridge's thermal-via pass (kae.route.thermal_vias) also when
+            # they were given to the critical router's opts rather than the project's text variables
+            for k in ("operating", "heat_min_W", "thermal_vias", "thermal_via_pitch", "thermal_via_max",
+                      "thermal_via_in_pad"):
+                if (opts or {}).get(k) not in (None, "") and k not in (bridge_opts or {}):
+                    bridge_opts = dict(bridge_opts or {}, **{k: opts[k]})
             if s is not None and (opts or {}).get("lm_soft", DEFAULTS["lm_soft"]):
                 bridge_opts = dict(bridge_opts or {}, **soft_critical(s))
             # the re-tweak rounds keep a reserve: up to 30 % of what is left, at most 180 s

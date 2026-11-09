@@ -2,7 +2,13 @@
 <!-- SPDX-License-Identifier: CC-BY-4.0 -->
 # Component priors and shared criteria (2026-11 audit decisions)
 
-**TL;DR**
+**Status:** decided in the 2026-11 audit; crystal C_L from the board behind `KAE_CRYSTAL_CL=board` until an A/B.
+**First published:** 2026-11-03, commit [d433880](https://github.com/magnetic-trowel/kicad-auto-everything/commit/d433880f42bf6db608a1454c75fa3299c69bc347) on branch `decide-2611`.
+
+Scope: the component priors and shared criteria kae's checkers and evaluators use (switch-node overshoot, cable common mode, MLCC DC bias and ESR, polarized-capacitor ESL/ESR, crystal load capacitance and ground scheme), with the measurements behind them. Not here: the rules themselves -> [hot-loops](../../topics/rules/power/hot-loops.md), [crystals-clocks](../../topics/rules/crystals-clocks.md), [decoupling-pdn](../../topics/rules/decoupling-pdn.md).
+Keys: overshoot criterion, 0.85 × V_abs, V_abs block hazard, cable common mode, Ott short-cable law, 2.6 µA, MLCC DC bias, `mlcc_bias_factor`, ESR vs C, tantalum ESL, crystal C_L, `KAE_CRYSTAL_CL`, `crystal_ground_no_plane`, `kae.physics.criteria`, `kae.excite.models`, `priors.crystal_budget`
+
+**Results**
 - **One overshoot criterion everywhere:** the switch-node peak V_in + overshoot ≤ 0.85 × V_abs; above V_abs itself the report carries a **block hazard**. The rule docs' "0.2 × V_DS,max" has no primary source and is dropped.
 - **Cable common mode:** Ott's short-cable law is capped at the resonant cable's 2·60·I/r (knee 95 MHz for 1 m). The placer's budget is now the evaluator's own line, 2.6 µA at 100 MHz, not 5 µA.
 - **MLCCs are derated for DC bias** with a field proxy V·√(C/body volume) fitted to vendor points, and get an ESR that falls with C. **Polarized capacitors** get ESL/ESR by body (tantalum case, can diameter), from vendor data.

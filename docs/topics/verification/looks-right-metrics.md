@@ -1,22 +1,16 @@
 # Quantifying "looks right": layout regularity and convention metrics
 
-**TL;DR**
-- "Looks right" means concrete regularities:
-  - like parts in one orientation, pin-1s aligned, memories in a matrix;
-  - parts and labels on grids and straight lines; text in at most two directions;
-  - compact power loops; tight, ordered decoupling;
-  - short, uncrossed airwires; traces leaving pad centres;
-  - identical channel layouts.
-- Every one of these heuristics can be computed from a KiCad board and netlist. The metric definitions below are proposals and are uncalibrated.
-- Neatness is necessary but not sufficient. Neat long parallel runs cause crosstalk, so every neatness term must be paired with a coupling penalty.
-- HPWL and crossings alone "are indifferent between a sensible layout and a scattered one" (KRT), so convention and intent metrics are needed on top.
-- No dataset links aesthetics to SI/EMC outcomes or reviewer acceptance, so weights need calibration on expert-rated boards.
+Scope: "looks right" layout-convention heuristics from sources and their proposed computable metrics (convention score). Not here: published quality metrics -> [quality-metrics.md](quality-metrics.md); what good looks like (workflow) -> [../workflow/what-good-looks-like.md](../workflow/what-good-looks-like.md).
+Keys: looks right, aesthetics, convention score, orientation entropy, pin-1 alignment, grid snap, collinearity, HPWL, crossings, Manhattan ratio, designator order, pad exit, parallel-run length, channel symmetry, signal flow, style profile, Olney, SparkFun
+Tags: [P] primary; [I] inference; [P/C] practitioner community opinion.
 
-## Key facts
-
-Tags: [P] primary; [I] inference. Practitioner quotes: [P/C] community opinion.
-
-### Source heuristics
+## Convention-score rules
+1. "Looks right" = concrete regularities: like parts in one orientation, pin-1s aligned, memories in a matrix; parts and labels on grids and straight lines; text in ≤2 directions; compact power loops; tight, ordered decoupling; short uncrossed airwires; traces leaving pad centres; identical channel layouts. All computable from a KiCad board + netlist; metric definitions below are uncalibrated proposals.
+2. Compute them in T0 (µs per move) as a "convention score": soft objective and review diagnostic, never a gate ([evaluation-stack.md](evaluation-stack.md)) [I].
+3. Neatness is necessary, not sufficient: neat long parallel runs cause crosstalk, so pair every neatness term with a coupling-length penalty [I]. HPWL and crossings alone "are indifferent between a sensible layout and a scattered one" (KRT).
+4. Thresholds and targets are a per-company style profile (grids, allowed angles, orientation conventions, silk rules); Quilter: "'looks right' varies by company" [I].
+5. No dataset links aesthetics to SI/EMC outcomes or reviewer acceptance: calibrate weights against expert-rated boards via blind review ([benchmark-plan.md](benchmark-plan.md)) [I].
+## Source heuristics
 
 - **Olney:**
   - "Similar types of components should be aligned on the board in the same orientation".
@@ -42,7 +36,7 @@ Tags: [P] primary; [I] inference. Practitioner quotes: [P/C] community opinion.
   - "'which way is up' is an unsolved problem".
   - "readability is king!!" [P/C].
 
-### Proposed metrics
+## Proposed metrics
 
 | Heuristic (sources) | Metric | Computation (KiCad board + netlist) |
 |---|---|---|
@@ -64,7 +58,9 @@ Tags: [P] primary; [I] inference. Practitioner quotes: [P/C] community opinion.
 | Power-width foresight (practitioners) | Width consistency on power nets | Min/max width along each power net vs declared current [I] |
 | Orientation conventions (practitioners) | Connector edge-facing; "up" consistency | Connector mating face toward board edge; text/part "up" agreement [I] |
 
-### Existing implementations (tool heuristics, not standards)
+## Existing implementations
+Tool heuristics, not standards.
+
 
 kicad-happy ([methodology_pcb.md](https://github.com/aklofas/kicad-happy/blob/main/skills/kicad/scripts/methodology_pcb.md)) [P]:
 - decap proximity: a C within 10 mm of a U, sharing a net, on the same side;
@@ -74,22 +70,12 @@ kicad-happy ([methodology_pcb.md](https://github.com/aklofas/kicad-happy/blob/ma
 
 KiCad supports regularity directly with Align/Distribute and multichannel Repeat Layout [P].
 
-## Recommendations for our system
-
-- **Compute these metrics in T0** (microseconds per move) as a "convention score". Use it as a soft objective and as a review diagnostic, never as a gate ([evaluation-stack.md](evaluation-stack.md)) [I].
-- **Pair every neatness term with a coupling-length penalty** [I].
-- **Make thresholds and targets a per-company style profile**: grids, allowed angles, orientation conventions, silk rules. Quilter: "'looks right' varies by company" [I].
-- **Calibrate weights against expert-rated boards** via blind review ([benchmark-plan.md](benchmark-plan.md)) [I].
-
-## Conflicts and open questions
+## Open questions
 
 - Kleinstein says readability is unnecessary if the board works; Phil's Lab and Quilter say convention decides acceptance. This trade-off is unquantified.
 - There is no empirical study of aesthetics vs measured performance or reviewer acceptance, and no human-rated aesthetics dataset.
 
 ## Sources
 
-- research notes: [expert_workflow_and_checklists.md § Q6](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/expert_workflow_and_checklists.md)
-- research notes: [practitioner_discussions.md § Q4a](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/practitioner_discussions.md)
-- research notes: [constraints_verification_benchmarks.md § Q3 (KRT critique)](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/constraints_verification_benchmarks.md)
+- [expert_workflow_and_checklists.md § Q6](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/expert_workflow_and_checklists.md); [practitioner_discussions.md § Q4a](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/practitioner_discussions.md); [constraints_verification_benchmarks.md § Q3 (KRT critique)](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/constraints_verification_benchmarks.md)
 
-See also: [../workflow/what-good-looks-like.md](../workflow/what-good-looks-like.md), [quality-metrics.md](quality-metrics.md)

@@ -58,8 +58,89 @@ def ledger_for(bd, brief, srcs, intent=None):
     return P, L
 
 
+OUTER_PREPREG_MM = 0.2    # 4-layer build without a stackup: L1-L2 and L3-L4 (docs/topics/rules/stackup.md: OSH Park 7.87 mil
+                          # with a 39 mil core; Ott S/G/P/S, signal-plane < 0.010", core > 0.040")
+
+
+def assume_stackup(b):
+    """(the stackup the field solve uses, hazards, assumption text) for a board. A file's stackup stands. Without one
+    (KiCad's default is an even split) a 4-layer board takes the common fab build, thin prepreg under the outer
+    layers and the rest as core, since an even split reads loops over the inner planes about 2.4 times too tall.
+    Other layer counts keep the even split: no fab build is documented for them. Only the declared layer count
+    decides, never which layers a layout's copper uses, so every layout of a board gets one stack."""
+    from kae.board.model import Stackup
+    su = b.stackup
+    if su.source == "file":
+        return su, [], None
+    n = len(su.copper)
+    body = su.thickness - 0.035 * n - 0.02
+    gaps = [body / max(1, n - 1)] * (n - 1)
+    how = "KiCad's even split"
+    if n == 4:
+        gaps = [OUTER_PREPREG_MM, body - 2 * OUTER_PREPREG_MM, OUTER_PREPREG_MM]
+        how = f"the common 4-layer build ({OUTER_PREPREG_MM:g} mm prepreg under the outer layers, the rest core)"
+    new = Stackup(copper=list(su.copper), cu_thickness=[0.035] * n, gaps=gaps, er=[4.5] * (n - 1),
+                  thickness=su.thickness, source="assumed")
+    text = f"stackup: the board states none; {n} copper layers, {', '.join(f'{g:.3g}' for g in gaps)} mm dielectrics ({how})"
+    hz = dict(code="stackup_assumed", severity="warn" if n > 2 else "info", category="data",
+              message=f"{text}. Loop inductance scales with the dielectric height, so absolute inductive harms rest on this.",
+              objects=[], evidence=dict(copper_layers=n, gaps_mm=[round(g, 4) for g in gaps],
+                                        source="docs/topics/rules/stackup.md (reference stacks)"),
+              fix="State the board's stackup in the KiCad board setup.")
+    return new, [hz], text
+
+
+def board_window(b, margin=3.0):
+    """The field solve's window: the pads' extent plus `margin` mm, grown to hold the board outline and every piece of
+    copper (tracks, arcs, vias, zones) with 0.5 mm to spare. The pads alone cut off copper routed beyond the
+    outermost pad (a backplane's 5 V feed looping around its last connector), and the evaluator then found the
+    rail open where KiCad finds it connected. With an outline, a layout's copper lies inside it, so every layout of
+    one placement gets the same window (and raster)."""
+    from kae.board import transform
+    xs, ys = [], []
+    for fp in b.footprints:
+        for p in fp.pads:
+            x, y = transform.pad_xy(fp, p)
+            xs.append(x), ys.append(y)
+    x0, y0, x1, y1 = min(xs) - margin, min(ys) - margin, max(xs) + margin, max(ys) + margin
+    boxes = [o.bounds for o in (getattr(b, "outline", None) or []) if not o.is_empty]
+    for t in getattr(b, "tracks", None) or []:
+        pts = [t.start, t.end] + ([t.mid] if getattr(t, "mid", None) is not None else [])
+        w = t.width / 2 + 0.5
+        boxes.append((min(p[0] for p in pts) - w, min(p[1] for p in pts) - w, max(p[0] for p in pts) + w,
+                      max(p[1] for p in pts) + w))
+    for v in getattr(b, "vias", None) or []:
+        r = v.size / 2 + 0.5
+        boxes.append((v.x - r, v.y - r, v.x + r, v.y + r))
+    for z in getattr(b, "zones", None) or []:
+        if getattr(z, "net", None) and getattr(z, "outline", None) is not None and not z.outline.is_empty:
+            bx = z.outline.bounds
+            boxes.append((bx[0] - 0.5, bx[1] - 0.5, bx[2] + 0.5, bx[3] + 0.5))
+    for bx in boxes:
+        x0, y0, x1, y1 = min(x0, bx[0]), min(y0, bx[1]), max(x1, bx[2]), max(y1, bx[3])
+    return (x0, y0, x1, y1)
+
+
+def coarsen_pitch(window, pitch, n_layers, max_cells):
+    """(pitch, note): the raster pitch doubled until the window's cells (nx ny layers) fit max_cells, and why. The
+    window is the board's pad extent, the same for every layout of one placement, so two layouts of a board always
+    share their pitch."""
+    if not max_cells:
+        return pitch, None
+    p0 = pitch
+    cells = lambda p: math.ceil((window[2] - window[0]) / p) * math.ceil((window[3] - window[1]) / p) * n_layers
+    n0 = cells(pitch)
+    while cells(pitch) > max_cells:
+        pitch *= 2
+    if pitch == p0:
+        return pitch, None
+    return pitch, (f"mesh: pitch {pitch:g} mm, not {p0:g}: the window at {p0:g} mm holds {n0 / 1e6:.2f}M cells, over the "
+                   f"budget of {max_cells / 1e6:.2f}M (memory and time grow faster than the cells); inductance bias "
+                   f"scales with the pitch, the same for every layout of this board")
+
+
 def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=None, log=print, lumped=True,
-             intent=None, n_corners=16, seed=0, dc=True):
+             intent=None, n_corners=16, seed=0, dc=True, max_cells=None):
     """Every harm of a laid-out board, across the parameters' intervals.
 
     Each aggressor's pattern is solved in two bands: its switching fundamental (current split by the
@@ -73,10 +154,15 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
     from kae.em import solve as ES
     from kae.em.kicad import BoardMesh
     from .beliefs import corners
+    from kae.board import pinfacts as PF
     t0 = time.time()
     b = b or load(path)
+    # the schematic's pin facts the intent was compiled with (operating facts `pins`): the same circuit
+    n_pins = PF.apply(b, (intent or {}).get("pins"))
+    b.stackup, stack_hz, stack_text = assume_stackup(b)
     brief = brief or B.build(b)
     bd = M.build(b, brief)
+    bd.radios = dict((intent or {}).get("radios") or {})        # the operating facts' radios
     srcs = S.add_all(bd, brief)
     obs = O.observers(bd, brief, srcs)
     P, ledger = ledger_for(bd, brief, srcs, intent)
@@ -108,13 +194,11 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
     if dcp:
         pads |= dcp.dc_pads
     if window is None:
-        from kae.board import transform
-        xs, ys = [], []
-        for fp in b.footprints:
-            for p in fp.pads:
-                x, y = transform.pad_xy(fp, p)
-                xs.append(x), ys.append(y)
-        window = (min(xs) - 3, min(ys) - 3, max(xs) + 3, max(ys) + 3)
+        window = board_window(b)
+    n_cu = len(b.stackup.gaps) + 1 if getattr(b, "stackup", None) is not None else 2
+    pitch, pitch_note = coarsen_pitch(window, pitch, n_cu, max_cells)
+    if pitch_note:
+        log(pitch_note)
     bm = BoardMesh(path, window, pitch, nsub=nsub, b=b, fills=fills)
     priced = {bd.net_of.get(p) for J in [v for _, v in pats.values()] + list(opats.values())
               for p, j in J.items() if abs(j) > 1e-9} - {None}
@@ -173,7 +257,18 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
         if band_res:
             solver_stats.append(_solver_row(f, band_res, time.time() - t_band))
             log("solver: " + _solver_line(solver_stats[-1]))
-    notes = list(mesh_notes)
+        # the harms read only each pattern's pad potentials: its full solution (every branch current and node
+        # potential: hundreds of MB on a large board) is kept only as the warm start of the source's next band
+        for _, info in band_res:
+            info.pop("x", None), info.pop("I", None), info.pop("net", None), info.pop("op", None)
+        for sn in [sn for sn in last if max(bands[sn].values()) <= f]:
+            del last[sn]
+    notes = ([pitch_note] if pitch_note else []) + list(mesh_notes)
+    if stack_text:
+        notes.append(stack_text)
+        bd.assumptions.append(stack_text)
+    if n_pins:
+        notes.append(f"pins: {n_pins} pads took their pin type and name from the operating facts (the schematic's)")
     uncomputed = []
     # an aggressor whose pattern drives current into a pad outside the copper model loses that current
     # from its solve: its harms are not computed (a dropped contribution is not a zero one)
@@ -313,7 +408,7 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
         sys_dc = {}                          # built by the first solve that needs it (_dc_system)
         harms += _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes, log, obs_out=observations,
                            system=sys_dc)
-        if dcp.loads and not any(n.startswith("DC: copper open") for n in notes):
+        if (dcp.loads or dcp.self_loads) and not any(n.startswith("DC: copper open") for n in notes):
             # part temperatures from the board's own heat flow, and each part's loss (kae.excite.heat)
             from . import heat as HT
             harms += HT.evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, [0.0] * ncp, notes,
@@ -323,6 +418,7 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
     apply_tcr(harms, tcr, tot, notes, hazards)
     harms.sort(key=lambda h: -(h["u_hi"] or 0))
     hazards += bias_hazards(harms, pitch)
+    hazards += stack_hz
     # each cell's parasitic ring: its copper loop with the switch node's capacitance
     rings = []
     for pr in pairs:
@@ -348,7 +444,7 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
                 part_power_W={k: round(v, 6) for k, v in sorted(part_power.items())},
                 solver_stats=solver_stats,
                 notes=notes + [f"pad {p}: not in the copper model" for p in missing][:20],
-                assumptions=bd.assumptions)
+                assumptions=bd.assumptions, stackup=dict(source=b.stackup.source, gaps_mm=list(b.stackup.gaps)), pins=(intent or {}).get("pins") or None)
 
 
 def _dc_system(holder, op):
@@ -655,10 +751,13 @@ def main(argv=None):
     ap.add_argument("--no-lumped", action="store_true", help="copper only, with the circuit's ideal-copper split")
     ap.add_argument("--intent", help="intent file (JSON): operating conditions, part facts, requirements")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--max-cells", type=float, default=None,
+                    help="raster budget (cells x copper layers): the pitch doubles until the board's window fits it")
     a = ap.parse_args(argv)
     from .beliefs import load_intent
     r = evaluate(a.board, a.pitch, tuple(a.window) if a.window else None, nsub=a.nsub, log=lambda m: print(m, file=sys.stderr),
-                 lumped=not a.no_lumped, intent=load_intent(a.intent), seed=a.seed)
+                 lumped=not a.no_lumped, intent=load_intent(a.intent), seed=a.seed,
+                 max_cells=int(a.max_cells) if a.max_cells else None)
     print_total(r["total"])
     print("assumptions:")
     for p in r["ledger"]:

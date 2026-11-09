@@ -12,7 +12,8 @@ benchmark manifest last to keep its rows. Boards are copied from WORKDIR/cache/<
 cache are fetched into WORKDIR/cache first, except rows carrying a --no-fetch-tag tag
 (e.g. host-robots-restricted), which are included only when already cached. With --drc,
 boards without a DRC report get one (KiCad DRC as saved, under the board's own rules, the
-same command enrich.py runs). --prune deletes folders whose id is no longer in the inputs.
+same command enrich.py runs). Boards listed in dru_fixes.py get their rules file fixed
+(KiCad 10 would drop it silently); their DRC report is then made fresh. --prune deletes folders whose id is no longer in the inputs.
 Boards are never committed (licences).
 
     python corpus.py ~/kae-boards --fetch-missing --drc --no-fetch-tag host-robots-restricted \\
@@ -30,6 +31,8 @@ import sys
 from pathlib import Path
 
 from kaebench import fetch as kfetch, tools
+
+import dru_fixes
 
 
 def drc(d, timeout=1800):
@@ -68,12 +71,13 @@ def copy_board(bid, name, row, work, boards, fetch_missing, run_drc):
             shutil.copy2(meta[k], d / f"board.{k}")
     if meta.get("source_pcb"):
         shutil.copy2(meta["source_pcb"], d / ("source" + Path(meta["source_pcb"]).suffix.lower()))
+    fix = dru_fixes.apply_fix(bid, d) if bid in dru_fixes.FIXES else None  # rules KiCad would drop
     rep = Path(work) / "drc" / bid / "saved.json"  # enrich's DRC report under the board's own rules
-    if rep.exists():
+    if rep.exists() and not fix:
         shutil.copy2(rep, d / "drc.json")
     elif run_drc and not (d / "drc.json").exists():
         drc(d)  # a board whose DRC fails or times out is kept, just without drc.json
-    row = dict(row, collection=name, path=f"boards/{bid}")
+    row = dict(row, collection=name, path=f"boards/{bid}", **({"dru_fix": fix} if fix else {}))
     (d / "row.json").write_text(json.dumps(row, indent=1))
     return bid, row
 

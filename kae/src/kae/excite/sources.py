@@ -7,6 +7,8 @@
   finds the hot loop (switch, rectifier, the capacitors that close it) and how the capacitors
   share it, whatever the topology.
 - ICs: the dynamic supply current of the core, drawn from the internal supply node to ground.
+- Modules (MCU and radio boards of their own, kae.excite.models' ports): their supply-current steps at their
+  supply pins, returning at the nearest ground pin, slowed by their own decoupling (MODULE_TR).
 - Clock drivers: the output pin charges the net's load, returning through the driver's ground (a clock
   arriving through a port, a connector or a module (kae.excite.models): from the port's pin, back
   through its nearest ground pin; a port pin the clock reaches is a receiver there).
@@ -17,13 +19,19 @@ vector is solved; requirements scale the unit solution by these.
 from __future__ import annotations
 
 import math
+import re
 
-from .models import PKG_L, SW_FN, _rl, _rlc, nearest_ground
+from .models import C_MODULE, PKG_L, PKG_R, SW_FN, _rl, _rlc, nearest_ground
 
 # dynamic core current and edge of IC classes (stand-ins; an IC's datasheet replaces them)
 DYNAMIC = {"mcu": (0.05, 1e-9), "fpga": (0.5, 0.5e-9), "memory": (0.1, 1e-9), "logic": (0.02, 1e-9),
            "adc_dac": (0.01, 2e-9), "": (0.01, 2e-9)}
 DIGITAL = ("mcu", "fpga", "memory", "logic", "adc_dac", "interface", "phy", "module", "processor", "soc")
+# a module's supply-current step at its pins (stand-in: an MCU's 50 mA through the module's own decoupling and pin
+# inductance, which slow the die's 1 ns edge to a few ns); a datasheet's burst current replaces it
+MODULE_I, MODULE_TR = 0.05, 5e-9
+NOT_CLOCKED = re.compile(r"Mini360|DC.?DC|\bbuck\b|\bboost\b|\bLDO\b|regulator|Converter|DFPlayer|\bamp(lifier)?\b|charger|"
+                         r"TP4056|MP1584|XL\d{4}|LM2596|\bR-?78|\bTSR", re.I)
 CLOCK_TR = 1e-9
 CLOCK_F = 25e6                   # a clock whose frequency the board does not state
 CORE_F = 50e6                    # core clock of an IC whose clock is not known
@@ -42,16 +50,50 @@ def add_all(bd, brief, nl=None):
                 out.append(src)
     for ref, nodes in bd.ic_nodes.items():
         kind, sub, role = bd.part_kind.get(ref, ("ic", None, ""))
-        if sub not in DIGITAL:
-            continue                 # only clocked logic draws a core current at its clock; a charger, a
-            #                          regulator or an analog part does not
-        I, tr = DYNAMIC.get(sub or "", DYNAMIC[""])
+        if sub not in DIGITAL and ref not in (getattr(bd, "radios", None) or {}):
+            continue                 # only clocked logic (and a radio: its digital core and PA) draws a core current
+            #                          at its clock; a charger, a regulator or an analog part does not
+        I, tr = DYNAMIC.get(sub or ("mcu" if ref in (getattr(bd, "radios", None) or {}) else ""), DYNAMIC[""])
         for rail, v in nodes.items():
             if rail == "g":
                 continue
             src = bd.circuit.src(f"core:{ref}:{rail}", v, nodes["g"], kind="core", ref=ref, rail=rail,
                                  I=I, didt=I / tr, f_e=1 / (math.pi * tr), V=bd.rails.get(rail) or 3.3, f_rep=CORE_F)
             out.append(src)
+    # a module (an MCU or radio board of its own, kae.excite.models' ports): its supply current changes reach the
+    # carrier at its supply pins, returning at its nearest ground pin. Its own decoupling supplies its core edges,
+    # so the carrier sees a slower step than an IC's die (MODULE_TR); a power or audio module is no clocked load
+    text = {p["ref"]: f"{p.get('value') or ''} {p.get('lib_id') or ''}" for p in brief["parts"].values()}
+    for net in sorted(bd.rails):
+        seen = set()
+        for tok in bd.pads_of.get(net, []):
+            ref = tok.rsplit(".", 1)[0]
+            if ref in seen or bd.port.get(ref) != "module" or bd.pin_type.get(tok) == "power_out" or \
+                    NOT_CLOCKED.search(text.get(ref, "")):
+                continue
+            g = nearest_ground(bd, ref, tok)
+            if g is None:
+                continue
+            seen.add(ref)
+            I, tr = MODULE_I, MODULE_TR
+            meta = dict(kind="core", ref=ref, rail=net, I=I, didt=I / tr, f_e=1 / (math.pi * tr), V=bd.rails.get(net) or 3.3,
+                        f_rep=CORE_F)
+            c = bd.circuit
+            if any(e.name == f"{tok}:supply" for e in c.elems):
+                # the module supplies this rail (kae.excite.models._port_supplies): its decoupling is that port element
+                out.append(c.src(f"core:{ref}:{net}", net, bd.net_of[g], pa=tok, pb=g, **meta))
+                continue
+            # inside the module: its MCU draws from its own decoupling (C_MODULE), which its supply and ground pins
+            # (PKG_L each) join to the carrier; the carrier's copper carries only what that decoupling does not
+            nodes = bd.module_nodes.setdefault(ref, {})
+            if "g" not in nodes:
+                nodes["g"] = gi = f"{ref}:mgnd"
+                for tg in [t for nt in bd.grounds for t in bd.pads_of.get(nt, []) if t.rsplit(".", 1)[0] == ref]:
+                    c.z(f"{tg}:mpkg", bd.net_of[tg], gi, _rl(PKG_R, PKG_L), tg, None, "pkg")
+            v = nodes[net] = f"{ref}:m{net}"
+            c.z(f"{tok}:mpkg", net, v, _rl(PKG_R, PKG_L), tok, None, "pkg")
+            c.z(f"{ref}:{net}:mdec", v, nodes["g"], _rlc(0.01, 0.2e-9, C_MODULE), None, None, "die")
+            out.append(c.src(f"core:{ref}:{net}", v, nodes["g"], **meta))
     for net, d in brief["nets"].items():
         if d.get("role") != "clock":
             continue

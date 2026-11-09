@@ -1,17 +1,18 @@
 # Rule genealogy: routing style, geometry, vias, pours, DFM, placement method
 
-**TL;DR**
-- Routing *style* (45°, Manhattan layer bias, few turns, teardrops, thermal reliefs, acute-angle bans) is mostly **manufacturing legacy, tool limitation and human cognition**, not circuit physics. Octilinear routing costs only 5.5% mean path length over any-angle; Manhattan costs 27% [C]. Keep 45° for editability, not for physics.
-- Corner shape barely matters for DC either: a sharp 90° bend counts as **0.56 squares** of resistance, a rounded one 0.50, an inner fillet 0.24 [C]. The only real corner effects are RF on thick substrates, local current crowding at the inner corner (pulse/fusing) and possibly kV ESD.
-- "Short", "wide", "no vias" and "keep away" are **overloaded proxies**: each stands for 2–5 basis quantities at once. "Wide" lowers inductance only when a return plane is close (L ∝ h/w); off-plane a 16× wider strip lowers L by only ~48% [C].
-- Pour and fill rules change sign with layer count: on 2-layer boards a stitched pour *is* the return plane; on multilayer boards same-layer fill is harmless beyond ~2h and pointless or harmful closer [C].
-- Placement methodology rules (template first, critical first, freeze) are cognition and sequential-tool workarounds that happen to order the work by **budget dominance**. A physics-first system can derive the order from budget sensitivity instead.
+Scope: origin, governing physics, verdict and replacement budget for rules R01–R46. Not here: one-line derivations -> [derivation-audit-table](derivation-audit-table.md); codes -> [legend](rule-genealogy-power-analog-thermal.md#legend); corner and copper physics -> [power-copper](power-copper.md).
+Keys: R01-R46, 45° routing, octilinear, any-angle, Manhattan, 90° corners, acid traps, teardrops, thermal reliefs, ground fill, pours, via aspect ratio, annular ring, tombstoning, V-score, placement order, overloaded proxies, style channel
 
-Legend as in [rule-genealogy-power-analog-thermal](rule-genealogy-power-analog-thermal.md). [C] sections refer to [rg_proxies.py](../../../tools/research/physics/rg_proxies.py), [rg_corners.py](../../../tools/research/physics/rg_corners.py) and [rg_fill_and_decaps.py](../../../tools/research/physics/rg_fill_and_decaps.py).
+**Results**
+- Routing *style* (45°, Manhattan layer bias, few turns, teardrops, thermal reliefs, acute-angle bans) is mostly **manufacturing legacy, tool limitation and human cognition**. Manhattan costs 27% mean path length over any-angle [C] (octilinear: R02). Keep 45° for editability; allow non-45° only where physics or mechanics pays: RF bends (Douville–James miter), flex bends, HV edges, power pours with pulse current.
+- DC corner cost: rounded bend 0.50 squares, inner fillet 0.24 [C] (sharp: R01). Real corner effects: RF on thick substrates, inner-corner current crowding (pulse/fusing), possibly kV ESD.
+- "Short", "wide", "no vias", "keep away" are **overloaded proxies** for 2–5 basis quantities each; never let the LLM emit one without the quantity it means (RG10). "Wide" lowers L only with a close return (L ∝ h/w); off-plane 16× wider lowers L ~48% [C].
+- Pour/fill rules change sign with layer count: 2-layer → stitched return pour mandatory (it *is* the return plane); multilayer → fill harmless beyond ~2h, pointless or harmful closer; fill only if s ≥ 2h and every island stitched below λ/10 at f_max (RG20) [C].
+- Placement-method rules (template first, critical first, freeze) are cognition and sequential-tool workarounds that order work by **budget dominance**; derive the order from budget sensitivity instead (RG37).
 
-## Key facts
+[C] = [rg_proxies.py](../../../tools/research/physics/rg_proxies.py), [rg_corners.py](../../../tools/research/physics/rg_corners.py), [rg_fill_and_decaps.py](../../../tools/research/physics/rg_fill_and_decaps.py). Split every layout score into physics (gates), manufacturing (yield margin) and style (Cg/Tl conventions) channels ([what-good-looks-like](../workflow/what-good-looks-like.md)); R02, R11, R40, R44 go to style and never block physics.
 
-### Geometry and routing style ([what-good-looks-like](../workflow/what-good-looks-like.md), [myths-and-contested](../rules/myths-and-contested.md))
+## Geometry and routing style ([what-good-looks-like](../workflow/what-good-looks-like.md), [myths-and-contested](../rules/myths-and-contested.md))
 
 | ID | Rule | Orig | Physics (basis: equation; binds when) | Verdict | Replacement [cost] |
 |---|---|---|---|---|---|
@@ -30,7 +31,7 @@ Legend as in [rule-genealogy-power-analog-thermal](rule-genealogy-power-analog-t
 | R13 | Length-tune with serpentines | Ph | **Z**, **M**: delay match vs self-coupling and loss | R when timing-limited | see S25 [2D/SP] |
 | R14 | Keep traces off board edge (≥2h) and copper ≥0.2 mm from routed edge | Ph+Mf | edge fringing → **Vcm**; routing tolerance ±0.2 mm | R | k·h + fab tolerance [2D/LU] |
 
-### Vias and fan-out ([dfm-fab-limits](../rules/dfm-fab-limits.md), [placement-methodology](../rules/placement-methodology.md))
+## Vias and fan-out ([dfm-fab-limits](../rules/dfm-fab-limits.md), [placement-methodology](../rules/placement-methodology.md))
 
 | ID | Rule | Orig | Physics | Verdict | Replacement [cost] |
 |---|---|---|---|---|---|
@@ -45,11 +46,11 @@ Legend as in [rule-genealogy-power-analog-thermal](rule-genealogy-power-analog-t
 | R23 | Remove non-functional pads | Ph+Mf | **Z**/**Res**: pad capacitance on stubs; also drill wear | R ≥ ~5 Gb/s | [FW/LU] |
 | R24 | KiCad stitching default max(2 mm, 2× via) | Tl | **Res** | C for most boards | pitch from the isolation target (S37) [CF] |
 
-### Pours, planes and reliefs
+## Pours, planes and reliefs
 
 | ID | Rule | Orig | Physics | Verdict | Replacement [cost] |
 |---|---|---|---|---|---|
-| R25 | Thermal reliefs on plane connections | Mf (hand/wave soldering) | **Th** 4 spokes 0.25×0.5 mm ≈37 K/W; adds ~50–90 pH and 0.25 mΩ [C §I]. In reflow a pad couples ~0.1 mW/K to the oven vs 27–54 mW/K through spokes, so it follows the plane either way (Wiedemann–Franz: decoupling it would cost ≥ 66 mΩ) [C da §A] | M: needed for hand/wave/TH; no physical basis in reflow, which contradicts vendor 0201/0402 balance guidance and needs an assembly test; harmful on sub-nH loops and >~3 A pads | per-pad process heat balance vs ΔL, ΔR [TN] |
+| R25 | Thermal reliefs on plane connections | Mf (hand/wave soldering) | **Th** 4 spokes 0.25×0.5 mm ≈37 K/W; adds ~50–90 pH and 0.25 mΩ [C §I]; in reflow the pad follows the plane either way (audit D7) | M: needed for hand/wave/TH; no physical basis in reflow, which contradicts vendor 0201/0402 balance guidance and needs an assembly test; harmful on sub-nH loops and >~3 A pads | per-pad process heat balance vs ΔL, ΔR [TN] |
 | R26 | Direct-connect thermal and power pads | Ph | **Th**, **R**, **L** | R | same check [TN] |
 | R27 | Pour all unused copper (2-layer) | Ph | **L**: the pour becomes the return plane if stitched | R on 2-layer when stitched and continuous | return-path map [2D] |
 | R28 | Ground fill on multilayer | Hb | **Z** −1.2% at 2h (S18); floating islands **Res** | X as default | s/h ≥ 2 and stitched islands [2D/CF] |
@@ -61,7 +62,7 @@ Legend as in [rule-genealogy-power-analog-thermal](rule-genealogy-power-analog-t
 | R34 | Big pours for power ("closer to a pour than a trace") | Ph | **R** ∝ 1/w; **L** ∝ h/w only with a close return; **Th** within fin length | R for quiet nets; A on switching nodes (**Cm**) | pour-shape objective R+ωL+Th s.t. Cm caps [2D/PEEC/TN] |
 | R35 | Round inside corners of power pours | Ph | **R**: rounding saves ≤0.07–0.3 □ per corner; removes crowding peak (~3× at sharp inner corner, singular) [C corners] | M: negligible for steady current; R for pulse/fusing hot spots | sheet-current solve [2D] |
 
-### DFM, assembly and placement method
+## DFM, assembly and placement method
 
 | ID | Rule | Orig | Physics | Verdict | Replacement [cost] |
 |---|---|---|---|---|---|
@@ -77,16 +78,9 @@ Legend as in [rule-genealogy-power-analog-thermal](rule-genealogy-power-analog-t
 | R45 | Mounting-hole keep-outs; no high speed near holes | Ph+Mf | screw head clearance; chassis currents (**Vcm**) | R | [GE] |
 | R46 | Generic "keep sensitive nets ≥1–3 mm from Y" (magnetics, SW, clocks, heat) | Sp | **M**, **Cm**, **Th**, **Ins**: coupling falls as 1/(1+(d/h)²) for traces over a plane, ~1/d³ for a magnetic dipole, slowly for heat | M: C near quiet parts, A near large open-flux magnetics or 2-layer boards | distance solved from M(d), Cm(d), ΔT(d) curves and the victim budget (RG53) [CF/PEEC] |
 
-## Recommendations for our system
-- Split every layout score into three channels as [what-good-looks-like](../workflow/what-good-looks-like.md) proposes: physics (gates), manufacturing (yield margin), style (Cg/Tl conventions). R02, R11, R40, R44 go to style and never block physics.
-- Allow non-45° geometry only for classes where physics or mechanics pays: RF bends (Douville–James miter), flex bends, HV edges, and power pours with pulse current. Everywhere else keep 45° for editability.
-- Decide reliefs per pad from the declared assembly process and the pad's loop budget (RG28), not globally.
-- Decide fill per layer count: 2-layer → stitched return pour mandatory; multilayer → fill only if s ≥ 2h and every island is stitched below λ/10 at f_max (RG20).
-- Never let the LLM emit "short", "wide", "close", "no vias" or "keep away" without the quantity it means (RG10).
-
-## Conflicts and open questions
+## Open questions
 - **R05 vs R10/R13:** short vs over-plane vs length-matched; each optimises a different quantity (L vs Z-delay).
-- **R25 vs R26:** solderability (Fab/Th of the joint) vs loop L and IR; the selector is the assembly process plus the loop budget.
+- **R25 vs R26:** solderability (Fab/Th of the joint) vs loop L and IR; decide reliefs per pad from the declared assembly process and the pad's loop budget (RG28), not globally.
 - **R34:** a big pour lowers R, L and Th on quiet nets, but raises Cm on switching nodes (P07). Pour shape is a multi-objective problem, not a style choice; see [power-copper](power-copper.md) and [copper-shape-synthesis](copper-shape-synthesis.md).
 - **Unverified:** teardrop and acid-trap evidence is vendor/forum level [S]; no controlled study of reliefs in reflow was found. The DC bend numbers are 2-D sheet solutions (no thickness or skin effect); the classic 0.559-square corner value matches our 0.562.
 
@@ -98,4 +92,4 @@ Legend as in [rule-genealogy-power-analog-thermal](rule-genealogy-power-analog-t
 - Teardrops: https://sierraconnect.protoexpress.com/t/use-of-teardrops-in-pcb-design/2781 [S]
 - 45° history: https://resources.altium.com/p/pcb-routing-angle-myths-45-degree-angle-versus-90-degree-angle [S]
 
-See also: [rule-basis-set](rule-basis-set.md), [rule-genealogy-power-analog-thermal](rule-genealogy-power-analog-thermal.md), [rule-genealogy-si-emi-rf](rule-genealogy-si-emi-rf.md), [../verification/looks-right-metrics.md](../verification/looks-right-metrics.md)
+See also: [looks-right-metrics](../verification/looks-right-metrics.md)

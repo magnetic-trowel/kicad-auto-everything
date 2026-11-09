@@ -1,17 +1,18 @@
 # Lens SY: symmetry, reciprocity and duality
 
-**TL;DR**
-- **Reciprocity is why "one solve per victim" works, and it is not the adjoint.** The board's field problem (copper, laminate, linear ferrite) is reciprocal; the circuit is not, but an adjoint (Aᵀλ = c) needs only linearity. What breaks S1 (adjoints) and S3 (field reciprocity) is nonlinear victims and periodic switching or sampling (which needs a periodic adjoint). One theorem, the lead field, unifies susceptibility maps, κ_ab maps and Kelvin taps; MREMC's edge law is reciprocity times Maxwell's strip distribution (FD within 1–10% [C]).
-- **Copper planes break electric/magnetic duality.** A plane turns a flat loop into a quadrupole, so mutual L ∝ h_a·h_v. It turns a dv/dt node into a vertical dipole fixed by ∫V dA, so mutual C barely depends on h: h^0.19 against h^1.98 for 2 mm strips [C]. Thin prepreg is a lever on loops only; coplanar guards do almost nothing over thin dielectric (−1% at h = 0.1 mm [C]). Over a plane, capacitive coupling from wide dv/dt copper dominates beyond about 2 mm for a 1 kΩ victim [C].
-- **Images and 2-D duality make empirical laws exact.** The slit cost is a mode-III crack with images: ΔR = −(2/π)R_s·ln cos(πΔψ/2I), and an edge notch costs exactly 2× (FD within 1.5%; lens CT found the same). The dual of a cut is a conducting needle along the flow. For any objective, a cut costs (π/4)R_s·Δψ_u·Δψ_λ: within 3–12%, where the plain adjoint misses by 13–35× [C]. Babinet gives the slot inductance independently, within 6% of the slotline formula ([fields-si-emi](fields-si-emi.md)).
-- **Mode conversion is symmetry breaking at *changes* of imbalance:** V_cm = Δχ·V_dm, so Bal and Vcm are one quantity. Near a 100 Ω pair, copper matters only within about 3h (−60 dB at 2h); a 10 µm leg-width mismatch converts −41 dB, a slot under one leg −22 dB [C]. Mirrored halves give a null plane and a quieter far field (−22 dB at 100 mm), not a smaller halo (−2% radius over a plane) [C].
-- **Scale and gauge.** f_x is a length, ℓ_d = R_s/(ωμ0) = ℓ_m/2 (ℓ_m = R_s/(π·μ0·f) = δ²/t, the common length of [foundations](foundations.md)), compared with each structure's size. Corner and edge fields follow r^(π/α−1), which explains the computed exponents −1/3, −0.2, t^(−1/3) and 1/√d (§3). Only loop EMFs are physical, so every voltage budget must name its loop.
+Scope: reciprocity and lead fields, adjoint vs reciprocity, EM/sheet/network duality, images, mirror decomposition and mode conversion, gauge, wedge scaling, Noether-style invariants. Not here: F4 statement -> [foundations](foundations.md); symbols -> [vocabulary](vocabulary.md#glossary).
+Keys: reciprocity, lead field, adjoint ≠ reciprocity, periodic adjoint, PXF, duality, Babinet–Booker, cut↔needle, images PEC/PMC, mirror decomposition, imbalance χ, imbalance-difference model, mode conversion, null plane, gauge, wedge exponent r^(π/α−1), mode-III crack, ln cos law, MREMC edge law, Maxwell strip distribution, h^0.19 vs h^1.98, guard traces, SY1-SY32
 
-Tags: [P] primary, [S] secondary, [I] inference, [C] computed by [sy_duality_balance.py](../../../tools/research/physics/sy_duality_balance.py) and [sy_images_symmetry.py](../../../tools/research/physics/sy_images_symmetry.py). Ideas SY1–SY32: [lens-sy ideas](../../ideas/physics-first/lens-sy.md).
+**Results**
+- Reciprocity is why "one solve per victim" works, and it is not the adjoint: the board's field problem (copper, laminate, linear ferrite) is reciprocal, the circuit is not, and an adjoint needs only linearity (P1, P1′). Both break at nonlinear victims and periodic switching or sampling. The lead field unifies susceptibility maps, κ_ab maps and Kelvin taps; MREMC's edge law = reciprocity × Maxwell's strip distribution (D2).
+- Planes break electric/magnetic duality (D1): thin prepreg is a lever on loops only; coplanar guards do almost nothing over thin dielectric; over a plane, capacitive coupling from wide dv/dt copper dominates beyond a few mm for kΩ victims.
+- Images and 2-D duality make empirical cut laws exact (D3); Babinet reproduces the slotline slot inductance (§3).
+- Mode conversion = symmetry breaking at *changes* of imbalance (P4): Bal and Vcm are one quantity. Leg-width mismatch outweighs nearby copper; mirrored halves cut the far field, not the halo.
+- Wedge scaling r^(π/α−1) explains the computed corner exponents (§3); only loop EMFs are physical, so every voltage budget names its loop (P5).
 
-## Key facts
+[C] = [sy_duality_balance.py](../../../tools/research/physics/sy_duality_balance.py), [sy_images_symmetry.py](../../../tools/research/physics/sy_images_symmetry.py). Ideas SY1–SY32: [lens-sy ideas](../../ideas/physics-first/lens-sy.md).
 
-### 1. Principles
+## 1. Principles
 
 Circuits are the limit where these symmetries hold trivially (one ground node, equipotential wires, invisible fields); layout is where they bend or break.
 
@@ -20,12 +21,12 @@ Statement, then board meaning:
 - **P1′ Adjoint ≠ reciprocity.** dJ/dp = −λᵀ(∂A/∂p)u with Aᵀλ = c for any linear(ized) A. Reciprocity only lets the forward solver supply λ. *`.noise` handles active parts. Switching and sampling need the periodic adjoint, which maps f → f ± k·f_s (PXF, Telichevesky–Kundert–White 1996 [S]).*
 - **P2 Duality.** (a) EM: E→η0H, H→−E/η0, PEC↔PMC; Babinet–Booker Z_slot·Z_strip = η0²/4 [S]. (b) Sheets: K = −∇φ/R_s = ∇ψ×ẑ, so φ/R_s↔ψ and cut↔needle (Keller [S]). (c) Planar networks: node↔mesh, C↔L, V↔I. *Every loop rule has a node twin; every cut a bridge twin; every slot a floating-strip twin.*
 - **P3 Images.** PEC: q→−q, horizontal I→−I, vertical I→+I, vertical m→−m, horizontal m→+m. Neumann edges (sheet edge, adiabatic edge, open cavity edge = PMC): same sign. *Half-valid for patterns of size a ≈ 4–10·ℓ_d, and within 10% for a ≳ 20–90·ℓ_d, a few h from edges, below cavity modes.*
-- **P4 Mirror decomposition.** If PXPᵀ = X (X = R, Lp, C), even (CM) and odd (DM) modes do not mix; conversion is first order in the antisymmetric part. At a change of the current-division factor χ = C1g/(C1g+C2g), V_cm = Δχ·V_dm (imbalance-difference model [S]). Odd sources are null on their mirror plane. Curie: responses keep the symmetry of cause plus structure. *Balance, cancellation, current sharing. Cancellation acts on the far field and null planes, capped near 20·log ε by the imbalance ε; it barely shrinks the near halo (3 mm halves, 10 mm halo: −2% radius over a plane, −16% in free space [C]), so "cancel, then pack tighter" (S5) buys little.*
+- **P4 Mirror decomposition.** If PXPᵀ = X (X = R, Lp, C), even (CM) and odd (DM) modes do not mix; conversion is first order in the antisymmetric part. At a change of the current-division factor χ = C1g/(C1g+C2g), V_cm = Δχ·V_dm (imbalance-difference model [S]). Odd sources are null on their mirror plane. Curie: responses keep the symmetry of cause plus structure. *Balance, cancellation, current sharing. Cancellation acts on the far field and null planes, capped near 20·log ε by the imbalance ε; it barely shrinks the near halo (3 mm halves, 10 mm halo: −2% radius over a plane, −16% in free space [C]), so "cancel, then pack tighter" (S5) buys little. Pair numbers [C]: near a 100 Ω pair copper matters only within ~3h (−60 dB at 2h); a 10 µm leg-width mismatch converts −41 dB, a slot under one leg −22 dB; mirrored halves give −22 dB far field at 100 mm; a victim on the mirror plane sits in an exact null, −20 dB at 10% imbalance.*
 - **P5 Gauge.** φ and A are not physical; ∮E·dl = −dΦ/dt and port quantities are. Partial inductance fixes a gauge (A → 0 at infinity): partial-L "bounce" is 30–96% of L_p depending on the victim's closure ([lens-ct](lens-ct.md) D4), so ledger spend (LA21) comes from sensitivities of loop or port quantities. *"Ground" means earth, reference or return ([André 2025](https://digital.incompliancemag.com/issue/april-2025/grounds-and-returns/) [P]); only the return is a conductor role, a reference is a measurement loop.*
 - **P6 Scale.** Near a wedge of angle α, fields go as r^(π/α−1) (Jackson §3.4 [S]). The intrinsic lengths are h, ℓ_d(ω), screening λ, δ and λ_g. Similarity: L, C ∝ s and E ∝ 1/s; for gas breakdown, p·d. *Regimes per structure.*
 - **P7 Noether-style pairs.** Gauge ↔ KCL; time translation ↔ frequency conservation (switching breaks it to f mod f_s); passive time reversal ↔ Z = Zᵀ; mirror ↔ mode parity; permutation ↔ equal sharing; matched moments ↔ gradient cancellation to order k. *Each gives a checkable invariant.*
 
-### 2. Three derivations
+## 2. Three derivations
 
 **D1. Planes break node/loop duality.** Consider lateral distance D ≫ h, w (2-D, per unit length).
 - **Loop.** Current I at height h_a plus its image is a line dipole 2I·h_a. Its flux through the victim's strip-to-plane loop gives L_m′ = μ0·h_a·h_v/(πD²), independent of width.
@@ -55,9 +56,9 @@ At the centre this is MREMC's (μ0/π)·h/W ([fields-emi-budget](fields-emi-budg
 - **Dual (Keller).** A conducting needle along the flow saves (π/4)·R_s·(Δφ/(R_s·I))² (FD within 0.2% at q = 0.25 [C]). Long needles saturate where long cuts diverge.
 - **Any objective.** By reciprocity plus the crack's polarization tensor, ΔJ = (π/4)R_s·Δψ_u·Δψ_λ, using the stream-function steps of the forward and adjoint solutions across the cut. For a Kelvin-pair objective it is within 3–12% of FD, where the first-order adjoint over the removed links was 13–35× low [C].
 
-So the adjoint's miss on a slot ([solver-ladder](solver-ladder.md): 0.27 vs 8.1 mW) is a missing polarization tensor, not an adjoint failure. [Lens CT](lens-ct.md) reaches the same ln-cos law from conservation; the cross-objective and needle forms come from this lens.
+So the adjoint's 30× miss on a slot ([solver-ladder](solver-ladder.md#6-caching-and-incremental-re-extraction)) is a missing polarization tensor, not an adjoint failure. [Lens CT](lens-ct.md) reaches the same ln-cos law from conservation; the cross-objective and needle forms come from this lens.
 
-### 3. More derivations, checked against computed numbers [C]
+## 3. More derivations, checked against computed numbers [C]
 
 - **Bend peak J 2.6/3.3/4.1 per mesh doubling; pulse J² 7.7/3.7/1.75 at 10 µs/100 µs/1 ms; 135° bend r^(−0.2); HV (g/r)^(1/3) ([power-copper](power-copper.md), [hv](hv-and-manufacturing-physics.md)).** Wedge exponent π/α−1 = −1/3 (270°), −0.2 (225°). ⟨J²⟩ over a diffusion disk ∝ ρ^(−2/3) ∝ t^(−1/3). *Check:* Ratios 1.27/1.24 vs 2^(1/3) = 1.26; 2.08/2.11 vs 10^(1/3) = 2.15.
 - **Corners (duality).** Concave copper corners crowd current and are E-free; convex corners crowd E (270° gap) and carry no current (+1). *Check:* Round convex HV corners, fillet concave pulse corners; chamfer convex pour corners freely.
@@ -67,7 +68,7 @@ So the adjoint's miss on a slot ([solver-ladder](solver-ladder.md): 0.27 vs 8.1 
 - **f_x found four times ([research-gaps](research-gaps.md)).** One length ℓ_d vs each scale. ℓ_d = a marks only the onset: at that frequency a loop is about 5% mirrored. Half-mirroring needs a/ℓ_m ≈ 2–5 (ℓ_m = 2ℓ_d), e.g. ~93 kHz for a 5 mm loop at h = 0.1 mm on 1 oz (a 20 mm region: ~23 kHz by scaling [I]); 90% needs a/ℓ_m ≈ 10–45 [C, rt_sheet_return; lens LS's 3-D table agrees]. A trace return at h = 0.1 mm forms above 0.6 MHz. At f_sw ≥ ~300 kHz on 1 oz the plane mirrors a 5–10 mm hot loop by 78–89% (2-D, h = 0.1 mm), at 100 kHz by 52–62% [C, rt_sheet_return]: switching ripple does not wander under a distant ADC; DC and low frequencies do. The return width at the scale of h still sets L (L′ 0.39 → 0.068 nH/mm from 1 kHz to 1 MHz, [power-copper](power-copper.md)). *Check:* ℓ_d = 0.12 mm at 500 kHz.
 - **Weave rotation up to 45° (FE42).** Cloth is a 2-D lattice: skew grows along directions normal to strong reciprocal vectors (axes; the diagonal if crossings add Dk). *Check:* Toy square weave: 45° 1.5 ps per 2 in, others ≤0.5, aligned 31.
 
-### 4. Human rules and their principles
+## 4. Human rules and their principles
 
 - Return under the trace; no slots under fast nets (P3, P2a): Keep the image intact. A slot is a magnetic dipole.
 - Many small holes, not one slot (P2a): Aperture polarizability ∝ size³ (Bethe [S]).
@@ -76,7 +77,7 @@ So the adjoint's miss on a slot ([solver-ladder](solver-ladder.md): 0.27 vs 8.1 
 - Symmetric feeds; alternating decaps; opposite-current vias; common centroid (P4, P7): Transitive groups share equally; odd arrangements make mutuals negative; matched moments cancel gradients.
 - Split or star ground (P5, P6): Ground potential exists only below the region's mirroring frequency.
 
-### 5. Convergences and synergies
+## 5. Convergences and synergies
 
 - **One lead-field theorem (P1, P1′).** XD35, FE3, DR3, S3, S11, XD53, XD72, LA7, LA8, DR26 and the Kelvin L_err analysis ([pdn-and-commutation](pdn-and-commutation.md)) are one theorem. So exclusion zones are sufficient, not necessary: a measurement needs orthogonality, R_s∫K_aggr·K_lead dA = 0 and ∫J·A_lead dV = 0, and foreign current may cross its region along lead equipotentials.
 - **One Babinet object.** Slot ΔL (FE2), slot antennas, merged antipads (FE4), stitching pitch from slot modes (XD83), can seams (FE32), hatched planes (XD80) and floating copper (PW11) are all apertures or islands with a polarizability and a half-wave resonance c/(2ℓ√ε_eff).
@@ -86,7 +87,7 @@ So the adjoint's miss on a slot ([solver-ladder](solver-ladder.md): 0.27 vs 8.1 
 - **Synergy: one map, both CM mechanisms.** FE3's map (one solve per connector pair) gives current-driven coupling ∝ h·K_ext and voltage-driven ∝ A·σ_ext (CT's board–world cut gives the latter exactly).
 - **Synergy: cuts as measurement tools.** Pricing a cut by Δψ_aggr·Δψ_lead finds slots that reduce foreign coupling into a measurement: the physics of a split ground that works.
 
-### 6. Transfers
+## 6. Transfers
 
 - Thermal image lattice (TM2) → IR, decap reach (XD113), slit prices, κ maps near edges.
 - Fracture mechanics (mode III, polarization tensors) → Cut prices in XD2, SIM25, OP41, PW10, S2.
@@ -97,7 +98,7 @@ So the adjoint's miss on a slot ([solver-ladder](solver-ladder.md): 0.27 vs 8.1 
 - Gradiometers and array null steering → S5 and LA35: put victims on null planes.
 - Commensurability (crystallography) → FE42 weave angles.
 
-### 7. What each conductor is doing, in symmetry terms
+## 7. What each conductor is doing, in symmetry terms
 
 Per band, each body gets a symmetry passport ([lens-cd](lens-cd.md)):
 1. **Mode content:** imbalance χ(z); where χ changes, it sources common mode.
@@ -107,16 +108,16 @@ Per band, each body gets a symmetry passport ([lens-cd](lens-cd.md)):
 5. **Group:** its pair, bridge or paralleled set, and antisymmetric residual.
 6. **Gauge:** its voltage means something only with its measuring loop.
 
-## Recommendations for our system
+## Use in kae
 
-1. Add **symmetry declarations**, permutations on the physics graph, with residual critics, and use the duality map (P2) as a rule generator. Merge Bal into Vcm ([rule-basis-set](rule-basis-set.md)) as "mode conversion" with a level index (SY13–SY15); conversion happens at changes of χ, not by accumulation along the route (FE35).
-2. Split the solver API into `adjoint(J)` (circuit, LTI or periodic) and `lead_field(port)` (field). Flag rectifying and threshold victims (SY1–SY4).
-3. Replace Δψ² with the image-exact law and the cross-objective crack price, and add the needle price (SY6–SY9).
-4. Budget dv/dt nodes in ∫V dA with nearly h-independent coupling; treat prepreg as a loop lever; bury victims rather than guard them (SY10–SY12).
-5. Build one image-lattice kernel library, and choose solvers per structure by ℓ_d (SY24, SY25).
-6. Every voltage budget names its loop, and spend is attributed by sensitivity (SY22, SY23).
+1. Symmetry declarations (permutations on the physics graph) with residual critics; duality map (P2) as a rule generator. Merge Bal into Vcm ([rule-basis-set](rule-basis-set.md)) as "mode conversion" with a level index (SY13–SY15); conversion happens at changes of χ, not by accumulation along the route (FE35).
+2. Split the solver API into `adjoint(J)` (circuit, LTI or periodic) and `lead_field(port)` (field); flag rectifying and threshold victims (SY1–SY4).
+3. Replace Δψ² with the image-exact law and the cross-objective crack price; add the needle price (SY6–SY9).
+4. Budget dv/dt nodes in ∫V dA with nearly h-independent coupling; prepreg is a loop lever; bury victims rather than guard them (SY10–SY12).
+5. One image-lattice kernel library; choose solvers per structure by ℓ_d (SY24, SY25).
+6. Every voltage budget names its loop; attribute spend by sensitivity (SY22, SY23).
 
-## Conflicts and open questions
+## Open questions
 
 - Immunity: reciprocity gives the linear coupling; rectifying and threshold victims remain open.
 - D1 and D2 are 2-D quasi-static; the 3-D formulas assume r ≫ sizes and an unbroken plane.

@@ -1506,7 +1506,8 @@ def kicad_feedback(P, st, report, step=0.3):
     (P.feedback): two parts an error names keep their current distance + `step` (growing each
     time KiCad still objects); a part an error names alone (against a zone, a graphic, a
     track) keeps off the error's positions by `step`. Returns {errors, by_type, constraints,
-    fixed_only}: errors between fixed items only cannot be repaired by placement."""
+    fixed_only, placer_by_type}: errors between fixed items only cannot be repaired by placement;
+    placer_by_type counts the others (the placer's) by type."""
     from .legalize import _OF_REF, kicad_violations, violation_parts
     viols = kicad_violations(report)
     fb = getattr(P, "feedback", None)
@@ -1518,7 +1519,9 @@ def kicad_feedback(P, st, report, step=0.3):
     zre = re.compile(r"^Zone \[([^\]]*)\] on (\S+?),?(\s|$)")
     tre = re.compile(r"^PCB text '.*' on \S+", re.S)
     texts = None
+    marks = []          # fixed_only before each violation: it was fixed-only when the count grew
     for v in viols:
+        marks.append(out["fixed_only"])
         out["by_type"][v["type"]] = out["by_type"].get(v["type"], 0) + 1
         # board text on copper (a grid obstacle only; the exact model has no text): the parts
         # the error names keep their hulls off the text's box, by `step` more each time KiCad
@@ -1607,6 +1610,11 @@ def kicad_feedback(P, st, report, step=0.3):
                     g = shapely.Point(pos["x"], pos["y"]).buffer(step)
                     fb["avoid"].setdefault(i, []).append((g, f"{v['type']} at ({pos['x']:.2f}, {pos['y']:.2f}) (KiCad DRC)"))
                     out["constraints"] += 1
+    marks.append(out["fixed_only"])
+    out["placer_by_type"] = {}
+    for v, a, b in zip(viols, marks, marks[1:]):
+        if b == a:
+            out["placer_by_type"][v["type"]] = out["placer_by_type"].get(v["type"], 0) + 1
     return out
 
 
@@ -1627,11 +1635,12 @@ def _intrinsic(v):
 
 
 # ----------------------------------------------------------------------------- diagnosis
-def diagnose(P, st, E, i, limit=400):
+def diagnose(P, st, E, i, limit=400, deadline=None):
     """Why part i found no clean spot: 'no_room' (not even with every other movable part
     gone: the outline, locked parts and rule areas leave none), 'side_full' (the movable
     parts' own area on its side exceeds the free area), else 'crowded' (room exists, the
-    neighbours fill it). Returns {reason, detail}."""
+    neighbours fill it). Returns {reason, detail}. `deadline` (monotonic seconds): stop trying
+    candidates then ('unknown'; one part's 800 tries took 70 s on pico-ice)."""
     p = P.parts[i]
     S, pad = _tables(P, st, set(P.mov))
     fixed = {q.i for q in P.parts if not q.movable} | {i}
@@ -1640,7 +1649,9 @@ def diagnose(P, st, E, i, limit=400):
         S, pad = _tables(P, st, set(P.mov), obstacles=False)
         cands = _candidates(P, st, i, S, pad, list(range(len(p.rots))), 4.0, limit)
     clean = None
-    for c, X, Y, k in cands:
+    for n, (c, X, Y, k) in enumerate(cands):
+        if deadline is not None and time.monotonic() >= deadline:
+            return dict(reason="unknown", detail=f"{p.ref}: out of time after {n} of {len(cands)} spots")
         f = E.findings_at(i, X, Y, k)
         if not [v for v in f if set(v["parts"]) <= fixed]:
             clean = (X, Y, k)
@@ -1656,13 +1667,20 @@ def diagnose(P, st, E, i, limit=400):
     return dict(reason="crowded", detail=f"{p.ref}: room exists (e.g. grid {clean}) but its region is full")
 
 
-def close_loop(P, st, time_s, log=None):
+def close_loop(P, st, time_s, log=None, deadline=None):
     """The closed legality loop at the end of a placement: exact repair, then for whatever is
-    left, why. Returns the repair report with 'diagnosis' {ref: {reason, detail}}."""
+    left, why. Returns the repair report with 'diagnosis' {ref: {reason, detail}}. `deadline`
+    (monotonic seconds): no part is diagnosed after it (a part's diagnosis took 37 s on
+    pico-ice, 7 parts 260 s); the rest are listed in 'diagnosis_skipped'."""
     rep = repair(P, st, time_s=time_s, log=log)
     if rep["stuck"]:
         E = ExactModel(P, st)
-        rep["diagnosis"] = {P.parts[q].ref: diagnose(P, st, E, q) for q in rep["stuck_parts"][:12]}
+        rep["diagnosis"] = {}
+        for q in rep["stuck_parts"][:12]:
+            if deadline is not None and time.monotonic() >= deadline:
+                rep.setdefault("diagnosis_skipped", []).append(P.parts[q].ref)
+                continue
+            rep["diagnosis"][P.parts[q].ref] = diagnose(P, st, E, q, deadline=deadline)
         if log:
             for r, d in rep["diagnosis"].items():
                 log(f"illegal: {d['reason']}: {d['detail']}")

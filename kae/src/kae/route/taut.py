@@ -74,6 +74,8 @@ DEFAULTS = dict(
     eps_topo=3e-3,
 )
 
+MIN_SEG = 0.01                            # mm: a straight piece shorter than this is absorbed by its neighbour
+FOLD_DEG = 2.0                            # degrees off a full reversal: copper going out and back over itself
 LEN_ABS, LEN_REL = 1.0, 0.2              # a tail taking copper off a land may grow this much (pad_reroute's limit)
 MARGIN = 2e-3 + 2 * A.SAG + 1e-4          # mm the exact path keeps above every requirement (TOL + sampling)
 CHECK_TOL = 2e-3                          # mm above every requirement in the exact check (critical_space.TOL)
@@ -537,6 +539,24 @@ class Taut:
                     best = pd
         return best
 
+    def _land(self, pd, net, layer):
+        """The land a track at pad `pd` enters: its copper merged with the same-net shapes that touch it
+        (a through-hole pad with SMD twins, a custom stack), as pad_reroute. Judging the entry against
+        the smallest shape alone drew lines radial to a 0.8 mm hole pad that crossed the 0.9 x 1.2 mm
+        shape around it at 65 degrees (hotswap keyboard diodes)."""
+        c = self.__dict__.setdefault("_land_c", {})
+        key = (id(pd), layer)
+        if key not in c:
+            g = pd.geom
+            near = g.buffer(0.01)
+            sis = [p.geom for p in self.sp.items[layer]
+                   if p.kind == "pad" and p.net == net and p is not pd and p.geom.intersects(near)]
+            if sis:
+                u = unary_union([g] + sis)
+                g = u if u.geom_type == "Polygon" else g
+            c[key] = g
+        return c[key]
+
     def _bga(self, pd):
         c = self.__dict__.setdefault("_bga_c", {})
         if pd.fp not in c:
@@ -623,7 +643,7 @@ class Taut:
         pd = self._pad_at(net, layer, pts[0])
         if pd is None:
             return []
-        pad = pd.geom
+        pad = self._land(pd, net, layer)
         if pad.geom_type != "Polygon":
             pad = max(getattr(pad, "geoms", [pad]), key=lambda g: g.area)
         fat = pad.buffer(1e-6)
@@ -1361,7 +1381,9 @@ def _acute_corners(pieces, tol_deg=90.0):
 
 def _merge_tiny(pieces, widths=None):
     """Arcs narrower than arcs.MIN_SWEEP become their chord (checked again by the caller); collinear
-    neighbouring segments of one width merge. With `widths` (one per piece): (pieces, widths)."""
+    neighbouring segments of one width merge; a segment shorter than MIN_SEG is absorbed by a
+    neighbouring segment of its width, and a straight out-and-back (FOLD_DEG) is cut to the single
+    segment that remains. The chain's two ends never move. With `widths` (one per piece): (pieces, widths)."""
     out, ws = [], []
     for p, w in zip(pieces, widths if widths is not None else [None] * len(pieces)):
         if p[0] == "arc" and abs(p[4]) < A.MIN_SWEEP:
@@ -1369,10 +1391,16 @@ def _merge_tiny(pieces, widths=None):
             p = ("seg", s, e)
         if p[0] == "seg" and math.dist(p[1], p[2]) < 1e-6:
             continue
-        if out and p[0] == "seg" and out[-1][0] == "seg" and ws[-1] == w \
-                and _deflect(out[-1][1], out[-1][2], p[2]) < 1e-9:
-            out[-1] = ("seg", out[-1][1], p[2])
-            continue
+        if out and p[0] == "seg" and out[-1][0] == "seg" and ws[-1] == w:
+            a, b, c = out[-1][1], out[-1][2], p[2]
+            if math.dist(a, b) < MIN_SEG or math.dist(b, c) < MIN_SEG or _deflect(a, b, c) < 1e-9 \
+                    or _deflect(a, b, c) > math.radians(180.0 - FOLD_DEG):
+                if math.dist(a, c) < 1e-6:           # out and back to where it began: both go
+                    out.pop()
+                    ws.pop()
+                else:
+                    out[-1] = ("seg", a, c)
+                continue
         out.append(p)
         ws.append(w)
     # re-chain exactly

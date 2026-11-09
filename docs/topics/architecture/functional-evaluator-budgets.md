@@ -2,7 +2,10 @@
 <!-- SPDX-License-Identifier: CC-BY-4.0 -->
 # Functional evaluator: budgets and loop-measure cross-check (`kae.sim.budget`)
 
-**TL;DR**
+Scope: loop-inductance budgets from the board's own testbench, and the boost loop's measures cross-checked. Not here: the rest of `kae.sim` -> [functional-evaluator](functional-evaluator.md).
+Keys: kae.sim.budget, `budgets`, board.budgets.json, `Vloop`, cell_body_floor, stand-in, hot loop, pt_mesh_loop, critical_cli route --budgets, power profile
+
+**Results**
 - `kae.sim.cli budgets` derives a cell's loop-inductance budget from the board's own testbench; it is applied only from a trusted requirement, when achievable and independent of the stand-in, and only by methods that opt in. On the two smoke boards none passes [M].
 - On the boost's routed loop the router's closed form (9.37 nH copper) is within about 5% of a solid-plane mesh reference; the plane slot adds about 1.7 nH it cannot see. The SPICE power-profile extraction reads −38% and must not judge loops [M].
 
@@ -43,7 +46,7 @@ So the router's loop model is the authority for loop inductance. Its error on th
 ## Conflicts and open questions
 
 - One loop is one data point; an error band on the closed form needs a corpus sample of hot loops.
-- Stand-in fidelity and numerics: [functional-evaluator § Conflicts and open questions](functional-evaluator.md#conflicts-and-open-questions).
+- Stand-in fidelity and numerics: [functional-evaluator § Conflicts and open questions](functional-evaluator.md#open-questions).
 
 ## Sources
 

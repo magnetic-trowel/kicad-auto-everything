@@ -1,21 +1,19 @@
 # DDR3, DDR4 and LPDDR4 layout rules (controller-keyed)
 
-*Tags: [P] primary source read, [S] snippet only, [I] our inference.*
+Scope: DDR3/DDR4/LPDDR4 fly-by, byte-lane matching, termination, VREF/VTT, per controller. Not here: rule-pack precedence -> [../rule-pack-format.md](../rule-pack-format.md); delay model -> [../diff-pairs.md](../diff-pairs.md).
+Keys: DDR, DDR3, DDR4, LPDDR4, fly-by, byte lane, DQ, DQS, CK, ADDR/CMD, VTT, VREF, write leveling, SPRABI1D, SPRAD06C, TN-41-13, PolarFire, Agilex, ps/mil, DDR-DERATE
+Tags: [P] primary, [S] snippet, [I] inference.
 
-**TL;DR**
-- **Rules depend on the controller, and vendors differ greatly.**
-  - DQ↔DQS: 2 ps (TI AM62x), 3.5 ps (Intel Agilex 5, [S]), 10 ps (Intel DDR3, [S]), 25 ps (Microchip PolarFire).
-  - ADDR↔CK: 4 ps (TI) to 100 ps (Microchip).
-  - Pick the pack for the actual controller. When the controller is unknown, the general policy is the tightest [P] value, which is under review ([../rule-pack-format.md](../rule-pack-format.md)); this pack's Recommendations instead scale the Micron 1% rule.
-- **Fly-by matching is per SDRAM.** Emit one `fromTo()` length or skew rule per SDRAM per group, plus `within_diff_pairs` for CK and DQS. A single net-class-wide skew rule cannot express fly-by.
-- **Match only within a byte lane.** Cross-byte matching is "neither required nor recommended" for DDR4/LPDDR4.
-- **Policy (TI):** match in the layout tool to <20% of each limit, keep the full limit as `max`, then confirm with power-aware IBIS simulation across PVT.
-  - Micron's principled default allocates about 1% of the clock period to matching: ±1 mm for address and ±0.5 mm for data at 800 MHz.
-- **Delay-to-length conversions differ by vendor** (5–6.1 mil/ps). Use KiCad 10's stackup-based delay model instead of any fixed constant.
+## DDR policy
+1. Rules depend on the controller; vendor spread 12.5–25×. DQ↔DQS: 2 ps (TI AM62x), 3.5 ps (Intel Agilex 5 [S]), 10 ps (Intel DDR3 [S]), 25 ps (Microchip PolarFire). ADDR↔CK: 4 ps (TI) to 100 ps (Microchip). Key every pack by controller vendor. Unknown controller: general policy is tightest [P] value (under review, [../rule-pack-format.md](../rule-pack-format.md)); this pack instead scales the Micron 1% rule linearly with clock period.
+2. Fly-by matching is per SDRAM: one `fromTo()` length/skew rule per SDRAM per group, plus `within_diff_pairs` for CK and DQS, in ps (KiCad 10 time domain) with per-layer and via delay from the stackup. A net-class-wide skew rule cannot express fly-by.
+3. Match only within a byte lane; cross-byte matching is "neither required nor recommended" (DDR4/LPDDR4).
+4. TI policy: match in the tool to <20% of each limit, keep full limit as `max`, confirm by power-aware IBIS simulation across PVT. Micron default: ~1% of clock period to matching (±1 mm address, ±0.5 mm data at 800 MHz).
+5. Delay-to-length conversions differ (5–6.1 mil/ps): use the stackup delay model, not a constant.
+6. Placement: fly-by order controller → SDRAM1 → … → termination; VTT regulator and termination resistors at the far end.
 
-## Key facts
-
-### DDR3 (TI KeyStone, [SPRABI1D](https://www.ti.com/lit/pdf/sprabi1) Rev. Jul 2022 [P])
+## DDR3 TI KeyStone rules
+Source: [SPRABI1D](https://www.ti.com/lit/pdf/sprabi1) Rev. Jul 2022 [P].
 
 | Group | Rules |
 |---|---|
@@ -29,7 +27,7 @@
 | VTT supply | VTT regulator close to the SDRAMs; VTT island on the component side; ≥1 × 0.1 µF per VTT pin plus ≥1 × 10–22 µF bulk |
 | Write leveling | Limit 2500 ps (theoretical). DDR3-1333 example: max <2135 ps (or <1385 ps), min >365 ps, assuming 180 ps/in |
 
-### DDR3 point-to-point and other vendors
+## DDR3 point-to-point and other vendors
 - **Micron** ([TN-41-13](https://cdn.hackaday.io/files/19354828041536/tn4113_ddr3_point_to_point_design.pdf) [P]):
   - Allocate about 1% of the timing budget to matching. At 800 MHz, 6.25 ps ≈ ±1 mm at 6.5 ps/mm.
   - Data with a 625 ps bit: ±0.5 mm.
@@ -42,7 +40,8 @@
   - ISSI: ±10 ps ≈ ±50 mil.
   - PCBWay blog: ±25 mil; stubs <200 mil (ideally <100 mil).
 
-### DDR4 (TI AM62x/AM62Lx, [SPRAD06C](https://www.ti.com/lit/pdf/sprad06) Rev. Mar 2025 [P])
+## DDR4 TI AM62x/AM62Lx rules
+Source: [SPRAD06C](https://www.ti.com/lit/pdf/sprad06) Rev. Mar 2025 [P].
 
 | Group | Rules |
 |---|---|
@@ -57,7 +56,8 @@
   - R_T 30–50 Ω; Z0 typically 50 Ω; Zdiff 100 Ω; ODT 80/120/240 Ω; DQ needs no VTT.
 - **Intel Agilex 5 down-memory:** DQ-to-DQS within a byte ±3.5 ps; DQS-to-DQS <1 ps; package length included [S].
 
-### LPDDR4 (TI AM62x, SPRAD06C Tables 3-6/3-7 [P])
+## LPDDR4 TI AM62x rules
+Source: SPRAD06C Tables 3-6/3-7 [P].
 
 | Group | Rules |
 |---|---|
@@ -65,7 +65,7 @@
 | Data | DQS and BYTE ≤450 ps. CK0 delay − DQS delay = 0 to 3 tCK (CK longer). DQS P/N ≤1.5 ps; DQS-to-BYTE ≤150 ps (per-bit deskew); shortest DQ/DM − DQS ≥ −49 ps. ≤2 vias; via stub ≤40 mil; count difference 0 |
 | Policy | Match in the tool to <20% of each limit, then confirm by power-aware IBIS simulation across PVT |
 
-### Delay-to-length conversions (vendor-specific)
+## Delay-to-length conversions
 
 | Source | Conversion |
 |---|---|
@@ -75,7 +75,7 @@
 | Renesas | 1 mm ≈ 6 ps |
 | NXP forum | 6 mil/ps for package delay [S] |
 
-### Rule summary for emission
+## DDR rule IDs
 
 | ID | Rule | Check |
 |---|---|---|
@@ -90,21 +90,9 @@
 | DDR-XBYTE | Never emit cross-byte skew rules | Pack policy |
 | DDR-DERATE | `opt` = 20% of each ps limit; `max` = the limit | Pack policy |
 
-## Recommendations for our system
-- **Placement.** Use fly-by order (controller → SDRAM1 → … → termination), keeping the VTT regulator and termination resistors at the far end.
-- **Constraints.** Generate per-SDRAM `fromTo` rules in ps (KiCad 10 time domain), with the per-layer and via delay coming from the stackup. Apply byte-lane-only matching.
-- **Scaling.** Scale the Micron 1% rule linearly with clock period when no controller pack exists.
-
-## Conflicts and open questions
-- **Vendor spread:** 12.5–25× between vendors. Key every pack by controller vendor.
-- **Missing sources:**
-  - No JEDEC primary document was read.
-  - ST AN5122, the NXP i.MX8M guides, Xilinx UG583 and the Intel EMIF tables were not reachable as primary text.
+## Open questions
+- No JEDEC primary document read. ST AN5122, NXP i.MX8M guides, Xilinx UG583 and Intel EMIF tables not reachable as primary text.
 
 ## Sources
-- Research notes: [interface_rule_packs.md § 3](../../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/interface_rule_packs.md).
-
-See also:
-- [../diff-pairs.md](../diff-pairs.md)
-- [../rule-pack-format.md](../rule-pack-format.md)
-- [../checkers-si-emi.md](../checkers-si-emi.md)
+- [interface_rule_packs.md § 3](../../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/interface_rule_packs.md)
+- See also [../checkers-si-emi.md](../checkers-si-emi.md).

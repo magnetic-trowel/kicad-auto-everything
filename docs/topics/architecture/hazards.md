@@ -2,7 +2,10 @@
 <!-- SPDX-License-Identifier: CC-BY-4.0 -->
 # Hazards: what kae tells the commanding LLM about the board it hands back
 
-**TL;DR**
+Scope: the `hazards` / `hazard_summary` contract of every kae JSON report: codes, severities (block, warn, info), the forced-safety DRC recheck, static project hazards and the size caps. Not here: placement severity ladder -> [kae-exact-legality](../../research/placement/kae-exact-legality.md); the tool envelope -> [mcp-tool-surface-spec](../kicad/mcp-tool-surface-spec.md).
+Keys: hazards, `hazard_summary`, `blocked`, block hazard, warn, info, `--recheck`, forced-safety recheck, `ignored_checks`, severity downgrade, `dru_rejected`, fab minimums, IPC-2221B clearance, `body_overlap`, `body_relaxed`, `severity_fallback`, `connector_off_edge`, `kae.route.blocked`
+
+**Results**
 - **Every JSON report the LLM reads ends with `hazards` and `hazard_summary`** (`kae place`, `kae.route.cli`, `kae.route.critical_cli`, `kae.joint.cli`, `kae brief`, `kae.excite.evaluate`, `kae.sim`). `hazard_summary.blocked` is true when the board would not work or cannot be built as drawn [M].
 - **The project's own DRC severities can hide a short.** KiCad does not run a check set to `ignore` at all (nothing in `violations`, even with `--severity-all`; only a line in `ignored_checks`) [M]. kae therefore rechecks every board it writes with the safety checks forced on, on a scratch copy; the board, its project and the benchmark's scoring are untouched [M].
 - **Static project hazards need no KiCad:** checks the project downgrades, custom rules that waive their own severity, a `.kicad_dru` KiCad drops, design minimums below every mainstream fab, and net classes whose clearance is below IPC-2221B for the net's inferred voltage [I].
@@ -71,6 +74,7 @@
 | `drc_check_downgraded` | warn (block class), info (warn class) | the project runs a check of the table below its required severity |
 | `dru_rule_downgraded` | warn | a custom rule with `(severity ignore|warning|exclusion)` |
 | `dru_rejected` | warn | `kae.board.dru_check.rejection` (`kae dru-check`): KiCad drops the whole file on any error |
+| `stackup_assumed` | warn (3+ copper layers), info (2) | `kae.excite.evaluate`: the board states no stackup, so the field solve assumed one ([physics-set-coverage](../physics/physics-set-coverage.md)) |
 | `below_fab_floor` | warn | board minimum, net-class or custom-rule clearance/width/drill/annular/edge/hole-to-hole below the smallest absolute limit of JLCPCB, PCBWay and OSH Park: 0.09 mm space and width, 0.15 mm drill, 0.10 mm annular, 0.2 mm edge, 0.127 mm hole-to-hole ([dfm-fab-limits.md](../rules/dfm-fab-limits.md)) |
 | `hv_clearance_below_ipc` | warn, safety | a net kae.circuit puts above 30 V whose class clearance is below IPC-2221B Table 6-1 B2 (external, uncoated) for its voltage to the lowest net; a custom clearance rule naming the net or class at that value clears it (register RC10) |
 | `capacitor_over_voltage` | block (warn when the rail voltage is only inferred), electrical | the brief's `summary.caps_over_rating`: a capacitor from a rail to ground whose stated rating (`Voltage` field, else the value) is below the rail's nominal voltage; evidence: rated V, rail V and its source. 64 such MLCCs in the corpus ([component-priors](../../research/physics/component-priors.md)) |
@@ -86,6 +90,7 @@
 | `class_max_below_ipc` | warn, thermal | net class maximum below the IPC-2221 width for the current |
 | `escape_infeasible` | block, electrical | `escape.certificate`: balls no routing can escape under the rules, with the relaxations that suffice ([bga-routing-ranked-ideas.md](../routing/bga-routing-ranked-ideas.md)) |
 | `body_overlap` / `body_relaxed` | block / info, assembly | `Problem.relaxed_body_hazards`, per part `relax_bodies` freed (`escalate` by default: only when legalization fails; `off`, `auto`), on the final poses: block when its body overlaps another part ([kae-exact-legality](../../research/placement/kae-exact-legality.md)) |
+| `severity_fallback` | info / warn, assembly | `kae place` severity ladder (`strict_then_level_c`, the default): drawn courtyards did not fit, so level_c (courtyards 0.15 mm in) was kept, or strict was skipped because drawn courtyards overfill the board: info, objects the parts whose drawn courtyards share margin; warn when courtyard overlaps remain. Info when level_c was tried and strict kept; warn when no time was left to try it ([kae-exact-legality](../../research/placement/kae-exact-legality.md)) |
 | `check_not_run` | warn, data | the joint loop's final card `checked` has `false` (values reported `null`) |
 | `physics_over_budget` | warn | a module's routed u > 1 (the critical recheck flags u crossing 1, [critical-net-routing.md](../routing/critical-net-routing.md)) |
 | `outline_incomplete` | block, manufacturing | `kae place`: staged footprints carry Edge.Cuts, the outline is open |

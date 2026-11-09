@@ -1,22 +1,11 @@
 # First-principles EMI budget: from edge rate to dBµV/m
 
-*Tags: [P] primary source read, [S] snippet or secondary, [V] vendor claim, [I] our inference, [C] computed by us.*
-*Calculator: [fe_emi_budget.py](../../../tools/research/physics/fe_emi_budget.py) (under 1 s, numpy only). Slot and edge coupling are calibrated with [fe_peec_plane.py](../../../tools/research/physics/fe_peec_plane.py).*
+Scope: the closed-form chain spectrum × drive current × coupling L between cable points × cable antenna × limit; worked clock cases; fix ranking; 1 mV and 5 µA rules; other source mechanisms; placement/routing cost. Not here: return paths, slots, cavities -> [fields-si-emi](fields-si-emi.md); ring damping -> [lens-th](lens-th.md); world-node CM -> [lens-ct](lens-ct.md).
+Keys: EMI budget, MREMC, common-mode current, cable antenna, L_ret, return-path EMF, κ_ab, slot crossing, split plane, stitching capacitor, connectors on one edge, 1 mV rule, 5 µA rule, Ott, CISPR 32 Class B, FCC 15.109, trapezoid spectrum, skew to common mode, voltage-driven CM, fe_emi_budget
 
-**TL;DR**
-- **Radiated emission from a board with cables is a product of five factors:** source spectrum × drive current × coupling impedance between the cable attachment points × cable antenna × limit. Each factor is a closed form, so the whole chain runs in microseconds per net and connector pair. Only the coupling factor depends on layout, and it is an inductance: about 30 pH for a centred 30 mm trace over a solid plane, 160 pH at 3h from the edge, and 0.45–2.5 nH when the trace crosses a 20 mm slot.
-- **Worked case [C]:** a 50 MHz, 1 ns, 3.3 V clock drives 10 pF over 30 mm, with cables on opposite board edges.
-  - Over a solid plane it sits near the Class B line: −6 dB by the worst-case MREMC model, but 1.9 µA of cable current against Ott's 5 µA.
-  - A 20 mm slot under it costs 24 dB. A split plane costs 38 dB.
-  - Putting both cables on the same edge removes the voltage between them (PEEC: 43–63 dB). It leaves the board-vs-cable mode, so it buys 6–30 dB when the return voltage runs away from the cable edge and 24–48 dB when it runs parallel to it (lumped estimate, [C, [rt_world_cm](../../../tools/research/physics/rt_world_cm.py)]). A stitching cap buys about 10 dB. Slowing edges from 1 to 3 ns buys 3 dB, and raising the series R from 33 to 100 Ω buys 2.5 dB.
-  - **In this case, removing a slot or split beats edge-rate and series-R tweaks by 20–35 dB; ring damping, not modelled here, is worth 12–21 dB at the ring band** ([lens-th](lens-th.md)).
-- **The 1 mV and 5 µA rules are one rule:** 1 mV across a typical 150 Ω common-mode impedance is 6.7 µA. MREMC's worst-case resonant cable (about 36 Ω) is ~13 dB harsher: 1 mV gives 61 dBµV/m, 21 dB over the Class B limit.
-- **Use the chain for ranking and placement cost, not pass/fail.** It brackets reality within ±10–20 dB, but it ranks layouts and fixes correctly, and it names the dominant (net, harmonic, connector pair).
-- **The skew → common-mode path on unshielded differential cables is the same chain** with V_cm = V_d·|sin(πfΔt)|/2: 50 ps of skew on a 2 Vpp, 31 MHz link leaves ~30 dB for the magnetics and common-mode choke to cover.
+Calculator: [fe_emi_budget.py](../../../tools/research/physics/fe_emi_budget.py) (under 1 s, numpy only; microseconds per net and connector pair); slot and edge coupling calibrated with [fe_peec_plane.py](../../../tools/research/physics/fe_peec_plane.py). Only the coupling factor depends on layout, and it is an inductance. Brackets reality within ±10–20 dB but ranks layouts and fixes correctly and names the dominant (net, harmonic, connector pair): use for ranking and placement cost, not pass/fail; until calibrated once per enclosure class against a measured board or openEMS run, use the worst-case MREMC level labelled "ranking only".
 
-## Key facts
-
-### 1. The chain
+## 1. The chain
 
 | Step | Formula | Source | Uncertainty |
 |---|---|---|---|
@@ -34,7 +23,7 @@ Two physical points sit behind step 3a:
 - **The plane is not equipotential at radio frequencies.** A return current I flowing along a finite plane produces a voltage between its ends of jω·L_ret·I, because part of the return flux wraps around the plane edges. For a trace at h = 0.2 mm, L_ret is tiny (tens of pH). It is still enough: 30 pH × 3 mA at 450 MHz is 0.29 mV, and a resonant cable turns 0.29 mV into 53 dBµV/m.
 - **Orientation matters.** The voltage appears along the direction of the return current. A fast trace that runs parallel to the line joining two cable points drives them; the same trace running perpendicular drives much less. MREMC handles this through its "horizontal/vertical" cable placement and L_eff.
 
-### 2. Worked cases (fe_emi_budget.py) [C]
+## 2. Worked cases (fe_emi_budget.py) [C]
 Common setup: 50 MHz, 50% duty, 3.3 V, t_r = 1 ns; R_s = 33 Ω; load 10 pF; 30 mm trace at h = 0.2 mm (L1 over L2 GND); board 80 mm wide; 1 m cables; harmonics to 1 GHz. "Margin" is the worst margin to CISPR 32 Class B (3 m) under MREMC's worst case; "I_cm" is the largest harmonic at Z_cm = 150 Ω.
 
 | Case | Coupling L between cable points | Worst margin | I_cm (vs 5 µA) | Change vs base |
@@ -50,23 +39,24 @@ Common setup: 50 MHz, 50% duty, 3.3 V, t_r = 1 ns; R_s = 33 Ω; load 10 pF; 30 m
 | E. B with t_r = 3 ns | — | −26.8 dB @ 150 MHz | 13 µA | +3 dB vs B |
 | F. B with R_s = 100 Ω | — | −27.2 dB | 16 µA | +2.5 dB vs B |
 
-**Unshielded differential cable** (2 Vpp square wave at 31.25 MHz with t_r 3 ns, an upper bound for 100BASE-TX, before magnetics and CMC): skew 5 / 50 / 200 ps gives a worst margin of −10 / −30 / −42 dB and I_cm of 2 / 21 / 82 µA. Ethernet magnetics and chokes provide the ~30–40 dB that closes this. So **skew is a budget shared with the magnetics, not a free number.**
+**Unshielded differential cable** (2 Vpp square wave at 31.25 MHz with t_r 3 ns, an upper bound for 100BASE-TX, before magnetics and CMC): skew 5 / 50 / 200 ps gives a worst margin of −10 / −30 / −42 dB and I_cm of 2 / 21 / 82 µA. V_cm = V_d·\|sin(πfΔt)\|/2 (same chain); 50 ps leaves ~30 dB for magnetics and CMC; Ethernet magnetics and chokes provide the ~30–40 dB that closes this. **Skew on cables leaving the board is a common-mode budget shared with the magnetics and CMC, not a free timing number.**
 
-### 3. What buys dB, in order (this case)
+## 3. What buys dB, in order (this case)
 1. **Cable attachment points on one edge** (κ → ~0 removes the inter-cable term; the board-vs-cable mode remains): 6–48 dB by orientation (lumped model). This is the physics behind LearnEMC's "connectors on one edge; nothing fast between connectors" ([emc-placement](../rules/emc-placement.md)).
 2. **No slot or split under the net:** 24–38 dB.
 3. **Distance from the board edge, and a thin dielectric:** 15–17 dB. A 2-layer board loses most of this ([Ott](https://hott.shielddigitaldesign.com/techtips/pcb-stack-up-1.html): 4-layer radiates ~15 dB less [P]).
 4. **Stitching capacitors:** 8–15 dB above their self-resonance. They help at the frequency they resonate at, and a cap placed 5 mm down the slot loses 2–3 dB of that.
-5. **Edge rate and series R:** 2.5–3 dB here (one 50 MHz clock). Slowing t_r from 1 to 3 ns moves the spectral corner 1/(π·t_r) from 318 to 106 MHz, but the worst harmonic then becomes the 3rd (150 MHz), which barely moves. Edge control matters more when the cable resonances sit well above the corner.
+5. **Ring damping** (not modelled here): 12–21 dB at the ring band ([lens-th](lens-th.md)).
+6. **Edge rate and series R:** 2.5–3 dB here (one 50 MHz clock). Slowing t_r from 1 to 3 ns moves the spectral corner 1/(π·t_r) from 318 to 106 MHz, but the worst harmonic then becomes the 3rd (150 MHz), which barely moves. Edge control matters more when the cable resonances sit well above the corner.
 
-The ranking changes with the case, so the system should compute it: every candidate fix is a parameter of the chain, and ∂margin/∂parameter tells the agent which fix to try first.
+Here removing a slot or split beats edge-rate and series-R tweaks by 20–35 dB. Make cable-point topology a first-class placement variable and model the board-vs-cable mode, not only κ. Price stitching caps at ~10 dB each near their SRF; offer "remove the split" first. The ranking changes with the case, so compute it: every candidate fix is a parameter of the chain, and ∂margin/∂parameter tells the agent which fix to try first.
 
-### 4. Consistency checks
-- **1 mV rule** (LearnEMC: about 1 mV between antenna parts can fail Class B [P]). MREMC gives 60.9 dBµV/m for 1 mV at 100 MHz, 21 dB over the limit. At a typical 150 Ω, 1 mV is 6.7 µA, close to Ott's 5 µA. The two rules agree at typical common-mode impedance; MREMC is the resonant worst case.
+## 4. Consistency checks
+- **1 mV rule** (LearnEMC: about 1 mV between antenna parts can fail Class B [P]). MREMC gives 60.9 dBµV/m for 1 mV at 100 MHz, 21 dB over the limit. At a typical 150 Ω, 1 mV is 6.7 µA, close to Ott's 5 µA. The two rules are one rule at typical common-mode impedance; MREMC's resonant worst case (~36 Ω) is ~13 dB harsher.
 - **5 µA rule** (Ott: Class B for cables ≥ 1 m [P]). Ott's short-antenna formula with 1 m at 3 m and 100 MHz gives 46 dBµV/m for 5 µA: 3 dB over the FCC 88–216 MHz limit and 6 dB over CISPR 32's 40 dBµV/m. So 5 µA is a typical-case rule with no margin. Ott's own tip ([tips-cm](https://hott.shielddigitaldesign.com/techtips/tips-cm.html) [P]) states "less than 5 microamps" for class B on cables ≥ 1 m with no frequency; the short-cable formula meets it near 30–50 MHz. kae's placer and evaluator both use the chain's 2.6 µA at 100 MHz.
 - **Base case** A: MREMC says fail by 6 dB, the 5 µA check says pass by 8 dB. The 14 dB spread is the difference between a resonant and a typical cable impedance. Treat MREMC as the upper bound and the 5 µA check as the median.
 
-### 5. Other source mechanisms
+## 5. Other source mechanisms
 
 | Mechanism | Physics | Typical size | When it dominates |
 |---|---|---|---|
@@ -76,22 +66,16 @@ The ranking changes with the case, so the system should compute it: every candid
 | Cavity / edge radiation | Plane-pair modes radiate from the edges | Excited by vias that change reference ([fields-si-emi](fields-si-emi.md)) | Above ~1 GHz; high-Q GND–PWR pairs |
 | Slot antenna | Slot at λ/2 resonance | 20 mm slot ≈ 4.6 GHz in FR-4 | Above 1 GHz (CISPR 32 above-1 GHz limits) |
 
-### 6. From calculator to placement and routing cost
+## 6. From calculator to placement and routing cost
+Ship fe_emi_budget as the reference spend model: inputs net spectra, outline, connector positions, κ maps; outputs margin per (net, harmonic, connector pair) and sensitivities.
 - **Per connector pair (a, b):** precompute κ_ab(x, y, direction) with PEEC over the outline. It gives the cable-pair voltage per unit of return EMF at each position and orientation.
 - **Per fast net:** I_n(f) from the role model (IBIS or part family), and its sketch or route.
 - **Cost:** Σ_f softplus(E(f) − limit(f) + guard) over the top harmonics. It is smooth in component positions, so it drops into the [P8](../../ideas/original/placement.md) placer loss.
 - **Router:** each slot crossing, edge approach or reference change has a ΔL price in nH. The router compares prices instead of obeying a forbid list ([R2](../../ideas/original/routing.md)).
+- **Same-edge term (to add to fe_emi_budget.py and in_emi_voi.py):** I_same ≈ ω·c_far·ΔV/|1 + jω·C_tot·Z_cm|, c_far = capacitance to the world of the board region beyond the return's voltage drop ([rt_world_cm](../../../tools/research/physics/rt_world_cm.py)); plus a ring term with the edge floor ([lens-th](lens-th.md)).
 - **Ledger:** I1 rows such as "USB connector ↔ DC jack: V_cm ≤ 100 µV at 150–450 MHz; top spenders: CLK50 (62%), SDIO_CLK (21%)".
 
-## Recommendations for our system
-1. **Ship fe_emi_budget as the reference spend model** for EMI budgets. Inputs are net spectra, the outline, connector positions and κ maps. Outputs are a margin per (net, harmonic, connector pair) and the sensitivities.
-2. **Calibrate the absolute level once** against a measured board or openEMS run per enclosure class. Until then use the worst-case MREMC level and label results "ranking only".
-3. **Make cable-point topology a first-class placement variable.** It is worth 6–48 dB here, depending on orientation; model the board-vs-cable mode, not only κ.
-4. **Price stitching caps honestly:** about 10 dB each, near their SRF. Offer "remove the split" first.
-5. **Treat skew on cables that leave the board as a common-mode budget** shared with the CMC and magnetics, not as a timing number only.
-6. **Model the same-edge case in fe_emi_budget.py and in_emi_voi.py with a board-vs-cable term,** I_same ≈ ω·c_far·ΔV/|1 + jω·C_tot·Z_cm|, where c_far is the capacitance to the world of the board region beyond the return's voltage drop ([rt_world_cm](../../../tools/research/physics/rt_world_cm.py)). Add a ring term with the edge floor ([lens-th](lens-th.md)).
-
-## Conflicts and open questions
+## Open questions
 - MREMC is a worst case; how far real boards in plastic enclosures sit below it (6 dB? 20 dB?) is not known for our corpus. Measurement or full-wave calibration is needed.
 - The 6–48 dB same-edge benefit is a lumped, quasi-static estimate with plate capacitances ([rt_world_cm](../../../tools/research/physics/rt_world_cm.py)); a full-wave board-plus-cable run should settle it ([verification-and-limits](verification-and-limits.md)).
 - κ for slots was computed on one outline (60 × 50 mm, h = 0.2 mm). The PEEC needs to be run per board.
@@ -106,4 +90,4 @@ The ranking changes with the case, so the system should compute it: every candid
 - Ott, common-mode current and red flags: https://hott.shielddigitaldesign.com/techtips/tips-cm.html [P]
 - CISPR 32 summaries: https://ti.com/lit/slyy202, https://expo.meanwell.com/upload/data/SafetyNews/EN/EMC-CISPR32.pdf [S]
 
-See also: [fields-si-emi](fields-si-emi.md), [rf-geometry](rf-geometry.md), [emc-placement](../rules/emc-placement.md), [checkers-si-emi](../rules/checkers-si-emi.md), [ideas: si-emi-rf](../../ideas/physics-first/si-emi-rf.md)
+See also: [rf-geometry](rf-geometry.md), [emc-placement](../rules/emc-placement.md), [checkers-si-emi](../rules/checkers-si-emi.md), [ideas: si-emi-rf](../../ideas/physics-first/si-emi-rf.md)

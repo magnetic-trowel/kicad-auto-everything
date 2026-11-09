@@ -1,39 +1,29 @@
 # Boost converter layout rules
 
-**TL;DR**
-- **The hot loop is LS switch → rectifier/HS switch → COUT_HF → PGND.** The *output* cap is the critical cap, not the input cap.
-- **COUT_HF ground returns to the IC PGND by the shortest path.** Use a small cap at the IC and bulk farther out.
-- **VIN copper is quiet,** so large VIN area is fine. Keep SW small and keep FB away from SW.
-- **Single AGND tie** close to the PGND pin.
-- Everything else follows [buck.md](buck.md): FB, SW and snubber rules.
+Scope: boost-specific hot loop, cap ranking, VIN copper, AGND tie, detector. Not here: shared hot-loop rules -> [hot-loops.md](hot-loops.md); FB, SW, snubber rules -> [buck.md](buck.md).
+Keys: boost, COUT_HF, output cap hot loop, rectifier, sync FET, SLVA773, SNVA731, PWR-09, Power-Ground
 
-## Key facts
-- **Hot loop:**
-  - [TI SNVA731](https://www.ti.com/lit/an/snva731/snva731.pdf) [P], VERIFIED: "In a boost converter, the most critical PCB feature is the loop formed by the output capacitor, diode and the regulator ground."
-  - AN-136 [P]: C_HF goes on the output side, close to the MOSFET and the diode.
-- **TI SLVA773** ("Five Steps to a Good PCB Layout of the Boost Converter", [PDF](https://www.ti.com/lit/an/slva773/slva773.pdf)) [P]:
-  - Output cap close to the IC with short, wide traces.
-  - "One via per amp of current if the via is required."
-  - A small-package cap can sit next to the IC, with bulk caps farther away.
-  - Input-cap ground close to PGND. CIN ground, COUT ground and IC ground "form a Power-Ground".
-  - A large VIN copper area is acceptable, because VIN is quiet.
-  - "Any trace of a sensitive node, such as FB, should be far away from the SW node"; do not run FB parallel to SW.
-  - AGND "connected to the Power-Ground of the IC through a single point … close to the PGND pin".
-- **Loop-area target:** "under 1 cm² if possible" appears only on a calculator page ([Firgelli](https://www.firgelliauto.com/blogs/engineering-calculators/boost-converter-calculator)) [V]. Use the [hot-loops.md](hot-loops.md) tiers instead.
-- **Rule PWR-09** (RPA §1): COUT_HF tight to the rectifier and PGND. Hot-loop area {LS FET, D, COUT_HF}. Severity S1. Also applies to flyback secondaries.
-- **Boost LED drivers** use the SW–D–COUT loop ([led-drivers.md](led-drivers.md)).
+## Boost rules
+| Rule | Value / detail | Source |
+|---|---|---|
+| Hot loop | LS switch (SW→PGND) → rectifier/HS (SW→VOUT) → COUT_HF → PGND; the **output** cap is critical, not the input cap. "In a boost converter, the most critical PCB feature is the loop formed by the output capacitor, diode and the regulator ground." | [TI SNVA731](https://www.ti.com/lit/an/snva731/snva731.pdf) [P, VERIFIED] |
+| C_HF side | Output side, close to MOSFET and diode | AN-136 [P] |
+| COUT placement | Close to IC, short wide traces; small-package cap next to IC, bulk farther away; COUT_HF ground returns to IC PGND by the shortest path and is the closest cap to PGND | [TI SLVA773](https://www.ti.com/lit/an/slva773/slva773.pdf) ("Five Steps to a Good PCB Layout of the Boost Converter") [P] |
+| Vias | "One via per amp of current if the via is required." | SLVA773 |
+| Power-Ground | CIN ground close to PGND; CIN, COUT and IC grounds "form a Power-Ground" | SLVA773 |
+| VIN copper | Quiet: large VIN area acceptable; do not flag a large VIN pour as EMI risk | SLVA773 |
+| FB | "Any trace of a sensitive node, such as FB, should be far away from the SW node"; not parallel to SW; no numeric FB–SW clearance in any vendor document | SLVA773 |
+| AGND | "connected to the Power-Ground of the IC through a single point … close to the PGND pin" | SLVA773 |
+| Loop area | "under 1 cm² if possible" only on a calculator page ([Firgelli](https://www.firgelliauto.com/blogs/engineering-calculators/boost-converter-calculator)) [V]; use [hot-loops.md](hot-loops.md#loop-area-thresholds) tiers | — |
+| PWR-09 (RPA §1) | COUT_HF tight to rectifier and PGND; hot-loop area {LS FET, D, COUT_HF}; S1; also flyback secondaries | [I] |
 
-## Recommendations for our system
-- **Topology detector:** an inductor between the input rail and SW, plus a diode or sync FET from SW to the output → boost. Assign COUT_HF = the smallest-package cap on VOUT/PGND.
-- **Hot-loop polygon** {SW pin / LS FET, rectifier, COUT_HF, PGND}: COUT_HF on the IC layer is hard (integrated converters); vias and plane coverage are scored through the loop-inductance estimate, so vertical loops stay legal ([hot-loops.md](hot-loops.md)); soft area score.
-- **Cap rank:** the COUT_HF ground pad must be the closest cap to PGND.
-- **Do not flag a large VIN pour as an EMI risk** in boost designs.
+## Boost detector and constraints
+- Topology: inductor between input rail and SW + diode or sync FET from SW to output → boost. COUT_HF = smallest-package cap on VOUT/PGND.
+- Hot-loop polygon {SW pin / LS FET, rectifier, COUT_HF, PGND}: COUT_HF on the IC layer hard (integrated converters); vias/plane scored by the loop-inductance estimate ([hot-loops.md](hot-loops.md)); soft area score.
+- Boost LED drivers use the SW–D–COUT loop ([led-drivers.md](led-drivers.md)).
 
-## Conflicts and open questions
-- **SEPIC/Ćuk loop membership** is inference only ([buck-boost-sepic.md](buck-boost-sepic.md)).
-- **No numeric FB–SW clearance** exists in any vendor document.
+## Open questions
+- SEPIC/Ćuk loop membership is inference only ([buck-boost-sepic.md](buck-boost-sepic.md)).
 
 ## Sources
-- research notes: [rules_power_rf_analog_dfm.md § 1](../../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_power_rf_analog_dfm.md); [verification_rules.md § 1B](../../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md); [interface_rule_packs.md § 8](../../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/interface_rule_packs.md)
-
-See also: [hot-loops.md](hot-loops.md), [buck.md](buck.md), [led-drivers.md](led-drivers.md)
+- [rules_power_rf_analog_dfm.md § 1](../../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_power_rf_analog_dfm.md); [verification_rules.md § 1B](../../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md); [interface_rule_packs.md § 8](../../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/interface_rule_packs.md)

@@ -77,6 +77,57 @@ A method runs with the harness commit recorded in it, and an experiment's jobs r
 experiment's frozen copy of `kaeres.py`. Code changes after `exp create` therefore change
 nothing in that experiment.
 
+## Running an experiment without wasting it
+
+Lessons from experiments that ran and measured nothing (2026-11):
+- **One harness for the experiment and its methods.** A method prepares its boards and runs its restart
+  wrapper from its own `--harness`. Pin every method's `--harness` and the experiment's `--harness` to
+  the same commit (or commits with the same `TASK_SPEC` and `restart.py`): a method pinned to a harness
+  of another task spec runs every job and writes nothing, because its runs land on another task
+  (`exp create` now refuses it); a wrapper from a harness without a flag the method uses (`--resume`)
+  fails every run at once.
+- **Run every arm at the same time.** On this shared host the same code, seeds and time budget left
+  13.9 % more open connections a few days later (zone-keepout-ab2's fresh base against zone-ab's,
+  47 boards, p < 0.001): more than any effect the recent A/Bs measured. A run reused from another
+  experiment was made at another time, so `exp create` refuses methods that already have runs on the
+  experiment's boards. Register a replicate instead (`method add` with the same recipe plus
+  `--param replicate=<tag>`), so each board's job runs every arm side by side; `--reuse-runs` overrides,
+  and the report then warns about boards whose arms ran more than 12 h apart.
+- **Smoke first.** One or two boards, 1 attempt, `exp submit` on that experiment, then read the runs
+  (status, scores, bug records) before submitting the full one.
+- **`results.csv` holds attempt 0 only** (cp1's attempt). A multi-seed comparison reads every attempt from
+  the run folders (`boards/<id>/runs/<slug>.<method8>.a<k>/`).
+- **Timed jobs.** Runs budget on wall time, so their kaeq jobs must be class `timed` (never frozen).
+  Before kaeq had classes, jobs frozen for memory ran shorter and worse, unevenly between arms;
+  `kaeq`'s jobs table records `freezes` and `frozen_s` per job.
+- **Big boards.** KiCad's DRC lists at most 499 unconnected items; the scorer, the restart judge and
+  `kae.route.drc` count past it with pcbnew. Freerouting stops on its own time limit, so on big boards
+  its result moves with host load; compare arms on the boards where a control did not move.
+
+Lessons from the decide-ab campaign (2026-11, 17 experiments; plan and analysis scripts on branch
+`decide-ab`, `experiments/decide-ab/`):
+- **No `{` or `}` in a method's shell.** `--command` goes through `str.format`, so the shell's
+  `${in%.kicad_pcb}` is read as a template field: every run of area-cost-ab failed with `KeyError: 'in%'`,
+  and the report shows 0 / 0 / 0 rather than an error. Use `$(echo {input} | sed ...)` and smoke it.
+- **Size the kaeq timeout for the hardest board, and retry time-outs before reading results.** A job
+  runs every arm of one board in turn, so a time-out drops its later arms, mostly on the dense boards
+  where arms differ most. 58 of 224 ladder jobs timed out at 2 h and an interim read was misleading.
+  `kaeq retry --owner exp-<name> --timeout 6h`, then analyse only boards every arm finished.
+- **Know the noise before claiming a difference.** The A/A (`aa-joint`: one joint-loop method under two
+  names, 213 merit boards, k = 1) moved cp1 by 0.5 pp, 95 % CI −1.4 to +2.8 pp, with 5 boards flipped.
+  With about 200 boards, effects under about 3 pp are not visible in cp1.
+- **Test determinism before relying on k = 1.** area-cost-ab assumed kae-plain was deterministic, but
+  only 22 of the ~53 boards that could not differ came out identical across arms: time-budgeted steps
+  vary with host load.
+- **Pick a metric close to the change.** Placement legality changes showed large effects in
+  `legal_strict`, placement shorts per board and hazard counts, while cp1 did not move. Count boards
+  with placement shorts per arm, not only totals; one board can dominate a total.
+- **Reuse an arm only when its code path is unchanged.** A new arm at a later commit can be compared
+  with older control runs only if the change cannot reach them (the ladder fix touched only the
+  ladder path); otherwise rerun every arm at one commit.
+- **kaeq's CPU column counts the job's own process.** A restart-wrapped job can show hours of wall
+  time and seconds of CPU while its children work; check `ps` of the children before calling it hung.
+
 ## Per board job
 
 1. **Preflight.** KiCad's Python must import pcbnew. If it can't, the job exits 75 and kaeq retries it; this is an infrastructure failure, not a board result.

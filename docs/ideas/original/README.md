@@ -1,6 +1,9 @@
 # Original ideas catalog
 
-58 ideas beyond the ~1,700 in the [inventories](../../INDEX.md#idea-inventories). Tags: **new** (not in the corpus), **combo** (novel combination), **sharp** (existing idea made buildable). Theme files give pitch, mechanism, evidence, builds-on, test and effort/risk; assemblies are in [hybrid-architecture-options](../../topics/architecture/hybrid-architecture-options.md). All [I] until tested.
+Scope: index of our 58 original ideas (one line each) plus the joint place-and-route, scorecard and layer-collapse files. Not here: the ~1,700 surveyed ideas -> [inventories](../../INDEX.md#idea-inventories); test status -> [research/ideas](../../research/ideas.md#original-ideas-58); assemblies -> [hybrid-architecture-options](../../topics/architecture/hybrid-architecture-options.md).
+Keys: original ideas, I1-I7, N1-N9, P1-P10, R1-R8, S1-S6, V1-V5, L1-L6, U1-U7, top 10, joint-pnr, scorecard, layer collapse
+
+Tags: **new** (not in the corpus), **combo** (novel combination), **sharp** (existing idea made buildable). Theme files give idea, mechanism, evidence, builds-on, test, effort/risk. All [I] until tested.
 
 ## Intent and the "why" — [intent-and-why.md](intent-and-why.md)
 - **I1 Physics budget ledger** (combo): dB/ps/nH/mV budgets the LLM allocates and objects spend.
@@ -77,18 +80,13 @@
 - **U7 Intent-level merge** (new): concurrent human/agent edits merged on intents.
 
 ## Joint place-and-route — [joint-pnr.md](joint-pnr.md)
-43 ideas for placing and routing together, with measured results in
-[joint-pnr-experiments](../../topics/placement/joint-pnr-experiments.md): beam search over
-place-one-route-it and physics place terms in the objective have merit; soft routing
-gradients, Physarum flow and LLM move proposals did not beat simple controls.
+43 ideas for placing and routing together; verdicts in the [scorecard](scorecard.md), runs in [joint-pnr-experiments](../../topics/placement/joint-pnr-experiments.md).
 
 ## Scorecard of everything tried — [scorecard.md](scorecard.md)
+Verdict and key number per tested joint-pnr and layer-collapse idea.
 
 ## Layer collapse — [layer-collapse.md](layer-collapse.md)
-Every net on its own layer, collapsed into the board's L layers: pours maximize copper,
-sensitive nets minimize it. Maps the pieces to problems with exact answers (graph
-thickness, planar max-cut via minimization, minimal partitions and Wulff shapes, power
-diagrams, capacity isoperimetry). Under test.
+Every net on its own layer, collapsed into the board's L layers (pours maximize copper, sensitive nets minimize it), mapped to problems with exact answers (graph thickness, planar max-cut via minimization, minimal partitions and Wulff shapes, power diagrams, capacity isoperimetry); experiments and the `jc` method.
 
 ## Top 10 to try first (impact vs effort)
 1. **P6 Slot assignment** (S): designer 0.56 vs 0.31–0.39 after swaps (one unreviewed study); days of work.

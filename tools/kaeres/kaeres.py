@@ -629,9 +629,27 @@ def cmd_exp_create(a):
         raise SystemExit(f"methods prepared with a harness of another task spec than {harness[:7]}'s ({want}): "
                          + "; ".join(f"{n} {i} (spec {s})" for n, i, s in off)
                          + ". Register them again with --harness at this experiment's harness.")
+    # runs made at another time are not comparable: on this shared host the same code, seeds and time
+    # budget left 13.9 % more open connections a few days later (zone-keepout-ab2 against zone-ab's base
+    # runs, 47 boards, p < 0.001), more than the effects the A/Bs measure; so an experiment makes all of
+    # its runs itself unless --reuse-runs says otherwise
+    if not a.reuse_runs:
+        old_runs = defaultdict(int)
+        ids = {m["id"] for m in ms if m["recipe"]["runner"]["type"] != "reference"}
+        for bid in boards:
+            if board_dir(bid).exists():
+                for _, r in board_runs(bid):
+                    if r["method_id"] in ids and r.get("experiment") != a.name and not r.get("repro_of"):
+                        old_runs[r["method_id"]] += 1
+        if old_runs:
+            raise SystemExit("methods with runs from other experiments on these boards: "
+                             + "; ".join(f"{m['name']} {m['id']} ({old_runs[m['id']]} runs)" for m in ms if m["id"] in old_runs)
+                             + ". Runs made at another time are not comparable (host load moves results by ~14 %): "
+                             "register a replicate of each (method add ... --param replicate=<tag>, same recipe otherwise) "
+                             "so every arm runs now, side by side; or pass --reuse-runs to compare with them anyway.")
     kicad = kicad_version()
     evs = evaluators_for(harness, kae, kicad)
-    e = dict(schema=SCHEMA, name=a.name, description=a.description or "", created=now(),
+    e = dict(schema=SCHEMA, name=a.name, reuse_runs=bool(a.reuse_runs), description=a.description or "", created=now(),
              methods=[dict(id=m["id"], name=m["name"]) for m in ms], attempts=a.attempts,
              harness=dict(commit=harness, link=github_link("https://github.com/magnetic-trowel/kicad-auto-everything", harness)),
              kae=dict(commit=kae, link=github_link("https://github.com/magnetic-trowel/kicad-auto-everything", kae)),
@@ -732,8 +750,9 @@ def cmd_exp_submit(a):
     f.write_text("".join(json.dumps(j) + "\n" for j in jobs))
     print(f"{len(jobs)} board jobs -> {f}")
     if jobs and not a.dry_run:
+        # benchmark runs: methods' results depend on the time they get, so never paused (kaeq class timed)
         subprocess.run(["kaeq", "submit", "--jobs", str(f), "--owner", f"exp-{a.name}", "--tag", a.name, "--live",
-                        "--cwd", str(code_dir(e["harness"]["commit"])), "--retries", "1"], check=True)
+                        "--class", "timed", "--cwd", str(code_dir(e["harness"]["commit"])), "--retries", "1"], check=True)
 
 
 # ------------------------------------------------------------------ the per-board job
@@ -820,6 +839,14 @@ class Bugs:
     def add(self, who, category, detail, signature=None, evidence=(), **extra):
         self.items.append(dict(board=self.bid, method=who, category=category, signature=signature or f"{who}:{category}",
                                detail=str(detail)[:4000], evidence=list(evidence), **extra))
+
+
+def _pintypes_args(physics_board, pt):
+    """--pintypes only for a physics_board.py that takes it: an experiment's older harness
+    exits 2 on the flag, and boards gained pintypes.json after their first evaluation."""
+    if not pt.exists() or "--pintypes" not in Path(physics_board).read_text(errors="ignore"):
+        return []
+    return ["--pintypes", pt]
 
 
 def cmd_job(a):
@@ -983,6 +1010,8 @@ def _job_group(bid, row, hc, kae, items, human, ws, env, log, kicad, a, size, ph
     tids = {}  # one task per kind; the route task keeps the id it had before other kinds existed
     for kind in kinds:
         task_recipe = dict(board_sha256=record.get("pcb_sha256"), task_spec=record.get("task_spec"), kind=kind, kicad=kicad)
+        if row.get("dru_fix"):  # rules file repaired in the corpus (dru_fixes.py): a different task
+            task_recipe["dru_fix"] = row["dru_fix"]["sha256_after"] or "removed"
         tids[kind] = ident(task_recipe)
         tdir = board_dir(bid) / "tasks" / tids[kind]
         if not (tdir / "task.json").exists():
@@ -1070,10 +1099,11 @@ def _job_group(bid, row, hc, kae, items, human, ws, env, log, kicad, a, size, ph
         pout = ws / f"physics-{hc[:8]}.json"
         with Step("physics", steps):
             pt = board_dir(bid) / "pintypes.json"  # the schematic's pin types, as re-evaluation passes them
-            rc, to = run_logged([kv / "bin" / "python", d / "tools" / "kaeres" / "physics_board.py",
+            pb = d / "tools" / "kaeres" / "physics_board.py"
+            rc, to = run_logged([kv / "bin" / "python", pb,
                                  "--input", task / "route" / "input" / "board.kicad_pcb",
                                  *[x for n, p in boards.items() for x in ("--board", f"{n}={p}")], "--out", pout,
-                                 *(["--pintypes", pt] if pt.exists() else [])],
+                                 *_pintypes_args(pb, pt)],
                                 log, genv, timeout=int(1800 + 120 * size))
         phys = read_json(pout) or dict(error=f"physics step {'timed out' if to else f'failed rc={rc}'}")
         if phys.get("error"):
@@ -1369,7 +1399,8 @@ def cmd_rerun(a):
     if a.submit:
         py = code_dir(r["harness_commit"]).with_name(code_dir(r["harness_commit"]).name + ".venv") / "bin" / "python"
         script = code_dir(r["harness_commit"]) / "tools" / "kaeres" / "kaeres.py"
-        subprocess.run(["kaeq", "submit", "--owner", "kaeres-rerun", "--live", "--cwd", str(code_dir(r["harness_commit"])),
+        subprocess.run(["kaeq", "submit", "--owner", "kaeres-rerun", "--live", "--class", "timed",
+                        "--cwd", str(code_dir(r["harness_commit"])),
                         "--mem", "8G", "--disk", "4G", "--timeout", "6h", "--cpus", "2", "--name", f"rerun:{r['run']}", "--",
                         str(py), str(script), *cmd.split()[1:]], check=True)
 
@@ -1383,8 +1414,10 @@ def exp_rows(e):
     human = next((m for m in methods().values() if m["recipe"]["runner"]["type"] == "reference"), None)
     want = ([dict(id=human["id"], name=human["name"])] if human else []) + [m for m in e["methods"] if not human or m["id"] != human["id"]]
     rows, bugs, fails, stale = [], [], [], 0
+    apart = []                      # boards whose methods' runs were made more than APART_H hours apart
     evs = e["evaluators"]
     for bid in boards:
+        made = []
         bd = board_dir(bid)
         if not bd.exists():
             continue
@@ -1413,10 +1446,23 @@ def exp_rows(e):
                      layers=b.get("layers"), footprints=b.get("footprints"), collection=b.get("collection"), license_tier=b.get("license_tier"))
             rows.append(v)
             bugs += read_json(d / "bugs.json", [])
+            if human is None or m["id"] != human["id"]:
+                made.append(r.get("finished"))
+        ts = [datetime.fromisoformat(t) for t in made if t]
+        if len(ts) >= 2 and (max(ts) - min(ts)).total_seconds() > APART_H * 3600:
+            apart.append(bid)
+    if apart:
+        print(f"warning: on {len(apart)} boards the methods' runs were made more than {APART_H} h apart "
+              f"(e.g. {apart[0]}): host load moves results by ~14 %, so those comparisons are not reliable",
+              file=sys.stderr)
+    e["_apart"] = apart
     if stale:
         print(f"{stale} runs left out: made on another task (board file, task spec or KiCad) than this experiment's",
               file=sys.stderr)
     return rows, bugs, fails
+
+
+APART_H = 12      # hours between the runs of one board's methods past which the report warns
 
 
 def _mean(xs):
@@ -1601,6 +1647,10 @@ def cmd_exp_report(a):
     if foreign:
         rep += ["", f"**Note:** {foreign} runs were scored by a different DRC evaluator than this experiment's (reused runs from "
                 "an older scorer). Rescore them before comparing numbers."]
+    if e.get("_apart"):
+        rep += ["", f"**Warning:** on {len(e['_apart'])} boards the methods' runs were made more than {APART_H} h apart "
+                "(runs reused from other experiments). Host load moves results by ~14 % on this host (zone-keepout-ab2), "
+                "so differences on those boards are not reliable; register replicates and run the arms side by side."]
     rep += ["", "Columns: cp1 = share of boards routed clean (valid, 0 unconnected, 0 DRC errors) on attempt 0; k = the most "
             "attempts a board has; cpk = share of boards with any clean attempt among k (equal to cp1 when k = 1). A method "
             "named *restarts* is wrapped by restart.py, so one of its runs is already the best of its internal restarts "
@@ -1779,7 +1829,7 @@ def cmd_rephysics_submit(a):
     print(f"physics evaluator {pid} (harness {harness[:7]}, kae {kae[:7]}): {len(jobs)} board jobs -> {f}")
     if jobs and not a.dry_run:
         subprocess.run(["kaeq", "submit", "--jobs", str(f), "--owner", f"rephysics-{a.name}", "--tag", f"rephysics-{a.name}",
-                        "--live", "--cwd", str(cd), "--retries", "1"], check=True)
+                        "--live", "--class", "batch", "--cwd", str(cd), "--retries", "1"], check=True)
 
 
 def cmd_rephysics_job(a):
@@ -1809,7 +1859,10 @@ def cmd_rephysics_job(a):
     for hc, items in groups.items():  # rebuild with the harness that scored the runs
         hv = code_dir(hc).with_name(code_dir(hc).name + ".venv")
         man_p = ws / f"rebuild-{hc[:8]}.json"
-        rc, to = run_logged([hv / "bin" / "python", cd / "tools" / "kaeres" / "rebuild_boards.py",
+        rb_py = cd / "tools" / "kaeres" / "rebuild_boards.py"
+        if not rb_py.exists():  # harness older than rebuild_boards.py: this kaeres' copy rebuilds the same way
+            rb_py = Path(__file__).resolve().with_name("rebuild_boards.py")
+        rc, to = run_logged([hv / "bin" / "python", rb_py,
                              "--board-dir", CORPUS / row["path"], "--work", ws / f"rb-{hc[:8]}",
                              *[x for d, r in items for x in ("--run", f"{r['run']}={d / 'output.kicad_pcb.gz'}")],
                              *[x for d, r in items if _run_kind(r) in ("joint", "joint-fixed") for x in ("--joint", r["run"])],
@@ -1830,9 +1883,10 @@ def cmd_rephysics_job(a):
         if not boards:
             continue
         pout = ws / f"physics-{hc[:8]}.json"
-        run_logged([kv / "bin" / "python", cd / "tools" / "kaeres" / "physics_board.py", "--input", man["input"],
+        pb = cd / "tools" / "kaeres" / "physics_board.py"
+        run_logged([kv / "bin" / "python", pb, "--input", man["input"],
                     *[x for n, p in boards.items() for x in ("--board", f"{n}={p}")], "--out", pout,
-                    *(["--pintypes", pt] if pt.exists() else [])], log, env, timeout=int(1800 + 120 * size))
+                    *_pintypes_args(pb, pt)], log, env, timeout=int(1800 + 120 * size))
         phys = read_json(pout) or dict(error="physics step failed", log=tail(log, 30))
         for d, r in items:
             if r["run"] not in boards:
@@ -1935,6 +1989,8 @@ def main():
     s.add_argument("--env", action="append", metavar="KEY=VALUE",
                    help="job environment that changes no result, e.g. KAE_STEP_CACHE=/var/tmp/$USER/step-cache "
                         "(not part of any method's identity)")
+    s.add_argument("--reuse-runs", action="store_true",
+                   help="allow methods that already have runs from other experiments (made at another time: the report warns)")
     s.set_defaults(f=cmd_exp_create)
     s = ep.add_parser("submit")
     s.add_argument("name"), s.add_argument("--only"), s.add_argument("--limit", type=int)

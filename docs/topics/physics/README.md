@@ -1,161 +1,133 @@
-# Physics-first layout: the philosophy
+# Physics-first layout: area map
 
-**TL;DR**
-- **A circuit is Maxwell's equations at zeroth order. Layout adds a series of corrections that converges only inside the nearest natural mode** (the gentleness criterion G). Physics-first layout keeps every part of what the schematic leaves out in one of three states:
-  - *invisible*: small, and inside that radius;
-  - *known*: budgeted, with an uncertainty;
-  - *designed*: promoted into the circuit with a spec, such as a line, a damper, a sense path or an antenna.
-  
-  See [foundations](foundations.md).
-- **Seven principles, plus one for damage, derive 132 of 160 audited rules of thumb**: 51 everywhere and 81 inside a stated regime. The principles survive; the millimetres mostly don't. Only 12 of the 67 numbers the rules quote can be derived ([derivation-audit](derivation-audit.md)).
-- **"What a conductor is doing" is computable.** For each piece of copper and each frequency band, it is the column of exact counterfactuals on every budget. A netlist keeps only which pins share copper. Passports for a whole board need one matrix factorization per band, and they matched brute-force re-solves to 2×10⁻⁹ [C] ([lens-cd](lens-cd.md), [real-board-passports](real-board-passports.md)).
-- **Two classes of objective need different machinery.** Self terms (loss, loop inductance, thermal resistance) relax to convex problems with certified floors. Interaction terms (couplings, EMI) are sign-indefinite residuals, judged by counterfactuals. The edit spectrum Σ c_i/(1 − λ_i) prices any copper edit exactly, and its largest λ is the trust radius ([physics-core-v2](physics-core-v2.md)).
-- **Every number is model against model.** The core mathematics is verified by independent methods; a pre-registered validation program decides the rest ([verification-and-limits](verification-and-limits.md), [validation-program](validation-program.md)).
+Scope: map of docs/topics/physics (one row per doc: what it holds, Keys) plus one-line answers to the questions that started the area. Not here: any fact of its own; principles and theorems -> [foundations](foundations.md); symbols -> [vocabulary](vocabulary.md#glossary); ideas -> [catalog](../../ideas/physics-first/README.md); summary -> [digest](../../digests/physics-first.md).
+Keys: physics-first layout, area map, philosophy, gentleness G, F1–F7, T1–T13, passports, physics core, critics, validation, solvers, joint place and route
 
-Tags: [P] primary, [S] secondary, [V] vendor, [I] inference, [C] computed by scripts in [`tools/research/physics/`](../../../tools/research/physics/), quasi-static and uncalibrated unless stated. Ideas: [catalog](../../ideas/physics-first/README.md).
+Tags: [P] primary, [S] secondary, [V] vendor, [I] inference, [C] computed by scripts in [`tools/research/physics/`](../../../tools/research/physics/) (listed in [tools/research/README](../../../tools/research/README.md)), quasi-static and uncalibrated unless stated.
 
-## Key facts
+Thesis in one line: a circuit is Maxwell at zeroth order; layout adds corrections that converge only inside the gentleness radius G < 1; keep every omitted effect invisible, known (budgeted with σ) or designed ([foundations](foundations.md)).
 
-### The starting point: gentleness
+## Map
 
-A schematic keeps Maxwell's exact, metric-free half: charge conservation and Faraday's law per cycle. It lumps the material half into parts. It stays right while a few ratios stay small:
-- electrical length θ = ωℓ/v;
-- the series and shunt parasitic ratios ε_L = θ·Z0/Z and ε_C = θ·Z/Z0;
-- the plane's resolution length ℓ_m = R_s/(π·μ0·f) against feature size;
-- insulator relaxation;
-- thermal feedback ([lens-ls](lens-ls.md)).
+### Core principles and vocabulary
 
-**G, the gentleness criterion.** Eliminating any hidden coordinate (a mode, a reflection, an eddy pattern, temperature, an edit's own current redistribution) gives the circuit a factor (I − G)⁻¹ = Σ Gⁿ. "Schematic plus parasitics" stops at first order. That is valid only while G's spectral radius is below 1, for example |δL/L| < 1/Q at a resonance. Beyond that radius, more fidelity does not help: the coordinate must join the circuit as a line, a mode or a fixed point. Two moves keep a layout gentle: **match** (removes the mode) and **damp** (moves it off the band). They are one idea ([foundations](foundations.md) §1).
-
-### Principles
-
-| # | Principle | One line |
+| Doc | What it holds | Keys |
 |---|---|---|
-| F1 | Conservation and topology | Total current (conduction plus displacement) always closes, and each cycle's EMF is its flux. This is exact once the chassis, cable and heatsink join as a world node. Only cycle sums are physical |
-| F2 | Linear, passive, reciprocal, causal media | Copper and laminate superpose per band with Z = Zᵀ. All model error lives here; nonlinearity lives in the parts |
-| F3 | Extremum | Nature minimizes energy inside the copper we draw: Thomson at DC, minimum magnetic energy at HF. Self terms are monotone and convex in copper; the R–L band is only stationary |
-| F4 | Symmetry and duality | Images, parity, sheet duality (cut ↔ needle) and wedge scaling make geometry exact. A broken symmetry is a source |
-| F5 | Locality and scale | Every interaction has a decay class and a natural length. A plane mirrors only patterns larger than ℓ_m; delay ≥ ℓ/v |
-| F6 | Dissipation and fluctuation | Each mode's losses add as 1/Q. Every loss is a noise and heat source; heat paths are electrical paths |
-| F7 | Decisions under belief | Learn when the value of information exceeds its cost. Rank with differences, certify with absolutes, buy robustness when cheaper than knowledge |
-| D | Extremes and accumulation | Breakdown, fracture, fatigue and ageing follow local maxima and accumulated rates, not energies. Energy principles alone cannot see a corner; damage can ([derivation-audit](derivation-audit.md)) |
+| [foundations](foundations.md) | circuit as zeroth-order Maxwell, gentleness G, principles F1–F7 + D, theorems T1–T13, what a conductor is doing | G, F1–F7, T1–T13, invisible/known/designed |
+| [foundations-derivations](foundations-derivations.md) | derivations D1–D9 of G and T1–T11; 26 rules traced to theorems | Neumann series, Bode-Fano, Woodbury, wedge singularity |
+| [vocabulary](vocabulary.md) | glossary of every symbol; 12 atoms, value types, relations, bands and regimes | glossary, Port, Loop, Node, Budget, f_x, ℓ_m |
+| [physics-graph](physics-graph.md) | operators, the physics graph, visual glyphs | operators, physics graph, glyphs |
 
-### Design theorems that replace the rules
+### Rules decompressed and tested
 
-Full statements, conditions and the derivation tree are in [foundations](foundations.md) §4 and [foundations-derivations](foundations-derivations.md).
-
-| Theorem | Statement | Replaces |
+| Doc | What it holds | Keys |
 |---|---|---|
-| T1 Impedance level | Length sets θ, shape sets Z0. A piece stores the least energy when Z0 = ΔV/ΔI, and is then a pure delay. Between resistive ends, a mismatch costs only phase at first order and magnitude at second, so matching matters most where a reactive part makes a resonance. Damp with R = Z0. Self terms only | "Short and wide", "small loop", PDN target impedance, RF matching, snubber sizing |
-| T2 Copper damping | The copper-only Q of wide copper is h/max(δ, δ²/t): ½ at the R–L crossover and 30–170 for hot-loop rings. Copper damps plane pairs below ~30 MHz, not rings | Relying on copper loss or "more copper" to tame ringing |
-| T3 Self vs interaction | An interaction is a difference of self energies. It has no fixed sign, Rayleigh monotonicity doesn't protect it, and per-piece attributions cancel | "Pour everything; more copper never hurts" (true for self terms only) |
-| T4 Exact edit pricing | Exact change = Σ c_i/(1 − λ_i), where the c_i sum to the first-order price. A slit costs (2/π)·R_s·ln sec(πx/2) for intercepted current fraction x | "A cut costs the copper it removes"; per-area sensitivity maps |
-| T5 Closed loops | Budgets live on cycles. A two-point AC voltage depends on the path | "Ground bounce between A and B" |
-| T6 The world is a node | I_CM = −jω·Σ C_i,ext·V_i with world-referenced V. A bond moves a displacement edge inside the boundary | "Ground the heatsink", "connectors on one edge" |
-| T7 Topology is exact | Articulation points pass zero foreign current. A neck leaks ∝ w² on the aggressor's flank and ∝ w⁴ at its stagnation point. Vias, cuts and joins are discrete events | Star grounds, single ties, "don't cross a split" |
-| T8 Band-limited mirrors | A plane images patterns larger than ℓ_m. Decaps and stitching vias form one wire medium, ω² = ω_p² + v²k² | Decap distance, λ/20 stitching |
-| T9 Symmetry residuals | Mode conversion happens where the current-division factor χ changes. Over a plane, loops are current-forced (height helps) and wide dv/dt nodes voltage-forced (height barely helps) | 3W, guards, "tight coupling" |
-| T10 Designed dissipation | A mode whose excitation × Q exceeds budget needs a tuned loss channel at its antinode | Snubber folklore, "stitch the edges" |
-| T11 Loss vs damage | Loss is an energy norm, finite at any corner. Damage is local and sees the corner singularity r^(π/α−1) | "Never 90°" (true for damage, HV and pulses only) |
-| T12 Exactness ladder | Topology (exact) → variational floors (certified) → rank-k counterfactuals (exact in the model) → closed forms → fields (±σ) → measurement | One fidelity ladder |
-| T13 Ranking vs compliance | Bias cancels in a ranking but not in a verdict. Cut sensitivity or uncertainty, whichever is cheaper | "Proxies are good enough" |
+| [rule-basis-set](rule-basis-set.md) | 12 quantities behind 160 rules; proxy words; regime selectors; conflicts | basis set, L, M, Cm, R, Z, Vcm, Th |
+| [rule-genealogy-power-analog-thermal](rule-genealogy-power-analog-thermal.md) | rules P01–P59: origin, physics, verdict, replacement budget | P01–P59, hot loop, Kelvin, creepage |
+| [rule-genealogy-si-emi-rf](rule-genealogy-si-emi-rf.md) | rules S01–S55 | S01–S55, return path, 3W, MREMC |
+| [rule-genealogy-routing-style-dfm](rule-genealogy-routing-style-dfm.md) | rules R01–R46 | R01–R46, 90° corners, teardrops, thermal reliefs |
+| [derivation-audit](derivation-audit.md) | method and verdicts: 132 of 160 rules derive (51 cleanly, 81 with a regime); 12 of 67 numbers derive | derivable, habit-wrong, principle D |
+| [derivation-audit-table](derivation-audit-table.md) | one row per rule: principles, derivation, regime, number status | verdict, number status |
 
-### What a conductor is doing
+### First-principles lenses
 
-A piece of copper (strip, via, pad cell, plane region) does whatever would change if it changed: its column of exact counterfactuals on every budget, per band ([foundations](foundations.md) §5). Its *passport* explains the column through eight things:
-1. currents by source;
-2. charges and where their field lines end;
-3. stored, dissipated and radiated energy;
-4. topological role and leverage;
-5. imbalance and impedance level;
-6. share of each mode's damping, noise and heat;
-7. field stress and damage rate;
-8. belief, with exactness and lineage.
+| Doc | What it holds | Keys |
+|---|---|---|
+| [lens-vp](lens-vp.md) | variational principles, term classes, certified floors, via capacity, R–L crossover | Thomson, floors, class A/B/C, Beckmann |
+| [lens-ct](lens-ct.md) | conservation and topology: world node, cut-flux law, necks | KCL/KVL, I_CM, articulation point |
+| [lens-sy](lens-sy.md) | reciprocity, lead fields, duality, images, mode conversion | reciprocity, duality, imbalance χ |
+| [lens-ls](lens-ls.md) | circuit-window edges, complex images, wire medium, regime map | θ, ℓ_m, f_p, decap reach |
+| [lens-th](lens-th.md) | dissipation, modal Q ledger, noise, electro-thermal coupling, damage | Q = h/δ, tuned snubber, 4kT Re Z |
+| [lens-in](lens-in.md) | decisions under belief: VOI, ranking vs compliance, epistemic ledger | VOI, EVPI, optimizer's curse |
+| [lens-cd](lens-cd.md) | per-piece passports, Tellegen attribution, exact counterfactuals, leverage, jobs | passport, ρ, χ, Woodbury |
 
-Its *jobs* are the signs of that column, and "designed" or "parasitic" belongs to a (piece, job) pair.
+### Domain physics
 
-A netlist collapses each conductor to a point. That is how an autorouter can be DRC-correct and physically wrong: two layouts of one netlist differ only in what the netlist drops.
+| Doc | What it holds | Keys |
+|---|---|---|
+| [power-copper](power-copper.md) | node/branch classes, width trade, pours, corners, AC resistance | R_s, squares, w*, cut pricing |
+| [pdn-and-commutation](pdn-and-commutation.md) | loop inductance, via clusters, decap mounting, plane spreading, Kelvin, gate loops | height × squares, via cluster, Kelvin |
+| [fields-si-emi](fields-si-emi.md) | return paths, discontinuities, crosstalk, cavities, pairs | slot ΔL, return via, cavity, 3W |
+| [fields-emi-budget](fields-emi-budget.md) | edge rate → dBµV/m chain; fix ranking; 1 mV and 5 µA rules | MREMC, CM current, CISPR 32 |
+| [rf-geometry](rf-geometry.md) | when corners, pads, stubs, vias, weave matter; RF lines, keep-outs | \|Γ\| ≈ Z0·ΔC/(2t_r), teardrop, stub |
+| [thermal-physics](thermal-physics.md) | board as 2-D fin, h coefficients, IPC-2221/2152 vs network, heatsinks | G_s, λ, K₀, 261 K/W via |
+| [hv-and-manufacturing-physics](hv-and-manufacturing-physics.md) | clearance, creepage, CAF, Paschen, fab processes, solder joints | creepage, Paschen, etch undercut |
+| [cross-domain-lessons](cross-domain-lessons.md) | transplants L1–L12 from coils, grids, plumbing, antennas, graphics | stream function ψ, Murray's law |
+| [worked-thought-experiments](worked-thought-experiments.md) | four boards worked rule-first vs physics-first | buck, half-bridge, ADC, 2.4 GHz |
 
-Computed so far [C]:
-- **Synthetic buck plus ADC board** ([lens-cd](lens-cd.md)): passports for 4,415 pieces × 4 bands × 10 budgets.
-  - 62% of the ADC's DC error sits in two plane regions.
-  - One 0.5 mm slot bridge removes 78% of the high-frequency coupling.
-  - Deleting "useless" copper in one batch cost 7.3× its summed single costs.
-- **A real open board** (BLDCM-Power, MIT; 4 layers, 32 mm, three-phase bridge with shunts; [real-board-passports](real-board-passports.md)). The exact DC passport takes seconds, and removal costs match brute force to 3.5×10⁻¹¹. Four findings no netlist or DRC shows:
-  - The bridge IC's exposed pad has no vias and joins ground through one corridor.
-  - The input capacitors' ground is an island: its vias carry under 5% of DC current but 86% of the switching current.
-  - The 3.3 V plane carries the hot loop's largest high-frequency current, all of it induced. Without the plane, loop inductance would be 2.8× higher.
-  - One via in the exposed pad cuts loop inductance by 15%, the best of 511 candidate sites (the median site gives 0.4%).
-- **Pilot floor census of 14 pours on four open boards** ([validation-program](validation-program.md)): shapes sit near their certified floors (median 4% avoidable). Losses come from thermal-relief gaps and plane partitioning.
+### The system
 
-### The machine
+| Doc | What it holds | Keys |
+|---|---|---|
+| [design-reasoning-architecture](design-reasoning-architecture.md) | reasoning pipeline R1–R7, least-slack τ, boundary conditions, roles of LLM/solvers/human, locality index | τ = budget/floor, physics package, ECO menu |
+| [schematic-to-physics](schematic-to-physics.md) | simulate the schematic: net passports, adjoint susceptibility, LII, √(k·s) budgets | `.noise`, LII, back-annotation |
+| [comprehension](comprehension.md) | `kae.circuit` brief: roles, structures, confidences; measured accuracy on 112 boards | brief, caps_p, pairing, power_path |
+| [physics-ir](physics-ir.md) | `pcb-intent/0.3` schema, validation, compile targets | intent.yaml, ledger.json, entity kinds |
+| [physics-ir-examples](physics-ir-examples.md) | six circuits in the IR with their binding budgets | buck, USB3, crystal, ADC, 2.4 GHz, 48 V |
+| [physics-core-v2](physics-core-v2.md) | core design: Piece/Passport/Belief, E0–E5, kernels K1–K8, edit spectrum r, classes A–L, build order | K1–K8, Woodbury radius, E0–E5 |
+| [physics-core-v2-api](physics-core-v2-api.md) | types, kernel protocols, `PhysicsCore` facade, pcb-intent 0.4 | Belief, Quote, why_here, what_if |
+| [real-board-passports](real-board-passports.md) | exact passports on BLDCM-Power: findings no netlist shows, ranked fixes | exposed pad, plane swap, 511 via sites |
+| [suite-physics-results](suite-physics-results.md) | passports and critics on 112 qualified boards; Freerouting vs human | via bottleneck, COLAMD, plane order |
 
-```
-schematic + datasheets + fixed constraints (outline, holes, connectors, antenna, heatsink, enclosure, cables)
-  │  simulate the schematic: per-net swing, dv/dt, di/dt, spectra; susceptibilities by adjoint
-  ▼
-physics brief (pcb-intent 0.4): ports with named returns, closed-loop budgets, world conductors,
-  boundary conditions, least-slack priorities from certified floors
-  ▼
-joint placement + routing + copper optimizer           ◄── physics core v2 (8 kernels, one factorization
-  state: poses · route topologies · copper fields          per band and topology epoch): topology engine,
-  self terms: convex, floor-scheduled first                complex sheet operator, complex-image PEEC,
-  interaction terms: exact counterfactual quotes           response/edit spectrum, floors, modal Q ledger,
-  topological events bound every gradient                  morphology, belief/VOI
-  G ≥ 1 → change representation (mode, line, damper)
-  ▼
-legalize inside the loop → kicad-cli DRC (referee)
-  ▼
-passports + critics (separate physics scorecard) → LLM explains binding budgets and proposes priced
-operators (geometry, stackup, part, edge rate, damper, bond) → human confirms
-```
+### Optimization
 
-Details: [physics-core-v2](physics-core-v2.md), [API](physics-core-v2-api.md), [joint-place-route](joint-place-route.md), [design-reasoning-architecture](design-reasoning-architecture.md), [physics-critics](physics-critics.md). On toy boards, joint search improves a sequential start 10 times out of 10 (−18%) and ties an equal-CPU restart portfolio, 5 of 10 ([joint-place-route-experiment](joint-place-route-experiment.md)). It is a refiner after diverse starts.
+| Doc | What it holds | Keys |
+|---|---|---|
+| [joint-place-route](joint-place-route.md) | why staged P&R stalls, prior art, topology-carrying joint state, three timescales | homotopy, kinetic bands, PROXI, Starfish |
+| [joint-place-route-experiment](joint-place-route-experiment.md) | PoC: joint SA vs sequential and equal-CPU portfolio; proxy study | refiner 10/10, portfolio tie 5/10 |
+| [physics-in-the-loop-optimization](physics-in-the-loop-optimization.md) | physics terms with gradients, adjoints, routing as current flow, legalization | loop kernel, Gilbert tree, price field |
+| [place-terms](place-terms.md) | `kae.physics.place_terms`: one currency u = v/a, closed forms, validation, speed | φ(u), detour 1 + c√ℓ, delta µs |
+| [copper-shape-synthesis](copper-shape-synthesis.md) | topology optimization of pours: methods, DFM mapping, POC, zone export | SIMP, −14.5%, f_c |
+| [exact-physics-options](exact-physics-options.md) | cost and decision flips of exact physics in placement; designs (a)–(h) | route floor, multi-fidelity top-K |
+| [exact-physics-in-kae](exact-physics-in-kae.md) | shipped `--physics-fidelity fast\|exact\|multi` (PEEC, FV) | PEEC, kae.physics.exact |
 
-### Answers to the questions that started this
+### Engines
 
-| Question | Answer now |
+| Doc | What it holds | Keys |
+|---|---|---|
+| [open-solvers](open-solvers.md) | open engines per rung, licence verdicts, speed, KiCad bridges, surrogates | FastHenry licence, openEMS, Palace, PyPEEC |
+| [solver-ladder](solver-ladder.md) | rungs F0–F4 + S, evaluator contract, trust radii, VOI escalation, caching | MS2, trust radius, escalation |
+
+### Judgement and truth
+
+| Doc | What it holds | Keys |
+|---|---|---|
+| [physics-critics](physics-critics.md) | what DRC cannot see, suite architecture, scorecard, mutation benchmark, prototype | scorecard, BPM, pc_refplane |
+| [physics-critics-catalog](physics-critics-catalog.md) | 41 critic definitions | RET-COV, HOTLOOP-L, CM-V … |
+| [physics-critics-validation](physics-critics-validation.md) | calibration, planted faults, gaming guards per critic | equivalent mutant, Ott slot fit |
+| [functional-evaluation](functional-evaluation.md) | whether a board works: ideal vs routed testbenches (`kae.sim`) | capability, verdicts, rail_dc |
+| [verification-and-limits](verification-and-limits.md) | claims checked by independent methods, scopes, steelman of rules, falsification | PEECN filaments, steelman |
+| [validation-program](validation-program.md) | VOI-ranked measurement plan, VAL-1, floor census, kill criteria | VAL-1, EVPI, kill criteria |
+| [validation-coupons](validation-coupons.md) | five coupons with registered predictions | LM, FP, SS, NL, CM |
+
+### Synthesis
+
+| Doc | What it holds | Keys |
+|---|---|---|
+| [cross-workstream-synthesis](cross-workstream-synthesis.md) | nine shared mathematical objects, convergences, synergies S1–S11, transfers | chained adjoints, ψ cut pricing |
+| [research-gaps](research-gaps.md) | ranked open problems, limits of the thesis | gap 1 ground truth, gap 2 slotted planes |
+
+## Answers to the questions that started this
+
+| Question | Answer (canonical home) |
 |---|---|
-| Curves instead of right angles? | Only where damage, HV, fast pulses (shorter than ~w²/κ) or RF edges below ~30 ps make the corner field matter (T11). For loss, a sharp corner adds ~0.56 squares and changes peak temperature by under 0.5% [C]. Fabs make curves at no extra cost, so allow them where a budget pays. |
-| Pours instead of thin traces? | Yes for DC feeds and returns. Pour shapes already sit near their floor (median 4% avoidable); the leverage is in partitioning and in pad connections. Switch-node copper is set by its coupling to the outside, not its self optimum (T1 vs T3). |
-| How much R, L and C, and which to maximize? | Per piece, from ΔV/ΔI against Z0 (T1). Low-impedance pieces (input caps, plane pairs) want wide copper over thin dielectric. High-impedance nodes want little capacitance. Useful parasitics to maximize: plane-pair capacitance, go/return overlap, and designed damping resistance (T10). |
-| Keep high current away from sensitive lines? | For loops, a close plane matters more than distance (coupling ∝ h_a·h_v). For wide dv/dt copper, height barely helps and distance or burying the victim matters (T9). For precision analog, keep foreign current out of the measurement cycle (T5, T7). |
-| A physics engine, SPICE, open RF tools? | Eight kernels in one core, with SPICE adjoints for the circuit and full-wave (openEMS, Palace) only for finalists and calibration ([physics-core-v2](physics-core-v2.md), [open-solvers](open-solvers.md)). |
-| Near-infinite compute? | Exact counterfactuals for every piece, certified floors, quality-diversity search, and surrogates trained on field-solver labels. But compute does not fix a divergent series or unknown cables: those need a new representation or a measurement ([validation-program](validation-program.md)). |
-| Place and route together? | Yes, on a topology-carrying state with physics as the shared objective, run as a refiner after diverse starts ([joint-place-route](joint-place-route.md)). |
+| Curves instead of right angles? | Only where damage, HV, fast pulses (shorter than ~w²/κ) or RF edges below ~30 ps make the corner field matter (T11, [foundations](foundations.md), [rf-geometry](rf-geometry.md)). For loss a sharp corner adds ~0.56 squares and changes peak temperature by under 0.5% [C] ([rule-genealogy-routing-style-dfm](rule-genealogy-routing-style-dfm.md)). Fabs make curves at no extra cost: allow them where a budget pays. |
+| Pours instead of thin traces? | Yes for DC feeds and returns; shapes already sit near their floor (median 4% avoidable), the leverage is partitioning and pad connections ([validation-program](validation-program.md#4-computational-track-no-hardware-start-now)); switch-node copper is set by coupling to the outside (T1 vs T3). |
+| How much R, L, C, and which to maximize? | Per piece from ΔV/ΔI vs Z0 (T1). Low-impedance pieces want wide copper over thin dielectric, high-impedance nodes little capacitance; useful parasitics: plane-pair C, go/return overlap, designed damping R (T10) ([foundations](foundations.md)). |
+| Keep high current away from sensitive lines? | Loops: a close plane beats distance (coupling ∝ h_a·h_v); wide dv/dt copper: height barely helps, use distance or bury the victim (T9, [lens-sy](lens-sy.md)); precision analog: keep foreign current out of the measurement cycle (T5, T7). |
+| A physics engine, SPICE, open RF tools? | Eight kernels in one core, SPICE adjoints for the circuit, full-wave (openEMS, Palace) only for finalists and calibration ([physics-core-v2](physics-core-v2.md), [open-solvers](open-solvers.md)). |
+| Near-infinite compute? | Exact counterfactuals, certified floors, QD search, surrogates on solver labels ([solver-ladder](solver-ladder.md#7-spending-near-infinite-compute)); it does not fix a divergent series or unknown cables: those need a new representation or a measurement ([validation-program](validation-program.md)). |
+| Place and route together? | Yes, on a topology-carrying state with physics as shared objective, as a refiner after diverse starts ([joint-place-route](joint-place-route.md), [experiment](joint-place-route-experiment.md)). |
 
-## Recommendations for our system
+## Next steps (owned elsewhere)
 
-1. **Measure first:** order the ℓ_m return-band coupon and lay out both arms of the pre-registered first board ([validation-program](validation-program.md), [validation-coupons](validation-coupons.md)).
-2. **Build kernels K1, K2 and K4 of [physics-core-v2](physics-core-v2.md)** (topology, sheet operator, exact response). Run them on one real 4-layer board with the mutation benchmark (PC29). Pass means exactness against re-factorization, the trust radius logged on every quote, and a job verb changing at every planted fault.
-3. **Turn the [derivation-audit-table](derivation-audit-table.md) into rule-pack records** with regime predicates computed from the board, so regime-bound rules fire only where they hold and arbitrary numbers come from budgets.
-4. **Run a floor and G census on the qualified bench suite**, as a separate report that never touches cp1/cpk.
+1. Measure first: LM coupon and both VAL-1 arms ([validation-program](validation-program.md#6-schedule), [validation-coupons](validation-coupons.md#9-ordering-and-use)).
+2. Build K1, K2, K4 on one real 4-layer board with the mutation benchmark (PC29) ([physics-core-v2](physics-core-v2.md#9-build-order-and-acceptance-tests)).
+3. Turn [derivation-audit-table](derivation-audit-table.md) rows into rule-pack records with board-computed regime predicates.
+4. Floor and G census on the qualified bench suite, as a separate report that never touches cp1/cpk.
 
-## Conflicts and open questions
-
-- **Measurement.** No principle or number here has been checked against a measurement. The validation program lists 11 kill criteria.
-- **Joint terms.** No principle yet prices self and interaction terms jointly with guarantees.
-- **Outside F2.** Nonlinear victims, ESD and surge fall outside linear media.
-- **Off-board unknowns.** Their share of decision value is 10–84% depending on priors ([lens-in](lens-in.md), [verification-and-limits](verification-and-limits.md)).
-- **Where rules win.** Good rules beat model optima when the decisive unknowns are off the board or the mechanism is unmodelled. The steelman of the rule-based expert in [verification-and-limits](verification-and-limits.md) is the baseline the validation program must beat.
+Open problems: no principle or number has met a measurement (11 kill criteria in [validation-program](validation-program.md#5-kill-criteria)); no joint self + interaction pricing with guarantees; nonlinear victims, ESD and surge lie outside F2; off-board unknowns hold 10–84% of decision value depending on priors ([verification-and-limits](verification-and-limits.md)); good rules beat model optima when decisive unknowns are off the board (steelman in [verification-and-limits](verification-and-limits.md#3-where-competent-rule-following-beats-physics-first)). Full list: [research-gaps](research-gaps.md).
 
 ## Sources
 
-All [C] numbers come from scripts in [`tools/research/physics/`](../../../tools/research/physics/), listed in [tools/research/README](../../../tools/research/README.md). Primary sources are cited in each topic doc. Research notes behind the rules: [rules_highspeed_emi.md](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_highspeed_emi.md), [rules_power_rf_analog_dfm.md](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_power_rf_analog_dfm.md), [verification_rules.md](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md).
-
-## Map of this area
-
-| Read it for | Docs |
-|---|---|
-| The core | [foundations](foundations.md), [foundations-derivations](foundations-derivations.md) |
-| Rules decompressed and tested | [rule-basis-set](rule-basis-set.md), genealogy ([power](rule-genealogy-power-analog-thermal.md), [SI/EMI/RF](rule-genealogy-si-emi-rf.md), [routing/DFM](rule-genealogy-routing-style-dfm.md)), [derivation-audit](derivation-audit.md), [table](derivation-audit-table.md) |
-| First-principles lenses | [VP](lens-vp.md), [CT](lens-ct.md), [SY](lens-sy.md), [LS](lens-ls.md), [TH](lens-th.md), [IN](lens-in.md), [CD](lens-cd.md) |
-| Conductor understanding | [lens-cd](lens-cd.md), [real-board-passports](real-board-passports.md), [suite-physics-results](suite-physics-results.md) |
-| The system | [physics-core-v2](physics-core-v2.md), [API](physics-core-v2-api.md), [vocabulary](vocabulary.md), [physics-ir](physics-ir.md), [examples](physics-ir-examples.md), [design-reasoning-architecture](design-reasoning-architecture.md), [schematic-to-physics](schematic-to-physics.md), [worked-thought-experiments](worked-thought-experiments.md) |
-| Optimization | [joint-place-route](joint-place-route.md), [experiment](joint-place-route-experiment.md), [physics-in-the-loop-optimization](physics-in-the-loop-optimization.md), [copper-shape-synthesis](copper-shape-synthesis.md) |
-| Domain physics | [power-copper](power-copper.md), [pdn-and-commutation](pdn-and-commutation.md), [fields-si-emi](fields-si-emi.md), [fields-emi-budget](fields-emi-budget.md), [rf-geometry](rf-geometry.md), [thermal-physics](thermal-physics.md), [hv-and-manufacturing-physics](hv-and-manufacturing-physics.md) |
-| Engines | [open-solvers](open-solvers.md), [solver-ladder](solver-ladder.md) |
-| Judgement and truth | [physics-critics](physics-critics.md), [catalog](physics-critics-catalog.md), [validation](physics-critics-validation.md), [verification-and-limits](verification-and-limits.md), [validation-program](validation-program.md), [coupons](validation-coupons.md) |
-| Synthesis | [cross-workstream-synthesis](cross-workstream-synthesis.md), [research-gaps](research-gaps.md), [cross-domain-lessons](cross-domain-lessons.md) |
-
-See also: [ideas catalog](../../ideas/physics-first/README.md) · [digest](../../digests/physics-first.md) · [executive report](../../../reports/Physics-first%20PCB%20layout.md)
+Primary sources are cited per topic doc. Research notes behind the rules: [rules_highspeed_emi.md](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_highspeed_emi.md), [rules_power_rf_analog_dfm.md](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_power_rf_analog_dfm.md), [verification_rules.md](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md). See also: [executive report](../../../reports/Physics-first%20PCB%20layout.md).
