@@ -526,7 +526,7 @@ def compute(path, human=None, do_refill=False, wrap=None, workdir=None):
     if pours_ok:
         d = copper_diff(m, outline_polygon(b))
         out["copper_pair_diff_pp"] = d
-        out["copper_flag"] = bool(d is not None and d >= COPPER_FLAG_PP)
+        out["copper_flag"] = None if d is None else d >= COPPER_FLAG_PP
     if human is not None:
         hb, _ = load(human, tempfile.mkdtemp(prefix="mfg-h-", dir=workdir))
         h_tr, h_z = layers_used(hb)
