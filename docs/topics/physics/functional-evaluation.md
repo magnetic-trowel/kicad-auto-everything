@@ -121,4 +121,4 @@ A regulator's harmonics are spaced at f_sw, so what counts is the envelope or th
 - In-repo measurements: kaeres index, evaluator `c3e877f84ac4` (kae `dfe6260`, `physics_board.py` `cd4ab2e`), 2026-10-27; `kae.sim` runs, 2026-10-28.
 - NXP UM10204, I2C-bus specification (rise-time limits, pin capacitance).
 
-See also: [physics-critics](physics-critics.md), [physics-critics-catalog](physics-critics-catalog.md), [physics-ir](physics-ir.md), [comprehension](comprehension.md), [schematic-to-physics](schematic-to-physics.md), [fields-emi-budget](fields-emi-budget.md).
+See also: [physics-set-coverage](physics-set-coverage.md) (the fast evaluator's coverage of the 213-board physics set), [physics-critics](physics-critics.md), [physics-critics-catalog](physics-critics-catalog.md), [physics-ir](physics-ir.md), [comprehension](comprehension.md), [schematic-to-physics](schematic-to-physics.md), [fields-emi-budget](fields-emi-budget.md).
