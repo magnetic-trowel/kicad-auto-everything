@@ -1969,6 +1969,8 @@ class Daemon:
                 wait, span = wait + df, span + dt   # thread of a multi-threaded job waiting counted, too touchy)
         if span:
             self.timed_wait = 0.7 * self.timed_wait + 0.3 * min(1.0, wait / span)
+        elif not any((j["qos"] or "timed") == "timed" for j in running):
+            self.timed_wait = 0.0    # no timed job runs, so none waits (span is also 0 between a running job's samples)
         if now - self.runq_class_ts >= 10:          # threads ready to run, by class and by scheduling policy
             self.runq_class_ts, self.runq_class = now, {"timed": 0, "batch": 0, "idle": 0}
             for j in running:

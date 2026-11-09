@@ -46,6 +46,8 @@ def main():
         if fetched.get(key):
             shutil.copy2(fetched[key], ref / f"{STEM}{ext}")
     tools.run_ops("convert", fetched["kicad_pcb"], board_path(ref))
+    if hasattr(prepare, "restrict_layers"):  # as prepare_board, from task spec 11 on (older harnesses run this too)
+        prepare.restrict_layers(ref)
     install_rules(ref, inp)
     tools.run_ops("strip-routing", board_path(ref), board_path(inp))
     man = dict(input=str(board_path(inp)), reference=str(board_path(ref)), board_sha256=fetched.get("pcb_sha256"),

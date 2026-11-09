@@ -30,6 +30,7 @@ Tags: [M] measured by our harness.
 | Manifest | One JSON line per board: repo, 40-hex commit, path, licence, sha256, stats, tags. Boards are never redistributed | `manifest.py` |
 | Fetch | Raw download (GitHub/GitLab) or shallow git fetch of one commit; sha256 verified; sibling `.kicad_pro`/`.kicad_dru` fetched too | `fetch.py` |
 | Prepare | `LoadBoard`/`SaveBoard` to KiCad 10. **Qualified** = human layout has 0 unconnected and 0 error DRC. Split by pads: A ≤ 31, B ≤ 100, C larger (PCBWorld) | `prepare.py` |
+| Copper layers (task spec 11) | The task keeps only the copper layers the board uses: inner layers with no copper are cut from the stack, and layers still inside the even stack are forbidden by a board-wide rule area (no tracks, no pours; through vias pass). Evidence must be trusted: complete (or at most 5% open) human copper, or Eagle's 16-layer default. Stackup thickness is preserved | `kicad_scripts/layer_plan.py`, `pcbnew_ops.py restrict-layers` |
 | Route task | All tracks/vias removed, zones unfilled, placement kept | `pcbnew_ops.py strip-routing` |
 | Place task | Unlocked footprints rotated to 0° and stacked off-board; locked footprints stay (task spec 2); copper removed | `pcbnew_ops.py strip-placement` |
 | Run | Private copy per attempt, timeout, resumable, parallel `-j` | `runner.py` |
