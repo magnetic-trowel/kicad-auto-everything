@@ -30,7 +30,7 @@ There is a second, smaller layer: the grid's rectangles of a fixed through-hole 
 
 ## The fix
 
-`_anchor_tight_parts` runs once after the problem is built, on parts with a courtyard over 5 % of the board (body-only parts such as logos stay with `relax_bodies`: a first version anchored them too, caught by the scan before any run). A part with no grid spot free of the fixed geometry (every other movable part aside) gets the overhang and is placed at the first exactly clean spot, biggest part first, ranked by hugging an edge (the rest of the board stays in one piece; a keep-out or courtyard hanging off the board costs nothing). It is then fixed like a locked part for every later stage. A part with no exactly clean spot is left to the normal stages, overhang kept. `--set anchor_tight=0` turns it off.
+`_anchor_tight_parts` runs once after the problem is built, on parts over 5 % of the board that have a courtyard or a connected pad. Logos and similar parts with neither stay with `relax_bodies`: a first version anchored them too (the scan caught it before any run), and a second that required a courtyard dropped vik-pmw3360's sensor carrier, which has a body and connected pads but no courtyard. A part with no grid spot free of the fixed geometry (every other movable part aside) gets the overhang and is placed at the first exactly clean spot, biggest part first, ranked by hugging an edge (the rest of the board stays in one piece; a keep-out or courtyard hanging off the board costs nothing). It is then fixed like a locked part for every later stage. A part with no exactly clean spot is left to the normal stages, overhang kept. `--set anchor_tight=0` turns it off.
 
 ## Numbers so far
 

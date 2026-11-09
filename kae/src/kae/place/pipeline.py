@@ -1043,8 +1043,10 @@ def _anchor_tight_parts(P, rep, log):
     overhang: a part with no exactly clean spot is not fixed)."""
     t0 = time.monotonic()
     area = max(1e-9, float(P.outline.area))
-    # (a part with no courtyard is a logo or similar: relax_bodies frees it, and fixing it would wall off the board)
-    big = sorted((i for i in P.mov if P.parts[i].has_courtyard and P.parts[i].area > ANCHOR_AREA_SHARE * area),
+    # a part with neither a courtyard nor a connected pad is a logo or similar: relax_bodies frees it, and fixing it
+    # would wall off the board. A module drawn with a body and no courtyard (vik-pmw3360's sensor carrier) is a part.
+    real = lambda p: p.has_courtyard or any(q.net for q in p.fp.pads)  # noqa: E731
+    big = sorted((i for i in P.mov if real(P.parts[i]) and P.parts[i].area > ANCHOR_AREA_SHARE * area),
                  key=lambda i: -P.parts[i].area)
     if not big:
         return {}, []
