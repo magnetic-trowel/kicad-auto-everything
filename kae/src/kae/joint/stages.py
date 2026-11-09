@@ -70,7 +70,7 @@ STAGE_KEYS = frozenset({
     "keep", "no_physics", "no_modules", "budget_s", "route_parallel", "first_last_mile", "first_blocked",
     # placer and module stage
     "writer", "edge_mate", "angle_step", "module_time", "window_module_time", "drop_modules_attempt",
-    "place_history", "place_history_scale",
+    "place_history_scale",
     # window re-placement and rip-up
     "replace_time", "replace_margin", "cong_mult", "history_scale", "bump_mm", "legal_mm", "net_mult",
     "phys_mult", "big_pads", "max_cross",
