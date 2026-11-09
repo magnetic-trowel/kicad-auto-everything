@@ -736,6 +736,18 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
                     st.X[i], st.Y[i], st.K[i] = X, Y, k
     stage("seed_spread", t)
     t = time.monotonic()
+    pose_mode = str(setting("bus_pose", board_path, opts) or "").strip().lower()
+    if pose_mode not in ("", "off", "final", "seed"):
+        raise ValueError(f"bus_pose {pose_mode!r}: '', 'final' or 'seed'")
+    pose_kind = str(setting("bus_pose_mode", board_path, opts) or "planar").strip().lower()
+    if pose_mode == "seed":
+        # the rotation of each bus end from pin tables, held from here on (kae.place.buspose)
+        from . import buspose as BP
+        mem = {i for m in macros for i in m.members}
+        rep["bus_pose_seed"] = BP.seed_pose(P, st, hold=mem | set(getattr(P, "zone_pinned", ())), mode=pose_kind,
+                                            seed=seed, log=log)
+        stage("bus_pose_seed", t)
+        t = time.monotonic()
     items = []
     in_macro = set()
     for mac in macros:
@@ -947,6 +959,26 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
         rep["exact"] = exact_check(P, st)
         stage("closed_loop", t)
         trace("closed_loop", st)
+    if pose_mode in ("final", "seed") and not late():
+        # the last word on each bus end's rotation (kae.place.buspose): legal turns only, the
+        # part's other nets and its physics priced; exact legality is kept
+        t = time.monotonic()
+        from . import buspose as BP
+        hold = {i for rule in (order or ()) for (i, _) in rule}
+        hold |= set(kw.get("labels") or {}) if anneal else set()
+        hold |= set(getattr(P, "zone_pinned", ()) or ())
+        try:
+            rep["bus_pose"] = BP.final_pass(P, st, terms=report_terms, zones=zone_tab, hold=hold, mode=pose_kind,
+                                            x_mm=float(setting("bus_pose_x_mm", board_path, opts)),
+                                            physics_veto=float(setting("bus_pose_physics", board_path, opts)) > 0,
+                                            nudge_mm=float(setting("bus_pose_nudge_mm", board_path, opts)),
+                                            time_s=cap(max(5.0, min(30.0, 0.1 * budget))), seed=seed, log=log)
+        except Exception as e:      # noqa: BLE001 - a polish pass; never lose the placement
+            rep["bus_pose"] = dict(error=f"{type(e).__name__}: {e}")
+        if rep["bus_pose"].get("moved"):
+            rep["exact"] = exact_check(P, st)
+            trace("bus_pose", st)
+        stage("bus_pose", t)
     if order and not late():
         # protection-order rules an annealer cut short left broken: the protection part to the
         # nearest clean spot that keeps them, the physics total bounded (kae.place.exact)

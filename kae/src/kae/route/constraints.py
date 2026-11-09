@@ -213,6 +213,13 @@ DEFAULTS = dict(
                                    # merit boards, k=2) found 0 / 10 / 30 equal (cp1 0.305 / 0.310 / 0.305,
                                    # completion 0.941-0.943), so the simpler setting wins; RUDY also ranks PCB
                                    # routability near chance (docs/research/placement/kae-routability-estimators.md)
+    bus_pose="",                   # placement (kae.place.buspose): "final" chooses each bus end's rotation from pin
+                                   # tables in a pass after legalization, "seed" before the floorplan too (then held),
+                                   # "" off. Experimental (bus-pose-ab); off until a test decides
+    bus_pose_mode="planar",        # "planar": non-planar bus lines first, length after; "length": the other way
+    bus_pose_x_mm=2.0,             # mm of the turned part's other nets' weighted HPWL one line made planar may cost
+    bus_pose_physics=1.0,          # 1: a turn may not worsen the place terms (as place_untangle); 0: ignored
+    bus_pose_nudge_mm=1.0,         # mm: a turned part may shift this far to fit where the in-place turn collides
     place_margin=0.0,              # placement: routing room between movable parts, mm (Problem.set_margin);
                                    # negative = auto (Problem.auto_margin: 2 x (0.7 - utilization), 0..1 mm).
                                    # 0: placement-decide-staged found auto and 0 equal (cp1 0.305 both,

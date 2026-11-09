@@ -103,7 +103,7 @@ class Annealer:
         self.side = [0 if p.s > 0 else 1 for p in P.parts]
         self.pinx = [[[float(v) for v in r.pins[:, 0]] for r in p.rots] for p in P.parts]
         self.piny = [[[float(v) for v in r.pins[:, 1]] for r in p.rots] for p in P.parts]
-        self.nrot = [len(p.rots) for p in P.parts]
+        self.nrot = [1 if getattr(p, "rot_hold", False) else len(p.rots) for p in P.parts]
         areas = [(r[1] - r[0]) * (r[3] - r[2]) for r in (self.own[i][0] for i in self.mov)] or [1]
         self.A0 = max(1.0, sum(areas) / len(areas))      # mean part area, cells^2
         self.S0 = math.sqrt(self.A0) * g                  # mean part size, mm

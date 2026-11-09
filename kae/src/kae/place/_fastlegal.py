@@ -176,6 +176,8 @@ def ripup_spot(H0, H1, C0, C1, SO, ncx, ncy, pad, si, X0, Y0, K0, w_rot, w_cost,
 def rotations_for_fit(p, k_now):
     """Rotation indices the greedy fit may use: the right angles, plus the current rotation
     when the part was turned to an odd angle (repaired where it is turned)."""
+    if getattr(p, "rot_hold", False):      # kae.place.buspose: this rotation is held
+        return [int(k_now)]
     ks = list(range(getattr(p, "n_ortho", len(p.rots))))
     if 0 <= k_now < len(p.rots) and k_now not in ks:
         ks.append(int(k_now))
