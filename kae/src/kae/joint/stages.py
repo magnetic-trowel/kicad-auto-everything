@@ -70,7 +70,7 @@ STAGE_KEYS = frozenset({
     # placer and module stage
     "writer", "edge_mate", "angle_step", "module_time", "window_module_time", "drop_modules_attempt",
     # window re-placement and rip-up
-    "replace_time", "replace_margin", "cong_mult", "history_scale", "bump_mm", "legal_mm", "net_mult",
+    "replace_time", "replace_share", "legal_time", "revert_illegal", "replace_margin", "cong_mult", "history_scale", "bump_mm", "legal_mm", "net_mult",
     "phys_mult", "big_pads", "max_cross",
     # routing
     "window_router", "window_route_s", "window_route_max_s", "window_passes", "window_rounds",
@@ -690,7 +690,8 @@ class KaeStages:
         self._ensure_brief(board)
         rep = dict(attempt=attempt)
         res = replace_window(board, window, self.brief, history=history, seed=seed,
-                             time_s=min(float(o.get("replace_time", 25.0)), max(5.0, 0.2 * time_s)),
+                             time_s=min(float(o.get("replace_time", 25.0)), max(5.0, float(o.get("replace_share", 0.2)) * time_s)),
+                             legal_time_s=o.get("legal_time"), revert_illegal=bool(o.get("revert_illegal", False)),
                              cong_mult=float(o.get("cong_mult", 2.0)) * (1.5 ** min(attempt, 3)),
                              history_scale=float(o.get("history_scale", 1.0)), bump_mm=float(o.get("bump_mm", 0.25)),
                              bump_refs=bump_refs, margin=float(o.get("replace_margin", 0.3)), legal_refs=legal_refs,

@@ -71,14 +71,34 @@ def window_board(board, parts):
     return dataclasses.replace(board, footprints=fps)
 
 
+def _revert_illegal(P, st, home, bad):
+    """Put parts that moved and are still grid-illegal back at their incumbent poses (`home`:
+    {part: (X, Y, K)}), biggest first, one at a time (a restored part can clear its neighbours'
+    violations too), until the window is legal or no moved part is left. Returns the refs restored."""
+    from kae.place.state import grid_violations
+    out = []
+    while bad:
+        moved = [i for i in bad if i in home and (int(st.X[i]), int(st.Y[i]), int(st.K[i])) != home[i]]
+        if not moved:
+            break
+        i = max(moved, key=lambda q: P.parts[q].area)
+        st.X[i], st.Y[i], st.K[i] = home[i]
+        out.append(P.parts[i].ref)
+        bad = grid_violations(st)
+    return out
+
+
 def replace_window(board, window, brief, history=None, seed=0, time_s=20.0, terms=None, physics=True,
                    cong_mult=2.0, history_scale=1.0, bump_mm=0.25, bump_refs=(), margin=0.3, moves_per_part=6000,
                    legal_refs=(), legal_mm=0.15, drc_report=None, net_weights=None,
-                   phys_mult=1.0, log=None):
+                   phys_mult=1.0, legal_time_s=None, revert_illegal=False, log=None):
     """See the module docstring. `board` is a kae.board.model.Board at the current poses;
     `window` a feedback.Window. `terms`: place terms built on the full board (the brief's
     structures), else built here when `physics`. `drc_report`: KiCad's report of the current
-    board (its placement errors become exact constraints); `net_weights`: {net: factor}."""
+    board (its placement errors become exact constraints); `net_weights`: {net: factor}.
+    `legal_time_s`: seconds for the greedy legalizer, on top of the annealer's share of `time_s`
+    (None: 0.15 of `time_s` out of it); `revert_illegal`: parts still illegal after it go back
+    to their incumbent poses, biggest first, so the rest of the window's moves can stand."""
     from kae.place import clusters
     from kae.place import exact as exactmod
     from kae.place.anneal import make_annealer
@@ -124,12 +144,14 @@ def replace_window(board, window, brief, history=None, seed=0, time_s=20.0, term
     for net in P.nets:
         net.weight *= float((net_weights or {}).get(net.name, 1.0))
     st = State(P)
+    home = {}
     for i in sub:
         p = P.parts[i]
         X, Y = P.grid_of(p.x0, p.y0)
         rots = [r.rot for r in p.rots]
         k = min(range(len(rots)), key=lambda kk: min(abs(rots[kk] - p.rot0) % 360, 360 - abs(rots[kk] - p.rot0) % 360))
         st.X[i], st.Y[i], st.K[i] = X, Y, k
+        home[i] = (int(X), int(Y), k)
     if drc_report:
         try:
             rep["kicad_feedback"] = exactmod.kicad_feedback(P, st, drc_report)
@@ -167,7 +189,11 @@ def replace_window(board, window, brief, history=None, seed=0, time_s=20.0, term
         rep["relaxed"] = True
         bad = grid_violations(st)
     if bad:
-        rep["greedy"] = greedy(P, st, sorted(bad), log=None, time_s=max(1.0, 0.15 * time_s))
+        gr_s = max(1.0, 0.15 * time_s) if legal_time_s is None else float(legal_time_s)
+        rep["greedy"] = greedy(P, st, sorted(bad), log=None, time_s=gr_s)
+        bad = grid_violations(st)
+    if bad and revert_illegal:
+        rep["reverted"] = _revert_illegal(P, st, home, bad)
         bad = grid_violations(st)
     rep["legal_grid"] = not bad
     if bad:
