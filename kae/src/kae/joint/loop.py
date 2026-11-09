@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import time
 
-from .feedback import CongestionHistory, error_spots, physics_spots, plan_windows, unrouted_spots
+from .feedback import ENV_DEPENDENT, IGNORED_SPOTS, CongestionHistory, error_spots, physics_spots, plan_windows, unrouted_spots
 from .scorecard import accept
 
 DEFAULTS = dict(
@@ -50,6 +50,7 @@ DEFAULTS = dict(
     route_share=0.6,       # share of what is left after placing and the module stage, for the first route
     reserve=25.0,          # seconds kept for the final write and DRC (at least 4 % of the budget)
     physics_spots=True,    # flagged modules make windows too
+    skip_unfixable_drc=True,  # DRC types no part move changes (feedback.NO_MOVE_FIXES) open no window
     min_iter_s=60.0,       # an iteration is not started with less than this left
     iter_share=0.25,       # one window's repair gets at most this share of the budget (at least min_iter_s)
     phys_slack=0.10,       # routed physics a strict completion/DRC gain may cost (scorecard.accept)
@@ -117,7 +118,8 @@ class JointLoop:
 
     # ------------------------------------------------------------------ helpers
     def _spots(self, fb, lay):
-        sp = unrouted_spots(fb.get("drc") or {}) + error_spots(fb.get("drc") or {})
+        ignore = IGNORED_SPOTS if self.opts["skip_unfixable_drc"] else ENV_DEPENDENT
+        sp = unrouted_spots(fb.get("drc") or {}) + error_spots(fb.get("drc") or {}, ignore=ignore)
         if self.opts["physics_spots"]:
             _, _, centres, refs = self._geom
             mp = getattr(self.stages, "module_parts", {}) or {}

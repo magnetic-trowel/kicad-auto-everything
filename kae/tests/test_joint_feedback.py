@@ -48,6 +48,13 @@ def test_parse_item_kinds_refs_nets():
     assert parse_item({"description": "Zone [GND] on In1.Cu"})["kind"] == "zone"
 
 
+def test_types_no_move_fixes_open_no_window():
+    drc = {"violations": [{"severity": "error", "type": t, "items": [{"description": "Footprint U1", "pos": {"x": 1, "y": 2}}]}
+                          for t in ("footprint_type_mismatch", "annular_width", "invalid_outline", "silk_over_copper")]}
+    spots = error_spots(drc)
+    assert [s.why for s in spots] == ["silk_over_copper"]
+
+
 def test_unrouted_and_error_spots():
     u = unrouted_spots(DRC)
     assert len(u) == 2
