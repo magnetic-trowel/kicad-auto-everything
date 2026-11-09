@@ -1,0 +1,3 @@
+adafruit-adafruit-pcf8523-rtc-breakout-pcb-adafruit-pcf8523-rtc-hvson
+sadekbaroudi-vik-pmw3360
+adafruit-adafruit-powerboost-500-charger-pcb-adafruit-powerboost-500c
