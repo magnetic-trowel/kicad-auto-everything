@@ -5,7 +5,7 @@
 Scope: kae's pair router and where it runs in the pipeline. Not here: which nets are a pair, how a pair is measured, hazards -> [kae-diff-pair-report](kae-diff-pair-report.md); pair physics and rules -> [diff-pairs](../../topics/rules/diff-pairs.md); router survey -> [diff-pair-routing](../../topics/routing/diff-pair-routing.md).
 Keys: kae.route.pair_route, pairs first, pair envelope, spine, fan-in, skew bump, stitching vias, pseudo-net, post-pass, diffpair-ab
 
-**Status:** built, A/B `diffpair-ab3` (first vs post vs control) queued. **First published:** 2026-11-09, branch `diffpair-route`.
+**Status:** built; A/B `diffpair-ab3` (first and post against the bridge, 120 boards, pre-registered) queued 2026-11-09, no result yet. **First published:** 2026-11-09, branch `diffpair-route`.
 
 ## What a pair needs, and when it can be built
 
@@ -25,15 +25,15 @@ These are the most constrained nets on the board, and the freedom they need exis
 
 **Post-pass** (`--pairs post`, `pair_route.post_pass` plus the last mile, kept only if KiCad finds the board no worse): the routed board's pairs are re-laid as pairs in place, per pair (old copper ripped, restored on failure), so it can never lose a connection it had. But it needs a free strip 2w+g wide where the first route left one trace, so it works where room exists.
 
-A comparison on 9 boards at 400 s (one per repo family, real pairs from `if_*` and `diffpair_*`, the same pair code with a last mile for post): 
+A comparison on 13 boards at 400 s (one per repo family, real pairs from `if_*` and `diffpair_*` tags, boards routed once each; post had a last mile on top of its time budget, so its opens are flattered):
 
-| arm | opens | errors | coupled median | skew median (mm) |
+| arm | opens | errors | coupled median (by board) | skew median, mm (by board) |
 |---|---|---|---|---|
-| control | 641 | 161 | 0.146 | 2.14 |
-| first | 669 | 190 | 0.615 | 1.20 |
-| post | 594 | 157 | 0.476 | 2.07 |
+| control | 803 | 803 | 0.07 | 2.14 |
+| first | 950 | 799 | 0.615 | 0.51 |
+| post | 677 | 820 | 0.246 | 2.07 |
 
-First gave the best pairs; it cost some opens and more `starved_thermal` errors on one board (cause not yet read). Post improved the pairs less and lost no connection on these boards. Neither dominated, so both are A/B arms against the bridge. These numbers are preliminary: they cover part of the comparison and are replaced by the A/B in `diffpair-ab3`.
+Pairs first gives the coupling and skew a reviewer wants; it cost opens on dense boards (felixheld 44 to 144, olimex 91 to 123, pcbcorpus 25 to 50, against gains elsewhere), plausibly because the locked pairs close corridors the rest needs; the cause is not yet read. Post cannot break what the general router connected, but it left most pairs at or near the control's coupling on the boards where the pair's strip was not free. Both go to the A/B.
 
 ## The router (`kae.route.pair_route`)
 
