@@ -6,7 +6,7 @@ Inputs are a board with its copper, and optionally the board's `kicad-cli` DRC r
 one per diff pair: lanes open, coupled share, vias per lane, via parity, skew, layer agreement, the class-keyed limits
 of kae.bus.limits with their source, and (with `--decompose`) the skew terms of kae.bus.skew.
 
-Every number here is a description. It feeds no score, no cost and no selection (docs/research/bus-yardstick-2611.md).
+Every number here is a description. It feeds no score, no cost and no selection (docs/research/routing/bus-yardstick-2611.md).
 Coupled share and bundling are shape, not a target: nothing may reward them.
 """
 from __future__ import annotations
@@ -172,7 +172,7 @@ def _trunk_span(s_, nn_):
 
 
 def _sum_f(headings, s0, s1):
-    """(sum of 2 tan(theta/2), net turning) of a lane's vertices between arc s0 and s1 (A2; docs/research/bus-yardstick-2611.md)."""
+    """(sum of 2 tan(theta/2), net turning) of a lane's vertices between arc s0 and s1 (A2; docs/research/routing/bus-yardstick-2611.md)."""
     sf = net = 0.0
     for (sa, ha, _), (sb, hb, _) in zip(headings, headings[1:]):
         if sb < s0 or sb > s1:

@@ -124,7 +124,7 @@ def cmd_submit(a):
         f = td / f"{i // a.chunk:05d}.txt"
         f.write_text("".join(f"{b} {r}\n" for b, r in tasks[i:i + a.chunk]))
         jobs.append(dict(cmd=f"{venv / 'bin' / 'python'} {kae_d / 'tools' / 'kaeres' / 'busreport.py'} job --evaluator {eid} --tasks {f}",
-                         name=f"bus-{a.name}-{i // a.chunk}", cpus=1, mem="4G", timeout="2h"))
+                         name=f"bus-{a.name}-{i // a.chunk}", cpus=1, mem=a.mem, timeout="3h"))
     print(f"{len(tasks)} runs on {len(boards)} boards to measure, {len(jobs)} jobs, evaluator {eid} at {commit[:7]}")
     if a.dry_run or not jobs:
         return 0
@@ -337,7 +337,8 @@ def main():
     s = sub.add_parser("submit", help="queue the scorecard for stored runs")
     s.add_argument("name"), s.add_argument("--boards", required=True, help="ids, or @FILE"), s.add_argument("--method", action="append", required=True)
     s.add_argument("--kae", default="HEAD", help="revision whose kae.bus and tools/kaeres/busreport.py measure (must be in the store's git)")
-    s.add_argument("--chunk", type=int, default=8), s.add_argument("--dry-run", action="store_true")
+    s.add_argument("--chunk", type=int, default=8), s.add_argument("--mem", default="1500M", help="kaeq --mem per job (about 1 GB per large board)")
+    s.add_argument("--dry-run", action="store_true")
     s.set_defaults(f=cmd_submit)
     s = sub.add_parser("report", help="aggregate finished scorecards")
     s.add_argument("name")

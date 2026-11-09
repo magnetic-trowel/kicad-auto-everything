@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Class- and controller-keyed limits for the bus scorecard (report-only).
 
-A check with no controller key fails most working boards (docs/research/bus-yardstick-2611.md), so a limit is keyed when
+A check with no controller key fails most working boards (docs/research/routing/bus-yardstick-2611.md), so a limit is keyed when
 the controller, the DRAM generation or the interface identifies it; otherwise it is a class default, marked `keyed=False`,
 and must be read as "assumed". Sources are the rule packs under docs/topics/rules/. Skews are in mm of copper at about
 6.8 ps/mm unless the source states otherwise. Classes with no timing budget (RGB, GPIO, ribbons, matrices, slow QSPI)

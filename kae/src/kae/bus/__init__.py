@@ -5,7 +5,7 @@
 `detect` finds buses from what a new board has (netlist, names, footprints, part data, pin
 geometry); it never reads tracks or vias, so it works on a board no human has routed.
 `scorecard` measures a routed board's buses. The scorecard is a report: it changes no score
-and does not reward bundling (see docs/research/bus-yardstick-2611.md).
+and does not reward bundling (see docs/research/routing/bus-yardstick-2611.md).
 """
 from .detect import detect_board, BusSet
 
