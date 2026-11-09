@@ -1469,6 +1469,26 @@ def clean_net_of_input(row, input_drc):
     return all(n <= base.get(t, 0) for t, n in json.loads(row.get("errors_by_type") or "{}").items())
 
 
+# bench/src/kaebench/score.py PLACEMENT_ERROR_TYPES (a test keeps them equal): the DRC types that make a placement illegal
+PLACEMENT_ERROR_TYPES = ("courtyards_overlap", "copper_edge_clearance", "clearance", "hole_clearance",
+                         "hole_to_hole", "holes_co_located", "items_not_allowed", "malformed_courtyard",
+                         "npth_inside_courtyard", "pth_inside_courtyard", "shorting_items")
+
+
+def fixed_input_placement_errors(e, bid):
+    """Placement-type DRC errors of a board's fixed input ({type: count}; `record.tasks["place-fixed"].input_drc` of the
+    experiment's joint-fixed task, else its place-fixed task): the placed parts a task can never move. Non-empty means
+    the board cannot be `clean` (clean requires legal) for any method. Empty means winnable as far as this check
+    knows, and None that the experiment's task spec has no such task for this board. Report-only."""
+    for kind in ("joint-fixed", "place-fixed"):
+        tid = exp_task_id(e, bid, kind)
+        t = task_meta(bid, tid) if tid else None
+        drc = (((t or {}).get("record") or {}).get("tasks") or {}).get("place-fixed", {}).get("input_drc")
+        if drc is not None and drc.get("errors_by_type") is not None:
+            return {k: n for k, n in drc["errors_by_type"].items() if k in PLACEMENT_ERROR_TYPES}
+    return None
+
+
 def route_input_drc(e, bid, r=None):
     """The route task's input DRC a run's xc is measured against: the experiment's route task of the board, else
     (given run r, when the experiment's task is not in the store) the run's own task if it is a route task.
@@ -1496,6 +1516,7 @@ def exp_rows(e):
             fails.append(read_json(p))
         task_meta = None
         route_drc = route_input_drc(e, bid)
+        fixed_errors = fixed_input_placement_errors(e, bid)
         human_base = human_drc_baseline(bid, human, exp_task_id(e, bid, "route"), evs["drc"]) if human else dict(types=None, source="none", evaluator=None)
         for m, att in ((m, att) for m in want for att in range(1 if m is want[0] and human else e.get("attempts") or 1)):
             d, r = find_run(bid, m["id"], att, exp_task_id(e, bid, _run_kind(dict(method_id=m["id"]))))
@@ -1515,6 +1536,7 @@ def exp_rows(e):
             v["foreign_evaluator"] = use["drc"] is not None and use["drc"] != evs["drc"]  # scored, but by another scorer
             v["kind"] = _run_kind(r)
             v["xc"] = clean_net_of_input(v, route_drc if route_drc is not None else route_input_drc(e, bid, r))
+            v["winnable"] = None if fixed_errors is None else not fixed_errors
             b = read_json(bd / "board.json") or {}
             v.update(repo=task_meta.get("repo"), split=task_meta.get("split"), pads=(task_meta.get("reference") or {}).get("stats", {}).get("pads"),
                      human_clean=task_meta.get("human_clean"), qualified=task_meta.get("qualified"),
@@ -1693,6 +1715,34 @@ def _bus_section(rows, name):
         return []
 
 
+def winnable_table(rows, names, spec=None):
+    """cp1 on all boards and on the winnable boards (no placement-type DRC error in the fixed input), side by side, with
+    the size of each set. Empty list when no board's fixed input is known. `spec` is only named in the text."""
+    rows = [r for r in rows if r["attempt"] == 0]
+    flag = {}
+    for r in rows:
+        flag.setdefault(r["board"], r.get("winnable"))
+    if not any(v is not None for v in flag.values()):
+        return []
+    win, lost, unk = [sorted(b for b, v in flag.items() if v is w) for w in (True, False, None)]
+    out = ["### Winnable boards", "",
+           f"Winnable: {len(win)} of {len(flag)} boards. {len(lost)} have a placement-type DRC error in the fixed input of their "
+           f"task (`place-fixed.input_drc`), so no method can be `clean` on them (`clean` needs a legal placement); "
+           f"{len(unk)} have no such task at this experiment's task spec{f' ({spec})' if spec else ''}, so are left out of the winnable set. "
+           "The set depends on the task spec (95 boards at spec 8, 100 at specs 9-10, of the 213 merit boards). "
+           "Report-only, not a score or a task change.", "",
+           "| method | boards | cp1 (all) | winnable boards | cp1 (winnable) | clean on non-winnable |", "|---|---|---|---|---|---|"]
+    for n in names:
+        rs = [r for r in rows if r["method"] == n]
+        if not rs:
+            continue
+        ws = [r for r in rs if r.get("winnable") is True]
+        ls = [r for r in rs if r.get("winnable") is False]
+        out.append(f"| {n} | {len(rs)} | {_f(_mean([1.0 if r['clean'] else 0.0 for r in rs]))} | {len(ws)} | "
+                   f"{_f(_mean([1.0 if r['clean'] else 0.0 for r in ws])) if ws else '—'} | {sum(1 for r in ls if r['clean'])} of {len(ls)} |")
+    return out + [""]
+
+
 def cmd_exp_report(a):
     e = load_exp(a.name)
     d = exp_dir(a.name)
@@ -1763,6 +1813,7 @@ def cmd_exp_report(a):
             "human = per-board ratio to the human board's; module ratio = per-board median of method / human module value "
             "over modules routed in both (lower is better). The human method is the original copper scored the same way.", ""]
     rep += method_table(rows, names, "All boards")
+    rep += winnable_table(rows, names, harness_task_spec(e["harness"]["commit"]))
     nonhuman = [n for n in names if not human or n != human["name"]]
     base = getattr(a, "baseline", None) or (nonhuman[0] if nonhuman else None)
     if base in names and len(nonhuman) > 1:

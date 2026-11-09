@@ -389,3 +389,32 @@ def test_method_table_marks_xc_of_placing_methods():
     out = kaeres.method_table(rows, ["router", "placer", "unknown"], "t")
     assert "xc (clean net of input; † placing method, not comparable)" in out[2]
     assert out[4].split(" | ")[4] == "0.500" and out[5].split(" | ")[4] == "1.000†" and out[6].split(" | ")[4] == "—"
+
+
+def test_winnable_table_counts_the_sets_and_cp1_on_winnable_boards():
+    def r(m, b, clean, win):
+        return dict(_r(m, b, 0, clean), winnable=win)
+    rows = [r("a", "w1", True, True), r("a", "w2", False, True), r("a", "w3", True, True), r("a", "lost", False, False), r("a", "u", True, None),
+            r("b", "w1", False, True), r("b", "w2", False, True), r("b", "lost", True, False)]
+    out = kaeres.winnable_table(rows, ["a", "b"], 9)
+    assert "Winnable: 3 of 5 boards. 1 have" in out[2] and "(9)" in out[2]
+    assert out[6].split(" | ")[1:] == ["5", "0.600", "3", "0.667", "0 of 1 |"]
+    assert out[7].split(" | ")[1:] == ["3", "0.333", "2", "0.000", "1 of 1 |"]    # b: only the two winnable boards it ran
+    assert kaeres.winnable_table([r("a", "x", True, None)], ["a"]) == []
+
+
+def test_fixed_input_placement_errors_reads_the_joint_fixed_input(monkeypatch):
+    monkeypatch.setattr(kaeres, "exp_task_id", lambda e, b, kind: f"{kind}-{b}")
+    tasks = {"joint-fixed-bad": dict(record=dict(tasks={"place-fixed": dict(input_drc=dict(errors_by_type=dict(clearance=2, unresolved_variable=1)))})),
+             "joint-fixed-ok": dict(record=dict(tasks={"place-fixed": dict(input_drc=dict(errors_by_type=dict(unresolved_variable=1)))}))}
+    monkeypatch.setattr(kaeres, "task_meta", lambda b, tid: tasks.get(tid))
+    assert kaeres.fixed_input_placement_errors({}, "bad") == dict(clearance=2)
+    assert kaeres.fixed_input_placement_errors({}, "ok") == {}
+    assert kaeres.fixed_input_placement_errors({}, "absent") is None
+
+
+def test_placement_error_types_match_the_scorer():
+    import ast
+    src = (Path(__file__).resolve().parents[3] / "bench" / "src" / "kaebench" / "score.py").read_text()
+    node = next(n for n in ast.parse(src).body if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == "PLACEMENT_ERROR_TYPES")
+    assert ast.literal_eval(node.value) == kaeres.PLACEMENT_ERROR_TYPES
