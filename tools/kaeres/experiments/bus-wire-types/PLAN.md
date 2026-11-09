@@ -23,6 +23,7 @@ Budgets: 900 s (all arms, `bus-wire-types`) and 300 s (control, shove, normal, `
 
 Outcomes, read per budget, and separately for boards where the control finishes at least 2 Freerouting passes (`router.report.telemetry.loops`) and where it does not:
 - **Open connections** total (KiCad on the re-opened board), each arm against control, 95 % bootstrap over boards.
+- Also on the boards where the soft arm rewrote at least 50 wires (`wire_types.wires`): a smoke board had only 9 stub wires, so the tag does not guarantee much escape copper (added before the full run).
 - cp1, cpk, completion, DRC errors by type, CPU, vias. Stub survival is reported from the arm's `wire_types` and the final copper where available.
 
 Decision, each soft arm at 900 s: **helps** if total opens fall by 5 % or more with the interval excluding 0 (noise: A/A total 2.8 % at 213 boards, about 4 % at 120); **no effect** if the interval lies within +-5 %; **hurts** if opens rise by more than 5 % with the interval excluding 0. Guardrail: DRC errors no worse by the same test. If the 900 s interval straddles the +-5 % edge for a soft arm, run the next 120 boards once and report the combined interval.
