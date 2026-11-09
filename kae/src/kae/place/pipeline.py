@@ -586,6 +586,12 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
     if edge_mode >= 2:
         board, pinned = _pin_edge_connectors(board, brief, held, fixed, angle_step, seed, rep, log)
         fixed = fixed | set(pinned)
+    if int(setting("array_macros", board_path, opts)) >= 1:
+        # LED matrices and series-resistor buses from the netlist, pinned as rigid blocks before
+        # anything else moves (kae.place.arrays; like the edge connectors above)
+        board, apinned = _pin_arrays(board, brief, held, fixed, angle_step, seed, rep, log)
+        pinned = {**pinned, **apinned}
+        fixed = fixed | set(apinned)
     P = Problem.build(board, net_kinds=_net_kinds(brief), held={fp.uuid for fp in held} | fixed,
                       angle_step=angle_step, severity=severity or _severity_mode(board, board_path, opts))
     rep["severity"] = dict(mode=P.severity_mode, project_downgrades=dict(P.downgraded))
@@ -1037,6 +1043,28 @@ def _pin_edge_connectors(board, brief, held, fixed, angle_step, seed, rep, log):
         return board, {}
     by = {fp.uuid: fp.ref for fp in board.footprints}
     rep["edge_pinned"] = dict(pinned=sorted(by[u] for u in poses), failed=failed, uuids=sorted(poses))
+    return (edge_check.with_poses(board, poses) if poses else board), poses
+
+
+def _pin_arrays(board, brief, held, fixed, angle_step, seed, rep, log):
+    """Rigid array macros (kae.place.arrays): their poses from a quick seed on a throwaway Problem, on
+    a legal spot of the board; returns (board with them moved there, {uuid: pose})."""
+    from . import arrays as arraysmod
+    from . import edge_check
+    try:
+        P0 = Problem.build(board, net_kinds=_net_kinds(brief), held={fp.uuid for fp in held} | set(fixed),
+                           angle_step=angle_step)
+        macs, info = arraysmod.macros(P0, log=log)
+        if not macs:
+            rep["arrays"] = info
+            return board, {}
+        net_w = {net.i: net.weight for net in P0.nets}
+        st0, _ = _seed_state(P0, macs, net_w, seed, log, partition=len(P0.mov) > FLOORPLAN_MAX_ITEMS)
+        poses, failed = arraysmod.pin(P0, macs, st0)
+    except Exception as e:      # noqa: BLE001 - placing without the macro beats not placing
+        rep["arrays"] = dict(error=f"{type(e).__name__}: {e}")
+        return board, {}
+    rep["arrays"] = dict(info, pinned_parts=len(poses), no_legal_spot=failed)
     return (edge_check.with_poses(board, poses) if poses else board), poses
 
 
