@@ -64,7 +64,7 @@ def arm_of(name):
 
 
 class Data:
-    def __init__(self, exp, out, churn="exclude", only_arms=None):
+    def __init__(self, exp, out, churn="exclude", only_arms=None, twin=None):
         self.e = jl(STORE / "experiments" / exp / "experiment.json")
         if not self.e:
             sys.exit(f"no experiment {exp}")
@@ -78,7 +78,14 @@ class Data:
             self.arms = [a for a in self.arms if a in only_arms]
         self.src = defaultdict(lambda: defaultdict(set))   # arm -> source -> boards
         self.churn_mode = churn
-        self.churn = {p.parent.name for p in self.out.glob("rescore-*/*/churn.json") if (jl(p) or {}).get("all_churn")}
+        self.churn = {p.parent.name for p in self.out.glob("rescore-*/*/churn.json") if p.parent.parent.name != "rescore-A0"
+                      and (jl(p) or {}).get("all_churn")}
+        # stored outputs of the old code carry the random uuids of their own prepare: only A0r is affected at spec 10
+        self.a0_churn = {p.parent.name for p in self.out.glob("rescore-A0/*/churn.json") if (jl(p) or {}).get("all_churn")}
+        if twin:
+            e = jl(STORE / "experiments" / twin / "experiment.json") or {}
+            self.ids.update({arm_of(m["name"]): m["id"] for m in e.get("methods", []) if arm_of(m["name"])})
+            self.arms = [a for a in ("A0", "A0r", "A", "A2", "B", "C", "D", "E") if a in ("A0", "A0r", "B") or a in self.ids]
 
     def run_dir(self, arm, b):
         if arm == "A0":
@@ -116,6 +123,9 @@ class Data:
         if r and r.get("status") == "ok" and b not in self.churn:
             self.src[arm]["rescore"].add(b)
             return r.get("score")
+        if arm == "A0r" and b in self.a0_churn:   # A0's outputs against a task of different random uuids
+            self.src[arm]["left out (uuid churn)"].add(b)
+            return None
         if b in self.churn and arm == "A0r":   # no score of A0 against its own task at this scorer
             self.src[arm]["left out (uuid churn)"].add(b)
             return None
@@ -510,7 +520,7 @@ def notch_gate(D, treat="C", ref="human", n_boot=5000):
 def sec_dfm(D):
     out = ["## Overhang by land type and exposed acute notches\n"]
     rows = []
-    for arm in ["human"] + [a for a in D.arms if a in ("A", "C")]:
+    for arm in ["human"] + [a for a in D.arms if a in ("A", "B", "C", "D", "E")]:
         tot = defaultdict(lambda: [0, 0.0])
         n = 0
         for b in D.boards:
@@ -526,88 +536,180 @@ def sec_dfm(D):
                         + [f"{tot[k][0]} / {tot[k][1]:.1f}" for k in ("smd2", "smd", "tht")])
     out.append(table(["arm", "boards", "entries", "mm2", "SMD two-terminal n / mm2", "other SMD n / mm2", "THT n / mm2"], rows))
     out.append("\n| arm | boards | notches < 80 deg, >= 50 um | track m | per m |\n|---|---|---|---|---|")
-    for arm in ["human"] + [a for a in D.arms if a in ("A", "C")]:
+    for arm in ["human"] + [a for a in D.arms if a in ("A", "B", "C", "D", "E")]:
         v = [x for x in (notches(D, arm, b) for b in D.boards) if x]
         if v:
             out.append(f"| {arm} | {len(v)} | {sum(x[0] for x in v)} | {sum(x[1] for x in v):.1f} | {sum(x[0] for x in v) / sum(x[1] for x in v):.2f} |")
     return "\n".join(out)
 
 
-def sec_gates(D):
-    """The pre-registered verdicts of PLAN.md section 9, computed, for C against A."""
-    S, cl = _stats(D), _repos()
-    v = []
+def not_worse(D, ctrl, treat):
+    """Rows of cp1, clean_strict, completion and DRC errors for a pair: (name, ok, detail)."""
+    rows = []
+    for name, met, binary, low in (("cp1", lambda s: bool(s.get("clean")), True, -0.02),
+                                   ("clean_strict", lambda s: s.get("clean_strict"), True, -0.02),
+                                   ("completion", lambda s: float(s.get("completion") or 0), False, -0.005),
+                                   ("DRC errors / board", lambda s: float(s.get("errors") or 0), False, None)):
+        r = paired(D, met, ctrl, treat, binary)
+        if not r:
+            rows.append((name, None, "no data"))
+            continue
+        if low is None:
+            ok = r["p"] >= 0.05 or r["diff"] <= 0
+        elif binary:
+            ok = r["ci"][0] > low and (r["p"] >= 0.05 or r["diff"] > 0)
+        else:
+            ok = r["ci"][0] > low
+        rows.append((name, ok, f"{ctrl} {r['mean_a']} {treat} {r['mean_b']} diff {r['diff']} CI {r['ci']} p {r['p']}"
+                     + (f" +{len(r['gained'])}/-{len(r['lost'])}" if binary else "") + f" n {r['n']}"))
+    return rows
 
-    def add(name, ok, detail):
-        v.append([name, {True: "PASS", False: "FAIL", None: "no data"}[ok], detail])
 
-    def pr(metric, binary):
-        return paired(D, metric, "A", "C", binary)
+def geometry_gate(D, ctrl, treat):
+    S = _stats(D)
+    ga, gc = {b: geo(D.stats(ctrl, b)) for b in D.boards}, {b: geo(D.stats(treat, b)) for b in D.boards}
+    bs = [b for b in D.boards if ga[b] and gc[b]]
+    if not bs:
+        return (None, None, "no stats")
+    oa = lambda g: g.get("oblique", 0) + g.get("acute_entries", 0)
+    rat = [oa(gc[b]) / oa(ga[b]) for b in bs if oa(ga[b])]
+    p = S.sign_flip([oa(gc[b]) - oa(ga[b]) for b in bs])
+    med = st.median(rat) if rat else None
+    return (med is not None and med < 0.9 and p < 0.05, med,
+            f"sum {ctrl} {sum(oa(ga[b]) for b in bs)} {treat} {sum(oa(gc[b]) for b in bs)}, median ratio {f3(med)}, p {p:.4g}, n {len(bs)}")
 
-    r = pr(lambda s: bool(s.get("clean")), True)
-    if r:
-        add("cp1 not worse (CI low > -0.02; McNemar p >= 0.05 or C better)", r["ci"][0] > -0.02 and (r["p"] >= 0.05 or r["diff"] > 0),
-            f"A {r['mean_a']} C {r['mean_b']} diff {r['diff']} CI {r['ci']} p {r['p']} +{len(r['gained'])}/-{len(r['lost'])}")
-    r = pr(lambda s: s.get("clean_strict"), True)
-    if r:
-        add("clean_strict not worse (same test)", r["ci"][0] > -0.02 and (r["p"] >= 0.05 or r["diff"] > 0),
-            f"A {r['mean_a']} C {r['mean_b']} CI {r['ci']} p {r['p']} +{len(r['gained'])}/-{len(r['lost'])}")
-    r = pr(lambda s: float(s.get("completion") or 0), False)
-    if r:
-        add("completion not worse (CI low > -0.005)", r["ci"][0] > -0.005, f"A {r['mean_a']} C {r['mean_b']} CI {r['ci']} p {r['p']}")
-    r = pr(lambda s: float(s.get("errors") or 0), False)
-    if r:
-        add("DRC errors not higher (p >= 0.05 or lower)", r["p"] >= 0.05 or r["diff"] <= 0, f"A {r['mean_a']} C {r['mean_b']} p {r['p']}")
+
+def physics_rows(D, ctrl, treat):
+    vd, by = physics_verdicts(D, treat, ctrl)
+    rows = []
+    for o in ("loss.copper", "drop.rail"):
+        vals, c = by.get(o), vd.get(o)
+        if vals:
+            rows.append((f"{o}: median at most 1, more signal-better than signal-worse", st.median(vals) <= 1 and c["signal better"] > c["signal worse"],
+                         f"median {st.median(vals):.3f}, " + ", ".join(f"{k} {n}" for k, n in sorted(c.items()))))
+        else:
+            rows.append((o, None, "no data"))
+    bad = {o: (c["signal worse"], c["signal better"]) for o, c in vd.items() if c["signal worse"] - c["signal better"] > 2}
+    rows.append(("no observable with signal-worse above signal-better by more than 2", not bad, str(bad or "none")))
+    return rows
+
+
+def overhang_rows(D, ctrl, treat):
+    g = overhang_gate(D, ctrl, treat)
+    if not g:
+        return [("overhang on SMD lands", None, "no measures")]
+    return [(f"overhang on SMD lands, {n}: no rise beyond noise", not x["fail"],
+             f"{ctrl} {x['control']} {treat} {x['treatment']} mean diff {x['mean_diff']} CI {x['ci']} p {x['p']:.3g} boards up {x['above']} down {x['below']}")
+            for n, x in g.items()]
+
+
+def new_types(D, ctrl, treat):
     ta, tc = Counter(), Counter()
     for b in D.boards:
-        sa, sc = D.score("A", b), D.score("C", b)
+        sa, sc = D.score(ctrl, b), D.score(treat, b)
         if sa and sc:
             ta.update(sa.get("errors_by_type") or {})
             tc.update(sc.get("errors_by_type") or {})
     new = {k: n for k, n in tc.items() if n > 5 and not ta.get(k)}
-    add("no new error type with more than 5 occurrences", not new, str(new or "none"))
-    invalid = {a: [b for b in D.boards if (D.score(a, b) or {}).get("valid") is False] for a in ("A", "C")}
-    add("check: no invalid outputs", not (invalid["A"] or invalid["C"]), str({a: len(x) for a, x in invalid.items()}))
-    ga, gc = {b: geo(D.stats("A", b)) for b in D.boards}, {b: geo(D.stats("C", b)) for b in D.boards}
-    bs = [b for b in D.boards if ga[b] and gc[b]]
-    oa = lambda g: g.get("oblique", 0) + g.get("acute_entries", 0)
-    if bs:
-        rat = [oa(gc[b]) / oa(ga[b]) for b in bs if oa(ga[b])]
-        p = S.sign_flip([oa(gc[b]) - oa(ga[b]) for b in bs])
-        add("oblique + acute entries fall (median ratio < 0.9, sign-flip p < 0.05)", st.median(rat) < 0.9 and p < 0.05,
-            f"sum A {sum(oa(ga[b]) for b in bs)} C {sum(oa(gc[b]) for b in bs)}, median ratio {st.median(rat):.3f}, p {p}")
-    else:
-        add("oblique + acute entries fall", None, "no stats")
-    g = overhang_gate(D)
-    for name in ("entries", "mm2"):
-        if name in g:
-            x = g[name]
-            add(f"overhang on SMD lands, {name}: C not above A beyond noise (CI excludes a rise)", not x["fail"],
-                f"A {x['control']} C {x['treatment']} mean diff {x['mean_diff']} CI {x['ci']} p {x['p']} boards up {x['above']} down {x['below']}")
-    if not g:
-        add("overhang on SMD lands", None, "no measures")
-    n = notch_gate(D)
-    if n:
-        add("notches < 80 deg, >= 50 um, per m: C not above human beyond noise", not n["fail"],
-            f"C {n['treat']} human {n['ref']} diff {n['diff']} CI {n['ci']} ({n['n']} boards)")
-    else:
-        add("notches per m", None, "no measures")
-    vd, by = physics_verdicts(D)
-    for o in ("loss.copper", "drop.rail"):
-        vals, c = by.get(o), vd.get(o)
-        if vals:
-            add(f"{o}: median C / A <= 1, more signal-better than signal-worse terms",
-                st.median(vals) <= 1 and c["signal better"] > c["signal worse"],
-                f"median {st.median(vals):.3f}, " + ", ".join(f"{k} {n_}" for k, n_ in sorted(c.items())))
-    bad = {o: (c["signal worse"], c["signal better"]) for o, c in vd.items() if c["signal worse"] - c["signal better"] > 2}
-    add("no observable with signal-worse exceeding signal-better by more than 2", not bad, str(bad or "none"))
-    return "## Pre-registered gates, C against A (PLAN.md section 9)\n\n" + table(["criterion", "verdict", "detail"], v)
+    return ("no new error type with more than 5 occurrences", not new, str(new or "none"))
 
 
-def physics_verdicts(D, arm="C", ref="A"):
+def validity(D, *arms):
+    inv = {a: [b for b in D.boards if (D.score(a, b) or {}).get("valid") is False] for a in arms}
+    return ("check: no invalid outputs", not any(inv.values()), str({a: (len(x), x[:6]) for a, x in inv.items()}))
+
+
+def _gtable(title, rows):
+    return f"### {title}\n\n" + table(["criterion", "verdict", "detail"],
+                                        [[n, {True: "PASS", False: "FAIL", None: "no data"}[ok], d] for n, ok, d in rows]) + "\n"
+
+
+def q1_rows(D):
+    S_rows = []
+    more_un, more_err, got = [], [], 0
+    for b in D.boards:
+        sa, sb = D.score("A", b), D.score("B", b)
+        if sa and sb:
+            got += 1
+            if int(sb.get("unconnected") or 0) > int(sa.get("unconnected") or 0):
+                more_un.append(b)
+            if int(sb.get("errors") or 0) > int(sa.get("errors") or 0):
+                more_err.append(b)
+    S_rows.append(("no board with more unconnected than A", not more_un if got else None, f"{len(more_un)} of {got}: {more_un[:5]}"))
+    S_rows.append(("at most 2 boards with more DRC errors than A", len(more_err) <= 2 if got else None, f"{len(more_err)} of {got}: {more_err[:5]}"))
+    r = paired(D, lambda s: bool(s.get("clean")), "A", "B", True)
+    if r:
+        S_rows.append(("B loses at most 1 clean board", len(r["lost"]) <= 1, f"+{len(r['gained'])}/-{len(r['lost'])}"))
+    S_rows += not_worse(D, "A", "B")
+    ok, _m, d = geometry_gate(D, "A", "B")
+    S_rows.append(("oblique + acute entries fall", ok, d))
+    S_rows += overhang_rows(D, "A", "B")
+    S_rows += physics_rows(D, "A", "B")
+    secs, skipped, n = [], 0, 0
+    for b in D.boards:
+        rep = last_json(D.log("B", b)) if D.fork_dir("B", b) else None
+        if rep:
+            n += 1
+            skipped += bool((rep.get("parts") or {}).get("skipped"))
+            if (rep.get("seconds") or {}).get("total") is not None and (rep.get("estimate_s") or {}).get("total"):
+                secs.append(rep["seconds"]["total"] / max(1e-6, rep["estimate_s"]["total"]))
+    S_rows.append(("finish median seconds within its estimate", st.median(secs) <= 1 if secs else None, f"median seconds/estimate {f3(st.median(secs)) if secs else '-'}"))
+    S_rows.append(("under 5 % of boards with a part skipped for time", skipped / n < 0.05 if n else None, f"{skipped} of {n}"))
+    return S_rows
+
+
+def sec_gates(D):
+    """The pre-registered verdicts of PLAN.md sections 4, 9 and 10, computed."""
+    arms = set(D.arms)
+    out = ["## Pre-registered gates\n"]
+    if "A2" in arms:
+        out.append(_gtable("Check: A/A twin of A (flips expected from noise alone)", not_worse(D, "A", "A2")))
+    if "B" in arms:
+        out.append(_gtable("Q1: finish alone (B against A)", q1_rows(D)))
+    if {"A", "C"} <= arms:
+        rows = not_worse(D, "A", "C") + [new_types(D, "A", "C"), validity(D, "A", "C")]
+        ok, _m, d = geometry_gate(D, "A", "C")
+        rows.append(("oblique + acute entries fall", ok, d))
+        rows += overhang_rows(D, "A", "C")
+        n = notch_gate(D)
+        rows.append(("notches < 80 deg, >= 50 um, per m: C not above human beyond noise", (not n["fail"]) if n else None,
+                     f"C {n['treat']} human {n['ref']} diff {n['diff']} CI {n['ci']} ({n['n']} boards)" if n else "no measures"))
+        rows += physics_rows(D, "A", "C")
+        out.append(_gtable("Q2: the redesign as the default (C against A)", rows))
+    if {"B", "C"} <= arms:
+        ok, _m, d = geometry_gate(D, "B", "C")
+        out.append(_gtable("Q3: what born-right copper adds (C against B, descriptive)", not_worse(D, "B", "C") + [("entries fall against B", ok, d)]))
+    if {"C", "D"} <= arms:
+        nw = not_worse(D, "C", "D")
+        ok, _m, d = geometry_gate(D, "C", "D")
+        ph = physics_rows(D, "C", "D")
+        adopt = all(x[1] for x in nw[:3]) and (bool(ok) or all(x[1] for x in ph))
+        out.append(_gtable("Q4: import tails (D against C)", nw + [("entries a further 10 % down", ok, d)] + ph
+                           + [("ADOPT import_tails (cp1, clean_strict, completion not worse; and entries or physics)", adopt, "")]))
+    if {"C", "E"} <= arms:
+        nw = not_worse(D, "C", "E")
+        vd, _by = physics_verdicts(D, "E", "C", boards=ground_via_boards(D))
+        better = [(o, vd[o]["signal better"], vd[o]["signal worse"]) for o in ("supply.peak", "loss.loop_ac") if o in vd]
+        hit = any(b >= 2 * max(w, 1) for _o, b, w in better)
+        out.append(_gtable("Q5: ground vias before routing (E against C, boards where E laid them)", nw + [
+            ("supply.peak or loss.loop_ac: signal-better at least twice signal-worse", hit if better else None, str(better)),
+            ("ADOPT escape_ground_vias", all(x[1] for x in nw[:3]) and hit if better else None, f"{len(ground_via_boards(D))} boards")]))
+    return "\n".join(out)
+
+
+def ground_via_boards(D):
+    out = []
+    for b in D.boards:
+        rep = (blocks(D.log("E", b), "report") or [None])[-1] or {}
+        if (rep.get("plane_escapes") or {}).get("ground_vias"):
+            out.append(b)
+    return out
+
+
+def physics_verdicts(D, arm="C", ref="A", boards=None):
     """({observable: Counter of verdicts}, {observable: [ratios]}) of `arm` against `ref`, as sec_physics judges them."""
     vd, by = defaultdict(Counter), defaultdict(list)
-    for b in D.boards:
+    for b in (D.boards if boards is None else boards):
         x, y = phys_terms(D, arm, b), phys_terms(D, ref, b)
         if not x[0] or not y[0]:
             continue
@@ -735,10 +837,11 @@ def main():
     ap.add_argument("--section", default="gates,routing,geometry,dfm,physics,hazards,stages")
     ap.add_argument("--churn", choices=("exclude", "stored"), default="exclude",
                     help="boards whose re-score is only uuid churn: left out of every arm, or each run's stored score")
+    ap.add_argument("--twin", help="experiment holding the A/A twin (arm A2)")
     ap.add_argument("--arms", help="comma list of arms to report (default: every arm with data)")
     ap.add_argument("--offset-list", help="write the (board, arm) pairs whose physics needs offset-averaging")
     a = ap.parse_args()
-    D = Data(a.exp, a.out, a.churn, a.arms.split(",") if a.arms else None)
+    D = Data(a.exp, a.out, a.churn, a.arms.split(",") if a.arms else None, a.twin)
     print(f"# route-finish A/B: {a.exp}\n\nArms {', '.join(D.arms)}; methods "
           + ", ".join(f"{k} `{v}`" for k, v in D.ids.items()) + f"; DRC evaluator `{D.drc_eval}`; {len(D.boards)} boards.\n")
     fns = dict(routing=sec_routing, geometry=sec_geometry, physics=lambda d: sec_physics(d, a.offset_list),

@@ -31,7 +31,7 @@
 #   SHA=<pushed route-finish commit> STAGE=s1|full|smoke tools/kaeres/experiments/route-finish-ab.sh
 #     s1    route-finish-ab-s1: 40 boards (route-finish-ab-s1.boards.txt), arms A and C (TWIN=1: and an A/A twin of A)
 #     s1r   route-finish-ab-s1r: the same 40 boards, arms A and C, at the fixed code (PLAN.md section 9)
-#     full  route-finish-ab: 213 boards, arms A, C, D, E (reuses the s1 runs)
+#     full  route-finish-ab: 213 boards, arms A, C, D, E; route-finish-ab-twin: A's twin on the 40 stage-1 boards
 #     smoke route-finish-ab-smoke: one board (BOARD, default freetronics-secsense-secsense), arms A, C, D, E
 # Registers methods and the experiment only. Then (each needs the user's approval for its size):
 #   1. warm the numba cache:   route-finish-ab/warm.sh SHA   (through kaeq, ~10 min)
@@ -94,7 +94,7 @@ add "$C" "kae.route.cli at $S7 (route-finish) defaults (rule D born-right grid c
   "" "" 1
 # A/A twin of A (a second id for the same recipe: the run-to-run noise of the restart portfolio), stage 1 only
 AT="rf legacy twin $S7 (restarts)"
-[ "$STAGE" = s1 ] && [ -n "${TWIN:-}" ] && add "$AT" "A/A replicate of '$A' (identical recipe; param replicate=2 only separates the ids)" \
+{ [ "$STAGE" = full ] || { [ "$STAGE" = s1 ] && [ -n "${TWIN:-}" ]; }; } && add "$AT" "A/A replicate of '$A' (identical recipe; param replicate=2 only separates the ids)" \
   "KAE_PAD_ENTRY=centre KAE_FR_PIN_ENTRIES=off" "" 0 replicate=2
 add "$DD" "as '$C' plus --set import_tails=true (rule D tails on each repair-round import, repair.import_tails)" \
   "" "--set import_tails=true" 1
@@ -106,7 +106,9 @@ case "$STAGE" in
   s1) $K exp create route-finish-ab-s1 --method "$A" --method "$C" ${TWIN:+--method "$AT"} --boards @$D/route-finish-ab-s1.boards.txt \
         --harness $SHA --kae $SHA --env KAE_STEP_CACHE=$STEP_CACHE --description "stage 1 (40 boards, A and C) of the $desc" >/dev/null ;;
   full) $K exp create route-finish-ab --method "$A" --method "$C" --method "$DD" --method "$EE" \
-        --boards @$D/route-finish-ab.boards.txt --harness $SHA --kae $SHA --env KAE_STEP_CACHE=$STEP_CACHE --description "$desc" >/dev/null ;;
+        --boards @$D/route-finish-ab.boards.txt --harness $SHA --kae $SHA --env KAE_STEP_CACHE=$STEP_CACHE --description "$desc" >/dev/null
+        $K exp create route-finish-ab-twin --method "$AT" --boards @$D/route-finish-ab-s1.boards.txt --harness $SHA --kae $SHA \
+          --env KAE_STEP_CACHE=$STEP_CACHE --description "A/A twin of A on the 40 stage-1 boards, in the same run as route-finish-ab (run-to-run noise). $desc" >/dev/null ;;
   s1r) $K exp create route-finish-ab-s1r --method "$A" --method "$C" --boards @$D/route-finish-ab-s1.boards.txt \
         --harness $SHA --kae $SHA --env KAE_STEP_CACHE=$STEP_CACHE --description "stage 1 rerun (the same 40 boards, A and C) at $S7 with the corrected physics set, score v12, task spec 10; criteria in route-finish-ab/PLAN.md section 9. $desc" >/dev/null ;;
   smoke) B1=${BOARD:-freetronics-secsense-secsense}

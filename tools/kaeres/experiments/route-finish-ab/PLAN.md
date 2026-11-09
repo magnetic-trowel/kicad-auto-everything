@@ -231,3 +231,20 @@ Arms A and C only, the same 40 boards (`route-finish-ab-s1.boards.txt`), code at
 The overhang gate replaces §4 Q1.2's "overhanging entries fall". SMD lands are two-terminal SMD plus other SMD (`tools/research/routing/overhang_diag.py`). Overhang totals and THT lands are reported, not gated: wide rails into THT pads are normal practice. Notches come from `tools/research/routing/notch_stats.py` ([why](../../../../bench/results/2026-11-08-finish-notches.md)) and are reported for A, C and human. "Not above beyond noise" is a one-sided claim about 40 boards: a pass means no clear rise, not proof of equality; the point estimates are reported alongside.
 
 Physics terms are judged as in §5, on raw values in base units (dB converted to linear) when both arms have one, else on contributions.
+
+## 10. The full experiment (`route-finish-ab`): pre-registered before any of its results exist
+
+The user approved stage 2, so section 9's rerun became a part of this. One set of method ids at c8188eb: A, C, D and E routed on all 213 boards (timed class, priority 5 at most), and the A/A twin of A (`route-finish-ab-twin`) on the 40 stage-1 boards, in the same run. B is the fork of A. A0r re-scores merge3-ab's boards; only boards without uuid churn count (A0's outputs carry the random uuids of their own prepare). Results of `route-finish-ab-s1r` are the same runs; its 40 boards are a section of the full report. `OUT=/var/tmp/$USER/rf-ab-s2`.
+
+Physics (`compiled-9867d0b`, section 9's settings) for human, A, B, C, D and E, base measures on 211 boards (kocer and J2032 are out), offsets on boards whose slowest base evaluation took at most 900 s.
+
+**Questions and verdicts** (`analyze.py --section gates`, repeated for the 40-board subset):
+
+- **Check.** A2 against A gives the flips expected from noise. A pair whose flips are no more than A2's is "within run-to-run noise" whatever its p-value.
+- **Q1, B against A:** no board with more unconnected; at most 2 boards with more DRC errors; at most 1 clean board lost; cp1, `clean_strict`, completion not worse; oblique + acute entries fall; SMD overhang gate (section 9); `loss.copper` and `drop.rail`; no observable mostly worse; median finish seconds within its estimate and under 5 % of boards with a part skipped for time.
+- **Q2, C against A (the stage's headline):** section 9's table.
+- **Q3, C against B:** descriptive.
+- **Q4, D against C:** adopt `import_tails` only if cp1, `clean_strict` and completion are not worse, and either entries fall a further 10 % or the physics rows of Q1 pass.
+- **Q5, E against C:** on boards where E laid ground vias; cp1, `clean_strict` and completion not worse on all boards, and `supply.peak` or `loss.loop_ac` with signal-better at least twice signal-worse.
+
+**Not in this run:** the task change "route only on layers the board uses" (task spec 11, branch `route-used-layers`) had not reached main at registration. These boards declare inner layers no copper uses, so a router here may use layers their design does not have (an estimate from the board files): adafruit mini-analog-thumbstick, adafruit pcf8523-rtc, asanza keithley-199, kocer direct-sampling-sdr, protocentral max30205, sparkfun edison micro-sd-block, sparkfun redbot-buzzer. Their results are not comparable with spec 11 runs.
