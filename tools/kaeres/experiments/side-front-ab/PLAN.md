@@ -33,8 +33,7 @@ cannot hold everything keeps its largest back parts where they were.
 150 boards with more than 10 back-side SMD parts and at most 1,000 pads: the 17 merit boards that qualify, and 133 corpus boards from
 `usability.jsonl` (`usable_route_test`) one per `repo_family`, assembled courtyards at most 85% of the outline. The J43 count
 of 43 merit boards also counted through-hole back parts, which are not an assembly decision. Boards the task cannot be prepared for
-(place-fixed round trip) drop from all arms alike. Stage 1 tag `double_sided_assembly`: all boards here are in it. `back_heavy` and the
-others are reported per tag.
+(place-fixed round trip) drop from all arms alike. 146 of the 150 are in the structural tag `double_sided_assembly` (the other 4 have no assembled parts on the front), 122 in `back_heavy`; results are reported per tag.
 
 ## Metrics (arm vs C, paired per board, attempt 0)
 Usual: `cp1`, `cpk` (= `cp1`, k = 1), completion, open connections, DRC errors per type (`errors_by_type`), legality (`legal`), CPU.
@@ -43,10 +42,9 @@ run's `KAE_SIDE` line (the input was written, so these do not depend on placemen
 Physics: decap Σu on `physics_inputs_ok` boards, above the noise floor (`stage1/physics-noise/J21.md`, median ratio at
 n boards) only.
 
-Noise: A/A staged twins move cp1 by 0.5 pp (95% CI -1.4 to +2.8) over about 200 boards, total opens by 2.8%. Paired boards: at 150 boards
+Noise: the A/A joint-loop twins (`aa-joint`; no staged A/A exists) move cp1 by 0.5 pp (95% CI -1.4 to +2.8) over about 200 boards, total opens by 2.8%. Paired boards: at 150 boards
 a cp1 difference under about 6 pp (paired SE with 15 to 20% discordant pairs: 3.2 pp) and an opens ratio under about 1.05 are not visible.
-Effects smaller than this can be ignored for a side decision worth the risk of a re-layout; the experiment extends to 300 boards if the
-primary answer is undecided.
+The bounds below are finer than that at 150 boards, so a bound counts as met only when the 95% CI of the paired difference lies inside it; a point estimate inside a bound with a wider CI is undecided, and the experiment then extends to 300 boards.
 
 ## Decision rule (pre-registered)
 - **Force-front is free**: S arm opens not more than +5% against C, cp1 not more than -3 pp, legality rate not lower by more than 3 pp, on all
