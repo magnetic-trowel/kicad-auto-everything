@@ -45,3 +45,9 @@ difference counts only if it clears the twin's difference on the same statistic.
 "no decision", and an arm is extended to more boards if its effect is within 2x of the twin difference.
 
 Expected cost: 40 boards x 11 arms, about 1,000 CPU-h with the bridge at 4 attempts; informational.
+
+## Changes before the full run
+2026-11-09, before any run of the experiment's boards: the `start_necked off` arm (R43) is dropped from the
+full run. R43's precondition (ledger: A/B only if the bridge necks power nets much more than humans) failed: over
+170 merit boards, power/ground net track length below class width is 13.5 % under the bridge against 14.6 %
+for the human boards (median 0 for both; 29 vs 34 boards above 5 %). The arm ran on the two smoke boards only.
