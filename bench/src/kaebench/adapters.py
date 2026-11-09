@@ -275,7 +275,7 @@ def _restart_reports(workdir):
     per-attempt log and the kept attempt's own report. Links are left out: this copy runs outside
     the sandbox, and only files the method wrote belong in the results."""
     d = Path(workdir) / "restarts"
-    return [d / n for n in ("summary.json", "report.json", "report-origin.json")
+    return [d / n for n in ("summary.json", "report.json", "report-origin.json", "fr-telemetry.tar")
             if (d / n).is_file() and not (d / n).is_symlink()]
 
 
