@@ -190,7 +190,7 @@ Each record has `board`, `method` (a method name, `harness` or `physics`), `cate
 | `java_exception`, `java_oom` | exceptions in the router log (`exception`, `frame`, `count`), even when output was written |
 | `unconnected_mismatch` | KiCad finds more unconnected items than the router reported incomplete: connections lost in translation |
 | `integrity` | the output changed something a route result may not |
-| `drc` | DRC errors of one type (`drc_type`, `count`) beyond the human layout's on the same board |
+| `drc` | DRC errors of one type (`drc_type`, `count`) beyond the human layout's on the same board. `human_baseline` says what they were compared with: the experiment's own human score (signature `...:drc:<type>`), else the human's newest evaluation (`...:human-fallback`), else none (`...:no-human-baseline`, `count` is all of the run's errors). `exp report` recomputes these from the run's scores, without changing `bugs.json` |
 | `over_time` | the attempt overran its timeout by more than 5 % |
 | `physics_error` | kae's physics failed on a board or module |
 

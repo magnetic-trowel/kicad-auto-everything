@@ -211,6 +211,94 @@ def test_older_spec_methods_prepare_with_the_experiments_harness_from_spec_10(mo
     assert kaeres.prep_harness("h9", "unknown") == "h9"
 
 
+def _human_store(tmp_path, monkeypatch, evals):
+    """A board whose human run on task t1 has these evaluations ({evaluator: errors_by_type or None}, in age order)."""
+    run = tmp_path / "human.a0"
+    (run / "evals").mkdir(parents=True)
+    for i, (ev, types) in enumerate(evals.items()):
+        kaeres.write_json(run / "evals" / f"{ev}.json", dict(evaluator=ev, at=f"2026-11-0{i + 1}T00:00:00+00:00",
+                                                             score=dict(errors_by_type=types) if types is not None else None))
+    monkeypatch.setattr(kaeres, "board_runs", lambda bid: [(run, dict(method_id="h", attempt=0, task_id="t1"))])
+    monkeypatch.setattr(kaeres, "on_task", lambda bid, r, tid: tid == r["task_id"])
+    return dict(id="h")
+
+
+def _drc_records(base, types):
+    bugs = kaeres.Bugs("b1")
+    kaeres._drc_bugs(bugs, "m", types, base)
+    return bugs.items
+
+
+def test_drc_bugs_without_the_experiments_human_eval_use_the_newest_and_say_so(tmp_path, monkeypatch):
+    """baseline-2611b: no human eval under its evaluator read as an empty human layout, so every
+    method error was reported as beyond the human layout's 0."""
+    human = _human_store(tmp_path, monkeypatch, {"zz-old": dict(drill_out_of_range=9), "aa-new": dict(drill_out_of_range=4)})
+    base = kaeres.human_drc_baseline("b1", human, "t1", "exp-eval")
+    assert (base["source"], base["evaluator"]) == ("fallback", "aa-new")  # newest by time, not by file name
+    assert _drc_records(base, dict(drill_out_of_range=4)) == []
+    [rec] = _drc_records(base, dict(drill_out_of_range=6))
+    assert rec["count"] == 2 and rec["signature"] == "m:drc:drill_out_of_range:human-fallback"
+    assert "beyond the human layout's 4" in rec["detail"] and "aa-new" in rec["detail"]
+    assert rec["human_baseline"] == dict(source="fallback", evaluator="aa-new")
+
+
+def test_drc_bugs_against_the_experiments_own_human_eval_keep_their_signature(tmp_path, monkeypatch):
+    human = _human_store(tmp_path, monkeypatch, {"exp-eval": dict(clearance=1), "newer": dict(clearance=7)})
+    base = kaeres.human_drc_baseline("b1", human, "t1", "exp-eval")
+    assert base["source"] == "exact" and base["types"] == dict(clearance=1)
+    [rec] = _drc_records(base, dict(clearance=3))
+    assert rec["signature"] == "m:drc:clearance" and rec["detail"] == "2 clearance error(s) beyond the human layout's 1"
+
+
+def test_a_clean_human_eval_is_a_real_zero_and_another_task_is_a_fallback(tmp_path, monkeypatch):
+    human = _human_store(tmp_path, monkeypatch, {"exp-eval": {}})
+    assert kaeres.human_drc_baseline("b1", human, "t1", "exp-eval")["source"] == "exact"
+    base = kaeres.human_drc_baseline("b1", human, "other-task", "exp-eval")
+    assert base["source"] == "fallback" and base["evaluator"] == "exp-eval"
+    assert "on another task" in _drc_records(base, dict(clearance=1))[0]["detail"]
+
+
+def test_no_scored_human_run_is_no_baseline_and_not_zero(tmp_path, monkeypatch):
+    human = _human_store(tmp_path, monkeypatch, {"exp-eval": None})
+    base = kaeres.human_drc_baseline("b1", human, "t1", "exp-eval")
+    assert base["source"] == "none"
+    [rec] = _drc_records(base, dict(clearance=3))
+    assert rec["count"] == 3 and rec["signature"] == "m:drc:clearance:no-human-baseline"
+    assert "no human baseline" in rec["detail"] and "beyond" not in rec["detail"]
+    monkeypatch.setattr(kaeres, "board_runs", lambda bid: [])
+    assert kaeres.human_drc_baseline("b1", human, "t1", "e")["source"] == "none"
+    assert kaeres.human_drc_baseline("b1", None, "t1", "e")["source"] == "none"
+
+
+def test_exp_rows_rebases_stored_drc_records_without_writing_them(tmp_path, monkeypatch):
+    """Reports are made from each run's bugs.json, which holds what its job knew; they must not
+    repeat a stale comparison, and a report must not rewrite those files."""
+    store = tmp_path / "s"
+    monkeypatch.setattr(kaeres, "STORE", store)
+    human = dict(id="h", name="human", recipe=dict(runner=dict(type="reference")))
+    monkeypatch.setattr(kaeres, "methods", lambda: {"h": human})
+    e = dict(name="x", harness=dict(commit="c" * 40), evaluators=dict(drc="exp", physics="p"), attempts=1, methods=[dict(id="m", name="meth")])
+    kaeres.exp_dir("x").mkdir(parents=True)
+    (kaeres.exp_dir("x") / "boards.txt").write_text("b1\n")
+    hd, md = kaeres.board_dir("b1") / "runs" / "h", kaeres.board_dir("b1") / "runs" / "m"
+    kaeres.write_json(hd / "evals" / "old.json", dict(at="2026-11-01", score=dict(errors_by_type=dict(drill=4))))
+    kaeres.write_json(md / "evals" / "exp.json", dict(at="2026-11-02", score=dict(errors_by_type=dict(drill=4, track=1))))
+    stale = [dict(board="b1", method="meth", category="drc", signature="meth:drc:drill", detail="4 drill error(s) beyond the human layout's 0",
+                  drc_type="drill", count=4, evidence=[]),
+             dict(board="b1", method="meth", category="over_time", signature="meth:over_time", detail="slow", evidence=[])]
+    kaeres.write_json(md / "bugs.json", stale)
+    before = (md / "bugs.json").read_bytes()
+    runs = dict(h=(hd, dict(method_id="h", attempt=0, task_id="t")), m=(md, dict(method_id="m", attempt=0, task_id="t")))
+    monkeypatch.setattr(kaeres, "find_run", lambda b, mid, att=0, tid=None: runs[mid] if att == 0 else (None, None))
+    monkeypatch.setattr(kaeres, "exp_task_id", lambda *a: "t")
+    monkeypatch.setattr(kaeres, "_run_kind", lambda r: "route")
+    monkeypatch.setattr(kaeres, "human_physics", lambda *a: None)
+    monkeypatch.setattr(kaeres, "run_view", lambda *a, **k: dict(board="b1"))
+    _, bugs, _ = kaeres.exp_rows(e)
+    assert sorted(b["signature"] for b in bugs) == ["meth:drc:track:human-fallback", "meth:over_time"]
+    assert (md / "bugs.json").read_bytes() == before
+
+
 def test_restart_reports_are_kept_with_the_run(tmp_path):
     """J13: the kept attempt's report survives the deleted work directory; kaebench keeps it as an artifact."""
     art, tmp = tmp_path / "artifacts", tmp_path / "run"
