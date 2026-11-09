@@ -391,6 +391,14 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     log = log or (lambda *a, **k: None)
     kw = dict(seed=seed, physics=physics, workers=workers, log=log, anneal=anneal, edge_mate=edge_mate,
               anneal_args=anneal_args, angle_step=angle_step, fixed=fixed, board_path=board_path, opts=opts)
+    from kae.route.constraints import setting
+    if int(setting("barrier_split", board_path, opts)) >= 1:
+        # a board split by voids or all-layer keepouts: each region placed on its own (kae.place.barriers)
+        from . import barriers
+        split = barriers.true_split(board)
+        if split is not None:
+            kw2 = {k: v for k, v in kw.items() if k not in ("seed", "log")}
+            return barriers.place_split(place, board, split, seed=seed, time_s=time_s, log=log, verify=verify, **kw2)
     mode = resolve_severity(board, board_path, opts)
     if mode != LADDER:
         return _place_rung(board, time_s=time_s, brief=brief, severity=mode, **kw)
@@ -816,6 +824,11 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
 
     if zone_rep is not None:
         rep["zones_seed"] = _zone_summary(zonesmod.report(P, seed_state, zone_rep))
+    # nets the seed left across a void or an all-layer keepout pull harder in the annealer (kae.place.barriers)
+    from . import barriers as barriersmod
+    w_bar = float(setting("barrier_net_weight", board_path, opts))
+    if w_bar > 1.0:
+        rep["barrier_reweight"] = barriersmod.reweight_crossing(P, seed_state, w_bar)
     # ---- anneal
     final = seed_state
     if anneal:
@@ -991,6 +1004,7 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
     body_hazards(rep, P, st)
     if zone_rep is not None:
         rep["zones"] = zonesmod.report(P, st, zone_rep)
+    rep["barrier_crossings"] = barriersmod.crossings(P, st)
     rep["hpwl"] = round(st.hpwl(), 2)
     rep["hpwl_signal"] = round(st.hpwl(signal_only=True), 2)
     res = Result(poses={}, report=rep, state=st, problem=P, terms=report_terms, order=order, brief=brief)
