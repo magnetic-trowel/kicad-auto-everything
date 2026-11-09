@@ -98,7 +98,7 @@ def main():
     cpus = set(mine[:a.cpus])
     wd = Path(a.workdir)
     wd.mkdir(parents=True, exist_ok=True)
-    env = dict(os.environ, KAE_BUDGET="work", OMP_NUM_THREADS="1", KAE_WORKERS="1")
+    env = dict(os.environ, KAE_BUDGET="work", OMP_NUM_THREADS="1", KAE_WORKERS="1", PYTHONHASHSEED="0")
     res = {}
     for k in range(a.warmup):
         r, dt = run(cmd, wd / f"warmup{k}.kicad_pcb", cpus, 0, env, a.timeout)

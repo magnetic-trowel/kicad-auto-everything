@@ -18,7 +18,7 @@ def test_time_mode_is_the_wall_clock_and_only_counts():
 
 
 def test_work_mode_advances_by_charged_work_only():
-    c = budget.Clock("work", rates={"move": 1 / 64})
+    c = budget.Clock("work", rates={"move": 1 / 64, "poll": 0.0})
     d = c.deadline(1.0)
     n = 0
     while c.now() < d:
@@ -29,7 +29,7 @@ def test_work_mode_advances_by_charged_work_only():
 
 
 def test_work_mode_ignores_wall_time_until_the_ceiling(monkeypatch):
-    c = budget.Clock("work")
+    c = budget.Clock("work", rates={"poll": 0.0})
     t = [100.0]
     monkeypatch.setattr(budget.time, "monotonic", lambda: t[0])
     c.t0 = 100.0
@@ -47,3 +47,12 @@ def test_mode_from_environment(monkeypatch):
     monkeypatch.setenv("KAE_BUDGET", "fast")
     with pytest.raises(ValueError):
         budget.Clock()
+
+
+def test_a_loop_that_only_polls_ends_after_a_counted_number_of_checks():
+    c = budget.Clock("work", rates={"poll": 1 / 16})
+    d = c.deadline(1.0)                  # the check in deadline() itself counts
+    n = 0
+    while c.now() < d:
+        n += 1
+    assert n == 15

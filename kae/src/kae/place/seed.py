@@ -17,6 +17,7 @@
 """
 from __future__ import annotations
 
+from kae.budget import now as clock_now
 import math
 
 import numpy as np
@@ -336,7 +337,7 @@ def regional_refine(P, st, macros, net_w, time_s, workers=1, seed=0, log=None, m
     import time as _time
     from . import clusters
     from .state import grid_violations
-    t0 = _time.monotonic()
+    t0 = clock_now()
     g = P.g
     items, anchors, owner = [], [], {}
     for mac in macros or []:
@@ -380,7 +381,7 @@ def regional_refine(P, st, macros, net_w, time_s, workers=1, seed=0, log=None, m
     m = int(math.ceil(margin_mm / g))
     rep = dict(regions=len(regions), solved=0, hpwl_before=round(st.hpwl(), 2))
     for ids in regions:
-        if _time.monotonic() - t0 > time_s:
+        if clock_now() - t0 > time_s:
             break
         mem = {i for o in ids for i in items[o].members}
         rects = [r for i in mem for (_, r, _) in st.grid_rects(i)]
@@ -423,7 +424,7 @@ def regional_refine(P, st, macros, net_w, time_s, workers=1, seed=0, log=None, m
             if len(pins) + len(fixed) >= 2:
                 nets.append((w, pins, fixed))
         model = cpsat.Model(P, its, obstacles, hpwl_nets=nets, w_disp=0.05, w_rot=0.0, w_wl=1.0)
-        sol = model.solve(min(per, max(0.5, time_s - (_time.monotonic() - t0))), workers=workers, seed=seed)
+        sol = model.solve(min(per, max(0.5, time_s - (clock_now() - t0))), workers=workers, seed=seed)
         if sol is None:
             continue
         before = st.copy()
@@ -436,7 +437,7 @@ def regional_refine(P, st, macros, net_w, time_s, workers=1, seed=0, log=None, m
             continue
         rep["solved"] += 1
     rep["hpwl_after"] = round(st.hpwl(), 2)
-    rep["seconds"] = round(_time.monotonic() - t0, 2)
+    rep["seconds"] = round(clock_now() - t0, 2)
     if log:
         log(f"regional floorplan: {rep['solved']}/{rep['regions']} regions, HPWL {rep['hpwl_before']} -> "
             f"{rep['hpwl_after']} ({rep['seconds']}s)")

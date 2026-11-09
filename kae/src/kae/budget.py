@@ -20,8 +20,8 @@ Work mode: KAE_BUDGET=work (or `set_mode("work")`). `now()` is the charged nomin
 nothing else, so a deadline means the same work on any host. Wall time enters only as a safety
 ceiling (`set_ceiling`, CEILING_FACTOR x the run's budget): past it `now()` is infinite, every
 deadline has passed, stages wind down, and the report says `ceiling_hit` (the run has failed: a
-stage did work it did not charge). A stage that loops on a deadline must charge, or it ends only at
-the ceiling.
+stage did work it did not charge). Every deadline check charges a small fixed amount ("poll"), so a loop that
+only polls still ends, after a counted number of checks.
 """
 from __future__ import annotations
 
@@ -34,7 +34,11 @@ from collections import defaultdict
 # nominal seconds per unit of counted work, from an idle reference host (calibrate.py); a kind
 # missing here is charged at 0 and counted only
 RATES = {
-    "anneal_move": 0.0,         # one proposed annealer move (set by calibration)
+    "poll": 1e-3,               # one deadline check: a loop that only polls still ends, after a counted
+                                # number of checks (exact-repair and search loops poll once per candidate)
+    "exact": 5e-3,              # one deadline check in the exact-repair loops (a candidate's polygon checks)
+    "anneal_move": 2e-6,        # one compiled annealer move
+    "anneal_move_py": 5e-5,     # one Python-priced annealer move (physics terms, macros)
     "cpsat_dtime": 1.0,         # CP-SAT deterministic time unit (OR-tools' own ~1 s on a reference core)
     "seconds": 1.0,             # work already measured in nominal seconds by the caller
 }
@@ -68,12 +72,13 @@ class Clock:
     def wall(self):
         return time.monotonic() - self.t0
 
-    def now(self):
+    def now(self, kind="poll"):
         """time.monotonic() (time mode), or the charged nominal seconds (work mode; infinite past the
-        wall ceiling). Only differences of now() mean anything, so every deadline in a process must
-        come from now(), never from time.monotonic()."""
+        wall ceiling), after charging one `kind` check. Only differences of now() mean anything, so
+        every deadline in a process must come from now(), never from time.monotonic()."""
         if self.mode == "time":
             return time.monotonic()
+        self.charge(kind)
         if self.ceiling is not None and self.wall() > self.ceiling:
             self.ceiling_hit = True
             return math.inf
@@ -120,8 +125,29 @@ def set_ceiling(budget_s):
     clock().ceiling = CEILING_FACTOR * float(budget_s)
 
 
-def now():
-    return clock().now()
+def now(kind="poll"):
+    return clock().now(kind)
+
+
+def cpu_now():
+    """A stage's own CPU clock: time.process_time() (time mode), the charged work (work mode)."""
+    return clock().spent if work_mode() else time.process_time()
+
+
+def cpsat_limit(params, time_s):
+    """Bound a CP-SAT solve by `time_s` budget seconds: wall time (time mode), or the solver's own
+    deterministic time with deterministic parallel search (work mode)."""
+    if work_mode():
+        params.max_deterministic_time = max(0.05, float(time_s))
+        params.max_time_in_seconds = max(600.0, CEILING_FACTOR * float(time_s))
+        params.num_workers = 1                # one worker: CP-SAT is repeatable only so (interleave_search was not)
+    else:
+        params.max_time_in_seconds = max(0.05, float(time_s))
+
+
+def cpsat_charge(solver):
+    """Charge a finished CP-SAT solve's deterministic time."""
+    charge("cpsat_dtime", float(solver.ResponseProto().deterministic_time))
 
 
 def charge(kind, units=1.0):

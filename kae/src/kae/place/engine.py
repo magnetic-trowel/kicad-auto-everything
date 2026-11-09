@@ -23,6 +23,8 @@ Aggressor-loop members, whose Terms.delta is the costliest, are sampled at half 
 """
 from __future__ import annotations
 
+from kae.budget import charge, cpu_now, work_mode
+from kae.budget import now as clock_now
 import math
 import random
 import time
@@ -1476,7 +1478,7 @@ class FastAnnealer:
             t0 = time.perf_counter()
             d_phys = self.terms.delta(self.poses, moved_u, {u: newp[u] for u in moved_u})
             dt = time.perf_counter() - t0
-            if len(S) == 1:
+            if len(S) == 1 and not work_mode():     # a measured time would steer the search by host speed
                 i = S[0]
                 self.dt[i] = dt if i not in self.dt else 0.8 * self.dt[i] + 0.2 * dt
         Sa = np.array(S, np.int64)
@@ -1512,7 +1514,7 @@ class FastAnnealer:
             return self.report(0.0)
         N = max_moves or moves_per_part * n
         adaptive = max_moves is None
-        t0 = time.process_time()
+        t0 = cpu_now()
         r0 = max(2, int(0.25 * self.ann._span()))
         ups = np.zeros(400)
         m = 0
@@ -1539,17 +1541,17 @@ class FastAnnealer:
         done = 0
         next_log = log_every
         best = None
-        w0 = time.monotonic()
+        w0 = clock_now()
         wall = (deadline - w0) if deadline is not None else None
         self.ended = "moves"
         while done < N:
             # cool on whichever runs out first: planned moves, CPU budget or wall time, so a
             # run cut short by its budget still ends cold (not at a random hot state)
             frac = done / N
-            el = time.process_time() - t0
+            el = cpu_now() - t0
             tf = el / cpu_s if cpu_s > 0 else 0.0
             if wall:
-                tf = max(tf, (time.monotonic() - w0) / wall)
+                tf = max(tf, (clock_now() - w0) / wall)
             if tf > frac + 0.02:          # only when a budget binds (a seeded run stays repeatable)
                 frac = tf
                 self.ended = "budget"
@@ -1562,8 +1564,10 @@ class FastAnnealer:
             nf = int(round(batch * share_fast))
             if nf and len(self.fast):
                 run_batch(self.E, self.fast, self.swap_ptr, self.swap_ids, nf, T, lam, r, fstats)
+                charge("anneal_move", nf)
                 if self.E.ip[I_OVERFLOW]:
                     self._rebuild()
+            charge("anneal_move_py", batch - nf if py_moves else 0)
             for _ in range(batch - nf if py_moves else 0):
                 mv = self._propose_python(r)
                 if mv is None:
@@ -1571,7 +1575,7 @@ class FastAnnealer:
                 self._try_python(mv[0], mv[1], T, lam, mv[2])
             done += batch
             if adaptive and done == 4 * batch:
-                el = time.process_time() - t0
+                el = cpu_now() - t0
                 if el > 0:
                     N = int(max(N, min(max_per_part * n, 0.85 * (done / el) * cpu_s)))
             if self.leg_total == 0:
@@ -1589,6 +1593,8 @@ class FastAnnealer:
                 nf = int(round(batch * share_fast))
                 if nf and len(self.fast):
                     run_batch(self.E, self.fast, self.swap_ptr, self.swap_ids, nf, T1, self.lam1, 1, fstats)
+                    charge("anneal_move", nf)
+                charge("anneal_move_py", min(200, batch - nf) if py_moves else 0)
                 for _ in range(min(200, batch - nf) if py_moves else 0):
                     mv = self._propose_python(1)
                     if mv is not None:
@@ -1602,7 +1608,7 @@ class FastAnnealer:
         self.stats["accepted"] += int(fstats[1] + fstats[3] + fstats[5])
         self.final_lam = self.lam0 * (self.lam1 / self.lam0) ** min(1.0, done / N)
         self.best_legal = best
-        return self.report(time.process_time() - t0, planned=N, done=done)
+        return self.report(cpu_now() - t0, planned=N, done=done)
 
     def _rebuild(self):
         """Hash bucket overflow: rebuild the engine from the current state with room to spare."""
