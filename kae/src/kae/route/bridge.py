@@ -140,8 +140,6 @@ DEFAULT_OPTS = dict(
     wire_type="route",       # how unlocked pre-routes go to Freerouting (translate.set_wire_types):
                              # "route" (KiCad's, fixed walls), "shove_fixed", "normal" (both rippable)
     wire_scope="all",        # "pairs": only the nets of the pairs routed first get wire_type
-    unlock_imported=False,   # after Freerouting, unlock the wires it returned locked ((type protect) walls
-                             # imported locked): the repair rounds and last mile may then rip escape stubs
     pairs_stage="before_escapes",  # "after_escapes": pairs first run after the plane escapes
     pairs_own_budget=False,  # the pair router's time is not taken from the rest of the budget
     pairs_s=180.0,           # with pairs: seconds for the pair router at most (a quarter of the budget at most)
@@ -331,13 +329,6 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
         # the input's locked tracks and vias (pre-routes): exported as fixed wiring, never
         # returned by Freerouting, kept as they are by KiCad's import; the repair loop never
         # rips, widens or unlocks them
-        if opts.get("unlock_imported"):
-            # walls Freerouting returned as (type protect): KiCad locked them, but they are not the input's
-            # pre-routes, so the repair rounds and last mile may rip them
-            from .critical_write import routing
-            kept = {r["uuid"] for r in routing(input_path) if r.get("locked")}
-            routed = [dict(r, locked=bool(r.get("locked") and r["uuid"] in kept)) for r in routed]
-            pcbnew_io.edit_routing(output_path, output_path, unlock_all=True, keep_locked=sorted(kept))
         opts["fixed_uuids"] = sorted(r["uuid"] for r in routed if r.get("locked"))
         report["fixed_items"] = len(opts["fixed_uuids"])
 
