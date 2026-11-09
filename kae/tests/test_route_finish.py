@@ -419,3 +419,33 @@ def test_noisy_check_bound_is_the_inputs_observed_maximum(tmp_path):
     run, calls = _fake_drc(rules)
     g = J.gate(src, src, jr, tmp_path / "g", drc_run=run, log=lambda *a: None)
     assert g["noise"] == ["solder_mask_bridge"] and g["kept"] == set(jr.by_id)
+
+
+def test_gate_keeps_the_input_when_its_drc_times_out(tmp_path):
+    from kae.route import drc
+    jr, (t0, *_rest) = _chain()
+    src = tmp_path / "in" / "board.kicad_pcb"
+    src.parent.mkdir()
+    src.write_text(t0)
+
+    def run(*a, **k):
+        raise drc.DrcError("DRC timed out after 10s")
+    g = J.gate(src, src, jr, tmp_path / "g", drc_run=run, log=lambda *a: None)
+    assert g["kept"] == set() and g["text"] == jr.input and g["time_limited"] and "timed out" in g["gate_error"]
+
+
+def test_gate_keeps_what_was_verified_when_a_later_drc_times_out(tmp_path):
+    from kae.route import drc
+    jr, (t0, *_rest) = _chain()
+    src = tmp_path / "in" / "board.kicad_pcb"
+    src.parent.mkdir()
+    src.write_text(t0)
+    inner, calls = _fake_drc(lambda text, k: [("clearance", [("V", 2.5, -0.3)])] if '"V"' in text else [])
+
+    def run(board, out, **k):                     # input, full, noise run, attributed board, then time is up
+        if len(calls) >= 4:
+            raise drc.DrcError("DRC timed out after 10s")
+        return inner(board, out, **k)
+    g = J.gate(src, src, jr, tmp_path / "g", drc_run=run, log=lambda *a: None)
+    assert g["kept"] == {"tails:a", "taut:net:N1", "power:B"} and g["gate_error"] and g["time_limited"]
+    assert set(J.items(g["text"])) == {"A2", "B"}

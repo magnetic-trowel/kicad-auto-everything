@@ -588,8 +588,8 @@ def split_by_culprits(jr, ids, pts, margin):
     return far, near
 
 
-def gate(input_board, project_board, jr, workdir, base_report=None, budget=24, deadline=None, log=print,
-         drc_run=None, recover=16, known_noise=()):
+def _gate(state, input_board, project_board, jr, workdir, base_report=None, budget=24, deadline=None, log=print,
+          drc_run=None, recover=16, known_noise=()):
     """Judge the journal's entries with KiCad's DRC and keep the largest set found no worse than the
     input. `base_report`: a DRC report of the input the caller already has (else one is run).
     `recover`: DRC runs at most for adding back what attribution reverted (0: none). `known_noise`:
@@ -601,6 +601,7 @@ def gate(input_board, project_board, jr, workdir, base_report=None, budget=24, d
     wd = Path(workdir)
     wd.mkdir(parents=True, exist_ok=True)
     runs = [0]          # KiCad DRC runs (input runs included)
+    state["runs"] = runs
     probes = [0]        # of them, boards with entries (the budget)
     rounds = []
 
@@ -631,6 +632,7 @@ def gate(input_board, project_board, jr, workdir, base_report=None, budget=24, d
     res["capped"] = capped
     noise = sorted(set(capped) | set(known_noise))
     best = dict(kept=set(), rep=base[0])
+    state.update(best=best, res=res, runs=runs, probes=probes)
 
     def judged(kept, tag):
         probes[0] += 1
@@ -777,6 +779,7 @@ def gate(input_board, project_board, jr, workdir, base_report=None, budget=24, d
         culprit_pts = [p for _t, its in new0 for _u, p in its if p]
     if not worse:
         best = dict(kept=set(allids), rep=rep)
+        state["best"] = best
     else:
         # attribution: the entries the new violations name, else near them, and their dependants
         kept = set(allids)
@@ -797,21 +800,48 @@ def gate(input_board, project_board, jr, workdir, base_report=None, budget=24, d
             rep, worse = judged(kept, f"attr{near}")
             if not worse:
                 best = dict(kept=set(kept), rep=rep)
+                state["best"] = best
                 break
         if worse:
             # ddmin from the input, breadth first: every stage, then the failing stages' halves by net, then a
             # failing net's entries by halves (a failing stage does not use up the budget of the later ones)
             best = addback(set(), set(allids), budget, "dd") or best
+            state["best"] = best
         elif recover and best["kept"] != allids:
             # attribution reverts whole neighbourhoods: re-admit them, those clear of every item the full
             # output's new violations name first, then the rest, each batch split by what KiCad names
             far, near_ = split_by_culprits(jr, allids - best["kept"], culprit_pts, jr.margin)
             res["recovery"] = dict(reverted=len(allids - best["kept"]), far=len(far), near=len(near_))
             best = readmit(set(best["kept"]), [far, near_], min(budget, probes[0] + recover), "rec") or best
+            state["best"] = best
     kept = best["kept"]
     res.update(kept=kept, text=jr.text(kept) if kept else jr.input, drc_out=drc.summary(best["rep"]), report=best["rep"], probes=probes[0],
                drc_runs=runs[0], seconds=round(time.monotonic() - t0, 1))
     return res
+
+
+def gate(input_board, project_board, jr, workdir, base_report=None, budget=24, deadline=None, log=print,
+         drc_run=None, recover=16, known_noise=()):
+    """_gate, which never raises for a DRC that fails or runs out of time: the board is then the
+    largest set KiCad has already found no worse (the input when none), and `gate_error` says why, so
+    a late DRC costs the unverified changes and never the routed board."""
+    from . import drc
+    state = {}
+    try:
+        return _gate(state, input_board, project_board, jr, workdir, base_report=base_report, budget=budget,
+                     deadline=deadline, log=log, drc_run=drc_run, recover=recover, known_noise=known_noise)
+    except drc.DrcError as e:
+        err = f"{type(e).__name__}: {e}"[:300]
+        log(f"[finish-gate] stopped: {err}")
+        runs = state.get("runs") or [0]
+        res, best = state.get("res"), state.get("best")
+        if res is None or best is None:      # not even the input's DRC: nothing can be verified
+            return dict(kept=set(), text=jr.input, drc_in=None, drc_out=None, drc_in_reused=False, noise=[], rounds=[],
+                        drc_runs=runs[0], report=None, probes=0, time_limited=True, gate_error=err)
+        kept = best["kept"]
+        res.update(kept=kept, text=jr.text(kept) if kept else jr.input, drc_out=drc.summary(best["rep"]),
+                   report=best["rep"], probes=state["probes"][0], drc_runs=runs[0], time_limited=True, gate_error=err)
+        return res
 
 
 def write(text, dst, project_board):

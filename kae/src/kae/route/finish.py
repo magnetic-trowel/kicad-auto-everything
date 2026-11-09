@@ -237,6 +237,7 @@ def _run(inp, out, project, o, workdir, time_s, base_report, drc_s, log):
         # re-plan: entries reverted with a change they built on lose their copper, where the chained passes
         # would have planned the later stage around the gated earlier one. The stages after the earliest one
         # with reverts run again on the gated board, behind a second gate whose input DRC is the first's last
+        g2 = None
         ran = rep["parts"]["ran"]
         rev_st = [p for p in ran if any(e.stage == p and e.id not in kept for e in jr.entries)]
         later = ran[ran.index(rev_st[0]) + 1:] if rev_st else []
@@ -292,6 +293,17 @@ def _run(inp, out, project, o, workdir, time_s, base_report, drc_s, log):
             rep["hazards"].append(H.make("finish_part_failed", "warn", "data", f"Finish part '{part}' failed: {why}",
                                          objects=[part], evidence=dict(error=why),
                                          fix="Report the board; the other parts and the gate ran without it."))
+        for gg in (g, g2):
+            if gg is None:
+                continue
+            if gg.get("gate_error"):
+                rep["gate_error"] = gg["gate_error"]
+                rep["hazards"].append(H.make(
+                    "finish_failed", "warn", "data",
+                    f"The finish gate could not finish ({gg['gate_error']}); the board has only the changes KiCad's "
+                    f"DRC had already verified ({len(gg['kept'])} entries).",
+                    objects=["finish"], evidence=dict(error=gg["gate_error"], kept=len(gg["kept"]), drc_runs=gg["drc_runs"]),
+                    fix="Give the finish stage more time; unverified changes were dropped, the routed copper is intact."))
         if g["noise"]:
             rep["hazards"].append(H.make(
                 "drc_noisy_checks", "info", "data",
