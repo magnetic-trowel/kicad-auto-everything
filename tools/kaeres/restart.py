@@ -858,6 +858,7 @@ def main():
     shutil.copy2(best["out"], out)
     log(f"kept #{best['k']} (seed {best['seed']}): {best['rank']}")
     carry_report(carry or best["out"].parent, wd)
+    origin_report(best, done, wd)
     return 0
 
 
@@ -883,6 +884,20 @@ def carry_report(attempt_dir, wd):
                 for s in b.get("summary") or []:
                     log(f"blocked: {s}")
             return
+
+
+def origin_report(best, done, wd):
+    """When the kept board came from a resumed attempt or a final pass, restarts/report.json is only
+    that router's report: the report of the fresh attempt it descends from (a joint loop's iterations,
+    windows and stop reason) goes to restarts/report-origin.json."""
+    by_k, cur, seen = {d["k"]: d for d in done}, best, set()
+    while cur.get("resumed_from") in by_k and cur["k"] not in seen:
+        seen.add(cur["k"])
+        cur = by_k[cur["resumed_from"]]
+    if cur is not best:
+        rep = _last_json(cur["out"].parent / "log")
+        if rep:
+            (wd / "report-origin.json").write_text(json.dumps(dict(rep, origin_attempt=cur["k"]), indent=1))
 
 
 if __name__ == "__main__":

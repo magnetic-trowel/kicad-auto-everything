@@ -209,3 +209,16 @@ def test_older_spec_methods_prepare_with_the_experiments_harness_from_spec_10(mo
     assert kaeres.prep_harness("h10b", "h10") == "h10b"
     assert kaeres.prep_harness("h8", "h9") == "h8"  # before spec 10 a method keeps its own tasks
     assert kaeres.prep_harness("h9", "unknown") == "h9"
+
+
+def test_restart_reports_are_kept_with_the_run(tmp_path):
+    """J13: the kept attempt's report survives the deleted work directory; kaebench keeps it as an artifact."""
+    art, tmp = tmp_path / "artifacts", tmp_path / "run"
+    art.mkdir()
+    tmp.mkdir()
+    (art / "summary.json").write_text('{"attempt_log": []}')
+    (art / "report.json").write_text('{"iterations": []}')
+    kaeres._keep_restart_files(art, tmp)
+    assert (tmp / "restarts.json").read_text() == '{"attempt_log": []}'
+    assert (tmp / "restart-report.json").read_text() == '{"iterations": []}'
+    assert not (tmp / "restart-report-origin.json").exists()
