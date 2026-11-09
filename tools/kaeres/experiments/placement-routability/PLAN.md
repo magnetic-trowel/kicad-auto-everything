@@ -70,3 +70,9 @@ history than in cong30 with the same test on k=1 and the 47 boards, and cong30 r
 ## Cost
 `placement-routability`: about 19 h wall per arm-seed on the 47 boards (single process), 5 arms x 3 seeds, about 370 CPU-h.
 `place-history`: 3 arms at 4 parallel, about 225 CPU-h. Information, not a cap.
+
+## Addendum, before the full submission (2026-11-09; no result of the 47 boards seen)
+Smokes outside the 47: placement-only on metro-m7 and vspeed (2 seeds; the term cuts crossings about 3x on metro-m7, 5 mm no better than 2 mm, so
+one weight, 2 mm); the kaeres job path on terjeio dummy (all arms, runs scored); two sequential joint runs on vspeed for the history. That last
+smoke found the loop never wrote the history (kae.joint.cli passes the loop only its own keys); fixed before any run of the 47, so the history
+arm is the code as fixed.
