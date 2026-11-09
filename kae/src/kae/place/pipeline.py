@@ -66,7 +66,6 @@ class Result:
 
 SA_U_SAT = 3.0   # see place(): utilization saturates beyond this in the annealer's terms
 SILK_W = 1.0     # the annealer's silkscreen term (silk_on projects): overlap / mean part area
-CHAN_W = 0.0     # the annealer's routing-channel term (pad halos overlapping / mean part area)
 
 
 def _default_workers():
@@ -855,7 +854,7 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
         # soft overlaps: silkscreen where the project makes it an error (on KiCad's glyphs) and
         # routing channels between parts' pads (kae.place.exact.channel_grid)
         w_silk = float(kw.pop("w_silk", SILK_W) or 0.0)
-        w_chan = float(kw.pop("w_chan", CHAN_W) or 0.0)
+        w_chan = float(kw.pop("w_chan", setting("place_w_chan", board_path, opts)) or 0.0)
         grids = []
         if exactmod.silk_on(P) and w_silk > 0:
             if "silk_text" not in rep:

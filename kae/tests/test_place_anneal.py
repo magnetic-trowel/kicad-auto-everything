@@ -86,3 +86,10 @@ def test_make_annealer_keeps_congestion_with_a_blockage_beta():
     b, P, st = _legal_state()
     a = make_annealer(P, st.copy(), terms=None, seed=1, w_phys=0.0, cong_args=dict(beta=0.5))
     assert type(a) is Annealer and a.cong is not None and a.cong.beta == 0.5
+
+
+def test_channel_term_setting_is_reachable_from_joint_set():
+    from kae.joint.cli import _known_key
+    from kae.route.constraints import DEFAULTS
+    assert DEFAULTS["place_w_chan"] == 0.0
+    assert _known_key("place_w_chan")
