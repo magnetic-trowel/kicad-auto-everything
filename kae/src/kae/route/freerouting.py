@@ -188,6 +188,11 @@ GRACE_S = 45.0
 SLOT_WARN = 0.10     # a slot wait above this share of the budget is logged
 
 
+def _pins(dsn):
+    """Pins on the nets of a Specctra file: a pass's time grows as its square."""
+    return max(1, sum(len(m.split()) for m in re.findall(r"\(pins\s+([^)]*)\)", Path(dsn).read_text(errors="replace"))))
+
+
 PASS_DONE = re.compile(r"Auto-routing pass #\d+ on board .* was completed")
 
 
@@ -196,17 +201,19 @@ def route(dsn, ses, workdir, *, passes=0, settings=None, budget_s=600.0, margin_
     """_route (below). In work mode (kae.budget) the budget is a pass cap, budget_s / the nominal
     seconds of one pass over this .dsn: Freerouting is deterministic while its job timeout does not
     fire, so the timeout is only the run's wall ceiling, and the passes done are charged."""
+    size = _pins(dsn) ** 2
     if not budget.work_mode():
-        return _route(dsn, ses, workdir, passes=passes, settings=settings, budget_s=budget_s, margin_s=margin_s,
-                      hard_s=hard_s, log_path=log_path)
-    mb = max(1e-3, Path(dsn).stat().st_size / 1e6)
-    cap = max(1, int(budget_s / max(1e-9, budget.clock().rates["fr_pass_mb"] * mb)))
+        run = _route(dsn, ses, workdir, passes=passes, settings=settings, budget_s=budget_s, margin_s=margin_s,
+                     hard_s=hard_s, log_path=log_path)
+        budget.charge("fr_pass_pin2", max(1, len(PASS_DONE.findall(run.log or ""))) * size)    # counted only
+        return run
+    cap = max(1, int(budget_s / max(1e-9, budget.clock().rates["fr_pass_pin2"] * size)))
     passes = min(passes, cap) if passes else cap
     wall = budget.wall_timeout(budget_s)
     run = _route(dsn, ses, workdir, passes=passes, settings=settings, budget_s=wall, margin_s=30.0,
                  hard_s=wall + GRACE_S, log_path=log_path)
     done = len(PASS_DONE.findall(run.log or ""))
-    budget.charge("fr_pass_mb", max(1, done) * mb)
+    budget.charge("fr_pass_pin2", max(1, done) * size)
     run.report["passes_done"], run.report["passes_cap"] = done, passes
     return run
 

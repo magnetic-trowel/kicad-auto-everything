@@ -1567,12 +1567,12 @@ class FastAnnealer:
                 charge("anneal_move", nf)
                 if self.E.ip[I_OVERFLOW]:
                     self._rebuild()
-            charge("anneal_move_py", batch - nf if py_moves else 0)
             for _ in range(batch - nf if py_moves else 0):
                 mv = self._propose_python(r)
                 if mv is None:
                     continue
                 self._try_python(mv[0], mv[1], T, lam, mv[2])
+            charge("anneal_move_py", batch - nf if py_moves else 0)
             done += batch
             if adaptive and done == 4 * batch:
                 el = cpu_now() - t0

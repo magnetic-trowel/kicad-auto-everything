@@ -34,16 +34,19 @@ from collections import defaultdict
 # nominal seconds per unit of counted work, from an idle reference host (calibrate.py); a kind
 # missing here is charged at 0 and counted only
 RATES = {
-    "poll": 1e-3,               # one deadline check: a loop that only polls still ends, after a counted
-                                # number of checks (exact-repair and search loops poll once per candidate)
+    # calibrated with tools/research/budget/calibrate.py on three boards (65-328 pins; quiet host, 2026-11-08)
+    "poll": 1e-3,               # one deadline check; a loop that only polls still ends after a counted number
+                                # of checks. Kept below its measured 19 ms, which is mostly fixed overhead
+                                # (loading the board) that a budget does not scale
     "exact": 5e-3,              # one deadline check in the exact-repair loops (a candidate's polygon checks)
-    "anneal_move": 2e-6,        # one compiled annealer move
-    "anneal_move_py": 5e-5,     # one Python-priced annealer move (physics terms, macros)
-    "cpsat_dtime": 1.0,         # CP-SAT deterministic time unit (OR-tools' own ~1 s on a reference core)
+    "anneal_move": 1.74e-5,     # one compiled annealer move
+    "anneal_move_py": 1.36e-4,  # one Python-priced annealer move (physics terms, macros)
+    "cpsat_dtime": 4.0,         # one unit of CP-SAT deterministic time (measured 3.8-4.5 s)
+    "fr_pass_pin2": 9e-5,       # one Freerouting pass, per pin^2 of the board (7-9.8e-5 over the three boards;
+                                # per MB of .dsn it varied 9x, and the largest board had a smaller .dsn)
+    "drc_mb": 4.27,             # one KiCad DRC (with zone refill) per MB of board file
+    "lastmile_try": 0.054,      # one last-mile path search (exact grid, one connection)
     "seconds": 1.0,             # work already measured in nominal seconds by the caller
-    "fr_pass_mb": 2.0,          # one Freerouting pass per MB of .dsn
-    "drc_mb": 1.0,              # one KiCad DRC (with zone refill) per MB of board file
-    "lastmile_try": 2e-2,       # one last-mile path search (exact grid, one connection)
 }
 CEILING_FACTOR = 4.0    # a run past CEILING_FACTOR x its nominal budget in wall time has failed
 
@@ -171,7 +174,7 @@ def cpsat_limit(params, time_s):
     """Bound a CP-SAT solve by `time_s` budget seconds: wall time (time mode), or the solver's own
     deterministic time with deterministic parallel search (work mode)."""
     if work_mode():
-        params.max_deterministic_time = max(0.05, float(time_s))
+        params.max_deterministic_time = max(0.05, float(time_s) / clock().rates["cpsat_dtime"])
         params.max_time_in_seconds = max(600.0, CEILING_FACTOR * float(time_s))
         params.num_workers = 1                # one worker: CP-SAT is repeatable only so (interleave_search was not)
     else:
