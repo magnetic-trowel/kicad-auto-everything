@@ -116,6 +116,7 @@ def params(bd, dcp, P, intent=None):
             out.append(Param(f"heat:sink{k}", "h_W_m2K", *_rng(hs["h_W_m2K"]), "W/m^2/K", "intent",
                              f"extra surface cooling over a region of the {hs.get('side', 'top')} face ({why})"))
     hot = {ld["ref"] for ld in dcp.loads if bd.part_kind.get(ld["ref"], ("",))[0] != "connector"}
+    hot |= {sl["ref"] for sl in getattr(dcp, "self_loads", [])}
     for f in dcp.feeds.values():
         hot |= {f["cell"]["ctrl"], f["cell"]["rect"]} if f["kind"] == "cell" else ({f["ref"]} if f["kind"] in ("linear", "switching") else set())
     for ref in sorted(r for r in hot if r):
@@ -158,7 +159,11 @@ def part_heat(bd, dcp, cv, val, inj, ac_parts=None, losses=None):
     for ld, x in zip(dcp.loads, xs):
         pk = bd.part_kind.get(ld["ref"], ("", None))
         if pk[0] != "connector" and (pk[1] if len(pk) > 1 else None) not in PASS_ON:
-            add(ld["ref"], x * (dcp.volts.get(ld["rail"]) or 0.0), loss=False)
+            # a rail of unknown voltage at the DC band's 3.3 V (kae.excite.dc.observe): at 0 V its loads made no heat
+            add(ld["ref"], x * (dcp.volts.get(ld["rail"]) or 3.3), loss=False)
+    for sl in getattr(dcp, "self_loads", []):
+        # a part powered from off the board (its own USB): its own draw at its rail's voltage, all heat
+        add(sl["ref"], cv.get(sl["key"], 0.0) * (dcp.volts.get(sl["rail"]) or 3.3), loss=False)
     for r, f in dcp.feeds.items():
         if f["kind"] == "cell":
             c = f["cell"]
@@ -367,9 +372,13 @@ def evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, tot, 
     injs = [{q: a for q, a in DC.injections(dcp, cv).items() if q in m.terminals} for cv in cvs]
     from .evaluate import _solver_line, _solver_row
     t_band = time.time()
-    res = ES.potentials_many(m, injs, 0.0, net=net_dc, op=op_dc, light=True,
-                             system=system.pop("sys", None) if isinstance(system, dict) else system)
-    log("solver: " + _solver_line(_solver_row(0.0, res, time.time() - t_band, band="heat")))
+    if any(injs):
+        res = ES.potentials_many(m, injs, 0.0, net=net_dc, op=op_dc, light=True,
+                                 system=system.pop("sys", None) if isinstance(system, dict) else system)
+        log("solver: " + _solver_line(_solver_row(0.0, res, time.time() - t_band, band="heat")))
+    else:
+        # no DC flow in the copper (only self-powered parts dissipate): no copper heat, nothing to factor
+        res = [({}, dict(net=net_dc, x=np.zeros(net_dc.n_br)))] * len(injs)
     if any(V is None for V, _ in res):
         notes.append("thermal: the DC flow does not close in the copper; temperatures not computed")
         return []

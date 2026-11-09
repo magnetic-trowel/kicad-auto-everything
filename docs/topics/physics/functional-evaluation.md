@@ -91,4 +91,4 @@ Deployment: add `kae.sim` to kaeres as a new evaluator beside the legacy total, 
 
 - In-repo: kaeres index, evaluator `c3e877f84ac4` (kae `dfe6260`, `physics_board.py` `cd4ab2e`), 2026-10-27; `kae.sim` runs, 2026-10-28.
 - NXP UM10204, I2C-bus specification (rise-time limits, pin capacitance).
-- Related: [physics-ir](physics-ir.md), [comprehension](comprehension.md), [schematic-to-physics](schematic-to-physics.md), [fields-emi-budget](fields-emi-budget.md).
+- Related: [physics-set-coverage](physics-set-coverage.md), [physics-ir](physics-ir.md), [comprehension](comprehension.md), [schematic-to-physics](schematic-to-physics.md), [fields-emi-budget](fields-emi-budget.md).
