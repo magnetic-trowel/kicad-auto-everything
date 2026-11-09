@@ -26,8 +26,10 @@ Everything here is pure Python (no KiCad), so it is unit-tested directly.
 from __future__ import annotations
 
 import math
+import os
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 
@@ -235,6 +237,43 @@ class CongestionHistory:
         add = scale * over * near
         self.h += add
         return float(add.sum())
+
+    def save(self, path):
+        """Write the history to `path` (.npz, atomically: another attempt may be reading): the
+        restart portfolio's attempts pass it to each other (kae.joint.stages, place_history)."""
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f".tmp-{os.getpid()}-{path.name}")
+        np.savez_compressed(tmp, h=self.h, meta=np.array([self.x0, self.y0, self.b]))
+        os.replace(tmp, path)
+
+    @classmethod
+    def merged(cls, files):
+        """The mean of saved histories (one per routed attempt): a corridor that failed in every
+        attempt reads as 1 amount, one that failed in one of four as a quarter. None when there
+        are no readable files; files on another grid (another board) are skipped."""
+        arrs, meta = [], None
+        for f in sorted(files):
+            try:
+                z = np.load(f)
+                h, m = z["h"], tuple(z["meta"].tolist())
+            except Exception:  # noqa: BLE001 - an attempt killed mid-write leaves a broken file: skip it
+                continue
+            if meta is None:
+                meta = (h.shape, m)
+            if (h.shape, m) == meta:
+                arrs.append(h)
+        if not arrs:
+            return None
+        hist = cls.__new__(cls)
+        hist.x0, hist.y0, hist.b = meta[1]
+        hist.nx, hist.ny = meta[0]
+        hist.h = np.mean(arrs, axis=0)
+        cx = hist.x0 + (np.arange(hist.nx) + 0.5) * hist.b
+        cy = hist.y0 + (np.arange(hist.ny) + 0.5) * hist.b
+        hist.cx, hist.cy = np.meshgrid(cx, cy, indexing="ij")
+        hist.attempts = len(arrs)
+        return hist
 
     def sample(self, x0, y0, b, nbx, nby):
         """History resampled onto another grid (bins of size b from (x0, y0)): the mean of

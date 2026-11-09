@@ -371,7 +371,7 @@ def _rung_summary(res, seconds):
 
 def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, log=None, anneal=True,
           edge_mate=False, anneal_args=None, angle_step=None, fixed=(), board_path=None, opts=None,
-          verify=None):
+          verify=None, cong_history=None):
     """Place the unlocked footprints of `board` within `time_s` seconds (resolve_severity picks
     the legality profile). The default, 'strict_then_level_c', places at 'strict' with body
     relaxation off, in LADDER_STRICT_SHARE of the time; when that leaves placement errors
@@ -389,7 +389,8 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     severity_ladder, and a severity_fallback hazard when the fallback ran."""
     log = log or (lambda *a, **k: None)
     kw = dict(seed=seed, physics=physics, workers=workers, log=log, anneal=anneal, edge_mate=edge_mate,
-              anneal_args=anneal_args, angle_step=angle_step, fixed=fixed, board_path=board_path, opts=opts)
+              anneal_args=anneal_args, angle_step=angle_step, fixed=fixed, board_path=board_path, opts=opts,
+              cong_history=cong_history)
     mode = resolve_severity(board, board_path, opts)
     if mode != LADDER:
         return _place_rung(board, time_s=time_s, brief=brief, severity=mode, **kw)
@@ -506,7 +507,7 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
 
 def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, log=None, anneal=True,
                 edge_mate=False, anneal_args=None, angle_step=None, fixed=(), board_path=None, opts=None,
-                severity=None, relax=None, hard_end=None, max_util=None):
+                severity=None, relax=None, hard_end=None, max_util=None, cong_history=None):
     """One placement at one legality profile (place() runs one or two of these). `severity`:
     'strict', 'level_c' or 'board' (None: _severity_mode); `relax`: a relax_bodies mode that
     overrides the setting (the strict rung of the severity ladder runs with 'off'). The ladder's
@@ -877,6 +878,14 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
             kw.setdefault("w_zone", 1.0)
             kw["zones"] = zone_tab
             rep["zone_term"] = dict(zone_tab.info, w_zone=kw["w_zone"])
+        if cong_history is not None:
+            # routing history as the placer's own congestion term (kae.joint.penalty.history_hook:
+            # a callable made for this Problem); only with w_cong > 0 does the annealer use it
+            hook = cong_history(P)
+            if hook is not None:
+                kw["cong_history"] = hook
+                rep["place_history"] = dict(w_cong=float(kw.get("w_cong", 0.0) or 0.0),
+                                            used=float(kw.get("w_cong", 0.0) or 0.0) > 0)
         ann = make_annealer(P, st.copy(), terms=terms, macros=[m for m in macros if not m.anchored], seed=seed,
                             log=log, **kw)
         if anneal_args:

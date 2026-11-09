@@ -33,7 +33,8 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .feedback import PartGeom
+from .feedback import CongestionHistory, PartGeom
+from .penalty import history_hook
 from .scorecard import PLACEMENT_TYPES, Scorecard
 
 
@@ -69,6 +70,7 @@ STAGE_KEYS = frozenset({
     "keep", "no_physics", "no_modules", "budget_s", "route_parallel", "first_last_mile", "first_blocked",
     # placer and module stage
     "writer", "edge_mate", "angle_step", "module_time", "window_module_time", "drop_modules_attempt",
+    "place_history", "place_history_scale",
     # window re-placement and rip-up
     "replace_time", "replace_margin", "cong_mult", "history_scale", "bump_mm", "legal_mm", "net_mult",
     "phys_mult", "big_pads", "max_cross",
@@ -137,6 +139,27 @@ class KaeStages:
         return list(out.values())
 
     # ------------------------------------------------------------------ place
+    def _place_history(self):
+        """place()'s cong_history factory (Problem -> annealer hook) from the failed corridors
+        earlier attempts saved in the `place_history` directory, or None. The hook pays only
+        with the placer's RUDY term on (place_w_cong > 0): kae.place.anneal adds it to the
+        congestion demand."""
+        d = self.opts.get("place_history")
+        if not d:
+            return None
+        files = sorted(Path(d).glob("h-*.npz"))
+        hist = CongestionHistory.merged(files)
+        if hist is None or not hist.h.any():
+            self.log(f"place history: nothing to read in {d} ({len(files)} files)")
+            return None
+        self.log(f"place history: {len(files)} attempts, peak {float(hist.h.max()):.2f}")
+        scale = float(self.opts.get("place_history_scale", 1.0))
+        report = self.place_history_report = dict(attempts=int(hist.attempts))
+
+        def factory(P):
+            return history_hook(P, hist, scale=scale, report=report)
+        return factory
+
     def place(self, seed, time_s):
         from kae.place.pipeline import place
         t0 = time.monotonic()
@@ -145,7 +168,8 @@ class KaeStages:
         self.edge_parts = {fp.uuid for fp in board.footprints if fp.edge_cuts}
         res = place(board, seed=seed, time_s=time_s, physics=not self.opts.get("no_physics"), workers=1,
                     log=lambda m: self.log(f"place: {m}"), edge_mate=bool(self.opts.get("edge_mate")),
-                    angle_step=self.opts.get("angle_step") or None, board_path=str(self.input), opts=self.opts)
+                    angle_step=self.opts.get("angle_step") or None, board_path=str(self.input), opts=self.opts,
+                    cong_history=self._place_history())
         out = self._path(0, "placed")
         if res.poses:
             self._write_poses(self.input, out, res.poses)
