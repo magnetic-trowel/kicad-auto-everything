@@ -28,7 +28,7 @@ whose bandit includes a `seed` kind) are separate; see the page.
 ## Boards
 `boards.txt`: 40 boards. All 21 merit boards in `route_demand.hard/extreme` where the bridge final
 (merge3-ab) left opens, plus 19 of `route_demand.hard/extreme` (usable_route_test, one per `repo_family`,
-fork 2e1125a-master leaves at least 3 opens in fr-baseline, sampled at random with seed 2611). No board that
+`fr-fork master` (06d2686) leaves at least 3 opens in fr-baseline, sampled at random with seed 2611). No board that
 everything routes clean. Tag `route_demand` is a heuristic: 19 of these are additionally selected by
 Freerouting leaving at least 3 opens, so a spot-check is built in.
 
