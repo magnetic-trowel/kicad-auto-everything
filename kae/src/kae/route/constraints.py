@@ -216,6 +216,9 @@ DEFAULTS = dict(
     place_untangle=0,              # placement: 1 runs kae.place.crossings.untangle after legalization (swaps of
                                    # equal parts and half turns that remove ratsnest crossings). Off until its A/B
                                    # (docs/research/placement/placement-routability-2611.md) says otherwise
+    place_w_xing=0.0,              # placement: mm of weighted HPWL one ratsnest crossing costs in the annealer
+                                   # (kae.place.crossings; 0 is off until its A/B, docs/research/placement/)
+    place_xing_from=0.25,          # placement: fraction of the anneal schedule after which the crossing term prices
     place_untangle_x_mm=2.0,       # placement: mm of weighted HPWL one removed crossing may cost in untangle
     place_margin=0.0,              # placement: routing room between movable parts, mm (Problem.set_margin);
                                    # negative = auto (Problem.auto_margin: 2 x (0.7 - utilization), 0..1 mm).

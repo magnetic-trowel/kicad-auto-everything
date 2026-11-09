@@ -74,7 +74,8 @@ class Annealer:
     def __init__(self, P, st, terms=None, macros=(), seed=0, w_wl=1.0, w_phys=1.0, w_disp=0.05,
                  w_cong=30.0, w_esc=0.3, lam0=1.0, lam1=40.0, wl_slack=0.15, wl_barrier=20.0, log=None,
                  cong_args=None, order=(), w_order=1.0, order_margin=0.5, subset=None, window=None,
-                 cong_history=None, labels=None, w_label=0.0, silk=None, w_silk=0.0, zones=None, w_zone=0.0):
+                 cong_history=None, labels=None, w_label=0.0, silk=None, w_silk=0.0, zones=None, w_zone=0.0,
+                 w_xing=0.0, xing_from=0.25):
         self.P = P
         self.st = st
         self.rng = random.Random(seed)
@@ -215,7 +216,16 @@ class Annealer:
         # the zones at its pose (the weights are in the table; w_zone scales it)
         self.zones = zones if (zones is not None and w_zone > 0) else None
         self.w = dict(wl=w_wl, phys=w_phys, disp=w_disp, cong=w_cong, esc=w_esc, order=w_order, label=w_label,
-                      silk=w_silk, zone=w_zone if self.zones is not None else 0.0)
+                      silk=w_silk, zone=w_zone if self.zones is not None else 0.0, xing=w_xing)
+        # ratsnest crossings (kae.place.crossings): `w_xing` mm of weighted HPWL per crossing, from
+        # the `xing_from` fraction of the schedule on (above that temperature parts are still
+        # wandering and the count means little; the trees are rebuilt when it starts)
+        self.xing_from = xing_from
+        self.xing_on = False
+        self.xing = None
+        if w_xing > 0:
+            from .crossings import Crossings
+            self.xing = Crossings(P, self)
         self.cong_args = cong_args
         # routability as a soft budget: free trade up to (1 + slack) x the seed HPWL, steep beyond
         self.wl_slack, self.wl_barrier = wl_slack, wl_barrier
@@ -479,6 +489,7 @@ class Annealer:
         silk_old = self._silk(S)
         zone_old = self._zone(S)
         cong_old = self.cong.local_cost(nets) if self.cong is not None else 0.0
+        xing_on = self.xing is not None and self.xing_on
         old = self._apply(S, newpos)
         newc = {j: self._net_cost(j) for j in nets}
         wl_new = sum(newc.values())
@@ -490,6 +501,7 @@ class Annealer:
         d_cong = 0.0
         if self.cong is not None:
             d_cong = self.cong.trial(nets, list(zip(S, old))) - cong_old
+        d_xing = self.xing.trial(nets) if xing_on else 0
         rules = {j for i in S for j in self.order_of.get(i, ())}
         newo = {j: self._order_pen(j) for j in rules}
         d_order = sum(newo[j] - self.open[j] for j in rules)
@@ -508,7 +520,8 @@ class Annealer:
                  + w["zone"] * (zone_new - zone_old)
                  + w["phys"] * d_phys / self.nstruct
                  + w["cong"] * d_cong
-                 + w["order"] * d_order)
+                 + w["order"] * d_order
+                 + w["wl"] * w["xing"] * d_xing / self.W0)
         st = self.stats
         st["moves"] += 1
         bm = st["by_move"].setdefault(kind, [0, 0])
@@ -523,6 +536,8 @@ class Annealer:
             self.order_total += d_order
             if self.cong is not None:
                 self.cong.commit()
+            if xing_on:
+                self.xing.commit()
             for i in S:
                 self.poses[self.uuid[i]] = self._pose_of(i)
             st["accepted"] += 1
@@ -532,6 +547,8 @@ class Annealer:
         self._apply(S, old)
         if self.cong is not None:
             self.cong.revert()
+        if xing_on:
+            self.xing.revert()
         return False, delta
 
     # ------------------------------------------------------------------ moves
@@ -657,7 +674,8 @@ class Annealer:
         c = self.cong.total() if self.cong is not None else 0.0
         lab = self._lab(self.mov) * self.g / (len(self.mov) * self.S0)
         silk = self.silk_total() / self.A0 if self.silk else 0.0
-        return (w["wl"] * self._wl_cost(self.wl) + lam * self.leg_total / self.A0 + w["disp"] * disp
+        xing = w["xing"] * w["wl"] * self.xing.total / self.W0 if self.xing is not None else 0.0
+        return (xing + w["wl"] * self._wl_cost(self.wl) + lam * self.leg_total / self.A0 + w["disp"] * disp
                 + w["phys"] * self.phys / self.nstruct + w["cong"] * c + w["order"] * self.order_total
                 + w["label"] * lab + w["silk"] * silk + w["zone"] * self._zone(self.mov))
 
@@ -669,7 +687,8 @@ class Annealer:
                      wl_slack=self.wl_slack, wl_barrier=self.wl_barrier, cong_args=self.cong_args,
                      order=self.order, w_order=self.w["order"], order_margin=self.order_margin,
                      labels=self.labels, w_label=self.w["label"], silk=self.silk, w_silk=self.w["silk"],
-                     zones=self.zones, w_zone=self.w["zone"], cong_history=self._cong_history_fn)
+                     zones=self.zones, w_zone=self.w["zone"], cong_history=self._cong_history_fn,
+                     w_xing=self.w["xing"], xing_from=self.xing_from)
         o.W0, o.A0, o.S0, o.nstruct = self.W0, self.A0, self.S0, self.nstruct
         o.Xs, o.Ys = self.Xs, self.Ys
         return o.cost(self.lam1), o.terms_report()
@@ -689,6 +708,8 @@ class Annealer:
             out.update(silk=round(self.silk_total() / self.A0, 5))
         if self.zones is not None:
             out.update(zone=round(self._zone(self.mov), 5))
+        if self.xing is not None:
+            out.update(xing=int(self.xing.total))
         return out
 
     def labels_off(self):
@@ -746,6 +767,10 @@ class Annealer:
             self.T_last = T
             lam = self.lam0 * (self.lam1 / self.lam0) ** frac
             r = max(1, int(r0 * (T / T0) ** 0.5))
+            if self.xing is not None and not self.xing_on and frac >= self.xing_from:
+                from .crossings import Crossings
+                self.xing = Crossings(self.P, self)    # the term starts here: trees of the current pins
+                self.xing_on = True
             for _ in range(batch):
                 mv = self.propose(r)
                 if mv is None:

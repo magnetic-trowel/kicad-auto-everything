@@ -821,11 +821,14 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
     if anneal:
         t = time.monotonic()
         kw = dict(w_phys=1.0 if terms is not None else 0.0, order=order,
-                  w_cong=float(setting("place_w_cong", board_path, opts)))
+                  w_cong=float(setting("place_w_cong", board_path, opts)),
+                  w_xing=float(setting("place_w_xing", board_path, opts)),
+                  xing_from=float(setting("place_xing_from", board_path, opts)))
         kw.update(anneal_args or {})
         if terms is None:
             kw["w_phys"] = 0.0
         rep["w_cong"] = float(kw.get("w_cong", 0.0) or 0.0)
+        rep["w_xing"] = float(kw.get("w_xing", 0.0) or 0.0)
         # parts named by board silk labels beside their label: by default the kinds validated on
         # the human placements (numbered rows) at a modest weight; anneal_args w_label and
         # label_kinds widen or switch it off (w_label 0)

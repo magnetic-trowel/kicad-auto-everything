@@ -180,3 +180,39 @@ def test_congestion_history_hook_is_exact_in_both_engines():
     ref = Annealer(P, fa.st.copy(), terms=None, seed=0, w_phys=0.0, cong_history=hist)
     assert np.allclose(fa.E.Dp, ref.cong.Dp)
     assert abs(fa.E.tot[engine.T_CONG] - ref.cong.total()) < 1e-6 * max(1.0, ref.cong.total())
+
+
+def _anneal_with_crossings(w_xing=2.0, seed=2):
+    b, P, st = _legal_state(seed)
+    ann = engine.FastAnnealer(P, st, seed=seed, w_cong=0.0, w_xing=w_xing, xing_from=0.0)
+    return ann, P
+
+
+def test_engine_crossing_total_stays_exact():
+    from kae.place.crossings import Crossings
+    ann, P = _anneal_with_crossings()
+    ann.run(cpu_s=30.0, moves_per_part=300)
+    ann.write_back()
+    # the engine's running total against a fresh count on the Python side
+    view = ann.ann
+    for i in view.mov:
+        view.X[i], view.Y[i], view.K[i] = int(ann.E.X[i]), int(ann.E.Y[i]), int(ann.E.K[i])
+        view._update_pins(i)
+    count = Crossings(P, view).total
+    assert int(ann.E.tot[engine.T_XING]) == count
+    assert ann.terms_report()["xing"] == count
+
+
+def test_crossing_term_lowers_crossings_at_equal_budget():
+    from kae.place.crossings import Crossings
+    base, P = _anneal_with_crossings(w_xing=0.0)
+    term, _ = _anneal_with_crossings(w_xing=20.0)
+    base.run(cpu_s=30.0, moves_per_part=2000)
+    term.run(cpu_s=30.0, moves_per_part=2000)
+    def count(a):
+        v = a.ann
+        for i in v.mov:
+            v.X[i], v.Y[i], v.K[i] = int(a.E.X[i]), int(a.E.Y[i]), int(a.E.K[i])
+            v._update_pins(i)
+        return Crossings(P, v).total
+    assert count(term) <= count(base)
