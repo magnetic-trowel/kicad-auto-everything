@@ -64,3 +64,5 @@ One thing to read for in the results: with `revert_illegal` on, a window can sti
 
 ## Addendum 2, before the full submission (2026-11-09; no run of the 40 boards exists)
 The first full submission (commit b086071) was cancelled before any job started: the tight-part scan showed the anchoring also caught body-only parts such as logos. Anchoring now takes only parts with a courtyard, and arms, boards and rules are unchanged. Methods are at commit f2f4151 and the experiments are named `loop-window-bench-v2` and `loop-j3-unfixable-v2`; the empty records under the old names hold no runs. The smoke ran at b086071, which differs only in that filter and a comment.
+
+Note (2026-11-09): `loop-window-bench-v2` and `loop-j3-unfixable-v2` stay at f2f4151, where anchoring requires a courtyard. A body-only part with connected pads, such as a module drawn without a courtyard, is not anchored in any of their arms, as on main. Anchoring is not what these arms test, and each compares against its own control.

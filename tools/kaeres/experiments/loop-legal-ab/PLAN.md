@@ -26,3 +26,6 @@ Passes if the legal rate rises on the anchored boards (Fisher exact on board x a
 The board scan does not prepare the task inputs, for queue reasons. It reads a stored kae joint-fixed output of each merit board (which keeps the task's locked flags), strips the routing, stages the movable parts off the board and sets the corpus project files beside it, then runs only the anchoring check. It reads no score. The three known boards are the check that it finds what the task inputs show. Each run's own report (`anchored`) says whether the part was really anchored on the task input.
 
 Parts without a courtyard are no longer anchored (commit f2f4151; see the window-bench plan's addendum 2). The boards are those where the scan at that commit finds a tight part, anchored or left with the overhang only.
+
+Correction before any run (2026-11-09): requiring a courtyard dropped vik-pmw3360's sensor carrier, which has a body and connected pads but no courtyard. Anchoring now takes parts with a courtyard or a connected pad (commit dbc70f5), and this experiment runs at that commit. Parts with neither (logos) are still left out.
+Not smoked separately: the arms are J1's restart wrapper recipe, already run at scale, plus `--set anchor_tight`, and the experiment is itself about smoke size. The first board's output is read before any extension.
