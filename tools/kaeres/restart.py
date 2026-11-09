@@ -53,7 +53,9 @@ judged or killed when) is the uncached one, and only the wall time shrinks. The 
 and charged seconds go to summary.json and KAE_WORK (step_cache).
 """
 import argparse
+import gzip
 import importlib.util
+import io
 import resource
 import json
 import os
@@ -63,6 +65,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tarfile
 import time
 from pathlib import Path
 
@@ -434,6 +437,62 @@ def _last_json(path):
     return {}
 
 
+FR_RAW_LIMIT = 20_000_000    # bytes as stored: a run's raw Freerouting logs and result files plus its compact telemetry
+
+
+def fr_raw_env(d):
+    """Where kae.route.freerouting copies each run's whole log and result file for this attempt."""
+    return {"KAE_FR_RAW_DIR": str(Path(d) / "fr-raw")}
+
+
+def keep_fr_raw(wd, summary, limit=FR_RAW_LIMIT):
+    """Gzip every attempt's raw Freerouting files (wd/<attempt>/fr-raw) into wd/fr-telemetry.tar,
+    `<attempt>/<name>.gz`, with manifest.json listing the parts kept and dropped (`parts`, `dropped`:
+    name, raw_bytes, gz_bytes). The tar and the attempts' compact `fr` in summary.json together stay
+    within `limit` bytes as stored: the compact telemetry is always kept, and the bulkiest raw parts
+    go first when they would not fit. Returns the record for summary.json's `fr_raw` (`file` None:
+    no tar, because nothing was kept), or None when no attempt ran Freerouting."""
+    raw = sorted(p for p in wd.glob("*/fr-raw/*") if p.is_file() and not p.is_symlink())
+    if not raw:
+        return None
+    gz_dir = wd / ".fr-raw-gz"
+    gz_dir.mkdir(exist_ok=True)
+    parts = []
+    for i, p in enumerate(raw):
+        g = gz_dir / str(i)
+        with open(p, "rb") as fi, gzip.open(g, "wb", compresslevel=6) as fo:
+            shutil.copyfileobj(fi, fo)
+        parts.append(dict(name=f"{p.parent.parent.name}/{p.name}.gz", raw_bytes=p.stat().st_size,
+                          gz_bytes=g.stat().st_size, g=g))
+    bare = dict(summary, attempt_log=[{k: v for k, v in d.items() if k != "fr"} for d in summary["attempt_log"]])
+    budget = limit - (len(json.dumps(summary, indent=1)) - len(json.dumps(bare, indent=1))) - 1024   # the fr_raw record
+    kept, dropped = sorted(parts, key=lambda x: x["gz_bytes"]), []   # kept[-1] is the bulkiest
+    while kept and sum(x["gz_bytes"] + 1024 for x in kept) > budget:   # 1024: a tar member's header and padding
+        dropped.append(kept.pop())
+    tar = wd / "fr-telemetry.tar"
+    public = lambda x: {k: v for k, v in x.items() if k != "g"}
+    while True:
+        manifest = json.dumps(dict(limit_bytes=limit, parts=[public(x) for x in kept], dropped=[public(x) for x in dropped]),
+                              indent=1).encode()
+        with tarfile.open(tar, "w") as t:
+            info = tarfile.TarInfo("manifest.json")
+            info.size = len(manifest)
+            t.addfile(info, io.BytesIO(manifest))
+            for x in kept:
+                t.add(x["g"], arcname=x["name"], recursive=False)
+        stored = tar.stat().st_size
+        if stored <= budget or not kept:
+            break
+        dropped.append(kept.pop())
+    if stored > budget:   # even the manifest does not fit: the record below still says what was dropped
+        tar.unlink()
+        stored = 0
+    for d in {p.parent for p in raw} | {gz_dir}:
+        shutil.rmtree(d, ignore_errors=True)
+    return dict(file=tar.name if stored else None, limit_bytes=limit, stored_bytes=stored, parts_kept=len(kept),
+                parts_dropped=len(dropped), dropped_raw_bytes=sum(x["raw_bytes"] for x in dropped))
+
+
 def fr_telemetry(log_path):
     """The Freerouting telemetry (kae.route.freerouting.telemetry) of a route attempt's report (the
     last JSON line of its log): {"first": the first routing, "repair": [one per repair round that
@@ -472,7 +531,7 @@ def _one_pass(a, kind, command, best, inp, base, wd, end, b, judge_est, meter, s
     if SC:
         info["charge"] = str(d / "charge.jsonl")
     p = subprocess.Popen(["sh", "-c", c], cwd=d, stdout=open(d / "log", "w"), stderr=subprocess.STDOUT,
-                         start_new_session=True, env=dict(os.environ, KAE_RESUME="1", **charge_env(info)))
+                         start_new_session=True, env=dict(os.environ, KAE_RESUME="1", **charge_env(info), **fr_raw_env(d)))
     while reap(p, info) is None:
         if time.monotonic() + saved(info) > min(t + b + GRACE_S, end - judge_est - 5):
             stop(p, info)
@@ -715,7 +774,7 @@ def main():
         ch = dict(charge=str(d / "charge.jsonl")) if SC else {}
         p = subprocess.Popen(["sh", "-c", c], cwd=d, stdout=open(d / "log", "w"), stderr=subprocess.STDOUT,
                              start_new_session=True, env=dict(os.environ, KAE_RESUME="1" if resume else "0",
-                                                              **charge_env(ch)))
+                                                              **charge_env(ch), **fr_raw_env(d)))
         running[p] = dict(k=k, seed=s, budget=round(b), out=o, t=time.monotonic(),
                           resumed_from=frm["k"] if resume else None, **ch)
         if sh is not None:
@@ -867,6 +926,8 @@ def main():
                                       for d in done])
     if sh is not None:
         summary["halving"] = sh.summary()
+    if (fr_raw := keep_fr_raw(wd, summary)):
+        summary["fr_raw"] = fr_raw
     (wd / "summary.json").write_text(json.dumps(summary, indent=1))
     print("KAE_WORK " + json.dumps(work), flush=True)
     if best is None:

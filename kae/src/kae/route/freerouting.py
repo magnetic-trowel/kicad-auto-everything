@@ -246,6 +246,7 @@ def route(dsn, ses, workdir, *, passes=0, settings=None, budget_s=600.0, margin_
         report = json.loads(result.read_text())
     except (OSError, ValueError):
         pass
+    _keep_raw(ses, out, result)
     if key:
         _store(key, p.returncode, dt, timed_out, out or "", report, ses, result, workdir, job_s)
     return Run(rc=p.returncode, ses=ses if ses.exists() and ses.stat().st_size > 0 else None, log=out or "",
@@ -368,6 +369,7 @@ def _replay(key, ses, result, workdir, budget_s, margin, hard_s, log_path, passe
             report = json.loads(result.read_text())
         except (OSError, ValueError):
             report = {}
+        _keep_raw(ses, log, result)
         stepcache.charge("freerouting", True, meta["seconds"], time.monotonic() - t0, k)
         return Run(rc=meta["rc"], ses=ses, log=log, seconds=meta["seconds"], timed_out=False,
                    report=dict(_summary(report, log), slot_wait_s=0.0, job_timeout_s=round(job_s, 1),
@@ -407,6 +409,22 @@ _POUR_CONNECTED = re.compile(r"Connected (\d+) group\(s\) of copper that foreign
 _POUR_CUT_OFF = re.compile(r"(\d+) pin\(s\) or via\(s\) are cut off from the fill")
 
 
+def _keep_raw(ses, log, result):
+    """With KAE_FR_RAW_DIR set (restart.py sets it per attempt), a copy of this run's whole log and
+    result file goes there; the work directory holding them is deleted when the bridge ends."""
+    d = os.environ.get("KAE_FR_RAW_DIR")
+    if not d:
+        return
+    try:
+        Path(d).mkdir(parents=True, exist_ok=True)
+        stem = f"{time.time_ns()}-{os.getpid()}-{ses.stem}"
+        (Path(d) / f"{stem}.log").write_text(log or "")
+        if result.is_file():
+            shutil.copy2(result, Path(d) / f"{stem}.result.json")
+    except OSError as e:
+        print(f"[kae.route {time.strftime('%H:%M:%S')}] warning: could not keep the Freerouting log: {e}", flush=True)
+
+
 def telemetry(report, log):
     """What happened inside a Freerouting run, from its log and result file: `loops` holds, for
     each pass loop of the run (the first, then one per fallback attempt that routed), the unrouted
@@ -415,7 +433,10 @@ def telemetry(report, log):
     connections routed at the neck width from the start (`routed`, `failed`); `pour_connected`
     groups of copper the fork joined after foreign tracks cut them off from a pour and
     `pour_cut_off` the pads and vias still cut off, which its connectivity counts as connected.
-    A telemetry with nothing to say is {}."""
+    `start_necked`, `pour_connected` and `pour_cut_off` are lists, one entry per line the fork
+    logged. `fallback` is the result file's whole entry, each attempt also under the short names
+    `violations` and `seconds`. A telemetry with nothing to say is {}. Nothing is left out or
+    capped here: the size limit is on what is stored (restart.py, keep_fr_raw)."""
     out = {}
     loops, last = [], None
     for m in _PASS_LINE.finditer(log or ""):
@@ -430,19 +451,14 @@ def telemetry(report, log):
         out["loops"] = loops
     fb = ((report or {}).get("phases") or {}).get("fallback") or {}
     if fb.get("attempts"):
-        out["fallback"] = dict(chosen=fb.get("chosen"), attempts=[
-            dict(strategy=a.get("strategy"), stop_reason=a.get("stop_reason"), unrouted=a.get("unrouted"),
-                 violations=a.get("new_or_changed_violations"), seconds=a.get("duration_seconds"))
-            for a in fb["attempts"]])
-    m = _NECK_LINE.search(log or "")
-    if m:
-        out["start_necked"] = dict(routed=int(m.group(1)), failed=int(m.group(2)))
-    m = _POUR_CONNECTED.search(log or "")
-    if m:
-        out["pour_connected"] = int(m.group(1))
-    m = _POUR_CUT_OFF.search(log or "")
-    if m:
-        out["pour_cut_off"] = int(m.group(1))
+        out["fallback"] = dict(fb, attempts=[dict(a, violations=a.get("new_or_changed_violations"),
+                                                  seconds=a.get("duration_seconds")) for a in fb["attempts"]])
+    if necks := [dict(routed=int(m.group(1)), failed=int(m.group(2))) for m in _NECK_LINE.finditer(log or "")]:
+        out["start_necked"] = necks
+    if pours := [int(m.group(1)) for m in _POUR_CONNECTED.finditer(log or "")]:
+        out["pour_connected"] = pours
+    if cut := [int(m.group(1)) for m in _POUR_CUT_OFF.finditer(log or "")]:
+        out["pour_cut_off"] = cut
     return out
 
 
