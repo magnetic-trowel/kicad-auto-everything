@@ -773,3 +773,26 @@ def test_intrinsic_footprint_violations_are_not_the_placers():
     rn = dict(type="clearance", items=[dict(description="Pad 2 [SCDAT6] of RN2 on F.Cu"),
                                       dict(description="Pad 1 [SCDAT7] of RN2 on F.Cu")])
     assert _own_cutout(rn) and not _own_cutout(dict(type="clearance", items=rn["items"][:1]))
+
+
+def test_anchor_fixes_only_parts_with_no_spot(monkeypatch):
+    """place.pipeline._anchor_tight_parts: a part the grid gives no spot free of the fixed
+    geometry is fixed at an exactly clean spot (the check runs on the fixture's real geometry;
+    the 'no spot' verdict is forced, since this fixture has room); others are left alone."""
+    from kae.place import exact as ex
+    from kae.place import pipeline as pl
+    monkeypatch.setattr(pl, "ANCHOR_AREA_SHARE", 0.0)
+    P = Problem.build(load(FIXTURE))
+    tight = max(P.mov, key=lambda q: P.parts[q].area)
+    real = ex._candidates
+    calls = {}
+
+    def fake(P_, st, i, S, pad, ks, w_rot, limit, edge=False):
+        calls[i] = calls.get(i, 0) + 1
+        return [] if i == tight and calls[i] == 1 else real(P_, st, i, S, pad, ks, w_rot, limit, edge=edge)
+
+    monkeypatch.setattr(ex, "_candidates", fake)
+    rep = {}
+    poses, hung = pl._anchor_tight_parts(P, rep, lambda m: None)
+    assert list(poses) == [P.parts[tight].uuid] and hung == []
+    assert rep["anchored"]["parts"][0]["anchored"] is True
