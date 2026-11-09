@@ -1,0 +1,27 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Bus-one wrapper (bus-alone-b1, follow-up): attempt N of a board routes only the nets of $install/busone/<board>.<N>.txt,
+# one bus that failed alone, with every other pin as an obstacle. The adapter's pass cap changes with the attempt
+# (its PASS_SCHEDULE); it is reset to 10, the control's attempt-0 value, so only the net list differs between attempts.
+D=$(cd "$(dirname "$0")" && pwd)
+BID=$(basename "$(dirname "$PWD")")
+N=${PWD##*/attempt-}
+LIST="$D/../busone/$BID.$N.txt"
+if [ ! -s "$LIST" ]; then
+  echo "bus-one wrapper: no list $LIST" >&2
+  exit 7
+fi
+DSN=""
+prev=""
+n=$#
+while [ "$n" -gt 0 ]; do
+  a=$1; shift; n=$((n - 1))
+  if [ "$prev" = "-de" ]; then DSN=$a; fi
+  if [ "$prev" = "-mp" ]; then a=10; fi
+  prev=$a
+  set -- "$@" "$a"
+done
+python3 "$D/filter_dsn.py" "$DSN" "$LIST" || exit 7
+exec "$D/freerouting.real" "$@"

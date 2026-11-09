@@ -64,3 +64,11 @@ of that stratum (one look; effect size tolerance +-10 pp), not an arbitrary cont
 ## Expected cost (information)
 
 Bus-alone runs are mostly seconds of Freerouting plus export and DRC scoring (~60 s/board, ~2 CPU), 22 CPU-h; views (3 per board) ~15-20 CPU-h. Stored controls are reused. No physics (`KAERES_SKIP_PHYSICS=1`).
+
+## Amendments (before any result)
+
+- 2026-11-09 14:50: a fresh control arm was queued with the experiment (side by side) and withdrawn before any job started: the
+  queue put it two days out. The control is the stored `fr-fork master` run, as registered above. Its task was prepared by harness
+  99761c5; boards whose route task content changed since (kaeres content records) are reported separately. Control runs that hit the
+  deadline (224 of 670 boards in the stored runs) make their buses `contention-or-budget`, never `contention`.
+- The bus-one follow-up uses `wrapper/freerouting-one` (attempt N = the N-th failing bus, pass cap reset to 10).

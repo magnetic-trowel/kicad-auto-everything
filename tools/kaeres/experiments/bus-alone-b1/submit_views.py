@@ -29,7 +29,9 @@ def main():
         for rj in sorted((STORE / "boards" / bid / "runs").glob("*/run.json")):
             r = json.loads(rj.read_text())
             arm = ARMS.get(r["method_id"])
-            if arm and r.get("experiment", "").startswith("bus-alone-b1") and r.get("status") == "ok":
+            if arm == "control" and r.get("experiment") == "fr-baseline" and r.get("status") == "ok" and "control" not in found:
+                found[arm] = rj.parent
+            elif arm == "alone" and r.get("experiment", "").startswith("bus-alone-b1") and r.get("status") == "ok":
                 found[arm] = rj.parent
             elif r["method_id"].startswith(HUMAN) and "human" not in found:
                 found["human"] = rj.parent
