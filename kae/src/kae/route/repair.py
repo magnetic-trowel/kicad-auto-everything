@@ -727,7 +727,7 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
             budget = max(15.0, min((left() - reserve) * 0.5, left() - reserve - 30))
             from .bridge import router_settings
             grace = opts.get("router_grace", freerouting.GRACE_S)
-            run = freerouting.route(dsn, rdir / "board.ses", rdir, passes=opts.get("passes") or 0,
+            run = freerouting.route(dsn, rdir / "board.ses", rdir, passes=opts.get("repair_passes") or opts.get("passes") or 0,
                                     settings=router_settings(plan, opts, repair=True), budget_s=budget,
                                     hard_s=max(budget, min(budget + grace, left() - 15)),
                                     log_path=rdir / "freerouting.log")

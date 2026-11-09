@@ -531,6 +531,19 @@ def plane_policy(opts, free_round_with_open=False):
     return "power"
 
 
+def fr_overrides(opts):
+    """Freerouting settings from opts (--set): every key fr.NAME=VALUE (a --router.NAME setting), and
+    fr_cycle=A;B;C, presets of comma-separated NAME=VALUE pairs of which attempt `seed` gets the one at
+    index seed mod the number of presets. The default is none: these are for setting experiments."""
+    out = {k[3:]: (str(v).lower() if isinstance(v, bool) else str(v)) for k, v in opts.items() if k.startswith("fr.")}
+    presets = [p for p in str(opts.get("fr_cycle") or "").split(";") if p]
+    if presets:
+        for kv in presets[int(opts.get("seed") or 0) % len(presets)].split(","):
+            k, _, v = kv.partition("=")
+            out[k] = v
+    return out
+
+
 def router_settings(p, opts, repair=False):
     # neck-down at pins: a net class's width is KiCad's default, not a limit (DRC checks the
     # board minimum and custom rules); with the fork's floor (min_trace_width_um, the largest
@@ -546,6 +559,7 @@ def router_settings(p, opts, repair=False):
     if p.min_width:
         # the fork's floor for every neck-down (pads, fanout, retries); older builds ignore it
         s["min_trace_width_um"] = specctra.fmt(p.min_width * 1000)
+    s.update(fr_overrides(opts))
     return s
 
 
