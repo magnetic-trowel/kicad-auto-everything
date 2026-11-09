@@ -5,7 +5,7 @@
 Scope: why Freerouting reports a pour board fully routed while KiCad finds open connections; whether `plane_as_obstacle` helps; what the fork's pour model misses. Not here: pour handling in kae's repair loop ([kae-repair-loop](kae-repair-loop.md)).
 Keys: pour truth, plane_as_obstacle, fill fragmentation, zone min width, thermal spokes, PlaneFillConnectivity, R5, R6, E14.
 
-**Status:** root cause measured; `plane_as_obstacle` A/B queued (`r6-plane-obstacle`).
+**Status:** root cause measured; `plane_as_obstacle` did not work (A/B stopped early, `r6-plane-obstacle`).
 **First published:** 2026-11-09, branch `fr-pours`. **Commit measured:** fork 06d2686 stored runs (`fr-baseline`); tools in `tools/research/routing/fr_pour_truth/`.
 
 ## 1. The gap (ledger R5)
@@ -36,6 +36,13 @@ Physically: Freerouting treats a plane net as connected whenever a pad lies in t
 
 Bridge consequence: this gap costs kae almost nothing. Under `kae bridge main final` (merge3-ab, 213 merit boards, final boards) 261 of 2,671 opens involve a zone, and the zone-only opens block exactly 1 board from being complete; the bridge's repair rounds and last mile close them with KiCad's real fill. A fork patch for fill rules would mostly help the plain Freerouting control.
 
-## 3. `plane_as_obstacle` A/B
+## 3. `plane_as_obstacle` A/B (did not work)
 
-Pending: experiment `r6-plane-obstacle`, fork 2e1125a, 900 s, one run per board per arm, 30 + 60 pour boards. See [PLAN](../../../tools/kaeres/experiments/r6-plane-obstacle/PLAN.md).
+Fork 2e1125a, 900 s, one run per board per arm, side by side; plan in [PLAN](../../../tools/kaeres/experiments/r6-plane-obstacle/PLAN.md). Stopped early, which the plan did not provide for, with 42 of 90 boards done: the bar was out of reach.
+
+| Boards | n | Opens, control | Opens, plane obstacle | Worse / better / equal |
+|---|---|---|---|---|
+| Selected on the control's failure (R5) | 17 | 84 | 1,212 | 17 / 0 / 0 |
+| Unselected (`complex_pours`, `power_pours`) | 25 | 6,138 | 12,129 | 19 / 1 / 5 |
+
+Mean completion: selected 0.909 against 0.035; unselected 0.761 against 0.319. Mechanism: a pour covering a layer shuts foreign nets out of that layer, so the board cannot route. Keep `plane_as_obstacle` off. Do not build R36/E14 for kae on this evidence: section 2's bridge result says the gap costs kae one merit board.

@@ -49,3 +49,10 @@ Separately, independent of the arms, the root-cause result above decides R36/E14
 repair closes nearly all of these on the merit boards (zone-only opens block 1 of 213 boards under kae
 bridge final), so a fork patch for fill rules helps only the plain Freerouting control. Expected cost: 90
 boards x 2 arms, small boards, about 20 CPU-h.
+
+## Stopped early (2026-11-09, not pre-registered)
+The plan had no early stop. The queued remainder was cancelled once 17 selected and 25 unselected boards had both arms,
+because the bar (opens at least 10 % lower on the 60 unselected boards) was out of reach: on the 25 unselected boards
+plane_as_obstacle has 12,129 opens against the control's 6,138, worse on 19, better on 1, equal on 5; on the 17 selected
+boards 1,212 against 84, worse on all. The remaining boards would need about 6,000 fewer opens than control to recover
+the deficit alone, and the setting mostly raises opens. Jobs already running were left to finish.
