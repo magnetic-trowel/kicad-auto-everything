@@ -297,3 +297,16 @@ def test_exp_rows_rebases_stored_drc_records_without_writing_them(tmp_path, monk
     _, bugs, _ = kaeres.exp_rows(e)
     assert sorted(b["signature"] for b in bugs) == ["meth:drc:track:human-fallback", "meth:over_time"]
     assert (md / "bugs.json").read_bytes() == before
+
+
+def test_restart_reports_are_kept_with_the_run(tmp_path):
+    """J13: the kept attempt's report survives the deleted work directory; kaebench keeps it as an artifact."""
+    art, tmp = tmp_path / "artifacts", tmp_path / "run"
+    art.mkdir()
+    tmp.mkdir()
+    (art / "summary.json").write_text('{"attempt_log": []}')
+    (art / "report.json").write_text('{"iterations": []}')
+    kaeres._keep_restart_files(art, tmp)
+    assert (tmp / "restarts.json").read_text() == '{"attempt_log": []}'
+    assert (tmp / "restart-report.json").read_text() == '{"iterations": []}'
+    assert not (tmp / "restart-report-origin.json").exists()

@@ -201,3 +201,25 @@ def test_finish_runs_on_a_clean_board_and_is_not_kept_when_worse(tmp_path):
     assert r.returncode == 0, r.stdout + r.stderr
     fz = summary["attempt_log"][-1]
     assert fz["k"] == "finish" and not fz["kept"] and "OPEN=0" in out.read_text()
+
+
+def test_kept_attempts_report_and_its_fresh_origin_are_stored(tmp_path):
+    """A kept fresh attempt's JSON report goes to report.json; when a final pass is kept instead, that
+    router's report does, and the fresh attempt it descends from goes to report-origin.json."""
+    loop = """echo '{"iterations": [1, 2], "stop": "time"}'; echo '(kicad_pcb OPEN=2)' > @OUT@"""
+    r, out, summary = _run(tmp_path, loop, """echo '{"route": 1}'; echo '(kicad_pcb OPEN=0)' > @OUT@""")
+    assert r.returncode == 0, r.stdout + r.stderr
+    wd = tmp_path / "work" / "restarts"
+    assert summary["best_attempt"] == "final"
+    assert json.loads((wd / "report.json").read_text()) == {"route": 1}
+    origin = json.loads((wd / "report-origin.json").read_text())
+    assert origin["iterations"] == [1, 2] and origin["stop"] == "time" and origin["origin_attempt"] == 0
+
+
+def test_a_kept_fresh_attempt_has_no_origin_report(tmp_path):
+    loop = """echo '{"iterations": [1], "stop": "no improvement"}'; echo '(kicad_pcb OPEN=0)' > @OUT@"""
+    r, out, summary = _run(tmp_path, loop, "")
+    assert r.returncode == 0, r.stdout + r.stderr
+    wd = tmp_path / "work" / "restarts"
+    assert json.loads((wd / "report.json").read_text())["stop"] == "no improvement"
+    assert not (wd / "report-origin.json").exists()

@@ -601,7 +601,8 @@ def test_timed_jobs_waiting_for_cpus_freeze_the_newest_batch_job(kq, tmp_path):
     d = _lease_daemon(kq, tmp_path, cpu_freeze_every_s=0, threads=512, reserve_cpu=0)  # admits both on a busy host
     submit(kq, "sleep 60", name="old", qos="batch")
     submit(kq, "sleep 60", name="new", qos="batch")
-    drive(kq, d, lambda: list(states(d).values()) == ["running", "running"] and len(d.cgroups) == 2)
+    submit(kq, "sleep 60", name="timed", qos="timed")        # timed_wait only means something while one runs
+    drive(kq, d, lambda: list(states(d).values()) == ["running"] * 3 and len(d.cgroups) == 3)
     d.timed_wait = 0.5                       # as if timed jobs waited for CPUs half the time
     running = d.c.execute("SELECT * FROM jobs WHERE state='running'").fetchall()
     d.cpu_freeze(kq.config(), time.time(), running)
@@ -615,7 +616,7 @@ def test_timed_jobs_waiting_for_cpus_freeze_the_newest_batch_job(kq, tmp_path):
     j = d.c.execute("SELECT * FROM jobs WHERE id=2").fetchone()
     assert j["freezes"] == 1 and j["frozen_s"] >= 0 and not j["frozen_since"]
     d.c.execute("UPDATE jobs SET state='cancelled'")
-    for i in (1, 2):
+    for i in (1, 2, 3):
         kq.kill_tree(d.c.execute("SELECT pid FROM jobs WHERE id=?", (i,)).fetchone()[0], d.cgroups.get(i))
 
 
@@ -895,7 +896,9 @@ def test_a_batch_job_starved_of_cpu_is_frozen_compressed_and_thawed_when_there_i
     submit(kq, "python3 -c 'import time\na = bytearray(300 << 20)\nfor i in range(0, len(a), 4096): a[i] = 1\n"
                "time.sleep(40)'", name="b", qos="batch", mem="400M")
     submit(kq, "sleep 40", name="later", qos="batch")
-    drive(kq, d, lambda: d.cgroups.get(1) and 1 in d.cpuj and kq.cg_mem(d.cgroups[1])[0] > 250, secs=30)
+    submit(kq, "sleep 40", name="timed", qos="timed")        # timed_wait only means something while one runs
+    drive(kq, d, lambda: d.cgroups.get(1) and 1 in d.cpuj and kq.cg_mem(d.cgroups[1])[0] > 250
+          and states(d)["timed"] == "running", secs=30)
     d.cpuj[1]["starved_since"] = time.time() - 300            # as if its threads had waited for a CPU 5 min
     d.timed_wait = 0.03                                        # (not calm: no thaw in the same pass)
     running = d.c.execute("SELECT * FROM jobs WHERE state='running'").fetchall()
@@ -908,7 +911,7 @@ def test_a_batch_job_starved_of_cpu_is_frozen_compressed_and_thawed_when_there_i
     d.cpu_freeze(kq.config(), time.time(), running)          # room in the run queue: thawed
     assert not kq.cg_frozen(d.cgroups[1])
     d.c.execute("UPDATE jobs SET state='cancelled'")
-    for i in (1, 2):
+    for i in (1, 2, 3):
         kq.kill_tree(d.c.execute("SELECT pid FROM jobs WHERE id=?", (i,)).fetchone()[0], d.cgroups.get(i))
 
 
@@ -1007,3 +1010,26 @@ def test_a_memory_limit_reverted_behind_kaeqs_back_is_set_again_and_told_to_syst
     drive(kq, d, lambda: kq.cg_high_mb(d.cgroups[1]) is None, secs=20)    # set again
     d.c.execute("UPDATE jobs SET state='cancelled'")
     kq.kill_tree(d.c.execute("SELECT pid FROM jobs").fetchone()[0], d.cgroups.get(1))
+
+
+def test_timed_wait_does_not_outlive_the_timed_jobs(kq, tmp_path):
+    """With no timed job running nobody waits: a stale timed_wait must not keep batch jobs frozen or block timed starts."""
+    d = _lease_daemon(kq, tmp_path, cpu_freeze_every_s=0, threads=512, reserve_cpu=0, thaw_min_run_s=0)
+    submit(kq, "sleep 60", name="b", qos="batch", mem="100M")
+    drive(kq, d, lambda: states(d)["b"] == "running" and 1 in d.cgroups, secs=20)
+    d.timed_wait = 0.5                                 # left over from timed jobs that have ended: freezes it
+    running = d.c.execute("SELECT * FROM jobs WHERE state='running'").fetchall()
+    d.cpu_freeze(kq.config(), time.time(), running)
+    assert kq.cg_frozen(d.cgroups[1]) and d.lease_st[1].get("cpu_frozen")
+    d.tick()
+    assert d.timed_wait == 0.0
+    drive(kq, d, lambda: not kq.cg_frozen(d.cgroups[1]), secs=20)     # thawed
+    submit(kq, "sleep 60", name="t", qos="timed", mem="100M")
+    drive(kq, d, lambda: states(d)["t"] == "running", secs=20)         # and a timed job can start
+    # while a timed job runs, a tick without a new sample keeps the value
+    d.timed_wait = 0.03
+    d.sample_cpu(kq.config(), time.time(), d.c.execute("SELECT * FROM jobs WHERE state='running'").fetchall(), {})
+    assert d.timed_wait == 0.03
+    d.c.execute("UPDATE jobs SET state='cancelled'")
+    for i in (1, 2):
+        kq.kill_tree(d.c.execute("SELECT pid FROM jobs WHERE id=?", (i,)).fetchone()[0], d.cgroups.get(i))

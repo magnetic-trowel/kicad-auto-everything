@@ -98,7 +98,7 @@ class _Space:
             for l, g in shapes.items():
                 self.items.append((g, net, "pad", l, cls, None))
         for ob in plan.obstacles:
-            if ob.kind != "keepout":
+            if ob.kind not in ("keepout", "wire_keepout"):
                 continue  # via keepouts do not bind tracks
             lay = None if ob.layer == "signal" else ob.layer
             if ob.why.startswith("rule area") and not isinstance(ob.geom, tuple):

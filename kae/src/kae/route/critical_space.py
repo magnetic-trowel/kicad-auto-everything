@@ -63,14 +63,16 @@ class Item:
     r: radius added to geom (track half width, via radius, hole radius)
     cls: pad/obstacle clearance class (plan.obstacle_classes) or routing class (tracks, vias)
     vias_only: a rule area that keeps out vias only
+    tracks_only: a rule area that keeps out tracks only
     """
-    __slots__ = ('kind', 'net', 'layers', 'geom', 'r', 'cls', 'bbox', 'owner', 'hole', 'smd', 'vias_only',
+    __slots__ = ('kind', 'net', 'layers', 'geom', 'r', 'cls', 'bbox', 'owner', 'hole', 'smd', 'vias_only', 'tracks_only',
                  'local', 'fp', 'idx', 'uuid', 'width', 'drill', 'locked', 'pos', 'exact')
 
     def __init__(self, kind, net, layers, geom, r=0.0, cls=None, owner=None, hole=None, smd=False,
-                 vias_only=False):
+                 vias_only=False, tracks_only=False):
         self.kind, self.net, self.layers, self.geom, self.r, self.cls = kind, net, frozenset(layers), geom, r, cls
         self.owner, self.hole, self.smd, self.vias_only = owner, hole, smd, vias_only
+        self.tracks_only = tracks_only
         self.local = None
         self.fp = None
         self.idx = -1
@@ -284,7 +286,8 @@ class Space:
                 if g is None or g.is_empty:
                     continue
                 kind = "keepout" if ob.cls == "kae_zero" else "shape"
-                it = Item(kind, None, layers, g, 0.0, ob.cls, owner=ob.why, vias_only=ob.kind == "via_keepout")
+                it = Item(kind, None, layers, g, 0.0, ob.cls, owner=ob.why, vias_only=ob.kind == "via_keepout",
+                          tracks_only=ob.kind == "wire_keepout")
             for l in layers:
                 if l in self.items:
                     self.items[l].append(it)
@@ -410,7 +413,7 @@ class Space:
         if it.kind == "corridor":
             return 0.0 if kind == "track" else None
         if it.kind == "keepout":
-            if it.vias_only and kind == "track":
+            if (it.vias_only and kind == "track") or (it.tracks_only and kind == "via"):
                 return None
             return 0.0
         if it.kind == "pad" and it.exact is not None:

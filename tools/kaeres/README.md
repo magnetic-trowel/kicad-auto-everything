@@ -41,6 +41,9 @@ Consequences:
       run.json                        method, task, harness commit, timing, CPU, router outcome
       output.kicad_pcb.gz             the method's output board
       adapter.log.gz, router-report.json, board.ses.gz, artifacts/ (router input, kept when a bug was seen)
+      restarts.json                   restart.py's per-attempt log
+      restart-report.json             the kept attempt's own report (a joint loop: iterations, windows, stop reason)
+      restart-report-origin.json      when that board was resumed or had a final pass: the report of the fresh attempt it descends from
       evals/<eval-id>.json            score (DRC) or physics, per evaluator; <eval-id>.drc.json.gz
       bugs.json                       bug records of this run
   experiments/<name>/

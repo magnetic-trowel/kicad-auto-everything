@@ -1153,6 +1153,19 @@ def _board_json(bid, row):
         write_json(p, row)
 
 
+RESTART_FILES = {"summary.json": "restarts.json", "report.json": "restart-report.json",
+                 "report-origin.json": "restart-report-origin.json"}
+
+
+def _keep_restart_files(art, tmp):
+    """restart.py's per-attempt log and the kept attempt's report (kaebench keeps them as artifacts):
+    a joint loop's iterations, windows and stop reason are in restart-report.json, or, when the kept
+    board was resumed or had a final pass, in restart-report-origin.json."""
+    for src, dst in RESTART_FILES.items():
+        if (art / src).is_file():
+            shutil.copy2(art / src, tmp / dst)
+
+
 def _write_run(bid, m, att, task_id, hc, aj, adir, ph, evs, bugs, steps, a, phc=None):
     """Archive one run (output, logs, evaluations, bugs) atomically under the board."""
     suffix = f".repro-{datetime.now().strftime('%Y%m%dT%H%M%S')}" if a.repro else ""
@@ -1178,7 +1191,7 @@ def _write_run(bid, m, att, task_id, hc, aj, adir, ph, evs, bugs, steps, a, phc=
     if any(b["category"] not in ("drc",) for b in bugs) and art.exists():  # the router's exact input, to reproduce
         (tmp / "artifacts").mkdir()
         for p in art.iterdir():
-            if p.is_file() and p.name not in ("result.json", "board.ses"):
+            if p.is_file() and p.name not in ("result.json", "board.ses", *RESTART_FILES):
                 gz(p, tmp / "artifacts" / (p.name + ".gz"))
     if (adir / "score_error.log").exists():
         shutil.copy2(adir / "score_error.log", tmp / "score_error.log")
@@ -1189,9 +1202,11 @@ def _write_run(bid, m, att, task_id, hc, aj, adir, ph, evs, bugs, steps, a, phc=
                method_usage=aj.get("method_usage"), adapter_meta=aj.get("adapter_meta"), load_avg=[aj.get("load_avg_start"), aj.get("load_avg_end")],
                job_steps=steps, work=_work(adir), **({"repro_of": run_name(m, att)} if suffix else {}))
     write_json(tmp / "run.json", run)
-    for sj in adir.rglob("restarts/summary.json"):  # restart.py's per-attempt log
-        shutil.copy2(sj, tmp / "restarts.json")
-        break
+    _keep_restart_files(art, tmp)
+    if not (tmp / "restarts.json").exists():
+        for sj in adir.rglob("restarts/summary.json"):  # a place method's probe: restart.py's per-attempt log
+            shutil.copy2(sj, tmp / "restarts.json")
+            break
     if aj.get("score") is not None:
         ev = dict(schema=SCHEMA, evaluator=evs["drc"], run=dest.name, at=now(), score=aj["score"], probe=aj.get("probe"),
                   scoring_s=aj.get("scoring_s"), scoring_usage=aj.get("scoring_usage"))
