@@ -412,3 +412,15 @@ def test_taut_necks_a_track_wider_than_its_lands(tmp_path):
     assert rep["necks"] == 2 and rep["hazards"] == []
     ws = sorted({round(t.width, 3) for t in load(tmp_path / "out.kicad_pcb").tracks if t.net == "WIDE"})
     assert ws[0] <= 0.6 and ws[-1] == 1.0
+
+
+def test_merge_tiny_absorbs_micro_segments_and_cuts_a_fold():
+    from kae.route.taut import _merge_tiny
+    # a 5 um piece between two others: its neighbour takes it, the chain's ends do not move
+    got = _merge_tiny([("seg", (0, 0), (2, 0)), ("seg", (2, 0), (2.005, 0.001)), ("seg", (2.005, 0.001), (2.005, 3))])
+    assert len(got) == 2 and got[0][1] == (0, 0) and got[-1][2] == (2.005, 3)
+    assert got[0][2] == got[1][1]
+    # out and back along one line: one segment to the last point
+    assert _merge_tiny([("seg", (0, 0), (1, 0)), ("seg", (1, 0), (0.8, 0))]) == [("seg", (0, 0), (0.8, 0))]
+    # a 90 degree corner is left alone
+    assert len(_merge_tiny([("seg", (0, 0), (1, 0)), ("seg", (1, 0), (1, 1))])) == 2

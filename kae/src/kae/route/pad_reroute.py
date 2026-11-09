@@ -64,6 +64,7 @@ SLIVER_X = 2.0
 RELEASE = (None, 2.0, 4.0)       # None = max(3 widths, 1 mm)
 LEN_ABS, LEN_REL = 1.0, 0.2
 OCTO_SHARE = 0.9
+FOLD_DEG = 2.0
 TOL = 1e-3
 
 
@@ -297,6 +298,9 @@ def plan(text, info, sp, gr, overlap=0.05, log=print, deadline=None, rails="midd
                                    current=cur, joined=True)
                         break
                     pts = pts + [end]
+                    if _folds_back(pts, rel, s, by_node, pieces, kind, TOL):
+                        why = "fold"
+                        continue
                     if not sp_legal(sp, s["net"], s["layer"], neck or w, pts[-2], end):
                         why = "final_piece"
                         continue
@@ -341,6 +345,32 @@ def plan(text, info, sp, gr, overlap=0.05, log=print, deadline=None, rails="midd
                 note("necked")
             break
     return changes, outcome, octo
+
+
+def _folds_back(pts, rel, s, by_node, pieces, kind, tol):
+    """Whether the new tail `pts` goes back over itself, or its first piece back over the copper kept
+    at the release point: copper out and back on one line is never legitimate."""
+    def bearing(a, b):
+        return math.atan2(b[1] - a[1], b[0] - a[0])
+
+    def same(a, b):
+        return abs(math.degrees(math.remainder(a - b, 2 * math.pi))) < FOLD_DEG
+    legs = [(p, q) for p, q in zip(pts[:-1], pts[1:]) if math.dist(p, q) > tol]
+    for (p0, q0), (p1, q1) in zip(legs[:-1], legs[1:]):
+        if same(bearing(q0, p0), bearing(p1, q1)):
+            return True
+    if not legs:
+        return False
+    first = bearing(legs[0][0], legs[0][1])
+    gone = {x[0]["uuid"] for x in pieces}
+    kept = []
+    for x in by_node.get((s["net"], s["layer"], _key(rel)), ()):
+        if x["uuid"] not in gone:
+            kept.append(x["b"] if _key(x["a"]) == _key(rel) else x["a"])
+    if kind == "split":
+        last, _p, _q = pieces[-1]
+        kept.append(last["b"] if math.dist(last["a"], _p) <= tol else last["a"])
+    return any(math.dist(rel, k) > tol and same(first, bearing(rel, k)) for k in kept)
 
 
 def _piece_w(ch, i, n):
