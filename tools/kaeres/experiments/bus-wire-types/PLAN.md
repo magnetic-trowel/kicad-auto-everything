@@ -36,7 +36,7 @@ Arms, `--pairs first` unless noted, 900 s (`diffpair-soft`) and 300 s (control, 
 - control: no pairs
 - first: pairs routed and locked first, as `diffpair-ab3`
 - first-soft: `--set pairs_unlocked=true --set wire_type=shove_fixed --set wire_scope=pairs`: pair copper unlocked in KiCad, rippable reservation in Freerouting
-- first-own: `--set pairs_own_budget=true`: the pair stage's time is not taken from the routing budget (its bridge deadline moves by what the pairs took)
+- first-own: `--set pairs_own_budget=true`: the pair stage's time is not taken from the routing budget (its bridge deadline moves by what the pairs took); the harness timeout is the budget plus the pair stage's cap, min(180 s, budget/4), and `--time` stays the budget (amended before the full run: the smoke run of the first version was killed at the plain budget; CPU is reported)
 - first-after: `--set pairs_stage=after_escapes`: pairs after the plane escapes instead of before them (locked)
 
 Outcomes: as `diffpair-ab3` (`pair_report.py`, `analyze.py`: coupled share on pairs routed in both arms, skew, open connections, DRC by type, cp1, CPU), per budget, and split by whether the control finished 2 passes. Plus **share of pair copper surviving routing** (`report["pairs"]["survival"]`, after Freerouting and final, midpoint within 5 um same net and layer).
