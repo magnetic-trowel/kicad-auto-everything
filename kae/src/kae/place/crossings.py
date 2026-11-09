@@ -247,6 +247,7 @@ def untangle(P, st, terms=None, zones=None, hold=(), x_mm=2.0, max_sweeps=8, tim
     xc = Crossings(P, pins)
     start = xc.total
     hp0 = hp = st.hpwl()
+    viol0 = set(grid_violations(st))          # parts the grid already flags (bodies, rounding): no new ones
     tparts = set(terms.parts()) if terms is not None else set()
     uuid = {p.i: p.uuid for p in P.parts}
     poses = {p.uuid: st.pose(p.i) for p in P.parts} if terms is not None else None
@@ -283,7 +284,7 @@ def untangle(P, st, terms=None, zones=None, hold=(), x_mm=2.0, max_sweeps=8, tim
             hp1 = st.hpwl()
             ok = hp1 - hp <= x_mm * (-d) and zone_cost(parts) <= z0 + 1e-9
             if ok and check_grid:
-                ok = not grid_violations(st)
+                ok = set(grid_violations(st)) <= viol0
             if ok and terms is not None:
                 ok = physics_ok(parts)[0]
         if ok:

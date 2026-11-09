@@ -928,9 +928,10 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
         viol = grid_violations(st)
     if rep.get("legalize_escalation") or rep.get("legalize_final"):
         trace("legalize_escalation", st)
-    if not viol and float(setting("place_untangle", board_path, opts)) > 0:
+    if float(setting("place_untangle", board_path, opts)) > 0:
         # ratsnest crossings HPWL does not see (kae.place.crossings): swaps of interchangeable
-        # parts and half turns that keep every rectangle, so legality; physics is never worsened
+        # parts and half turns that add no grid violator; physics is never worsened. Grid
+        # violators need not stop it (the grid is conservative: bodies, rounding)
         t = time.monotonic()
         from .crossings import untangle
         hold = {i for rule in (order or ()) for (i, _) in rule}
