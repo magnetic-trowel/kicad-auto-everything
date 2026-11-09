@@ -215,7 +215,7 @@ DEFAULTS = dict(
                                    # routability near chance (docs/research/placement/kae-routability-estimators.md)
     place_untangle=0,              # placement: 1 runs kae.place.crossings.untangle after legalization (swaps of
                                    # equal parts and half turns that remove ratsnest crossings). Off until its A/B
-                                   # (docs/research/placement/2026-11-untangle.md) says otherwise
+                                   # (docs/research/placement/placement-routability-2611.md) says otherwise
     place_untangle_x_mm=2.0,       # placement: mm of weighted HPWL one removed crossing may cost in untangle
     place_margin=0.0,              # placement: routing room between movable parts, mm (Problem.set_margin);
                                    # negative = auto (Problem.auto_margin: 2 x (0.7 - utilization), 0..1 mm).
