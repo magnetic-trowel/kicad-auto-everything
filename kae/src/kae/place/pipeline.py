@@ -1043,7 +1043,9 @@ def _anchor_tight_parts(P, rep, log):
     overhang: a part with no exactly clean spot is not fixed)."""
     t0 = time.monotonic()
     area = max(1e-9, float(P.outline.area))
-    big = sorted((i for i in P.mov if P.parts[i].area > ANCHOR_AREA_SHARE * area), key=lambda i: -P.parts[i].area)
+    # (a part with no courtyard is a logo or similar: relax_bodies frees it, and fixing it would wall off the board)
+    big = sorted((i for i in P.mov if P.parts[i].has_courtyard and P.parts[i].area > ANCHOR_AREA_SHARE * area),
+                 key=lambda i: -P.parts[i].area)
     if not big:
         return {}, []
     P.set_margin(0.0)
