@@ -94,7 +94,8 @@ def main():
                              wires=((reps.get((b, m)) or {}).get("wire_types") or {}).get("wires")))
         res_m = {}
         for label, sub in (("all", rows), ("control >= 2 passes", [x for x in rows if (x["passes_c"] or 0) >= 2]),
-                           ("control < 2 passes", [x for x in rows if x["passes_c"] is not None and x["passes_c"] < 2])):
+                           ("control < 2 passes", [x for x in rows if x["passes_c"] is not None and x["passes_c"] < 2]),
+                           ("arm rewrote >= 50 wires", [x for x in rows if (x["wires"] or 0) >= 50])):
             if not sub:
                 continue
             sv = [x["surv_fr"] for x in sub if x["surv_fr"] is not None]
