@@ -486,6 +486,8 @@ def compute(path, human=None, do_refill=False, wrap=None, workdir=None):
     """The columns of one board. Fields are null where the board cannot support them (no tracks, no outline)."""
     workdir = workdir or tempfile.mkdtemp(prefix="mfg-")
     b, p = load(path, workdir)
+    # the board's own net classes: a .kicad_pro or legacy (net_class ...) beside it (decided before a refill, which writes a .kicad_pro)
+    has_classes = Path(p).with_suffix(".kicad_pro").exists() or "(net_class " in Path(p).read_text(encoding="utf-8", errors="replace")
     refilled = False
     if do_refill and b.zones:
         p = Path(refill(p, wrap or os.environ["KAE_KICAD_WRAP"]))
@@ -509,8 +511,7 @@ def compute(path, human=None, do_refill=False, wrap=None, workdir=None):
     else:
         tt, tp = None, None
     # width: share of length within 2 % of the smallest track width any net class asks for
-    # (needs the board's own classes: with no .kicad_pro and no legacy (net_class ...) the loader only has KiCad's default)
-    has_classes = Path(p).with_suffix(".kicad_pro").exists() or "(net_class " in text
+    # (a board without its own classes has only KiCad's default in the loader: no column)
     widths = [nc.track_width for nc in (b.rules.netclasses or {}).values() if nc.track_width] if has_classes else []
     if total > 0 and widths:
         floor = min(widths)
