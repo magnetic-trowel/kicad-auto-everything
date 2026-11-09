@@ -22,6 +22,7 @@ from pathlib import Path
 
 from . import score, tools
 from .boardfiles import STEM, board_path, install_rules, unconnected_ignored
+from .kicad_scripts import layer_plan
 
 TASK_KINDS = ("route", "place", "place-fixed")
 # 2: place tasks keep locked footprints in place (1 moved them off-board, so boards with
@@ -53,9 +54,14 @@ TASK_KINDS = ("route", "place", "place-fixed")
 #    (saved without uuid) of a place-fixed reference now keep one order; tasks of earlier
 #    specs stay valid on their own, but outputs are scored only against the task they were
 #    made from
-TASK_SPEC = 10
-# Oldest spec each task kind is still valid under (spec 5 changed only place tasks).
-MIN_TASK_SPEC = {"route": 4, "place": 5, "joint": 5, "place-fixed": 9, "joint-fixed": 9}
+# 11: tasks are limited to the copper layers the board uses (kicad_scripts/layer_plan.py): a board
+#    whose human copper is complete (or an Eagle import's 16-layer default) loses the inner layers
+#    it never used, and layers still inside the even stack are forbidden by a rule area. Boards
+#    that keep their layers give the same files as under spec 10 (kaeres aliases their runs); a
+#    prepared task of an earlier spec may be of a changed board, so all must be prepared again
+TASK_SPEC = 11
+# Oldest spec each task kind is still valid under.
+MIN_TASK_SPEC = {"route": 11, "place": 11, "joint": 11, "place-fixed": 11, "joint-fixed": 11}
 # The task input each kind starts from (joint = place and route, from the place task's input).
 INPUT_KIND = {"route": "route", "place": "place", "joint": "place",
               "place-fixed": "place-fixed", "joint-fixed": "place-fixed"}
@@ -126,6 +132,25 @@ def _drc(board, out_json):
     return drc
 
 
+def restrict_layers(ref, drc=None):
+    """Limit the board in `ref` to the copper layers it uses (layer_plan.py), in place. drc: the
+    board's _drc result, if already run. Returns the plan applied, or None (board untouched)."""
+    board = board_path(ref)
+    use = tools.run_ops("layer-use", board)
+    dru = ref / f"{STEM}.kicad_dru"
+    dru_text = dru.read_text(errors="replace") if dru.exists() else None
+    unconnected = None
+    if layer_plan.needs_completeness(use):
+        unconnected = (drc or _drc(board, ref / "drc.json"))["unconnected"]
+    plan = layer_plan.plan(use, dru_text, unconnected)
+    if plan:
+        spec = ref / "layer-plan.json"
+        spec.write_text(json.dumps(plan))
+        tools.run_ops("restrict-layers", board, board, spec)
+        spec.unlink()
+    return plan
+
+
 def prepare_board(entry, fetched, tasks_dir, kinds=TASK_KINDS, keep_locked=False, force=False,
                   fixed_overrides=None):
     """Create tasks_dir/<id>/{reference,route,place,place-fixed}/ and task.json. Returns the task
@@ -145,6 +170,10 @@ def prepare_board(entry, fetched, tasks_dir, kinds=TASK_KINDS, keep_locked=False
     conv = tools.run_ops("convert", fetched["kicad_pcb"], board_path(ref))
     ref_stats = tools.run_ops("stats", board_path(ref))
     ref_drc = _drc(board_path(ref), ref / "drc.json")
+    layers = restrict_layers(ref, ref_drc)
+    if layers:  # the task's board is the restricted one
+        ref_stats = tools.run_ops("stats", board_path(ref))
+        ref_drc = _drc(board_path(ref), ref / "drc.json")
     human_clean = ref_drc["unconnected"] == 0 and ref_drc["errors"] == 0
     record = dict(
         id=entry["id"], license=entry.get("license"), license_tier=entry.get("license_tier"),
@@ -159,6 +188,8 @@ def prepare_board(entry, fetched, tasks_dir, kinds=TASK_KINDS, keep_locked=False
                                      if r.get("pads_outside")}),
         tasks={},
     )
+    if layers:
+        record["layer_restriction"] = layers
     for kind in kinds:
         kdir = tdir / kind / "input"
         kdir.mkdir(parents=True)
