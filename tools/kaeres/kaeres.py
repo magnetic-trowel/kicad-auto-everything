@@ -1352,6 +1352,19 @@ def physics_valued(ph):
     return round(sum(min(PHYSICS_U_CAP, max(0.0, float(u))) for u in us), 4), len(us)
 
 
+MFG_COLUMNS = ("ca_short_per_m_pours", "width_at_class_min", "copper_pair_diff_pp", "copper_flag", "vip_small_signal",
+               "fab_class_jlcpcb", "phantom_share", "exp_breakout_40um", "acute_per_m")
+
+
+def mfg_of(ed):
+    """The manufacturability columns of a run from its evaluations (the newest `mfg` evaluation; refilled ones first), or {}."""
+    evs = [(k, v) for k, v in ed.items() if (v or {}).get("mfg") is not None]
+    if not evs:
+        return {}
+    k, v = max(evs, key=lambda kv: (bool((kv[1]["mfg"] or {}).get("refilled")), kv[1].get("at") or "", kv[0]))
+    return dict(v["mfg"], evaluator=k)
+
+
 def run_view(bid, d, r, evs, human_phys=None):
     """One flat row: a run with the given evaluators' results."""
     ed = evals_of(d)
@@ -1363,6 +1376,7 @@ def run_view(bid, d, r, evs, human_phys=None):
         s = dict(pr, valid=bool(s.get("valid") and pr.get("valid")), legal=s.get("legal"),
                  clean=bool(pr.get("clean") and s.get("legal")))
     ph = ((ed.get(evs.get("physics")) or {}).get("physics")) or {}
+    mfg = mfg_of(ed)
     meta = r.get("adapter_meta") or {}
     rep = meta.get("router_report") or {}
     mu = r.get("method_usage") or {}
@@ -1380,7 +1394,8 @@ def run_view(bid, d, r, evs, human_phys=None):
                physics_total=ph.get("physics_total"), physics_modules=ph.get("n_modules"), physics_missing=ph.get("n_missing"),
                physics_open=ph.get("n_open"), worst_rail_mohm=ph.get("worst_rail_mohm"), physics_error=ph.get("error"),
                physics_vs_human=None, module_ratio_median=None, scored=bool(s), physics_scored=bool(ph),
-               physics_valued_total=None, physics_observations=None, physics_valued_vs_human=None)
+               physics_valued_total=None, physics_observations=None, physics_valued_vs_human=None,
+               mfg_refilled=mfg.get("refilled"), **{f"mfg_{c}": mfg.get(c) for c in MFG_COLUMNS})
     if ph and not ph.get("error"):
         row["physics_valued_total"], row["physics_observations"] = physics_valued(ph)
     if human_phys and ph and not ph.get("error") and not human_phys.get("error"):
@@ -1830,6 +1845,33 @@ def intent_table(rows, names, root):
     return out + [""]
 
 
+def mfg_table(rows, names):
+    """Manufacturability columns of the runs measured so far (`kaeres mfg submit`; nothing is computed here). Empty when
+    no run has them: pour-dependent columns need a zone refill, so this stays out of the normal report."""
+    rows = [r for r in rows if r["attempt"] == 0]
+    if not any(r.get("mfg_fab_class_jlcpcb") is not None or r.get("mfg_acute_per_m") is not None for r in rows):
+        return []
+    out = ["### Manufacturability (report-only, not targets)", "",
+           "Medians over the measured runs (lower is usually easier to build; copper flags and fab classes are counts). Definitions, "
+           "thresholds and limits: `tools/kaeres/README.md`, Manufacturability columns. These are not scoring targets: optimizing "
+           "any of them alone makes boards worse. Pour-dependent columns need a refilled measurement (`kaeres mfg submit --refill`), "
+           "and all-board medians are confounded by unrouted copper.", "",
+           "| method | boards | CA short / m (pours, mm²/m) | width at class min | copper Δ between mirror layers (pp) | copper flags (≥ 20 pp) | "
+           "vias in small signal pads (total) | JLCPCB class std / adv / hdi / none | phantom-layer length share (mean over boards measured) | "
+           "E[via breakouts, 40 µm] | acute junctions / m |", "|---|---|---|---|---|---|---|---|---|---|---|"]
+    for n in names:
+        rs = [r for r in rows if r["method"] == n and (r.get("mfg_fab_class_jlcpcb") is not None or r.get("mfg_acute_per_m") is not None)]
+        if not rs:
+            continue
+        fc = Counter(r.get("mfg_fab_class_jlcpcb") or "none" for r in rs)
+        col = lambda c: [r.get(f"mfg_{c}") for r in rs]
+        out.append(f"| {n} | {len(rs)} | {_f(_med(col('ca_short_per_m_pours')), 3)} | {_f(_med(col('width_at_class_min')), 3)} | "
+                   f"{_f(_med(col('copper_pair_diff_pp')), 1)} | {sum(1 for x in col('copper_flag') if x)} | {sum(x or 0 for x in col('vip_small_signal'))} | "
+                   f"{fc['standard']} / {fc['advanced']} / {fc['hdi']} / {fc['none']} | {_f(_mean(col('phantom_share')), 3)} | "
+                   f"{_f(_mean(col('exp_breakout_40um')), 4)} | {_f(_med(col('acute_per_m')), 2)} |")
+    return out + [""]
+
+
 def cmd_exp_report(a):
     e = load_exp(a.name)
     d = exp_dir(a.name)
@@ -1915,6 +1957,7 @@ def cmd_exp_report(a):
     rep += physics_table(rows, names)
     if getattr(a, "intent", None):
         rep += intent_table(rows, names, a.intent)
+    rep += mfg_table(rows, names)
     rep += ["### DRC error types (errors on ok attempts)", "", "| type | " + " | ".join(names) + " |", "|---|" + "---|" * len(names)]
     per = {n: Counter() for n in names}
     for r in rows:
@@ -2154,6 +2197,110 @@ def cmd_rephysics_job(a):
     return 0
 
 
+# ------------------------------------------------------------------ manufacturability measurements (report-only)
+def mfg_evaluator(commit, kicad, refill):
+    """The evaluator id of tools/kaeres/mfg_board.py at commit (its code, what it reads and the refill, registered)."""
+    recipe = dict(type="kaeres-mfg", kicad=kicad, refill=bool(refill),
+                  code=tree_ids(commit, ["tools/kaeres/mfg_board.py", "kae/src/kae/board", "kae/src/kae/route/fab.py"]))
+    eid = "mfg-" + ident(recipe)
+    p = STORE / "evaluators" / f"{eid}.json"
+    if not p.exists():
+        write_json(p, dict(schema=SCHEMA, id=eid, name="mfg", recipe=recipe, created=now(),
+                           commits=dict(harness=dict(commit=commit, link=github_link("https://github.com/magnetic-trowel/kicad-auto-everything", commit)))))
+    return eid
+
+
+def _mfg_todo(bid, method_ids, eid):
+    """Attempt-0 runs of these methods on a board with an output and no evaluation by evaluator eid (the human layout included)."""
+    return [(d, r) for d, r in board_runs(bid) if r["method_id"] in method_ids and r["attempt"] == 0 and r.get("status") == "ok"
+            and (d / "output.kicad_pcb.gz").exists() and not (d / "evals" / f"{eid}.json").exists()]
+
+
+def cmd_mfg_submit(a):
+    """Queue manufacturability measurement of an experiment's runs (attempt 0). --refill first fills zones with pcbnew,
+    which the pour-dependent columns need; it is optional and kept out of `exp report` because it is the expensive step."""
+    e = load_exp(a.name)
+    repo = main_repo()
+    harness = git(repo, "rev-parse", a.harness)
+    if not on_remote(repo, harness):
+        raise SystemExit(f"{harness[:7]} is on no remote branch: push it first")
+    cd, kv = ensure_harness(harness, kae=True)
+    eid = mfg_evaluator(harness, e["kicad"], a.refill)
+    human = next((m for m in methods().values() if m["recipe"]["runner"]["type"] == "reference"), None)
+    mids = {m["id"] for m in e["methods"]} | ({human["id"]} if human else set())
+    rows = corpus_rows()
+    boards = (exp_dir(a.name) / "boards.txt").read_text().split()
+    if a.only:
+        only = set(Path(a.only[1:]).read_text().split() if a.only.startswith("@") else a.only.split(","))
+        boards = [b for b in boards if b in only]
+    pending = _kaeq_active(f"mfg-{a.name}")
+    jobs = []
+    for bid in boards:
+        if f"mfg-{a.name}:{bid}" in pending or bid not in rows or not _mfg_todo(bid, mids, eid):
+            continue
+        sz = board_size_mb(rows[bid])
+        jobs.append(dict(cmd=f"{kv / 'bin' / 'python'} {cd / 'tools' / 'kaeres' / 'kaeres.py'} mfg-job --board {bid} --harness {harness} "
+                             f"--methods {','.join(sorted(mids))}" + (" --refill" if a.refill else ""),
+                         name=f"mfg-{a.name}:{bid}", cpus=2, mem=f"{3 + 0.3 * sz:.1f}G", disk=f"{int(300 + 8 * sz)}M",
+                         timeout=f"{int(min(4 * 3600, 1800 + 300 * sz))}s", prio=a.prio))
+        if a.limit and len(jobs) >= a.limit:
+            break
+    f = exp_dir(a.name) / f"mfg-{datetime.now().strftime('%Y%m%dT%H%M%S')}.jsonl"
+    f.write_text("".join(json.dumps(j) + "\n" for j in jobs))
+    print(f"mfg evaluator {eid} (harness {harness[:7]}, refill {a.refill}): {len(jobs)} board jobs -> {f}")
+    if jobs and not a.dry_run:
+        subprocess.run(["kaeq", "submit", "--jobs", str(f), "--owner", f"mfg-{a.name}", "--tag", f"mfg-{a.name}",
+                        "--live", "--class", "batch", "--cwd", str(cd), "--retries", "1"], check=True)
+
+
+def cmd_mfg_job(a):
+    """Measure one board's runs and store each as a `mfg` evaluation (a new file beside the run's others; nothing else changes)."""
+    bid = a.board
+    row = corpus_rows()[bid]
+    eid = mfg_evaluator(a.harness, kicad_version(), a.refill)
+    todo = _mfg_todo(bid, set(a.methods.split(",")), eid)
+    if not todo:
+        print(f"{bid}: nothing to measure")
+        return 0
+    human = next((m for m in methods().values() if m["recipe"]["runner"]["type"] == "reference"), None)
+    hd = find_run(bid, human["id"], 0)[0] if human else None
+    ws = Path(os.environ.get("KAEQ_SCRATCH") or tempfile.mkdtemp(prefix="kaeres-", dir="/var/tmp"))
+    env = dict(os.environ)
+    env.update({k: v for k, v in env_sh().items() if k not in env})
+    binds = [b for b in env.get("APPTAINER_BIND", "").split(",") if b]
+    env["APPTAINER_BIND"] = ",".join(dict.fromkeys(binds + [str(ws), str(CORPUS.resolve())]))
+    env["KICAD_CONFIG_HOME"] = str(STORE / "kicad-config" / "threads-2")
+    cd, kv = code_dir(a.harness), code_dir(a.harness).with_name(code_dir(a.harness).name + ".venv-kae")
+    corpus = CORPUS / row["path"]
+    written, failed = 0, []
+    for d, r in todo:
+        w = ws / "m" / r["run"]
+        w.mkdir(parents=True)
+        with gzip.open(d / "output.kicad_pcb.gz", "rb") as fi, open(w / "board.kicad_pcb", "wb") as fo:
+            shutil.copyfileobj(fi, fo)
+        for ext in ("kicad_pro", "kicad_dru"):
+            if (corpus / f"board.{ext}").exists():
+                shutil.copy2(corpus / f"board.{ext}", w / f"board.{ext}")
+        out = w / "mfg.json"
+        cmd = [kv / "bin" / "python", cd / "tools" / "kaeres" / "mfg_board.py", "--board", w / "board.kicad_pcb", "--out", out]
+        if hd is not None and d != hd and (hd / "output.kicad_pcb.gz").exists():
+            cmd += ["--human", hd / "output.kicad_pcb.gz"]
+        if a.refill:
+            cmd.append("--refill")
+        rc, to = run_logged(cmd, ws / "job.log", env, timeout=int(1800 + 300 * board_size_mb(row)))
+        res = read_json(out)
+        if rc != 0 or not res:
+            failed.append(f"{r['run']}: rc {rc}, timed out {to}")
+            continue
+        write_json(d / "evals" / f"{eid}.json", dict(schema=SCHEMA, evaluator=eid, run=r["run"], at=now(), mfg=res))
+        written += 1
+    shutil.rmtree(ws / "m", ignore_errors=True)
+    print(f"{bid}: {written} mfg evaluation(s) by {eid}; {len(failed)} failed", flush=True)
+    for x in failed:
+        print(f"{bid}: {x}\n{tail(ws / 'job.log', 20)}", flush=True)
+    return 1 if failed and not written else 0
+
+
 # ------------------------------------------------------------------ index
 def cmd_index(a):
     """Rebuild index.sqlite: methods, evaluators, tasks, runs and evaluations (a cache; files are the truth)."""
@@ -2291,6 +2438,17 @@ def main():
     s.add_argument("--board", required=True), s.add_argument("--harness", required=True), s.add_argument("--kae", required=True)
     s.add_argument("--methods", required=True)
     s.set_defaults(f=cmd_rephysics_job)
+    mp = sub.add_parser("mfg", help="manufacturability measurements of an experiment's runs (report-only)").add_subparsers(dest="sub", required=True)
+    s = mp.add_parser("submit", help="queue them, one kaeq job per board with runs still unmeasured")
+    s.add_argument("name"), s.add_argument("--harness", default="HEAD", help="commit of mfg_board.py (default: this checkout's HEAD)")
+    s.add_argument("--refill", action="store_true", help="fill zones first (pcbnew); needed by the pour-dependent columns")
+    s.add_argument("--only", help="comma-separated board ids or @file"), s.add_argument("--limit", type=int), s.add_argument("--prio", type=int, default=0)
+    s.add_argument("--dry-run", action="store_true")
+    s.set_defaults(f=cmd_mfg_submit)
+    s = sub.add_parser("mfg-job", help="one board's manufacturability measurements (what each queued job runs)")
+    s.add_argument("--board", required=True), s.add_argument("--harness", required=True), s.add_argument("--methods", required=True)
+    s.add_argument("--refill", action="store_true")
+    s.set_defaults(f=cmd_mfg_job)
     s = sub.add_parser("index", help="rebuild index.sqlite")
     s.set_defaults(f=cmd_index)
     a = ap.parse_args()

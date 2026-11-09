@@ -190,6 +190,29 @@ Before task spec 10, prepare drew random uuids for objects that a board file sto
 - **Winnable boards** (`### Winnable boards`; `winnable` in `results.csv`): `cp1` on the boards that can still be clean, beside `cp1` on all. A board is left out when the fixed input of its task (`tasks.place-fixed.input_drc` of the experiment's `joint-fixed` task, else its `place-fixed` task) has a placement-type DRC error (`score.py` `PLACEMENT_ERROR_TYPES`): `clean` needs a legal placement, so no method can be clean on it. The section gives the set's size. The set depends on the task spec: of the 213 merit boards, 95 at spec 8 and 100 at specs 9-10 are not winnable. "Can never be clean" is empirical: no method in any report so far is clean on such a board (the `clean on non-winnable` column would show it). Boards without such a task at the experiment's spec are `unknown` and left out, so route-only experiments on boards never prepared as joint tasks show no such set.
 - **Physics, valued only** (`### Physics: valued only...`; `physics_valued_total`, `physics_observations`, `physics_valued_vs_human` in `results.csv`): `physics_total` beside the same sum over only the modules that have a value (`physics_total` adds a flat 3 for each module without one, about 36-56 % of the sum). `observations` counts the modules with a value; a board with none measured nothing and is left out of the per-board means. No module kind of this evaluator is layout-independent (on `baseline-2611b` none of 954 modules valued by three or more methods has identical values), so the valued total is also its layout-dependent total.
 - **Intent physics** (`### Intent physics`, only with `exp report NAME --intent DIR`): kaeres does not store intent evaluations (`tools/research/physics/eval_intent.sh`, `kae.excite.evaluate`); `--intent` reads them from `DIR/<board>/<run, method id or human>.{status,ev}.json`. Per method: mean cost (`tiers.cost`, mW_eq), the same without terms whose observation a layout cannot change (`LAYOUT_INDEPENDENT_OBS`: `loss.part`, a part's own dissipation; ratio 1.00 and sd 0 across layouts), the layout cost's median ratio to the human, and the number of boards with no observation, which are left out of the means.
+- **Manufacturability** (`### Manufacturability`; `mfg_*` columns in `results.csv`): see below. Computed only by `kaeres mfg submit`, never by `exp report`.
+
+## Manufacturability columns
+
+Report-only and not targets (E72): no score uses them, and optimizing any one of them alone makes boards worse. `tools/kaeres/mfg_board.py` computes them per run and stores `evals/mfg-<id>.json` beside the run's other evaluations (attempt 0 only; the evaluator id hashes the script, `kae/src/kae/board`, `fab.py` and whether a refill was done). `exp report` only reads what is stored and prints nothing when no run has them.
+
+```bash
+$K mfg submit NAME [--refill] [--only ids|@file] [--limit N] [--prio P] [--dry-run]   # one kaeq job per board with unmeasured runs
+```
+
+**The refill.** Router outputs store no zone fills, so pour-dependent columns need one (`--refill`: pcbnew fills each output's zones, in a scratch copy next to the board's `.kicad_pro`/`.kicad_dru`). It costs most of the job (minutes on the largest boards; 2 CPUs per job), so it stays out of `exp report`, and a measurement made without it reports those columns as null (`pours_available` false, or `refilled` false for a board whose zones are unfilled). The Stage-1 pass measured 1,887 runs in 1.9 CPU-h with a refill (`stage1/geometry/REPORT.md`).
+
+| column | definition | threshold, source | limits |
+|---|---|---|---|
+| `ca_short_per_m_pours` | Critical area for shorts per metre of track, pours included: sum over 0.25 mm track samples, both sides, of L x0²/s with x0 = 25 µm, s the gap to other-net copper up to 2 mm, floored at 0.02 mm | relative only; 1.2x the human flag (`tm_mfg_physics` section J, `dfm-fab-limits.md`) | needs a refill; gaps are measured every 0.25 mm, so minima are upper bounds; all-board medians are confounded by unrouted copper |
+| `width_at_class_min` | Share of track length within 2 % of the smallest track width any net class asks for | informational | needs the board's own net classes (a `.kicad_pro` or legacy `net_class`; null otherwise, not KiCad's default) |
+| `copper_pair_diff_pp`, `copper_flag` | Worst absolute difference in copper area share between mirrored layer pairs, percentage points, pours included; flag at >= 20 pp | about 20 % (DFM-27, read as points; source ambiguous) | needs a refill; pours dominate it |
+| `vip_small_signal` | Vias inside a same-net SMD pad under 2 mm² on a signal net (name heuristic) | hazard candidate (R99) | net class by name only |
+| `fab_class_jlcpcb` | Cheapest JLCPCB class (`kae.route.fab`) that builds the smallest track, track gap, pad gap, via and via-in-pad use, or none | JLCPCB capabilities page | one fab; track and pad gaps are sampled minima |
+| `phantom_share` | Share of track length on copper layers the human layout does not use (track or zone) | E4/R90 | needs the human run; a used layer is any layer with human copper |
+| `exp_breakout_40um` | Sum over vias of Q(ring/40 µm), the expected via-pad breakouts at a 40 µm drill position error | `tm_mfg_physics` section I (sigma 25-40 µm) | vias only; through-hole pads not counted |
+| `acute_per_m` | Same-net track junctions with interior angle under 90°, per metre of track | acid-trap proxy, no vendor line | endpoint matches only, straight segments only |
+
 
 ## Bug records
 
