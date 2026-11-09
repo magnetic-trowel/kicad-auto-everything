@@ -117,7 +117,7 @@ class ObstacleClass:
 
 @dataclass
 class Obstacle:
-    kind: str               # 'keepout' | 'via_keepout'
+    kind: str               # 'keepout' | 'via_keepout' | 'wire_keepout' (tracks only; vias pass, as in KiCad)
     layer: str              # copper layer name or 'signal'
     geom: object            # shapely Polygon / MultiPolygon, or ('circle', x, y, d)
     cls: str                # obstacle class name
@@ -874,7 +874,9 @@ def _obstacles(info, rb, p, sev, opts):
         geo = unary_union([x for x in (_poly(r) for r in z["rings"]) if x is not None])
         if geo.is_empty:
             continue
-        kind = "keepout" if z.get("no_tracks") else "via_keepout"
+        # no tracks but vias allowed (e.g. a board's unused layer: a full-layer area): a through via
+        # passes, as KiCad's disallow test does; a plain keepout would stop every via on the board
+        kind = ("keepout" if z.get("no_vias") else "wire_keepout") if z.get("no_tracks") else "via_keepout"
         zc = _zero_class(p)
         for l in z["layers"]:
             p.obstacles.append(Obstacle(kind, l, geo, zc, f"rule area {z.get('name') or ''} {z.get('owner') or ''}"))
