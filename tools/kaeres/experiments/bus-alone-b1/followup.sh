@@ -1,0 +1,20 @@
+#!/bin/bash
+# SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Hourly follow-up for bus-alone-b1: once the bus-alone runs are in, queue their views; once every view is made, write
+# the analysis (WORK/out/SUMMARY.md, buses.csv). Idempotent. Usage: followup.sh WORK_DIR
+set -u
+export PATH=$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin
+HERE=$(cd "$(dirname "$0")" && pwd)
+WORK=$1
+exp_left=$(kaeq status --owner exp-bus-alone-b1 | grep '^exp-bus-alone-b1:' | grep -oE '(queued|running)=[0-9]+' | cut -d= -f2 | paste -sd+ | bc)
+view_left=$(kaeq status --owner busview-bus-alone-b1 | grep '^busview' | grep -oE '(queued|running)=[0-9]+' | cut -d= -f2 | paste -sd+ | bc)
+echo "$(date -Is) experiment jobs left: ${exp_left:-0}, view jobs left: ${view_left:-0}"
+if [ "${exp_left:-0}" = 0 ] && [ ! -e "$WORK/.views-submitted" ]; then
+  python3 "$HERE/submit_views.py" bus-alone-b1 "$WORK" && touch "$WORK/.views-submitted"
+  exit 0
+fi
+if [ -e "$WORK/.views-submitted" ] && [ "${view_left:-0}" = 0 ]; then
+  python3 "$HERE/submit_views.py" bus-alone-b1 "$WORK" --dry-run | grep -q ', 0 views to make' || { python3 "$HERE/submit_views.py" bus-alone-b1 "$WORK"; exit 0; }
+  python3 "$HERE/analyze.py" "$WORK/busnets" "$WORK/views" "$WORK/runs.csv" /var/tmp/eriks/board-tags/suites "$WORK/out" > "$WORK/analyze.log" 2>&1 && touch "$WORK/.done"
+fi
