@@ -34,6 +34,14 @@ import numpy as np
 # DRC types that depend on the local library setup, not on the board (as kaebench and
 # kae.route.drc ignore them)
 ENV_DEPENDENT = ("lib_footprint_issues", "lib_footprint_mismatch")
+# DRC types no part move or local re-route changes: footprint definitions (pads, courtyards,
+# text, padstacks, drills), the board outline, zones and text variables. Every kae placement
+# of a board has the same count of each of these (constant across seeds and methods on every
+# board with one, 0 varied of 191 board x evaluator pairs); windows opened only for them were
+# never kept (0 of 75). Silk and solder-mask types do vary with placement and stay.
+NO_MOVE_FIXES = ("footprint_type_mismatch", "unresolved_variable", "annular_width", "zones_intersect",
+                 "invalid_outline", "malformed_courtyard", "text_on_edge_cuts", "padstack", "drill_out_of_range")
+IGNORED_SPOTS = ENV_DEPENDENT + NO_MOVE_FIXES
 
 _NET = re.compile(r"\[([^\]]*)\]")
 _REF = re.compile(r"\bof (\S+?)(?:\s+on\s|\s*$)")
@@ -121,7 +129,7 @@ def unrouted_spots(drc):
     return out
 
 
-def error_spots(drc, ignore=ENV_DEPENDENT):
+def error_spots(drc, ignore=IGNORED_SPOTS):
     """One spot per error-level DRC violation (unconnected items aside)."""
     out = []
     for v in (drc or {}).get("violations") or []:
