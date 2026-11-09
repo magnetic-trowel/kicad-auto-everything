@@ -104,3 +104,11 @@ def test_untangle_holds_parts_and_respects_physics():
 
     rep = C.untangle(P, st, terms=Never(), x_mm=1e9, time_s=20.0)
     assert rep["swaps"] == 0 and rep["turns"] == 0
+
+
+def test_half_turn_keeps_legality_on_off_centre_footprints():
+    _, P, st = _legal()
+    two_pin = [i for i in P.mov if len(P.parts[i].fp.pads) == 2 and len(P.parts[i].rots) == 4]
+    assert two_pin and any(C.half_turn(P.parts[i], int(st.K[i])) for i in two_pin)
+    C.untangle(P, st, x_mm=1e9, time_s=20.0)
+    assert not grid_violations(st)

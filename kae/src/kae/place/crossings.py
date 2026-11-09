@@ -26,6 +26,8 @@ from __future__ import annotations
 import math
 import time
 
+from .state import grid_violations
+
 MAX_PINS = 12
 
 
@@ -217,17 +219,22 @@ def swap_pairs(P, st, hold=(), per_part=8):
     return sorted(pairs)
 
 
-def half_turnable(p, k0):
-    """Rotation index of a half turn of part p from k0 when it keeps every grid rectangle,
-    else None."""
+def half_turn(p, k0):
+    """(rotation index of a half turn of part p from k0, whether it keeps every grid rectangle),
+    or None for a part with no half turn. A footprint not centred on its origin moves its
+    rectangles by a cell or so: the turn is still a candidate, checked for legality."""
     if len(p.rots) < 4 or not hasattr(p, "turn"):
         return None
     k1 = p.turn[k0][2]
-    r0, r1 = p.rots[k0], p.rots[k1]
-    if k1 == k0 or r0.g_own != r1.g_own or tuple(r0.g_own_rects or ()) != tuple(r1.g_own_rects or ()) \
-            or tuple(r0.g_opp) != tuple(r1.g_opp) or r0.g_board != r1.g_board:
+    if k1 == k0:
         return None
-    return k1
+    r0, r1 = p.rots[k0], p.rots[k1]
+    same = r0.g_own == r1.g_own and r0.g_board == r1.g_board
+    # the same rectangles in another order (a half turn swaps which pad's rectangle comes first)
+    for a, b in ((r0.g_own_rects, r1.g_own_rects), (r0.g_opp, r1.g_opp), (r0.g_boards, r1.g_boards)):
+        if sorted(tuple(x) for x in (a or ())) != sorted(tuple(x) for x in (b or ())):
+            same = False
+    return k1, same
 
 
 def untangle(P, st, terms=None, zones=None, hold=(), x_mm=2.0, max_sweeps=8, time_s=20.0, log=None):
@@ -262,7 +269,7 @@ def untangle(P, st, terms=None, zones=None, hold=(), x_mm=2.0, max_sweeps=8, tim
             return 0.0
         return sum(zones.part(q, int(st.X[q]), int(st.Y[q]), int(st.K[q])) for q in parts)
 
-    def attempt(parts, apply, undo):
+    def attempt(parts, apply, undo, check_grid=False):
         nonlocal hp
         z0 = zone_cost(parts)
         apply()
@@ -275,6 +282,8 @@ def untangle(P, st, terms=None, zones=None, hold=(), x_mm=2.0, max_sweeps=8, tim
         if d < 0:
             hp1 = st.hpwl()
             ok = hp1 - hp <= x_mm * (-d) and zone_cost(parts) <= z0 + 1e-9
+            if ok and check_grid:
+                ok = not grid_violations(st)
             if ok and terms is not None:
                 ok = physics_ok(parts)[0]
         if ok:
@@ -313,16 +322,17 @@ def untangle(P, st, terms=None, zones=None, hold=(), x_mm=2.0, max_sweeps=8, tim
                 timed_out = True
                 break
             k0 = int(st.K[i])
-            k1 = half_turnable(P.parts[i], k0)
-            if k1 is None:
+            ht = half_turn(P.parts[i], k0)
+            if ht is None:
                 continue
+            k1, same = ht
 
             def apply_turn():
                 st.K[i] = k1
 
             def undo_turn():
                 st.K[i] = k0
-            if attempt((i,), apply_turn, undo_turn):
+            if attempt((i,), apply_turn, undo_turn, check_grid=not same):
                 moved["turn"] += 1
                 improved = True
         if timed_out:
