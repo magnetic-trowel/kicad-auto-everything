@@ -36,7 +36,7 @@ Never on plain outlines (the code path does not run; no regression there is poss
 ## Metrics (paired, attempt 0)
 `cp1`, `cpk` (= `cp1`, k = 1), completion, open connections, `legal`, DRC per type (`errors_by_type`), CPU, `barrier_split` / `barrier_crossings`.
 
-Noise: A/A staged twins move total opens by 2.8% and cp1 by about 0.5 pp at 200 boards. At these sizes a paired ratio of about 1.05 in opens, and about 6-8 pp in cp1, is the visible limit.
+Noise: the A/A joint-loop twins (`aa-joint`; no staged A/A exists) move total opens by 2.8% and cp1 by about 0.5 pp at 200 boards. At these sizes a paired ratio of about 1.05 in opens, and about 6-8 pp in cp1, is the visible limit.
 Physics not reported: neither mechanism changes module structure; open-connections and legality are the mechanism's direct metric.
 
 ## Decision rule (pre-registered)
