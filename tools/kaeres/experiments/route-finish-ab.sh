@@ -30,6 +30,7 @@
 #
 #   SHA=<pushed route-finish commit> STAGE=s1|full|smoke tools/kaeres/experiments/route-finish-ab.sh
 #     s1    route-finish-ab-s1: 40 boards (route-finish-ab-s1.boards.txt), arms A and C (TWIN=1: and an A/A twin of A)
+#     s1r   route-finish-ab-s1r: the same 40 boards, arms A and C, at the fixed code (PLAN.md section 9)
 #     full  route-finish-ab: 213 boards, arms A, C, D, E (reuses the s1 runs)
 #     smoke route-finish-ab-smoke: one board (BOARD, default freetronics-secsense-secsense), arms A, C, D, E
 # Registers methods and the experiment only. Then (each needs the user's approval for its size):
@@ -49,7 +50,7 @@ H=(--harness $SHA)
 KH='$HOME/.cache/kaebench'
 FORK="$HOME/.cache/kaebench/kae-freerouting-fork-2e1125a/bin/freerouting"
 NUMBA=numba-rf-${SHA:0:7}
-OPSRC=${OPSRC:-/var/tmp/$USER/intent-213/compiled-6329e71}
+OPSRC=${OPSRC:-/var/tmp/$USER/intent-213/compiled-9867d0b}
 STEP_CACHE=${STEP_CACHE:-/var/tmp/$USER/step-cache-rf-ab}
 D=tools/kaeres/experiments
 
@@ -106,9 +107,11 @@ case "$STAGE" in
         --harness $SHA --kae $SHA --env KAE_STEP_CACHE=$STEP_CACHE --description "stage 1 (40 boards, A and C) of the $desc" >/dev/null ;;
   full) $K exp create route-finish-ab --method "$A" --method "$C" --method "$DD" --method "$EE" \
         --boards @$D/route-finish-ab.boards.txt --harness $SHA --kae $SHA --env KAE_STEP_CACHE=$STEP_CACHE --description "$desc" >/dev/null ;;
+  s1r) $K exp create route-finish-ab-s1r --method "$A" --method "$C" --boards @$D/route-finish-ab-s1.boards.txt \
+        --harness $SHA --kae $SHA --env KAE_STEP_CACHE=$STEP_CACHE --description "stage 1 rerun (the same 40 boards, A and C) at $S7 with the corrected physics set, score v12, task spec 10; criteria in route-finish-ab/PLAN.md section 9. $desc" >/dev/null ;;
   smoke) B1=${BOARD:-freetronics-secsense-secsense}
         $K exp create route-finish-ab-smoke-$S7 --method "$A" --method "$C" --method "$DD" --method "$EE" --boards "$B1" \
         --harness $SHA --kae $SHA --env KAE_STEP_CACHE=$STEP_CACHE --description "smoke ($B1) of the $desc" >/dev/null ;;
-  *) echo "STAGE: s1, full or smoke" >&2; exit 2 ;;
+  *) echo "STAGE: s1, s1r, full or smoke" >&2; exit 2 ;;
 esac
 echo "experiment created (STAGE=$STAGE); nothing submitted"

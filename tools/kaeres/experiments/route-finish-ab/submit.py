@@ -65,6 +65,8 @@ def main():
     ap.add_argument("--out", default=f"/var/tmp/{os.environ.get('USER', '')}/rf-ab")
     ap.add_argument("--offsets", action="store_true")
     ap.add_argument("--include-unsolved", action="store_true")
+    ap.add_argument("--offset-max-s", type=float, default=900.0,
+                    help="--offsets: leave out boards where any base evaluation in OUT took longer (or none exists)")
     ap.add_argument("--owner", default="rf-ab")
     ap.add_argument("--prio", type=int, default=0)
     ap.add_argument("--submit", action="store_true")
@@ -80,6 +82,12 @@ def main():
             jobs.append(dict(cmd=f"env {env} bash fork.sh {a.arm} {b}", name=f"rfab:{a.arm}:{short}", cpus=2,
                              mem="24G" if big else "4G", disk="8G" if big else "2G", timeout="6h", prio=a.prio))
             continue
+        if a.offsets:
+            times = [int(m.group(1)) for p in (Path(a.out) / "measure" / b / "phys").glob("*.status.txt") if "@" not in p.name
+                     for m in re.finditer(r"eval_s (\d+)", p.read_text())]
+            if not times or max(times) > a.offset_max_s:
+                skipped.append(b)
+                continue
         ev, peak = hist.get(b, (None, None))
         if ev is None and not a.include_unsolved:
             skipped.append(b)
@@ -87,7 +95,7 @@ def main():
         ev = ev or 6 * 3600.0
         cpus = 16 if ev > 600 else 4
         mem = max(4096, int(1.3 * (peak or 3000)))
-        tmo = int(min(12 * 3600, max(3600, 3 * ev + 1800)))
+        tmo = int(min(12 * 3600, max(4 * 3600 if ev > 600 else 3600, 3 * ev + 1800)))
         for off in (OFFSETS if a.offsets else (None,)):
             cmd = f"env {env} bash measure.sh {b} {a.arm}" + (f" {off[0]} {off[1]}" if off else "")
             jobs.append(dict(cmd=cmd, name=f"rfab:m:{a.arm[:8]}:{short}" + (f"@{off[0]}" if off else ""), cpus=cpus,
@@ -97,7 +105,7 @@ def main():
     f.parent.mkdir(parents=True, exist_ok=True)
     f.write_text("".join(json.dumps(j) + "\n" for j in jobs))
     print(f"{len(jobs)} jobs -> {f}" + (f"; physics ~{est / 3600:.1f} job-h at 4 cpus" if est else "")
-          + (f"; left out (no evaluation ever finished): {' '.join(skipped)}" if skipped else ""))
+          + (f"; left out (no evaluation, or offsets too heavy): {' '.join(skipped)}" if skipped else ""))
     if a.submit and jobs:
         if a.prio > 5:
             sys.exit("priority above 5 needs the user's say-so")

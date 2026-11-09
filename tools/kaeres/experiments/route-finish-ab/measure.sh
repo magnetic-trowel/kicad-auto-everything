@@ -35,6 +35,13 @@ if [ -z "$dx" ] && [ ! -s "$M/${arm:0:12}.stats.json" ]; then
   ( ulimit -v 40000000; PYTHONPATH=$CODE/kae/src "$KPY" -m kae.route.taut stats "$ws/board.kicad_pcb" ) > "$M/${arm:0:12}.stats.json" \
     2> "$ws/stats.err" || { tail -5 "$ws/stats.err" >&2; rm -f "$M/${arm:0:12}.stats.json"; }
 fi
+if [ -z "$dx" ]; then      # overhang by land type and exposed acute notches (DFM criteria, PLAN.md section 9)
+  for t in overhang_diag notch_stats; do
+    j=$M/${arm:0:12}.$t.json
+    [ -s "$j" ] || ( ulimit -v 40000000; PYTHONPATH=$CODE/kae/src "$KPY" "$CODE/tools/research/routing/$t.py" "$ws/board.kicad_pcb" --json "$j" ) \
+      > /dev/null 2> "$ws/$t.err" || { tail -5 "$ws/$t.err" >&2; rm -f "$j"; }
+  done
+fi
 [ -n "${NO_PHYSICS:-}" ] && exit 0
 [ -s "$M/phys/$tag.status.json" ] && { echo "$b $tag: physics done"; exit 0; }
 op=$OPSRC/$b.operating.json it=$OPSRC/$b.intent.json

@@ -204,3 +204,30 @@ After a scoring fix, stored boards are re-scored without re-routing: `submit.py 
 - The warmed numba cache is small (204 KB against 9.7 MB for merge3-ab's, which also warmed kae.joint); kernels a
   board needs beyond the two warm boards compile inside the first attempt of every arm alike.
 - B's finish is not charged to a wall budget; C's is. A B > C result on time-skipped parts is that, not a code effect.
+
+## 9. Stage 1 rerun (`route-finish-ab-s1r`): pre-registered before any of its results exist
+
+Arms A and C only, the same 40 boards (`route-finish-ab-s1.boards.txt`), code at c8188eb (score v12, task spec 10 with deterministic uuids, the corrected physics set, the finish notch fixes). Intents and operating facts: `intent-213/compiled-9867d0b`. Routing runs in the kaeq `timed` class at priority 5 at most, results in `OUT=/var/tmp/$USER/rf-ab-s1r`. Stage 2 is not part of this and waits for its own approval.
+
+**Physics settings.** `KAE_EVAL_MAX_CELLS` stays at its default, **4,000,000** cells (`eval_intent.sh`; `offset_eval.py` passes the same value): a larger window has its pitch doubled until it fits, and the evaluator says so. kocer and J2032 are dropped from physics; neither is in these 40 boards. Human, A and C each get base physics and geometry on every board. Offsets (three shifted rasters) follow on boards whose slowest base evaluation among the three arms took at most 900 s (`submit.py --offset-max-s`); heavier boards (poledancer's offsets timed out at 4 h in stage 1) are judged against the floor alone.
+
+**Routing tables** cover all 40 boards: with spec 10 the 10 boards left out of stage 1 for uuid churn are comparable. The check: their non-routing object uuids are the same in A's and C's outputs, which come from separately prepared tasks.
+
+**Gates, C against A** (`analyze.py --section gates` computes each verdict):
+
+| Criterion | Passes when |
+|---|---|
+| cp1 and `clean_strict` | paired 95 % CI lower bound above -0.02, and McNemar p ≥ 0.05 or C better |
+| completion | CI lower bound above -0.005 |
+| DRC errors per board | sign-flip p ≥ 0.05, or C lower |
+| new error types | none in C with more than 5 occurrences and absent from A |
+| validity (check) | no invalid output in either arm |
+| oblique + acute entries | per-board median C/A below 0.9 and sign-flip p < 0.05 |
+| `loss.copper`, `drop.rail` | median C/A at most 1, and more signal-better than signal-worse terms |
+| every observable | signal-worse terms exceed signal-better by at most 2 |
+| **overhang on SMD lands** | neither the per-board entry count nor the area (mm²) of C rises above A beyond noise: the repository-resampled 95 % CI of the mean per-board difference (C - A) must not lie wholly above 0 |
+| **exposed acute notches** | notches with gap < 80° and depth ≥ 50 µm, pooled per metre of track: C not above human beyond noise, i.e. the repository-resampled 95 % CI of the pooled-rate difference (C - human) must not lie wholly above 0 |
+
+The overhang gate replaces §4 Q1.2's "overhanging entries fall". SMD lands are two-terminal SMD plus other SMD (`tools/research/routing/overhang_diag.py`). Overhang totals and THT lands are reported, not gated: wide rails into THT pads are normal practice. Notches come from `tools/research/routing/notch_stats.py` ([why](../../../../bench/results/2026-11-08-finish-notches.md)) and are reported for A, C and human. "Not above beyond noise" is a one-sided claim about 40 boards: a pass means no clear rise, not proof of equality; the point estimates are reported alongside.
+
+Physics terms are judged as in §5, on raw values in base units (dB converted to linear) when both arms have one, else on contributions.

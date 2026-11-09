@@ -24,6 +24,7 @@ import gzip
 import json
 import math
 import os
+import random
 import re
 import statistics as st
 import sys
@@ -63,7 +64,7 @@ def arm_of(name):
 
 
 class Data:
-    def __init__(self, exp, out, churn="exclude"):
+    def __init__(self, exp, out, churn="exclude", only_arms=None):
         self.e = jl(STORE / "experiments" / exp / "experiment.json")
         if not self.e:
             sys.exit(f"no experiment {exp}")
@@ -73,6 +74,8 @@ class Data:
         self.drc_eval = self.e["evaluators"]["drc"]
         self.arms = [a for a in ("A0", "A0r", "A", "A2", "B", "C", "D", "E") if a in ("A0", "A0r", "B") or a in self.ids]
         self._a0 = None
+        if only_arms:
+            self.arms = [a for a in self.arms if a in only_arms]
         self.src = defaultdict(lambda: defaultdict(set))   # arm -> source -> boards
         self.churn_mode = churn
         self.churn = {p.parent.name for p in self.out.glob("rescore-*/*/churn.json") if (jl(p) or {}).get("all_churn")}
@@ -298,15 +301,35 @@ def sec_geometry(D):
     return "\n".join(out)
 
 
+SCALE = {"V": 1.0, "mV": 1e-3, "µV": 1e-6, "uV": 1e-6, "nV": 1e-9, "W": 1.0, "mW": 1e-3, "µW": 1e-6, "uW": 1e-6, "nW": 1e-9,
+         "pW": 1e-12, "A": 1.0, "mA": 1e-3, "µA": 1e-6, "uA": 1e-6, "K": 1.0, "C": 1.0, "ohm": 1.0, "mohm": 1e-3}
+
+
+def raw_value(v):
+    """A term's displayed value in base units ('980 mV' and '1.1 V' are comparable), dB as a linear amplitude;
+    None when it has no number or an unknown unit (the contribution is judged instead)."""
+    m = re.match(r"\s*(-?[\d.]+(?:e[-+]?\d+)?)\s*(\S*)", str(v or ""))
+    if not m:
+        return None
+    x, u = float(m.group(1)), m.group(2)
+    if u.startswith("dB"):
+        return 10 ** (x / 20.0)
+    return x * SCALE[u] if u in SCALE else None
+
+
 def terms(status):
     """{term id: (observable, contribution, raw value or None)}"""
     out = {}
     for t in (status or {}).get("terms") or []:
         if t.get("contribution") is None:
             continue
-        m = re.match(r"\s*(-?[\d.]+(?:e-?\d+)?)", str(t.get("value") or ""))
-        out[t["id"]] = (t["obs"], float(t["contribution"]), float(m.group(1)) if m else None)
+        out[t["id"]] = (t["obs"], float(t["contribution"]), raw_value(t.get("value")))
     return out
+
+
+def _cmp(x, y):
+    """The two numbers a term is judged on: raw values when both arms have one, else both contributions."""
+    return (x[2], y[2]) if x[2] is not None and y[2] is not None else (x[1], y[1])
 
 
 def phys_terms(D, arm, b):
@@ -350,7 +373,7 @@ def sec_physics(D, offset_list=None):
                     y = P[ref][0].get(k)
                     if not y:
                         continue
-                    xv, yv = (x[2] if x[2] is not None else x[1]), (y[2] if y[2] is not None else y[1])
+                    xv, yv = _cmp(x, y)
                     if not yv:
                         continue
                     r = xv / yv
@@ -390,6 +413,229 @@ def sec_physics(D, offset_list=None):
         Path(offset_list).write_text("".join(f"{b} {a}\n" for b, a in sorted(need)))
         out.append(f"\n{len(need)} (board, arm) pairs need offset-averaging: {offset_list}\n")
     return "\n".join(out)
+
+
+NOTCH_DEPTH = "0.05"     # m: the gated column of notch_stats, at gaps below 80 degrees (PLAN.md section 9)
+
+
+def _tag(D, arm):
+    return D.ids[arm][:12] if arm in D.ids else arm
+
+
+def overhang(D, arm, b):
+    """{kind: (entries, mm2)} of a kept board (overhang_diag), None without a measure."""
+    j = jl(D.out / "measure" / b / f"{_tag(D, arm)}.overhang_diag.json")
+    if j is None:
+        return None
+    out = defaultdict(lambda: [0, 0.0])
+    for e in j.get("entries") or []:
+        out[e["kind"]][0] += 1
+        out[e["kind"]][1] += float(e["mm2"])
+    return out
+
+
+def notches(D, arm, b):
+    """(notches below 80 deg and at least 50 um deep, metres of track) of a kept board, None without a measure."""
+    j = jl(D.out / "measure" / b / f"{_tag(D, arm)}.notch_stats.json")
+    return None if j is None else (j["notches"][NOTCH_DEPTH]["below80"], j["track_m"])
+
+
+def _stats(D):
+    sys.path.insert(0, str(STORE / "code" / f"kicad-auto-everything@{D.e['harness']['commit'][:12]}" / "bench" / "src"))
+    from kaebench import stats as S
+    return S
+
+
+def _repos():
+    try:
+        rows = [json.loads(l) for l in open(CORPUS / "manifest.jsonl") if l.strip()]
+    except OSError:
+        return {}
+    return {r["id"]: r.get("repo") for r in rows}
+
+
+def smd_overhang(D, a, b):
+    """{board: (n, mm2)} on SMD lands (smd2 + smd) over the boards both arms have."""
+    out = {}
+    for bd in D.boards:
+        x, y = overhang(D, a, bd), overhang(D, b, bd)
+        if x is not None and y is not None:
+            out[bd] = tuple((sum(o[k][i] for k in ("smd2", "smd") if k in o)) for o in (x, y) for i in (0, 1))
+    return out
+
+
+def overhang_gate(D, ctrl="A", treat="C"):
+    """C's SMD overhang against A's: per-board differences (entries; mm2), repository-resampled CI, sign-flip p.
+    Fails when either difference is positive and its CI excludes 0."""
+    S, cl = _stats(D), _repos()
+    d = smd_overhang(D, ctrl, treat)
+    res = {}
+    for name, i in (("entries", 0), ("mm2", 1)):
+        diffs = [v[2 + i] - v[i] for v in d.values()]
+        if not diffs:
+            continue
+        ci = S.bootstrap_ci(diffs, [cl.get(b, b) for b in d])
+        res[name] = dict(n=len(diffs), control=round(sum(v[i] for v in d.values()), 2),
+                         treatment=round(sum(v[2 + i] for v in d.values()), 2), mean_diff=round(st.mean(diffs), 4),
+                         ci=[round(x, 4) for x in ci], p=S.sign_flip(diffs), above=sum(x > 0 for x in diffs),
+                         below=sum(x < 0 for x in diffs), fail=ci[0] > 0)
+    return res
+
+
+def notch_gate(D, treat="C", ref="human", n_boot=5000):
+    """Pooled notches per metre, treatment against reference, boards both have; 95 % CI of the difference by
+    resampling repositories. Fails when the CI's lower bound is above 0."""
+    cl = _repos()
+    rows = []
+    for b in D.boards:
+        x, y = notches(D, treat, b), notches(D, ref, b)
+        if x and y:
+            rows.append((cl.get(b, b), x, y))
+    if not rows:
+        return None
+    rate = lambda rs, i: sum(r[i][0] for r in rs) / max(1e-9, sum(r[i][1] for r in rs))
+    by = defaultdict(list)
+    for r in rows:
+        by[r[0]].append(r)
+    keys, rng, boots = sorted(by), random.Random(0), []
+    for _ in range(n_boot):
+        rs = [r for k in rng.choices(keys, k=len(keys)) for r in by[k]]
+        boots.append(rate(rs, 1) - rate(rs, 2))
+    boots.sort()
+    ci = (boots[int(0.025 * n_boot)], boots[int(0.975 * n_boot)])
+    return dict(n=len(rows), treat=round(rate(rows, 1), 2), ref=round(rate(rows, 2), 2), diff=round(rate(rows, 1) - rate(rows, 2), 2),
+                ci=[round(x, 2) for x in ci], fail=ci[0] > 0)
+
+
+def sec_dfm(D):
+    out = ["## Overhang by land type and exposed acute notches\n"]
+    rows = []
+    for arm in ["human"] + [a for a in D.arms if a in ("A", "C")]:
+        tot = defaultdict(lambda: [0, 0.0])
+        n = 0
+        for b in D.boards:
+            o = overhang(D, arm, b)
+            if o is None:
+                continue
+            n += 1
+            for k, v in o.items():
+                tot[k][0] += v[0]
+                tot[k][1] += v[1]
+        if n:
+            rows.append([arm, n, sum(v[0] for v in tot.values()), round(sum(v[1] for v in tot.values()), 1)]
+                        + [f"{tot[k][0]} / {tot[k][1]:.1f}" for k in ("smd2", "smd", "tht")])
+    out.append(table(["arm", "boards", "entries", "mm2", "SMD two-terminal n / mm2", "other SMD n / mm2", "THT n / mm2"], rows))
+    out.append("\n| arm | boards | notches < 80 deg, >= 50 um | track m | per m |\n|---|---|---|---|---|")
+    for arm in ["human"] + [a for a in D.arms if a in ("A", "C")]:
+        v = [x for x in (notches(D, arm, b) for b in D.boards) if x]
+        if v:
+            out.append(f"| {arm} | {len(v)} | {sum(x[0] for x in v)} | {sum(x[1] for x in v):.1f} | {sum(x[0] for x in v) / sum(x[1] for x in v):.2f} |")
+    return "\n".join(out)
+
+
+def sec_gates(D):
+    """The pre-registered verdicts of PLAN.md section 9, computed, for C against A."""
+    S, cl = _stats(D), _repos()
+    v = []
+
+    def add(name, ok, detail):
+        v.append([name, {True: "PASS", False: "FAIL", None: "no data"}[ok], detail])
+
+    def pr(metric, binary):
+        return paired(D, metric, "A", "C", binary)
+
+    r = pr(lambda s: bool(s.get("clean")), True)
+    if r:
+        add("cp1 not worse (CI low > -0.02; McNemar p >= 0.05 or C better)", r["ci"][0] > -0.02 and (r["p"] >= 0.05 or r["diff"] > 0),
+            f"A {r['mean_a']} C {r['mean_b']} diff {r['diff']} CI {r['ci']} p {r['p']} +{len(r['gained'])}/-{len(r['lost'])}")
+    r = pr(lambda s: s.get("clean_strict"), True)
+    if r:
+        add("clean_strict not worse (same test)", r["ci"][0] > -0.02 and (r["p"] >= 0.05 or r["diff"] > 0),
+            f"A {r['mean_a']} C {r['mean_b']} CI {r['ci']} p {r['p']} +{len(r['gained'])}/-{len(r['lost'])}")
+    r = pr(lambda s: float(s.get("completion") or 0), False)
+    if r:
+        add("completion not worse (CI low > -0.005)", r["ci"][0] > -0.005, f"A {r['mean_a']} C {r['mean_b']} CI {r['ci']} p {r['p']}")
+    r = pr(lambda s: float(s.get("errors") or 0), False)
+    if r:
+        add("DRC errors not higher (p >= 0.05 or lower)", r["p"] >= 0.05 or r["diff"] <= 0, f"A {r['mean_a']} C {r['mean_b']} p {r['p']}")
+    ta, tc = Counter(), Counter()
+    for b in D.boards:
+        sa, sc = D.score("A", b), D.score("C", b)
+        if sa and sc:
+            ta.update(sa.get("errors_by_type") or {})
+            tc.update(sc.get("errors_by_type") or {})
+    new = {k: n for k, n in tc.items() if n > 5 and not ta.get(k)}
+    add("no new error type with more than 5 occurrences", not new, str(new or "none"))
+    invalid = {a: [b for b in D.boards if (D.score(a, b) or {}).get("valid") is False] for a in ("A", "C")}
+    add("check: no invalid outputs", not (invalid["A"] or invalid["C"]), str({a: len(x) for a, x in invalid.items()}))
+    ga, gc = {b: geo(D.stats("A", b)) for b in D.boards}, {b: geo(D.stats("C", b)) for b in D.boards}
+    bs = [b for b in D.boards if ga[b] and gc[b]]
+    oa = lambda g: g.get("oblique", 0) + g.get("acute_entries", 0)
+    if bs:
+        rat = [oa(gc[b]) / oa(ga[b]) for b in bs if oa(ga[b])]
+        p = S.sign_flip([oa(gc[b]) - oa(ga[b]) for b in bs])
+        add("oblique + acute entries fall (median ratio < 0.9, sign-flip p < 0.05)", st.median(rat) < 0.9 and p < 0.05,
+            f"sum A {sum(oa(ga[b]) for b in bs)} C {sum(oa(gc[b]) for b in bs)}, median ratio {st.median(rat):.3f}, p {p}")
+    else:
+        add("oblique + acute entries fall", None, "no stats")
+    g = overhang_gate(D)
+    for name in ("entries", "mm2"):
+        if name in g:
+            x = g[name]
+            add(f"overhang on SMD lands, {name}: C not above A beyond noise (CI excludes a rise)", not x["fail"],
+                f"A {x['control']} C {x['treatment']} mean diff {x['mean_diff']} CI {x['ci']} p {x['p']} boards up {x['above']} down {x['below']}")
+    if not g:
+        add("overhang on SMD lands", None, "no measures")
+    n = notch_gate(D)
+    if n:
+        add("notches < 80 deg, >= 50 um, per m: C not above human beyond noise", not n["fail"],
+            f"C {n['treat']} human {n['ref']} diff {n['diff']} CI {n['ci']} ({n['n']} boards)")
+    else:
+        add("notches per m", None, "no measures")
+    vd, by = physics_verdicts(D)
+    for o in ("loss.copper", "drop.rail"):
+        vals, c = by.get(o), vd.get(o)
+        if vals:
+            add(f"{o}: median C / A <= 1, more signal-better than signal-worse terms",
+                st.median(vals) <= 1 and c["signal better"] > c["signal worse"],
+                f"median {st.median(vals):.3f}, " + ", ".join(f"{k} {n_}" for k, n_ in sorted(c.items())))
+    bad = {o: (c["signal worse"], c["signal better"]) for o, c in vd.items() if c["signal worse"] - c["signal better"] > 2}
+    add("no observable with signal-worse exceeding signal-better by more than 2", not bad, str(bad or "none"))
+    return "## Pre-registered gates, C against A (PLAN.md section 9)\n\n" + table(["criterion", "verdict", "detail"], v)
+
+
+def physics_verdicts(D, arm="C", ref="A"):
+    """({observable: Counter of verdicts}, {observable: [ratios]}) of `arm` against `ref`, as sec_physics judges them."""
+    vd, by = defaultdict(Counter), defaultdict(list)
+    for b in D.boards:
+        x, y = phys_terms(D, arm, b), phys_terms(D, ref, b)
+        if not x[0] or not y[0]:
+            continue
+        for k, xt in x[0].items():
+            yt = y[0].get(k)
+            if not yt:
+                continue
+            xv, yv = _cmp(xt, yt)
+            if not yv:
+                continue
+            r = xv / yv
+            by[xt[0]].append(r)
+            fl = FLOOR.get(xt[0])
+            if fl is None:
+                vd[xt[0]]["floor ?"] += 1
+            elif x[1] and y[1] and xt[3] is not None and yt[3] is not None:
+                sd = math.sqrt((xt[3] ** 2 + yt[3] ** 2) / 2)
+                if abs(xv - yv) > 2 * max(sd, 1e-12):
+                    vd[xt[0]]["signal better" if xv < yv else "signal worse"] += 1
+                else:
+                    vd[xt[0]]["noise (offsets)"] += 1
+            elif abs(r - 1) <= fl:
+                vd[xt[0]]["noise"] += 1
+            elif abs(r - 1) <= 2 * fl:
+                vd[xt[0]]["ambiguous"] += 1
+            else:
+                vd[xt[0]]["signal better" if r < 1 else "signal worse"] += 1
+    return vd, by
 
 
 def hazards_of(D, arm, b):
@@ -486,16 +732,17 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--exp", required=True)
     ap.add_argument("--out", default=f"/var/tmp/{os.environ.get('USER', '')}/rf-ab")
-    ap.add_argument("--section", default="routing,geometry,physics,hazards,stages")
+    ap.add_argument("--section", default="gates,routing,geometry,dfm,physics,hazards,stages")
     ap.add_argument("--churn", choices=("exclude", "stored"), default="exclude",
                     help="boards whose re-score is only uuid churn: left out of every arm, or each run's stored score")
+    ap.add_argument("--arms", help="comma list of arms to report (default: every arm with data)")
     ap.add_argument("--offset-list", help="write the (board, arm) pairs whose physics needs offset-averaging")
     a = ap.parse_args()
-    D = Data(a.exp, a.out, a.churn)
+    D = Data(a.exp, a.out, a.churn, a.arms.split(",") if a.arms else None)
     print(f"# route-finish A/B: {a.exp}\n\nArms {', '.join(D.arms)}; methods "
           + ", ".join(f"{k} `{v}`" for k, v in D.ids.items()) + f"; DRC evaluator `{D.drc_eval}`; {len(D.boards)} boards.\n")
     fns = dict(routing=sec_routing, geometry=sec_geometry, physics=lambda d: sec_physics(d, a.offset_list),
-               hazards=sec_hazards, stages=sec_stages)
+               hazards=sec_hazards, stages=sec_stages, dfm=sec_dfm, gates=sec_gates)
     for s in a.section.split(","):
         print(fns[s](D) + "\n")
 
