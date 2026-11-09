@@ -237,6 +237,8 @@ DEFAULTS = dict(
                                    # only on the pour around it (for assembly that cannot plug vias in pads)
     escape_fanout=0,               # placement: 1 also reserves the dog-bone via sites of each ball grid on the
                                    # other side (no part there covers them); 0: off
+    pair_swap=0,                   # placement (kae.place.swaps): 1 ends placement with greedy swaps of equal two-pad parts
+                                   # on the physics terms; 0: off, until pair-swap-ab decides
     zone_pull=0.0,                 # placement (kae.place.zones): weight of pads off their own net's fixed copper
                                    # zone (all of them off = zone_pull x the seed HPWL), also the seed's pull and
                                    # package pins; 0: off. Off by default: zone-ab (48 boards, 3 seeds) at 3 left

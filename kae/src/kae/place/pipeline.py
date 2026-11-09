@@ -987,6 +987,18 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
             rep["exact"] = exact_check(P, st)
             trace("silk_fix", st)
         stage("silk_fix", t)
+    if report_terms is not None and int(setting("pair_swap", board_path, opts)) >= 1 and not late():
+        # swaps of interchangeable parts on the physics terms (E116, kae.place.swaps)
+        from . import swaps as swapmod
+        t = time.monotonic()
+        try:
+            rep["pair_swap"] = swapmod.polish(P, st, report_terms, min(30.0, max(2.0, 0.03 * float(time_s))),
+                                              check=lambda: exact_check(P, st) or [], log=log)
+        except Exception as e:      # noqa: BLE001 - a polish pass; never lose the placement
+            rep["pair_swap"] = dict(error=f"{type(e).__name__}: {e}")
+        rep["exact"] = exact_check(P, st)
+        stage("pair_swap", t)
+        trace("pair_swap", st)
     rep.update(grid_verdict(P, st, rep["exact"]))
     body_hazards(rep, P, st)
     if zone_rep is not None:
