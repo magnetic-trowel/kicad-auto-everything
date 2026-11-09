@@ -37,7 +37,7 @@ ENV_DEPENDENT = ("lib_footprint_issues", "lib_footprint_mismatch")
 # DRC types no part move or local re-route changes: footprint definitions (pads, courtyards,
 # text, padstacks, drills), the board outline, zones and text variables. Every kae placement
 # of a board has the same count of each of these (constant across seeds and methods on every
-# board with one, 0 varied of 191 board x evaluator pairs); windows opened only for them were
+# board with one, 0 varied of 194 board x evaluator pairs); windows opened only for them were
 # never kept (0 of 75). Silk and solder-mask types do vary with placement and stay.
 NO_MOVE_FIXES = ("footprint_type_mismatch", "unresolved_variable", "annular_width", "zones_intersect",
                  "invalid_outline", "malformed_courtyard", "text_on_edge_cuts", "padstack", "drill_out_of_range")
