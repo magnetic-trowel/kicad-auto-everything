@@ -40,8 +40,8 @@ def test_method_table_means_over_common_boards():
     out = kaeres.method_table(rows, ["a", "b"], "t")
     assert "DRC errors / board, 1 common boards" in out[2] and "physics Σu, 1 common boards" in out[2]
     cells = {ln.split(" | ")[0].strip("| "): ln.split(" | ") for ln in out[4:6]}
-    assert cells["a"][8:10] == ["5.00 (2)", "0.00"] and cells["b"][8:10] == ["2.00 (1)", "2.00"]
-    assert cells["a"][16:18] == ["5.000 (2)", "1.000"] and cells["b"][16:18] == ["3.000 (1)", "3.000"]
+    assert cells["a"][9:11] == ["5.00 (2)", "0.00"] and cells["b"][9:11] == ["2.00 (1)", "2.00"]
+    assert cells["a"][17:19] == ["5.000 (2)", "1.000"] and cells["b"][17:19] == ["3.000 (1)", "3.000"]
 
 
 def _r(method, board, attempt, clean, status="ok", unconnected=None):
@@ -54,7 +54,7 @@ def test_method_table_reports_k_and_cpk_over_attempts():
     rows = [_r("a", "b1", 0, False), _r("a", "b1", 1, True), _r("a", "b2", 0, False), _r("a", "b2", 1, False)]
     out = kaeres.method_table(rows, ["a"], "t")
     cells = out[4].split(" | ")
-    assert cells[1:6] == ["2", "2", "0.000", "2", "0.500"]   # boards, ok, cp1, k, cpk
+    assert cells[1:7] == ["2", "2", "0.000", "—", "2", "0.500"]   # boards, ok, cp1, xc, k, cpk
 
 
 def test_paired_table_tests_cp1_and_cpk_and_lists_flips():
@@ -364,3 +364,28 @@ def test_rephysics_job_fails_when_no_run_could_be_rebuilt(tmp_path, monkeypatch,
     assert kaeres.cmd_rephysics_job(a) == 1
     out = capsys.readouterr().out
     assert "0 physics evaluation(s)" in out and "unexpected keyword" in out and "no run could be rebuilt" in out
+
+
+def _xr(method, board, xc, kind="route"):
+    return dict(_r(method, board, 0, False), xc=xc, kind=kind)
+
+
+def test_xc_is_clean_net_of_the_route_inputs_errors():
+    drc = dict(errors_by_type=dict(courtyards_overlap=2, solder_mask_bridge=1))
+    row = dict(valid=True, unconnected=0, errors_by_type='{"courtyards_overlap": 2}')
+    assert kaeres.clean_net_of_input(row, drc) is True
+    assert kaeres.clean_net_of_input(dict(row, errors_by_type='{"courtyards_overlap": 3}'), drc) is False
+    assert kaeres.clean_net_of_input(dict(row, errors_by_type='{"clearance": 1}'), drc) is False
+    assert kaeres.clean_net_of_input(dict(row, unconnected=1), drc) is False
+    assert kaeres.clean_net_of_input(dict(row, valid=False), drc) is False
+    assert kaeres.clean_net_of_input(row, None) is None
+    assert kaeres.clean_net_of_input(row, dict(errors_by_type=None)) is None   # input DRC never measured
+    assert kaeres.clean_net_of_input(dict(row, errors_by_type="{}"), dict(errors_by_type={})) is True
+
+
+def test_method_table_marks_xc_of_placing_methods():
+    rows = [_xr("router", "b1", True), _xr("router", "b2", False), _xr("placer", "b1", True, "joint-fixed"),
+            _xr("placer", "b2", True, "joint-fixed"), _xr("unknown", "b1", None)]
+    out = kaeres.method_table(rows, ["router", "placer", "unknown"], "t")
+    assert "xc (clean net of input; † placing method, not comparable)" in out[2]
+    assert out[4].split(" | ")[4] == "0.500" and out[5].split(" | ")[4] == "1.000†" and out[6].split(" | ")[4] == "—"
