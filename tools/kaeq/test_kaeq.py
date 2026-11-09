@@ -993,3 +993,17 @@ def test_a_thrashing_job_gets_more_and_declared_memory_of_new_jobs_is_no_shortag
     p = kq.lease_plan([dict(j, mpress=0.0, invest=10.0)], 1000.0, cfg, now=1000.0, buffer=20000.0, free_now=38000.0)
     assert p["evict"] is None and p["stalled"] == []
     assert kq.lease_plan([dict(j, mpress=0.0, invest=10.0)], 1000.0, cfg, now=1000.0, buffer=20000.0)["evict"] == 1
+
+
+def test_a_memory_limit_reverted_behind_kaeqs_back_is_set_again_and_told_to_systemd(kq, tmp_path):
+    d = _lease_daemon(kq, tmp_path)
+    submit(kq, "sleep 30", name="k", qos="timed", mem="200M")
+    drive(kq, d, lambda: d.cgroups.get(1) and kq.cg_high_mb(d.cgroups[1]) is None, secs=20)   # timed: no limit
+    unit = os.path.basename(d.cgroups[1])
+    drive(kq, d, lambda: "MemoryHigh=infinity" in subprocess.run(["systemctl", "--user", "show", "-p", "MemoryHigh", unit],
+                                                                 capture_output=True, text=True).stdout, secs=20)
+    with open(d.cgroups[1] + "/memory.high", "w") as f:       # as systemd re-applying an old property would
+        f.write(str(300 << 20))
+    drive(kq, d, lambda: kq.cg_high_mb(d.cgroups[1]) is None, secs=20)    # set again
+    d.c.execute("UPDATE jobs SET state='cancelled'")
+    kq.kill_tree(d.c.execute("SELECT pid FROM jobs").fetchone()[0], d.cgroups.get(1))
