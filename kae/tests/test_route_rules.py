@@ -163,3 +163,115 @@ def test_zero_length_edge_shapes_are_skipped():
                        dict(kind="segment", layer="Edge.Cuts", pts=[(2, 2), (3, 3)])])
     cut, stray, board = C._edge_geoms(info)   # raised GEOSException on the zero-length segment
     assert board is not None and len(stray) == 1
+
+
+def test_condition_precedence_is_kicads_not_cs():
+    """&& binds looser than ||, and ! binds tighter than comparisons
+    (docs/topics/kicad/drc-rule-language-reference.md, Precedence)."""
+    A, B = ("prop", "A", "NetClass"), ("prop", "B", "NetClass")
+    c = R.compile_condition("A.NetClass == 'PUSB' || A.NetClass == 'PA' && B.NetClass == 'PGND'")
+    assert c == ("and", ("or", ("cmp", "==", A, ("str", "PUSB")), ("cmp", "==", A, ("str", "PA"))),
+                 ("cmp", "==", B, ("str", "PGND")))
+    assert R.compile_condition("!A.Name == ''") == ("cmp", "==", ("not", ("prop", "A", "Name")), ("str", ""))
+    # rustaphor lightrelay: a PUSB track is held off PGND only, not off every other net
+    def t(expr, a, b):
+        return R.truth(R.ev(R.compile_condition(expr), R.Ctx(a, b, "F.Cu", "clearance")))
+    e = "A.NetClass == 'PUSB' || A.NetClass == 'PA' && B.NetClass == 'PGND'"
+    assert t(e, track("V", "PUSB"), track("G", "PGND"))
+    assert not t(e, track("V", "PUSB"), track("S", "Default"))
+    # trident pcbleakage: '!A.Name' is a number, never equal to '', so the zone part never holds
+    e = "A.Type == 'Zone' && !A.Name == '' && B.Type == 'Zone' && B.Name == '' || B.Type == 'Via'"
+    zone = dict(type="Zone", net="G", netclass="Default", copper=True, connected=True, name="", layers=["F.Cu"])
+    assert not t(e, dict(zone, name="Z1"), dict(zone))
+    assert not t(e, zone, via("A"))
+
+
+def test_unitless_numbers_in_conditions_are_nm():
+    """drc-rule-language-reference.md: a unitless value inside a condition is nm."""
+    ctx = R.Ctx(track("A", width=0.25), None, "F.Cu", "track_width")
+    def t(expr):
+        return R.truth(R.ev(R.compile_condition(expr), ctx))
+    assert t("A.Width > 200000") and not t("A.Width > 300000") and t("A.Width == 250000")
+    assert t("A.Width > 0.2mm") and t("A.Width == 0.25mm") and t("A.Width < 10mil")
+    assert t("A.Width > 0.1mm + 100000") and t("A.Width * 2 == 0.5mm")
+
+
+def test_a_second_condition_overwrites_the_first(tmp_path):
+    """drc-rule-language-reference.md: a second (condition) silently overwrites the first
+    (beaglebone-ai's EMMC rule, azonenberg's switch engine); both readers keep the last."""
+    from kae.board import kicad_file
+    dru = """(version 1)
+(rule two (condition "A.Type == 'Zone'") (condition "B.Type == 'Via'")
+  (constraint clearance (min 0.7mm)))
+"""
+    b = board(dru, tmp_path)
+    assert b.rules[-1].text == "B.Type == 'Via'"
+    assert R.evaluate(b, "clearance", track("A"), via("B"), "F.Cu").min == 0.7
+    assert kicad_file.read_dru(tmp_path / "board.kicad_dru")[0]["condition"] == "B.Type == 'Via'"
+
+
+def test_a_custom_rule_that_is_not_an_error_does_not_bind(tmp_path):
+    """drc-rule-language-reference.md: an ignore rule still overrides earlier rules but KiCad
+    reports nothing for it (a warning is not a scored error), so strictest() keeps only the
+    floor of an ignored clearance check, and the net-class limits for anything else."""
+    from kae.route import constraints as C
+    dru = """(version 1)
+(rule wall (severity ignore) (condition "A.NetClass == 'Power'") (constraint clearance (min 0.8mm)))
+(rule wide (severity warning) (condition "A.NetName == 'B'") (constraint track_width (min 0.6mm) (max 0.7mm)))
+(rule hard (condition "A.NetName == 'D_P'") (constraint track_width (min 0.6mm)))
+"""
+    (tmp_path / "board.kicad_dru").write_text(dru)
+    info = dict(copper=COPPER, settings=SETTINGS, netclasses=CLASSES, nets={"A": {}, "B": {}, "D_P": {}, "PWR": {}})
+    rb = C.rule_board(info, tmp_path / "board.kicad_pcb")
+    a, p = track("A"), track("PWR", nc="Power")
+    assert R.evaluate(rb, "clearance", a, p, "F.Cu").min == 0.8           # KiCad's resolution is unchanged
+    assert R.strictest(rb, "clearance", a, p, "F.Cu").min == 0.15         # board minimum (>= 0.1 floor)
+    w = R.strictest(rb, "track_width", track("B"), None, "F.Cu")
+    assert (w.min, w.max) == (0.13, None)                                 # net class and board setup
+    assert R.strictest(rb, "track_width", track("D_P"), None, "F.Cu").min == 0.6   # error severity binds
+
+
+def test_a_rules_file_kicad_drops_gives_no_custom_rules(tmp_path, capsys):
+    """drc-rule-language-reference.md: KiCad drops the whole .kicad_dru on any parse error and
+    its DRC runs with net-class and board rules only; both readers do the same, say why on
+    stderr and record it for the route and place reports."""
+    from kae.board import kicad_file
+    from kae.route import constraints as C
+    dru = """(version 1)
+(rule big (constraint clearance (min 0.9mm)))
+(rule typo (constraint clearence (min 0.1mm)))
+"""
+    (tmp_path / "board.kicad_dru").write_text(dru)
+    info = dict(copper=COPPER, settings=SETTINGS, netclasses=CLASSES, nets={"A": {}, "B": {}})
+    rb = C.rule_board(info, tmp_path / "board.kicad_pcb")
+    assert rb.dru_rejected.startswith("board.kicad_dru:3:")
+    assert not [r for r in rb.rules if r.source == "custom"]
+    assert R.strictest(rb, "clearance", track("A"), track("B"), "F.Cu").min == 0.2   # net class, not 0.9
+    r = kicad_file.read_rules(tmp_path / "board.kicad_pcb")
+    assert r.custom == [] and r.dru_rejected == rb.dru_rejected
+    assert "KiCad drops this rules file" in capsys.readouterr().err
+    (tmp_path / "board.kicad_dru").write_text(dru.replace("clearence", "clearance").replace("0.1mm", "0.1mm) (max 1mm"))
+    rb = C.rule_board(info, tmp_path / "board.kicad_pcb")
+    assert not rb.dru_rejected and R.strictest(rb, "clearance", track("A"), track("B"), "F.Cu").min == 0.1
+
+
+def test_a_negative_or_zero_override_is_no_override():
+    """ubertooth U3's thermal vias carry a pad clearance of -0.099 mm: KiCad 10.0.7 requires the
+    0.2 mm class clearance there (a track 0.131 mm away is a violation); flooring the override at
+    the board minimum let the router come to the board minimum."""
+    b = board()
+    for v in (-0.09906, 0.0):
+        c = R.evaluate(b, "clearance", track("A"), pad("B", override=v), "F.Cu")
+        assert c.min == 0.2 and c.rule != "local override"
+        assert R.evaluate(b, "hole_clearance", track("A"), pad("B", override=v, drilled=True), "F.Cu").rule != \
+            "local override"
+
+
+def test_the_coupled_diff_pair_gap_holds_between_tracks_not_pads():
+    """KiCad 10.0.7 (aifryz sensor-hub): coupled tracks may sit at the pair gap, but a pad of one
+    net keeps the class clearance from the other net's track."""
+    cl = dict(CLASSES, Default=dict(CLASSES["Default"], dp_gap=0.09))
+    b = R.build(COPPER, SETTINGS, cl, {"D_P", "D_N"})
+    assert R.evaluate(b, "clearance", track("D_P"), track("D_N"), "F.Cu").min == 0.15     # the gap, at the board minimum
+    assert R.evaluate(b, "clearance", track("D_P"), pad("D_N"), "F.Cu").min == 0.2
+    assert R.evaluate(b, "clearance", pad("D_P"), track("D_N"), "F.Cu").min == 0.2

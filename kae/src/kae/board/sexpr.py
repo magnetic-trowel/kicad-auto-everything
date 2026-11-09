@@ -119,6 +119,13 @@ def value(node, name, default=None):
     return c[1] if c is not None and len(c) > 1 else default
 
 
+def last_value(node, name, default=None):
+    """The first atom of the LAST child `name`: where a repeated form overwrites the earlier
+    one, as a .kicad_dru rule's second (condition ...) does."""
+    cs = kids(node, name)
+    return cs[-1][1] if cs and len(cs[-1]) > 1 else default
+
+
 def flag(node, name):
     """KiCad booleans: `(name yes)`, `(name)` or a bare atom `name` are true."""
     for c in node:

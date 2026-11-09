@@ -151,3 +151,27 @@ def fmt(v):
     if abs(r - round(r)) < 1e-9:
         return str(int(round(r)))
     return f"{r:.4f}".rstrip("0").rstrip(".")
+
+
+# ----------------------------------------------------------------------------- session
+def session_counts(tree):
+    """What KiCad's session import (SPECCTRA_DB::FromSESSION, 10.0) makes of each net of a
+    session: {net: {segments, arcs, vias, polygons}}. A `path` wire of n points becomes n-1
+    tracks (zero-length ones too), a `qarc` one arc, each via vertex one via; `polygon`
+    wires are ignored by KiCad (counted here so the caller can say so)."""
+    out = {}
+    routes = find(tree, "routes")
+    net_out = find(routes, "network_out") if routes is not None else None
+    for net in findall(net_out or [], "net"):
+        name = str(net[1]) if len(net) > 1 else ""
+        c = out.setdefault(name, dict(segments=0, arcs=0, vias=0, polygons=0))
+        for w in findall(net, "wire"):
+            for p in findall(w, "path"):
+                pts = [a for a in p[3:] if not isinstance(a, list)]
+                c["segments"] += max(0, len(pts) // 2 - 1)
+            c["arcs"] += len(findall(w, "qarc"))
+            c["polygons"] += len(findall(w, "polygon"))
+        for v in findall(net, "via"):
+            nums = [a for a in v[2:] if not isinstance(a, list)]
+            c["vias"] += max(1, len(nums) // 2)
+    return out

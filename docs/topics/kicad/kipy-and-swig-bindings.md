@@ -34,6 +34,7 @@ Never call kipy whole-object setters on a user's file; use native IPC operations
 | Hazard | Detail [P] |
 |---|---|
 | `SaveBoard` | "is not a reformat: it drops data" → [file-format-and-version-hazards.md](file-format-and-version-hazards.md#silent-data-loss-on-write); never let pcbnew re-serialize a user's file |
+| `SaveBoard` = connectivity + the plain writer | runs `BuildConnectivity` and `SynchronizeNetsAndNetClasses`, then `PCB_IO_MGR::Save(KICAD_SEXP)`; `LoadBoard` builds connectivity after `PCB_IO_MGR::Load`. The connectivity step re-nets copper; the writer itself still sorts items into `std::set`s, so its de-duplication applies to both ([pcbnew_scripting_helpers.cpp @10.0](https://gitlab.com/kicad/code/kicad/-/blob/10.0/pcbnew/python/scripting/pcbnew_scripting_helpers.cpp), [pcb_io_kicad_sexpr.cpp @10.0](https://gitlab.com/kicad/code/kicad/-/blob/10.0/pcbnew/pcb_io/kicad_sexpr/pcb_io_kicad_sexpr.cpp)) [P] |
 | `.kicad_pro` overwrite | pcbnew writes a possibly stale project model on every save; KMS restores `net_settings` with `preserve_project_settings()` |
 | Zone fill | "Calling `ZONE_FILLER` via SWIG causes segfault" ([KMS KNOWN_ISSUES](https://github.com/mixelpixx/KiCAD-MCP-Server/blob/cbb59a6203997f5e916be7e0480d63fe5519134a/docs/KNOWN_ISSUES.md)) |
 | Proxy decay | a `BOARD` proxy can lose its methods after some sequences (`delete_trace` + auto-save); `open_project` kept reporting success ([KMS f65eaf2](https://github.com/mixelpixx/KiCAD-MCP-Server/commit/f65eaf2798c642eb174af2ace6a9c7e8d2753ec8)) |

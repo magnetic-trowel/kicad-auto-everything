@@ -28,7 +28,72 @@ from pathlib import Path
 
 from kae.board import pcbnew_io
 
-from . import constraints, drc, freerouting, specctra, translate
+from . import constraints, drc, freerouting, specctra, stepcache, translate
+
+def check_import(ses_path, res):
+    """Compare what a session holds (specctra.session_counts) with what KiCad's import put
+    on the board (`res` from pcbnew_io.import_ses: its routing minus the items that were
+    there before). KiCad 10.0.7 skips wires and vias with an unknown layer or padstack with
+    only a log warning, and puts a wire whose net it cannot find on net 0
+    (specctra-freerouting-integration.md). Returns (check, hazards)."""
+    want = specctra.session_counts(specctra.read(ses_path))
+    kept = set(res.get("kept") or ())
+    got = {}
+    for r in res.get("routing") or ():
+        if r["uuid"] in kept:
+            continue
+        c = got.setdefault(r.get("net") or "", dict(segments=0, arcs=0, vias=0))
+        c[{"track": "segments", "arc": "arcs", "via": "vias"}[r["kind"]]] += 1
+    missing, extra = {}, {}
+    for net in sorted(set(want) | set(got)):
+        w, g = want.get(net, {}), got.get(net, {})
+        for k in ("segments", "arcs", "vias"):
+            d = int(g.get(k, 0)) - int(w.get(k, 0))
+            if d < 0:
+                missing.setdefault(net, {})[k] = -d
+            elif d > 0:
+                extra.setdefault(net, {})[k] = d
+    polygons = sum(c["polygons"] for c in want.values())
+    total = {k: sum(c[k] for c in want.values()) for k in ("segments", "arcs", "vias")}
+    check = dict(session=total, landed={k: sum(c.get(k, 0) for c in got.values()) for k in total},
+                 missing=missing, extra=extra, polygons_ignored=polygons)
+    hazards = []
+    if extra:
+        hazards.append(dict(
+            code="ses_import_wrong_net", severity="block", category="electrical",
+            message=(f"KiCad's import of the routed session put copper on nets the session did not route "
+                     f"({len(extra)} nets{', including no net' if '' in extra else ''}): that copper may "
+                     f"short other nets."),
+            objects=sorted(extra)[:20], evidence=dict(extra=dict(list(extra.items())[:20]),
+                                                     missing=dict(list(missing.items())[:20])),
+            fix="Do not use this board; report it (a net-name translation between KiCad and the router "
+                "is wrong)."))
+    if missing:
+        n = sum(sum(v.values()) for v in missing.values())
+        hazards.append(dict(
+            code="ses_import_incomplete", severity="warn", category="data",
+            message=(f"KiCad's import skipped {n} of the router's tracks, arcs or vias on {len(missing)} nets "
+                     f"(unknown layer or via padstack); those connections stay open."),
+            objects=sorted(missing)[:20], evidence=dict(missing=dict(list(missing.items())[:20]), session=total),
+            fix="Check the open connections in the DRC report; report the board if they persist."))
+    if polygons:
+        hazards.append(dict(
+            code="ses_import_polygons_ignored", severity="info", category="data",
+            message=f"KiCad ignores the {polygons} polygon wires the router returned (zones stay KiCad's).",
+            objects=[], evidence=dict(polygons=polygons), fix="None needed unless those areas were meant as copper."))
+    return check, hazards
+
+
+def import_session(board, ses_path, dst):
+    """pcbnew_io.import_ses plus check_import. Returns the import result with
+    `import_check` and every hazard (write check, pre-route re-netting, session check)
+    under `hazards`."""
+    res = pcbnew_io.import_ses(board, ses_path, dst)
+    check, hz = check_import(ses_path, res)
+    res["import_check"] = check
+    res["hazards"] = list(res.get("hazards") or []) + hz
+    return res
+
 
 DEFAULT_OPTS = dict(
     fanout=False,            # Freerouting's fanout pre-pass narrows tracks (see freerouting.py):
@@ -68,9 +133,22 @@ DEFAULT_OPTS = dict(
     blocked=True,            # at the end, diagnose the connections still open (kae.route.blocked): the report's
                              # "blocked" names the board rule (or kae default) that makes each impossible
     blocked_s=30.0,          # with blocked: seconds kept for it at most (taken from the repair rounds)
+    thermal_via_s=60.0,      # with thermal vias to place (kae.route.thermal_vias: a hot part over a heat-sink
+                             # plate on the other face): seconds kept from the repair rounds for their pass and DRC
     pad_shapes="kicad",      # pin shapes in the DSN: "kicad" (KiCad's export: rounded corners and arcs as
                              # chords inside the outline, up to 4 um at r 0.25 mm, 10 um on custom pads) or
                              # "outside" (polygons that contain the pad's copper, translate.circumscribe_pins)
+    import_tails=False,      # arm D: in each repair round, rule D tails (exact check only) on the tracks the
+                             # session import added; a tail the round's DRC names goes back to its raw shape
+    finish=False,            # at the end, when time is left: kae.route.finish (stage 7: rule D tails, taut arcs,
+                             # power copper, one journaled DRC gate; never worse). Off by default: the restart
+                             # portfolio runs it once on the kept board (restart.py --finish), not per attempt
+    finish_parts=None,       # with finish: its parts (default finish.PARTS: tails, taut, power)
+    finish_min_s=60.0,       # with finish: run it only with this much time left
+    power_copper=False,      # power copper alone, through finish (parts ["power"]): widen rails and grounds,
+                             # ground vias at decap/IC pads, stitch pours, kept only where DRC is no worse
+    pad_trim=None,           # Freerouting's centre ends cut back to the pad edge, through finish (part "trim",
+                             # last); None = when the pad_entry setting is "edge"
 )
 
 
@@ -94,6 +172,7 @@ def severities(board_path):
 
 def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None, log=_log):
     t0 = time.monotonic()
+    fork = stepcache.fork_context(input_path, seed, time_s, opts)   # KAE_STEP_CACHE: fork points
     opts = {**DEFAULT_OPTS, **(opts or {})}
     input_path, output_path = Path(input_path).resolve(), Path(output_path).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -169,6 +248,8 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
         translate.write_rules(p, dsn)
         log(f"plan: {len(p.classes)} classes, {len(p.obstacle_classes)} obstacle classes, "
             f"{report['translate'].get('obstacles')} obstacles ({time.monotonic() - t0:.1f}s)")
+        if p.notes.get("dru_rejected"):
+            log(f"rules: KiCad drops the .kicad_dru ({p.notes['dru_rejected']}); no custom rules applied")
 
         # 3: route. Freerouting stops itself at its job timeout and writes what it has; it is
         # killed only past its grace period, inside our deadline. If it still writes nothing,
@@ -207,8 +288,12 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             report["session"] = translate.fix_session(ses, p)
             ses_k = wd / "board_kicad.ses"
             specctra.write(ses, ses_k)
-            routed = pcbnew_io.import_ses(input_path, ses_k, output_path).get("routing") or []
+            imp = import_session(input_path, ses_k, output_path)
+            routed = imp.get("routing") or []
+            report["import_check"] = imp["import_check"]
+            report.setdefault("hazards", []).extend(imp["hazards"])
             report["status"] = "routed"
+        stepcache.save_fork(fork, "routed", {"board": output_path, "ses": run.ses}, time.monotonic() - t0)
         # the input's locked tracks and vias (pre-routes): exported as fixed wiring, never
         # returned by Freerouting, kept as they are by KiCad's import; the repair loop never
         # rips, widens or unlocks them
@@ -217,24 +302,60 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
 
         # 5: DRC and repair
         diag_s = min(float(opts.get("blocked_s") or 0.0), 0.05 * time_s) if opts.get("blocked") else 0.0
+        final_rep = None
+        from . import thermal_vias
+        try:
+            hot = thermal_vias.planned(original_input, opts)[0]
+        except Exception as e:  # noqa: BLE001 - unreadable operating facts: no thermal vias
+            log(f"thermal vias: {type(e).__name__}: {e}")
+            hot = []
+        tv_s = min(float(opts.get("thermal_via_s") or 0.0), 0.1 * time_s) if hot else 0.0
         if opts.get("repair") and left() > 30:
             from . import repair
             report["repair"] = repair.loop(input_path, output_path, wd, p, info, opts,
-                                           deadline=t0 + time_s - 10 - diag_s, log=log)
+                                           deadline=t0 + time_s - 10 - diag_s - tv_s, log=log)
             final_rep = report["repair"].pop("_report", None)
+            report.setdefault("hazards", []).extend(report["repair"].pop("hazards", None) or [])
+            if hot and left() > 20:
+                # after the repair and last-mile rounds, which judge connections only: the hot parts'
+                # thermal vias and solid heat pads, judged by KiCad's DRC like a round (kae.route.thermal_vias)
+                report["thermal_vias"] = thermal_vias.run(input_path, output_path, wd, p, info, opts,
+                                                          deadline=t0 + time_s - 10 - diag_s,
+                                                          best=report["repair"].get("final"), log=log)
+                tv_rep = report["thermal_vias"].pop("_report", None)
+                if report["thermal_vias"].get("thermal"):
+                    # the push-back: what each hot part's heat path costs, what was done, what would
+                    # change it (kae.route.thermal_vias.pushback), beside "blocked"
+                    report["thermal"] = report["thermal_vias"]["thermal"]
+                if report["thermal_vias"].get("kept"):
+                    report["repair"]["final"] = report["thermal_vias"]["after"]
+                    final_rep = tv_rep or final_rep
             if diag_s and final_rep and (report["repair"].get("final") or {}).get("unconnected"):
                 report["blocked"] = diagnose(output_path, input_path, original_input, info, p, final_rep, sev, wd,
-                                             deadline=time.monotonic() + max(5.0, left() - 8), log=log)
+                                             deadline=time.monotonic() + max(5.0, left() - 8), log=log, opts=opts)
+                report.setdefault("hazards", []).extend(report["blocked"].get("hazards") or [])
         elif opts.get("drc", True) and left() > 20:
             staged = drc.stage_board(output_path, input_path, wd / "drc")
             rep = drc.run(staged, wd / "drc" / "drc.json", timeout=max(10, left() - 5))
             report["drc"] = drc.summary(rep)
+        stepcache.save_fork(fork, "repaired", {"board": output_path}, time.monotonic() - t0)
+        parts = finish_parts(opts, p)
+        if parts and left() > float(opts.get("finish_min_s") or 60.0):
+            report["finish"] = finish_hook(output_path, input_path, wd / "finish", parts, time_s=left() - 10,
+                                           base_report=final_rep if opts.get("repair") else None, log=log)
+            report.setdefault("hazards", []).extend(report["finish"].pop("hazards", None) or [])
+        elif parts:
+            report["finish"] = dict(skipped=f"time: {left():.0f} s left", parts=parts)
         if report.get("blocked_packages"):
             # packages no routing can escape under the board's rules (escape.certificate), in front
             # of the per-connection diagnosis
             blk = report.setdefault("blocked", {})
             blk["packages"] = report.pop("blocked_packages")
+            # relaxations beyond the fab's standard class are manufacturing hazards (kae.route.fab)
+            for c in blk["packages"]:
+                report.setdefault("hazards", []).extend(c.get("hazards") or [])
             blk["summary"] = [c["summary"] for c in blk["packages"]] + list(blk.get("summary") or [])
+        stepcache.save_fork(fork, "final", {"board": output_path}, time.monotonic() - t0, report)
         return report
     finally:
         report["opts"] = {k: v for k, v in opts.items()
@@ -246,7 +367,44 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             report["workdir"] = str(wd)
 
 
-def diagnose(output_path, input_path, original_input, info, plan, drc_report, sev, wd, deadline, log=_log):
+def finish_parts(opts, plan=None):
+    """The finish parts an attempt runs at its end: opts finish (finish_parts, else all), else the
+    legacy single passes routed through it (power_copper -> "power", pad_trim -> "trim")."""
+    if opts.get("finish"):
+        from . import finish
+        return list(opts.get("finish_parts") or finish.PARTS)
+    parts = ["power"] if opts.get("power_copper") else []
+    trim = opts.get("pad_trim")
+    if trim if trim is not None else getattr(plan, "pad_entry", "centre") == "edge":
+        parts.append("trim")
+    return parts
+
+
+def finish_hook(output_path, project_board, workdir, parts, time_s, base_report=None, log=_log):
+    """kae.route.finish on the routed `output_path` (with `project_board`'s rules), replacing it when
+    the gate kept a change. `base_report`: the repair loop's DRC of that board (the gate reuses it).
+    Returns the finish report without its journal and gate rounds."""
+    from . import finish
+    wd = Path(workdir)
+    try:
+        rep = finish.run(output_path, wd / "out.kicad_pcb", project=project_board, opts=dict(parts=tuple(parts)),
+                         workdir=wd / "work", time_s=time_s, base_report=base_report, log=log)
+    except Exception as e:      # noqa: BLE001 - a post-pass never costs the routed board
+        from kae import hazards as H
+        log(f"finish: skipped: {type(e).__name__}: {e}")
+        return dict(error=f"{type(e).__name__}: {e}", hazards=[H.make(
+            "finish_failed", "warn", "data", f"The finish stage failed and was skipped: {type(e).__name__}: {e}"[:300],
+            objects=["finish"], fix="Report the board; it is handed back as routed, without rule D tails, taut "
+                                    "arcs or power copper.")])
+    if rep.get("kept"):
+        Path(output_path).write_text((wd / "out.kicad_pcb").read_text(encoding="utf-8"), encoding="utf-8")
+    for k in ("journal", "gate_rounds"):
+        rep.pop(k, None)
+    shutil.rmtree(wd / "work", ignore_errors=True)
+    return rep
+
+
+def diagnose(output_path, input_path, original_input, info, plan, drc_report, sev, wd, deadline, log=_log, opts=None):
     """kae.route.blocked on the final board: what makes each open connection impossible."""
     from kae.board.kicad_file import load
     from . import blocked
@@ -256,7 +414,7 @@ def diagnose(output_path, input_path, original_input, info, plan, drc_report, se
         inb = load(original_input)
         ids = {t.uuid for t in inb.tracks} | {v.uuid for v in inb.vias}
         out = blocked.diagnose(staged, info, plan, fills, drc_report, sev=sev, input_ids=ids, deadline=deadline,
-                               log=log)
+                               log=log, opts=opts)
         log(f"blocked: {len(out['blocked'])} connections the rules block, {len(out['congestion'])} congestion, "
             f"{out['undiagnosed']} not diagnosed ({out['seconds']} s)")
         return out

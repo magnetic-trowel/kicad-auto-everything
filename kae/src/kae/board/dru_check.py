@@ -575,6 +575,24 @@ def static_check(text: str, vocab: str | None = None) -> list[Issue]:
     return sorted(issues, key=lambda i: (i.line, i.col))
 
 
+def rejection(path, pcb=None) -> str | None:
+    """Why KiCad would drop a .kicad_dru, from the static pass alone (no KiCad is called):
+    '<file>:<line>:<col>: error: <message>' of its first error, or None when it has none.
+    Readers that build router or placer constraints from the file call this and, on a
+    rejection, use no custom rules, as KiCad's DRC then does. `pcb`: the board, whose own
+    layer names are legal in (layer ...)."""
+    global BOARD_LAYERS
+    path = Path(path)
+    saved = BOARD_LAYERS
+    try:
+        BOARD_LAYERS = board_layers(pcb) if pcb and Path(pcb).exists() else set()
+        issues = static_check(path.read_text(encoding="utf-8", errors="replace"))
+    finally:
+        BOARD_LAYERS = saved
+    err = next((i for i in issues if i.severity == "error"), None)
+    return f"{path.name}:{err}" if err else None
+
+
 def rule_spans(text: str) -> list[tuple[str, int, str]]:
     """(name, line, source text) of each top-level (rule ...) form, comments stripped."""
     out, depth, start, line, i, n = [], 0, None, 1, 0, len(text)

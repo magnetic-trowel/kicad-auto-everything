@@ -5,6 +5,8 @@ Keys: decoupling, bypass, PDN, mounting inductance, ESL, ESR, three capacitor va
 
 ## Decoupling and PDN rules
 1. Mounting loop inductance (pads, vias, depth to plane pair) sets HF decoupling, not capacitor value: same-package 0.1 µF and 47 µF MLCCs have the same ESL. Implement "smallest closest" as "**lowest mounting inductance closest**", ranked with the [loop-inductance estimator](checkers-power.md) (package, pad-to-via distance, via length to the plane pair); alternate orientation in clusters.
+   - Built so far (`kae.circuit.roles.cap_class`, `CAP_CLASS = 'package'`): a non-polarized chip of 0603 or smaller counts as HF at any value, so a load's pin may be paired with it ([comprehension](../physics/comprehension.md) §3.3). Larger and through-hole bodies fall back to value (≤ 1 µF), and polarized bodies are never HF. Who owns a capacitor, and what a converter loop or bias pin takes, still goes by value, because there the charge it holds matters and humans lay out that way: the ownership eval holds at 74.67% (1,378 caps), and pin pairings rise from 289 to 295: the 6 new ones (4.7–10 µF 0402) sit 1.3–3.7 mm from their pin in the human layouts. `CAP_CLASS = 'value'` restores the old classes.
+   - Basis [P]: Archambeault's connection-inductance table ([IEEE EMC Society Newsletter, 2009](https://forum.hsbne.org/uploads/default/original/2X/9/946bf58f4e03f86ead589fbf62e3db9c2a1a6ec0.pdf)) rises 0402 < 0603 < 0805 at every via depth (0.9 / 1.1 / 1.2 nH at 10 mil). It puts body ESL at 0.2–0.5 nH "depending on the size". Bogatin, Smith and Sandler (above) give a 10 µF and a 0.1 µF MLCC in one body "exactly the same high frequency impedance".
 2. "Three values per pin" is a myth: equal-ESL values create anti-resonance peaks; damp with ESR or controlled-ESR bulk instead of adding decade values.
 3. `Z_t = ΔV/I_transient` is necessary, not sufficient: transient share of the budget only, flat profile, peaks ≤1.57 × Z_t robust (≤3 × tolerated); watch for "rogue waves" from several high-Q peaks.
 4. Pre-layout BOM checks: MLCC DC-bias derating; bead at ~20% of rated current; bead + cap resonance vs f_sw. Add beads only on explicit requirement, always with the resonance check.
@@ -21,7 +23,7 @@ Keys: decoupling, bypass, PDN, mounting inductance, ESL, ESR, three capacitor va
 - **Bogatin, Smith & Sandler**, "The Myth of Three Capacitor Values" ([SIJ 2020](https://www.signalintegrityjournal.com/articles/1589-the-myth-of-three-capacitor-values)) [P]:
   - MLCC ESL "will be independent of its capacitance value".
   - Three values with equal ESL create "two parallel resonance peaks".
-  - A 47 µF electrolytic can have ~30 nH of ESL; a 0.1 µF disc ~7 nH.
+  - A 47 µF electrolytic can have ~30 nH of ESL ("as much as": an upper bound; TDK B41858 gives 20 nH for 8–12.5 mm cans, Chemi-Con 4 nH for miniature radials, [component-priors](../../research/physics/component-priors.md)); a 0.1 µF disc ~7 nH.
   - The series-RLC model holds "when the mounting inductance is larger than about 1 nH".
   - Place MLCCs early so they get low mounting inductance.
 - **Conventional rule, still taught:** ADI MT-101 ([PDF](https://www.analog.com/media/en/training-seminars/tutorials/MT-101.pdf)) [P]: a 10–100 µF electrolytic "no more than 2 in." away, plus 0.01–0.1 µF as close as possible. VR: CONTESTED against Bogatin/Archambeault.
@@ -100,7 +102,7 @@ RPA §2, §17 [I].
 | PDN-02 | Order by mounting L; bulk anywhere local | Bulk within ~10–20 mm | Lowest estimated mounting L closest (package, pad-to-via distance, via depth) | S3 |
 | PDN-03 | Tight power/ground plane pair | ~38 pF/cm² at 0.1 mm | Stack-up adjacency and thickness | S3 |
 | PDN-04 | Cap count/values from the Z_t profile, not "0.1 µF per pin" | Z_t = ΔV/ΔI | Derated admittance sum vs Z_t | S3 |
-| PDN-05 | Derate MLCCs at DC bias | Vendor bias curve; 50% voltage derating as a start | BOM: derated C from the part's bias curve (fallback V_rail/V_rated + package) | S2 |
+| PDN-05 | Derate MLCCs at DC bias | Vendor bias curve; 50% voltage derating as a start | BOM: derated C from the part's bias curve (fallback: `kae.excite.models.mlcc_bias_factor`, field proxy V·√(C/body volume), fitted to vendor points; [component-priors](../../research/physics/component-priors.md)) | S2 |
 | PDN-06 | Bead only where needed; I_DC ≤20% rated; f_res = 1/(2π√(L·C)) well below f_sw. An undamped LC has gain ≥1 at every f_sw < √2·f_res, so RPA's "not within ±50%" window passes amplifying filters (f_res = 1.6·f_sw gives +4 dB) [I] | — | BOM + datasheet L; computed attenuation at f_sw and its harmonics; Q or damping | S2 |
 | PDN-08 | No plane cuts under referenced signals; stitch at layer changes | ≥1–2 GND vias near each reference-changing via | Nearest-GND-via distance; zone-void crossings | S2 |
 | PDN-09 | Peak ≤1.57 × Z_t (robust) / ≤3 × (risk) | — | RLC sweep | S2 |

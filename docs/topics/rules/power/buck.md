@@ -44,7 +44,7 @@ Keys: buck, synchronous buck, CIN, CBYPASS, SW node, inductor dot, VOS, FB, Kelv
   - CBYPASS is 0.1–0.47 µF X5R/X7R at the IC on the top layer; bulk CIN may sit about 2 cm away.
   - Never put CBYPASS on the reverse side through vias ("operates as a reverse effect"), and never put the freewheel diode on the bottom through vias.
   - The inductor should be close, but there is "no need to be as close as input capacitor".
-  - Via inductance: L ≈ (h/5)(ln(4h/d)+1) nH (Johnson).
+  - Via inductance: L ≈ (h/5)(ln(4h/d)+1) nH (Johnson), a rough loop figure, 2–6× the via's partial inductance ([checkers-power](../checkers-power.md)).
 - **AN-136** (Zhang; [mirror](https://docs.ampnuts.ru/analog.com.datasheet/ltc3729l-6/related_data/an136f.pdf)) [P from mirror; VR verified only via snippet]:
   - Power stage first, small-signal after. C_HF is a 0.1–10 µF low-ESL ceramic.
   - Power parts on one side, power traces on one layer. Change layers only in continuous-current paths, never in the hot loop, and with multiple vias.

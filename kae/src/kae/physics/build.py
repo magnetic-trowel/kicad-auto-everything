@@ -38,6 +38,7 @@ from .structures import (
     CmComp,
     CouplingComp,
     CouplingEngine,
+    CrystalClearanceComp,
     CrystalComp,
     DecapLoop,
     EsdComp,
@@ -268,9 +269,7 @@ def build_structures(terms):
                 else:
                     S.extend(_decap(ctx, s, Struct, low))
             elif kind == 'crystal':
-                st = _crystal(ctx, s, Struct)
-                if st:
-                    S.append(st)
+                S.extend(_crystal(ctx, s, Struct))
             elif kind == 'connector_chain':
                 st = _esd(ctx, s, Struct)
                 if st:
@@ -352,11 +351,15 @@ def _commutation(ctx, s, Struct):
     cls = s.get('class') or 'unknown'
     ex = s.get('excite') or {}
     vin = ex.get('V') or ctx.net_volts(s.get('rail')) or PR.V_IN_UNKNOWN.value
-    alloc = ctx.budget(s, 'L_nH') or PR.hot_loop_budget(cls, vin, t_sw_ns=ex.get('t_sw_ns'))
+    alloc = ctx.budget(s, 'L_nH') or PR.hot_loop_budget(cls, vin, t_sw_ns=ex.get('t_sw_ns'), v_abs=PR.budget_v_abs(ex))
+    # the loop inductance at which the ring reaches the switch's absolute maximum itself (derate 1): beyond
+    # it the part is outside its rating (kae.physics.criteria; a hazard in the place report)
+    l_abs = PR.hot_loop_budget(cls, vin, t_sw_ns=ex.get('t_sw_ns'), derate=1.0, v_abs=ex.get('V_abs')).value
     excite = PR.hot_loop_excite(cls, vin, ex.get('I'), ex.get('t_sw_ns'))
     return Struct(id=s.get('id') or f'cell:{bv.parts[T[1].i].ref}', kind='commutation', conf=ctx.conf(s) * pmax,
                   alloc=alloc, comps=comps, reduce='parallel', labels=labels,
-                  info=dict(cls=cls, V_in=vin, excite=excite, ownership=pmax, sw=s.get('sw'),
+                  info=dict(cls=cls, V_in=vin, excite=excite, ownership=pmax, sw=s.get('sw'), L_abs_nH=l_abs,
+                            V_abs=ex.get('V_abs') or PR.v_abs_rating(vin), V_abs_known=bool(ex.get('V_abs')),
                             sw_nets=s.get('sw_nets') or ([s.get('sw')] if s.get('sw') else [])))
 
 
@@ -651,7 +654,7 @@ def _decap_loop(ctx, tp, tr, tc, tg, rail, pairs):
     mc = _mount(ctx, max(math.hypot(tr.lx - tc.lx, tr.ly - tc.ly), 0.3), max(min(tr.a, tc.a), 0.2), cp.zbody, {})
     pitch_ic = math.hypot(tp.lx - tg.lx, tp.ly - tg.ly) if tp.i == tg.i else 0.0
     mi = _mount(ctx, max(pitch_ic, 0.3), 0.3 if _is_ic(ip) else max(tp.a, 0.2), ip.zbody, {})
-    return DecapLoop(bv, loop, pairs, rail, ctx.gnd, mc, mi)
+    return DecapLoop(bv, loop, pairs, rail, ctx.gnd, mc, mi, r_eff=ctx.t.knobs.pour_r_eff)
 
 
 # ----------------------------------------------------------------------------- (d)
@@ -660,11 +663,11 @@ def _crystal(ctx, s, Struct):
     ic = ctx.part(s.get('ic'))
     y = ctx.part(s.get('crystal'))
     if ic is None or y is None:
-        return None
+        return []
     ki = ctx.pads(ic, s.get('xin'))
     ko = ctx.pads(ic, s.get('xout'))
     if not ki or not ko:
-        return None
+        return []
     ni, no = bv.parts[ic].pad_net[ki[0]], bv.parts[ic].pad_net[ko[0]]
 
     def side_terms(net, kic):
@@ -677,11 +680,26 @@ def _crystal(ctx, s, Struct):
                 ts.append(ctx.term(i, ks[:1]))
         return ts
     ti, to = side_terms(ni, ki), side_terms(no, ko)
-    alloc, sens = PR.crystal_budget(s.get('f_Hz'))
+    alloc, sens = PR.crystal_budget(s.get('f_Hz'), c_load_pf=PR.crystal_cl(s))
     alloc = ctx.budget(s, 'ppm') or alloc
     comp = CrystalComp(bv, ti, to, sens, detour=ctx.t.knobs.detour('crystal'))
-    return Struct(id=s.get('id') or f'xtal:{bv.parts[y].ref}', kind='crystal', conf=ctx.conf(s), alloc=alloc,
-                  comps=[comp], labels=['pulling'], info=dict(nets=[ni, no], S_ppm_per_pF=sens))
+    sid = s.get('id') or f'xtal:{bv.parts[y].ref}'
+    out = [Struct(id=sid, kind='crystal', conf=ctx.conf(s), alloc=alloc,
+                  comps=[comp], labels=['pulling'], info=dict(nets=[ni, no], S_ppm_per_pF=sens))]
+    dmin = ctx.budget(s, 'd_min')
+    if dmin is not None and dmin.value > 0:
+        # a vendor minimum distance (ESP32 XTAL-DMIN): the shortfall in mm, a tenth of d_min
+        # short spends the whole allocation and the barrier prices beyond it, so the pulling
+        # term (which falls with distance) stops at the annulus; util > 1 reports the violation
+        ky = [k for k, n in enumerate(bv.parts[y].pad_net) if n and n not in ctx.gnd]
+        ty = [ctx.term(y, [k]) for k in ky]
+        tic = [ctx.term(ic, ki[:1]), ctx.term(ic, ko[:1])]
+        out.append(Struct(id=f'{sid}#d_min', kind='crystal', conf=ctx.conf(s),
+                          alloc=PR.Belief(0.1 * dmin.value, 'mm', f'shortfall below d_min {dmin.value:g} mm '
+                                          f'({dmin.basis}); 10% of d_min spends the allocation', dmin.cls),
+                          comps=[CrystalClearanceComp(ty, tic, dmin.value)], labels=['below_d_min'],
+                          info=dict(d_min_mm=dmin.value)))
+    return out
 
 
 # ----------------------------------------------------------------------------- (c)

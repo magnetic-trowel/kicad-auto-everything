@@ -15,8 +15,21 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from . import stepcache
+
 # Violation types that depend on the local library setup, not on the board (as kaebench).
 ENV_DEPENDENT = ("lib_footprint_issues", "lib_footprint_mismatch")
+# kicad-cli lists at most this many unconnected items; past it (or when the project ignores the
+# check: unconnected_ignored) the count comes from pcbnew's connectivity after a zone fill, as
+# kaebench's scorer counts (score._uncapped): on polarfire-som
+# every repair round read 499 and last-mile rounds that joined 26-41 connections were discarded
+DRC_UNCONNECTED_CAP = 499
+UNCONNECTED_PY = ("import json, sys, pcbnew\n"
+                  "b = pcbnew.LoadBoard(sys.argv[1]); zs = pcbnew.ZONES()\n"
+                  "for i in range(b.GetAreaCount()): zs.append(pcbnew.Cast_to_ZONE(b.GetArea(i)))\n"
+                  "len(zs) and pcbnew.ZONE_FILLER(b).Fill(zs)\n"
+                  "b.BuildConnectivity()\n"
+                  "print(json.dumps(dict(unconnected=b.GetConnectivity().GetUnconnectedCount(False))))\n")
 
 
 class DrcError(RuntimeError):
@@ -37,21 +50,55 @@ def kicad_cli():
     return (p,)
 
 
-def run(board, out_json, timeout=900):
-    """kicad-cli pcb drc on `board`; returns the parsed JSON report."""
+def run(board, out_json, timeout=900, cache=True):
+    """kicad-cli pcb drc on `board`; returns the parsed JSON report. `cache=False` runs KiCad even
+    with the step cache on (a second run of the same board, to see which checks are noisy)."""
     board, out_json = Path(board).resolve(), Path(out_json).resolve()
     if out_json.exists():
         out_json.unlink()
     cmd = [*kicad_cli(), "pcb", "drc", "--format", "json", "--refill-zones", "--severity-all",
            "--units", "mm", "-o", str(out_json), str(board)]
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd=board.parent, errors="replace")
+        if cache and stepcache.enabled():   # KAE_STEP_CACHE: a board DRC'd before, with the same rules, replays its report
+            r = stepcache.run("kicad-drc", cmd, inputs=stepcache.kicad_inputs(board), outputs={"report": out_json},
+                              wd=board.parent, timeout=timeout, tool=stepcache.kicad_version(kicad_cli()),
+                              cwd=board.parent)
+        else:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd=board.parent, errors="replace")
     except subprocess.TimeoutExpired:
         raise DrcError(f"DRC timed out after {timeout}s")
     if not out_json.exists():
         raise DrcError(f"DRC failed (rc={r.returncode}): {(r.stdout + r.stderr)[-600:]}")
     with open(out_json) as f:
-        return json.load(f)
+        rep = json.load(f)
+    if len(rep.get("unconnected_items") or []) >= DRC_UNCONNECTED_CAP or unconnected_ignored(board):
+        n = uncapped_unconnected(board, timeout)
+        if n is not None:
+            rep["unconnected_count"] = n
+    return rep
+
+
+def unconnected_ignored(board):
+    """True when the project beside `board` sets the unconnected_items check to "ignore": KiCad's
+    DRC then lists no unconnected items at all, even with --severity-all, so its count says nothing
+    about connectivity (as kaebench's boardfiles.unconnected_ignored; the scorer then counts with
+    pcbnew, and so does run). gamaphy-freedom-rp2040 is one such board."""
+    try:
+        pro = json.loads(Path(board).with_suffix(".kicad_pro").read_text(encoding="utf-8"))
+        return pro["board"]["design_settings"]["rule_severities"]["unconnected_items"] == "ignore"
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+
+
+def uncapped_unconnected(board, timeout=900):
+    """pcbnew's unconnected count of `board` after a zone fill (no cap), None when it cannot run."""
+    from kae.board.pcbnew_io import PcbnewError, kicad_python
+    try:
+        r = subprocess.run([*kicad_python(), "-c", UNCONNECTED_PY, str(board)], capture_output=True, text=True,
+                           timeout=timeout, cwd=Path(board).parent, errors="replace")
+        return int(json.loads(r.stdout.strip().splitlines()[-1])["unconnected"])
+    except (PcbnewError, OSError, subprocess.TimeoutExpired, ValueError, IndexError, KeyError):
+        return None
 
 
 def errors(report, ignore=ENV_DEPENDENT):
@@ -64,7 +111,8 @@ def summary(report):
     by = {}
     for v in errs:
         by[v["type"]] = by.get(v["type"], 0) + 1
-    return dict(errors=len(errs), unconnected=len(report.get("unconnected_items", [])), by_type=by)
+    n = report.get("unconnected_count")
+    return dict(errors=len(errs), unconnected=n if n is not None else len(report.get("unconnected_items", [])), by_type=by)
 
 
 def excess(summary, base):
@@ -72,6 +120,26 @@ def excess(summary, base):
     before routing), per type: what routing added. 0 for a board whose only errors it had already."""
     base = base or {}
     return sum(max(0, n - base.get(t, 0)) for t, n in (summary.get("by_type") or {}).items())
+
+
+def promote_severities(staged_board, checks):
+    """Set `checks` to 'error' in the staged board's .kicad_pro (a copy: stage_board), so KiCad's
+    DRC reports what kae's fixed placement profile treats as errors. Returns the checks changed.
+    Custom .kicad_dru rules with their own severity still apply (a designer's per-object waiver)."""
+    pro = Path(staged_board).with_suffix(".kicad_pro")
+    if not pro.exists():
+        return []           # no project: KiCad's defaults, all of these are errors already
+    try:
+        d = json.loads(pro.read_text(encoding="utf-8", errors="replace"))
+    except ValueError:
+        return []
+    rs = d.setdefault("board", {}).setdefault("design_settings", {}).setdefault("rule_severities", {})
+    changed = [c for c in checks if rs.get(c, "error") != "error"]
+    if changed:
+        for c in changed:
+            rs[c] = "error"
+        pro.write_text(json.dumps(d, indent=2))
+    return changed
 
 
 def stage_board(src_board, project_board, dest_dir):

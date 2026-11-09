@@ -15,6 +15,15 @@ Two writers:
   owns (rotated about the old position and translated). Library-frame children (graphics, pad positions) are untouched. Side
   changes are not supported here (v0 keeps sides).
 `auto` tries pcbnew when a KiCad Python answers quickly and falls back to sexpr.
+
+Angles are spelled as KiCad 10's writer spells them after FOOTPRINT::SetOrientation: the
+footprint's own angle in (-180, 180] (270 is written -90), pad and text angles in [0, 360).
+Like SetOrientation, and unlike KiCad's rotate command (FOOTPRINT::Rotate), neither writer
+applies KeepUpright to footprint texts; KiCad draws keep-upright texts readable anyway
+(PCB_TEXT::GetDrawRotation). pcbnew_io.write_poses(keep_upright=True) is the A/B arm that
+does apply it (kae-board-model.md, Writing boards). Footprints are found by the loader's
+keys (kicad_file.footprint_keys), so boards with repeated or missing uuids and KiCad 5
+tstamps work as they do with the pcbnew writer.
 """
 from __future__ import annotations
 
@@ -24,7 +33,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from kae.board import transform
+from kae.board import kicad_file, sexpr, transform
 
 _TOK = re.compile(r'"(?:[^"\\]|\\.)*"|\(|\)|[^\s()"]+')
 
@@ -107,13 +116,6 @@ def _child(node, head):
     return None
 
 
-def _uuid_of(node):
-    u = _child(node, "uuid") or _child(node, "tstamp")
-    if u is None or not u.atoms:
-        return None
-    return u.atoms[0][0].strip('"')
-
-
 def _at_edit(at_node, new_angle_fn):
     """Edit the angle of an (at x y [a]) node: returns (start, end, text) or None."""
     atoms = at_node.atoms
@@ -136,9 +138,17 @@ def _is_num(t):
 
 
 def _norm_angle(a):
-    """KiCad keeps angles in (-360, 360); write them in [0, 360)."""
+    """Pad and text angles as KiCad 10 writes them after a rotation: [0, 360)
+    (EDA_ANGLE::Normalize)."""
     a = a % 360.0
     return 0.0 if abs(a) < 1e-9 or abs(a - 360.0) < 1e-9 else a
+
+
+def _norm180(a):
+    """A footprint's own angle as KiCad 10 writes it: (-180, 180] (FOOTPRINT::SetOrientation
+    calls EDA_ANGLE::Normalize180), so 270 is written -90."""
+    a = _norm_angle(a)
+    return a - 360.0 if a > 180.0 + 1e-9 else a
 
 
 def edit_footprint(text, a, b, pose):
@@ -154,7 +164,7 @@ def edit_footprint(text, a, b, pose):
     cur_side = "B" if layer is not None and layer.atoms and layer.atoms[0][0].strip('"') == "B.Cu" else "F"
     if side != cur_side:
         raise ValueError("the S-expression writer does not flip footprints")
-    rot = _norm_angle(rot)
+    rot = _norm180(rot)
     d = rot - orot
     edits = []
     parts = [fmt(x), fmt(y)] + ([fmt(rot)] if abs(rot) > 1e-9 else [])
@@ -217,13 +227,14 @@ def write_sexpr(src_path, dst_path, poses):
     edits = []
     moved = 0
     seen = set()
-    for head, a, b in _top_blocks(text):
-        if head not in ("footprint", "module"):
-            continue
-        node_uuid = _uuid_of(_tree(text, a, b))
-        if node_uuid in poses and node_uuid not in seen:
-            seen.add(node_uuid)
-            edits += edit_footprint(text, a, b, poses[node_uuid])
+    blocks = [(a, b) for head, a, b in _top_blocks(text) if head in ("footprint", "module")]
+    # the loader's keys (kicad_file.footprint_keys): uuid, KiCad 5 tstamp as a KIID, or the
+    # synthesized key of a footprint with no uuid or a repeated one
+    keys = kicad_file.footprint_keys([sexpr.parse(text[a:b]) for a, b in blocks])
+    for (a, b), (key, _) in zip(blocks, keys):
+        if key in poses and key not in seen:
+            seen.add(key)
+            edits += edit_footprint(text, a, b, poses[key])
             moved += 1
     missing = set(poses) - seen
     if missing:

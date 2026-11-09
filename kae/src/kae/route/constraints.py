@@ -131,6 +131,9 @@ class Plan:
     net_class: dict = field(default_factory=dict)      # net -> routing class name
     matrix: dict = field(default_factory=dict)         # (R, S, layer) -> mm (R <= S by name)
     pin_class: dict = field(default_factory=dict)      # (comp, pin) -> obstacle class name
+    pin_exact: dict = field(default_factory=dict)      # (comp, pin) -> {(class, layer): (track, via) mm} measured
+                                                       # from the pad's real copper (Space), where the DSN shape
+                                                       # lies inside it
     obstacle_classes: dict = field(default_factory=dict)
     obstacles: list = field(default_factory=list)
     net_graphics: list = field(default_factory=list)   # (net, {layer: polygon}, obstacle class, why)
@@ -141,6 +144,16 @@ class Plan:
     rule_board: object = None
     bridging_openings: list = field(default_factory=list)  # (layer, polygon, why, nets): mask openings that
                                                            # shut a pad in or expose two nets (kae.route.blocked)
+    pad_entry: str = "centreline"                      # where the grid router ends tracks at pads (pad_entry_mode)
+    arc_policy: str = "arcs"                           # "arcs" or "keep45" (arc_policy)
+    pad_rules: dict = field(default_factory=dict)      # info pad index -> PadRule (every pad routing may end on)
+    process: str = "reflow"                            # soldering process (power_copper.process_of)
+    hazards: list = field(default_factory=list)        # kae.hazards entries the plan raises (land_enlarged_by_track)
+    mask: object = field(default=None, repr=False)     # _MaskIndex: other nets' mask apertures (PadRule.mask)
+
+    def pad_rule(self, idx):
+        """The PadRule of info pad `idx`, or None (a pad no routing ends on)."""
+        return self.pad_rules.get(idx)
 
 
 # ----------------------------------------------------------------------------- helpers
@@ -164,6 +177,18 @@ DEFAULTS = dict(
     pad_entry_overlap=0.05,        # mm: a track may end outside a pad when its copper still overlaps the pad by
                                    # this much (KiCad connects any overlap); a 0.4 mm-pitch WLP ball is left
                                    # cleanly no other way at 0.2 / 0.2 mm (critical_grid._escapes)
+    pad_entry="centreline",        # where kae's grid router ends a track at a pad: "centreline" (rule D: the
+                                   # plan's per-pad rule, pad_entry.centreline_targets: on the land's long centre
+                                   # line, the crossing within 10 deg of the outline normal, no copper past the
+                                   # land, necked at small two-terminal lands), or "centre" (snapped onto the pad
+                                   # centre where legal; the A/B arm). "edge" (the superseded edge rule) reads as
+                                   # "centreline". Env KAE_PAD_ENTRY when neither the project nor opts set it
+    arc_policy="arcs",             # corners of shaped copper (taut, finish): "arcs" (tangent arcs) or "keep45"
+                                   # (keep the board's 45/90 style: rule-genealogy R02/R03 keep 45 deg for
+                                   # editability, an editing reason, not physics or fab); env KAE_ARC_POLICY
+    escape_ground_vias=0,          # arm E (routing-stages.md): 1 lays power_copper's ground vias at decap and IC
+                                   # ground pads in lastmile.plane_escapes, before routing, so the site is
+                                   # reserved; 0: off (power copper fits them afterwards); env KAE_ESCAPE_GROUND_VIAS
     escape_band=0,                 # placement (kae.place.escape_band): the surface escapes of each ball grid
                                    # and fine-pitch ring kept free of parts that are not its own (1: a soft
                                    # annealer term; 2: hard occupancy against every part; 0: off). Off: on
@@ -174,8 +199,56 @@ DEFAULTS = dict(
     escape_band_scale=1.0,         # band depth per side = scale x escapes on that side x (track + clearance)
     escape_band_max_mm=2.5,        # mm: the deepest band on one side
     escape_ring_pitch=0.5,         # mm: pad rings (QFN, QFP) at most this fine get bands
+    place_severity="strict_then_level_c",  # placement legality: courtyards, copper-to-edge, rule areas,
+                                   # clearance, shorts and hole clearance are errors whatever the project says.
+                                   # "strict_then_level_c" (default) places with drawn courtyards and, only when
+                                   # that leaves placement errors, again with courtyards at IPC Level C where
+                                   # the project waives them (kae.place.pipeline LADDER); "strict" and
+                                   # "level_c" one rung each; "board" follows the project (kae.place.problem)
+    relax_bodies="escalate",       # placement: "escalate" (default) frees a courtyard-less part to its pads only when
+                                   # legalization fails (each such overlap a body_overlap block hazard); "off" never;
+                                   # "auto" also up front on a board over 95% full (kae.place.pipeline)
+    place_w_cong=0.0,              # placement: weight of the annealer's RUDY + pin-escape congestion term
+                                   # (kae.place.cost.Congestion). Off: the placement-decide-staged A/B (213
+                                   # merit boards, k=2) found 0 / 10 / 30 equal (cp1 0.305 / 0.310 / 0.305,
+                                   # completion 0.941-0.943), so the simpler setting wins; RUDY also ranks PCB
+                                   # routability near chance (docs/research/placement/kae-routability-estimators.md)
+    place_margin=0.0,              # placement: routing room between movable parts, mm (Problem.set_margin);
+                                   # negative = auto (Problem.auto_margin: 2 x (0.7 - utilization), 0..1 mm).
+                                   # 0: placement-decide-staged found auto and 0 equal (cp1 0.305 both,
+                                   # completion 0.942 / 0.941), so the formula with no source is dropped
+    connector_edge=2,              # placement: user-facing connectors kae places (kae.place.edge_check:
+                                   # USB, barrel, audio, RJ/modular, video/D-sub; at or near 100 % on an
+                                   # edge on human boards) 2: pinned to the edge facing out after the seed,
+                                   # 1: only the connector_off_edge hazard, 0: neither (audit P4)
+    fab="jlcpcb",                  # the fab whose classes clip and label suggested relaxations (escape
+                                   # certificates, kae.route.blocked): kae.route.fab.PROFILES
+    operating="",                  # placement and routing: the board's operating facts (JSON: requirements.thermal
+                                   # heat sinks, parts' P_sustained_W; kae.place.heat); "" none
+    heat_pull_w=1.0,               # placement: label-term weight per sustained W pulling a hot part into a region sink
+    heat_min_W=0.25,               # placement and routing: parts dissipating less are not pulled (placement) and
+                                   # get no thermal vias (routing)
+    thermal_vias=1,                # routing (kae.route.thermal_vias): 1: each part dissipating heat_min_W or more
+                                   # gets vias from its thermal pad and pour pads into the same net's copper on
+                                   # the other face (a region sink's face, else the net's pour there); 0: off
+    thermal_via_pitch=1.0,         # mm: grid pitch of thermal vias (the board's same-net via pitch still applies)
+    thermal_via_max=16,            # thermal vias per part at most
+    thermal_via_in_pad=1,          # 1: thermal vias inside an exposed pad (as critical routing's plane vias); 0:
+                                   # only on the pour around it (for assembly that cannot plug vias in pads)
     escape_fanout=0,               # placement: 1 also reserves the dog-bone via sites of each ball grid on the
                                    # other side (no part there covers them); 0: off
+    zone_pull=0.0,                 # placement (kae.place.zones): weight of pads off their own net's fixed copper
+                                   # zone (all of them off = zone_pull x the seed HPWL), also the seed's pull and
+                                   # package pins; 0: off. Off by default: zone-ab (48 boards, 3 seeds) at 3 left
+                                   # 4.7 % more open (polarfire, sdi-mipi, nekoink worse): zone nets were 11-51 of
+                                   # 168-545 opens without it, the router reaches planes by vias, and the pull cost
+                                   # signal routing. Movable pads over their zone after 300 s, off / 1 / 3
+                                   # (human): polarfire 139-151 / 268-283 / 265-361 of 465 (387), nekoink
+                                   # 52-56 / 108-114 / 115-117 of 226 (196), gecko5 1-2 / 46-52 / 52-55 of 73
+                                   # (61); HPWL no worse (polarfire 12.7k at 3 vs 15.8k off, same seed)
+    zone_keepout=1.0,              # placement: weight of pads whose mask opening would bridge another net's
+                                   # fixed outer-layer zone or sit in a board-level mask aperture with another
+                                   # net (each 0.1 x this; gecko5: all staged DRC errors, 14 -> 0); 0: off
 )
 
 
@@ -208,6 +281,39 @@ def setting(name, board_path=None, opts=None):
     return DEFAULTS[name]
 
 
+def setting_env(name, board_path=None, opts=None):
+    """setting(), with env KAE_<NAME> where neither the project nor opts set it."""
+    import os
+    v = setting(name, board_path, opts)
+    if v == DEFAULTS[name]:
+        e = os.environ.get("KAE_" + name.upper())
+        if e not in (None, ""):
+            try:
+                return float(e)
+            except ValueError:
+                return e if isinstance(DEFAULTS[name], str) else v
+    return v
+
+
+PAD_ENTRY_MODES = ("centreline", "centre")
+ARC_POLICIES = ("arcs", "keep45")
+
+
+def pad_entry_mode(board_path=None, opts=None):
+    """The pad_entry setting ("centreline", rule D, or "centre"): project text variable, opts,
+    else env KAE_PAD_ENTRY, else the default. The superseded "edge" reads as "centreline"."""
+    v = setting_env("pad_entry", board_path, opts)
+    v = "centreline" if v == "edge" else v
+    return v if v in PAD_ENTRY_MODES else DEFAULTS["pad_entry"]
+
+
+def arc_policy(board_path=None, opts=None):
+    """The arc_policy setting ("arcs" or "keep45"): project text variable KAE_ARC_POLICY, opts,
+    else env KAE_ARC_POLICY, else "arcs"."""
+    v = setting_env("arc_policy", board_path, opts)
+    return v if v in ARC_POLICIES else DEFAULTS["arc_policy"]
+
+
 def rule_board(info, board_path, opts=None):
     dru = Path(board_path).with_suffix(".kicad_dru")
     rb = R.build(info["copper"], info["settings"], info["netclasses"], set(info["nets"]),
@@ -219,8 +325,9 @@ def rule_board(info, board_path, opts=None):
     mins = {"clearance": s.get("min_clearance", 0.0), "hole_clearance": s.get("hole_clearance", 0.0),
             "edge_clearance": s.get("edge_clearance", 0.0)}
     floor = setting("ignored_clearance_floor", board_path, opts)
-    rb.ignored = {ct: max(floor, mins.get(ct) or 0.0) for key, ct in IGNORABLE.items()
-                  if _severity_ignored(sev, key)}
+    # the same floor holds where a custom rule with severity ignore/warning wins (rules._soften)
+    rb.soft_floor = {ct: max(floor, mins.get(ct) or 0.0) for ct in IGNORABLE.values()}
+    rb.ignored = {ct: rb.soft_floor[ct] for key, ct in IGNORABLE.items() if _severity_ignored(sev, key)}
     return rb
 
 
@@ -281,6 +388,8 @@ def plan(info, board_path, opts=None):
     rb = rule_board(info, board_path, opts)
     cu = list(info["copper"])
     p = Plan(copper=cu, rule_board=rb)
+    p.pad_entry = pad_entry_mode(board_path, opts)
+    p.arc_policy = arc_policy(board_path, opts)
     sev = opts.get("severities") or {}
     s = info["settings"]
 
@@ -401,6 +510,13 @@ def plan(info, board_path, opts=None):
             pin_req[key] = cls
             p.obstacle_classes[cls] = ObstacleClass(cls, dict(vec))
         p.pin_class[(pad["comp"], pad["pin"])] = cls
+        if not outside:
+            # the DSN shape lies inside the real copper (chords of rounded corners, a custom pad's
+            # first outline): the class above adds the largest excess on every side. For exact
+            # checks against the real copper (critical_space.Space) the requirement without it
+            dsn, real = _pad_shapes(pad)
+            if any(_excess(real.get(l), dsn) > 1e-6 for l in pad["layers"]):
+                p.pin_exact[(pad["comp"], pad["pin"])] = _pad_requirements(info, rb, p, pad, sev, outside=True)
 
     # ---- obstacles
     _obstacles(info, rb, p, sev, opts)
@@ -411,6 +527,11 @@ def plan(info, board_path, opts=None):
     p.edge_clearance = max(edge_vals) if edge_vals else s.get("edge_clearance", 0.0)
     p.notes["unsupported_functions"] = sorted(rb.unsupported)
     p.notes["rule_errors"] = list(rb.errors)
+    if rb.dru_rejected:
+        p.notes["dru_rejected"] = rb.dru_rejected   # KiCad drops the file: no custom rules applied
+
+    # ---- per-pad entry rules: rule D, necks, current, mask web (PadRule)
+    _pad_rules(info, p, board_path, opts, sev)
     return p
 
 
@@ -1077,6 +1198,244 @@ def thermal_corridors(info, p, pad_uuids=None, sev=None):
 
 
 # ----------------------------------------------------------------------------- validation
+# ----------------------------------------------------------------------------- per-pad entry rules
+ENTRY_DEG = 10.0      # degrees off the outline normal the crossing piece of a rule-D entry may run
+MASK_REACH = 1.0      # mm beyond a land within which other nets' mask apertures are looked at
+
+
+class PadRule:
+    """How copper may end on one pad (the plan's copy; every producer and checker reads it):
+
+    - **Rule D** (`targets`): pad_entry.centreline_targets on the land, the crossing within
+      ENTRY_DEG of the outline normal, no copper past the land (pad_entry.overhang), and no
+      approach that leaves less than the board's solder-mask web to another net's aperture
+      (`mask_on`).
+    - **Neck** (`neck`): power_copper.neck_rule for the lands of two-terminal SMD parts, by the
+      assembly process, the land's package class and the part's series current; None: no neck.
+    - **Current** (`current_a`, `need`): the pad's current (power_copper.pad_currents on the
+      operating facts) and the width it asks (power_copper.current_need), the floor of any neck.
+    The frame and the mask apertures are computed on first use and kept."""
+
+    __slots__ = ("idx", "ref", "number", "net", "layers", "smd", "neck", "series_a", "current_a", "need",
+                 "two_terminal", "_pad", "_plan", "_land", "_frame", "_mask")
+
+    def __init__(self, idx, pad, plan):
+        self.idx, self._pad, self._plan = idx, pad, plan
+        self.ref, self.number, self.net = pad.get("ref"), pad.get("number") or pad.get("pin"), pad.get("net") or ""
+        self.layers = tuple(pad.get("layers") or ())
+        self.smd = pad.get("attr") == "smd"
+        self.neck, self.series_a, self.current_a, self.need = None, 0.0, 0.0, 0.0
+        self.two_terminal = False
+        self._land = self._frame = None
+        self._mask = {}
+
+    def __repr__(self):
+        return f"PadRule({self.ref}.{self.number}, {self.net!r}, neck={self.neck}, need={self.need:.3f})"
+
+    @property
+    def land(self):
+        """The land's copper as the router sees it (the DSN shape, else the union of its layers)."""
+        if self._land is None:
+            dsn, real = _pad_shapes(self._pad)
+            g = dsn
+            if g is None or g.is_empty:
+                vals = [x for x in real.values() if x is not None and not x.is_empty]
+                g = unary_union(vals) if vals else Polygon()
+            self._land = g
+        return self._land
+
+    @property
+    def frame(self):
+        """pad_entry.pad_frame of the land: (centre, long axis u, normal v, long side, short side)."""
+        if self._frame is None:
+            from . import pad_entry as PE
+            self._frame = PE.pad_frame(self.land)
+        return self._frame
+
+    @property
+    def land_w(self):
+        return self.frame[4]
+
+    def mask_on(self, layer):
+        """(apertures, web) on `layer`: the solder-mask openings near the land that expose other
+        nets' copper (their pads grown by their mask expansion, and drawn openings that expose
+        this pad's net and another), and the board's minimum mask web; None when no mask check
+        applies (inner layer, bridges allowed or ignored, nothing near)."""
+        if layer not in self._mask:
+            m = self._plan.mask
+            self._mask[layer] = m.near(self, layer) if m is not None else None
+        return self._mask[layer]
+
+    def width_at(self, w, min_w=0.0):
+        """The width of the final piece for copper of width w: w, or the neck (never below the
+        current's need nor min_w) where w is wider; and the stub the wide copper then keeps off the
+        outline (pad_entry.NECK_LEN + w/2), else None."""
+        from . import pad_entry as PE
+        if self.neck is None or w <= self.neck + 1e-9:
+            return w, None
+        wn = max(self.neck, self.need, min_w)
+        if wn >= w - 1e-9:
+            return w, None
+        return wn, PE.NECK_LEN + w / 2
+
+    def targets(self, release, width, land=None, layer=None, stub=None, check_overhang=True):
+        """Rule-D targets [(approach point a, end, kind)] from `release` at `width` (pad_entry.
+        centreline_targets with this pad's rules); `land`: the copper to enter (default the pad's
+        own), `layer`: for the mask web."""
+        from . import pad_entry as PE
+        return PE.centreline_targets(self.land if land is None else land, release, width, stub=stub,
+                                     max_deg=ENTRY_DEG, check_overhang=check_overhang,
+                                     mask=self.mask_on(layer) if layer is not None else None)
+
+
+class _MaskIndex:
+    """Other nets' mask apertures per outer layer, for PadRule.mask_on (built on first use)."""
+
+    def __init__(self, info, plan, sev):
+        self.info, self.plan = info, plan
+        cu = plan.copper
+        self.outer = {cu[0]: "F", cu[-1]: "B"} if cu else {}
+        self.on = not _severity_ignored(sev, "solder_mask_bridge")
+        s = info.get("settings") or {}
+        self.web = float(s.get("mask_min_web", 0.0) or 0.0)
+        self._trees = None
+
+    def _build(self):
+        self._trees = {}
+        for l, side in self.outer.items():
+            geoms, owners = [], []
+            for i, pad in enumerate(self.info.get("pads") or []):
+                if not pad.get("net") or l not in (pad.get("layers") or ()) or side not in (pad.get("mask") or {}):
+                    continue
+                _dsn, real = _pad_shapes(pad)
+                g = real.get(l)
+                if g is None or g.is_empty:
+                    continue
+                e = float(pad["mask"][side] or 0.0)
+                ap = g.buffer(e, quad_segs=8) if e > 0 else g
+                geoms.append(ap)
+                owners.append((pad.get("net"), pad.get("comp")))
+            for layer, geo, _why, nets in self.plan.bridging_openings:
+                if layer == l and len(nets) > 1:
+                    geoms.append(geo)
+                    owners.append((tuple(nets), None))
+            self._trees[l] = (shapely.STRtree(geoms) if geoms else None, geoms, owners)
+
+    def near(self, rule, layer):
+        if not self.on or layer not in self.outer or rule._pad.get("allow_bridges"):
+            return None
+        if self._trees is None:
+            self._build()
+        tree, geoms, owners = self._trees.get(layer, (None, [], []))
+        if tree is None:
+            return None
+        land = rule.land
+        out = []
+        for k in tree.query(land.buffer(MASK_REACH + max(rule.frame[3], 0.0))):
+            net, comp = owners[int(k)]
+            if isinstance(net, tuple):
+                if rule.net not in net:
+                    continue                 # an opening this net never reaches (a keepout for it)
+            elif net == rule.net:
+                continue
+            out.append(geoms[int(k)])
+        return (out, self.web) if out else None
+
+
+_ROLES = {}
+
+
+def _roles(board_path, nets, opts):
+    """(power, ground) net sets: opts "power" / "ground" when given; else the physics brief's rails
+    and grounds (kae.circuit.brief, as power_copper.classify; cached per board content) together with
+    the nets pad_entry.current_net names a rail or ground (on the 12 pad-entry boards the brief
+    finds 24 rails the names miss, V_BATT, PWRIN, IPSOUT..., and misses 2 they find, secsense 3V3
+    and VIN); switch nodes never. Names alone when no brief can be built."""
+    from . import pad_entry as PE
+    from . import power_copper as PC
+    g_n = {n for n in nets if PE.GND_RE.search(n.rsplit("/", 1)[-1])}
+    p_n = {n for n in nets if n not in g_n and PE.current_net(n)}
+    p_b, g_b, sw = set(), set(), set()
+    brief = opts.get("brief")
+    if brief is None and board_path:
+        try:
+            import hashlib
+            key = hashlib.sha1(Path(board_path).read_bytes()).hexdigest()      # staged copies share it
+        except OSError:
+            key = None
+        if key is not None and key not in _ROLES:
+            try:
+                from kae.board.kicad_file import load
+                from kae.circuit.brief import build
+                b = load(board_path)
+                _ROLES.clear() if len(_ROLES) > 64 else None
+                _ROLES[key] = (build(b),)
+            except Exception:                       # noqa: BLE001 - names are the fallback
+                _ROLES[key] = None
+        hit = _ROLES.get(key) if key is not None else None
+        if hit is not None:
+            brief = hit[0]
+    if brief is not None:
+        p_b, g_b, sw, _v = PC.classify(brief, nets)
+    ground = set(opts["ground"]) if opts.get("ground") is not None else (g_n | g_b)
+    power = set(opts["power"]) if opts.get("power") is not None else ((p_n | p_b) - ground - set(sw))
+    return power, ground
+
+
+def _pad_rules(info, p, board_path, opts, sev):
+    """Fill p.pad_rules, p.process and p.hazards (see PadRule). Rails and grounds from the brief and
+    the names (_roles), currents from the operating facts (opts "operating", else the project's
+    KAE_OPERATING, as power_copper)."""
+    from . import pad_entry as PE
+    from . import power_copper as PC
+    pads = info.get("pads") or []
+    for i, pad in enumerate(pads):
+        if pad.get("pin") and pad.get("layers") and pad.get("net"):
+            p.pad_rules[i] = PadRule(i, pad, p)
+    p.mask = _MaskIndex(info, p, sev)
+    nets = {r.net for r in p.pad_rules.values()}
+    power, ground = _roles(board_path, nets, opts)
+    op = PC._operating(board_path, opts.get("operating")) if board_path else None
+    asm = ((op or {}).get("requirements") or {}).get("assembly") or {}
+    p.process = PC.process_of(asm)
+    margin = float(opts.get("current_margin", PC.DEFAULTS["current_margin"]))
+    pad_nets = [(r.ref, r.net) for r in p.pad_rules.values()]
+    nets_of = {}
+    for ref, net in pad_nets:
+        nets_of.setdefault(ref, set()).add(net)
+    cur = PC.pad_currents(op, pad_nets, power, ground) if op else {}
+    net_cur = PC.net_currents(op, nets_of, power, ground) if op else {}
+    for r in p.pad_rules.values():
+        r.current_a = cur.get((r.ref, r.net), 0.0)
+        r.need = PC.current_need(r.current_a, margin)
+    # necks: the copper pads of each part (pads with no net count: a two-terminal part has two)
+    by_comp = {}
+    for i, pad in enumerate(pads):
+        if pad.get("pin") and pad.get("layers") and pad.get("comp") is not None:
+            by_comp.setdefault(pad.get("comp"), []).append(i)
+    lands = {}
+    for comp, idxs in by_comp.items():
+        if len(idxs) != 2 or not all(pads[i].get("attr") == "smd" for i in idxs):
+            continue
+        lands[comp] = [(i, True, pads[i].get("net") or "",
+                        p.pad_rules[i].land_w if i in p.pad_rules else PadRule(i, pads[i], p).land_w) for i in idxs]
+    necks, series = PC.land_necks(lands, power, ground, net_cur, p.process, margin)
+    if not opts.get("neck", True):
+        necks = {}
+    for i, w in necks.items():
+        if i in p.pad_rules:
+            p.pad_rules[i].neck = w
+    for i, a in series.items():
+        r = p.pad_rules.get(i)
+        if r is None:
+            continue
+        r.two_terminal, r.series_a = True, a
+        need = PC.current_need(a, margin)
+        if a > 0 and need >= r.land_w:
+            # the rail's current needs more copper than the land: no neck, and the land is enlarged
+            p.hazards.append(PE.land_hazard(r.ref, r.number, r.net, need, r.land_w, need, a))
+
+
 def validate(info, board_path):
     """Compare this module's rule resolution with KiCad's own engine on the probes
     (single-item constraints: track width, via diameter and drill, own clearance of
@@ -1121,4 +1480,5 @@ def validate(info, board_path):
             check(f"pad {ctype} {pad['ref']}.{pad['number']} {l}", c.min or 0.0, v)
     out["unsupported"] = sorted(rb.unsupported)
     out["rule_errors"] = rb.errors
+    out["dru_rejected"] = rb.dru_rejected
     return out

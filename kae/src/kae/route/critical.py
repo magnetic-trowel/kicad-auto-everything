@@ -39,6 +39,7 @@ from kae.board import pcbnew_io
 from kae.board.kicad_file import load
 from kae.board.model import Track, Via
 
+from . import arcs as A
 from . import critical_write as W
 from .critical_grid import GridRouter
 from .critical_modules import Ctx, modules_from_brief, route_module
@@ -68,7 +69,39 @@ DEFAULTS = dict(
     thermal_spokes=True,   # manual spokes first for pads the placement starves (Session.thermal_spokes)
     lm_soft=False,         # the bridge's last mile may re-lay critical copper, kept by the joint loop's
                            # physics rule (soft_critical)
+    dT_max_K=10.0,         # IPC-2221 temperature rise critical copper is sized for (intent_opts)
+    drop_share=0.02,       # rail + ground DC drop budget, fraction of the rail voltage (intent_opts)
+    rail_max_mm=3.0,       # widest rail / cell track; above ~5.3 A on 1 oz a pour is due: copper capped below its
+                           # IPC width is a hazard with its rise (high-current.md "How kae applies these")
+    rail_over_cap=False,   # A/B arm (decide C2): ladders start at the IPC width above the cap, the cap only a floor
+    via_A=0.0,             # current per rail via (0: from its drill and plating, critical_physics.via_current)
+    via_plating_mm=0.0,    # via plating (0: IPC-6012 class 2's 20 um, kae.materials)
+    entry_guard=False,     # with rule-D pad entries: each physics module is routed with them and with the old
+                           # entries, and the old routing kept only when it quotes lower and has no acute entry
+                           # (critical_modules._entry_guard); off: it doubles the stage's time and kept
+                           # no old routing on aifryz or the fixture (physics-ranked entries per hop already)
+    tighten=False,         # taut on the module and rail copper before it is locked, physics-guarded
+                           # (critical_taut; routing-stages.md P4); off until its A/B
+    arc_policy="arcs",     # tightened copper: "arcs" (tangent arcs) or "keep45" (no tightening: taut has
+                           # no segment-only mode)
+    tighten_tol=0.005,     # a module's quote / a rail branch's resistance may rise at most this fraction
+    tighten_passes=4,      # taut passes at most
+    tighten_gate=True,     # KiCad's DRC on the tightened copper; errors naming it restore it (Session.tighten_gate)
+    tighten_pours="hold",  # other nets' fills (KiCad's refill with the critical copper) when known: "hold"
+                           # (obstacles; copper stays in its knockout) or "refill" (ignored, as the grid router)
 )
+
+
+def intent_opts(intent):
+    """Session opts from an intent's requirements (as kae.excite.dc.plan reads them), so the
+    critical router sizes copper against the limits the evaluator scores: dT_max_K and
+    drop_share. Takes the facts dict or a kae.intent/1 document (its facts); {} without one."""
+    if not intent:
+        return {}
+    if intent.get("schema") == "kae.intent/1":
+        intent = intent.get("facts") or {}
+    req = intent.get("requirements") or {}
+    return {k: float(req[k]) for k in ("dT_max_K", "drop_share") if req.get(k) is not None}
 
 
 def _log(msg):
@@ -115,6 +148,7 @@ class Session:
         self.router.gnd = set(self.ctx.gnd)
         self.modules = []
         self.rails = []
+        self.arcs = {}             # uuid -> mid point of the committed tracks that are arcs (critical_taut)
         self.t_setup = time.monotonic() - t0
 
     # ------------------------------------------------------------------ routing
@@ -263,8 +297,9 @@ class Session:
         from shapely.geometry import Point as _Pt
         sp = self.space
         mods = {m.id: m for m in list(self.modules) + list(getattr(self.ctx, "rail_modules", []) or [])}
-        out = dict(necks=0, splits=0, left=0)
+        out = dict(necks=0, splits=0, left=0, pin_ties=0)
         tol = 1e-4
+        ruled = getattr(sp, "pad_entry", "centre") != "centre"
 
         def add_piece(net, layer, w0, a, b, owner):
             mn = sp.width_limits(net, layer)[0] or 0.0
@@ -310,6 +345,12 @@ class Session:
                             break
                     if centre is None:
                         body = next((x for x in same if x.kind == "track" and x.geom.distance(pe) < x.r + 1e-9), None)
+                    if centre is not None and x.kind == "pad" and ruled:
+                        # a rule-D end on the land's centre line: KiCad (and the scorer) connect any
+                        # overlap, and Freerouting gets a DSN pin tie (translate.tie_pins), so no
+                        # copper is added on the board
+                        out["pin_ties"] += 1
+                        continue
                     if centre is not None:
                         if add_piece(t.net, layer, t.width, e, centre, t.owner) is not None:
                             out["necks"] += 1
@@ -346,6 +387,54 @@ class Session:
                 break
         return out
 
+    def tighten(self, fills=None, opts=None):
+        """Taut on the committed copper, physics-guarded (critical_taut.tighten); `fills`:
+        critical_recheck.fills_of of the board with this copper (None: pours refill).
+        The report is kept as self.tightened (report()["tighten"])."""
+        from .critical_taut import tighten
+        self.tightened = tighten(self, fills=fills, opts=opts, log=self.log)
+        return self.tightened
+
+    def tighten_gate(self, workdir, rounds=3, timeout=900):
+        """KiCad's DRC on the tightened copper (the stage boundary's gate, routing-stages.md
+        P5): every error that names tightened copper restores that copper's groups
+        (critical_taut's refuse, which settles the physics guard again); repeated while
+        something was restored, at most `rounds` times. The exact check inside taut uses the
+        rule port's numbers; where those are below KiCad's (a pad class the port reads
+        smaller), only KiCad catches it. Returns {rounds, reverted, errors_named}."""
+        from . import drc
+        refuse = getattr(self, "_tighten_refuse", None)
+        out = dict(rounds=0, reverted=0, errors_named=0)
+        if refuse is None:
+            return out
+        wd = Path(workdir)
+        wd.mkdir(parents=True, exist_ok=True)
+        for k in range(rounds):
+            new = set(getattr(self, "_tighten_new", ()) or ())
+            live = {it.uuid for it in self.space.routed} & new
+            if not live:
+                break
+            b = wd / f"gate{k}.kicad_pcb"
+            self.write(b)
+            rep = drc.run(b, wd / f"gate{k}.json", timeout=timeout)
+            out["rounds"] += 1
+            named = set()
+            n = 0
+            for v in drc.errors(rep) + list(rep.get("unconnected_items") or []):
+                us = {i.get("uuid") for i in v.get("items") or []} & live
+                if us:
+                    named |= us
+                    n += 1
+            out["errors_named"] += n
+            if not named:
+                break
+            before = int(self.tightened.get("gate_reverted", 0))
+            refuse(named, why="drc")
+            out["reverted"] += int(self.tightened.get("gate_reverted", 0)) - before
+        self.tightened["gate"] = out
+        self.log(f"tighten gate: {out}")
+        return out
+
     # ------------------------------------------------------------------ output
     def soft(self, it):
         """Whether a committed item is a join without physics (a critical net's nearby pads
@@ -369,7 +458,7 @@ class Session:
             if it.kind == "track":
                 (x0, y0), (x1, y1) = it.geom.coords[0], it.geom.coords[-1]
                 out_t.append(Track(uuid=it.uuid, net=it.net, layer=next(iter(it.layers)), width=it.width,
-                                   start=(x0, y0), end=(x1, y1), locked=lk))
+                                   start=(x0, y0), end=(x1, y1), mid=self.arcs.get(it.uuid), locked=lk))
             elif it.kind == "via":
                 out_v.append(Via(uuid=it.uuid, net=it.net, x=it.geom.x, y=it.geom.y, size=it.width, drill=it.drill,
                                  layers=[self.space.cu[0], self.space.cu[-1]], locked=lk))
@@ -491,7 +580,7 @@ class Session:
     def write(self, dst, guards=()):
         tracks, vias = self.copper()
         W.append_items(self.path, dst,
-                       tracks=[(t.net, t.layer, t.width, t.start, t.end, t.uuid, t.locked) for t in tracks],
+                       tracks=[(t.net, t.layer, t.width, t.start, t.end, t.uuid, t.locked, t.mid) for t in tracks],
                        vias=[(v.net, v.x, v.y, v.size, v.drill, v.uuid, v.locked) for v in vias],
                        zones=list(guards))
         for ext in (".kicad_pro", ".kicad_dru", ".kicad_prl"):
@@ -508,16 +597,27 @@ class Session:
             board=str(self.path),
             setup_s=round(self.t_setup, 2), route_s=round(getattr(self, "t_route", 0.0), 2),
             tracks=len(tracks), vias=len(vias),
-            track_mm=round(sum(math.dist(t.start, t.end) for t in tracks), 2),
+            track_mm=round(sum(A.track_length(t) for t in tracks), 2),
             router=dict(self.router.stats),
             completed=dict(getattr(self, "completed", {}) or {}),
             joins=dict(getattr(self, "joins", {}) or {}),
             stitched=int(getattr(self, "n_stitched", 0) or 0),
+            **({"tighten": self.tightened} if getattr(self, "tightened", None) else {}),
             space_notes=list(self.space.notes),
             modules=[dict(id=m.id, kind=m.kind, status=m.status, items=len(m.copper), physics=m.physics,
-                          notes=m.notes[:6]) for m in self.modules],
+                          notes=m.notes[:6], flags=m.flags) for m in self.modules],
             rails=self.rails,
+            hazards=self.hazards(),
         )
+
+    def hazards(self):
+        """Every module's and rail's hazards (docs: the shared hazard schema), blocks first."""
+        out = [h for m in self.modules for h in getattr(m, "hazards", [])]
+        out += [h for r in self.rails or [] for h in r.get("hazards", [])]
+        out += list(getattr(self.space.plan, "hazards", None) or [])      # the plan's (land_enlarged_by_track)
+        out += list((getattr(self, "tightened", None) or {}).get("hazards") or [])
+        order = {"block": 0, "warn": 1, "info": 2}
+        return sorted(out, key=lambda h: order.get(h.get("severity"), 3))
 
 
 # ----------------------------------------------------------------------------- API
@@ -525,6 +625,8 @@ def route_critical(board_path, out_path=None, brief=None, info=None, opts=None, 
     """Route the critical copper of a placed board; write `out_path` (input + locked copper)
     when given. Returns (report, session)."""
     s = Session(board_path, brief=brief, info=info, opts=opts, log=log).route()
+    if s.opts.get("tighten"):
+        s.tighten()
     if out_path:
         s.write(out_path)
     return s.report(), s
@@ -562,15 +664,34 @@ def run(input_path, output_path, seed=0, time_s=900.0, opts=None, bridge_opts=No
                 except Exception as e:  # noqa: BLE001 - spokes refine; the repair loop also draws them
                     log(f"thermal spokes: {type(e).__name__}: {e}")
             s.route(budget_s=crit_budget)
+            fills = None
             if (opts or {}).get("stitch", True):
                 # ground pour pieces the critical copper leaves weakly tied get stitching vias
                 try:
                     from .critical_recheck import fills_of
                     s.write(w0)
-                    s.n_stitched = s.stitch_ground(fills_of(w0))
+                    fills = fills_of(w0)
+                    s.n_stitched = s.stitch_ground(fills)
                 except Exception as e:  # noqa: BLE001 - stitching is a refinement
                     log(f"stitching: {type(e).__name__}: {e}")
+            if s.opts.get("tighten"):
+                # shape before lock (routing-stages.md P4): taut on the copper, physics-guarded
+                try:
+                    if fills is None and s.opts.get("tighten_pours", "hold") == "hold":
+                        from .critical_recheck import fills_of
+                        s.write(w0)
+                        fills = fills_of(w0)
+                    s.tighten(fills=fills if s.opts.get("tighten_pours", "hold") == "hold" else None)
+                    if s.opts.get("tighten_gate", True):
+                        s.tighten_gate(wd / "tighten-gate")
+                except Exception as e:  # noqa: BLE001 - tightening is a refinement; the copper stays as routed
+                    import traceback
+                    traceback.print_exc()
+                    log(f"tighten: {type(e).__name__}: {e}")
+                    rep["tighten_error"] = f"{type(e).__name__}: {e}"
             rep["critical"] = s.report()
+            if rep["critical"].get("hazards"):          # the shared schema: top level of the report
+                rep.setdefault("hazards", []).extend(rep["critical"]["hazards"])
             guards = s.guards() if bridge else []
             rep["critical"]["guards"] = len(guards)
             s.write(w0, guards=guards)
@@ -584,6 +705,12 @@ def run(input_path, output_path, seed=0, time_s=900.0, opts=None, bridge_opts=No
         if bridge and left() > 30:
             from . import bridge as BR
             r0 = wd / "routed0.kicad_pcb"
+            # the heat facts reach the bridge's thermal-via pass (kae.route.thermal_vias) also when
+            # they were given to the critical router's opts rather than the project's text variables
+            for k in ("operating", "heat_min_W", "thermal_vias", "thermal_via_pitch", "thermal_via_max",
+                      "thermal_via_in_pad"):
+                if (opts or {}).get(k) not in (None, "") and k not in (bridge_opts or {}):
+                    bridge_opts = dict(bridge_opts or {}, **{k: opts[k]})
             if s is not None and (opts or {}).get("lm_soft", DEFAULTS["lm_soft"]):
                 bridge_opts = dict(bridge_opts or {}, **soft_critical(s))
             # the re-tweak rounds keep a reserve: up to 30 % of what is left, at most 180 s
@@ -643,19 +770,22 @@ def soft_critical(s, slack=0.10):
     return dict(soft_fixed=uuids, physics_guard=guard)
 
 
-def write_joint(src, dst, poses, copper):
+def write_joint(src, dst, poses, copper, hazards=None):
     """dst = src with parts moved to `poses` (pcbnew_io.write_poses: KiCad's own writer, any
     angle) and the critical copper added (locked but for soft joins). Project files are
-    copied beside dst."""
+    copied beside dst. The writer's post-write hazards (format upgrade, merged or lost
+    drawings) are appended to `hazards` when a list is given."""
     import shutil
     src, dst = Path(src), Path(dst)
     if poses:
-        pcbnew_io.write_poses(src, dst, {u: tuple(p) for u, p in poses.items()})
+        wrep = pcbnew_io.write_poses(src, dst, {u: tuple(p) for u, p in poses.items()})
+        if hazards is not None:
+            hazards.extend((wrep or {}).get("hazards") or [])
     elif src.resolve() != dst.resolve():
         shutil.copy2(src, dst)
     tracks = [c for c in copper if isinstance(c, Track)]
     vias = [c for c in copper if isinstance(c, Via)]
-    W.append_items(dst, dst, tracks=[(t.net, t.layer, t.width, t.start, t.end, t.uuid, t.locked) for t in tracks],
+    W.append_items(dst, dst, tracks=[(t.net, t.layer, t.width, t.start, t.end, t.uuid, t.locked, t.mid) for t in tracks],
                    vias=[(v.net, v.x, v.y, v.size, v.drill, v.uuid, v.locked) for v in vias])
     for ext in (".kicad_pro", ".kicad_dru", ".kicad_prl"):
         s = src.with_suffix(ext)

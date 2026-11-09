@@ -53,11 +53,12 @@ SHORT = 0.001         # mm: what stays of every clearance in the relaxed search 
 WINDOWS = (1.0, 4.0, 12.0)
 MAX_EXP = 1_000_000   # grid expansions per search of the width that fits (a search with no path
                       # explores its whole window)
-RELAXED_W = 0.05      # mm: the track width of the relaxed search, and the narrowest width tried
+RELAXED_W = 0.05      # mm: the track width of the relaxed search (it finds a path to examine; it is
+                      # never suggested: suggestions stop at the fab's finest class, kae.route.fab)
 FIT_RES = 0.02        # mm: grid of the search for the track width that fits
 FIT_MARGIN = 1.0      # mm around the relaxed route: the window of that search
-FIT_LADDER = ((0.8,), (0.15, 0.127, 0.1, 0.075, RELAXED_W))   # widths tried: shares of the rules'
-                      # minimum, then common fab minimums (6, 5, 4, 3 mil)
+FIT_STEP = 0.005      # mm: resolution of the binary search for the widest track that fits (the real
+                      # search has no closed form), between the fab's finest track and the rules' minimum
 
 
 # ----------------------------------------------------------------------------- relaxed search
@@ -119,7 +120,7 @@ class _RelaxedRouter(GridRouter):
             return super().via_allowed(grid, net, layers_all)
         return self._real(lambda: GridRouter.via_allowed(self, grid, net, layers_all))
 
-    def _pull(self, net, layer, w, pts, tol=None):
+    def _pull(self, net, layer, w, pts, tol=None, keep=()):
         return pts
 
 
@@ -307,7 +308,26 @@ def _explain(sp, net, g, wmin, fit=None):
         rec.update(constraint="track_width", required=round(g["w"], 4), available=round(fit, 4),
                    clearance=dict(required=round(nd, 4), available=round(d, 4), where=top[3]),
                    source=ks, where=kw, override=ko)
+    _fab_label(sp, rec, it)
     return rec
+
+
+def _fab_label(sp, rec, it=None):
+    """The fab class (kae.route.fab) of the relaxation a record implies: the track width that
+    fits, or the clearance down to what is available, or the via that fits."""
+    from . import fab
+    prof = getattr(sp, "fab_prof", None)
+    if prof is None:
+        return
+    n = len(sp.cu)
+    if rec["constraint"] == "track_width":
+        rec.update(fab.label(prof, n, "track", rec["available"]))
+    elif "fits_via" in rec:
+        if rec["fits_via"] > 0:
+            rec.update(fab.label(prof, n, "via", (rec["fits_via"], None)))
+    elif rec["constraint"] == "clearance":
+        pad = it != "edge" and it is not None and getattr(it, "kind", "") in ("pad", "pad_nopin")
+        rec.update(fab.label(prof, n, "pad_track" if pad else "space", max(rec["available"], 0.0)))
 
 
 def _line(net, pads, cause, b):
@@ -321,9 +341,12 @@ def _line(net, pads, cause, b):
                 f"{'; '.join(b or []) or 'copper or the outline'}")
     at = f" at ({b['at'][0]:.2f}, {b['at'][1]:.2f}) {b['layer']}"
     src = b["where"] + (f"; override {b['override']}" if b.get("override") else "")
+    fc = ""
+    if "fab_class" in b:
+        fc = f" ({b['fab']} {b['fab_class']})" if b["fab_class"] else f" (finer than any {b['fab']} class)"
     if b["constraint"] == "track_width":
         return (f"{who}: needs a {b['available']:.3f} mm track{at}, minimum track width {b['required']:.3f} mm "
-                f"({src}); relax to {math.floor(b['available'] * 1000) / 1000:.3f} to allow")
+                f"({src}); relax to {math.floor(b['available'] * 1000) / 1000:.3f}{fc} to allow")
     if b["constraint"] in ("keepout", "thermal_corridor"):
         return f"{who}: crosses a {b['constraint'].replace('_', ' ')}{at} ({src})"
     if "fits_via" in b:
@@ -333,11 +356,12 @@ def _line(net, pads, cause, b):
         size = f"a {b['track']:.3f} mm track"
         alt = ""
     return (f"{who}: {b['constraint'].replace('_', ' ')} to {b['against']}{at}: needs {b['required']:.3f} mm, "
-            f"{b['available']:.3f} mm available with {size} ({src}){alt}")
+            f"{b['available']:.3f} mm available with {size} ({src}){alt}{fc}")
 
 
 # ----------------------------------------------------------------------------- the board
-def diagnose(board, info, plan, fills, report, sev=None, input_ids=(), deadline=None, log=print, max_conns=60):
+def diagnose(board, info, plan, fills, report, sev=None, input_ids=(), deadline=None, log=print, max_conns=60,
+             opts=None):
     """Diagnose the open connections of `board` (see the module docstring). `board`: the
     final board with its project files beside it (drc.stage_board), `fills` its refilled
     zones (pcbnew_io.zone_fills()["zones"]), `report` its KiCad DRC report, `input_ids` the
@@ -345,6 +369,11 @@ def diagnose(board, info, plan, fills, report, sev=None, input_ids=(), deadline=
     t0 = time.monotonic()
     b = load(board)
     sp = Space(b, info, plan=plan, sev=sev or {})
+    from . import fab
+    # suggestions stop at the fab's finest class and carry the cheapest class that builds them
+    sp.fab_prof = fab.profile(opts=opts, board_path=board)
+    sp.fab_floor_w = fab.floor(sp.fab_prof, len(sp.cu), "track")
+    sp.fab_tracks = [lim.get("track") for _c, lim in fab.classes(sp.fab_prof, len(sp.cu))]
     _bridging_openings(sp)
     relax = _Relaxed(sp)
     gr = GridRouter(sp)          # the last mile's search: a smaller bound blamed rules for congestion
@@ -383,6 +412,18 @@ def diagnose(board, info, plan, fills, report, sev=None, input_ids=(), deadline=
             (out["congestion"] if rec["cause"] == "congestion" else out["blocked"]).append(rec)
             log("blocked: " + rec["line"])
     out["summary"] = [r["line"] for r in out["blocked"]]
+    hz = []
+    for r in out["blocked"]:
+        bd = r.get("binding") or {}
+        if "fab_class" in bd and bd["fab_class"] != "standard":
+            v = bd.get("fits_via") if "fits_via" in bd else bd.get("available")
+            e = dict(rule={"track_width": "track width"}.get(bd["constraint"], bd["constraint"].replace("_", " ")),
+                     value=v, fab_class=bd["fab_class"], fab_cost=bd.get("fab_cost"))
+            h = fab.hazard(sp.fab_prof, len(sp.cu), e, [r["net"]] + list(r.get("pads") or []), f"{r['net']}")
+            if h:
+                h["evidence"].update(required=bd.get("required"), available=bd.get("available"), at=bd.get("at"))
+                hz.append(h)
+    out["hazards"] = hz
     out["seconds"] = round(time.monotonic() - t0, 1)
     return out
 
@@ -429,10 +470,11 @@ def _relaxed_route(sp, rgr, relax, net, src, others, wmin):
     return None, None
 
 
-def _width_fit(sp, net, src, others, wmin, rt):
-    """The widest track of FIT_LADDER (below the rules' minimum `wmin`) that the real rules let
-    through, every clearance as it is, near the relaxed route `rt` (its box grown by
-    FIT_MARGIN), or None when not even the narrowest fits."""
+def _width_fit(sp, net, src, others, wmin, rt, floor_w=None):
+    """The widest track below the rules' minimum `wmin` that the real rules let through, every
+    clearance as it is, near the relaxed route `rt` (its box grown by FIT_MARGIN): a binary
+    search (FIT_STEP, plus the fab classes' track limits) down to `floor_w`, the fab's finest
+    class; None when not even that fits."""
     from shapely.geometry import box
     pts = [p for _, a, b in rt.segs for p in (a, b)] + list(rt.vias)
     xs, ys = [p[0] for p in pts], [p[1] for p in pts]
@@ -445,14 +487,20 @@ def _width_fit(sp, net, src, others, wmin, rt):
 
     def ok(w):
         return gr.connect(net, src, dst, w, sp.cu, via=len(sp.cu) > 1, window=grid) is not None
-    ladder = sorted({round(f * wmin, 3) for f in FIT_LADDER[0]} | set(FIT_LADDER[1]), reverse=True)
-    ladder = [w for w in ladder if w < wmin - 1e-6]
-    if not ladder or not ok(ladder[-1]):
+    lo = max(floor_w or RELAXED_W, 0.001)
+    cands = {round(wmin - k * FIT_STEP, 3) for k in range(1, int((wmin - lo) / FIT_STEP) + 1)}
+    cands |= {lo} | {v for v in getattr(sp, "fab_tracks", ()) if v}
+    cands = sorted((w for w in cands if lo - 1e-9 <= w < wmin - 1e-6), reverse=True)
+    if not cands or not ok(cands[-1]):
         return None
-    for w in ladder[:-1]:
-        if ok(w):
-            return w
-    return ladder[-1]
+    i, j = 0, len(cands) - 1          # cands[j] fits
+    while i < j:
+        m = (i + j) // 2
+        if ok(cands[m]):
+            j = m
+        else:
+            i = m + 1
+    return cands[j]
 
 
 def _route(gr, sp, net, src, others, widths):
@@ -499,7 +547,7 @@ def _one(sp, gr, rgr, relax, net, src, others, widths, wmin, input_ids):
             g = gaps[0]
             fit = None
             if g["kind"] == "track" and (g["worst"][0] == "edge" or g["worst"][0].kind not in ("keepout", "corridor")):
-                fit = _width_fit(sp, net, src, others, wmin, rt)
+                fit = _width_fit(sp, net, src, others, wmin, rt, getattr(sp, "fab_floor_w", None))
             b = _explain(sp, net, g, wmin, fit)
         finally:
             LM._restore(sp, theirs)

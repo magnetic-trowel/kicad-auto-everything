@@ -32,7 +32,7 @@ def test_physics_of_a_place_run_reads_the_probes_routed_board(tmp_path):
 def test_method_table_means_over_common_boards():
     """DRC errors and physics are also averaged over the boards every method scored."""
     def row(method, board, errors, phys, status="ok"):
-        return dict(method=method, board=board, status=status, clean=errors == 0, completion=1.0, unconnected=0,
+        return dict(method=method, board=board, attempt=0, status=status, clean=errors == 0, completion=1.0, unconnected=0,
                     errors=errors, timed_out=False, partial=False, cpu_s=1.0, attempts=1, runtime_s=1.0,
                     physics_total=phys, physics_vs_human=None, module_ratio_median=None)
     rows = [row("a", "b1", 0, 1.0), row("a", "hard", 10, 9.0),
@@ -40,8 +40,42 @@ def test_method_table_means_over_common_boards():
     out = kaeres.method_table(rows, ["a", "b"], "t")
     assert "DRC errors / board, 1 common boards" in out[2] and "physics Σu, 1 common boards" in out[2]
     cells = {ln.split(" | ")[0].strip("| "): ln.split(" | ") for ln in out[4:6]}
-    assert cells["a"][6:8] == ["5.00 (2)", "0.00"] and cells["b"][6:8] == ["2.00 (1)", "2.00"]
-    assert cells["a"][14:16] == ["5.000 (2)", "1.000"] and cells["b"][14:16] == ["3.000 (1)", "3.000"]
+    assert cells["a"][8:10] == ["5.00 (2)", "0.00"] and cells["b"][8:10] == ["2.00 (1)", "2.00"]
+    assert cells["a"][16:18] == ["5.000 (2)", "1.000"] and cells["b"][16:18] == ["3.000 (1)", "3.000"]
+
+
+def _r(method, board, attempt, clean, status="ok", unconnected=None):
+    return dict(method=method, board=board, attempt=attempt, status=status, clean=clean, completion=1.0 if clean else 0.5,
+                unconnected=0 if clean else (unconnected or 3), errors=0, errors_by_type="{}", timed_out=False, partial=False,
+                cpu_s=1.0, attempts=1, runtime_s=1.0, physics_total=None, physics_vs_human=None, module_ratio_median=None)
+
+
+def test_method_table_reports_k_and_cpk_over_attempts():
+    rows = [_r("a", "b1", 0, False), _r("a", "b1", 1, True), _r("a", "b2", 0, False), _r("a", "b2", 1, False)]
+    out = kaeres.method_table(rows, ["a"], "t")
+    cells = out[4].split(" | ")
+    assert cells[1:6] == ["2", "2", "0.000", "2", "0.500"]   # boards, ok, cp1, k, cpk
+
+
+def test_paired_table_tests_cp1_and_cpk_and_lists_flips():
+    rows = []
+    for i in range(8):
+        rows += [_r("base", f"b{i}", 0, False), _r("new", f"b{i}", 0, True)]
+    rows += [_r("base", "x", 0, True), _r("new", "x", 0, False, unconnected=7), _r("base", "pending", 0, True)]
+    out = "\n".join(kaeres.paired_table(rows, "base", ["base", "new"], {}))
+    line = next(ln for ln in out.splitlines() if ln.startswith("| new | 9 |"))
+    assert "| 1 |" in line                                    # one board not run by new yet
+    assert "+8 / −1" in line and "B better" in line
+    assert "| new | x | base | 7 |" in out
+
+
+def test_method_cpu_s_ignores_cpu_lost_in_the_sandbox():
+    lost = dict(runtime_s=600, method_usage=dict(cpu_s=0.006, processes=1), adapter_meta=dict(sandboxed=True))
+    assert kaeres.method_cpu_s(lost) is None
+    assert kaeres.method_cpu_s(dict(lost, job_steps=dict(run=dict(cgroup_cpu_s=2400.0)))) == 2400.0
+    assert kaeres.method_cpu_s(dict(lost, work=dict(cpu_s=6198.8))) == 6198.8
+    fr = dict(runtime_s=600, method_usage=dict(cpu_s=640.0, processes=3), adapter_meta={})
+    assert kaeres.method_cpu_s(fr) == 640.0
 
 
 def test_runs_of_another_task_are_missing_and_not_reported(tmp_path, monkeypatch):
@@ -102,3 +136,76 @@ def test_exp_create_refuses_a_method_prepared_on_another_task_spec(monkeypatch, 
     a = type("A", (), dict(name="x", method=["fr"], harness="h9", kae="h9", boards=None, attempts=1, description=""))
     with pytest.raises(SystemExit, match="another task spec"):
         K.cmd_exp_create(a)
+
+
+def _task_dir(root, board_text="(kicad_pcb)\n", repo="local:/a"):
+    """A kaebench tasks/<board> directory with a route input."""
+    import json
+    t = root / "b1"
+    for sub in ("reference", "route/input"):
+        (t / sub).mkdir(parents=True, exist_ok=True)
+        (t / sub / "board.kicad_pcb").write_text(board_text)
+        (t / sub / "drc.json").write_text(json.dumps({"date": str(root)}))  # dated: not content
+    rec = dict(id="b1", repo=repo, task_spec=9, pcb_sha256="s", split="A", reference=dict(stats={"pads": 2}),
+               tasks=dict(route=dict(input_stats={"tracks": 0})), roundtrip=dict(route=dict(ok=True)))
+    (t / "task.json").write_text(json.dumps(rec))
+    return t
+
+
+def test_task_content_covers_inputs_not_paths_or_reports(tmp_path):
+    a = kaeres.task_content(_task_dir(tmp_path / "a", repo="local:/a"), "route")
+    b = kaeres.task_content(_task_dir(tmp_path / "b", repo="local:/b"), "route")
+    c = kaeres.task_content(_task_dir(tmp_path / "c", board_text="(kicad_pcb (uuid x))\n"), "route")
+    assert a and a == b and a != c
+    assert kaeres.task_content(_task_dir(tmp_path / "d"), "place") is None
+
+
+def _store(tmp_path, monkeypatch, old_content, new_content):
+    """A board with a spec-9 route task (a run of method m on it, prepared by harness h9) and a spec-10
+    route task of the same board file and KiCad, each with the recorded content."""
+    import json
+    monkeypatch.setattr(kaeres, "STORE", tmp_path)
+    bd = tmp_path / "boards" / "b1"
+    for tid, spec, hc, content in (("old000000000", 9, "h9", old_content), ("new000000000", 10, "h10", new_content)):
+        (bd / "tasks" / tid).mkdir(parents=True)
+        (bd / "tasks" / tid / "task.json").write_text(json.dumps(dict(
+            id=tid, prepared_by=hc, recipe=dict(board_sha256="s", task_spec=spec, kind="route", kicad="10.0.7"))))
+        (bd / "tasks" / tid / "content.json").write_text(json.dumps({hc: content}))
+    (bd / "runs" / "m.a0").mkdir(parents=True)
+    (bd / "runs" / "m.a0" / "run.json").write_text(json.dumps(dict(
+        run="m.a0", method_id="m", attempt=0, task_id="old000000000", harness_commit="h9")))
+
+
+def test_a_run_on_a_task_of_equal_content_is_reused(tmp_path, monkeypatch):
+    _store(tmp_path, monkeypatch, "v1:same", "v1:same")
+    d, r = kaeres.find_run("b1", "m", 0, "new000000000")
+    assert r is not None and r["task_id"] == "old000000000"
+
+
+def test_a_run_on_a_task_of_other_content_is_not_reused(tmp_path, monkeypatch):
+    _store(tmp_path, monkeypatch, "v1:random-uuids", "v1:seeded")
+    assert kaeres.find_run("b1", "m", 0, "new000000000") == (None, None)
+    assert kaeres.find_run("b1", "m", 0, "old000000000")[1] is not None  # still on its own task
+
+
+def test_content_of_another_harness_or_board_file_is_not_an_alias(tmp_path, monkeypatch):
+    import json
+    _store(tmp_path, monkeypatch, "v1:same", "v1:same")
+    old = tmp_path / "boards" / "b1" / "tasks" / "old000000000"
+    # the content recorded for the old task came from a harness that did not make the run
+    (old / "content.json").write_text(json.dumps({"h9-other": "v1:same"}))
+    assert kaeres.find_run("b1", "m", 0, "new000000000") == (None, None)
+    (old / "content.json").write_text(json.dumps({"h9": "v1:same"}))
+    tj = json.loads((old / "task.json").read_text())
+    tj["recipe"]["board_sha256"] = "t"  # another board file
+    (old / "task.json").write_text(json.dumps(tj))
+    assert kaeres.find_run("b1", "m", 0, "new000000000") == (None, None)
+
+
+def test_older_spec_methods_prepare_with_the_experiments_harness_from_spec_10(monkeypatch):
+    specs = {"h8": 8, "h9": 9, "h10": 10, "h10b": 10}
+    monkeypatch.setattr(kaeres, "harness_task_spec", lambda c: specs.get(c))
+    assert kaeres.prep_harness("h9", "h10") == "h10"
+    assert kaeres.prep_harness("h10b", "h10") == "h10b"
+    assert kaeres.prep_harness("h8", "h9") == "h8"  # before spec 10 a method keeps its own tasks
+    assert kaeres.prep_harness("h9", "unknown") == "h9"

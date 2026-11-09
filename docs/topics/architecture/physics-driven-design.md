@@ -52,7 +52,7 @@ Layouts A, B of one structure differ in J by W_ii·(Z_ii(A) − Z_ii(B)) + local
 
 - Z errors reverse decisions: validate Z at every tier.
 - W needs right order of magnitude and membership: 2× off misallocates margin but still improves both structures. Dangerous W error = classification (switch node called quiet, missed high-Z input). Simulate membership (branches whose current steps at each edge; name-based roles only as cross-check); price a stand-in at the upper end of its interval; report every structure and its W.
-- Budget sweep threshold moved 7× with the stand-in's recovery data ([functional-evaluator](functional-evaluator.md) §5a); a price moving that much cannot reverse a ranking. Judge thresholds only at sign-off (§5).
+- Budget sweep threshold moved 7× with the stand-in's recovery data ([functional-evaluator-budgets](functional-evaluator-budgets.md)); a price moving that much cannot reverse a ranking. Judge thresholds only at sign-off (§5).
 
 ## 4. The copper quantities and their operators
 
@@ -69,7 +69,7 @@ Layouts A, B of one structure differ in J by W_ii·(Z_ii(A) − Z_ii(B)) + local
 | Radiators, RF matching | not priced | full-wave on slices (F3) | keep-outs, datasheet rules, flagged |
 
 - Four operators suffice: sheet (R, thermal), partial inductance, potential, 2-D line cross-section.
-- Return path is in Z (a loop's L_p sum includes its return), so a plane slot is a Z change like any other. Today's critical router prices loops over the nearest zone's outline, blind to slots inside it; that slot is its whole boost-loop error, 1.7 nH of 13 ([functional-evaluator](functional-evaluator.md) §5a).
+- Return path is in Z (a loop's L_p sum includes its return), so a plane slot is a Z change like any other. Today's critical router prices loops over the nearest zone's outline, blind to slots inside it; that slot is its whole boost-loop error, 1.7 nH of 13 ([functional-evaluator-budgets](functional-evaluator-budgets.md)).
 
 ## 5. Three tiers of the same quantities
 

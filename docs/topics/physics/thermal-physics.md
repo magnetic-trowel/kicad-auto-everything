@@ -88,11 +88,13 @@ Consequences:
 - **Neighbouring heat adds linearly,** which no chart captures.
 - **IPC-2221's exponents are physics-plausible.** For narrow traces I ∝ ΔT^0.5·A^0.5; for wide traces I ∝ A·t^−0.5. The 0.44 exponent absorbs the TCR.
 - **So use a network:** per-net line conductance from stackup and planes, plus superposed part heat, plus the TCR fixed point. IPC-2221 is the conservative fallback (TM18); log which one bound.
+- **How `heat.track` applies the chart** (`kae.excite.dc.track_currents`): current is the DC flux through a grid line across the track, exact for a raster staircase at any angle or offset. The width is the track's, or its net's copper across it (board geometry). Cells counted along a perpendicular gave 0.7–2× the current, so the rise moved up to 3× when a route merely shifted [C].
 
 **TCR feedback** [C, §E]. At constant current, ΔT = ΔT₀/(1 − αΔT₀) with α = 0.00393/K.
 - A constant-R estimate of 40 K becomes 47.5 K; 100 K becomes 165 K.
 - No steady state exists above ΔT₀ = 254 K. That is the clean physics behind fusing.
 - IR drop at 40 K above ambient is 16% higher than the 20 °C value most calculators print.
+- **Built** in the evaluator's heat band (`kae.excite.heat.tcr_solve`): each cell's copper heat scales by 1 + α(T_amb + ΔT − 20 °C) on the board's own conduction network, iterated to the fixed point; the DC band's copper loss and drops take the same factor; a loop gain ≥ 1 (no fixed point) is the block hazard `thermal_runaway_copper`. Effect on real boards: [field-solver-accuracy](../../research/physics/field-solver-accuracy.md).
 
 ## Heatsinks, interfaces and alternative paths
 

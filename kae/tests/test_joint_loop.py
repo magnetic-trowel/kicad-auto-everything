@@ -4,6 +4,8 @@
 import copy
 from pathlib import Path
 
+import pytest
+
 from kae.joint.feedback import PartGeom
 from kae.joint.loop import JointLoop, derive_seed
 from kae.joint.scorecard import Scorecard, accept, physics_total
@@ -353,3 +355,32 @@ def test_no_window_restarts_after_a_timeout_or_with_many_open(tmp_path, monkeypa
         fake.router, calls[:] = router, []
         st._route_window(tmp_path / "in.kicad_pcb", tmp_path / "raw.kicad_pcb", 1, 5, 60.0)
         assert calls == [5]
+
+
+def test_accept_copper_tiebreak_is_off_by_default_and_needs_dominance():
+    def cc(length, vias, unc=2, u=1.0):
+        c = card(unc=unc, mods={"a": u})
+        c.track_length_mm, c.vias = length, vias
+        return c
+    base = cc(100.0, 10)
+    assert not accept(base, cc(80.0, 8))[0]                                   # default: copper is reported only
+    assert accept(base, cc(80.0, 8), eff_tiebreak=True)[0]
+    assert accept(base, cc(100.0, 9), eff_tiebreak=True)[0]                   # fewer vias, no longer
+    assert not accept(base, cc(99.5, 10), eff_tiebreak=True)[0]               # within eff_tol: noise
+    assert not accept(base, cc(80.0, 11), eff_tiebreak=True)[0]               # shorter but more vias: no dominance
+    assert not accept(base, cc(80.0, 8, u=1.05), eff_tiebreak=True)[0]       # physics still guards it
+    assert not accept(base, cc(80.0, 8, unc=3), eff_tiebreak=True)[0]        # completion first
+    assert cc(80.0, 8).to_dict()["track_length_mm"] == 80.0 and cc(80.0, 8).to_dict()["vias"] == 8
+
+
+def test_copper_totals_lines_and_arcs():
+    import math
+    from types import SimpleNamespace as NS
+    from kae.joint.scorecard import copper_totals
+    b = NS(tracks=[NS(start=(0, 0), end=(3, 4), mid=None),
+                   NS(start=(1, 0), end=(-1, 0), mid=(0, 1)),             # half circle r = 1
+                   NS(start=(1, 0), end=(0, -1), mid=(-1, 0)),            # three quarters, r = 1
+                   NS(start=(1, 0), end=(0, 1), mid=(math.sqrt(.5), math.sqrt(.5)))],  # a quarter
+           vias=[1, 2])
+    length, vias = copper_totals(b)
+    assert vias == 2 and length == pytest.approx(5 + math.pi + 1.5 * math.pi + 0.5 * math.pi, rel=1e-6)

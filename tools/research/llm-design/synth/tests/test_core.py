@@ -380,3 +380,20 @@ def test_fixed_position_needs_source():
     d = Design("fx")
     with pytest.raises(DesignError):
         d.place.fixed("J1", 10, 10)
+
+
+def test_dru_verdict_uses_kae_dru_check():
+    """kae's static pass catches what kaesynth's own lint does not (KiCad drops such a file)."""
+    pytest.importorskip("kae.board.dru_check")
+    from kaesynth.build import dru_verdict
+    good = "(version 1)\n(rule a (constraint clearance (min 0.2mm)) (condition \"A.hasNetclass('X')\"))\n"
+    bad = good.replace("A.hasNetclass('X')", "A.NetClas == 'X'")
+    assert dru_verdict(good, None, {"X", "Default"}) == "ok (static checks only; KiCad's parser was not asked)"
+    v = dru_verdict(bad, None, {"X", "Default"})
+    assert v.startswith("FAIL: ") and "NetClas" in v
+
+
+def test_dru_verdict_kaesynth_lint_first():
+    from kaesynth.build import dru_verdict
+    v = dru_verdict("(version 1)\n(rule a (constraint clearance (min 0.2um)))\n", None, {"Default"})
+    assert v.startswith("FAIL: ") and "um" in v

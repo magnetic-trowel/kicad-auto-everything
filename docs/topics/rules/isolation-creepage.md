@@ -106,6 +106,7 @@ RPA §9, §6 [I].
 - **Paywalled standards:** IEC 60664-1, 62368-1 and 61010-1 were not read. Other Table 17 voltages, Table G.13 coated values and ES1/ES2/ES3 boundaries need the standard.
 - **Not researched:** mains input-filter layout (X/Y caps, CM choke, input/output separation) and MOV/fuse placement.
 - **KiCad 10.0 parses a native `creepage` constraint** (minimum surface path between nets; DRC key `creepage`) [P] ([drc-rule-language-reference.md](../kicad/drc-rule-language-reference.md)). Still to test: how it treats slots and the PD minimum slot width.
+- **What kae does today (register RC10, kept):** no voltage-dependent clearance of its own; the board's rules win and the router uses only them. Every report warns (`hv_clearance_below_ipc`, [hazards.md](../architecture/hazards.md)) when a net kae.circuit puts above 30 V sits in a class whose clearance is below the IPC-2221B B2 row for its voltage. Inferred voltages are not a safety classification (ISO-01 needs a human), so this stays a warning, not a rule kae applies [I].
 
 ## Sources
 - [rules_power_rf_analog_dfm.md § 6, § 9, § 10, § 20](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/rules_power_rf_analog_dfm.md); [verification_rules.md § 1B (DFM-10)](../../../research_notes/LLM%20driven%20PCB%20placement%20and%20routing/verification_rules.md)

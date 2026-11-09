@@ -32,8 +32,8 @@ pytest tests                                        # KiCad tests skip without k
 
 With KiCad from the container image (`bench/scripts/setup.sh`), `kicad-cli` runs through
 `KAE_KICAD_WRAP`; point `KICAD10_SYMBOL_DIR` and `KICAD10_FOOTPRINT_DIR` at the image's
-`usr/share/kicad/{symbols,footprints}`. The DRC smoke run needs a host Python that imports pcbnew (`KAE_KICAD_PYTHON`, a path); with
-the container only, the build lints the rules statically and skips the smoke run.
+`usr/share/kicad/{symbols,footprints}`. The rules check imports `kae.board.dru_check` (put
+`kae/src` on `PYTHONPATH`); without it, the build runs kaesynth's own lint only and says so.
 
 `build` exits non-zero while any unwaived error remains. Iterate until it is clean, then read
 `report.md`: warnings are things a reviewer will ask about.
@@ -47,8 +47,10 @@ the container only, the build lints the rules statically and skips the smoke run
 4. **Circuit.** Nets with domain, voltage range, current, kind. Every pin connected or `nc_pins(..., reason=)`.
 5. **Checks** (deterministic, pin-level messages; table below).
 6. **Emit + KiCad gates:** `kicad-cli sch erc` and a **netlist round trip** — the schematic KiCad
-   reads must be pin-for-pin identical to the IR. Then a static lint of the `.kicad_dru`
-   (kicad-cli 10.0.7 ignores bad rules silently) and a DRC smoke run.
+   reads must be pin-for-pin identical to the IR. Then the `.kicad_dru` check: kaesynth's lint
+   (net-class names), then `kae dru-check`'s static and KiCad passes (kicad-cli 10.0.7 drops a
+   bad file silently and exits 0, so a plain DRC run proves nothing;
+   [kicad-cli.md](../../../../docs/topics/kicad/kicad-cli.md)).
 
 ERC-clean is a low bar ([evidence](../../../../docs/topics/synthesis/part-selection-and-verification.md)):
 the design-level checks and an independent review are what catch wrong designs.
@@ -205,5 +207,5 @@ converter output and the pack it charges) belongs to one root: model the worst c
   path. Time-domain behaviour needs a testbench; until then, calculations must state
   every scenario (signal stuck high and stuck low) and reviewers re-derive them. Typed interfaces (I²C pull-ups, address uniqueness) are not modelled.
 - `kicad-cli` 10.0.7 segfaults running DRC with `creepage` rules on a board without an
-  Edge.Cuts outline; the DRC smoke run adds one.
+  Edge.Cuts outline; `dru_check`'s probe board has one.
 - Output targets KiCad 10 (`20260306`); KiCad 9 cannot open it.

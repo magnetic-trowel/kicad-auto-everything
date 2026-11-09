@@ -128,7 +128,10 @@ def route_open(input_path, output_path, seed=0, time_s=30.0, workdir=None, opts=
         rep["session"] = translate.fix_session(ses, p)
         ses_k = wd / "board_kicad.ses"
         specctra.write(ses, ses_k)
-        pcbnew_io.import_ses(input_path, ses_k, output_path)
+        from .bridge import import_session
+        imp = import_session(input_path, ses_k, output_path)
+        rep["import_check"] = imp["import_check"]
+        rep.setdefault("hazards", []).extend(imp["hazards"])
         step("import", t)
         rep["status"] = "routed"
         return rep

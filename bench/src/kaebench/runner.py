@@ -50,7 +50,7 @@ def _attempt(task_dir, rec, adapter, kind, attempt, timeout, adir, probe, keep_w
                               "joint-fixed": board_path(fixed / "reference"),
                               "joint-fixed_placement": board_path(fixed / "human-placement")})
     row = dict(adapter=adapter.name, kind=kind, id=rec["id"], split=rec["split"], attempt=attempt,
-               tags=rec.get("tags", []), score_version=SCORE_VERSION, load_avg_start=os.getloadavg())
+               repo=rec.get("repo"), tags=rec.get("tags", []), score_version=SCORE_VERSION, load_avg_start=os.getloadavg())
     tools.usage_take()  # start this attempt's accounting from zero
     t0 = time.monotonic()
     try:

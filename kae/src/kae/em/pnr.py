@@ -118,7 +118,7 @@ class PhysRouter:
         if goal is not None:
             from kae.intent import route as IR
             from kae.intent import sections as SE
-            self.policy = IR.Policy(goal, SE.apply(SE.from_brief(self.brief), goal.get("sections")))
+            self.policy = IR.Policy(goal, SE.apply(SE.from_brief(self.brief), goal.get("sections"), self.brief))
             self.pair_terms = {(o.name, s.name): ts for o in self.obs for s in self.srcs
                                if (ts := self.policy.pair_terms(bd, o, s))}
             on = {k[0] for k in self.pair_terms}
@@ -190,7 +190,8 @@ class PhysRouter:
         log(f"pnr: {len(self.srcs)} aggressors, {len(self.obs)} observers; priced nets {self.nets}; "
             f"ripped {len(rip)} items" + (f"; kept as the input has them: {self.kept}" if self.kept else ""))
         from kae.route.critical import Session
-        self.sess = Session(self.base, opts=dict(place_allocs=False), log=lambda m: None)
+        self.sess = Session(self.base, opts=dict(place_allocs=False, dT_max_K=self.dcp.dT_max,
+                                                 drop_share=self.dcp.drop_share), log=lambda m: None)
         self.sp, self.router = self.sess.space, self.sess.router
         self.tracks, self.vias = [], []
         self.window = None
@@ -364,6 +365,7 @@ class PhysRouter:
         ncp = len(next(iter(self.cval.values()), [None]))
         tot = np.zeros(ncp)
         slope = {}
+        hard_rows = []                                   # the intent's hard terms: a tier, never a cost
         for o in self.pobs:
             kk = ("o", o.name)
             for s in self.psrcs:
@@ -386,6 +388,8 @@ class PhysRouter:
                 self.harm[(o.name, s.name)] = float(us[0])
                 if self.pair_terms is not None:      # the intent's cost, in its currency
                     tot += self.policy.pair_cost(self.pair_terms[(o.name, s.name)], us * o.bound)
+                    hard_rows += [(t, f"{o.name} <- {s.name}", w, lim, v) for t, w, lim, v in
+                                  self.policy.pair_hard(self.pair_terms[(o.name, s.name)], us * o.bound)]
                 else:
                     tot += np.where(us <= 1, us, us + 4 * (us - 1) ** 2)
                 if o.kind not in UNPRICED or self.pair_terms is not None:
@@ -395,6 +399,10 @@ class PhysRouter:
                 tot[c] += self.policy.dc_cost(ob)
             else:
                 tot[c] += HA.phi(ob["loss"][0]) + sum(HA.phi(d[2]) for d in ob["drops"])
+        if self.policy is not None and self.dc_obs:
+            hard_rows += self.policy.dc_hard(self.dc_obs)
+        self.hard_rows = hard_rows
+        self.H_hard = float(sum(r[-1] for r in hard_rows))
         if self.cap:
             tot = tot + self.cap.corner_phi(self.capf)
         self.H, idx = HA.robust(list(tot))
@@ -717,7 +725,8 @@ class PhysRouter:
             s = float(self.sp._generic_need(n, "track", layer) or 0.2)
         except Exception:                     # noqa: BLE001 - a clearance only weighs the area
             s = 0.2
-        w, why = self.policy.width(n, I, t, s, self.WIDTHS, max(w0, mn), mx)
+        inner = layer in names[1:-1]          # as _dc_width: IPC-2221's internal k on inner layers
+        w, why = self.policy.width(n, I, t, s, self.WIDTHS, max(w0, mn), mx, internal=inner)
         return self.sp.clamp_width(n, layer, w), why
 
     def _gnd_gap(self, L):
@@ -766,6 +775,7 @@ class PhysRouter:
             self._refill()
         self._repair()
         self._check_connectivity()
+        self.hazards = self._hazards(fields)
         from kae.route import critical_write as W
         W.append_items(self.base, self.out, tracks=self.tracks, vias=self.vias)
         for ext in (".kicad_pro", ".kicad_dru"):
@@ -776,6 +786,23 @@ class PhysRouter:
         self.log(f"pnr: {len(self.tracks)} tracks, {len(self.vias)} vias, {len(self.failed)} failed hops, "
                  f"{time.time() - t0:.1f}s" + (f"; chose {self.choices}" if self.choices else ""))
         return self
+
+    def _hazards(self, fields):
+        """The intent's hazards on the routed copper (kae.intent.route.Policy.hazards): hard terms judged by a
+        field solve of the copper as it stands, when the intent has hard terms the router computes."""
+        if self.policy is None:
+            return []
+        hard = [t for t in self.policy.intent.get("terms", []) if t["tier"] == "hard"]
+        if hard and fields:
+            self.solve_fields()
+        return self.policy.hazards(getattr(self, "hard_rows", []) if fields else [], checked_pairs=fields,
+                                   checked_dc=fields and getattr(self, "dc_obs", None) is not None)
+
+    def report(self):
+        """The routing report the commander reads: counts and the shared hazards list."""
+        return dict(schema="kae.pnr/1", board=str(self.src_path), out=str(self.out), tracks=len(self.tracks),
+                    vias=len(self.vias), failed_hops=len(self.failed), torn=sorted(getattr(self, "torn", []) or []),
+                    hard_violation=getattr(self, "H_hard", None), hazards=getattr(self, "hazards", []))
 
     def _refill(self):
         """After a net: KiCad's refill of the copper as it stands (about a second), and the exact islands of
@@ -877,7 +904,7 @@ class PhysRouter:
         return res2
 
     # ------------------------------------------------------------------ verified candidates
-    _STATE = ("prices", "pot_at", "K", "_warm", "wts", "harm", "u_c", "H", "H_typ", "H_corners", "_sig", "dc_obs", "Lks", "mesh", "op", "islands", "ref_ids", "layer_names", "_H",
+    _STATE = ("prices", "pot_at", "K", "_warm", "wts", "harm", "u_c", "H", "H_hard", "hard_rows", "H_typ", "H_corners", "_sig", "dc_obs", "Lks", "mesh", "op", "islands", "ref_ids", "layer_names", "_H",
               "_pred", "_L0", "_predL", "capf", "spec_m", "spec_hops", "_cut_w", "spec_pred")
 
     def _snap(self):
@@ -907,14 +934,16 @@ class PhysRouter:
                 self.prices = copy.deepcopy(st0["prices"])
             res = self._route_net(n, plain=(mode == "plain"))
             H = self._true_harm()
-            cands.append((H, mode, res, self._snap()))
+            cands.append((H, mode, res, self._snap(), getattr(self, "H_hard", 0.0)))
             self._uncommit(res)
-        H, mode, res, st = min(cands, key=lambda c: (c[0], c[1] != "plain"))
+        # lexicographic, as kae.intent.objective.key: fewer hard violations first, then the cost
+        H, mode, res, st, _ = min(cands, key=lambda c: (round(c[4], 9), c[0], c[1] != "plain"))
         self._recommit(res)
         self._restore(st)
         self.failed += res["failed"]
         self.choices.append((n, mode, round(cands[0][0], 2), round(cands[1][0], 2)))
-        self.log(f"pnr: {n}: physics candidate {cands[0][0]:.2f}, plain {cands[1][0]:.2f} -> {mode}")
+        self.log(f"pnr: {n}: physics candidate {cands[0][0]:.2f} (hard {cands[0][4]:.3g}), plain {cands[1][0]:.2f} "
+                 f"(hard {cands[1][4]:.3g}) -> {mode}")
 
     def _uncommit(self, res):
         self.sp.remove(res["items"])
@@ -1017,9 +1046,9 @@ class PhysRouter:
                             rt.search = (grid, lay, path, ph)
                         self.log(f"pnr:   hop {n} {b_[0]}->{a[0]} {'plain' if plain else 'phys'}: "
                                  f"{self.explain(rt)} len {rt.length:.1f} vias {len(rt.vias)}")
-                    for l, p0, p1 in rt.segs:
-                        out["items"].append(self.sp.add_track(n, l, rt.width, p0, p1, owner=("pnr", n)))
-                        t = (n, l, rt.width, p0, p1, "", self.lock)
+                    for i_, (l, p0, p1) in enumerate(rt.segs):
+                        out["items"].append(self.sp.add_track(n, l, rt.seg_w(i_), p0, p1, owner=("pnr", n)))
+                        t = (n, l, rt.seg_w(i_), p0, p1, "", self.lock)
                         self.tracks.append(t)
                         out["tracks"].append(t)
                     if not plain or self.spec is not None:     # (spectral: plain candidates are predicted too)
@@ -1346,9 +1375,14 @@ def main(argv=None):
     facts, goal = load_intent(a.intent), None
     if facts.get("schema") == "kae.intent/1":            # the commander's intent: its facts and its goal
         goal, facts = facts, facts.get("facts") or {}
-    route_whole(a.board, a.out, passes=a.passes, pitch=a.pitch, lam=a.lam, plain=a.plain, refresh=a.refresh,
+    r = route_whole(a.board, a.out, passes=a.passes, pitch=a.pitch, lam=a.lam, plain=a.plain, refresh=a.refresh,
                 verify=a.verify, intent=facts, seed=a.seed, work=a.work, capacitive=not a.no_capacitive,
                 spectral=dict(workers=a.workers) if a.spectral else False, goal=goal, lock=a.lock)
+    import json
+    rep = Path(a.out).with_suffix(".pnr.json")
+    rep.write_text(json.dumps(r.report(), indent=1, default=str))
+    for h in r.report()["hazards"]:
+        print(f"pnr: hazard {h['severity']} {h['code']}: {h['message']}")
 
 
 if __name__ == "__main__":

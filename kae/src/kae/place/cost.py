@@ -56,6 +56,10 @@ class Congestion:
     # peak's correlation (+0.40 -> +0.18); coarser bins (1.6, 2.4 mm minimum) are worse.
     # Across boards, signal HPWL per layer-area does as well (+0.61): hotspots add little to
     # density there, and timeouts follow board size (pins AUC 0.92), not congestion (< 0.5).
+    # Within one board (three dense sensor boards, our placements vs the human ones) no RUDY
+    # variant separated the placements that route from those that fail
+    # (docs/research/placement/kae-routability-estimators.md). The annealer's weight
+    # (place_w_cong, 30) is unablated: tools/kaeres/experiments/placement-decide-ab.sh.
     def __init__(self, P, ann, bins=None, target=0.5, escape=2.0, beta=0.0, smin=0.1, signal_only=False):
         self.P = P
         self.ann = ann

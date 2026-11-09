@@ -18,6 +18,9 @@ tools/research/solver-bench/sa_place.py):
          + w_order * order           protection order of protected connector chains (a rule:
                                      the TVS nearer the connector than the protected part),
                                      violation distance / mean part size
+         + w_zone * zones            the board's fixed copper zones (kae.place.zones): pads off
+                                     their own net's zone, pads that would bridge another
+                                     net's outer zone; a unary cost per part
 
 Moves: shift (radius shrinking with the temperature), rotate in place, swap equal
 footprints (or similar sizes), macro shift, macro rotate, macro re-layout from its top-K.
@@ -71,7 +74,7 @@ class Annealer:
     def __init__(self, P, st, terms=None, macros=(), seed=0, w_wl=1.0, w_phys=1.0, w_disp=0.05,
                  w_cong=30.0, w_esc=0.3, lam0=1.0, lam1=40.0, wl_slack=0.15, wl_barrier=20.0, log=None,
                  cong_args=None, order=(), w_order=1.0, order_margin=0.5, subset=None, window=None,
-                 cong_history=None, labels=None, w_label=0.0, silk=None, w_silk=0.0):
+                 cong_history=None, labels=None, w_label=0.0, silk=None, w_silk=0.0, zones=None, w_zone=0.0):
         self.P = P
         self.st = st
         self.rng = random.Random(seed)
@@ -208,8 +211,11 @@ class Annealer:
         # between two parts' pads closer than track + 2 clearance); weighted overlap / mean
         # part area
         self.silk = dict(silk or {}) if w_silk > 0 else {}
+        # ---- fixed copper zones (kae.place.zones.ZoneTerm): per part, its pads' cost against
+        # the zones at its pose (the weights are in the table; w_zone scales it)
+        self.zones = zones if (zones is not None and w_zone > 0) else None
         self.w = dict(wl=w_wl, phys=w_phys, disp=w_disp, cong=w_cong, esc=w_esc, order=w_order, label=w_label,
-                      silk=w_silk)
+                      silk=w_silk, zone=w_zone if self.zones is not None else 0.0)
         self.cong_args = cong_args
         # routability as a soft budget: free trade up to (1 + slack) x the seed HPWL, steep beyond
         self.wl_slack, self.wl_barrier = wl_slack, wl_barrier
@@ -450,6 +456,13 @@ class Annealer:
                 tot += a[2] * d
         return tot
 
+    def _zone(self, S):
+        """Zone term of parts S (kae.place.zones.ZoneTerm.part)."""
+        Z = self.zones
+        if Z is None:
+            return 0.0
+        return sum(Z.part(i, self.X[i], self.Y[i], self.K[i]) for i in S)
+
     def _pose_of(self, i):
         p = self.P.parts[i]
         return (self.P.ox + self.X[i] * self.g, self.P.oy + self.Y[i] * self.g, p.rots[self.K[i]].rot, p.side)
@@ -464,6 +477,7 @@ class Annealer:
         disp_old = self._disp(S)
         lab_old = self._lab(S)
         silk_old = self._silk(S)
+        zone_old = self._zone(S)
         cong_old = self.cong.local_cost(nets) if self.cong is not None else 0.0
         old = self._apply(S, newpos)
         newc = {j: self._net_cost(j) for j in nets}
@@ -472,6 +486,7 @@ class Annealer:
         disp_new = self._disp(S)
         lab_new = self._lab(S)
         silk_new = self._silk(S)
+        zone_new = self._zone(S)
         d_cong = 0.0
         if self.cong is not None:
             d_cong = self.cong.trial(nets, list(zip(S, old))) - cong_old
@@ -490,6 +505,7 @@ class Annealer:
                  + w["disp"] * (disp_new - disp_old) * self.g / (len(self.mov) * self.S0)
                  + w["label"] * (lab_new - lab_old) * self.g / (len(self.mov) * self.S0)
                  + w["silk"] * (silk_new - silk_old) / self.A0
+                 + w["zone"] * (zone_new - zone_old)
                  + w["phys"] * d_phys / self.nstruct
                  + w["cong"] * d_cong
                  + w["order"] * d_order)
@@ -643,7 +659,7 @@ class Annealer:
         silk = self.silk_total() / self.A0 if self.silk else 0.0
         return (w["wl"] * self._wl_cost(self.wl) + lam * self.leg_total / self.A0 + w["disp"] * disp
                 + w["phys"] * self.phys / self.nstruct + w["cong"] * c + w["order"] * self.order_total
-                + w["label"] * lab + w["silk"] * silk)
+                + w["label"] * lab + w["silk"] * silk + w["zone"] * self._zone(self.mov))
 
     def evaluate(self, st):
         """Full cost of another state with this annealer's weights and normalization (seed
@@ -653,7 +669,7 @@ class Annealer:
                      wl_slack=self.wl_slack, wl_barrier=self.wl_barrier, cong_args=self.cong_args,
                      order=self.order, w_order=self.w["order"], order_margin=self.order_margin,
                      labels=self.labels, w_label=self.w["label"], silk=self.silk, w_silk=self.w["silk"],
-                     cong_history=self._cong_history_fn)
+                     zones=self.zones, w_zone=self.w["zone"], cong_history=self._cong_history_fn)
         o.W0, o.A0, o.S0, o.nstruct = self.W0, self.A0, self.S0, self.nstruct
         o.Xs, o.Ys = self.Xs, self.Ys
         return o.cost(self.lam1), o.terms_report()
@@ -671,6 +687,8 @@ class Annealer:
                        labelled_parts=len(self.labels), labels_off=self.labels_off())
         if self.silk:
             out.update(silk=round(self.silk_total() / self.A0, 5))
+        if self.zones is not None:
+            out.update(zone=round(self._zone(self.mov), 5))
         return out
 
     def labels_off(self):

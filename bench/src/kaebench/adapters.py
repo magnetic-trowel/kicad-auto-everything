@@ -75,6 +75,12 @@ class Sandbox:
         for p in self._hidden():
             if p.exists():
                 cmd += ["--tmpfs", str(p)]
+        cache = os.environ.get("KAE_STEP_CACHE")
+        if cache and os.path.isabs(cache):
+            # kae's step cache (kae/src/kae/route/stepcache.py) is shared across attempts and methods
+            # on purpose: it replays identical steps and charges their time, so results do not change
+            Path(cache).mkdir(parents=True, exist_ok=True)
+            cmd += ["--bind", cache, cache]
         cmd += ["--bind", str(work), str(work), "--chdir", str(work),
                 "--unshare-pid", "--unshare-ipc", "--die-with-parent", "--new-session"]
         if not self.network:
