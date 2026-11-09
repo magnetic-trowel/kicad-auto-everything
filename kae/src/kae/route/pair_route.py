@@ -869,9 +869,9 @@ def post_pass(routed_path, out_path, time_s=120.0, opts=None, log=_log):
         else:
             remove += [it.uuid for it in old]
             for (net, layer, w, a, b) in res.tracks:
-                tracks.append((net, layer, w, a, b, W.new_uuid(), True, None))
+                tracks.append((net, layer, w, a, b, W.new_uuid(), False, None))
             for (net, x, y, D, d, uid) in res.via_rec:
-                vias.append((net, x, y, D, d, uid, True))
+                vias.append((net, x, y, D, d, uid, False))
         rep["pairs"].append(dict(p=res.p, n=res.n, tier=res.tier, status=res.status, reason=res.reason, skew=res.skew,
                                  length=res.length, vias=res.vias, stitch=res.stitch))
     tmp = out_path.with_suffix(".tmp.kicad_pcb")

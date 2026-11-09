@@ -86,9 +86,9 @@ def main(argv=None):
     r.add_argument("--finish", action=argparse.BooleanOptionalAction, default=False,
                    help="at the end, when time is left: the finish stage (rule D tails, taut arcs, power copper, "
                         "one journaled DRC gate; kae.route.finish)")
-    r.add_argument("--pairs", default="off", choices=("off", "first"),
-                   help="differential pairs: 'first' routes them coupled and locks them before the general router "
-                        "(kae.route.pair_route)")
+    r.add_argument("--pairs", default="off", choices=("off", "first", "post"),
+                   help="differential pairs: 'first' routes them coupled and locks them before the general router; 'post' re-lays "
+                        "them as pairs after it, in place, kept only if KiCad finds the board no worse (kae.route.pair_route)")
     r.add_argument("--neckdown", action=argparse.BooleanOptionalAction, default=False,
                    help="Freerouting's neck-down at pins, floored at the board's legal minimum width")
     r.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",

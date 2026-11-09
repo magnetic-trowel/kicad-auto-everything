@@ -135,8 +135,10 @@ DEFAULT_OPTS = dict(
     blocked_s=30.0,          # with blocked: seconds kept for it at most (taken from the repair rounds)
     thermal_via_s=60.0,      # with thermal vias to place (kae.route.thermal_vias: a hot part over a heat-sink
                              # plate on the other face): seconds kept from the repair rounds for their pass and DRC
-    pairs="off",             # "first": differential pairs routed and locked before the rest (kae.route.pair_route)
+    pairs="off",             # "first": differential pairs routed and locked before the rest (kae.route.pair_route);
+                             # "post": re-laid as pairs after the general route, kept when KiCad finds it no worse
     pairs_s=180.0,           # with pairs: seconds for the pair router at most (a quarter of the budget at most)
+    pairs_post_reserve_s=240.0,  # with pairs="post": kept from the repair rounds for the pass, its last mile and DRC
     pad_shapes="kicad",      # pin shapes in the DSN: "kicad" (KiCad's export: rounded corners and arcs as
                              # chords inside the outline, up to 4 um at r 0.25 mm, 10 um on custom pads) or
                              # "outside" (polygons that contain the pad's copper, translate.circumscribe_pins)
@@ -315,10 +317,11 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             log(f"thermal vias: {type(e).__name__}: {e}")
             hot = []
         tv_s = min(float(opts.get("thermal_via_s") or 0.0), 0.1 * time_s) if hot else 0.0
+        post_s = min(float(opts.get("pairs_post_reserve_s", 240.0)), 0.3 * time_s) if opts.get("pairs") == "post" else 0.0
         if opts.get("repair") and left() > 30:
             from . import repair
             report["repair"] = repair.loop(input_path, output_path, wd, p, info, opts,
-                                           deadline=t0 + time_s - 10 - diag_s - tv_s, log=log)
+                                           deadline=t0 + time_s - 10 - diag_s - tv_s - post_s, log=log)
             final_rep = report["repair"].pop("_report", None)
             report.setdefault("hazards", []).extend(report["repair"].pop("hazards", None) or [])
             if hot and left() > 20:
@@ -344,6 +347,9 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             rep = drc.run(staged, wd / "drc" / "drc.json", timeout=max(10, left() - 5))
             report["drc"] = drc.summary(rep)
         stepcache.save_fork(fork, "repaired", {"board": output_path}, time.monotonic() - t0)
+        if opts.get("pairs") == "post" and left() > 30:
+            # couple the pairs the routed board already has, in place; kept only when KiCad finds it no worse
+            report["pairs"] = _pairs_post(output_path, input_path, wd, opts, report, left, log, seed, final_rep)
         parts = finish_parts(opts, p)
         if parts and left() > float(opts.get("finish_min_s") or 60.0):
             report["finish"] = finish_hook(output_path, input_path, wd / "finish", parts, time_s=left() - 10,
@@ -390,6 +396,45 @@ def _pairs_first(input_path, wd, opts, report, left, log):
     log(f"pairs first: {c.get('routed', 0)} routed, {c.get('failed', 0)} failed, {c.get('skipped', 0)} skipped of "
         f"{c.get('detected', 0)} ({got.get('seconds')} s)")
     return dst
+
+
+def _pairs_post(output_path, input_path, wd, opts, report, left, log, seed, base_rep=None):
+    """E37 alternative (kae.route.pair_route.post_pass): re-lay the routed board's pairs as pairs where they fit,
+    then the last mile for the branches the rip left open. KiCad's DRC decides: not worse in opens or errors, or the
+    board stays as routed."""
+    from . import pair_route
+    pd = Path(wd) / "pairs_post"
+    pd.mkdir(parents=True, exist_ok=True)
+    try:
+        src = drc.stage_board(output_path, input_path, pd / "base")
+        got = pair_route.post_pass(src, pd / "post.kicad_pcb", time_s=min(float(opts.get("pairs_s", 180.0)), 0.4 * left()), log=log,
+                                   opts={k[6:]: v for k, v in opts.items() if k.startswith("pairs_") and k != "pairs_s"})
+        c = got.get("counts") or {}
+        log(f"pairs post: {c.get('routed', 0)} re-laid, {c.get('failed', 0)} failed of {c.get('detected', 0)}")
+        if not c.get("routed"):
+            return got
+        out = pd / "post_lm.kicad_pcb"
+        last_mile_only(input_path, pd / "post.kicad_pcb", out, time_s=min(120.0, left() - 10.0), seed=seed, workdir=pd / "lm",
+                       opts=dict(keep=True), log=log)
+        staged = drc.stage_board(out, input_path, pd / "drc")
+        new = drc.summary(drc.run(staged, pd / "drc" / "drc.json", timeout=max(10.0, left() - 5.0)))
+        base = report.get("repair", {}).get("final") or (drc.summary(base_rep) if base_rep else None)
+        if base is None:
+            base = drc.summary(drc.run(drc.stage_board(output_path, input_path, pd / "drc0"), pd / "drc0.json",
+                                       timeout=max(10.0, left() - 5.0)))
+        got["after"], got["before"] = new, {k: base.get(k) for k in ("errors", "unconnected")}
+        if new.get("errors", 1 << 30) <= base.get("errors", 1 << 30) and new.get("unconnected", 1 << 30) <= base.get("unconnected", 1 << 30):
+            shutil.copy2(out, output_path)
+            got["kept"] = True
+            if "repair" in report:
+                report["repair"]["final"] = new
+        else:
+            got["kept"] = False
+        log(f"pairs post: {'kept' if got['kept'] else 'discarded'}: before {got['before']} after {new.get('errors')}/{new.get('unconnected')}")
+        return got
+    except Exception as e:  # noqa: BLE001 - the board as routed stands
+        log(f"pairs post: {type(e).__name__}: {e}")
+        return dict(error=f"{type(e).__name__}: {e}"[:300])
 
 
 def finish_parts(opts, plan=None):

@@ -6,7 +6,7 @@
 # run). One commit for both arms; the only difference is --pairs first.
 #   SHA=<pushed commit> tools/kaeres/experiments/diffpair-ab/setup.sh
 #   warm the numba cache (numba-kae-dp-${SHA:0:7}, a route run with --pairs first on a small board), then
-#   kaeres exp create diffpair-ab-smoke --method "kae bridge dp-control <sha7>" --method "kae bridge dp-pairs <sha7>" \
+#   kaeres exp create diffpair-ab-smoke --method "kae bridge dp-control <sha7>" --method "kae bridge dp-first <sha7>" --method "kae bridge dp-post <sha7>" \
 #      --boards <3 boards from boards.txt> --attempts 1 --harness $SHA --kae $SHA; kaeres exp submit diffpair-ab-smoke; read runs; then
 #   kaeres exp create diffpair-ab --method ... --boards @tools/kaeres/experiments/diffpair-ab/boards.txt --attempts 1 --harness $SHA --kae $SHA
 #   kaeres exp submit diffpair-ab; kaeres exp install-timer diffpair-ab
@@ -26,4 +26,5 @@ add() {  # NAME DESCRIPTION EXTRA_FLAGS
     --param timeout_s=900 --code kae=.@"$SHA" --harness "$SHA"
 }
 add "kae bridge dp-control $S7" "diffpair-ab control: kae.route.cli at $S7, no pair routing" ""
-add "kae bridge dp-pairs $S7"   "diffpair-ab arm: kae.route.cli --pairs first at $S7 (kae.route.pair_route)" "--pairs first"
+add "kae bridge dp-first $S7"   "diffpair-ab arm: kae.route.cli --pairs first at $S7 (kae.route.pair_route)" "--pairs first"
+add "kae bridge dp-post $S7"    "diffpair-ab arm: kae.route.cli --pairs post at $S7 (re-laid in place, kept if no worse)" "--pairs post"

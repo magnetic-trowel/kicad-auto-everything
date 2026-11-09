@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """diffpair-ab analysis: the pre-registered numbers (PLAN.md). Needs `kaeres exp report` and `pair_report.py` run.
 
-    python analyze.py NAME CONTROL_METHOD_NAME PAIRS_METHOD_NAME [--min-len 4]
+    python analyze.py NAME CONTROL_METHOD_NAME ARM_METHOD_NAME [--min-len 4]     (once for each arm)
 
 Pairs: tier rule or interface, both legs routed in both arms and at least --min-len mm a leg in the control.
 Pair statistics are paired by (board, p); intervals bootstrap over boards (a board's pairs are not independent).
