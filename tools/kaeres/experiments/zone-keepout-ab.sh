@@ -28,7 +28,7 @@
 #
 # Usage: SHA=<place-zone-aware commit, pushed> tools/kaeres/experiments/zone-keepout-ab.sh   (registers the keep-out arm)
 # then:
-#   warm-numba.sh $SHA numba-kae-zone-${SHA:0:7} /var/tmp/eriks/prof/tasks/M/route.kicad_pcb ... (inputs S/M/L)
+#   warm-numba.sh $SHA numba-kae-zone-${SHA:0:7} $KAE_LOCAL/prof/tasks/M/route.kicad_pcb ... (inputs S/M/L)
 #   kaeres exp create zone-keepout-smoke --method c797ddafd9f5 --method <zone id> \
 #       --boards logisim-evolution-gecko5education-gecko5education,zephray-nekoink-pcb-2 --attempts 1 --harness $SHA --kae $SHA
 #   kaeres exp submit zone-keepout-smoke; check runs, bugs, scores; then

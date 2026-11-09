@@ -8,7 +8,7 @@
 set -u
 sha=$1 name=$2 rin=$3 jin=$4 o=$5
 C=$HOME/kae-baselines/code; . "$HOME/.cache/kaebench/env.sh"
-export APPTAINER_BIND=/var/tmp/eriks,$C OMP_NUM_THREADS=1 KAE_WORKERS=1
+export APPTAINER_BIND=${KAE_LOCAL:-/var/tmp/$USER},$C OMP_NUM_THREADS=1 KAE_WORKERS=1
 export KAE_BRIDGE_FREEROUTING=$HOME/.cache/kaebench/kae-freerouting-fork-2e1125a/bin/freerouting
 export NUMBA_CACHE_DIR=$HOME/.cache/kaebench/$name; mkdir -p "$NUMBA_CACHE_DIR"
 ulimit -v 40000000
