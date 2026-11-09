@@ -1659,7 +1659,8 @@ def cmd_exp_report(a):
             "timeouts = stopped at the deadline (partial); CPU s = the method's own processes (router, DSN export, SES import), "
             "not scoring; physics Σu = kae module physics total (lower is better; modules without a value count 3); Σu vs "
             "human = per-board ratio to the human board's; module ratio = per-board median of method / human module value "
-            "over modules routed in both (lower is better). The human method is the original copper scored the same way.", ""]
+            "over modules routed in both (lower is better). The human method is the original copper scored the same way. "
+            "Place and joint tasks inherit each part's side and (in the fixed kinds) the mechanical interface from the human layout (J45).", ""]
     rep += method_table(rows, names, "All boards")
     nonhuman = [n for n in names if not human or n != human["name"]]
     base = getattr(a, "baseline", None) or (nonhuman[0] if nonhuman else None)
