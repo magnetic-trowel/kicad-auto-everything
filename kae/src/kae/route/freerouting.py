@@ -190,7 +190,11 @@ SLOT_WARN = 0.10     # a slot wait above this share of the budget is logged
 
 def _pins(dsn):
     """Pins on the nets of a Specctra file: a pass's time grows as its square."""
-    return max(1, sum(len(m.split()) for m in re.findall(r"\(pins\s+([^)]*)\)", Path(dsn).read_text(errors="replace"))))
+    try:
+        text = Path(dsn).read_text(errors="replace")
+    except OSError:                      # the router reports a missing input itself
+        return 1
+    return max(1, sum(len(m.split()) for m in re.findall(r"\(pins\s+([^)]*)\)", text)))
 
 
 PASS_DONE = re.compile(r"Auto-routing pass #\d+ on board .* was completed")
