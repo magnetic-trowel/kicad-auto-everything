@@ -36,6 +36,7 @@ the board is still worse the pass falls back stage by stage to the input.
 """
 from __future__ import annotations
 
+from kae.budget import now as clock_now
 import argparse
 import json
 import math
@@ -527,7 +528,7 @@ class PowerCopper:
         from kae.board.kicad_file import load
         from .critical_space import Space
         from .bridge import severities
-        t0 = time.monotonic()
+        t0 = clock_now()
         self.path = Path(board_path).resolve()
         self.o = {**DEFAULTS, **(opts or {})}
         self.log = log
@@ -570,7 +571,7 @@ class PowerCopper:
         self.vias = []         # (net, x, y, size, drill, uuid, kind)
         self.tracks = []       # (net, layer, w, a, b, uuid, owner)
         self.stats = dict(widened=0, widened_mm=0.0, ground_vias=0, stitch_vias=0)
-        self.t_setup = time.monotonic() - t0
+        self.t_setup = clock_now() - t0
         log(f"[power-copper] currents {dict((k, round(v, 3)) for k, v in self.current.items())}")
         log(f"[power-copper] {len(self.power)} rails, {len(self.ground)} grounds, {len(self.switch)} switch nodes, "
             f"{len(self.victims)} victim nets; setup {self.t_setup:.1f}s")
@@ -1332,7 +1333,7 @@ def run(input_path, output_path, opts=None, workdir=None, timeout=1800, log=prin
     `gate=False` (kae.route.finish): no DRC; the whole plan is written and returned as
     kae.route.journal entries in rep["_entries"] (one per group: a widened track, a via with its
     track, a strip, a zone)."""
-    t0 = time.monotonic()
+    t0 = clock_now()
     o = {**DEFAULTS, **(opts or {})}
     inp = Path(input_path).resolve()
     wd = Path(workdir or tempfile.mkdtemp(prefix="kae-pc-"))
@@ -1342,10 +1343,10 @@ def run(input_path, output_path, opts=None, workdir=None, timeout=1800, log=prin
     vec = o.get("mode") == "vector"
     for k, f in (("widen", pc.vector_or_widen), ("vias", pc.ground_vias), ("stitch", pc.stitch)):
         if o[k]:
-            t1 = time.monotonic()
+            t1 = clock_now()
             f()
-            log(f"[power-copper] {k}: {time.monotonic() - t1:.1f}s")
-    t_plan = time.monotonic() - t0
+            log(f"[power-copper] {k}: {clock_now() - t1:.1f}s")
+    t_plan = clock_now() - t0
     log(f"[power-copper] planned {pc.stats} in {t_plan:.1f}s")
     kinds = ["vector" if vec else "widen", "pad", "stitch"] + (["vector"] if pc.zone_nets and not vec else [])
     if not gate:
@@ -1360,7 +1361,7 @@ def run(input_path, output_path, opts=None, workdir=None, timeout=1800, log=prin
                     hazards=pc.land_hazards(),
                     nets=dict(power=sorted(pc.power), ground=sorted(pc.ground), switch=sorted(pc.switch),
                               victims=sorted(pc.victims), zones=sorted(pc.zone_nets)),
-                    plan_s=round(t_plan, 2), total_s=round(time.monotonic() - t0, 2),
+                    plan_s=round(t_plan, 2), total_s=round(clock_now() - t0, 2),
                     _entries=J.diff_entries("power", staged.read_text(encoding="utf-8"),
                                             out.read_text(encoding="utf-8"), journal_keys(pc, kinds), kind_of))
     base_rep, base = _drc(staged, wd / "in.drc.json", timeout)
@@ -1453,7 +1454,7 @@ def run(input_path, output_path, opts=None, workdir=None, timeout=1800, log=prin
                 drc_in=base, drc_out=final or base, rounds=rounds,
                 nets=dict(power=sorted(pc.power), ground=sorted(pc.ground), switch=sorted(pc.switch),
                           victims=sorted(pc.victims)),
-                plan_s=round(t_plan, 2), total_s=round(time.monotonic() - t0, 2))
+                plan_s=round(t_plan, 2), total_s=round(clock_now() - t0, 2))
 
 
 def hook(output_path, project_board, workdir, opts=None, timeout=900, log=print):

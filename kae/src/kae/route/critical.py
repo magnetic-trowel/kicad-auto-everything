@@ -27,6 +27,7 @@ Joint use (the month plan's joint loop):
 """
 from __future__ import annotations
 
+from kae.budget import now as clock_now
 import json
 import math
 import tempfile
@@ -113,7 +114,7 @@ class Session:
     """Everything critical routing needs for one board: model, brief, rules, space, router."""
 
     def __init__(self, board_path, brief=None, info=None, opts=None, log=_log, board=None, terms=None):
-        t0 = time.monotonic()
+        t0 = clock_now()
         self.path = Path(board_path).resolve()
         self.opts = {**DEFAULTS, **(opts or {})}
         self.log = log
@@ -149,13 +150,13 @@ class Session:
         self.modules = []
         self.rails = []
         self.arcs = {}             # uuid -> mid point of the committed tracks that are arcs (critical_taut)
-        self.t_setup = time.monotonic() - t0
+        self.t_setup = clock_now() - t0
 
     # ------------------------------------------------------------------ routing
     def route(self, budget_s=None):
         """Route every module, then the rails; stops starting new modules once `budget_s`
         seconds are spent (the rest is left to the general router)."""
-        t0 = time.monotonic()
+        t0 = clock_now()
         budget = budget_s if budget_s is not None else self.opts.get("budget_s")
         pre = list(getattr(self, "pre_modules", []) or [])     # laid before the modules (run: thermal spokes)
         from .critical_rails import rail_currents
@@ -168,18 +169,18 @@ class Session:
         skip = tuple(self.opts.get("skip") or ())
         mods = [m for m in mods if not m.id.startswith(skip)] if skip else mods
         for m in mods:
-            t1 = time.monotonic()
+            t1 = clock_now()
             if budget is not None and t1 - t0 > budget:
                 m.status = "skipped"
                 m.notes.append("time budget spent")
                 continue
             route_module(self.ctx, m)
-            m.physics["seconds"] = round(time.monotonic() - t1, 3)
+            m.physics["seconds"] = round(clock_now() - t1, 3)
             self.log(f"{m.id}: {m.status}, {len(m.copper)} items, "
                      f"{m.physics.get('value')} {m.physics.get('unit', '')} (u {m.physics.get('u')})"
                      + (f" [{'; '.join(m.notes[:3])}]" if m.notes else ""))
         self.modules = pre + mods
-        if self.opts.get("rails", "auto") != "none" and (budget is None or time.monotonic() - t0 < budget):
+        if self.opts.get("rails", "auto") != "none" and (budget is None or clock_now() - t0 < budget):
             from .critical_rails import route_rails
             self.rails = route_rails(self.ctx, mode=self.opts.get("rails", "auto"))
         # the pads left near critical copper are joined here (Freerouting does not join an
@@ -187,12 +188,12 @@ class Session:
         self.completed = {}
         reach = float(self.opts.get("complete_mm", 8.0))
         isl = float(self.opts.get("island_mm", 20.0))
-        if (reach > 0 or isl > 0) and (budget is None or time.monotonic() - t0 < budget):
+        if (reach > 0 or isl > 0) and (budget is None or clock_now() - t0 < budget):
             from .critical_rails import complete_module_nets
             self.completed = complete_module_nets(self.ctx, reach, isl)
         if self.opts.get("corner_joins", True):
             self.joins = self.join_at_corners()
-        self.t_route = time.monotonic() - t0
+        self.t_route = clock_now() - t0
         return self
 
     def thermal_spokes(self):
@@ -642,7 +643,7 @@ def run(input_path, output_path, seed=0, time_s=900.0, opts=None, bridge_opts=No
     """Critical routing, then the bridge around the locked copper, then (rounds > 0) the
     recheck / re-tweak loop; OUTPUT = INPUT + all routing (nothing else changes). Returns a
     JSON-able report."""
-    t0 = time.monotonic()
+    t0 = clock_now()
     input_path, output_path = Path(input_path).resolve(), Path(output_path).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     own = workdir is None
@@ -651,7 +652,7 @@ def run(input_path, output_path, seed=0, time_s=900.0, opts=None, bridge_opts=No
     rep = dict(input=str(input_path), seed=seed, budget_s=time_s)
 
     def left():
-        return time_s - (time.monotonic() - t0)
+        return time_s - (clock_now() - t0)
     try:
         w0 = wd / "crit.kicad_pcb"
         s = None
@@ -738,7 +739,7 @@ def run(input_path, output_path, seed=0, time_s=900.0, opts=None, bridge_opts=No
         rep["status"] = "error"
         rep["error"] = f"{type(e).__name__}: {e}"
     finally:
-        rep["seconds"] = round(time.monotonic() - t0, 2)
+        rep["seconds"] = round(clock_now() - t0, 2)
         if own and not (opts or {}).get("keep"):
             import shutil
             shutil.rmtree(wd, ignore_errors=True)

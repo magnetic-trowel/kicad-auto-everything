@@ -7,6 +7,7 @@ KAE_KICAD_WRAP + kicad-cli (e.g. "apptainer exec ~/kicad.sif"), or kicad-cli on 
 The board must have its project files (.kicad_pro, .kicad_dru) beside it, since KiCad takes
 rule severities and custom rules from them.
 """
+from kae import budget
 import functools
 import json
 import os
@@ -56,6 +57,8 @@ def run(board, out_json, timeout=900, cache=True):
     board, out_json = Path(board).resolve(), Path(out_json).resolve()
     if out_json.exists():
         out_json.unlink()
+    timeout = budget.wall_timeout(timeout)
+    mb = board.stat().st_size / 1e6
     cmd = [*kicad_cli(), "pcb", "drc", "--format", "json", "--refill-zones", "--severity-all",
            "--units", "mm", "-o", str(out_json), str(board)]
     try:
@@ -67,6 +70,8 @@ def run(board, out_json, timeout=900, cache=True):
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd=board.parent, errors="replace")
     except subprocess.TimeoutExpired:
         raise DrcError(f"DRC timed out after {timeout}s")
+    finally:
+        budget.charge("drc_mb", mb)
     if not out_json.exists():
         raise DrcError(f"DRC failed (rc={r.returncode}): {(r.stdout + r.stderr)[-600:]}")
     with open(out_json) as f:
@@ -95,7 +100,7 @@ def uncapped_unconnected(board, timeout=900):
     from kae.board.pcbnew_io import PcbnewError, kicad_python
     try:
         r = subprocess.run([*kicad_python(), "-c", UNCONNECTED_PY, str(board)], capture_output=True, text=True,
-                           timeout=timeout, cwd=Path(board).parent, errors="replace")
+                           timeout=budget.wall_timeout(timeout), cwd=Path(board).parent, errors="replace")
         return int(json.loads(r.stdout.strip().splitlines()[-1])["unconnected"])
     except (PcbnewError, OSError, subprocess.TimeoutExpired, ValueError, IndexError, KeyError):
         return None

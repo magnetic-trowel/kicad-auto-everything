@@ -16,6 +16,9 @@ KAE_FREEROUTING (a binary or a .jar), the native bundle in KAE_HOME (default
 ~/.cache/kaebench), `freerouting` on PATH, a jar in KAE_HOME. Settings an older build does not
 know are logged as unknown and ignored.
 """
+import re
+
+from kae import budget
 import fcntl
 import json
 import os
@@ -185,8 +188,31 @@ GRACE_S = 45.0
 SLOT_WARN = 0.10     # a slot wait above this share of the budget is logged
 
 
+PASS_DONE = re.compile(r"Auto-routing pass #\d+ on board .* was completed")
+
+
 def route(dsn, ses, workdir, *, passes=0, settings=None, budget_s=600.0, margin_s=None, hard_s=None,
           log_path=None):
+    """_route (below). In work mode (kae.budget) the budget is a pass cap, budget_s / the nominal
+    seconds of one pass over this .dsn: Freerouting is deterministic while its job timeout does not
+    fire, so the timeout is only the run's wall ceiling, and the passes done are charged."""
+    if not budget.work_mode():
+        return _route(dsn, ses, workdir, passes=passes, settings=settings, budget_s=budget_s, margin_s=margin_s,
+                      hard_s=hard_s, log_path=log_path)
+    mb = max(1e-3, Path(dsn).stat().st_size / 1e6)
+    cap = max(1, int(budget_s / max(1e-9, budget.clock().rates["fr_pass_mb"] * mb)))
+    passes = min(passes, cap) if passes else cap
+    wall = budget.wall_timeout(budget_s)
+    run = _route(dsn, ses, workdir, passes=passes, settings=settings, budget_s=wall, margin_s=30.0,
+                 hard_s=wall + GRACE_S, log_path=log_path)
+    done = len(PASS_DONE.findall(run.log or ""))
+    budget.charge("fr_pass_mb", max(1, done) * mb)
+    run.report["passes_done"], run.report["passes_cap"] = done, passes
+    return run
+
+
+def _route(dsn, ses, workdir, *, passes=0, settings=None, budget_s=600.0, margin_s=None, hard_s=None,
+           log_path=None):
     """Route `dsn` into `ses`. `passes` caps the autorouter passes (0 = until it stops
     improving). Freerouting's own deadline (job_timeout) is `budget_s` less its start-up
     (`margin_s`, default min(15 s, 10%)) and less the time spent waiting for a host slot
@@ -209,6 +235,7 @@ def route(dsn, ses, workdir, *, passes=0, settings=None, budget_s=600.0, margin_
             return hit
     # the wait for a slot is part of the caller's budget: Freerouting gets what is left of it,
     # and after the budget it runs without a slot (a wait without end would hang the caller)
+    # (work mode: a wait costs no budget, so it waits as long as the wall ceiling allows)
     slot = _Slot(timeout=max(1.0, budget_s - margin - 5.0)).__enter__()
     waited = slot.waited or 0.0
     if slot.gave_up:

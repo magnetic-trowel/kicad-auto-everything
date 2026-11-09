@@ -29,6 +29,7 @@ Both reports end with "hazards" and "hazard_summary" (kae.hazards); `route` rech
 with the safety checks forced on (--recheck, kae.board_hazards), `physics` flags modules over
 their allocation (u > 1). Exit status: 0 when an output was written, 2 otherwise.
 """
+from kae.budget import now as clock_now
 import argparse
 import json
 import sys
@@ -111,7 +112,7 @@ def main(argv=None):
     EX.configure(a.physics_fidelity, a.physics_k)
     from kae.cli import _numba_cache
     _numba_cache()
-    t0 = time.monotonic()
+    t0 = clock_now()
     log = lambda m: print(f"[kae.crit] {m}", file=sys.stderr, flush=True)   # noqa: E731
     if a.cmd == "route":
         from kae.route import critical

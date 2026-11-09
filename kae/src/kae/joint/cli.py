@@ -30,6 +30,8 @@ or the placer reads); "no_output".
 """
 from __future__ import annotations
 
+from kae.budget import start_run as _start_run
+from kae.budget import now as clock_now
 import argparse
 import json
 import shutil
@@ -85,7 +87,7 @@ def run(a):
         # the bridge's "blocked" diagnosis is for the final board (loop: rep["final"]["blocked"])
         sopts.setdefault("first_blocked", False)
     rep = dict(status="error")
-    t0 = time.monotonic()
+    t0 = clock_now()
     pre = _mtime(out)
     loop = stages = None
     try:
@@ -189,6 +191,8 @@ def main(argv=None):
     from kae.physics import exact as EX
     EX.add_cli_args(r)                      # --physics-fidelity fast | exact | multi, --physics-k
     a = ap.parse_args(argv)
+    if getattr(a, "time", None):
+        _start_run(float(a.time))
     EX.configure(a.physics_fidelity, a.physics_k)
     from kae.cli import _numba_cache
     _numba_cache()

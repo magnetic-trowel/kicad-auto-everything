@@ -39,6 +39,7 @@ import json
 import sys
 import time
 
+from kae.budget import start_run as _start_run
 from kae.budget import now as clock_now
 from pathlib import Path
 
@@ -477,6 +478,8 @@ def main(argv=None):
     dru_check.add_arguments(sd)
     sd.set_defaults(fn=dru_check.run)
     a = ap.parse_args(argv)
+    if getattr(a, "time", None):
+        _start_run(float(a.time))
     nc = _numba_cache()
     if nc:
         _log(f"numba cache: read-only {nc[0]} copied to {nc[1]}")

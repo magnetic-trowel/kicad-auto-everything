@@ -19,6 +19,7 @@ and pcbnew state as a process of its own per call, without KiCad's start-up each
 process keeps one worker per thread calling at once. KAE_PCBNEW_WORKER=0 starts a process
 per call instead.
 """
+from kae.budget import wall_timeout
 import atexit
 import functools
 import json
@@ -179,6 +180,7 @@ def _result(op, status, rc, stderr, out):
 
 def _run_process(op, args, timeout):
     """One KiCad Python process for this call (KAE_PCBNEW_WORKER=0)."""
+    timeout = wall_timeout(timeout)
     with tempfile.TemporaryDirectory(prefix="kae-pcbnew-", dir=_tmpdir()) as d:
         out = os.path.join(d, "out.json")
         cmd = [*kicad_python(), bridge_script(), op, *args(out)]
@@ -283,7 +285,7 @@ class _Worker:
 
     def request(self, argv, stderr, timeout):
         """(status line or None, exit status) of one operation."""
-        deadline = time.monotonic() + timeout
+        deadline = time.monotonic() + wall_timeout(timeout)
         try:
             self.proc.stdin.write((json.dumps(dict(argv=argv, stderr=stderr)) + "\n").encode())
             self.proc.stdin.flush()

@@ -31,6 +31,7 @@ missing connections), so the output never gets worse. Stops when the board is cl
 more can be done, FAILS rounds in a row were not better, the round limit is reached, or time
 runs out.
 """
+from kae.budget import now as clock_now
 import json
 import math
 import re
@@ -582,7 +583,7 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
     output_path = Path(output_path)
     rounds = []
     hazards = []    # from the rounds whose board was kept (each kept board builds on the last)
-    t_start = time.monotonic()
+    t_start = clock_now()
     thermal = set(opts.get("thermal_pads") or []) if opts.get("thermal_pads") != "all" else set()
     sev = opts.get("severities") or {}
     fixed = set(opts.get("fixed_uuids") or [])   # the input's locked routing
@@ -595,7 +596,7 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
     reserve = float(opts.get("last_mile_reserve_s", 90.0)) if opts.get("last_mile") else 0.0
 
     def left():
-        return deadline - time.monotonic()
+        return deadline - clock_now()
 
     def check(board, d):
         staged = drc.stage_board(board, input_path, d)
@@ -818,7 +819,7 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
         best_rep = _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, best, best_rep, fixed,
                               log, base=base) or best_rep
         best = next((r for r in reversed(rounds) if r.get("final")), {}).get("final") or best
-    return dict(rounds=rounds, final=best, thermal_pads=len(thermal), seconds=round(time.monotonic() - t_start, 1),
+    return dict(rounds=rounds, final=best, thermal_pads=len(thermal), seconds=round(clock_now() - t_start, 1),
                 hazards=hazards,
                 drc_dir=None if opts.get("last_mile") else str(best_dir),   # the DRC of the board kept
                 _report=best_rep)   # its DRC report (for kae.route.blocked; the bridge takes it out)
@@ -839,7 +840,7 @@ def import_tails(cand, input_path, imp, wd, log=print, timeout=60.0):
     wd = Path(wd)
     wd.mkdir(parents=True, exist_ok=True)
     staged = drc.stage_board(cand, input_path, wd / "raw")
-    t0 = time.monotonic()
+    t0 = clock_now()
     try:
         r = pad_reroute.run(staged, wd / "out.kicad_pcb", workdir=wd / "work", timeout=timeout, log=log, gate=False,
                             only=new)
@@ -847,7 +848,7 @@ def import_tails(cand, input_path, imp, wd, log=print, timeout=60.0):
         rec["error"] = f"{type(e).__name__}: {e}"[:200]
         return rec
     entries = r.pop("_entries", [])
-    rec.update(kept=len(entries), outcome=r.get("outcome"), seconds=round(time.monotonic() - t0, 1))
+    rec.update(kept=len(entries), outcome=r.get("outcome"), seconds=round(clock_now() - t0, 1))
     if entries:
         jr = J.Journal(staged.read_text(encoding="utf-8")).add(entries)
         Path(cand).write_text(jr.text(), encoding="utf-8")
@@ -976,7 +977,7 @@ def input_errors(input_path, wd, deadline):
         d = Path(wd) / "input_drc"
         try:
             rep = drc.run(drc.stage_board(p, p, d), d / "drc.json",
-                          timeout=max(10, min(600, deadline - time.monotonic() - 60)))
+                          timeout=max(10, min(600, deadline - clock_now() - 60)))
             _BASE[key] = drc.summary(rep)["by_type"]
         except (drc.DrcError, OSError):
             return {}
@@ -1013,7 +1014,7 @@ def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, 
     from . import lastmile
 
     def left():
-        return deadline - time.monotonic()
+        return deadline - clock_now()
     sev = opts.get("severities") or {}
     fixed = set(fixed)
     # critical copper the last mile may rip as a last resort (kae.route.critical passes it with
@@ -1065,7 +1066,7 @@ def _last_mile(input_path, output_path, wd, plan, info, opts, deadline, rounds, 
             # time for its DRC and the rounds after it
             r = lastmile.close(staged, info, plan, fills, cand, nets=lastmile.open_nets(cur_rep), sev=sev,
                                fixed=fixed, log=log, soft=soft, rip=rip, txn=not greedy, max_joins=None,
-                               deadline=time.monotonic() + max(LAST_MILE_MIN_S / 2, 0.5 * (left() - LAST_MILE_MIN_S)))
+                               deadline=clock_now() + max(LAST_MILE_MIN_S / 2, 0.5 * (left() - LAST_MILE_MIN_S)))
         except Exception as e:  # noqa: BLE001 - the repaired board stays
             rec["error"] = f"{type(e).__name__}: {e}"
             break

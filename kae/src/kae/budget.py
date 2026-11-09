@@ -41,6 +41,9 @@ RATES = {
     "anneal_move_py": 5e-5,     # one Python-priced annealer move (physics terms, macros)
     "cpsat_dtime": 1.0,         # CP-SAT deterministic time unit (OR-tools' own ~1 s on a reference core)
     "seconds": 1.0,             # work already measured in nominal seconds by the caller
+    "fr_pass_mb": 2.0,          # one Freerouting pass per MB of .dsn
+    "drc_mb": 1.0,              # one KiCad DRC (with zone refill) per MB of board file
+    "lastmile_try": 2e-2,       # one last-mile path search (exact grid, one connection)
 }
 CEILING_FACTOR = 4.0    # a run past CEILING_FACTOR x its nominal budget in wall time has failed
 
@@ -57,6 +60,9 @@ class Clock:
         self.spent = 0.0                     # charged nominal seconds
         self.units = defaultdict(float)      # counted units per kind (both modes)
         self.by_kind = defaultdict(float)    # charged nominal seconds per kind
+        self.profile = bool(os.environ.get("KAE_BUDGET_PROFILE"))    # calibration: wall time per kind
+        self.wall_by_kind = defaultdict(float)
+        self.last = self.t0
         self.ceiling = None                  # wall seconds after which now() is infinite (work mode)
         self.ceiling_hit = False
 
@@ -64,6 +70,10 @@ class Clock:
         """Count `units` of `kind` work; in work mode they advance the clock at RATES[kind]."""
         s = units * self.rates.get(kind, 0.0)
         with _lock:
+            if self.profile:                 # the time since the previous clock event went to this work
+                t = time.monotonic()
+                self.wall_by_kind[kind] += t - self.last
+                self.last = t
             self.units[kind] += units
             self.by_kind[kind] += s
             self.spent += s
@@ -77,6 +87,8 @@ class Clock:
         wall ceiling), after charging one `kind` check. Only differences of now() mean anything, so
         every deadline in a process must come from now(), never from time.monotonic()."""
         if self.mode == "time":
+            if self.profile:
+                self.charge(kind)
             return time.monotonic()
         self.charge(kind)
         if self.ceiling is not None and self.wall() > self.ceiling:
@@ -98,6 +110,8 @@ class Clock:
                    charged_by_kind={k: round(v, 2) for k, v in self.by_kind.items()})
         if self.mode == "work":
             out.update(ceiling_s=self.ceiling, ceiling_hit=self.ceiling_hit)
+        if self.profile:
+            out["wall_by_kind"] = {k: round(v, 3) for k, v in self.wall_by_kind.items()}
         return out
 
 
@@ -125,8 +139,27 @@ def set_ceiling(budget_s):
     clock().ceiling = CEILING_FACTOR * float(budget_s)
 
 
+def start_run(budget_s):
+    """A CLI's entry: set the wall ceiling for this run's budget and print the clock's report at exit."""
+    set_ceiling(budget_s)
+    if work_mode() or clock().profile:
+        import atexit
+        import json
+        atexit.register(lambda: print("[kae.budget] " + json.dumps(clock().report()), flush=True))
+
+
 def now(kind="poll"):
     return clock().now(kind)
+
+
+def wall_timeout(seconds):
+    """Wall seconds to allow a subprocess a caller gave `seconds` of budget: the same (time mode), or
+    what is left to the ceiling, at least an hour without one (work mode): a timeout read from the
+    budget would kill a slow step on a busy host, and the budget does not run while it waits."""
+    c = clock()
+    if c.mode == "time":
+        return seconds
+    return max(60.0, c.ceiling - c.wall()) if c.ceiling is not None else max(3600.0, float(seconds))
 
 
 def cpu_now():
