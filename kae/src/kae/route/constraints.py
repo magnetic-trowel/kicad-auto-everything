@@ -213,6 +213,9 @@ DEFAULTS = dict(
                                    # merit boards, k=2) found 0 / 10 / 30 equal (cp1 0.305 / 0.310 / 0.305,
                                    # completion 0.941-0.943), so the simpler setting wins; RUDY also ranks PCB
                                    # routability near chance (docs/research/placement/kae-routability-estimators.md)
+    place_w_chan=0.0,              # placement: weight of the annealer's routing-channel term (pad halos of
+                                   # two parts overlapping / mean part area; kae.place.exact.channel_grid). Off
+                                   # until its A/B: one board's evidence so far (paw3395)
     place_margin=0.0,              # placement: routing room between movable parts, mm (Problem.set_margin);
                                    # negative = auto (Problem.auto_margin: 2 x (0.7 - utilization), 0..1 mm).
                                    # 0: placement-decide-staged found auto and 0 equal (cp1 0.305 both,
