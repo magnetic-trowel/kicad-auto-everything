@@ -19,7 +19,7 @@ and pcbnew state as a process of its own per call, without KiCad's start-up each
 process keeps one worker per thread calling at once. KAE_PCBNEW_WORKER=0 starts a process
 per call instead.
 """
-from kae.budget import wall_timeout
+from kae.budget import wall_timeout, work_mode
 import atexit
 import functools
 import json
@@ -425,10 +425,20 @@ def _run_worker(op, args, timeout):
             return _result(op, status, rc, _tail(err, 1 << 20), out)
 
 
+def _content_order(res):
+    """Work mode (kae.budget): pcbnew's lists in the order of what they hold, not of the file (KiCad
+    writes copper in UUID order, and a routed board's UUIDs are new on every import)."""
+    if work_mode() and isinstance(res, dict):
+        for k in ("routing", "tracks", "vias", "zones"):
+            if isinstance(res.get(k), list) and all(isinstance(r, dict) for r in res[k]):
+                res[k].sort(key=lambda r: repr(sorted((a, b) for a, b in r.items() if a != "uuid")))
+    return res
+
+
 def _run(op, args, timeout):
     if _worker_enabled():
-        return _run_worker(op, args, timeout)
-    return _run_process(op, args, timeout)
+        return _content_order(_run_worker(op, args, timeout))
+    return _content_order(_run_process(op, args, timeout))
 
 
 def _abs(p):

@@ -59,6 +59,8 @@ def run(board, out_json, timeout=900, cache=True):
         out_json.unlink()
     timeout = budget.wall_timeout(timeout)
     mb = board.stat().st_size / 1e6
+    if budget.work_mode():
+        canonical_copper_order(board)
     cmd = [*kicad_cli(), "pcb", "drc", "--format", "json", "--refill-zones", "--severity-all",
            "--units", "mm", "-o", str(out_json), str(board)]
     try:
@@ -76,6 +78,10 @@ def run(board, out_json, timeout=900, cache=True):
         raise DrcError(f"DRC failed (rc={r.returncode}): {(r.stdout + r.stderr)[-600:]}")
     with open(out_json) as f:
         rep = json.load(f)
+    if budget.work_mode():              # KiCad's report follows the file's order (UUIDs: see kicad_file.load)
+        for k in ("violations", "unconnected_items", "schematic_parity"):
+            if rep.get(k):
+                rep[k].sort(key=_content_key)
     if len(rep.get("unconnected_items") or []) >= DRC_UNCONNECTED_CAP or unconnected_ignored(board):
         n = uncapped_unconnected(board, timeout)
         if n is not None:
@@ -93,6 +99,39 @@ def unconnected_ignored(board):
         return pro["board"]["design_settings"]["rule_severities"]["unconnected_items"] == "ignore"
     except (OSError, ValueError, KeyError, TypeError):
         return False
+
+
+def canonical_copper_order(board):
+    """Rewrite `board` with its top-level (segment), (arc) and (via) blocks in the order of their content.
+    KiCad writes copper in UUID order, new on every import of a routed board, and its ratsnest breaks ties
+    between equally near copper by load order: the same board then reports other unconnected items."""
+    lines = Path(board).read_text(errors="replace").split("\n")
+    blocks, first, out, i = [], None, [], 0
+    while i < len(lines):
+        ln = lines[i]
+        if ln.startswith(("\t(segment", "\t(arc", "\t(via")) and not ln.startswith("\t(via_"):
+            j, depth = i, 0
+            while True:
+                depth += lines[j].count("(") - lines[j].count(")")
+                if depth <= 0:
+                    break
+                j += 1
+            blocks.append(lines[i:j + 1])
+            if first is None:
+                first = len(out)
+            i = j + 1
+            continue
+        out.append(ln)
+        i += 1
+    if blocks:
+        blocks.sort(key=lambda b: [x for x in b if "(uuid" not in x and "(tstamp" not in x])
+        out[first:first] = [x for b in blocks for x in b]
+        Path(board).write_text("\n".join(out))
+
+
+def _content_key(v):
+    """A violation's order by what it says, not by the UUIDs of the items it names."""
+    return (v.get("type") or "", v.get("severity") or "", sorted((i.get("description") or "", str(i.get("pos"))) for i in v.get("items") or []))
 
 
 def uncapped_unconnected(board, timeout=900):
