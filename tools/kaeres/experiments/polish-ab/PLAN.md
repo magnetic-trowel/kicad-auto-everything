@@ -28,8 +28,8 @@ Usual: `cp1`, `cpk`, completion, open connections, `legal`, DRC per type, CPU. O
 for margin: neighbour-gap p10/p50 and share of gaps under 0.3 mm/0.5 mm in the output (stage-1 `extract.features` on the output board) against the human board's.
 Physics: decap/critical Σu on valued modules only, above the noise floor (J21, median ratio at n boards; pair-swap boards ≥ ~30 needed for a 1.08 floor).
 
-Noise: A/A staged twins move total opens by about 3% (`aa-joint`, 213 boards), cp1 by about 0.5 pp. With n of 27 / 60 boards, open differences under about 15% and cp1 differences under 12 / 8 pp are not visible.
-Pair swaps: extended to all 138 boards with term gain if routed physics or opens at 27 boards are positive but not significant; to a cost of about 100 CPU-h.
+Noise: the A/A joint-loop twins (`aa-joint`, 213 boards; no staged A/A exists) move total opens by about 3%, cp1 by about 0.5 pp. With n of 27 / 60 boards, open differences under about 15% and cp1 differences under 12 / 8 pp are not visible.
+Pair swaps: extended to all 138 boards with term gain if routed physics or opens at 27 boards are positive but not significant (expected cost about 100 CPU-h, as information).
 
 ## Decision rule (pre-registered)
 - Pair swaps ship (default `pair_swap=1`) if SW lowers the placer term as measured (median ratio at or below 0.9, boards with gain over 10%) with routed opens not worse by more than 5% and valued routed physics not worse beyond its noise floor. Otherwise off.
