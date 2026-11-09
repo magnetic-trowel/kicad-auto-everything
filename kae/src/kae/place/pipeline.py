@@ -928,6 +928,23 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
         viol = grid_violations(st)
     if rep.get("legalize_escalation") or rep.get("legalize_final"):
         trace("legalize_escalation", st)
+    if not viol and float(setting("place_untangle", board_path, opts)) > 0:
+        # ratsnest crossings HPWL does not see (kae.place.crossings): swaps of interchangeable
+        # parts and half turns that keep every rectangle, so legality; physics is never worsened
+        t = time.monotonic()
+        from .crossings import untangle
+        hold = {i for rule in (order or ()) for (i, _) in rule}
+        hold |= set(kw.get("labels") or {}) if anneal else set()
+        hold |= set(getattr(P, "zone_pinned", ()) or ())
+        try:
+            rep["untangle"] = untangle(P, st, terms=report_terms, zones=zone_tab, hold=hold,
+                                       x_mm=float(setting("place_untangle_x_mm", board_path, opts)),
+                                       time_s=cap(min(20.0, max(2.0, 0.1 * budget))), log=log)
+        except Exception as e:      # noqa: BLE001 - a polish pass; never lose the placement
+            rep["untangle"] = dict(error=f"{type(e).__name__}: {e}")
+        viol = grid_violations(st)
+        trace("untangle", st)
+        stage("untangle", t)
     rep["legal_grid"] = not viol
     rep["margin_mm"] = P.margin
     t = time.monotonic()
