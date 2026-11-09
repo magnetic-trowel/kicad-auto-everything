@@ -20,6 +20,7 @@ them, otherwise documented priors (flagged `prior`).
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass, field
 
 from kae.physics import criteria as CR
@@ -139,6 +140,9 @@ def observers(bd, brief, sources):
     return out
 
 
+RF_FEED_NET = re.compile(r"(^|[^A-Z])(RF|ANT|ANTENNA)(\d|[^A-Z]|$)", re.I)
+
+
 def radio_parts(bd, brief):
     """{ref: radio kind} of the board's radios and GNSS receivers (kae.circuit.roles.radio_kind on each part's value
     and library), among the parts the circuit model holds."""
@@ -168,7 +172,9 @@ def radio_pins(bd, brief):
         if ref not in radios or not net or net in bd.grounds or net in bd.rails:
             continue
         fn = bd.pin_fn.get(tok, "") if hasattr(bd, "pin_fn") else ""
-        if (nets.get(net) or {}).get("role") == "rf" or (fn and RF_PIN.search(fn)):
+        # a named pin says what it is (a /LoRa_Aux net has the radio's name but is a logic line on its AUX pin); an
+        # unnamed pin needs its net to be an RF or antenna net by the net's own name, not merely role rf
+        if RF_PIN.search(fn) if fn else (nets.get(net) or {}).get("role") == "rf" and RF_FEED_NET.search(net):
             out.append((ref, tok, net, nearest_ground(bd, ref, tok)))
     return out
 

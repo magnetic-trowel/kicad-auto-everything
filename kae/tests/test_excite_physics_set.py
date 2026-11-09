@@ -273,3 +273,12 @@ def test_a_board_without_a_stackup_is_reported_and_takes_the_common_build():
     assert len(set(round(g, 6) for g in su.gaps)) == 1
     b = board(4, source="file")
     assert assume_stackup(b) == (b.stackup, [], None)
+
+
+def test_a_logic_line_named_after_the_radio_is_no_rf_victim():
+    from types import SimpleNamespace as NS
+    bd = NS(part_kind={"U1": ("module", None, "")}, grounds={"GND"}, rails={}, radios={"U1": "subghz"},
+            net_of={"U1.1": "/LoRa_Aux", "U1.2": "/ANT1", "U1.3": "/ANT", "U1.4": "/LoRa_Tx", "U1.9": "GND"},
+            pin_fn={"U1.1": "AUX", "U1.2": "ANT", "U1.3": "", "U1.4": ""}, pads_of={"GND": ["U1.9"]}, pad_xy={"U1.9": (0, 0)})
+    br = dict(parts={}, nets={n: dict(role="rf") for n in ("/LoRa_Aux", "/ANT1", "/ANT", "/LoRa_Tx")})
+    assert [t for _, t, _, _ in O.radio_pins(bd, br)] == ["U1.2", "U1.3"]
