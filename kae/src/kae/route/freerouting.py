@@ -19,6 +19,7 @@ know are logged as unknown and ignored.
 import fcntl
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -399,6 +400,52 @@ def _optimizer_stop(log):
     return None
 
 
+_PASS_LINE = re.compile(r"Auto-routing pass #(\d+) on board '[^']*' was completed in ([\d.]+) seconds "
+                        r"with score ([\d.]+) \((\d+) unrouted and (\d+) violations")
+_NECK_LINE = re.compile(r"Start necked: (\d+) connection.*?, (\d+) did not route")
+_POUR_CONNECTED = re.compile(r"Connected (\d+) group\(s\) of copper that foreign tracks")
+_POUR_CUT_OFF = re.compile(r"(\d+) pin\(s\) or via\(s\) are cut off from the fill")
+
+
+def telemetry(report, log):
+    """What happened inside a Freerouting run, from its log and result file: `loops` holds, for
+    each pass loop of the run (the first, then one per fallback attempt that routed), the unrouted
+    count and seconds per pass (`unrouted`, `seconds`); `fallback` the fork's fallback attempts
+    (strategy, stop reason, unrouted, seconds; `chosen` is the attempt kept); `start_necked` the
+    connections routed at the neck width from the start (`routed`, `failed`); `pour_connected`
+    groups of copper the fork joined after foreign tracks cut them off from a pour and
+    `pour_cut_off` the pads and vias still cut off, which its connectivity counts as connected.
+    A telemetry with nothing to say is {}."""
+    out = {}
+    loops, last = [], None
+    for m in _PASS_LINE.finditer(log or ""):
+        n = int(m.group(1))
+        if last is None or n <= last:
+            loops.append(dict(unrouted=[], seconds=[], violations=[]))
+        loops[-1]["unrouted"].append(int(m.group(4)))
+        loops[-1]["seconds"].append(round(float(m.group(2)), 2))
+        loops[-1]["violations"].append(int(m.group(5)))
+        last = n
+    if loops:
+        out["loops"] = loops
+    fb = ((report or {}).get("phases") or {}).get("fallback") or {}
+    if fb.get("attempts"):
+        out["fallback"] = dict(chosen=fb.get("chosen"), attempts=[
+            dict(strategy=a.get("strategy"), stop_reason=a.get("stop_reason"), unrouted=a.get("unrouted"),
+                 violations=a.get("new_or_changed_violations"), seconds=a.get("duration_seconds"))
+            for a in fb["attempts"]])
+    m = _NECK_LINE.search(log or "")
+    if m:
+        out["start_necked"] = dict(routed=int(m.group(1)), failed=int(m.group(2)))
+    m = _POUR_CONNECTED.search(log or "")
+    if m:
+        out["pour_connected"] = int(m.group(1))
+    m = _POUR_CUT_OFF.search(log or "")
+    if m:
+        out["pour_cut_off"] = int(m.group(1))
+    return out
+
+
 def _summary(d, log=""):
     """The parts of Freerouting's result file the bridge reports, plus why each stage stopped:
     `autorouter_stop` is the fork's StopReason for the chosen attempt (COMPLETED: nothing left
@@ -415,4 +462,5 @@ def _summary(d, log=""):
                 optimizer_score=d.get("optimizer_score"), cpu_s=use.get("cpu_time"),
                 peak_mb=use.get("peak_memory"), app_version=d.get("app_version"),
                 autorouter_stop=ar_stop, optimizer_stop=_optimizer_stop(log),
-                **({"pin_entries": pe} if (pe := pin_entry_stats(log)) else {}))
+                **({"pin_entries": pe} if (pe := pin_entry_stats(log)) else {}),
+                **({"telemetry": t} if (t := telemetry(d, log)) else {}))

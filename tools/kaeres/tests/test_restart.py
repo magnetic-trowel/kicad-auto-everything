@@ -216,6 +216,16 @@ def test_kept_attempts_report_and_its_fresh_origin_are_stored(tmp_path):
     assert origin["iterations"] == [1, 2] and origin["stop"] == "time" and origin["origin_attempt"] == 0
 
 
+def test_attempts_keep_their_freerouting_telemetry(tmp_path):
+    """Each attempt's record in summary.json holds the Freerouting telemetry of its route report."""
+    rep = ('{"router": {"report": {"telemetry": {"loops": [{"unrouted": [3, 1]}]}}}, '
+           '"repair": {"rounds": [{"router": {"telemetry": {"pour_cut_off": 2}}}]}}')
+    r, out, summary = _run(tmp_path, f"echo '{rep}'; echo '(kicad_pcb OPEN=0)' > @OUT@", "")
+    assert r.returncode == 0, r.stdout + r.stderr
+    fr = summary["attempt_log"][0]["fr"]
+    assert fr["first"]["loops"][0]["unrouted"] == [3, 1] and fr["repair"] == [{"pour_cut_off": 2}]
+
+
 def test_a_kept_fresh_attempt_has_no_origin_report(tmp_path):
     loop = """echo '{"iterations": [1], "stop": "no improvement"}'; echo '(kicad_pcb OPEN=0)' > @OUT@"""
     r, out, summary = _run(tmp_path, loop, "")

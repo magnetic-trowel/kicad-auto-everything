@@ -434,6 +434,22 @@ def _last_json(path):
     return {}
 
 
+def fr_telemetry(log_path):
+    """The Freerouting telemetry (kae.route.freerouting.telemetry) of a route attempt's report (the
+    last JSON line of its log): {"first": the first routing, "repair": [one per repair round that
+    routed]}, {} when the attempt reports none."""
+    rep = _last_json(log_path)
+    out = {}
+    first = ((rep.get("router") or {}).get("report") or {}).get("telemetry")
+    if first:
+        out["first"] = first
+    rounds = [t for r in ((rep.get("repair") or {}).get("rounds") or [])
+              if (t := (r.get("router") or {}).get("telemetry"))]
+    if rounds:
+        out["repair"] = rounds
+    return out
+
+
 def _one_pass(a, kind, command, best, inp, base, wd, end, b, judge_est, meter, stop, cpu_s, base_pairs, keep_equal):
     """Run `command` once on the kept board (in wd/kind) with `b` seconds, judge its board and say
     whether it replaces the kept one: when KiCad ranks it better, or (keep_equal) no worse."""
@@ -773,6 +789,8 @@ def main():
             judge_cpu += child_cpu() - c0
             judge_wall += time.monotonic() - w0
             info.update(rc=p.returncode, rank=rank)
+            if (fr := fr_telemetry(info["out"].parent / "log")):
+                info["fr"] = fr
             if a.history and rank is not None:
                 record_open(info, history, wd / "history.json")
             if sh is not None:

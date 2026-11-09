@@ -732,7 +732,8 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
                                     hard_s=max(budget, min(budget + grace, left() - 15)),
                                     log_path=rdir / "freerouting.log")
             rec["router"] = dict(seconds=run.seconds, state=run.report.get("final_state"),
-                                 score=run.report.get("router_score"), killed=run.timed_out)
+                                 score=run.report.get("router_score"), killed=run.timed_out,
+                                 **({"telemetry": run.report["telemetry"]} if run.report.get("telemetry") else {}))
             if run.ses is None:
                 # a failed round like any other: the best board stays, the next round escalates
                 rec["kept"] = False
