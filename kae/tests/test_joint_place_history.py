@@ -37,3 +37,9 @@ def test_merged_skips_broken_files_and_other_grids(tmp_path):
 
 def test_merged_empty(tmp_path):
     assert CongestionHistory.merged([]) is None
+
+
+def test_loop_keeps_the_history_option():
+    # kae.joint.cli passes the loop only its own keys: the directory must be one of them
+    from kae.joint.cli import _loop_keys
+    assert "place_history" in _loop_keys()
