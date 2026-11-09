@@ -52,6 +52,8 @@ DEFAULTS = dict(
     physics_spots=True,    # flagged modules make windows too
     min_iter_s=60.0,       # an iteration is not started with less than this left
     iter_share=0.25,       # one window's repair gets at most this share of the budget (at least min_iter_s)
+    window_budget_factor=0.0,  # extra time for the windows beyond the budget's shares: this many budgets after
+                           # iteration 0 (the experiments' knob; 0: windows get what the shares leave)
     phys_slack=0.10,       # routed physics a strict completion/DRC gain may cost (scorecard.accept)
     eff_tiebreak=False,    # equal on everything else: keep a board with dominating copper (length, vias); A/B arm
     rudy_scale=0.5,        # RUDY overflow near failures added to the history (0: off)
@@ -228,6 +230,10 @@ class JointLoop:
         self._history(hist, lay, fb)
         best, best_card, best_fb, best_it = lay, card, fb, 0
         self._save(st, best, output, rep)
+        if float(o["window_budget_factor"]) > 0:
+            # a real window budget, measured: iteration 0 kept its usual shares of time_s
+            deadline = max(deadline, time.monotonic() + float(o["window_budget_factor"]) * time_s + fin_res + reserve)
+            rep["window_deadline_s"] = round(deadline - t0, 1)
         tries = {}
         max_att = int(o["max_attempts"]) if o["max_attempts"] is not None else 2 + int(time_s // 1800)
         rep["max_attempts"] = max_att
