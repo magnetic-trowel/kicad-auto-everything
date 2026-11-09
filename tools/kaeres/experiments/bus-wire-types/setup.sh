@@ -26,7 +26,12 @@ for t in 900 300; do
   add "kae bridge dps-first $t $S7" "pairs first, locked at $S7, ${t} s" $t "--pairs first"
   add "kae bridge dps-soft $t $S7"  "pairs first, soft (unlocked, shove_fixed) at $S7, ${t} s" $t \
     "--pairs first --set pairs_unlocked=true --set wire_type=shove_fixed --set wire_scope=pairs"
-  add "kae bridge dps-own $t $S7"   "pairs first, own budget at $S7, ${t} s" $t "--pairs first --set pairs_own_budget=true"
+  # own budget: the bridge keeps --time t for everything but the pair stage, whose time (at most min(180, t/4) s)
+  # comes on top, so the harness timeout is t plus that (a method killed at t would be no test)
+  own=$(( t / 4 < 180 ? t / 4 : 180 ))
+  $K method add "kae bridge dps-own+ $t $S7" --kind route --description "pairs first, own budget (+${own} s) at $S7, ${t} s" \
+    --command "$CP $E_ -m kae.route.cli route {input} {output} --seed {attempt} --time $t --pairs first --set pairs_own_budget=true" \
+    --param timeout_s="$((t + own))" --code kae=.@"$SHA" --harness "$SHA"
 done
 add "kae bridge wt-plan-route 900 $S7" "escape plan laid as copper, walls, 900 s at $S7" 900 "--set escape_lay=plan"
 add "kae bridge wt-plan-shove 900 $S7" "escape plan laid as copper, shove_fixed, 900 s at $S7" 900 "--set escape_lay=plan --set wire_type=shove_fixed"
@@ -43,7 +48,7 @@ eval $K exp create bus-wire-types-300 --boards $B1 --attempts 1 $HS \
   $(m "wt-control 300") $(m "wt-shove 300") $(m "wt-normal 300")
 eval $K exp create diffpair-soft --boards $B2 --attempts 1 $HS \
   --description "\"X2 D1: pairs-first soft, own budget, after escapes, 900 s; PLAN.md in tools/kaeres/experiments/bus-wire-types\"" \
-  $(m "wt-control 900") $(m "dps-first 900") $(m "dps-soft 900") $(m "dps-own 900") $(m "dps-after 900")
+  $(m "wt-control 900") $(m "dps-first 900") $(m "dps-soft 900") $(m "dps-own+ 900") $(m "dps-after 900")
 eval $K exp create diffpair-soft-300 --boards $B2 --attempts 1 $HS \
   --description "\"X2 D1 at 300 s; PLAN.md in tools/kaeres/experiments/bus-wire-types\"" \
-  $(m "wt-control 300") $(m "dps-first 300") $(m "dps-soft 300") $(m "dps-own 300")
+  $(m "wt-control 300") $(m "dps-first 300") $(m "dps-soft 300") $(m "dps-own+ 300")
