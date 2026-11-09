@@ -60,3 +60,32 @@ def test_hazard_only_for_pairs_that_matter():
     hz = P.hazards(b, brief=brief)
     assert [h["code"] for h in hz] == ["pair_uncoupled", "pair_skew"]
     assert "/USB_D+//USB_D-" in hz[0]["objects"][0]
+
+
+def test_offset_polyline_right_angle_is_mitred():
+    from kae.route.pair_route import offset_polyline
+    pts = [(0.0, 0.0), (10.0, 0.0), (10.0, 10.0)]
+    left = offset_polyline(pts, 0.5)
+    assert left[0] == (0.0, 0.5) and left[-1] == (9.5, 10.0)
+    assert abs(left[1][0] - 9.5) < 1e-9 and abs(left[1][1] - 0.5) < 1e-9     # mitre corner
+    right = offset_polyline(pts, -0.5)
+    assert abs(right[1][0] - 10.5) < 1e-9 and abs(right[1][1] + 0.5) < 1e-9
+
+
+def test_cut_and_empty_ends():
+    from kae.route.pair_route import _cut, _with_empty_ends
+    assert _cut([(0.0, 0.0), (10.0, 0.0)], 2.0, end=False)[0] == (2.0, 0.0)
+    assert _cut([(0.0, 0.0), (10.0, 0.0)], 2.0, end=True)[-1] == (8.0, 0.0)
+    runs = [("B.Cu", [(0.0, 0.0), (5.0, 0.0)]), ("F.Cu", [(5.0, 0.0), (9.0, 0.0)])]
+    vias = [(0.0, 0.0), (5.0, 0.0)]                  # the route changed layer on its first cell
+    out = _with_empty_ends(runs, vias, ["F.Cu"], ["F.Cu"])
+    assert [l for l, _ in out] == ["F.Cu", "B.Cu", "F.Cu"] and len(out[0][1]) == 1
+
+
+def test_bump_adds_the_length_asked():
+    import math
+    from kae.route.pair_route import _bump, bump_gain
+    pts = _bump((0.0, 0.0), (10.0, 0.0), 0.5, side=1.0)
+    L = sum(math.dist(a, b) for a, b in zip(pts[:-1], pts[1:]))
+    assert abs((L - 10.0) - bump_gain(0.5)) < 1e-9
+    assert max(p[1] for p in pts) == 0.5 and min(p[1] for p in pts) == 0.0

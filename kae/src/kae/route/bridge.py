@@ -135,6 +135,8 @@ DEFAULT_OPTS = dict(
     blocked_s=30.0,          # with blocked: seconds kept for it at most (taken from the repair rounds)
     thermal_via_s=60.0,      # with thermal vias to place (kae.route.thermal_vias: a hot part over a heat-sink
                              # plate on the other face): seconds kept from the repair rounds for their pass and DRC
+    pairs="off",             # "first": differential pairs routed and locked before the rest (kae.route.pair_route)
+    pairs_s=180.0,           # with pairs: seconds for the pair router at most (a quarter of the budget at most)
     pad_shapes="kicad",      # pin shapes in the DSN: "kicad" (KiCad's export: rounded corners and arcs as
                              # chords inside the outline, up to 4 um at r 0.25 mm, 10 um on custom pads) or
                              # "outside" (polygons that contain the pad's copper, translate.circumscribe_pins)
@@ -186,6 +188,9 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
         return time_s - (time.monotonic() - t0)
 
     try:
+        if opts.get("pairs") == "first":
+            # differential pairs routed as pairs first, locked, the rest routed around them (pair_route)
+            input_path = _pairs_first(input_path, wd, opts, report, left, log)
         # 1-2: export and plan
         kdsn = wd / "kicad.dsn"
         info = pcbnew_io.export_dsn(input_path, kdsn)
@@ -365,6 +370,26 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             shutil.rmtree(wd, ignore_errors=True)
         else:
             report["workdir"] = str(wd)
+
+
+def _pairs_first(input_path, wd, opts, report, left, log):
+    """Route the board's pairs with kae.route.pair_route and lock them; the board that goes on is that board."""
+    from . import pair_route
+    dst = Path(wd) / "pairs" / "pairs.kicad_pcb"
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    budget = min(float(opts.get("pairs_s", 180.0)), 0.25 * left())
+    try:
+        got = pair_route.route_pairs(input_path, dst, time_s=budget, log=log,
+                                     opts={k[6:]: v for k, v in opts.items() if k.startswith("pairs_") and k != "pairs_s"})
+    except Exception as e:  # noqa: BLE001 - the pairs are a refinement; the board is still routed
+        log(f"pairs first: {type(e).__name__}: {e}; routing without it")
+        report["pairs"] = dict(error=f"{type(e).__name__}: {e}"[:300])
+        return input_path
+    report["pairs"] = got
+    c = got.get("counts") or {}
+    log(f"pairs first: {c.get('routed', 0)} routed, {c.get('failed', 0)} failed, {c.get('skipped', 0)} skipped of "
+        f"{c.get('detected', 0)} ({got.get('seconds')} s)")
+    return dst
 
 
 def finish_parts(opts, plan=None):
