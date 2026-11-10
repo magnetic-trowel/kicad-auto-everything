@@ -5,7 +5,7 @@
 Scope: why three boards with clean human layouts were never legal under kae placement, and the fix in `kae.place.pipeline`. Not here: legality in general -> [kae-exact-legality](kae-exact-legality.md).
 Keys: legality, anchor_tight, tight part, courtyard overhang, allow_overhang, kae.place.pipeline._anchor_tight_parts, J19, openremise, vik-pmw3360, esp32 flight controller
 
-**Status:** not finished: mechanism and root cause verified, the deciding A/B (`loop-legal-ab`) queued.
+**Status:** partial. The root cause is verified and the fix makes the two boards it was built for legal every time. It fails its pre-registered A/B overall: legal 21 vs 18 and 21 vs 17 of 60 cells, not significant, with one board made illegal by it. Not merged.
 **First published:** 2026-11-09, branch `loop-legality`.
 
 ## The failure
@@ -52,3 +52,27 @@ The code path does nothing unless a part over 5 % of the board has no spot free 
 
 - Choosing among exactly clean spots by connectivity rather than edge-hugging. The current ranking is a heuristic: it never competes with an alternative here because the alternative was no legal spot at all.
 - Exact-model false positive noted at openremise's human pose (R2 inside A1's keep-out, reported by the exact check and not by KiCad).
+
+## A/B: `loop-legal-ab` (2026-11-10)
+
+Plan: `tools/kaeres/experiments/loop-legal-ab/PLAN.md` (pre-registered). Commit dbc70f5: anchors parts with a courtyard or a connected pad. f2f4151 required a courtyard, which dropped vik-pmw3360's carrier, and was corrected before this ran. Boards: the 20 merit boards where the scan finds a tight part (13 anchored, 7 overhang only). Seeds 0-2, J1's restart wrapper, arms interleaved; KiCad scored 240 of 240 runs.
+
+| arm | legal | legal_strict | clean | completion | opens | errors | placement errors | CPU h |
+|---|---|---|---|---|---|---|---|---|
+| staged, anchoring off | 18 | 18 | 6 | 0.938 | 424 | 2,382 | 912 | 48.4 |
+| staged, anchoring on | 21 | 21 | 9 | 0.957 | 326 | 1,699 | 786 | 51.7 |
+| joint, anchoring off | 17 | 17 | 6 | 0.951 | 423 | 2,466 | 961 | 49.2 |
+| joint, anchoring on | 21 | 21 | 8 | 0.949 | 441 | 1,647 | 733 | 55.0 |
+
+Legal, anchored against control over 60 board x seed cells: Fisher p 0.70 (staged), 0.56 (joint). The pre-registered rule needs p < 0.05, so **it fails**. Most of these boards are illegal for every arm (12 of 20 at 0 of 3 in all four, mostly fixed parts already in conflict in the task input), so the test has few cells that can move.
+
+Placement errors by type, off / on (staged; joint): shorting_items 139 / 115 (139 / 51), pth_inside_courtyard 69 / 0 (76 / 6), courtyards_overlap 39 / 18 (42 / 18), items_not_allowed 25 / 0 (42 / 0), hole_to_hole 1 / 0 (3 / 0); copper_edge_clearance 286 / 294 (289 / 296) and hole_clearance 120 / 126 (120 / 126) rise slightly.
+
+The three boards (legal of 3 seeds, off → on, staged; joint):
+- openremise-sniffer: 0 → 3; 0 → 3. Errors 30 → 2; 32 → 1.
+- esp32 flight controller: 0 → 3; 0 → 3. Opens 31 → 1; 40 → 7. Errors 83 → 0; 95 → 0.
+- vik-pmw3360: 3 → 3; 2 → 3. At this commit the control is mostly legal already, unlike the 2 of 19 stored runs, which came from older code.
+
+The regression: melexinvn-bs-kombo goes from 3 of 3 legal to 0 of 3 in both chains, KiCad reporting 2 hole_clearance errors. Its connector J2 has no grid-free spot, so it was anchored at a spot only the exact check judged. That check passes a hole clearance KiCad then flags, while the control's closed loop found a legal spot anyway. sparkfun-sparkpunk shows the same pattern (BAT1, +2 clearance errors, illegal in every arm). Opens: staged 424 → 326, joint 423 → 441 (+4 %, above the 2.8 % A/A floor). lenaschimmel-bestelampe accounts for most of that rise (42 → 75), and there the part is only given the overhang, not anchored.
+
+**Next.** Keep anchoring for grid-free spots. For a spot only the exact check accepts (openremise needs one), verify it with KiCad's DRC of the placed part before fixing it, or else fall back to the overhang only. Then rerun on these 20 boards. Separately, the exact model's hole_clearance blind spot needs a case of its own.
