@@ -8,6 +8,7 @@ import argparse
 import json
 import os
 import subprocess
+import time
 from pathlib import Path
 
 STORE = Path(os.path.expanduser(os.environ.get("KAE_RESULTS", "~/kae-baselines")))
@@ -46,15 +47,16 @@ def main():
     td = work / "view-tasks"
     td.mkdir(parents=True, exist_ok=True)
     jobs = []
+    stamp = time.strftime("%Y%m%dT%H%M%S")
     for i in range(0, len(todo), a.chunk):
-        f = td / f"{a.exp}-{i // a.chunk:05d}.txt"
+        f = td / f"{a.exp}-{stamp}-{i // a.chunk:05d}.txt"   # never rewrite a list a queued job will read
         f.write_text("".join(f"{b} {arm} {d}\n" for b, arm, d in todo[i:i + a.chunk]))
         cmd = (f"bash -c 'source ~/.cache/kaebench/env.sh && export APPTAINER_BIND=/var/tmp/eriks && ulimit -v 40000000 && "
                f"python3 {HERE / 'view_bus.py'} {f} {work / 'views'} {work / 'busnets'}'")
         jobs.append(dict(cmd=cmd, name=f"busview-{i // a.chunk}", cpus=2, mem="3G", timeout="4h"))
     print(f"{len(rows)} runs, {len(todo)} views to make, {len(jobs)} jobs")
     if jobs and not a.dry_run:
-        jf = td / f"{a.exp}-jobs.jsonl"
+        jf = td / f"{a.exp}-{stamp}-jobs.jsonl"
         jf.write_text("".join(json.dumps(j) + "\n" for j in jobs))
         subprocess.run(["kaeq", "submit", "--jobs", str(jf), "--tag", f"busview-{a.exp}"], check=True,
                        env=dict(os.environ, KAEQ_OWNER=f"busview-{a.exp}"))
