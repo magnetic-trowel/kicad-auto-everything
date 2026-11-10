@@ -1,0 +1,181 @@
+{"board": "logisim-evolution-gecko5education-gecko5education", "fps": 311, "pads": 1711, "matrices": [[10, 12]], "buses": [8], "merit": true}
+{"board": "krzys9876-zx-spectrum-diy-keyb2", "fps": 59, "pads": 214, "matrices": [[5, 8]], "buses": [], "merit": false}
+{"board": "dangerousprototypes-buspirateultrahardware-bpuv2a", "fps": 171, "pads": 895, "matrices": [], "buses": [10], "merit": false}
+{"board": "mlab-modules-batdatunit01-batdatunit01", "fps": 225, "pads": 845, "matrices": [], "buses": [6], "merit": false}
+{"board": "mbfredys-pcb-3-phase-energy-monitor-smart-switch-with-energy-monitoring", "fps": 206, "pads": 680, "matrices": [], "buses": [9], "merit": false}
+{"board": "nf-dj-netforce-tpu-nf-tpu-2", "fps": 153, "pads": 832, "matrices": [], "buses": [8], "merit": false}
+{"board": "antmicro-mec1723-espi-debugger-mec1723-espi-debugger", "fps": 239, "pads": 901, "matrices": [], "buses": [8], "merit": false}
+{"board": "topola-topola-5x5-1206-led-matrix", "fps": 41, "pads": 126, "matrices": [[5, 5]], "buses": [], "merit": false}
+{"board": "salehghobari-helloboardpcb-helloboard", "fps": 50, "pads": 219, "matrices": [], "buses": [7], "merit": false}
+{"board": "intergalaktik-ulx4m-ls-ulx4m", "fps": 240, "pads": 1189, "matrices": [], "buses": [22], "merit": false}
+{"board": "physical-computation-warp-hardware-warp-reva", "fps": 148, "pads": 486, "matrices": [], "buses": [6], "merit": false}
+{"board": "vikulin-gammapi-zero-icepi-zero", "fps": 165, "pads": 805, "matrices": [], "buses": [8], "merit": false}
+{"board": "kiibohd-pcb-icedleft", "fps": 164, "pads": 618, "matrices": [[9, 5]], "buses": [], "merit": false}
+{"board": "chipiki-pxfmini-v2-rbpi-z-hat", "fps": 119, "pads": 512, "matrices": [], "buses": [10, 6], "merit": false}
+{"board": "gianlucarenzi-a130kb-mx-a130xe-cx85", "fps": 32, "pads": 173, "matrices": [[5, 4]], "buses": [], "merit": false}
+{"board": "apoluekt-openrpncalc-main", "fps": 141, "pads": 508, "matrices": [[6, 9]], "buses": [], "merit": false}
+{"board": "0xlama-attiny-led-matrix-display-badge-led-matrix-display-badge", "fps": 32, "pads": 69, "matrices": [[5, 5]], "buses": [], "merit": false}
+{"board": "alheir-gatebench-gatebench", "fps": 311, "pads": 953, "matrices": [], "buses": [8], "merit": false}
+{"board": "tebl-rc1802-cosmac-elf-rc1802-keypad", "fps": 17, "pads": 88, "matrices": [[4, 4]], "buses": [], "merit": false}
+{"board": "adafruit-adafruit-eyelights-led-glasses-and-driver-pcb-adafruit-eyelights-led-glasses", "fps": 177, "pads": 643, "matrices": [[9, 13]], "buses": [], "merit": false}
+{"board": "grassfedreeve-akohekohe-akohekohe", "fps": 38, "pads": 241, "matrices": [[6, 5]], "buses": [], "merit": false}
+{"board": "duncmccl-armstrong-uduino", "fps": 128, "pads": 541, "matrices": [], "buses": [8], "merit": false}
+{"board": "freetronics-leopadretrofit-leopadretrofit", "fps": 50, "pads": 189, "matrices": [[4, 5]], "buses": [], "merit": false}
+{"board": "freetronics-leopadmini-leopadmini", "fps": 52, "pads": 223, "matrices": [[4, 5]], "buses": [], "merit": false}
+{"board": "dlehenbauer-commodore-pet-clone-mainboard", "fps": 316, "pads": 1761, "matrices": [], "buses": [8], "merit": false}
+{"board": "pietptr-microdox-pcb-print-microdox", "fps": 38, "pads": 484, "matrices": [[7, 5]], "buses": [], "merit": false}
+{"board": "plinkysynth-plinky-public-plinkyblack-hwmidi-jacks", "fps": 300, "pads": 993, "matrices": [], "buses": [16, 8], "merit": false}
+{"board": "carlosedp-qsfp-hdmi-storeypeak-qsfp-io", "fps": 21, "pads": 136, "matrices": [], "buses": [8], "merit": false}
+{"board": "fastbeam-fastbeam-fastbeam-6a", "fps": 201, "pads": 636, "matrices": [[2, 8]], "buses": [], "merit": false}
+{"board": "trol73-avr-ic-tester-tester", "fps": 60, "pads": 205, "matrices": [], "buses": [22], "merit": false}
+{"board": "jonathanferron-miyocalc40-miyocalc40", "fps": 57, "pads": 221, "matrices": [[10, 4]], "buses": [], "merit": false}
+{"board": "librerouter-boards-mega-board", "fps": 305, "pads": 1337, "matrices": [], "buses": [14, 9], "merit": false}
+{"board": "anthilla-anthc-anthc", "fps": 211, "pads": 735, "matrices": [], "buses": [6], "merit": false}
+{"board": "botanicfields-kicad-bf-010", "fps": 60, "pads": 277, "matrices": [], "buses": [7], "merit": false}
+{"board": "watterott-vcard-vcard-v10", "fps": 148, "pads": 358, "matrices": [[8, 12]], "buses": [], "merit": false}
+{"board": "jjhorton-pmod-pmod-ledarray", "fps": 139, "pads": 306, "matrices": [[16, 8]], "buses": [], "merit": false}
+{"board": "markwestbroek-musicbrain-musicbrain-adc8", "fps": 23, "pads": 137, "matrices": [], "buses": [8], "merit": false}
+{"board": "secersh-etzee-etz-b11-lsc-6-choc-v2", "fps": 44, "pads": 198, "matrices": [[4, 6]], "buses": [], "merit": false}
+{"board": "pietptr-microdox-pcb-microdox", "fps": 38, "pads": 484, "matrices": [[7, 5]], "buses": [], "merit": false}
+{"board": "vanvught-kicad-gd32f470vg-pixel-16-gd32f470vg-pixel-16", "fps": 113, "pads": 515, "matrices": [], "buses": [8, 8, 8, 8], "merit": false}
+{"board": "fm4dd-gm-proto-e1-gm-proto-e1", "fps": 67, "pads": 808, "matrices": [], "buses": [8], "merit": false}
+{"board": "ivanxblue-oresat-gps-hardware-usb-gps", "fps": 327, "pads": 608, "matrices": [], "buses": [7], "merit": false}
+{"board": "secersh-etzee-etz-b11-rsc-6-ks-33", "fps": 44, "pads": 198, "matrices": [[4, 6]], "buses": [], "merit": false}
+{"board": "secersh-etzee-etz-b11-lsp-5-choc-v2", "fps": 330, "pads": 1320, "matrices": [[39, 9]], "buses": [], "merit": false}
+{"board": "protocentral-healthypi-pc-healthypi-v1", "fps": 154, "pads": 515, "matrices": [], "buses": [7, 6], "merit": false}
+{"board": "hackclub-onboard-icepi-zero", "fps": 122, "pads": 722, "matrices": [], "buses": [8], "merit": false}
+{"board": "bluthen-exposure-timing-nexta", "fps": 29, "pads": 177, "matrices": [], "buses": [10, 10], "merit": false}
+{"board": "iorodeo-panels-g4-single-pcb-driver-cplex-rp2040", "fps": 479, "pads": 1533, "matrices": [[16, 17]], "buses": [], "merit": false}
+{"board": "asmr-systems-development-boards-at42qt148-captouch", "fps": 43, "pads": 145, "matrices": [], "buses": [8], "merit": false}
+{"board": "iorodeo-panels-g4-single-pcb-driver-rp2350", "fps": 462, "pads": 1308, "matrices": [[18, 18]], "buses": [], "merit": false}
+{"board": "pigatron-industries-xen-octasource-pgtn021-octasource2b-controls", "fps": 138, "pads": 271, "matrices": [[8, 2]], "buses": [], "merit": false}
+{"board": "swetland-zx81-keyboard-zx81-kbd", "fps": 46, "pads": 217, "matrices": [[8, 5]], "buses": [], "merit": false}
+{"board": "logisim-evolution-gecko5education-cpuaddon", "fps": 141, "pads": 814, "matrices": [], "buses": [8], "merit": false}
+{"board": "emard-ulx3s-ulx3s", "fps": 235, "pads": 1177, "matrices": [], "buses": [8], "merit": false}
+{"board": "hanya-escpt-data", "fps": 58, "pads": 302, "matrices": [[5, 4]], "buses": [], "merit": false}
+{"board": "adafruit-adafruit-is31fl3741-pcb-adafruit-is31fl3741-matrix", "fps": 164, "pads": 664, "matrices": [[9, 13]], "buses": [], "merit": false}
+{"board": "brentseidel-circuits-ioboard", "fps": 49, "pads": 192, "matrices": [], "buses": [8, 8, 8, 8], "merit": false}
+{"board": "greatscottgadgets-hackrf-hackrf-one", "fps": 437, "pads": 1639, "matrices": [], "buses": [6], "merit": false}
+{"board": "freesurfer-rge-slothpu16-register-file", "fps": 224, "pads": 994, "matrices": [[2, 8]], "buses": [], "merit": false}
+{"board": "afiskon-hbr-mk2-hbr-mk2-bpfs", "fps": 119, "pads": 415, "matrices": [[2, 8]], "buses": [], "merit": false}
+{"board": "machdyne-bonbon-bonbon", "fps": 119, "pads": 486, "matrices": [], "buses": [8], "merit": false}
+{"board": "rqcoon-help-help", "fps": 29, "pads": 378, "matrices": [[9, 3]], "buses": [], "merit": false}
+{"board": "mattybrad-drumkid2-dk2-07", "fps": 189, "pads": 731, "matrices": [], "buses": [8], "merit": false}
+{"board": "machdyne-kuchen-kuchen", "fps": 102, "pads": 599, "matrices": [], "buses": [8], "merit": false}
+{"board": "fri3dcamp-badge-fri3d-badge-2018-2", "fps": 138, "pads": 436, "matrices": [], "buses": [7], "merit": false}
+{"board": "solderedelectronics-8x8-led-matrix-green-max7219-board-hardware-design-led-matrix-max7219", "fps": 93, "pads": 167, "matrices": [[8, 8]], "buses": [], "merit": false}
+{"board": "sparkfun-mp3-trigger-mp3-trigger", "fps": 90, "pads": 336, "matrices": [], "buses": [16], "merit": false}
+{"board": "atoomnetmarc-avr-demo-board-at90s2323", "fps": 171, "pads": 441, "matrices": [[8, 16]], "buses": [], "merit": false}
+{"board": "soundpuddle-soundpuddle-hardware-soundpuddle-megawing-mk1", "fps": 321, "pads": 926, "matrices": [], "buses": [7], "merit": false}
+{"board": "emdotnet-stmbl-ethernet-bob", "fps": 562, "pads": 906, "matrices": [], "buses": [7], "merit": false}
+{"board": "jackmatanky-kb-snak-rufous", "fps": 32, "pads": 291, "matrices": [[6, 5]], "buses": [], "merit": false}
+{"board": "mkulesh-stm32developmentboards-stm-adapters", "fps": 72, "pads": 438, "matrices": [], "buses": [6], "merit": false}
+{"board": "brillar0101-neuralcard-neuralcard", "fps": 72, "pads": 249, "matrices": [[6, 5]], "buses": [], "merit": false}
+{"board": "pms67-hadesfcs-hades", "fps": 215, "pads": 867, "matrices": [], "buses": [10], "merit": false}
+{"board": "beagleboard-beaglebone-black-wireless-beaglebone-black-wireless", "fps": 275, "pads": 1510, "matrices": [], "buses": [6], "merit": false}
+{"board": "open-ephys-onix-fmc-host-fmc-host", "fps": 320, "pads": 1670, "matrices": [], "buses": [6], "merit": false}
+{"board": "eez-open-dib-smx46-eez-dib-smx46-r1b6", "fps": 144, "pads": 647, "matrices": [[6, 4]], "buses": [], "merit": false}
+{"board": "sparkfun-badgerarray-sparkfun-badgerarray", "fps": 76, "pads": 140, "matrices": [[8, 8]], "buses": [], "merit": false}
+{"board": "0xd6-flip-card-mirror-rp2350-60qfn-minimal", "fps": 517, "pads": 1154, "matrices": [[22, 22]], "buses": [], "merit": false}
+{"board": "rweick-ref1191-datel-n64-gameshark-ref1191", "fps": 25, "pads": 304, "matrices": [], "buses": [8], "merit": false}
+{"board": "cutiepi-io-cutiepi-board-cutiepi-v2-3", "fps": 313, "pads": 1083, "matrices": [], "buses": [6], "merit": false}
+{"board": "openwch-ch585-captouchkeyboard-v2-0", "fps": 102, "pads": 389, "matrices": [[6, 8]], "buses": [], "merit": false}
+{"board": "pietptr-microdox-pcb-microdox-leds", "fps": 47, "pads": 502, "matrices": [[7, 5]], "buses": [], "merit": false}
+{"board": "pinguz97-zynq-som-zynq-som", "fps": 288, "pads": 1912, "matrices": [], "buses": [24], "merit": false}
+{"board": "crsknr-hw-udsp-card-udsp-card", "fps": 221, "pads": 987, "matrices": [], "buses": [7, 6], "merit": false}
+{"board": "adafruit-adafruit-neokey-snap-apart-pcb-neokey-5x6-ortho-snap-apart", "fps": 134, "pads": 971, "matrices": [[3, 6]], "buses": [], "merit": false}
+{"board": "freesurfer-rge-slothpu16-barrel-shifter", "fps": 35, "pads": 414, "matrices": [[2, 8]], "buses": [], "merit": false}
+{"board": "smoothieware-smoothieboard2-smoothiev2-prime", "fps": 453, "pads": 1907, "matrices": [], "buses": [9], "merit": false}
+{"board": "kubajznicek-adaptboard-keypad-pcb", "fps": 25, "pads": 215, "matrices": [[4, 5]], "buses": [], "merit": false}
+{"board": "interrupt-tv-diode-rom-diode-rom-16", "fps": 133, "pads": 331, "matrices": [[8, 16]], "buses": [], "merit": false}
+{"board": "iorodeo-panels-g4-single-pcb-rp2350-fit-check", "fps": 374, "pads": 1109, "matrices": [[16, 17]], "buses": [], "merit": false}
+{"board": "gitbykalimenope-hackrf-circuit-board-kicad-hackrf-one", "fps": 458, "pads": 1735, "matrices": [], "buses": [6], "merit": false}
+{"board": "spritetm-hadbadge2019-pcb-hadbadge2019", "fps": 204, "pads": 1018, "matrices": [], "buses": [10], "merit": false}
+{"board": "freetronics-leopad-leopad", "fps": 51, "pads": 221, "matrices": [[4, 5]], "buses": [], "merit": false}
+{"board": "solderparty-keebdeck-basic-hw-keebdeck-basic", "fps": 120, "pads": 348, "matrices": [[12, 6]], "buses": [], "merit": false}
+{"board": "sparkfun-serial-7-segment-shield-serial-7-segment-shield", "fps": 32, "pads": 130, "matrices": [], "buses": [8], "merit": false}
+{"board": "machdyne-keks-keks", "fps": 163, "pads": 854, "matrices": [], "buses": [8], "merit": false}
+{"board": "aiwachow-micromouse-kicad-micromouse", "fps": 158, "pads": 534, "matrices": [], "buses": [6], "merit": false}
+{"board": "mossmann-daisho-hdmi", "fps": 228, "pads": 1262, "matrices": [], "buses": [6], "merit": false}
+{"board": "king-jam-xmas-2018-christmas-2018", "fps": 30, "pads": 69, "matrices": [[5, 5]], "buses": [], "merit": false}
+{"board": "mbfredys-pcb-temperature-controller-controlador-temperatura", "fps": 70, "pads": 292, "matrices": [], "buses": [8, 8], "merit": false}
+{"board": "open-ephys-acquisition-board-acquisition-board-2", "fps": 342, "pads": 1266, "matrices": [], "buses": [8], "merit": false}
+{"board": "ricaflops-jupiter-ii-jupiter-ii-keyboard", "fps": 47, "pads": 184, "matrices": [[8, 5]], "buses": [], "merit": false}
+{"board": "justsem-rp2040-868-rp2040gpstracker", "fps": 176, "pads": 533, "matrices": [], "buses": [6], "merit": false}
+{"board": "machdyne-schoko-schoko", "fps": 117, "pads": 647, "matrices": [], "buses": [8], "merit": false}
+{"board": "beagleboard-beaglebone-blue-beaglebone-blue", "fps": 302, "pads": 1541, "matrices": [], "buses": [8], "merit": false}
+{"board": "watterott-rpi-dpi-hat-rpi-dpi-hat-v10", "fps": 71, "pads": 207, "matrices": [], "buses": [16], "merit": false}
+{"board": "jflitton-the-c128-keyboard-project-c128-keyboard", "fps": 104, "pads": 733, "matrices": [[8, 11]], "buses": [], "merit": false}
+{"board": "dynamicgoose-mu-micro-deck-mu-carrier-board", "fps": 255, "pads": 1316, "matrices": [], "buses": [8], "merit": false}
+{"board": "peetz0r-why2025-badge-hardware-led-matrix", "fps": 255, "pads": 600, "matrices": [[12, 20]], "buses": [], "merit": false}
+{"board": "tpcarlson-synth-diy-d6", "fps": 175, "pads": 576, "matrices": [[3, 6]], "buses": [], "merit": false}
+{"board": "8-lambda-8-showcontrollpcbs-touchboard", "fps": 292, "pads": 985, "matrices": [[12, 8]], "buses": [], "merit": false}
+{"board": "sourcebox-74hc595-breakout-74hc595-breakout", "fps": 96, "pads": 362, "matrices": [], "buses": [8, 8, 8, 8, 8, 8, 8, 8], "merit": false}
+{"board": "sparkfun-led-ringcoder-breakout-led-ringcoder", "fps": 39, "pads": 129, "matrices": [], "buses": [8, 8], "merit": false}
+{"board": "hugelton-btns-btns-board", "fps": 140, "pads": 420, "matrices": [[8, 5]], "buses": [], "merit": false}
+{"board": "mkulesh-stm32digitalclock-mcuboard", "fps": 92, "pads": 362, "matrices": [], "buses": [6], "merit": false}
+{"board": "open-muscle-openmuscle-flexgrid-om-flexgrid-flex", "fps": 61, "pads": 139, "matrices": [[15, 4]], "buses": [], "merit": false}
+{"board": "ciaa-hardware-ciaa-nxp", "fps": 443, "pads": 1482, "matrices": [], "buses": [7], "merit": false}
+{"board": "jaxc-magna-magna", "fps": 217, "pads": 772, "matrices": [], "buses": [12, 6], "merit": false}
+{"board": "markwestbroek-musicbrain-musicbrain-gate8", "fps": 15, "pads": 72, "matrices": [], "buses": [8], "merit": false}
+{"board": "wcp52-synthesizer-ad9958-dev", "fps": 88, "pads": 266, "matrices": [], "buses": [8], "merit": false}
+{"board": "antmicro-dc-sci-debug-interposer-dc-sci-debug-interposer", "fps": 288, "pads": 1108, "matrices": [], "buses": [38], "merit": false}
+{"board": "hotwolf-aricalculator-aricalculator-revc", "fps": 513, "pads": 910, "matrices": [[7, 6]], "buses": [], "merit": false}
+{"board": "jjhorton-pmod-pmod-rgb7segment", "fps": 122, "pads": 533, "matrices": [[9, 12]], "buses": [], "merit": false}
+{"board": "kiibohd-pcb-whitefox", "fps": 298, "pads": 1111, "matrices": [[9, 9]], "buses": [], "merit": false}
+{"board": "mattybrad-drumkid2-dk2-04-top", "fps": 114, "pads": 464, "matrices": [], "buses": [8], "merit": false}
+{"board": "skiselev-omega-omega-keyboard", "fps": 98, "pads": 468, "matrices": [[9, 8]], "buses": [], "merit": false}
+{"board": "azonenberg-openfpga-gp4-hil", "fps": 450, "pads": 1825, "matrices": [], "buses": [11, 11, 7], "merit": false}
+{"board": "crides-steno-steno", "fps": 61, "pads": 406, "matrices": [[5, 6]], "buses": [], "merit": false}
+{"board": "freetronics-arduphone2-phone2", "fps": 119, "pads": 442, "matrices": [[3, 6]], "buses": [], "merit": false}
+{"board": "calcpsu-tikeyboard-ti59-keyboard", "fps": 59, "pads": 194, "matrices": [[5, 9]], "buses": [], "merit": false}
+{"board": "smoothieware-smoothieboard2-v2-core", "fps": 340, "pads": 1353, "matrices": [], "buses": [9], "merit": false}
+{"board": "bombarie-tens-transcendance-transcendence", "fps": 97, "pads": 438, "matrices": [[16, 2]], "buses": [], "merit": false}
+{"board": "frooastside-frooastboard-frooastboard-walnut", "fps": 236, "pads": 1024, "matrices": [[4, 12]], "buses": [], "merit": false}
+{"board": "antoniomr-wifi-play-board-wifi-pb", "fps": 207, "pads": 547, "matrices": [], "buses": [7], "merit": false}
+{"board": "shaduzlabs-pink-0-pink-0", "fps": 34, "pads": 133, "matrices": [], "buses": [8], "merit": false}
+{"board": "ohwr-project-fmc-adc-500m14b4cha-fmc-adc500m", "fps": 404, "pads": 1552, "matrices": [], "buses": [16], "merit": false}
+{"board": "aronayub-kicad-matrix-project", "fps": 85, "pads": 369, "matrices": [], "buses": [8, 8, 8, 8], "merit": false}
+{"board": "matthewcieplak-super-sixteen-kicad-control-board-smt", "fps": 97, "pads": 352, "matrices": [], "buses": [8], "merit": false}
+{"board": "izehouze-a-10c-ufc-a-10c-ufc", "fps": 45, "pads": 210, "matrices": [[6, 6]], "buses": [], "merit": false}
+{"board": "eggsampler-pciedma-pciedma", "fps": 267, "pads": 1402, "matrices": [], "buses": [18], "merit": false}
+{"board": "pigatron-industries-xen-octasource-pgtn021-octasource-mkiii-controls", "fps": 144, "pads": 289, "matrices": [[8, 2]], "buses": [], "merit": false}
+{"board": "cheyao-icepi-zero-icepi-zero-2", "fps": 138, "pads": 748, "matrices": [], "buses": [8], "merit": false}
+{"board": "ainnovators-noob-sdr-noob-sdr", "fps": 473, "pads": 1868, "matrices": [], "buses": [10], "merit": false}
+{"board": "gregdavill-advent-calendar-of-circuits-2020-gpdi", "fps": 65, "pads": 235, "matrices": [], "buses": [8], "merit": false}
+{"board": "vanvught-kicad-gd32f207rg-pixel-8-gd32f207rg-pixel-8", "fps": 43, "pads": 205, "matrices": [], "buses": [8, 8], "merit": false}
+{"board": "rallekralle11-dis-thermometer-termometer2", "fps": 168, "pads": 431, "matrices": [[10, 10]], "buses": [], "merit": false}
+{"board": "licentia-eu-hc91-kicad-keyboard-keyboard-91", "fps": 53, "pads": 150, "matrices": [[5, 8]], "buses": [], "merit": false}
+{"board": "mornepousse-niphargus-niphar", "fps": 287, "pads": 1224, "matrices": [], "buses": [6], "merit": false}
+{"board": "pparent76-own-mailbox-hardware-mailbox", "fps": 183, "pads": 828, "matrices": [], "buses": [6], "merit": false}
+{"board": "axelvoitier-keebs-lergo", "fps": 151, "pads": 848, "matrices": [[5, 4]], "buses": [], "merit": false}
+{"board": "piotr-binkowski-kintex-pcie-board-kintex-pcie", "fps": 166, "pads": 1254, "matrices": [], "buses": [18], "merit": false}
+{"board": "will127534-lora-concentrator-radio-pizero", "fps": 88, "pads": 350, "matrices": [], "buses": [10], "merit": false}
+{"board": "tengigabytes-mokyalora-mokyalora", "fps": 443, "pads": 1262, "matrices": [], "buses": [12], "merit": false}
+{"board": "open-muscle-openmuscle-band-om-60-flex", "fps": 62, "pads": 162, "matrices": [[15, 4]], "buses": [], "merit": false}
+{"board": "pigatron-industries-xen-octasource-pgtn021-octasource-mkii-controls", "fps": 133, "pads": 263, "matrices": [[8, 2]], "buses": [], "merit": false}
+{"board": "modos-labs-lancer-pcb", "fps": 257, "pads": 1348, "matrices": [], "buses": [7], "merit": false}
+{"board": "rweick-ref1198-datel-n64-gameshark-ref1198", "fps": 25, "pads": 308, "matrices": [], "buses": [8], "merit": false}
+{"board": "kicad-code-kicad-dexter-motorctrl", "fps": 251, "pads": 918, "matrices": [], "buses": [6], "merit": false}
+{"board": "trebb-iso50-pcb", "fps": 105, "pads": 391, "matrices": [[4, 14]], "buses": [], "merit": false}
+{"board": "naokiiwakami-cv-depot-cv-depot", "fps": 206, "pads": 668, "matrices": [], "buses": [8], "merit": false}
+{"board": "kiibohd-pcb-ic60", "fps": 243, "pads": 801, "matrices": [[9, 8]], "buses": [], "merit": false}
+{"board": "scottapotamas-displayport-switch-displayport-switch", "fps": 43, "pads": 225, "matrices": [], "buses": [8], "merit": false}
+{"board": "freetronics-arduphone-phone", "fps": 112, "pads": 403, "matrices": [[3, 6]], "buses": [], "merit": false}
+{"board": "jabadiagm-msxgoauld-x-msx-goauld-xc7", "fps": 37, "pads": 364, "matrices": [], "buses": [8], "merit": false}
+{"board": "famichu-maglev-switch-mx-sample-numeric-keyboard", "fps": 66, "pads": 268, "matrices": [], "buses": [10], "merit": false}
+{"board": "machdyne-eis-eis", "fps": 121, "pads": 570, "matrices": [], "buses": [8], "merit": false}
+{"board": "will127534-lora-concentrator-radio-rpi", "fps": 100, "pads": 408, "matrices": [], "buses": [9, 9], "merit": false}
+{"board": "girishji-choc-keyboard-choc-keyboard", "fps": 102, "pads": 1152, "matrices": [[15, 5]], "buses": [], "merit": false}
+{"board": "pigatron-industries-xen-octasource-pgtn021-octasource2c-controls", "fps": 133, "pads": 263, "matrices": [[8, 2]], "buses": [], "merit": false}
+{"board": "will127534-lora-concentrator-radio", "fps": 119, "pads": 391, "matrices": [], "buses": [9, 8], "merit": false}
+{"board": "git4dcc-rtb-e10-e10", "fps": 45, "pads": 155, "matrices": [], "buses": [8, 8], "merit": false}
+{"board": "pigatron-industries-xen-octasource-pgtn021-octasource2a-controls", "fps": 156, "pads": 315, "matrices": [[8, 2]], "buses": [], "merit": false}
+{"board": "e3w2q-te96-keyboard-te96", "fps": 254, "pads": 954, "matrices": [[4, 6]], "buses": [], "merit": false}
+{"board": "hyperglitch-dc2024badge-dcbadge24", "fps": 128, "pads": 313, "matrices": [[7, 4]], "buses": [], "merit": false}
+{"board": "sparkfun-led-array-8x7-sparkfun-led-array-8x7", "fps": 72, "pads": 140, "matrices": [[8, 8]], "buses": [], "merit": false}
+{"board": "grassfedreeve-akohekohe-akohekohe-min-choc", "fps": 33, "pads": 229, "matrices": [[6, 5]], "buses": [], "merit": false}
+{"board": "gregdavill-perplexingly-petite-pov-pppov-2", "fps": 34, "pads": 82, "matrices": [[5, 5]], "buses": [], "merit": false}
+{"board": "ohmtech-rdi-eurorack-blocks-kivu12", "fps": 136, "pads": 466, "matrices": [], "buses": [8, 8], "merit": false}
+{"board": "computergeek1507-kicad-designs-expansion-buffer", "fps": 18, "pads": 112, "matrices": [], "buses": [16], "merit": false}
+{"board": "hotwolf-aricalculator-keypad", "fps": 258, "pads": 776, "matrices": [[8, 8]], "buses": [], "merit": false}

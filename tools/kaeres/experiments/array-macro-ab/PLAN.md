@@ -16,13 +16,17 @@ Detected on the movable parts: matrices (identical parts whose two pad nets form
 C control; A `array_macros=1`.
 
 ## Boards: `boards.txt` (`select_boards.py`, seed `array-macro-ab-2026-11-09`)
-Up to 100 boards where the detector fires (matrix of 16 or more, or bus of 6 or more), one per `repo_family`, merit boards first (gecko5education and nekoink among them), at most 2,000 pads, `usable_route_test`.
+Every board where the detector fires (matrix of 16 or more, or bus of 6 or more), one per `repo_family`, merit boards first, at most 2,000 pads,
+`usable_route_test`: the scan of 4,848 tagged boards (repeated_matrix, repeated_cells aligned, line_array, radial_array, parallel_bus) finds a
+matrix on 82 and a bus on 103; after the filters the whole pool is run (`boards.txt`). The tags fire far more often than the detector: keyboard
+matrices put a diode in every cell, so switch nets are not a product, and they are left out by design. gecko5education is in; nekoink is not:
+its series arrays are not detected (each resistor's nets reach more than its two ends), so the board-study idea for it is untested here.
 
 ## Metrics (paired, attempt 0)
 `cp1`, `cpk`, completion, open connections, `legal`, per-type DRC, CPU. Own: open connections on the array's own row, column and bus nets (DRC unconnected items by net), the lattice deviation of the output (rms from the best-fit grid, parts in the array), `no_legal_spot` (arrays the pre-step could not pin). Report by tag: `repeated_matrix.*`, `parallel_bus`.
 
-Noise: the A/A joint-loop twins (`aa-joint`; no staged A/A exists): total opens about 3%, cp1 about 0.5 pp at 200 boards. At 100 boards, opens ratios under about 1.07 and cp1 under about 7 pp are not visible; the board-level sign test on opens is the primary test.
+Noise: the A/A joint-loop twins (`aa-joint`; no staged A/A exists): total opens about 3%, cp1 about 0.5 pp at 200 boards. At about 150 boards, opens ratios under about 1.05 and cp1 under about 6 pp are not visible; the board-level sign test on opens is the primary test. Expected cost, as information: about 200 CPU-h.
 
 ## Decision rule (pre-registered)
 `array_macros` becomes the default if A lowers total opens by at least 5% (paired sign test p < 0.05), lowers opens on the array nets on at least 60% of boards with arrays, and does not lower `legal` or cp1 beyond the noise floor (3 pp). If only array-net opens fall while other opens rise by as much, it stays off and the cost is the finding: the rigid block took room.
-Extension: if undecided at 100 boards, run the rest of the pool.
+The whole pool runs at once; if undecided, widen the detector's pool (pads above 2,000, or more tagged boards) rather than relax the rule.
