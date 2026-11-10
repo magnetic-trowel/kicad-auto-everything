@@ -118,3 +118,28 @@ and a seed-0 A/A, so it is approximate.
 successive halving). Boards: the same 80, k = 1, the same outcomes and extension rule, as one pair (physics and opens at 0.025 each). If `--screen` is different beyond the floor on physics or opens, the ladder's no-screen verdict is limited to that wrapper, and (a) with `--screen` is added as a further pair to check whether the chassis conclusion holds under it.
 
 Nothing in this addendum is submitted yet; the extension and `j1-screen` are triggered after the 80 are complete.
+
+## Addendum 3: implementation notes (2026-11-09, written before reading any result of the 80 boards)
+`analyze.py` implements Addendum 2. Details it fixes, none chosen from data:
+- Physics units also need at least one module and Σu > 0 in both arms: a board with no modules has no physics value. J21's floor uses its "excluding identical" column; the n used is the non-identical unit count.
+- Opens units are boards where both arms produced a scored run; a board where one arm failed is excluded and counted (`missing pair`), not imputed.
+- The hedged-capital bets are truncated at 3/4 (Waudby-Smith and Ramdas give 1/2 or 3/4; Addendum 2 did not say which).
+- If a test meets both the "different" and "equivalent" conditions (a small difference within the margin), it is called equivalent.
+- Structural limit: the wealth per unit is at most ln(1 + 1.5 x 0.015) = 0.0223, and rejecting needs ln(2/0.0125) = 5.08, so opens equivalence cannot be reached below about 228 units even with zero variance. At 80 boards and at 209 the opens tests are therefore "different" or "undecided", never "equivalent". Addendum 2's margin stands: a seed round is what can reach it.
+
+## Addendum 4: decisions after batches 1+2, and one exploratory statistic (2026-11-09, defined before it is computed)
+Results of batches 1+2 (209 boards): all four tests undecided (`analysis-batches1-2.md` beside the `j1-chassis-ext` results).
+
+**Decisions (coordinator, 2026-11-09)**
+1. Seed round 1 (`j1-chassis-seeds`, attempt 1 of all four arms on the 209 boards) runs. After it, J1's seed rounds **pause** and round 2 is not submitted.
+   - Why: windows ran in the kept attempt on 56 of 201 joint boards, so more rounds would spend about 6,000 CPU-h measuring windows at a budget where they hardly act.
+   - The loop experiments that give windows a real budget come first. J1's rounds resume, if still worth it, once those report.
+2. **c vs d physics stays undecided** under the pre-registered statistic (the product over batches of per-batch sign e-values). A resampling projection from batches 1+2 showed it cannot settle in any number of rounds: with about 33 units per round, each round's mixture costs more evidence than the round brings.
+   - No pooled statistic replaces it as confirmatory.
+
+**Exploratory only (never changes a classification).** After round 1, these two statistics are reported for the physics tests, labelled exploratory. Units are the confirmatory x of every batch.
+- **X1, pooled sign e-value.** One Beta(1/2, 1/2) mixture over all units of all batches together (S and n summed), instead of a product over batches.
+  - It is a valid test of θ = 1 under the sharp null: arm labels exchangeable for every run, so signs are fair coins, independent across runs.
+  - At θ ≠ 1, and so for equivalence, it assumes independent units with one common median. Repeated attempts on one board break that.
+- **X2, board-level.** One unit per board: the mean of that board's x over the attempts where it was both-routed. One Beta(1/2, 1/2) mixture over the boards.
+- The classification rules are the confirmatory ones: evidence >= 80, margin 1.06, J21 floor at the unit count.
