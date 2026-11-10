@@ -48,6 +48,8 @@ from .state import State, grid_violations
 from .stubs import make_brief, make_terms
 
 ROLE_KIND = {"ground": "ground", "rail": "power", "power": "power"}
+ANCHOR_AREA_SHARE = 0.05   # parts over this share of the board are tested for a spot (_anchor_tight_parts)
+ANCHOR_SPOTS = 800         # ... and this many spots judged by the exact check (near edges, then spread)
 FLOORPLAN_MAX_ITEMS = 40   # above this the global HPWL floorplan rarely finds a solution in time
 ROLE_WEIGHT = {"clock": 1.5, "high_speed": 1.5, "analog": 1.2, "rf": 1.5, "switch_node": 1.0}
 
@@ -586,8 +588,21 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
     if edge_mode >= 2:
         board, pinned = _pin_edge_connectors(board, brief, held, fixed, angle_step, seed, rep, log)
         fixed = fixed | set(pinned)
-    P = Problem.build(board, net_kinds=_net_kinds(brief), held={fp.uuid for fp in held} | fixed,
-                      angle_step=angle_step, severity=severity or _severity_mode(board, board_path, opts))
+    def build(b, frozen):
+        return Problem.build(b, net_kinds=_net_kinds(brief), held={fp.uuid for fp in held} | frozen,
+                             angle_step=angle_step, severity=severity or _severity_mode(board, board_path, opts))
+
+    P = build(board, fixed)
+    if int(setting("anchor_tight", board_path, opts)):
+        anchored, hung = _anchor_tight_parts(P, rep, log)
+        if anchored:
+            # held like fixed parts from here on; every other stage works around them
+            from . import edge_check
+            board = edge_check.with_poses(board, anchored)
+            fixed = fixed | set(anchored)
+            pinned = {**pinned, **anchored}
+            P = build(board, fixed)
+            P.allow_overhang([p.i for p in P.parts if p.movable and p.ref in hung])
     rep["severity"] = dict(mode=P.severity_mode, project_downgrades=dict(P.downgraded))
     rep["severity_used"] = P.severity_mode
     rep.setdefault("hazards", []).extend(P.severity_hazards())
@@ -1013,6 +1028,59 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
 
 def _zone_summary(r):
     return {k: v for k, v in r.items() if k != "by_net"}
+
+
+def _anchor_tight_parts(P, rep, log):
+    """Big parts with no spot the grid calls free of the fixed geometry alone (outline, locked
+    parts, rule areas; every other movable part aside): the annealer and the legalizer can
+    never make them legal, on 3 boards whose human layout is clean, a Pico module, an ESP32
+    dev board and a sensor carrier, not once in 15-19 runs. Their courtyard may hang over the
+    edge, as the human's does (Problem.allow_overhang; KiCad checks copper against the edge),
+    and the grid's rectangles of a fixed through-hole part are a conservative cover, so the
+    exact check judges the spot. Biggest first, each at the first exactly clean spot hugging
+    an edge (the rest of the board stays in one piece) and then fixed like a locked part.
+    Returns ({uuid: pose}, refs of tight parts left to the normal stages, which keep the
+    overhang: a part with no exactly clean spot is not fixed)."""
+    t0 = time.monotonic()
+    area = max(1e-9, float(P.outline.area))
+    # a part with neither a courtyard nor a connected pad is a logo or similar: relax_bodies frees it, and fixing it
+    # would wall off the board. A module drawn with a body and no courtyard (vik-pmw3360's sensor carrier) is a part.
+    real = lambda p: p.has_courtyard or any(q.net for q in p.fp.pads)  # noqa: E731
+    big = sorted((i for i in P.mov if real(P.parts[i]) and P.parts[i].area > ANCHOR_AREA_SHARE * area),
+                 key=lambda i: -P.parts[i].area)
+    if not big:
+        return {}, []
+    P.set_margin(0.0)
+    st = State(P)
+    skip = set(P.mov)
+    S, pad = exactmod._tables(P, st, skip)
+    tight = [i for i in big if not exactmod._candidates(P, st, i, S, pad, list(range(len(P.parts[i].rots))), 0.0, 1)]
+    if not tight:
+        return {}, []
+    E = exactmod.ExactModel(P, st)
+    poses, rows = {}, []
+    for i in tight:
+        p = P.parts[i]
+        ks = list(range(len(p.rots)))
+        hung = P.allow_overhang([i])
+        cands = exactmod._candidates(P, st, i, S, pad, ks, 0.0, ANCHOR_SPOTS, edge=True)
+        grid_free = bool(cands)
+        if not cands:
+            S0, pad0 = exactmod._tables(P, st, skip, obstacles=False)
+            cands = exactmod._candidates(P, st, i, S0, pad0, ks, 0.0, ANCHOR_SPOTS, edge=True)
+        spot = next((c for c in cands if not E.findings_at(i, c[1], c[2], c[3], first=True)), None)
+        row = dict(ref=p.ref, overhang=bool(hung), grid_free=grid_free, tried=len(cands), anchored=spot is not None)
+        rows.append(row)
+        if spot is None:
+            log(f"anchor: {p.ref}: no exactly clean spot in {len(cands)} tried")
+            continue
+        E.set_pose(i, spot[1], spot[2], spot[3])
+        poses[p.uuid] = st.pose(i)
+        skip.discard(i)
+        S, pad = exactmod._tables(P, st, skip)
+        log(f"anchor: {p.ref} fixed at {poses[p.uuid][:3]} (no spot free of the fixed parts)")
+    rep["anchored"] = dict(uuids=sorted(poses), parts=rows, seconds=round(time.monotonic() - t0, 2))
+    return poses, [r["ref"] for r in rows if not r["anchored"]]
 
 
 def _pin_edge_connectors(board, brief, held, fixed, angle_step, seed, rep, log):
