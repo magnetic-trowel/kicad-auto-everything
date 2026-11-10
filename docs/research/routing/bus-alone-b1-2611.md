@@ -45,6 +45,9 @@ Every bus kind sits between 54% (GPIO banks) and 78% (RGB LCD). Of the 2,352 bus
 
 Example of a clean failure: a 2-layer header-to-QFP GPIO board (18 bus nets alone, Freerouting COMPLETED at its 10-pass cap with 12 connections unrouted; the human routed all of them).
 
+Stratum membership by the full suites instead of their `.n100` lists (same 643 boards, more of them count in each width stratum;
+reported, not the pre-registered cut): width 8-15 67% (55-76%, 220 boards), 16-31 69% (60-77%, 191), 32-63 60% (47-71%, 97).
+
 ## Verdict (pre-registered rule)
 
 At least 50%: by the rule, completion on bus-rich boards is mostly an escape, pin-access and within-bus problem, not contention with
