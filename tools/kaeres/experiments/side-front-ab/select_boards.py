@@ -5,7 +5,7 @@
 
     select_boards.py --tags DIR --merit FILE --corpus DIR [--n 150] [--out boards.txt]
 
-A board qualifies when it has more than 10 back-side SMD parts (counted by parsing the board, not
+A board qualifies when it is in the `double_sided_assembly` or `back_heavy` tag suite, has more than 10 back-side SMD parts (counted by parsing the board, not
 just the features' proxy), its assembled parts' courtyards (both sides) cover at most 85% of the
 outline so front-only assembly is thinkable, it passes `usable_route_test`, and it has at most
 1,000 pads (bigger boards are memory-bound: a different experiment). All qualifying merit boards
@@ -39,15 +39,19 @@ def count_sides(path):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tags", required=True), ap.add_argument("--merit", required=True), ap.add_argument("--corpus", required=True)
-    ap.add_argument("--n", type=int, default=150), ap.add_argument("--out", default="boards.txt")
+    ap.add_argument("--n", type=int, default=300), ap.add_argument("--out", default="boards.txt")
+    ap.add_argument("--suites", default="/var/tmp/eriks/board-tags/suites", help="double_sided_assembly.txt and back_heavy.txt live here")
     a = ap.parse_args()
     feats = {r["id"]: r for r in map(json.loads, open(os.path.join(a.tags, "features.jsonl")))}
     use = {r["id"]: r for r in map(json.loads, open(os.path.join(a.tags, "usability.jsonl")))}
     merit = [x.strip() for x in open(a.merit) if x.strip()]
+    suite = set()
+    for t in ("double_sided_assembly", "back_heavy"):
+        suite |= {x.strip() for x in open(os.path.join(a.suites, t + ".txt")) if x.strip()}
 
     def eligible(b):
         f, u = feats.get(b), use.get(b)
-        if not f or not u or not u.get("usable_route_test"):
+        if not f or not u or not u.get("usable_route_test") or b not in suite:
             return False
         fill = (f.get("courtyard_frac_front") or 0) + (f.get("courtyard_frac_back") or 0)
         return f.get("smd_pads_back", 0) >= 24 and fill <= 0.85 and 0 < (f.get("n_pads") or 0) <= 1000

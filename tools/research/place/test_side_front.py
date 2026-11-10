@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 """choose_flips: passives first, smallest first, stops at the fill cap."""
-from side_front import choose_flips
+from side_front import choose_flips, rule_sides
 
 
 def part(key, area, passive, side="B", ok=True):
@@ -31,3 +31,15 @@ def test_passives_arm_never_flips_an_ic():
 def test_only_flippable_parts_are_candidates():
     parts = [part("locked", 1.0, True, ok=False), part("r", 1.0, True)]
     assert choose_flips(parts, 100.0, "smd", 0.9)[0] == ["r"]
+
+
+def test_rule_ignores_the_human_side():
+    # the same parts with the human's sides swapped get the same assignment
+    a = [part("r", 1.0, True, side="B"), part("u", 50.0, False, side="F"), part("c", 2.0, True, side="F")]
+    b = [part("r", 1.0, True, side="F"), part("u", 50.0, False, side="B"), part("c", 2.0, True, side="B")]
+    assert rule_sides(a, 100.0, 0.3) == rule_sides(b, 100.0, 0.3) == {"r": "F", "c": "F", "u": "B"}
+
+
+def test_rule_counts_fixed_parts_on_the_front():
+    parts = [part("fixed", 25.0, False, side="F", ok=False), part("r", 10.0, True, side="B")]
+    assert rule_sides(parts, 100.0, 0.3) == {"r": "B"}

@@ -34,6 +34,6 @@ add() {  # NAME DESCRIPTION PRE-STEP
 flip() {  # ARM
   echo "mkdir -p flip && PYTHONPATH={code:harness}/tools/research/place {py:kae} {code:harness}/tools/research/place/side_front.py --input {input} --output \$PWD/flip/board.kicad_pcb --arm $1 &&"
 }
-add "kae side control $S7 (restarts)"  "arm C: human sides" ""
+add "kae side control $S7 (restarts)"  "arm C: human sides (oracle reference)" ""
 add "kae side passives $S7 (restarts)" "arm P: two-pad SMD passives flipped to the front before placing (cap 0.70 fill)" "$(flip passives)"
-add "kae side smd $S7 (restarts)"      "arm S: every flippable SMD part flipped to the front before placing (cap 0.70 fill)" "$(flip smd)"
+add "kae side rule $S7 (restarts)"     "arm R: every movable SMD part's side by rule, no human side (front first to 0.70 fill)" "$(flip rule)"
