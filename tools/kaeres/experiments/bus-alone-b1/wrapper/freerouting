@@ -3,10 +3,23 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # Bus-alone wrapper (experiment bus-alone-b1): filter the DSN down to this board's bus nets, then run this install's
-# Freerouting unchanged. kaebench's adapter runs Freerouting with cwd=<...>/<board id>/attempt-N, which names the board;
+# Freerouting unchanged. kaebench runs the adapter in <...>/<board id>/attempt-N/work, which names the board;
 # every other net's pins stay in the DSN as obstacles without a net. The list is $install/busnets/<board id>.txt.
 D=$(cd "$(dirname "$0")" && pwd)
-BID=$(basename "$(dirname "$PWD")")
+# kaebench runs the adapter in <...>/<board id>/attempt-N/work: find the attempt directory above the cwd
+BID=""
+ATT=""
+p=$PWD
+while [ "$p" != "/" ] && [ -n "$p" ]; do
+  case "${p##*/}" in
+    attempt-[0-9]*) ATT=${p##*/attempt-}; BID=$(basename "$(dirname "$p")"); break ;;
+  esac
+  p=$(dirname "$p")
+done
+if [ -z "$BID" ]; then
+  echo "bus-alone wrapper: no attempt-N directory above $PWD" >&2
+  exit 7
+fi
 DSN=""
 prev=""
 for a in "$@"; do

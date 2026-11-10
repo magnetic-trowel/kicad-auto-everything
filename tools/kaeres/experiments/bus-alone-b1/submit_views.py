@@ -12,7 +12,7 @@ from pathlib import Path
 
 STORE = Path(os.path.expanduser(os.environ.get("KAE_RESULTS", "~/kae-baselines")))
 HERE = Path(__file__).resolve().parent
-ARMS = {"c55ff7cd5c00": "control", "a3a4a1a9933c": "alone"}
+ARMS = {"c55ff7cd5c00": "control"}   # the alone arm: --alone-method (v1 a3a4a1a9933c failed in plumbing)
 HUMAN = "537e5ef2"
 
 

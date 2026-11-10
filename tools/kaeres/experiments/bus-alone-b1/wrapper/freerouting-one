@@ -6,8 +6,21 @@
 # one bus that failed alone, with every other pin as an obstacle. The adapter's pass cap changes with the attempt
 # (its PASS_SCHEDULE); it is reset to 10, the control's attempt-0 value, so only the net list differs between attempts.
 D=$(cd "$(dirname "$0")" && pwd)
-BID=$(basename "$(dirname "$PWD")")
-N=${PWD##*/attempt-}
+# kaebench runs the adapter in <...>/<board id>/attempt-N/work: find the attempt directory above the cwd
+BID=""
+ATT=""
+p=$PWD
+while [ "$p" != "/" ] && [ -n "$p" ]; do
+  case "${p##*/}" in
+    attempt-[0-9]*) ATT=${p##*/attempt-}; BID=$(basename "$(dirname "$p")"); break ;;
+  esac
+  p=$(dirname "$p")
+done
+if [ -z "$BID" ]; then
+  echo "bus-alone wrapper: no attempt-N directory above $PWD" >&2
+  exit 7
+fi
+N=$ATT
 LIST="$D/../busone/$BID.$N.txt"
 if [ ! -s "$LIST" ]; then
   echo "bus-one wrapper: no list $LIST" >&2

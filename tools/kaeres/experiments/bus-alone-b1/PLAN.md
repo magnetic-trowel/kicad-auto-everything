@@ -72,3 +72,7 @@ Bus-alone runs are mostly seconds of Freerouting plus export and DRC scoring (~6
   99761c5; boards whose route task content changed since (kaeres content records) are reported separately. Control runs that hit the
   deadline (224 of 670 boards in the stored runs) make their buses `contention-or-budget`, never `contention`.
 - The bus-one follow-up uses `wrapper/freerouting-one` (attempt N = the N-th failing bus, pass cap reset to 10).
+- 2026-11-10: **v1 failed in plumbing, no result.** All 670 runs of `fr-fork 06d2686 bus-alone v1` (`a3a4a1a9933c`) are `no_output`:
+  the wrapper took the board id from the parent of its cwd, but kaebench runs the adapter in `<id>/attempt-N/work`, so it looked for
+  `busnets/attempt-0.txt` and exited 7 (the manual smoke had used `<id>/attempt-N` as the cwd). v2 finds the `attempt-N` directory above the
+  cwd; smoked through the real kaeres job path before the rerun. Nothing else changed (same jar, flags, lists, boards, analysis).
