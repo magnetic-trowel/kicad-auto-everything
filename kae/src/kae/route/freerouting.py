@@ -9,12 +9,13 @@ results, so every run gets a private, empty user-data
 folder (`--user_data_path`) and an environment without FREEROUTING__* variables, and every
 setting the bridge depends on is passed on the command line.
 
-The bridge prefers the magnetic-trowel fork (it honours `min_trace_width_um`; see
-tools/research/routing/install_freerouting_fork.sh): KAE_BRIDGE_FREEROUTING, else the newest
-KAE_HOME/kae-freerouting-fork-*/bin/freerouting. Without one it falls back as kaebench does:
-KAE_FREEROUTING (a binary or a .jar), the native bundle in KAE_HOME (default
-~/.cache/kaebench), `freerouting` on PATH, a jar in KAE_HOME. Settings an older build does not
-know are logged as unknown and ignored.
+The build is always named, never guessed (command()): KAE_BRIDGE_FREEROUTING, else the build
+pinned in KAE_HOME/kae-freerouting.pin (default KAE_HOME ~/.cache/kaebench; written by
+tools/research/routing/install_freerouting_fork.sh REF --pin), else KAE_FREEROUTING; with none of
+them it fails. It used to take the newest KAE_HOME/kae-freerouting-fork-* by file time, so an
+experiment's wrapper installed there silently became every run's router. The bridge wants the
+magnetic-trowel fork (it honours `min_trace_width_um`). Settings an older build does not know are
+logged as unknown and ignored.
 """
 import fcntl
 import json
@@ -42,27 +43,36 @@ class FreeroutingError(RuntimeError):
     pass
 
 
+PIN_FILE = "kae-freerouting.pin"
+
+
+def _as_command(path):
+    return ["java", "-jar", path] if str(path).endswith(".jar") else [str(path)]
+
+
 def command():
-    """Command prefix for Freerouting."""
+    """Command prefix for Freerouting: KAE_BRIDGE_FREEROUTING, else the build named in
+    KAE_HOME/kae-freerouting.pin (a path, absolute or relative to KAE_HOME), else KAE_FREEROUTING.
+    Raises FreeroutingError when none is set or the pinned build is missing: a run never picks a
+    build by itself."""
     env = os.environ.get("KAE_BRIDGE_FREEROUTING")
     if env:
-        return ["java", "-jar", env] if env.endswith(".jar") else [env]
-    fork = sorted(KAE_HOME.glob("kae-freerouting-fork-*/bin/freerouting"), key=lambda q: q.stat().st_mtime)
-    if fork:
-        return [str(fork[-1])]
+        return _as_command(env)
+    pin = KAE_HOME / PIN_FILE
+    if pin.is_file():
+        text = pin.read_text().strip()
+        path = Path(text).expanduser()
+        if not path.is_absolute():
+            path = KAE_HOME / path
+        if not text or not path.is_file():
+            raise FreeroutingError(f"{pin} names {text!r}, which is not a file: fix or rewrite the pin")
+        return _as_command(path)
     env = os.environ.get("KAE_FREEROUTING")
     if env:
-        return ["java", "-jar", env] if env.endswith(".jar") else [env]
-    native = sorted(KAE_HOME.glob("freerouting-*-linux-x64/bin/freerouting"))
-    if native:
-        return [str(native[-1])]
-    exe = shutil.which("freerouting")
-    if exe:
-        return [exe]
-    jars = sorted(KAE_HOME.glob("freerouting-*.jar"))
-    if jars:
-        return ["java", "-jar", str(jars[-1])]
-    raise FreeroutingError("Freerouting not found; set KAE_FREEROUTING or run bench/scripts/setup.sh")
+        return _as_command(env)
+    raise FreeroutingError(
+        f"No Freerouting build is pinned: set KAE_BRIDGE_FREEROUTING, or write a build's path into {pin} "
+        "(tools/research/routing/install_freerouting_fork.sh REF --pin does)")
 
 
 @dataclass
