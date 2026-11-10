@@ -25,7 +25,7 @@ Modules from the physics brief (`kae.circuit.brief`) in priority order (cell, pa
 | Protection chain | Connector → protector → protected part; protector's ground via | Surge path L′(w, h)·ℓ + via to plane. No via before the protector ([emc-placement](../rules/emc-placement.md)): such a hop goes to the bridge, flagged for same-side placement; so do hops after it |
 | Power rail | Trunk to the farthest load, then branches | DC drop, zones first; tracks only where they beat class width (below) |
 
-Differential pairs and buses stay with the bridge → [diff pairs](diff-pair-routing.md).
+Buses stay with the bridge; differential pairs are routed separately and locked before it → [pair routing](../../research/routing/kae-pair-routing.md).
 
 ## Keeping critical copper out of the router's way
 
