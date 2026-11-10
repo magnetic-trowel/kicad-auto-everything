@@ -49,4 +49,5 @@ The smoke (`barrier-smoke2`, code c3654d7) showed two faults, fixed before the f
 staged off the board; and on pdp7-memory-display, whose outline parses as two 17 mm2 loops, every part was sent into one loop (1,013 DRC errors,
 about 207 parts outside, against 262 errors for the control). Now pad-less parts are assigned by area, anchored parts no region holds are obstacles
 in every region, and a split whose regions cannot hold their parts is skipped (placed whole, reported as `barrier_split.skipped`). The split board
-list is redrawn without boards the scan marks over capacity (same seed and rule otherwise). The weight list is unchanged.
+list is redrawn without boards whose parts cannot fit the outline as parsed (courtyards over 90% of it on a side; same seed and rule otherwise).
+The corpus scan's own over-capacity flag was not used: without the task's anchors it puts whole netlists in one region. The weight list is unchanged.

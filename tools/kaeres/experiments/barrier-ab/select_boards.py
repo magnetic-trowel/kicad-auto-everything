@@ -25,11 +25,14 @@ def main():
     ap.add_argument("--split-n", type=int, default=100), ap.add_argument("--weight-n", type=int, default=80)
     a = ap.parse_args()
     use = {r["id"]: r for r in map(json.loads, open(a.usability))}
-    pads = {r["id"]: r.get("n_pads") or 0 for r in map(json.loads, open(a.features))}
+    feats = [json.loads(x) for x in open(a.features)]
+    pads = {r["id"]: r.get("n_pads") or 0 for r in feats}
+    # courtyards per side at most 90% of the outline: the parts fit the board as parsed
+    fits = {r["id"]: max(r.get("courtyard_frac_front") or 0, r.get("courtyard_frac_back") or 0) <= 0.9 for r in feats}
     merit = {x.strip() for x in open(a.merit) if x.strip()}
     rows = [r for r in map(json.loads, open(a.scan)) if "err" not in r and use.get(r["board"], {}).get("usable_route_test")
             and 0 < pads.get(r["board"], 0) <= 1000]
-    split = [r for r in rows if r["n_regions"] >= 2 and not r.get("over")]  # an overfull region: a broken outline, the split is skipped
+    split = [r for r in rows if r["n_regions"] >= 2 and fits.get(r["board"], False)]  # parts that cannot fit the outline: a broken outline
     weight = [r for r in rows if r["n_regions"] < 2 and (r["barriers"] > 0 or (r["holes"] > 0 and r["hole_area"] >= 0.03 * max(r["board_area"], 1.0)))]
 
     def pick(pool, n):
