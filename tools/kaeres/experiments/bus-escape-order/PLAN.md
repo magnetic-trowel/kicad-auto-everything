@@ -72,3 +72,18 @@ About 0.3 CPU-h per board-arm at 900 s, 0.13 at 300 s: about 170 CPU-h; one job 
   copper stripped (not a task run, not scored). It showed the risk to read first: on its 0.5 mm-pitch eMMC the planner planned
   9 escapes and laid 1 (planned paths fail the exact check at that pitch). The laid share per arm (`report.escape`) is read
   before any outcome.
+- 2026-11-10, after reading the smoke (2 boards, all 12 runs `ok`, KiCad-scored, flags as intended, task inputs carry no
+  copper). Laid escapes were short of planned: olimex (0.5 mm-pitch eMMC, planner capacity 0) 1 of 9; wren U1 + U8 95 of 137
+  (bus lanes 69 of 101). Causes found on the real task input with the planner's debug output: (a) planned tracks exactly
+  between two balls failed Space's 2 um margin (0.08999 < 0.09 + TOL): the plan's dog-bones and paths are now checked with
+  EXACT_TOL, float slack only (KiCad's DRC of the escaped board: no clearance error); (b) tracks sharing a gap took its slots
+  first come, first served and crossed: slots now follow where the tracks come from (`_gap_slots`); turns round a shared
+  corner are offset per track. wren: 95 -> 102 of 137 laid; the rest are planned paths against pads on diagonals and dog-bones
+  that do not fit. (c) Soft copper does not survive: in a 300 s bus-arm run of wren, 22% of the escape track length and 51 of 77
+  vias were still in the output (`pair_route.copper_survival`): Freerouting rips `shove_fixed` copper at normal cost, so the
+  ordered ports mostly do not survive. Added arm **buswall** (900 s): the bus lanes' escapes stay walls (`wire_scope=except_bus`),
+  the rest of the plan soft, walls unlocked for the repair rounds (`unlock_imported`); in the same check 100% of bus escape copper
+  survived, with 63 open against 32 for the soft arm (one board, one run: not a result). buswall vs bus reads whether keeping
+  the order is worth the walls. Escape copper survival per arm is reported (secondary). Methods re-registered at the new commit;
+  the smoke at c046276 is not reused. kaeres splits each board into jobs of three or four arms in method order; all arms of a
+  board still run within about an hour of each other.

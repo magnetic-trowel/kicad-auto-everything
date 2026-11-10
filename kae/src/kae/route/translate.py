@@ -958,12 +958,12 @@ def _shuffle(tree, rnd):
 WIRE_TYPES = ("route", "shove_fixed", "normal")
 
 
-def set_wire_types(tree, wire_type, nets=None):
+def set_wire_types(tree, wire_type, nets=None, exclude=()):
     """Give the DSN's unlocked wiring another Specctra `type`. KiCad exports unlocked tracks and vias as
     `(type route)`, which Freerouting reads as user-fixed (Wiring.calcFixed): never ripped or shoved, and
     written back as `(type protect)`, which KiCad's import locks. `shove_fixed` is rippable but not shoved
-    or pull-tightened, `normal` ordinary routing; both come back unlocked. `nets`: only those nets; None: all.
-    Returns {wires, vias} changed."""
+    or pull-tightened, `normal` ordinary routing; both come back unlocked. `nets`: only those nets; None: all;
+    `exclude`: never these (they stay walls). Returns {wires, vias} changed."""
     if wire_type not in WIRE_TYPES:
         raise ValueError(f"unknown wire type {wire_type!r}: {WIRE_TYPES}")
     out = dict(wires=0, vias=0)
@@ -976,6 +976,8 @@ def set_wire_types(tree, wire_type, nets=None):
             if t is None or len(t) < 2 or str(t[1]) != "route":
                 continue
             if nets is not None and (n is None or str(n[1]) not in nets):
+                continue
+            if exclude and n is not None and str(n[1]) in exclude:
                 continue
             t[1] = wire_type
             out[count] += 1

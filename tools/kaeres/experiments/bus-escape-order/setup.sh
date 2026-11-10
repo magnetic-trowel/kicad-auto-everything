@@ -27,6 +27,8 @@ for t in 900 300; do
   add "kae bridge be-bus $t $S7"     "escape plan as shove_fixed copper, bus lanes as ordered ribbons at $S7, ${t} s" $t \
     "$PLAN --set escape_bus=true"
 done
+add "kae bridge be-buswall 900 $S7" "ordered bus escapes kept as walls (rest of the plan soft) at $S7, 900 s" 900 \
+  "$PLAN --set escape_bus=true --set wire_scope=except_bus --set unlock_imported=true"
 HS="--harness $SHA --kae $SHA"
 m() { echo "--method \"kae bridge $1 $S7\""; }
 SFX=""
@@ -34,4 +36,5 @@ BOARDS=@$D/boards.txt
 if [ "${1:-}" = smoke ]; then SFX="-smoke"; BOARDS=@$D/smoke.txt; fi
 eval $K exp create bus-escape-order$SFX --boards $BOARDS --attempts 1 $HS \
   --description "\"wave 2 bus escape: ordered bus escapes vs plan vs bridge, 900 s; PLAN.md in $D\"" \
-  $(m "be-control 900") $(m "be-plan 900") $(m "be-bus 900") $(m "be-control 300") $(m "be-plan 300") $(m "be-bus 300")
+  $(m "be-control 900") $(m "be-plan 900") $(m "be-bus 900") $(m "be-buswall 900") \
+  $(m "be-control 300") $(m "be-plan 300") $(m "be-bus 300")

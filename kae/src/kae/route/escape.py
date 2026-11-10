@@ -67,6 +67,7 @@ import numpy as np
 from shapely.geometry import LineString, Point, box
 
 from . import critical_write as W
+from .critical_space import EXACT_TOL
 
 MIN_BALLS = 16          # a ball grid has at least this many pads
 MIN_RING = 12           # a pad ring (QFN, QFP) has at least this many pads
@@ -1364,7 +1365,9 @@ def _lay_grid(sp, ctx, paths, plane_vias, info, deadline=None, tracks=True):
     """Lay a plan: the plane balls' and the planned dog-bones, then each escape on its layer
     along its planned path (through the middle of each gap, side by side where several
     share one), checked exactly, else searched with the grid router to a box past the
-    package's edge. Returns one record per planned ball."""
+    package's edge. Returns one record per planned ball. The plan's gaps are exact fits (escape.fit), so its
+    dog-bones and planned paths are checked with no margin, only float slack (EXACT_TOL; KiCad stores whole
+    nm): with the usual 2 um margin a track planned exactly between two balls failed (0.08999999 < 0.09 + TOL)."""
     from .critical_grid import Anchor, GridRouter
     from .lastmile import _commit
     zclr = max([float(z.get("clearance") or 0.0) for z in info.get("zones") or []] + [0.0])
@@ -1387,7 +1390,7 @@ def _lay_grid(sp, ctx, paths, plane_vias, info, deadline=None, tracks=True):
         # the net's via, else the smallest the board allows (where room is scarce)
         size = None
         for cand in [sp.via_size(pd.net)] + ([small_via(sp)] if small_via(sp) else []):
-            if not sp.via_violations(pd.net, *v, size=cand[0], drill=cand[1], first=True) and \
+            if not sp.via_violations(pd.net, *v, size=cand[0], drill=cand[1], first=True, tol=EXACT_TOL) and \
                     not _starves(sp, pd.net, Point(v), cand[0] / 2, sp.cu, zclr):
                 size = cand
                 break
@@ -1395,7 +1398,7 @@ def _lay_grid(sp, ctx, paths, plane_vias, info, deadline=None, tracks=True):
             return None
         mn, opt, _ = sp.width_limits(pd.net, B)
         for wd in [w for w in dict.fromkeys([opt, mn]) if w] or [0.1]:
-            if sp.track_violations(pd.net, B, wd, pd.pos, v, first=True) or \
+            if sp.track_violations(pd.net, B, wd, pd.pos, v, first=True, tol=EXACT_TOL) or \
                     _starves(sp, pd.net, LineString([pd.pos, v]), wd / 2, [B], zclr):
                 continue
             sp.add_via(pd.net, *v, owner=owner, size=size[0], drill=size[1], uuid=W.new_uuid())
@@ -1417,13 +1420,9 @@ def _lay_grid(sp, ctx, paths, plane_vias, info, deadline=None, tracks=True):
                              side=q["side"], via=[round(v[0], 4), round(v[1], 4)] if v else None, exit=None,
                              laid=False, **ctx.get("flex", {}).get(k, {})))
         return recs
-    slots = {}
-    for q in paths.values():
-        for nd in q["nodes"]:
-            if nd[0] == "g":
-                key = (q["layer"], nd[1])
-                slots[key] = [slots.get(key, [0, 0])[0] + 1, 0]
+    slots = _gap_slots(ctx, paths)
     gr = GridRouter(sp, pad_entry="centre")      # escapes leave from the ball's centre (dog-bone geometry)
+    turns = {}                                    # (layer, corner, tile) -> tracks rounding it so far
     recs = []
     # the least flexible first on each layer (fewest options: they cannot go elsewhere)
     flex = ctx.get("flex", {})
@@ -1443,7 +1442,7 @@ def _lay_grid(sp, ctx, paths, plane_vias, info, deadline=None, tracks=True):
         if deadline is not None and time.monotonic() > deadline:
             continue
         start = pd.pos if l == B else tuple(rec["via"])
-        pts = _plan_points(ctx, q, start, slots, R[l]["w"] + R[l]["c"])
+        pts = _plan_points(ctx, dict(q, ball=k), start, slots, R[l]["w"] + R[l]["c"], turns)
         rec["_pts"], rec["_k"] = pts, k
         rec["exit"] = [round(pts[-1][0], 4), round(pts[-1][1], 4)]
         mn, opt, _ = sp.width_limits(pd.net, l)
@@ -1451,8 +1450,8 @@ def _lay_grid(sp, ctx, paths, plane_vias, info, deadline=None, tracks=True):
             if DEBUG:
                 rec["pts"] = [[round(a, 3), round(b, 3)] for a, b in pts]
                 rec["nodes"] = q["nodes"]
-                rec["why"] = [str(sp.track_violations(pd.net, l, wd, a_, b_, first=True))[:120] for a_, b_ in zip(pts, pts[1:])]
-            if all(not sp.track_violations(pd.net, l, wd, a_, b_, first=True) for a_, b_ in zip(pts, pts[1:])):
+                rec["why"] = [str(sp.track_violations(pd.net, l, wd, a_, b_, first=True, tol=EXACT_TOL))[:120] for a_, b_ in zip(pts, pts[1:])]
+            if all(not sp.track_violations(pd.net, l, wd, a_, b_, first=True, tol=EXACT_TOL) for a_, b_ in zip(pts, pts[1:])):
                 for a_, b_ in zip(pts, pts[1:]):
                     sp.add_track(pd.net, l, wd, a_, b_, owner=owner, uuid=W.new_uuid())
                 rec["laid"] = "plan"
@@ -1505,10 +1504,38 @@ def _records(ctx, paths):
     return recs
 
 
-def _plan_points(ctx, q, start, slots, step):
+def _gap_slots(ctx, paths):
+    """{(layer, gap): {ball: (slot, tracks)}}: the tracks through one gap take its slots in the
+    order of where they come from along the gap (the node before it, then the ball, then where they
+    go), so that neighbouring
+    escapes do not cross on their way in (first come, first served crossed them: two balls of
+    the edge row into one gap, each to the other's side)."""
+    by = {}
+    for k, q in paths.items():
+        l = q["layer"]
+        par = 0 if l == ctx["B"] else 1
+        nodes = q["nodes"]
+        for i, nd in enumerate(nodes):
+            if nd[0] != "g":
+                continue
+            gx, gy = nd[1]
+            ax = 1 if gx % 2 == par else 0          # along the gap: y for a gap between corners above each other
+            prev = nodes[i - 1][1] if i > 0 and nodes[i - 1][0] != "sink" else nd[1]
+            nxt = nodes[i + 1][1] if i + 1 < len(nodes) and nodes[i + 1][0] != "sink" else nd[1]
+            by.setdefault((l, nd[1]), []).append((prev[ax], nodes[0][1][ax], nxt[ax], k))
+    out = {}
+    for key, v in by.items():
+        v.sort()
+        out[key] = {k: (i, len(v)) for i, (_a, _s, _b, k) in enumerate(v)}
+    return out
+
+
+def _plan_points(ctx, q, start, slots, step, turns=None):
     """Board points of a planned escape: `start` (ball or via), the middle of each gap on its
-    path (the k-th of n tracks in a gap offset by (k - (n - 1) / 2) * step along it) and the
-    centre of each tile it turns in, then 0.75 pitch out past the package's edge."""
+    path (the k-th of n tracks in a gap, _gap_slots, offset by (k - (n - 1) / 2) * step along it), a point
+    round each corner it turns at (the k-th track round one corner, counted in `turns`, at the
+    obstacle's clearance plus k steps from it; the tile's centre without `turns`), then 0.75
+    pitch out past the package's edge."""
     xy, p, l = ctx["xy"], ctx["p"], q["layer"]
     par = 0 if l == ctx["B"] else 1
     idx = []
@@ -1517,21 +1544,39 @@ def _plan_points(ctx, q, start, slots, step):
     def tiles_of(g):
         gx, gy = g
         return {(gx - 1, gy), (gx + 1, gy)} if gx % 2 == par else {(gx, gy - 1), (gx, gy + 1)}
+
+    def corners_of(g):
+        gx, gy = g
+        return ((gx, gy - 1), (gx, gy + 1)) if gx % 2 == par else ((gx - 1, gy), (gx + 1, gy))
+    R = ctx["R"][l]
+    # a track's centre from a corner obstacle (ball on the ball layer, via site elsewhere)
+    clear = (ctx["d"] / 2 + ctx["cpad"] if l == ctx["B"] else R["D"] / 2 + R.get("c_via", R["c"])) + R["w"] / 2
     prev = None
     for nd in q["nodes"][1:]:
         if nd[0] == "g" and prev is not None and prev[0] == "g":
-            # round a corner of the tile both gaps bound: through its centre, clear of the corner
+            # round the corner both gaps share (the shortcut), inside the tile they bound: the k-th track
+            # round one corner keeps the obstacle's clearance plus k track pitches from it (all of
+            # them through the tile's centre overlapped: escapes laid on top of each other)
             common = tiles_of(prev[1]) & tiles_of(nd[1])
             if common:
                 cx_, cy_ = next(iter(common))
-                idx.append((cx_ / 2, cy_ / 2))
+                qs = set(corners_of(prev[1])) & set(corners_of(nd[1]))
+                if qs and turns is not None:
+                    qx, qy = next(iter(qs))
+                    key = (l, (qx, qy), (cx_, cy_))
+                    k = turns.get(key, 0)
+                    turns[key] = k + 1
+                    r = (clear + k * step) / p               # package index units
+                    dx, dy = (cx_ - qx) / 2, (cy_ - qy) / 2  # corner to centre, index units
+                    dl = math.hypot(dx, dy)
+                    r = min(r, dl)
+                    idx.append((qx / 2 + dx / dl * r, qy / 2 + dy / dl * r))
+                else:
+                    idx.append((cx_ / 2, cy_ / 2))
         prev = nd
         if nd[0] == "g":
             gx, gy = nd[1]
-            key = (l, nd[1])
-            n, k = slots.get(key, [1, 0])
-            if key in slots:
-                slots[key][1] += 1
+            k, n = slots.get((l, nd[1]), {}).get(q.get("ball"), (0, 1))
             off = (k - (n - 1) / 2) * step / p
             along_y = gx % 2 == par            # its corners are above and below each other
             idx.append((gx / 2, gy / 2 + off) if along_y else (gx / 2 + off, gy / 2))
@@ -1640,7 +1685,8 @@ def run(sp, info, opts=None, log=print, deadline=None):
             bus = orders(opts["_board"], log=log)
         except Exception as e:  # noqa: BLE001 - no bus order: the plan as without it
             log(f"escape plan: bus order failed: {type(e).__name__}: {e}")
-        out["bus"] = dict(parts=len(bus), lanes=sum(len(v) for v in bus.values()))
+        out["bus"] = dict(parts=len(bus), lanes=sum(len(v) for v in bus.values()),
+                          nets=sorted({n for v in bus.values() for n in v}))
     for pkg in find_packages(sp):
         try:
             if pkg["kind"] == "ring":

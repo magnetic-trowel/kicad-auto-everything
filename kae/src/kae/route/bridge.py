@@ -142,7 +142,8 @@ DEFAULT_OPTS = dict(
                              # "post": re-laid as pairs after the general route, kept when KiCad finds it no worse
     wire_type="route",       # how unlocked pre-routes go to Freerouting (translate.set_wire_types):
                              # "route" (KiCad's, fixed walls), "shove_fixed", "normal" (both rippable)
-    wire_scope="all",        # "pairs": only the nets of the pairs routed first get wire_type
+    wire_scope="all",        # "pairs": only the nets of the pairs routed first get wire_type; "except_bus": all but
+                             # the bus lanes of escape_bus (their ordered escapes stay walls)
     pairs_stage="before_escapes",  # "after_escapes": pairs first run after the plane escapes
     pairs_own_budget=False,  # the pair router's time is not taken from the rest of the budget
     pairs_s=180.0,           # with pairs: seconds for the pair router at most (a quarter of the budget at most)
@@ -268,8 +269,12 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             if scope == "pairs":
                 nets = {n for pr in (report.get("pairs") or {}).get("pairs", ()) if pr.get("status") == "routed"
                         for n in (pr["p"], pr["n"])}
-            report["wire_types"] = dict(translate.set_wire_types(tree, opts["wire_type"], nets=nets),
-                                        type=opts["wire_type"], scope=scope)
+            exclude = set()
+            if scope == "except_bus":
+                # the bus lanes' ordered escapes stay walls (their order survives), the rest of the plan is soft
+                exclude = set(((report.get("escape") or {}).get("bus") or {}).get("nets") or ())
+            report["wire_types"] = dict(translate.set_wire_types(tree, opts["wire_type"], nets=nets, exclude=exclude),
+                                        type=opts["wire_type"], scope=scope, walls=len(exclude))
         first, hist_path = route_first(opts)
         opts["route_first"] = first
         report["permuted"] = translate.permute(tree, seed, first=first)

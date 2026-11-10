@@ -36,6 +36,13 @@ def test_scope_limits_to_the_named_nets():
     assert types(t) == ["normal", "route", "fix", "normal"]
 
 
+def test_excluded_nets_stay_walls():
+    """wire_scope except_bus: the bus lanes' ordered escapes stay (type route), the rest turns soft."""
+    t = tree()
+    assert translate.set_wire_types(t, "shove_fixed", exclude={"A"}) == dict(wires=1, vias=0)
+    assert types(t) == ["route", "shove_fixed", "fix", "route"]
+
+
 def test_unknown_type_is_refused():
     import pytest
     with pytest.raises(ValueError):

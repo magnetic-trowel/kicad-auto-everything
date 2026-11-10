@@ -537,8 +537,9 @@ class Space:
                     out.append(("edge", d, e))
         return out
 
-    def via_violations(self, net, x, y, size=None, drill=None, ignore=(), first=False, layers=None):
-        """Requirements a through via of `net` at (x, y) breaks (empty when legal)."""
+    def via_violations(self, net, x, y, size=None, drill=None, ignore=(), first=False, layers=None, tol=TOL):
+        """Requirements a through via of `net` at (x, y) breaks (empty when legal); `tol` mm kept above each."""
+        TOL = tol
         D, d = (size, drill) if size else self.via_size(net)
         rv, rh = D / 2.0, d / 2.0
         p = Point(x, y)
