@@ -51,3 +51,10 @@ about 207 parts outside, against 262 errors for the control). Now pad-less parts
 in every region, and a split whose regions cannot hold their parts is skipped (placed whole, reported as `barrier_split.skipped`). The split board
 list is redrawn without boards whose parts cannot fit the outline as parsed (courtyards over 90% of it on a side; same seed and rule otherwise).
 The corpus scan's own over-capacity flag was not used: without the task's anchors it puts whole netlists in one region. The weight list is unchanged.
+
+A placer-level check on the prepared task inputs then found both boards the question is about skipped as over capacity: courtyards were
+summed over both sides of a double-sided board, and on beems six loosely tied parts filled the 334 mm2 region. Capacity is now per side (a
+through-hole part on both), and an overfull region side gives its least-tied movable parts to regions with room. With that, sycamore splits
+2 ways (4 / 145 parts, 0 nets across, HPWL 2,985 against 10,394 unsplit at 150 s) and beems 3 ways (46 / 110 / 11 parts, 6 signal nets
+across regions after moving 5 parts for room), no part outside its region. Experiments `barrier-split-ab2` and `barrier-weight-ab2` run this
+code; `barrier-split-ab` and `barrier-weight-ab` were created at 333be53 and never submitted.

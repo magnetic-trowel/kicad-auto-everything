@@ -20,7 +20,8 @@ Assignment (`assign`): each anchored part (locked, or the task's fixed interface
 holding most of its pads. A movable part takes the region of the parts it talks to, by breadth-first
 label propagation over signal nets, each net voting 1/(pins - 1) so a wide bus does not swamp a point
 link; parts no anchor reaches go by power nets, then largest group first into the region with the most
-area left. Nothing here reads a human placement: only the task's outline, rule areas, anchors and nets.
+room. Room is counted per side (a through-hole part takes both); a region side over CAPACITY gives up its
+movable parts least tied to it to regions with room. A split still over capacity is not applied. Nothing here reads a human placement: only the task's outline, rule areas, anchors and nets.
 Pins of nets that span regions are reported (`cross_nets`): a board that connects them with a cable has
 those opens whatever the method does, the human layout included.
 """
@@ -35,7 +36,7 @@ import shapely
 from shapely.geometry import LineString, Point, Polygon
 
 MIN_REGION_SHARE = 0.02      # a piece of the outline under this share of the board is no region
-CAPACITY = 0.85              # courtyards a region is assumed able to hold, as a share of its area
+CAPACITY = 0.85              # courtyards a region is assumed able to hold on each side, as a share of its area
 SPLIT_MIN_S = 20.0           # the least time a region gets
 SPLIT_VERIFY_FRAC = 0.1      # share of the budget kept for the caller's check of the merged board
 MST_MAX_PINS = 60            # nets with more pins are planes in all but name: their MST says nothing
@@ -188,22 +189,57 @@ def assign(board, regs):
     n1 = len(label)
     _propagate(label, _adjacency(board, lambda k: k != "signal"))
     how["power_nets"] = len(label) - n1
-    used = defaultdict(float)
+    def sides(i):
+        f = fps[i]
+        if any(p.drill for p in f.pads):
+            return ("F", "B")
+        return (f.side,)
+    used = defaultdict(float)          # (region, side) -> courtyard area
     for i, r in label.items():
-        used[r] += _part_area(fps[i])
-    # parts no net reaches, pad-less ones too (a logo staged off the board must still be placed somewhere)
+        for sd in sides(i):
+            used[(r, sd)] += _part_area(fps[i])
+
+    def room(r, i):
+        return min(CAPACITY * regs[r].area - used[(r, sd)] for sd in sides(i))
     left = [i for i in range(len(fps)) if i not in label and not fps[i].locked and not fps[i].edge_cuts]
     adj = _adjacency(board, lambda k: True)
     comps = _components(set(left), adj)
     comps.sort(key=lambda c: -sum(_part_area(fps[i]) for i in c))
     for comp in comps:
-        area = sum(_part_area(fps[i]) for i in comp)
-        r = max(range(len(regs)), key=lambda k: CAPACITY * regs[k].area - used[k])
+        r = max(range(len(regs)), key=lambda k: min(room(k, i) for i in comp))
         for i in comp:
             label[i] = r
-        used[r] += area
+            for sd in sides(i):
+                used[(r, sd)] += _part_area(fps[i])
         how["by_area"] += len(comp)
-    over = [r for r in range(len(regs)) if used[r] > CAPACITY * regs[r].area]
+    # an overfull region side gives up the movable parts least tied to it (net weight to it minus to the best
+    # other region), to regions with room, until it fits or nothing can move
+    for r in range(len(regs)):
+        for sd in ("F", "B"):
+            if used[(r, sd)] <= CAPACITY * regs[r].area:
+                continue
+            cand = []
+            for i, ri in label.items():
+                if ri != r or fps[i].locked or fps[i].edge_cuts or sd not in sides(i):
+                    continue
+                w = defaultdict(float)
+                for j, x in adj.get(i, {}).items():
+                    if j in label:
+                        w[label[j]] += x
+                cand.append((w[r] - max([w[k] for k in range(len(regs)) if k != r] or [0.0]), i))
+            for _, i in sorted(cand):
+                if used[(r, sd)] <= CAPACITY * regs[r].area:
+                    break
+                dest = [k for k in range(len(regs)) if k != r and room(k, i) >= _part_area(fps[i])]
+                if not dest:
+                    continue
+                k = max(dest, key=lambda k: room(k, i))
+                for s2 in sides(i):
+                    used[(r, s2)] -= _part_area(fps[i])
+                    used[(k, s2)] += _part_area(fps[i])
+                label[i] = k
+                how["moved_for_room"] += 1
+    over = sorted({r for (r, sd), v in used.items() if v > CAPACITY * regs[r].area})
     return {fps[i].uuid: label.get(i, -1) for i in range(len(fps))}, dict(how), over
 
 

@@ -14,7 +14,7 @@ def pad(x, y, net=""):
 
 
 def fp(ref, x, y, pads, locked=False):
-    return NS(ref=ref, uuid=ref, x=x, y=y, pads=pads, locked=locked, edge_cuts=[], courtyard=[], body=[])
+    return NS(ref=ref, uuid=ref, x=x, y=y, pads=pads, locked=locked, edge_cuts=[], courtyard=[], body=[], side="F")
 
 
 def board(outline, fps, keepouts=(), cu=("F.Cu", "B.Cu")):
@@ -102,3 +102,15 @@ def test_a_region_that_cannot_hold_its_parts_is_reported():
         f.courtyard = [box(0, 0, 30, 30)]
     s = B.true_split(board([box(0, 0, 10, 10), box(100, 0, 110, 10)], big))
     assert s.over_capacity
+
+
+def test_full_region_gives_up_its_loosest_part():
+    # small region 10 x 10 (capacity 85 a side) anchored by J1; two 50 mm2 parts drawn to it, A also tied to J2: A moves
+    a = fp("A", 300, 300, [pad(300, 300, "x"), pad(300, 301, "x2"), pad(300, 302, "y")])
+    b = fp("B", 300, 300, [pad(300, 300, "x")])
+    for f in (a, b):
+        f.courtyard = [box(0, 0, 5, 10)]
+    fps = [fp("J1", 5, 5, [pad(5, 5, "x"), pad(5, 6, "x2")], locked=True), fp("J2", 120, 20, [pad(120, 20, "y")], locked=True), a, b]
+    s = B.true_split(board([box(0, 0, 10, 10), box(100, 0, 150, 50)], fps))
+    assert not s.over_capacity and s.how["moved_for_room"] == 1
+    assert s.region_of["A"] == s.region_of["J2"] and s.region_of["B"] == s.region_of["J1"]
