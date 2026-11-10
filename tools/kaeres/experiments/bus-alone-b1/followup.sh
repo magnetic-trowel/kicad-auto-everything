@@ -16,5 +16,6 @@ if [ "${exp_left:-0}" = 0 ] && [ ! -e "$WORK/.views-submitted" ]; then
 fi
 if [ -e "$WORK/.views-submitted" ] && [ "${view_left:-0}" = 0 ]; then
   python3 "$HERE/submit_views.py" "${EXP:-bus-alone-b1}" "$WORK" --alone-method "${ALONE:-d0dd04f102a8}" --dry-run | grep -q ', 0 views to make' || { python3 "$HERE/submit_views.py" "${EXP:-bus-alone-b1}" "$WORK" --alone-method "${ALONE:-d0dd04f102a8}"; kaeq prio 7 --owner "busview-${EXP:-bus-alone-b1}" >/dev/null; exit 0; }
+  cat "$WORK"/runs-*.csv > "$WORK/runs.csv"
   python3 "$HERE/analyze.py" "$WORK/busnets" "$WORK/views" "$WORK/runs.csv" /var/tmp/eriks/board-tags/suites "$WORK/out" > "$WORK/analyze.log" 2>&1 && touch "$WORK/.done"
 fi

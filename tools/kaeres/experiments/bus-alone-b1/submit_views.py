@@ -42,7 +42,7 @@ def main():
         if "control" in found and ("alone" in found or a.early):
             rows += [(bid, arm, str(d)) for arm, d in sorted(found.items())]
     if not a.early:
-        (work / "runs.csv").write_text("".join(f"{b},{arm},{d}\n" for b, arm, d in rows))
+        (work / f"runs-{a.exp}.csv").write_text("".join(f"{b},{arm},{d}\n" for b, arm, d in rows))
     todo = [r for r in rows if not (work / "views" / f"{r[0]}.{r[1]}.json").exists()]
     td = work / "view-tasks"
     td.mkdir(parents=True, exist_ok=True)
