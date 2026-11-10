@@ -76,3 +76,6 @@ Bus-alone runs are mostly seconds of Freerouting plus export and DRC scoring (~6
   the wrapper took the board id from the parent of its cwd, but kaebench runs the adapter in `<id>/attempt-N/work`, so it looked for
   `busnets/attempt-0.txt` and exited 7 (the manual smoke had used `<id>/attempt-N` as the cwd). v2 finds the `attempt-N` directory above the
   cwd; smoked through the real kaeres job path before the rerun. Nothing else changed (same jar, flags, lists, boards, analysis).
+- 2026-11-10: rerun as experiment `bus-alone-b1-v2`, method `fr-fork 06d2686 bus-alone v2` (`d0dd04f102a8`), kaeq priority 7. Smoke through the
+  kaeres job path on 3 boards (`bus-alone-b1-smoke2`): all `ok`, filter kept the listed nets, outputs re-opened, bus-only DRC views made
+  and analysed end to end. Analysis runs with `EXP=bus-alone-b1-v2 followup.sh /var/tmp/eriks/bus-alone`.
