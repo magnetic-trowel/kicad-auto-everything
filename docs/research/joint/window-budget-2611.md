@@ -37,7 +37,7 @@ Keys: joint loop, windows, window_budget_factor, budget curve, min_iter_s, route
 | w4 all vs ctl | −12.6 % | 24 / 11 | −0.163, 0.002 | better, at 4.4x CPU |
 | j2 vs ctl | +2.8 % | 12 / 22 | +0.039, 0.42 | fails (no gain) |
 | j5 vs ctl | −3.1 % | 15 / 19 | +0.024, 0.53 | fails (no gain) |
-| j14 vs ctl | −10.9 % | 24 / 13 | −0.072, 0.11 | undecided |
+| j14 vs ctl | −10.9 % | 24 / 13 | −0.072, 0.11 | undecided at 40; **passes pooled with the extension** (below) |
 | w2 j4t vs w2 ctl | +1.6 % | 17 / 16 | −0.018, 0.68 | fails: illegal after repair 446 vs 423, not halved |
 | w2 j4 vs w2 ctl | −3.3 % | 18 / 19 | −0.052, 0.21 | fails: illegal 394 vs 423, not halved |
 | w2 j3 vs w2 ctl | +0.6 % | 15 / 19 | +0.011, 0.77 | fails (as on its own 30 boards) |
@@ -60,5 +60,13 @@ Doubling from 1 to 2 B removes 4.5 more opens per board (median). From 2 to 4 B 
 ## What it means
 - The gain is real but bought with compute: w2 is 2.8 times ctl's CPU. Inside the same budget, re-splitting the time (j2, j5) gains nothing. So the default stays, and the open question is compute-matched: does 3 B of joint with windows beat 3 B of restarts of the staged pipeline, which is how the merit runs spend extra time?
 - J4 fails, so the legalizer was not the limit. More time and the incumbent fallback leave a third of windows illegal: the windows ask for moves that have no legal spot.
-- J14 (`first_last_mile=1`, −11 %, 24 of 37 boards better) is the only change at today's budget that looks promising. It is undecided at 40 boards; the plan's extension (31 boards) would decide it.
+- J14 (`first_last_mile=1`) passes on the pre-registered extension (below). It is the one change that pays at today's budget.
 - What would change this: a window choice that does not repeat (J15) or that targets blocked corridors (`kae.route.blocked`), measured on the same boards.
+
+## J14 extension (`loop-j14-ext`, 2026-11-10)
+Same two arms (`ctl`, `j14`) on the extension's 29 boards, pooled with the first 40 as pre-registered (addendum 3):
+- Open connections: 6,046 vs 6,510 (−7.1 %), 36 boards fewer and 23 more, mean d −0.072, sign-flip p 0.020. This passes.
+- Each batch alone is not significant (p 0.11 and 0.084).
+- Errors 3,505 vs 3,458 (+1.4 %); cp1 1 vs 1; CPU 31.1 vs 31.6 h.
+- Mechanism: iteration 0 ends with the bridge's last mile, so the windows and the finish start from fewer opens (7,010 down to 6,388 after iteration 0), at no extra median time.
+- Default changed in PR #54 (branch `joint-first-last-mile`).
