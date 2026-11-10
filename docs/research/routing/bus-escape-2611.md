@@ -56,7 +56,12 @@ line) and Freerouting routes the trunk from rippable (`shove_fixed`) copper. Pro
 netlist, parts and pin positions. Not done: lateral compression of the ports, fine-pitch rings, via-in-pad (only where
 `escape_via_in_pad` and the board's rules allow it), coordinating layers between two grid ends.
 
-A/B: [PLAN.md](../../../tools/kaeres/experiments/bus-escape-order/PLAN.md) (133 boards, control / plan / bus at 900 s and 300 s).
+Smoke (2 boards): planned escapes were laid short of plan (exact-fit gaps failed a 2 um margin; tracks sharing a gap crossed);
+fixed, wren 95 -> 102 of 137 laid. Soft (`shove_fixed`) escape copper mostly does not survive Freerouting: 22% of its track
+length was left after a 300 s run, so an arm keeps the bus lanes' ordered escapes as walls (`wire_scope=except_bus`).
+
+A/B: [PLAN.md](../../../tools/kaeres/experiments/bus-escape-order/PLAN.md), experiment `bus-escape-order-2` (133 boards;
+control / plan / bus at 900 s and 300 s, buswall at 900 s).
 
 ## 3. Freerouting time on bus nets (proposal, not tested)
 
