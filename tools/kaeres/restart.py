@@ -434,6 +434,23 @@ def _last_json(path):
     return {}
 
 
+FAILURE_TAIL = 1200   # characters of a failed attempt's log kept in its record
+
+
+def attempt_failure(log_path):
+    """Why an attempt exited non-zero, for its record in summary.json (the attempt's own log goes
+    with the work directory): the status and error of its report (the last JSON line), and the
+    end of its log without that line."""
+    rep = _last_json(log_path)
+    try:
+        lines = Path(log_path).read_text(errors="replace").splitlines()
+    except OSError:
+        lines = []
+    tail = "\n".join(ln for ln in lines if not ln.startswith("{"))[-FAILURE_TAIL:]
+    return dict(status=rep.get("status"), error=(str(rep.get("error"))[:FAILURE_TAIL] if rep.get("error") else None),
+                log_tail=tail)
+
+
 def fr_telemetry(log_path):
     """The Freerouting telemetry (kae.route.freerouting.telemetry) of a route attempt's report (the
     last JSON line of its log): {"first": the first routing, "repair": [one per repair round that
@@ -791,6 +808,8 @@ def main():
             info.update(rc=p.returncode, rank=rank)
             if (fr := fr_telemetry(info["out"].parent / "log")):
                 info["fr"] = fr
+            if p.returncode:
+                info["failure"] = attempt_failure(info["out"].parent / "log")
             if a.history and rank is not None:
                 record_open(info, history, wd / "history.json")
             if sh is not None:
