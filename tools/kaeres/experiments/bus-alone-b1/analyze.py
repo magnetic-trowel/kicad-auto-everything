@@ -110,7 +110,7 @@ def main():
     md += ["## By stratum", "", "| stratum | boards | buses | lanes | lanes open control | lanes open alone | of control's open lanes, also open alone (95% CI) | "
            "boards with opens that fail alone | buses fails alone / contention / budget / fine |", "|---|---|---|---|---|---|---|---|---|"]
     for st in ["all"] + STRATA:
-        ids = None if st == "all" else set(Path(suites, f"{st}.n100.txt").read_text().split())
+        ids = None if st == "all" else set(Path(suites, f"{st}.txt").read_text().split())   # full suite: only the boards run count
         rs = [r for r in rows if ids is None or r["board"] in ids]
         if not rs:
             continue
