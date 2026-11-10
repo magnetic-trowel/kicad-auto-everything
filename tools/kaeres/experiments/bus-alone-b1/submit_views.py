@@ -20,9 +20,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("exp"), ap.add_argument("work"), ap.add_argument("--chunk", type=int, default=12)
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--alone-method", default="d0dd04f102a8", help="method id of the bus-alone arm")
     ap.add_argument("--early", action="store_true", help="also view control and human runs of boards whose bus-alone run is not done")
     a = ap.parse_args()
     work = Path(a.work)
+    ARMS[a.alone_method] = "alone"
     boards = (STORE / "experiments" / a.exp / "boards.txt").read_text().split()
     rows = []
     for bid in boards:
