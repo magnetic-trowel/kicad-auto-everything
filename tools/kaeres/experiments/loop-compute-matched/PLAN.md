@@ -24,3 +24,10 @@ Seed 0, k = 1, interleaved in the kaeq timed class.
   - Anything else is undecided and triggers the next extension batch. After the corpus pool is used up, the verdict is reported as undecided.
 - **Compute match:** the two arms' total CPU must be within a factor of 1.25. If not, the comparison is not compute-matched: report it, and rerun the cheaper arm with its timeout scaled to match before calling a winner.
 - **Secondary, reported:** cp1 (clean), completion, DRC errors total and per type, CPU per board, restart attempts used, loop windows and kept, and physics on boards both arms route fully, above the J21 floor, when there are at least 20 such boards.
+
+## Addendum, before the full submission (2026-11-10, after a 2-board smoke)
+The smoke ran two boards of the first batch (circuitmonkey class-d amp, tinkerforge motion detector), which stay in the batch. The plumbing works: both arms finished within the timeout, KiCad scored them, the joint report holds the window deadline, and the wrapper ran 12 and 26 attempts one at a time.
+The smoke showed a design fact that the compute rule above did not foresee. The joint loop stops when it has no window left (248 s on one board), while the wrapper spends its whole allowance looking for a clean board (2,592 s). So actual CPU cannot be matched by scaling a timeout. The rule changes before any decision data:
+- **Compute is matched by allowance.** Both arms get the same timeout, each may stop early, and the CPU each actually used is reported per board and in total.
+- The opens rule decides at equal allowance. The verdict states the CPU ratio: a W win at lower CPU is a win at lower compute; an R win at higher CPU is a win at equal allowance, not at equal CPU.
+- The rule about rerunning the cheaper arm is withdrawn.
