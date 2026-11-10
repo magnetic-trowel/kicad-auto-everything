@@ -1,0 +1,2 @@
+olimex-flash-e-flash-e-rev-c
+wren6991-snowflake-fpga-fpga-hat

@@ -230,3 +230,39 @@ def test_a_depopulated_interior_is_no_proof(tmp_path):
     assert c and c["proof"] is False and "not a proof" in c["summary"]
     sp, info, pkg = _grid_space(tmp_path / "full", 1.0, 0.4)
     assert escape.certificate(sp, pkg, info, log=lambda m: None)["proof"] is True
+
+
+def test_bus_lanes_leave_on_their_side_and_in_the_far_end_order(tmp_path):
+    """escape.plan_grid(order=): a bus whose far end is on the left (W) prefers the W side, its
+    lanes split into order chains, one layer each (_bus_layers): more lanes reach the W edge
+    in the far end's order than without the order, and no escape is lost."""
+    from kae.route.bus_escape import frame
+    sp, info = _space(tmp_path)
+    (pkg,) = [p for p in escape.find_packages(sp) if p["kind"] == "grid"]
+    # 12 lanes in columns 2-3, rows 1-6; far pins in the order 1 4 2 5 3 6 down the rows: two chains
+    rank = [1, 4, 2, 5, 3, 6]
+    order = {f"S{r}{c}": dict(bus=0, far=(104.0, 115.0 + 0.3 * (c - 2) + 2.0 * rank[r - 1]))
+             for r in range(1, 7) for c in (2, 3)}
+    base, bctx, bpaths, _pv = escape.plan_grid(sp, pkg, info, {})
+    plan, ctx, paths, _pv = escape.plan_grid(sp, pkg, info, {}, order=order)
+    b = plan["bus"]
+    assert b["lanes"] == 12 and b["planned"] == 12 and b["chains"] == 2 and b["on_chain_layer"] >= 10
+    assert plan["planned"] >= base["planned"]
+    # the same lanes planned without the order: how many reach the W edge in order
+    bctx["bus_side"] = {k: "W" for k in ctx["bus_of"]}
+    bctx["bus_of"] = {k: (0, frame(pkg, order[bctx["balls"][k][0].net]["far"])) for k in bctx["sig"]
+                      if bctx["balls"][k][0].net in order}
+    per = {}
+    for k, q in bpaths.items():
+        per.setdefault(q["layer"], ([], {}))[1][k] = (q["side"], q["nodes"])
+    g0 = escape._bus_groups(bctx, per)
+    in0 = sum(len(g) for g in g0.values()) - len(escape._out_of_order(g0))
+    assert b["in_order"] > in0
+
+
+def test_lis_keep():
+    from kae.route.bus_escape import lis_keep
+    assert lis_keep([]) == []
+    s = [3, 1, 2, 5, 4, 6]
+    k = lis_keep(s)
+    assert len(k) == 4 and all(s[a] <= s[b] for a, b in zip(k, k[1:]))

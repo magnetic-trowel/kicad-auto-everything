@@ -48,8 +48,12 @@ gap between two empty sites at least what crosses a pitch with nothing at its en
 of empty sites of any length are over-estimated (_caps `sound`). Pad rings (QFN/QFP rows, ring_certificate): the
 pads a track of the board's minimum width cannot leave between its neighbours.
 
-Buses: `plan_grid(..., order=None)` takes no bus order yet; the interface for it is a list
-of net lists whose escapes should keep their order on one side.
+Buses (opts escape_bus, off by default): `plan_grid(..., order=)` takes each bus lane's net and
+the position of its pin at the bus's other end (kae.route.bus_escape.orders, the bare-board
+detector). Its lanes prefer the side facing that end, and are split into the fewest chains
+that keep that end's order (the permutation's LDS), one layer per chain (_bus_layers, a cost,
+not a rule), so that the planned escapes end just outside the package as ordered ports per
+layer (the compress line). The plan reports how many lanes reach the edge in order.
 
 `run(sp, info, opts)` -> {packages (with per-ball escapes: layer, side, via, exit, laid),
 blocked (kae.route.blocked's format: cause "rule", summary), laid, wanted}.
@@ -75,6 +79,8 @@ LAYER_COST = 100.0             # per layer away from the ball layer (more than a
                                # escape on the surface, as on the human boards)
 ESCAPE_GAIN = 1000.0           # objective value of one escaped signal ball
 PLANE_GAIN = 500.0             # of one plane ball's dog-bone
+BUS_LAYER_COST = 250.0         # a bus lane on another layer than its order chain's (bus order): more than
+                               # two layers down, less than an escape
 PAD_COST = 150.0               # a via in the ball's pad (legal in KiCad; filled and capped at the fab):
                                # only where no dog-bone does
 EDGE_COST = 1.0                # per tile or cell crossed
@@ -661,18 +667,23 @@ def _stage1(sp, ctx, site_ok, planes=True, pads=False, per_net=False):
     y = {t: M.var(0.0, 1) for t in _sites(ctx)}
     opt, plane = {}, {}
     src = {l: {} for l in layers}
+    pref = ctx.get("bus_layer") or {}
+
+    def off(k, l):
+        """A bus lane's cost of a layer other than its chain's (bus order, plan_grid)."""
+        return BUS_LAYER_COST if k in pref and pref[k] != l else 0.0
     for k in ctx["sig"]:
         P = (2 * k[0], 2 * k[1])
-        v = opt[(k, B, None)] = M.var(ESCAPE_GAIN, 1)
+        v = opt[(k, B, None)] = M.var(ESCAPE_GAIN - off(k, B), 1)
         src[B].setdefault(("*", ("ball", P)), []).append((v, 1))
         for t in _neighbours_diag(k):
             if site_ok.get((k, t)):
                 for li, l in enumerate(layers[1:], 1):
-                    v = opt[(k, l, t)] = M.var(ESCAPE_GAIN - LAYER_COST * li, 1)
+                    v = opt[(k, l, t)] = M.var(ESCAPE_GAIN - LAYER_COST * li - off(k, l), 1)
                     src[l].setdefault(("*", ("site", t)), []).append((v, 1))
         if pads and site_ok.get((k, "pad")):
             for li, l in enumerate(layers[1:], 1):
-                v = opt[(k, l, ("pad", P))] = M.var(ESCAPE_GAIN - LAYER_COST * li - PAD_COST, 1)
+                v = opt[(k, l, ("pad", P))] = M.var(ESCAPE_GAIN - LAYER_COST * li - PAD_COST - off(k, l), 1)
                 src[l].setdefault(("*", ("pad", P)), []).append((v, 1))
     for k in ctx["pln"] if planes else ():
         for t in _neighbours_diag(k):
@@ -722,15 +733,19 @@ def _stage1(sp, ctx, site_ok, planes=True, pads=False, per_net=False):
 def _stage2(sp, ctx, l, assigned, taken, time_limit, single=False):
     """One layer, vias fixed: each assigned ball leaves by one of its sides (best first), or
     with `single` by any side (one commodity: a network flow, integral as an LP).
-    `assigned`: [(ball, site or None)] -> {ball: (side, node list)}."""
+    `assigned`: [(ball, site or None)] -> {ball: (side, node list)}. A bus lane's ball
+    (ctx["bus_side"]) puts its bus's side first."""
     B = ctx["B"]
     M = _Model()
     sides_of, src, zs = {}, {}, {}
     nx, ny = ctx["nx"], ctx["ny"]
+    pref = ctx.get("bus_side") or {}
     for k, t in assigned:
         pd = ctx["balls"][k][0]
         u, w = ctx["pkg"]["umin"] + k[0] * ctx["p"], ctx["pkg"]["wmin"] + k[1] * ctx["p"]
         order = _sides_toward(sp, ctx["pkg"], pd.net, u, w)
+        if k in pref:
+            order = [pref[k]] + [s for s in order if s != pref[k]]
         own = min((("W", k[0]), ("E", nx - 1 - k[0]), ("S", k[1]), ("N", ny - 1 - k[1])), key=lambda a: a[1])[0]
         ss = ["*"] if single else list(dict.fromkeys(order[:PLAN_SIDES] + [own]))
         sides_of[k] = ss
@@ -781,9 +796,21 @@ def plan_grid(sp, pkg, info, opts=None, deadline=None, order=None):
     Stage 1: the LP of all layers (which ball goes down, through which site); its options
     rounded greedily (sites exclusive); stage 2: each layer's integer flow with the vias
     fixed and a commodity per side, so that escapes leave towards their nets' other ends.
-    `order`: bus net lists (not used yet)."""
+    `order` ({net: dict(bus, far)}, kae.route.bus_escape.orders for this package): the
+    lanes of each bus prefer the side facing the bus's other end and the layer of their order
+    chain (_bus_layers); plan["bus"] counts the lanes planned and those in order."""
     t0 = time.monotonic()
     ctx = _setup(sp, pkg, info, opts)
+    if order:
+        from .bus_escape import bus_side, frame
+        lanes = {k: order[ctx["balls"][k][0].net] for k in ctx["sig"] if ctx["balls"][k][0].net in order}
+        fars = {}
+        for k, o in lanes.items():
+            fars.setdefault(o["bus"], []).append(o["far"])
+        side = {b: bus_side(pkg, f) for b, f in fars.items()}
+        ctx["bus_side"] = {k: side[o["bus"]] for k, o in lanes.items()}
+        ctx["bus_of"] = {k: (o["bus"], frame(pkg, o["far"])) for k, o in lanes.items()}
+        ctx["bus_layer"] = _bus_layers(ctx, side)
     ok = _site_ok(sp, ctx)
     M, opt, plane, _ = _stage1(sp, ctx, ok, pads=bool((opts or {}).get("escape_via_in_pad")))
     obj, x, _ = M.solve(integer=False)
@@ -870,6 +897,15 @@ def plan_grid(sp, pkg, info, opts=None, deadline=None, order=None):
         for k, t in add:
             if t is not None and k not in got:
                 taken.discard(_key(t))
+    if ctx.get("bus_of"):
+        groups = _bus_groups(ctx, per_layer)
+        planned = sum(len(g) for g in groups.values())
+        plan["bus"] = dict(lanes=len(ctx["bus_of"]), buses=len(side), on_side=planned,
+                           planned=sum(1 for _l, (_a, got) in per_layer.items() for k in got if k in ctx["bus_of"]),
+                           in_order=planned - len(_out_of_order(groups)), groups=len(groups),
+                           chains=len(set(ctx["bus_layer"].values())),
+                           on_chain_layer=sum(1 for l, (_a, got) in per_layer.items() for k in got
+                                              if ctx["bus_layer"].get(k) == l))
     for l, (assigned, got) in per_layer.items():
         for k, (s, nodes) in got.items():
             paths[k] = dict(layer=l, side=s, site=dict(assigned)[k], nodes=nodes)
@@ -878,6 +914,76 @@ def plan_grid(sp, pkg, info, opts=None, deadline=None, order=None):
     plan["by_layer"] = {l: sum(1 for q in paths.values() if q["layer"] == l) for l in ctx["layers"]}
     plan["seconds"] = round(time.monotonic() - t0, 1)
     return plan, ctx, paths, plane_vias
+
+
+def _exit_along(nodes, side):
+    """Where a planned escape crosses the array's edge: its last gap node's coordinate along
+    the side (doubled package index), or None."""
+    g = next((nd[1] for nd in reversed(nodes) if nd[0] == "g"), None)
+    if g is None:
+        g = nodes[0][1]
+    return g[1] if side in ("W", "E") else g[0]
+
+
+def _bus_groups(ctx, per_layer):
+    """{(bus, layer, side): [(along, far coordinate, ball)]} of the planned bus lanes that
+    leave by their bus's side."""
+    groups = {}
+    for l, (_a, got) in per_layer.items():
+        for k, (s, nodes) in got.items():
+            if k not in ctx["bus_of"] or s not in SIDES or s != ctx["bus_side"].get(k, s):
+                continue          # only lanes on their bus's side count as a ribbon
+            b, (fu, fw) = ctx["bus_of"][k]
+            groups.setdefault((b, l, s), []).append((_exit_along(nodes, s), fw if s in ("W", "E") else fu, k))
+    return groups
+
+
+def _out_of_order(groups):
+    """Balls whose exits break their group's order (outside a longest ordered subsequence)."""
+    from .bus_escape import lis_keep
+    out = set()
+    for g in groups.values():
+        g.sort()
+        keep = set(lis_keep([f for _a, f, _k in g]))
+        out |= {k for i, (_a, _f, k) in enumerate(g) if i not in keep}
+    return out
+
+
+def _bus_layers(ctx, side):
+    """{ball: layer} for each bus lane: the bus's lanes, taken in the order their balls lie
+    along the bus's side, are split greedily into the fewest chains whose far pins keep that
+    order (their number is the permutation's longest decreasing run, LDS); each chain gets one
+    layer, the chain with the outermost balls the ball layer, so that on each layer the
+    lanes reach the package edge in the far end's order (an uncrossed escape keeps the order
+    of its balls along the side). More chains than layers wrap round."""
+    import bisect
+    out = {}
+    layers = [l for l in ctx["layers"] if not l.startswith("extra")]
+    rings = {k: ctx["balls"][k][1] for k in ctx["bus_of"]}
+    for b, s in side.items():
+        ks = [k for k, (bb, _f) in ctx["bus_of"].items() if bb == b]
+        along = (lambda k: k[1]) if s in ("W", "E") else (lambda k: k[0])
+        far = (lambda k: ctx["bus_of"][k][1][1]) if s in ("W", "E") else (lambda k: ctx["bus_of"][k][1][0])
+        ks.sort(key=lambda k: (along(k), far(k)))
+        tops, chains = [], []            # piles: last far value of each chain (kept sorted), members
+        for k in ks:
+            x = far(k)
+            i = bisect.bisect_right(tops, x) - 1     # the chain ending at the largest value <= x
+            if i < 0:
+                tops.insert(0, x)
+                chains.insert(0, [k])
+            else:
+                tops[i] = x
+                chains[i].append(k)
+                # keep tops sorted: a chain's new end can pass the next chain's
+                order = sorted(range(len(tops)), key=lambda j: tops[j])
+                tops = [tops[j] for j in order]
+                chains = [chains[j] for j in order]
+        chains.sort(key=lambda c: sum(rings[k] for k in c) / len(c))      # outermost first
+        for ci, c in enumerate(chains):
+            for k in c:
+                out[k] = layers[ci % len(layers)]
+    return out
 
 
 def bound(sp, pkg, info, opts=None, **kw):
@@ -1526,6 +1632,15 @@ def run(sp, info, opts=None, log=print, deadline=None):
     opts = opts or {}
     out = dict(packages=[], blocked=[], laid=0, wanted=0)
     lay = opts.get("escape_lay", True) not in (False, "dog_bones")
+    bus = {}
+    if opts.get("escape_bus") and opts.get("_board"):
+        # bus lanes leave as ordered ribbons (kae.route.bus_escape): side and order from the bare-board detector
+        try:
+            from .bus_escape import orders
+            bus = orders(opts["_board"], log=log)
+        except Exception as e:  # noqa: BLE001 - no bus order: the plan as without it
+            log(f"escape plan: bus order failed: {type(e).__name__}: {e}")
+        out["bus"] = dict(parts=len(bus), lanes=sum(len(v) for v in bus.values()))
     for pkg in find_packages(sp):
         try:
             if pkg["kind"] == "ring":
@@ -1553,7 +1668,8 @@ def run(sp, info, opts=None, log=print, deadline=None):
                 ctx["flex"] = flex
                 plan = dict(plan, cached=True)
             else:
-                plan, ctx, paths, plane_vias = plan_grid(sp, pkg, info, opts, deadline=deadline)
+                plan, ctx, paths, plane_vias = plan_grid(sp, pkg, info, opts, deadline=deadline,
+                                                         order=bus.get(pkg["ref"]) or None)
                 try:
                     cert = certificate(sp, pkg, info, opts, log=log, deadline=deadline)
                 except Exception as e:  # noqa: BLE001 - a failed proof must not throw away the plan
