@@ -32,9 +32,10 @@ add "kae bridge be-buswall 900 $S7" "ordered bus escapes kept as walls (rest of 
 HS="--harness $SHA --kae $SHA"
 m() { echo "--method \"kae bridge $1 $S7\""; }
 SFX=""
+EXP=${EXP:-bus-escape-order}
 BOARDS=@$D/boards.txt
 if [ "${1:-}" = smoke ]; then SFX="-smoke"; BOARDS=@$D/smoke.txt; fi
-eval $K exp create bus-escape-order$SFX --boards $BOARDS --attempts 1 $HS \
+eval $K exp create $EXP$SFX --boards $BOARDS --attempts 1 $HS \
   --description "\"wave 2 bus escape: ordered bus escapes vs plan vs bridge, 900 s; PLAN.md in $D\"" \
   $(m "be-control 900") $(m "be-plan 900") $(m "be-bus 900") $(m "be-buswall 900") \
   $(m "be-control 300") $(m "be-plan 300") $(m "be-bus 300")

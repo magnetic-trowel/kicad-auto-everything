@@ -85,5 +85,6 @@ About 0.3 CPU-h per board-arm at 900 s, 0.13 at 300 s: about 170 CPU-h; one job 
   the rest of the plan soft, walls unlocked for the repair rounds (`unlock_imported`); in the same check 100% of bus escape copper
   survived, with 63 open against 32 for the soft arm (one board, one run: not a result). buswall vs bus reads whether keeping
   the order is worth the walls. Escape copper survival per arm is reported (secondary). Methods re-registered at the new commit;
-  the smoke at c046276 is not reused. kaeres splits each board into jobs of three or four arms in method order; all arms of a
+  the smoke at c046276 is not reused. The full run is experiment `bus-escape-order-2` (`bus-escape-order` was created at
+  c046276 and never submitted). kaeres splits each board into jobs of three or four arms in method order; all arms of a
   board still run within about an hour of each other.
