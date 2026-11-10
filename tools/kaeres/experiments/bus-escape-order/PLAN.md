@@ -63,3 +63,12 @@ six in turn).
 
 ## Expected cost (information)
 About 0.3 CPU-h per board-arm at 900 s, 0.13 at 300 s: about 170 CPU-h; one job per board of about 70 min wall.
+
+## Amendments (before any result)
+- 2026-11-10: methods at c046276; experiments `bus-escape-order-smoke` (`smoke.txt`, 2 boards, queued) and `bus-escape-order`
+  (created, submitted only after the smoke is read end to end). kaeres splits each board into two jobs of three arms (900 s,
+  then 300 s); the arms of one budget still run side by side.
+- Numba cache `numba-kae-dp-c046276` warmed by one 200 s bus-arm route of a KiCad-10 copy of the olimex smoke board with its
+  copper stripped (not a task run, not scored). It showed the risk to read first: on its 0.5 mm-pitch eMMC the planner planned
+  9 escapes and laid 1 (planned paths fail the exact check at that pitch). The laid share per arm (`report.escape`) is read
+  before any outcome.
