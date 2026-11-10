@@ -66,3 +66,8 @@ One thing to read for in the results: with `revert_illegal` on, a window can sti
 The first full submission (commit b086071) was cancelled before any job started: the tight-part scan showed the anchoring also caught body-only parts such as logos. Anchoring now takes only parts with a courtyard, and arms, boards and rules are unchanged. Methods are at commit f2f4151 and the experiments are named `loop-window-bench-v2` and `loop-j3-unfixable-v2`; the empty records under the old names hold no runs. The smoke ran at b086071, which differs only in that filter and a comment.
 
 Note (2026-11-09): `loop-window-bench-v2` and `loop-j3-unfixable-v2` stay at f2f4151, where anchoring requires a courtyard. A body-only part with connected pads, such as a module drawn without a courtyard, is not anchored in any of their arms, as on main. Anchoring is not what these arms test, and each compares against its own control.
+
+## Addendum 3 (2026-11-10, after the 40-board results; written before any extension run)
+Only J14 was undecided at 40 boards. Per the extension rule, `ctl` and `j14` (the same method ids) run on `boards-extension-j14.txt`: the 31 extension boards minus the 2 smoke boards, 29 boards. This is experiment `loop-j14-ext`.
+Decision on all 69 boards pooled (40 + 29), with the plan's opens rule: mean `d` < 0, sign-flip p < 0.05, and total opens at least 3 % lower, with errors not worse beyond noise. Anything else is reported as undecided.
+The other arms do not run on the extension: they were decided at 40 boards (J2, J5, J3, J4 failed; w2 against natural was better).
