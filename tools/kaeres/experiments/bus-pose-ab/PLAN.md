@@ -96,3 +96,17 @@ Rotation angles are the four right angles only.
 
 ## Cost
 At most 63 CPU-h per arm-seed if every board used its whole budget; expected 400-800 CPU-h for the 12 arm-seeds. Information, not a cap.
+
+## Addendum, before the full submission (2026-11-10; smoke read, no result of the 140 boards seen)
+- Smoke `bus-pose-ab-smoke` (3 boards outside the 140, k = 1): all 12 runs scored by KiCad (DRC evaluator afa09d34bc94), `valid` in every arm;
+  placement errors identical across arms on each board (board-inherent: fixed parts' edge clearance, malformed courtyards, outline), so no turn added one.
+  The knob took effect only where set: control logs no pass; final-planar turned 0, 0 and 4 parts (planar lines 0.475 -> 0.650 on the nixie board),
+  final-length 1, 0, 1; seed-final turned 2, 0, 4 at the seed and held 3, 1, 6 parts. The physics veto refused 3, 0, 6 candidate turns; grid collisions 7, 0, 0-4; no exact
+  finding and no joint revert.
+- Clarification: in seed-final the final pass cannot turn a part whose rotation the seed held (`Part.rot_hold`), so it acts only on bus ends the seed did not hold.
+  The arm is "seed choice, held"; its final pass is a no-op on held parts. Code unchanged; this text replaces "then the final pass" in the arm table.
+- Legality of the placement study's turns (`tools/research/bus_pose/legal_summary.py`, 25 merit boards, the study's 263 moved bus-runs of kae staged): the
+  best-planarity pair needs a turn on 170; 88 are legal (grid and exact check; none needed a nudge over 1 mm; 82 collide on the grid), and of those 64 worsen the place terms,
+  so 24 pass the veto. Fully planar: now 37%, unconstrained best 50%, legal 43% (best legal pair of any rank 47%), legal and physics-safe 40%. Human placements: 43% -> 45%.
+- Added as report-only (not in the decision rule), after the bus-alone result that bus completion is mostly escape and pin access: escape facing, the share of a bus's
+  pads on the half of each end part that faces the other end (all ends, and ends with 64+ pads), per arm and paired.

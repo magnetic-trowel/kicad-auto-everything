@@ -86,11 +86,16 @@ def report(exp, e, boards, out_dir, methods, control):
     D['planar'] = D.lis >= 0.999
     D['vias_per_line'] = D.vias / D.n
     D['open_share'] = D.lines_open / D.n
+    # escape facing: share of the bus's pads on the half of each end part that faces the other end
+    # (busmetrics face_a/face_b); 'grid' = ends with 64+ connected pads (ball grids and big QFPs)
+    D['face'] = (D.face_a + D.face_b) / 2
+    D['face_big'] = np.where(D.a_pads >= 64, D.face_a, np.nan)
+    D['face_big'] = np.where(D.b_pads >= 64, np.where(np.isnan(D.face_big), D.face_b, (D.face_big + D.face_b) / 2), D.face_big)
     per = D.groupby(['arm', 'board', 'attempt']).agg(
         buses=('n', 'size'), lines=('n', 'sum'), lines_open=('lines_open', 'sum'), vias=('vias', 'sum'), L=('L', 'sum'),
         lds=('lds', 'mean'), lis=('lis', 'mean'), planar=('planar', 'mean'), foreign_xing=('foreign_xing', 'sum'),
         track_len=('track_len', 'sum'), unconnected=('unconnected', 'first'), errors=('errors', 'first'), legal=('legal', 'first'),
-        completion=('completion', 'first')).reset_index()
+        completion=('completion', 'first'), face=('face', 'mean'), face_big=('face_big', 'mean')).reset_index()
     per['vias_per_line'] = per.vias / per.lines
     per['foreign_per_line'] = per.foreign_xing / per.lines
     per['open_rate'] = per.lines_open / per.lines
@@ -101,7 +106,7 @@ def report(exp, e, boards, out_dir, methods, control):
     summ = per[per.arm.isin(arms) | per.arm.str.contains('human')].groupby('arm').agg(
         n=('board', 'nunique'), lines=('lines', 'sum'), lines_open=('lines_open', 'sum'), open_rate=('open_rate', 'mean'),
         vias_per_line=('vias_per_line', 'mean'), lds=('lds', 'mean'), lis=('lis', 'mean'), planar=('planar', 'mean'),
-        foreign_per_line=('foreign_per_line', 'mean'), L=('L', 'median'))
+        foreign_per_line=('foreign_per_line', 'mean'), L=('L', 'median'), face=('face', 'mean'), face_big=('face_big', 'mean'))
     print(summ.round(3).to_string())
     rng = np.random.default_rng(1)
 
@@ -127,6 +132,7 @@ def report(exp, e, boards, out_dir, methods, control):
         print('  log(vias per bus line + 0.1):', test('vias_per_line', arm, lambda x: np.log(x + 0.1)))
         print('  log1p(foreign crossings per line):', test('foreign_per_line', arm, np.log1p))
         print('  lds:', test('lds', arm, lambda x: x), ' planar share:', test('planar', arm, lambda x: x), 'L (log):', test('L', arm, np.log))
+        print('  escape facing (all ends):', test('face', arm, lambda x: x), ' (ends with 64+ pads):', test('face_big', arm, lambda x: x))
 
 
 if __name__ == '__main__':
