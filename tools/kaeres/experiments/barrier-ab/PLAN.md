@@ -27,8 +27,8 @@ Report keys `barrier_split` (regions, areas, parts per region, assignment, cross
 ## Arms (joint-fixed, staged: `kae.joint.cli --max-iters 0 --no-modules`, restart `--resume 0.5 --final`, 900 s x sqrt(fp/40); interleaved per board)
 | Experiment | Boards | Arms |
 |---|---|---|
-| `barrier-split-ab` | `split.boards.txt`: 100, one per family, merit first, at most 1,000 pads, from the 332-board scan of usable_route_test boards | C control, S split |
-| `barrier-weight-ab` | `weight.boards.txt`: 80, one region with outline holes of at least 3% of the area or at least one all-copper keepout | C control, W weight 3 |
+| `barrier-split-ab2` | `split.boards.txt`: 100, one per family, merit first, at most 1,000 pads, from the 332-board scan of usable_route_test boards | C control, S split |
+| `barrier-weight-ab2` | `weight.boards.txt`: 80, one region with outline holes of at least 3% of the area or at least one all-copper keepout | C control, W weight 3 |
 
 Board facts and the `split`-scan are from `select_boards.py` on the barrier scan (`kae.place.barriers.regions`). Boards a task cannot be prepared for drop out of all arms.
 Never on plain outlines (the code path does not run; no regression there is possible by construction).
