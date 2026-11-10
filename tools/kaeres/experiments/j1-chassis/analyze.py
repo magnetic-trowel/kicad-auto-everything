@@ -287,6 +287,27 @@ def describe(data, batches, pairs):
     return lines + [""]
 
 
+def exploratory(data, batches, pairs, alpha):
+    """Addendum 4, exploratory only: X1 pools every unit into one mixture; X2 has one unit per board
+    (the mean of its x over the batches where it was both-routed). Never changes a classification."""
+    lines = ["### Exploratory physics (Addendum 4; not confirmatory, does not change any classification)\n",
+             "| pair | statistic | units | median ratio | ln E at θ=1 | J21 floor | would read as |", "|---|---|---|---|---|---|---|"]
+    for arm, ctrl in pairs:
+        per_board = defaultdict(list)
+        for bi, (_, boards) in enumerate(batches):
+            for b in boards:
+                a, c = data.get((arm, b, bi)), data.get((ctrl, b, bi))
+                if both_routed(a, c):
+                    per_board[b].append(math.log(a["phys"] / c["phys"]))
+        x1 = [x for v in per_board.values() for x in v]
+        x2 = [st.mean(v) for v in per_board.values()]
+        for name, xs in (("X1 pooled units", x1), ("X2 board means", x2)):
+            r = physics_test([xs], alpha)
+            cls = "different" if r["different"] and not r["equivalent"] else "equivalent" if r["equivalent"] else "undecided"
+            lines.append(f"| {arm} vs {ctrl} | {name} | {r['n']} ({r['n_nonidentical']}) | {fmt(r['median'])} | {r['log_e_at_1']:.2f} | {r['floor']} | {cls} (exploratory) |")
+    return lines + [""]
+
+
 def selftest():
     r = random.Random(0)
     # the e-value of 10 heads in 10 fair flips, closed form
@@ -365,6 +386,7 @@ def main():
     lines += type_table(data, list(arms), all_b) + loop_table(data, list(arms), all_b) + tests
     desc_pairs = pairs + [p for p in LADDER if p[0] in arms and p[1] in arms and p not in pairs]
     lines += describe(data, batches, desc_pairs)
+    lines += exploratory(data, batches, pairs, alpha)
     undecided = [f"{p[0]} vs {p[1]} {m}" for p, v in verdicts.items() for m, c in zip(("physics", "opens"), v[:2]) if c == "undecided"]
     lines.append(f"## Undecided tests: {undecided or 'none'}\n")
     text = "\n".join(lines) + "\n"
