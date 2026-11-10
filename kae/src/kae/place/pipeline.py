@@ -31,6 +31,7 @@ seconds with `workers` threads.
 """
 from __future__ import annotations
 
+import collections
 import math
 import os
 import time
@@ -50,6 +51,7 @@ from .stubs import make_brief, make_terms
 ROLE_KIND = {"ground": "ground", "rail": "power", "power": "power"}
 ANCHOR_AREA_SHARE = 0.05   # parts over this share of the board are tested for a spot (_anchor_tight_parts)
 ANCHOR_SPOTS = 800         # ... and this many spots judged by the exact check (near edges, then spread)
+ANCHOR_KICAD_TRIES = 3     # exact-only spots (no grid-free one) KiCad's DRC judges before a part is fixed there
 FLOORPLAN_MAX_ITEMS = 40   # above this the global HPWL floorplan rarely finds a solution in time
 ROLE_WEIGHT = {"clock": 1.5, "high_speed": 1.5, "analog": 1.2, "rf": 1.5, "switch_node": 1.0}
 
@@ -594,7 +596,7 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
 
     P = build(board, fixed)
     if int(setting("anchor_tight", board_path, opts)):
-        anchored, hung = _anchor_tight_parts(P, rep, log)
+        anchored, hung = _anchor_tight_parts(P, rep, log, board_path=board_path)
         if anchored:
             # held like fixed parts from here on; every other stage works around them
             from . import edge_check
@@ -1030,7 +1032,7 @@ def _zone_summary(r):
     return {k: v for k, v in r.items() if k != "by_net"}
 
 
-def _anchor_tight_parts(P, rep, log):
+def _anchor_tight_parts(P, rep, log, board_path=None):
     """Big parts with no spot the grid calls free of the fixed geometry alone (outline, locked
     parts, rule areas; every other movable part aside): the annealer and the legalizer can
     never make them legal, on 3 boards whose human layout is clean, a Pico module, an ESP32
@@ -1068,11 +1070,29 @@ def _anchor_tight_parts(P, rep, log):
         if not cands:
             S0, pad0 = exactmod._tables(P, st, skip, obstacles=False)
             cands = exactmod._candidates(P, st, i, S0, pad0, ks, 0.0, ANCHOR_SPOTS, edge=True)
-        spot = next((c for c in cands if not E.findings_at(i, c[1], c[2], c[3], first=True)), None)
-        row = dict(ref=p.ref, overhang=bool(hung), grid_free=grid_free, tried=len(cands), anchored=spot is not None)
+        clean = (c for c in cands if not E.findings_at(i, c[1], c[2], c[3], first=True))
+        row = dict(ref=p.ref, overhang=bool(hung), grid_free=grid_free, tried=len(cands))
+        if grid_free:
+            spot = next(clean, None)
+        else:
+            # only the exact check vouches for these spots, and it has blind spots (melexinvn: a hole
+            # clearance it passed and KiCad flagged, on a part the control legalized anyway): KiCad's
+            # DRC must agree before the part is fixed, else it keeps the overhang only
+            spot, row["kicad"] = None, []
+            for c in clean:
+                if len(row["kicad"]) >= ANCHOR_KICAD_TRIES:
+                    break
+                ok, why = _kicad_agrees(P, st, i, c, board_path)
+                row["kicad"].append(why)
+                if ok:
+                    spot = c
+                    break
+                if why.startswith("no KiCad"):
+                    break
+        row["anchored"] = spot is not None
         rows.append(row)
         if spot is None:
-            log(f"anchor: {p.ref}: no exactly clean spot in {len(cands)} tried")
+            log(f"anchor: {p.ref}: no spot to fix it at ({len(cands)} tried{', KiCad: ' + '; '.join(row['kicad']) if row.get('kicad') else ''})")
             continue
         E.set_pose(i, spot[1], spot[2], spot[3])
         poses[p.uuid] = st.pose(i)
@@ -1081,6 +1101,36 @@ def _anchor_tight_parts(P, rep, log):
         log(f"anchor: {p.ref} fixed at {poses[p.uuid][:3]} (no spot free of the fixed parts)")
     rep["anchored"] = dict(uuids=sorted(poses), parts=rows, seconds=round(time.monotonic() - t0, 2))
     return poses, [r["ref"] for r in rows if not r["anchored"]]
+
+
+def _kicad_agrees(P, st, i, spot, board_path):
+    """(ok, why): KiCad's DRC of the input board with part i alone moved to `spot` ((cost, X, Y, K)) names no
+    placement error of part i, with the fixed placement profile's checks at error severity."""
+    if not board_path:
+        return False, "no KiCad: no board path"
+    import tempfile
+    from pathlib import Path
+
+    from kae.route import drc as kdrc
+
+    from .legalize import kicad_violations, violation_parts
+    from .problem import FIXED_ERROR_CHECKS
+    from .writer import write
+    saved = (st.X[i], st.Y[i], st.K[i])
+    st.X[i], st.Y[i], st.K[i] = spot[1], spot[2], spot[3]
+    try:
+        kdrc.kicad_cli()
+        d = Path(tempfile.mkdtemp(prefix="kae-anchor-"))
+        write(board_path, d / "moved.kicad_pcb", {P.parts[i].uuid: st.pose(i)})
+        staged = kdrc.stage_board(d / "moved.kicad_pcb", board_path, d / "drc")
+        kdrc.promote_severities(staged, list(FIXED_ERROR_CHECKS))
+        bad = collections.Counter(v["type"] for v in kicad_violations(kdrc.run(staged, staged.parent / "drc.json", timeout=300))
+                                  if i in violation_parts(P, st, v))
+        return (not bad), (", ".join(f"{k} {n}" for k, n in sorted(bad.items())) or "clean")
+    except Exception as e:      # noqa: BLE001 - no verdict: the part keeps the overhang only
+        return False, f"no KiCad: {type(e).__name__}: {str(e)[:80]}"
+    finally:
+        st.X[i], st.Y[i], st.K[i] = saved
 
 
 def _pin_edge_connectors(board, brief, held, fixed, angle_step, seed, rep, log):

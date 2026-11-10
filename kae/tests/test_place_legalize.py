@@ -796,3 +796,33 @@ def test_anchor_fixes_only_parts_with_no_spot(monkeypatch):
     poses, hung = pl._anchor_tight_parts(P, rep, lambda m: None)
     assert list(poses) == [P.parts[tight].uuid] and hung == []
     assert rep["anchored"]["parts"][0]["anchored"] is True
+
+
+def test_anchor_at_an_exact_only_spot_needs_kicad(monkeypatch):
+    """No grid-free spot: the exact check's spots are fixed only when KiCad's DRC agrees; otherwise the part keeps
+    the overhang and stays with the normal stages."""
+    from kae.place import exact as ex
+    from kae.place import pipeline as pl
+    monkeypatch.setattr(pl, "ANCHOR_AREA_SHARE", 0.0)
+    real = ex._candidates
+    for verdict, anchored in (((False, "hole_clearance 2"), False), ((True, "clean"), True)):
+        P = Problem.build(load(FIXTURE))
+        tight = max((q for q in P.mov if P.parts[q].has_courtyard), key=lambda q: P.parts[q].area)
+        calls = {"n": 0}
+
+        def fake(P_, st, i, S, pad, ks, w_rot, limit, edge=False):
+            if i == tight:
+                calls["n"] += 1
+                if calls["n"] <= 2:            # no spot at all, and none grid-free with the overhang
+                    return []
+            return real(P_, st, i, S, pad, ks, w_rot, limit, edge=edge)
+
+        monkeypatch.setattr(ex, "_candidates", fake)
+        asked = []
+        monkeypatch.setattr(pl, "_kicad_agrees", lambda *a: (asked.append(a[3]), verdict)[1])
+        rep = {}
+        poses, hung = pl._anchor_tight_parts(P, rep, lambda m: None, board_path="x.kicad_pcb")
+        row = rep["anchored"]["parts"][0]
+        assert row["grid_free"] is False and asked and row["anchored"] is anchored
+        assert (P.parts[tight].uuid in poses) is anchored and (hung == []) is anchored
+        assert len(asked) == (1 if anchored else pl.ANCHOR_KICAD_TRIES)
