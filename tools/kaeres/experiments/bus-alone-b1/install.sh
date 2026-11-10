@@ -6,7 +6,7 @@
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 SRC=$HOME/.cache/kaebench/kae-freerouting-fork-06d2686
-DEST=$HOME/.cache/kaebench/kae-freerouting-fork-06d2686-busalone-v2   # v1 failed: board id read from the wrong directory
+DEST=$HOME/.cache/kaebench/kae-freerouting-fork-06d2686-busalone-${VER:-v2}   # v1 failed: board id read from the wrong directory
 BUSNETS=$1
 rm -rf "$DEST.tmp"
 cp -a "$SRC" "$DEST.tmp"

@@ -126,6 +126,19 @@ def main():
         fa = [r for r in rs if r["cls"] == "fails_alone"]
         md.append(f"| {k} | {n} | {sum(r['open_full'] for r in rs)} | {sum(r['open_alone'] for r in rs)} | {pct(alone_share(rs))} | "
                   f"{sum(r['fine_end'] for r in fa)} | {sum(1 - r['fine_end'] for r in fa)} |")
+    md += ["", "## Sensitivity: did the bus-alone run itself finish? (reported, not pre-registered)", "",
+           "| subset | boards | buses | lanes open control | open alone | also open alone (95% CI) | fails alone / contention / budget / fine |",
+           "|---|---|---|---|---|---|---|"]
+    for lab, f in (("bus-alone COMPLETED", lambda r: not r["alone_partial"]),
+                   ("bus-alone and control COMPLETED", lambda r: not r["alone_partial"] and not r["ctl_partial"]),
+                   ("bus-alone TIMED_OUT", lambda r: r["alone_partial"])):
+        rs = [r for r in rows if f(r)]
+        if not rs:
+            continue
+        s, lo, hi = boot(rs, alone_share)
+        c = Counter(r["cls"] for r in rs)
+        md.append(f"| {lab} | {len({r['board'] for r in rs})} | {len(rs)} | {sum(r['open_full'] for r in rs)} | {sum(r['open_alone'] for r in rs)} | "
+                  f"{pct(s)} ({pct(lo)}-{pct(hi)}) | {c['fails_alone']} / {c['contention']} / {c['contention_or_budget']} / {c['fine']} |")
     fa = [r for r in rows if r["cls"] == "fails_alone"]
     md += ["", "## Buses that fail alone", "", f"{len(fa)} buses; whole bus open alone: {sum(1 for r in fa if r['open_alone'] == r['lanes'])}; "
            f"1-2 lanes: {sum(1 for r in fa if r['open_alone'] <= 2)}; with a BGA/grid or < 0.5 mm end: {sum(r['fine_end'] for r in fa)}; "

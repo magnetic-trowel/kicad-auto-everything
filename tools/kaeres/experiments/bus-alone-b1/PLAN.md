@@ -79,3 +79,6 @@ Bus-alone runs are mostly seconds of Freerouting plus export and DRC scoring (~6
 - 2026-11-10: rerun as experiment `bus-alone-b1-v2`, method `fr-fork 06d2686 bus-alone v2` (`d0dd04f102a8`), kaeq priority 7. Smoke through the
   kaeres job path on 3 boards (`bus-alone-b1-smoke2`): all `ok`, filter kept the listed nets, outputs re-opened, bus-only DRC views made
   and analysed end to end. Analysis runs with `EXP=bus-alone-b1-v2 followup.sh /var/tmp/eriks/bus-alone`.
+- 2026-11-10: first look done (`out/SUMMARY.md`). The CIs of `bus_width.8-15` (42-77%) and `bus_width.16-31` (32-67%) straddle the 50%
+  threshold, so the pre-registered extension runs: the rest of those two full suites (2,284 boards), experiment `bus-alone-b1-ext`,
+  method `fr-fork 06d2686 bus-alone v2 ext` (the same wrapper with the lists of these boards added; nothing else changed). One look.
