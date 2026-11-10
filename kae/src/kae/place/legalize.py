@@ -641,6 +641,19 @@ def repair_kicad(P, st, violations, time_s=30.0, workers=2, seed=0, step_mm=0.1,
 
 
 # ----------------------------------------------------------------------------- exact shapes
+ARC_ERR = 0.001   # mm: most an arc of a pad or hole may sit inside its polygon (the polygon is inscribed)
+
+
+def arc_segs(r, err=ARC_ERR):
+    """Shapely quad_segs (segments per quarter circle) that keep a radius-r arc within `err` of its
+    inscribed polygon. A fixed 8 put a 3 mm hole 0.007 mm inside its polygon, so with a 1.7 mm pad
+    two shapes measured 0.009 mm further apart than KiCad, which measures arcs exactly:
+    melexinvn's hole_clearance 0.2402 mm (rule 0.25) read 0.2491 and passed."""
+    if r <= err:
+        return 1
+    return max(8, min(64, math.ceil(math.pi / (4.0 * math.acos(1.0 - err / r)))))
+
+
 def pad_shape(p, layer=None):
     """A pad's copper as a library-frame polygon, as KiCad shapes it: circles, ovals, rounded
     rectangles from the pad's fields; trapezoids, chamfered rectangles and custom pads (anchor
@@ -661,24 +674,24 @@ def pad_shape(p, layer=None):
         geom = affinity.affine_transform(affinity.translate(outline, ox, oy), [c, s, -s, c, p.lx, p.ly])
     elif shape == "circle":
         cx, cy = lib(ox, oy)
-        geom = Point(cx, cy).buffer(max(w, h) / 2, quad_segs=8)
+        geom = Point(cx, cy).buffer(max(w, h) / 2, quad_segs=arc_segs(max(w, h) / 2))
     elif shape == "oval" and abs(w - h) > 1e-9:
         r = min(w, h) / 2
         if w > h:
             a, b = lib(ox - (w / 2 - r), oy), lib(ox + (w / 2 - r), oy)
         else:
             a, b = lib(ox, oy - (h / 2 - r)), lib(ox, oy + (h / 2 - r))
-        geom = LineString([a, b]).buffer(r, quad_segs=8)
+        geom = LineString([a, b]).buffer(r, quad_segs=arc_segs(r))
     elif shape == "oval":
         cx, cy = lib(ox, oy)
-        geom = Point(cx, cy).buffer(w / 2, quad_segs=8)
+        geom = Point(cx, cy).buffer(w / 2, quad_segs=arc_segs(w / 2))
     elif shape == "roundrect" and rratio > 0:
         # KiCad's rounded rectangle: corner radius rratio x the shorter side (as rectangles
         # the corners sat outside the copper; pingdevkit's 0402s read 0.191 mm apart, not 0.2)
         r = min(0.5, float(rratio)) * min(w, h)
         core = Polygon([(ox - w / 2 + r, oy - h / 2 + r), (ox + w / 2 - r, oy - h / 2 + r),
                         (ox + w / 2 - r, oy + h / 2 - r), (ox - w / 2 + r, oy + h / 2 - r)])
-        loc = core.buffer(r, quad_segs=8) if r > 0 else core
+        loc = core.buffer(r, quad_segs=arc_segs(r)) if r > 0 else core
         geom = Polygon([lib(u, v) for u, v in loc.exterior.coords])
     else:
         geom = Polygon([lib(ox - w / 2, oy - h / 2), lib(ox + w / 2, oy - h / 2), lib(ox + w / 2, oy + h / 2),
@@ -702,8 +715,8 @@ def hole_shape(p):
                 u0, u1, v0, v1 = 0.0, 0.0, -(h / 2 - r), (h / 2 - r)
             a = (p.lx + u0 * c + v0 * s, p.ly - u0 * s + v0 * c)
             b = (p.lx + u1 * c + v1 * s, p.ly - u1 * s + v1 * c)
-            return LineString([a, b]).buffer(r, quad_segs=8)
-    return Point(p.lx, p.ly).buffer(p.drill / 2, quad_segs=8)
+            return LineString([a, b]).buffer(r, quad_segs=arc_segs(r))
+    return Point(p.lx, p.ly).buffer(p.drill / 2, quad_segs=arc_segs(p.drill / 2))
 
 
 def _copper_sides(p, part_side):
