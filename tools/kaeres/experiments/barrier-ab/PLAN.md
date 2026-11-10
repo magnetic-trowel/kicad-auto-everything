@@ -43,3 +43,10 @@ Physics not reported: neither mechanism changes module structure; open-connectio
 - `barrier_split` becomes the default if the split arm lowers total opens by at least 5% on the split boards (paired sign test, p < 0.05 or tying at p >= 0.05 only if cp1 also rises by more than 3 pp), no regression of cp1 larger than 3 pp, no drop in `legal` larger than 3 pp, and `barrier_split` lands no region part outside its region. Otherwise it stays off with its numbers in the docs.
 - `barrier_net_weight`: default stays 1 unless W lowers both `barrier_crossings` and opens with no cp1/legal regression; a drop in crossings alone is not enough (E104: crossings alone cost no opens).
 - A/B runs on boards where the mechanism exists only. Extension: if the split arm's paired total-opens CI crosses 1 at 100 boards and cp1 is flat, run the rest of the 332-board scan.
+
+## Amendment after the smoke (2026-11-09, before any full run)
+The smoke (`barrier-smoke2`, code c3654d7) showed two faults, fixed before the full run: parts without pads (logos) were in no region and stayed
+staged off the board; and on pdp7-memory-display, whose outline parses as two 17 mm2 loops, every part was sent into one loop (1,013 DRC errors,
+about 207 parts outside, against 262 errors for the control). Now pad-less parts are assigned by area, anchored parts no region holds are obstacles
+in every region, and a split whose regions cannot hold their parts is skipped (placed whole, reported as `barrier_split.skipped`). The split board
+list is redrawn without boards the scan marks over capacity (same seed and rule otherwise). The weight list is unchanged.

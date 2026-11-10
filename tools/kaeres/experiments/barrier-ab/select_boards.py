@@ -29,7 +29,7 @@ def main():
     merit = {x.strip() for x in open(a.merit) if x.strip()}
     rows = [r for r in map(json.loads, open(a.scan)) if "err" not in r and use.get(r["board"], {}).get("usable_route_test")
             and 0 < pads.get(r["board"], 0) <= 1000]
-    split = [r for r in rows if r["n_regions"] >= 2]
+    split = [r for r in rows if r["n_regions"] >= 2 and not r.get("over")]  # an overfull region: a broken outline, the split is skipped
     weight = [r for r in rows if r["n_regions"] < 2 and (r["barriers"] > 0 or (r["holes"] > 0 and r["hole_area"] >= 0.03 * max(r["board_area"], 1.0)))]
 
     def pick(pool, n):

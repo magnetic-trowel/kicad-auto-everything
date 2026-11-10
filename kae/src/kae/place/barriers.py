@@ -191,7 +191,8 @@ def assign(board, regs):
     used = defaultdict(float)
     for i, r in label.items():
         used[r] += _part_area(fps[i])
-    left = [i for i in range(len(fps)) if i not in label and fps[i].pads]
+    # parts no net reaches, pad-less ones too (a logo staged off the board must still be placed somewhere)
+    left = [i for i in range(len(fps)) if i not in label and not fps[i].locked and not fps[i].edge_cuts]
     adj = _adjacency(board, lambda k: True)
     comps = _components(set(left), adj)
     comps.sort(key=lambda c: -sum(_part_area(fps[i]) for i in c))
@@ -207,7 +208,10 @@ def assign(board, regs):
 
 
 def true_split(board):
-    """A Split when the outline less the barriers has several regions of a real size, else None."""
+    """A Split when the outline less the barriers has several regions of a real size, else None.
+    A split whose assignment overfills a region is returned with `over_capacity` set: the caller
+    places the board whole (an outline that holds a fraction of the parts is a broken outline, not a
+    panel: pdp7-memory-display's two 17 mm2 loops)."""
     regs = regions(board)
     if len(regs) < 2:
         return None
@@ -224,8 +228,10 @@ def true_split(board):
 
 
 def sub_board(board, split, r):
-    """The board as region r sees it: its outline and only its parts."""
-    keep = [fp for fp in board.footprints if split.region_of.get(fp.uuid, -1) == r]
+    """The board as region r sees it: its outline, its parts, and anchored parts no region holds
+    (fixed obstacles wherever they are: a mouse-bite or a part straddling a wall)."""
+    keep = [fp for fp in board.footprints if split.region_of.get(fp.uuid, -1) == r
+            or (split.region_of.get(fp.uuid, -1) < 0 and (fp.locked or fp.edge_cuts))]
     return dataclasses.replace(board, outline=[split.regions[r]], footprints=keep)
 
 

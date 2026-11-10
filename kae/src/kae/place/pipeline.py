@@ -396,9 +396,18 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         # a board split by voids or all-layer keepouts: each region placed on its own (kae.place.barriers)
         from . import barriers
         split = barriers.true_split(board)
-        if split is not None:
+        if split is not None and not split.over_capacity:
             kw2 = {k: v for k, v in kw.items() if k not in ("seed", "log")}
             return barriers.place_split(place, board, split, seed=seed, time_s=time_s, log=log, verify=verify, **kw2)
+        if split is not None:
+            log(f"barrier split skipped: regions {split.over_capacity} cannot hold their parts")
+            opts = dict(opts or {}, barrier_split=0)
+            res = place(board, seed=seed, time_s=time_s, physics=physics, brief=brief, workers=workers, log=log,
+                        anneal=anneal, edge_mate=edge_mate, anneal_args=anneal_args, angle_step=angle_step,
+                        fixed=fixed, board_path=board_path, opts=opts, verify=verify)
+            res.report["barrier_split"] = dict(skipped="over_capacity", regions=len(split.regions),
+                                               over_capacity=split.over_capacity)
+            return res
     mode = resolve_severity(board, board_path, opts)
     if mode != LADDER:
         return _place_rung(board, time_s=time_s, brief=brief, severity=mode, **kw)

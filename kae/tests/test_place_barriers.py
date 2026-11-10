@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 """kae.place.barriers: true region splits from the outline and all-layer keepouts, part assignment by nets."""
+import dataclasses
 from types import SimpleNamespace as NS
 
 from shapely.geometry import Polygon, box
@@ -80,3 +81,24 @@ def test_mst_edges_connect_all_points():
 def test_barriers_include_outline_holes():
     outer = Polygon([(0, 0), (20, 0), (20, 20), (0, 20)], holes=[[(5, 5), (15, 5), (15, 15), (5, 15)]])
     assert abs(sum(p.area for p in B.all_barriers(board([outer], []))) - 100.0) < 1e-6
+
+
+def test_padless_parts_get_a_region_and_free_anchors_go_everywhere():
+    fps = [fp("J1", 10, 10, [pad(10, 10, "a")], locked=True), fp("J2", 110, 10, [pad(110, 10, "b")], locked=True),
+           fp("LOGO", 300, 300, []), fp("MB1", 75, 10, [pad(75, 10), pad(76, 10)], locked=True)]
+    s = B.true_split(board([box(0, 0, 50, 50), box(100, 0, 150, 50)], fps))
+    assert s.region_of["LOGO"] in (0, 1)
+    assert s.region_of["MB1"] == -1
+    @dataclasses.dataclass
+    class Bd:
+        footprints: list
+        outline: list
+    assert all(any(f.ref == "MB1" for f in B.sub_board(Bd(fps, []), s, r).footprints) for r in (0, 1))
+
+
+def test_a_region_that_cannot_hold_its_parts_is_reported():
+    big = [fp(f"U{i}", 300, 300, [pad(300, 300, "n")]) for i in range(3)]
+    for f in big:
+        f.courtyard = [box(0, 0, 30, 30)]
+    s = B.true_split(board([box(0, 0, 10, 10), box(100, 0, 110, 10)], big))
+    assert s.over_capacity
