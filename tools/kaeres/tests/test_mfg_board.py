@@ -7,7 +7,7 @@ from types import SimpleNamespace as NS
 
 import pytest
 
-shapely = pytest.importorskip("shapely")
+shapely = pytest.importorskip("shapely", minversion="2.0")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import mfg_board as M  # noqa: E402
 
