@@ -315,13 +315,13 @@ def test_no_start_while_threads_queue_for_a_cpu(kq):
     def idle_cpus():  # the test machine may be busy: report it idle, so only the run queue decides
         clock[0] += 4000
         return 0, clock[0]
-    kq.cpu_ticks = idle_cpus
     conf = json.load(open(kq.CONF)); conf.update(runq_window_s=1, heavy_boost=False)   # a short window; no fillers
     json.dump(conf, open(kq.CONF, "w"))
     d = kq.Daemon()
+    d.host.cpu_ticks = idle_cpus
     submit(kq, "sleep 20", name="busy", qos="batch")
     drive(kq, d, lambda: states(d)["busy"] == "running")  # (with nothing running, one job always starts)
-    kq.runnable_threads = lambda: 50  # 4 threads, 1 reserved: 50 runnable threads is oversubscribed
+    d.host.runnable_threads = lambda: 50  # 4 threads, 1 reserved: 50 runnable threads is oversubscribed
     submit(kq, "true", name="wait", qos="batch")
     for _ in range(10):
         d.tick()
@@ -331,7 +331,7 @@ def test_no_start_while_threads_queue_for_a_cpu(kq):
     submit(kq, "true", name="timed")
     drive(kq, d, lambda: states(d)["timed"] in ("running", "ok"))
     assert states(d)["wait"] == "queued"
-    kq.runnable_threads = lambda: 0
+    d.host.runnable_threads = lambda: 0
     drive(kq, d, lambda: states(d)["wait"] in ("running", "ok"))
     d.c.execute("UPDATE jobs SET state='cancelled' WHERE state IN ('queued','running')")
     d.c.commit()
@@ -599,9 +599,9 @@ def test_lease_plan_freezes_growers_when_the_buffer_is_eaten(kq):
 
 def test_timed_jobs_waiting_for_cpus_freeze_the_newest_batch_job(kq, tmp_path):
     d = _lease_daemon(kq, tmp_path, cpu_freeze_every_s=0, threads=512, reserve_cpu=0)  # admits both on a busy host
-    kq.runnable_threads = lambda: 0          # independent of how busy the test host is
+    d.host.runnable_threads = lambda: 0          # independent of how busy the test host is
     _clk = [0]
-    kq.cpu_ticks = lambda: (0, _clk.__setitem__(0, _clk[0] + 4000) or _clk[0])   # and of other users' load
+    d.host.cpu_ticks = lambda: (0, _clk.__setitem__(0, _clk[0] + 4000) or _clk[0])   # and of other users' load
     submit(kq, "sleep 60", name="old", qos="batch")
     submit(kq, "sleep 60", name="new", qos="batch")
     submit(kq, "sleep 60", name="timed", qos="timed")        # timed_wait only means something while one runs
@@ -700,7 +700,7 @@ def _lease_daemon(kq, tmp_path, **cfg):
     d = kq.Daemon()
     if not d.use_cgroup(kq.config()):
         pytest.skip("no delegated cgroup memory controller here")
-    kq.user_pressure = lambda: 0.0     # the live host's user manager pressure must not pause the tests' reclaims
+    d.host.user_pressure = lambda: 0.0     # the live host's user manager pressure must not pause the tests' reclaims
     return d
 
 
@@ -879,11 +879,11 @@ def test_batch_cpu_admission_needs_a_lasting_dip_and_its_quantile_adapts(kq):
     def idle_cpus():
         clock[0] += 4000
         return 0, clock[0]
-    kq.cpu_ticks = idle_cpus
     conf = json.load(open(kq.CONF)); conf.update(threads=64, reserve_cpu=0, runq_window_s=600, heavy_boost=False)
     json.dump(conf, open(kq.CONF, "w"))
     d = kq.Daemon()
-    kq.runnable_threads = lambda: 0
+    d.host.cpu_ticks = idle_cpus
+    d.host.runnable_threads = lambda: 0
     submit(kq, "sleep 20", name="busy", qos="batch")
     drive(kq, d, lambda: states(d)["busy"] == "running")      # (with nothing running, one job always starts)
     now = time.time()
@@ -896,9 +896,9 @@ def test_batch_cpu_admission_needs_a_lasting_dip_and_its_quantile_adapts(kq):
 
 def test_a_batch_job_starved_of_cpu_is_frozen_compressed_and_thawed_when_there_is_room(kq, tmp_path):
     d = _lease_daemon(kq, tmp_path, cpu_freeze_every_s=0, threads=512, reserve_cpu=0)
-    kq.runnable_threads = lambda: 0          # independent of how busy the test host is
+    d.host.runnable_threads = lambda: 0          # independent of how busy the test host is
     _clk = [0]
-    kq.cpu_ticks = lambda: (0, _clk.__setitem__(0, _clk[0] + 4000) or _clk[0])   # and of other users' load
+    d.host.cpu_ticks = lambda: (0, _clk.__setitem__(0, _clk[0] + 4000) or _clk[0])   # and of other users' load
     submit(kq, "python3 -c 'import time\na = bytearray(300 << 20)\nfor i in range(0, len(a), 4096): a[i] = 1\n"
                "time.sleep(40)'", name="b", qos="batch", mem="400M")
     submit(kq, "sleep 40", name="later", qos="batch")
@@ -927,11 +927,11 @@ def test_light_batch_jobs_fill_spare_cpus_and_heavy_ones_wait_for_the_run_queue(
     def idle_cpus():
         clock[0] += 4000
         return 0, clock[0]
-    kq.cpu_ticks = idle_cpus
-    kq.runnable_threads = lambda: 0
     conf = json.load(open(kq.CONF)); conf.update(threads=64, reserve_cpu=0, runq_window_s=600, cgroup="off")
     json.dump(conf, open(kq.CONF, "w"))
     d = kq.Daemon()
+    d.host.cpu_ticks = idle_cpus
+    d.host.runnable_threads = lambda: 0
     submit(kq, "sleep 20", name="busy", qos="timed")
     drive(kq, d, lambda: states(d)["busy"] == "running")
     now = time.time()
@@ -950,18 +950,18 @@ def test_a_waiting_filler_holds_no_room_for_itself(kq):
     def idle_cpus():
         clock[0] += 4000
         return 0, clock[0]
-    kq.cpu_ticks = idle_cpus
-    kq.runnable_threads = lambda: 200                        # no spare CPU right now: fillers wait
     conf = json.load(open(kq.CONF)); conf.update(threads=64, reserve_cpu=0, cgroup="off", starve_after_s=0)
     json.dump(conf, open(kq.CONF, "w"))
     d = kq.Daemon()
+    d.host.cpu_ticks = idle_cpus
+    d.host.runnable_threads = lambda: 200                        # no spare CPU right now: fillers wait
     submit(kq, "sleep 20", name="busy", qos="timed")
     drive(kq, d, lambda: states(d)["busy"] == "running")
     submit(kq, "sleep 20", name="filler", qos="batch", cpus=2, mem="1G", prio=5)   # first in line, long "starving"
     submit(kq, "sleep 20", name="timed", qos="timed", cpus=1, mem="1G")
     drive(kq, d, lambda: states(d)["timed"] == "running")
     assert states(d)["filler"] == "queued"
-    kq.runnable_threads = lambda: 0                          # CPUs spare: it starts
+    d.host.runnable_threads = lambda: 0                          # CPUs spare: it starts
     drive(kq, d, lambda: states(d)["filler"] == "running")
     d.c.execute("UPDATE jobs SET state='cancelled' WHERE state IN ('queued','running')")
 
@@ -972,11 +972,11 @@ def test_fillers_start_while_a_starving_head_waits_for_cpu(kq):
     def idle_cpus():
         clock[0] += 4000
         return 0, clock[0]
-    kq.cpu_ticks = idle_cpus
-    kq.runnable_threads = lambda: 0
     conf = json.load(open(kq.CONF)); conf.update(threads=64, reserve_cpu=0, cgroup="off", starve_after_s=0)
     json.dump(conf, open(kq.CONF, "w"))
     d = kq.Daemon()
+    d.host.cpu_ticks = idle_cpus
+    d.host.runnable_threads = lambda: 0
     submit(kq, "sleep 20", name="busy", qos="timed")
     drive(kq, d, lambda: states(d)["busy"] == "running")
     submit(kq, "sleep 20", name="head", qos="timed", prio=5, mem="1G")       # waits: timed jobs are short of CPU
@@ -1021,9 +1021,9 @@ def test_a_memory_limit_reverted_behind_kaeqs_back_is_set_again_and_told_to_syst
 def test_timed_wait_does_not_outlive_the_timed_jobs(kq, tmp_path):
     """With no timed job running nobody waits: a stale timed_wait must not keep batch jobs frozen or block timed starts."""
     d = _lease_daemon(kq, tmp_path, cpu_freeze_every_s=0, threads=512, reserve_cpu=0, thaw_min_run_s=0)
-    kq.runnable_threads = lambda: 0          # independent of how busy the test host is
+    d.host.runnable_threads = lambda: 0          # independent of how busy the test host is
     _clk = [0]
-    kq.cpu_ticks = lambda: (0, _clk.__setitem__(0, _clk[0] + 4000) or _clk[0])   # and of other users' load
+    d.host.cpu_ticks = lambda: (0, _clk.__setitem__(0, _clk[0] + 4000) or _clk[0])   # and of other users' load
     submit(kq, "sleep 60", name="b", qos="batch", mem="100M")
     drive(kq, d, lambda: states(d)["b"] == "running" and 1 in d.cgroups, secs=20)
     d.timed_wait = 0.5                                 # left over from timed jobs that have ended: freezes it
@@ -1052,11 +1052,11 @@ def test_a_starving_head_waiting_for_memory_is_not_overtaken_by_short_jobs(kq):
     def idle_cpus():
         clock[0] += 4000
         return 0, clock[0]
-    kq.cpu_ticks = idle_cpus
-    kq.runnable_threads = lambda: 0
     conf = json.load(open(kq.CONF)); conf.update(threads=64, reserve_cpu=0, cgroup="off", starve_after_s=0, heavy_boost=False)
     json.dump(conf, open(kq.CONF, "w"))
     d = kq.Daemon()
+    d.host.cpu_ticks = idle_cpus
+    d.host.runnable_threads = lambda: 0
     now = time.time()
     for i in range(6):          # history: owner "s" runs short jobs (so it may backfill)
         d.c.execute("INSERT INTO jobs(owner,cmd,cpus,mem_mb,timeout_s,state,submitted,started,finished) "
@@ -1105,10 +1105,10 @@ def test_the_daemon_reports_its_own_failure_symptoms(kq, tmp_path):
     def idle_cpus():
         clock[0] += 4000
         return 0, clock[0]
-    kq.cpu_ticks = idle_cpus
     conf = json.load(open(kq.CONF)); conf.update(health_after_s=100, health_frozen_s=600, health_timed_idle_s=600)
     json.dump(conf, open(kq.CONF, "w"))
     d = kq.Daemon()
+    d.host.cpu_ticks = idle_cpus
     submit(kq, "sleep 30", name="b", qos="batch")
     drive(kq, d, lambda: states(d)["b"] == "running")
     cfg, now = kq.config(), time.time()

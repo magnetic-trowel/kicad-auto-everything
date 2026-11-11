@@ -906,7 +906,7 @@ def compress_room_mb(mode):
     return max(0.0, free - 512)
 
 
-def compress(cg, mb, running=False, done=None):
+def compress(cg, mb, running=False, done=None, pressure=None):
     """Push up to mb of a job's memory into swap (zram: compressed in RAM), in a thread (a large reclaim takes
     seconds). A frozen job stays frozen; its pages come back as it touches them after a thaw. running=True: a
     running job (squeeze): the kernel takes its least recently used pages, and swapping is turned off again after.
@@ -923,7 +923,7 @@ def compress(cg, mb, running=False, done=None):
         # or three steps in a row moved nothing (what is left is hot, or it ended)
         base, t0, idle = cg_swap_mb(cg), time.time(), 0
         while cg_swap_mb(cg) - base < mb and idle < 3 and (running or cg_frozen(cg)) and time.time() - t0 < 120:
-            if user_pressure() > 10.0:           # in steps, pausing while the user manager is under pressure
+            if (pressure or user_pressure)() > 10.0:   # in steps, pausing while the user manager is under pressure
                 time.sleep(2)                    # (systemd-oomd kills it at 50% for 20 s)
                 continue
             before = cg_swap_mb(cg)
@@ -1441,15 +1441,36 @@ def digest(jid, tail=12, errs=6):
 
 
 # ---------------------------------------------------------------- daemon
+class Host:
+    """What the daemon reads from the machine, in one place: tests and the simulator pass their own (overriding
+    methods), so a test never depends on how busy the machine running it is."""
+
+    def runnable_threads(self):
+        return runnable_threads()
+
+    def cpu_ticks(self):
+        return cpu_ticks()
+
+    def meminfo(self):
+        return meminfo()
+
+    def user_pressure(self):
+        return user_pressure()
+
+    def proc_by_session(self):
+        return proc_by_session()
+
+
 class Daemon:
-    def __init__(self):
+    def __init__(self, host=None):
+        self.host = host or Host()
         self.c = db()
         self.popen = {}          # id -> Popen (to reap zombies)
         self.others_ema = 0.0
         self.runq_ema = 0.0
         self.runq_hist, self.runq_q, self.runq_q_ts, self.runq_stats = [], None, time.time(), (0.0, 0.0)
         self.cpu_waiting = False     # a queued job waited for CPUs at the last admission
-        self.prev = cpu_ticks()
+        self.prev = self.host.cpu_ticks()
         self.prev_ours = {}
         self.sys = {}
         self.cg = None
@@ -1531,7 +1552,7 @@ class Daemon:
         cfg = config()
         c = self.c
         lease_on = cfg["mem_pool"] == "lease" and self.use_cgroup(cfg)
-        sessions, per_pid = proc_by_session()
+        sessions, per_pid = self.host.proc_by_session()
         now = time.time()
         running = c.execute("SELECT * FROM jobs WHERE state='running'").fetchall()
         ours_ticks, ours_rss, unrealized = 0, 0.0, 0.0
@@ -1557,14 +1578,14 @@ class Daemon:
             self.flush_cpu()
             self.cpu_ts = now
         # system sample
-        busy, total = cpu_ticks()
+        busy, total = self.host.cpu_ticks()
         dt = max(1, total - self.prev[1])
         sys_threads = (busy - self.prev[0]) / dt * cfg["threads"]
         ours_threads = ours_ticks / dt * cfg["threads"]
         self.others_ema = 0.7 * self.others_ema + 0.3 * max(0.0, sys_threads - ours_threads)
         self.prev = (busy, total)
         # demand, not just use: when CPUs are saturated, use stops at capacity but threads keep queueing
-        rq = runnable_threads()
+        rq = self.host.runnable_threads()
         self.runq_ema = 0.8 * self.runq_ema + 0.2 * rq
         rq = max(0.0, rq - self.runq_class.get("idle", 0))      # idle-priority threads take only spare CPUs
         self.runq_hist.append((now, rq, self.cpu_waiting))     # the window behind batch CPU admission
@@ -1577,7 +1598,7 @@ class Daemon:
                 dlog(f"cpu: admission quantile {self.runq_q:.2f} -> {new:.2f} (oversubscribed {over:.0%}, "
                      f"CPUs idle while jobs wait {idle:.0%})")
             self.runq_q, self.runq_q_ts, self.runq_stats = new, now, (over, idle)
-        mi = meminfo()
+        mi = self.host.meminfo()
         running = c.execute("SELECT * FROM jobs WHERE state='running'").fetchall()
         for jid in set(self.trace) - {j["id"] for j in running}:
             del self.trace[jid]
@@ -1952,7 +1973,7 @@ class Daemon:
             self.squeezed_add[jid] = self.squeezed_add.get(jid, 0.0) + got
             st["squeezed_total"] = st.get("squeezed_total", 0.0) + got
             self.squeezing = None
-        compress(j["cg"], mb, running=True, done=done)
+        compress(j["cg"], mb, running=True, done=done, pressure=self.host.user_pressure)
         dlog(f"#{jid}: squeezing up to {fgb(mb)} of its {fgb(anon)} into zram while it runs "
              f"(free beyond the reserve {fgb(real_mb)} < buffer {fgb(buffer)})")
 
@@ -1963,7 +1984,7 @@ class Daemon:
             return
         st = self.lease_st.setdefault(jid, {})
         st["compressed"] = st["was_compressed"] = True
-        compress(cg, min(use_mb, room))
+        compress(cg, min(use_mb, room), pressure=self.host.user_pressure)
         dlog(f"#{jid}: frozen; compressing up to {fgb(min(use_mb, room))} of its memory into swap")
 
     def sample_cpu(self, cfg, now, running, usage=None):
@@ -2251,7 +2272,7 @@ class Daemon:
         # the CPUs jobs may use): at idle priority it cannot hurt anyone if that is brief. filler_frac x those CPUs
         # caps fillers' declared CPUs, a loose sanity limit
         fill = [sum(j["cpus"] for j in running if j["qos"] == "batch" and self.is_filler(j, cfg)),
-                runnable_threads()]
+                self.host.runnable_threads()]
         filler_ok = lambda j: (fill[1] + j["cpus"] <= pool and fill[0] + j["cpus"] <= cfg["filler_frac"] * pool)
         per_owner = {}
         for j in c.execute("SELECT owner, COUNT(*) n FROM jobs WHERE state='running' GROUP BY owner"):
