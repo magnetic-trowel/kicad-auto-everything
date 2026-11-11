@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tarfile
 from pathlib import Path
+from types import SimpleNamespace
 
 RESTART = Path(__file__).resolve().parents[1] / "restart.py"
 _spec = importlib.util.spec_from_file_location("restart_under_test", RESTART)
@@ -296,3 +297,19 @@ def test_a_kept_fresh_attempt_has_no_origin_report(tmp_path):
     wd = tmp_path / "work" / "restarts"
     assert json.loads((wd / "report.json").read_text())["stop"] == "no improvement"
     assert not (wd / "report-origin.json").exists()
+
+
+def test_work_mode_gives_the_finish_its_finish_s(tmp_path, monkeypatch):
+    """KAE_BUDGET=work: the passes get --final-s / --finish-s of nominal work when given (a 70/30 split of
+    restarts and finish), else their fixed shares of --time; the attempts' plan is what is left."""
+    monkeypatch.setenv("KAE_BUDGET", "work")
+    finish = "sed 's/OPEN=1/OPEN=1 t=@TIME@/' @BEST@ > @OUT@"
+    r, out, summary = _run(tmp_path, "echo '(kicad_pcb OPEN=2)' > @OUT@",
+                           "echo '(kicad_pcb OPEN=1)' > @OUT@", time_s=1000,
+                           extra=["--finish", finish, "--finish-s", "300", "--first-s", "2000"])
+    assert r.returncode == 0, r.stdout + r.stderr
+    log = {d["k"]: d for d in summary["attempt_log"]}
+    assert log["finish"]["budget"] == 300 and log["final"]["budget"] == 20
+    assert log[0]["budget"] <= 1000 - 300 - 20
+    a = SimpleNamespace(time=1000.0, final="x", final_s=0.0, finish="y", finish_s=0.0)
+    assert restart.work_final_s(a) == 150.0 and restart.work_finish_s(a) == 100.0
