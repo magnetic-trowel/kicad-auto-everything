@@ -152,6 +152,21 @@ def parts(space, fills, net):
     return sorted(groups.values(), key=size, reverse=True)
 
 
+_SHRUNK = {}     # (id(fill copper), shrink) -> (copper, shrunk copper); holds the copper, so ids are not reused
+
+
+def _shrunk(copper, shrink):
+    """copper.buffer(-shrink), kept per fill: every last-mile try of a part with a fill shrank the same
+    pour again (78 s of a 199-part restart's 2,560 s of attempts)."""
+    key = (id(copper), shrink)
+    hit = _SHRUNK.get(key)
+    if hit is None:
+        if len(_SHRUNK) > 4096:
+            _SHRUNK.clear()
+        hit = _SHRUNK[key] = (copper, copper.buffer(-shrink))
+    return hit[1]
+
+
 def _anchors(part, shrink, clip=None):
     """Routing anchors for the copper of a part (fills shrunk by `shrink`, so a track end
     lands inside them), the ones meeting `clip` (a box) when given."""
@@ -167,7 +182,7 @@ def _anchors(part, shrink, clip=None):
         elif n.kind == "via":
             out.append(Anchor(it.geom, tuple(it.layers), (it.geom.x, it.geom.y), grow=it.r * 0.8, kind="via"))
         else:
-            g = n.copper.buffer(-shrink)
+            g = _shrunk(n.copper, shrink)
             if clip is not None:
                 g = g.intersection(clip)
             if not g.is_empty and g.area > 1e-4:
