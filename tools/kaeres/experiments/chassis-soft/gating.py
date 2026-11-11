@@ -105,3 +105,22 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+def completion_first(D, P, B):
+    """Run R; if R routes fully, also run M and keep it when it ranks no worse (legal, opens, DRC errors), else R;
+    if R leaves opens, spend the second allowance on another restart run R' and keep the better.
+    P: loop-physics-matched's runs (its R is another wrapper setting: --parallel 1, 3.15 B wall)."""
+    rank = lambda r: (0 if r["s"].get("legal") else 1, r["s"]["unconnected"], r["s"].get("errors") or 0)  # noqa: E731
+    pick, cpu = {}, 0.0
+    for b in B:
+        R = D[b]["R"]
+        if R["s"]["unconnected"] == 0:
+            M = D[b]["M"]
+            pick[b] = M if rank(M) <= rank(R) else R
+            cpu += R["cpu"] + M["cpu"]
+        else:
+            R2 = P[b]["R"]
+            pick[b] = R2 if rank(R2) < rank(R) else R
+            cpu += R["cpu"] + R2.get("cpu", 0)
+    return pick, cpu

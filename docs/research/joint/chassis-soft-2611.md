@@ -115,3 +115,21 @@ Three candidates, cheapest first:
 - **Guard:** physics within the J21 floor of M on the routed set.
 - **Success:** closing at least half of M's opens gap to R at no physics loss beyond the floor.
 - **Order and cost:** about 0.66 CPU-h per board and arm, so about 100 CPU-h for (1) on 139 boards. Run (1) first; build (2) only if (1) moves opens.
+
+### Completion-first policy (a run-time decision, not a pre-routing gate)
+Run R. If R routes the board fully, also run M, and keep M when it ranks no worse than R (legal, then opens, then DRC errors). If R leaves opens, spend the second allowance on another restart run instead and keep the better of the two.
+
+Data: `chassis-soft` R and M, and `loop-physics-matched`'s R as the second restart run R'. R' is another wrapper setting (`--parallel 1`, 3.15 B wall), so this is an approximation. 160 boards; R routed 119 fully, and M was kept on 103 of those.
+
+| policy | opens | clean | legal | DRC errors | physics vs R (both routed) | CPU |
+|---|---|---|---|---|---|---|
+| (a) R alone | 992 | 114 | 153 | 124 | | 95.3 h |
+| (b) best of R and R' (harness-ranked) | 843 | 120 | 159 | 14 | | 175.0 h |
+| (c) portfolio M or R (harness-ranked) | 938 | 114 | 154 | 121 | n 93, median 0.826, p < 0.0001 | 205.5 h |
+| completion-first | **843** | 117 | 157 | 80 | **n 93, median 0.826**, p < 0.0001 | 195.2 h |
+
+- **Against (b):** completion-first leaves exactly the same open connections (843; identical on every board). Its physics is better: median 0.836 against (b), n 96, p < 0.0001.
+- **It does not quite dominate (b):** 3 fewer clean boards (117 vs 120), 2 fewer legal, 66 more DRC errors, and 12 % more CPU.
+- **The cause:** on boards R completes but leaves DRC errors, (b) can still pick R', which sometimes has none, while completion-first spends that compute on M.
+- **A variant would close it:** "R complete and clean → M; else R'".
+- **Reading:** completion-first keeps all of the completion of two restart runs and all of the module stage's physics, at the cost of a few clean boards. It needs no new mechanism, only a policy in the restart wrapper. It is a candidate default to test pre-registered in the wrapper itself (one run, same allowance), not a verdict: these numbers mix two experiments and two wrapper settings.
