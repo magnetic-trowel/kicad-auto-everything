@@ -82,3 +82,5 @@ Bus-alone runs are mostly seconds of Freerouting plus export and DRC scoring (~6
 - 2026-11-10: first look done (`out/SUMMARY.md`). The CIs of `bus_width.8-15` (42-77%) and `bus_width.16-31` (32-67%) straddle the 50%
   threshold, so the pre-registered extension runs: the rest of those two full suites (2,284 boards), experiment `bus-alone-b1-ext`,
   method `fr-fork 06d2686 bus-alone v2 ext` (the same wrapper with the lists of these boards added; nothing else changed). One look.
+- 2026-11-10: extension done (2,854 boards). Both extended strata settled above 50% (8-15: 60%, 54-65%; 16-31: 69%, 63-73%). Results page:
+  docs/research/routing/bus-alone-b1-2611.md.

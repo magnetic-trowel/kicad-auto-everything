@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: CC-BY-4.0 -->
 # Bus-alone routing (B1): does a bus fail alone, or lose in contention?
 
-**Status:** first look done 2026-11-10 (643 boards); the pre-registered extension of the width 8-31 strata is running (`bus-alone-b1-ext`). Pre-registered: [PLAN.md](../../../tools/kaeres/experiments/bus-alone-b1/PLAN.md).
+**Status:** decided 2026-11-10 (2,854 boards with the pre-registered extension). Verdict: buses mostly fail alone; escape and pin access first.
 **First published:** 2026-11-09, branch `bus-alone-b1`.
 Keys: bus-alone, fails alone, contention, B1, bus campaign, DSN net filter
 
@@ -17,7 +17,42 @@ the harness DRC exactly on bus nets where the harness list is not capped.
 Boards: union of the `.n100` suites `bus_width.8-15` and up, `bus_ddr`, `bus_kind.parallel_mem`, `.connector_ribbon`, `.gpio_bank`:
 673 boards, 670 with at least one bus of width >= 4. 224 of 670 stored controls hit their deadline.
 
-## Results (first look, 643 boards, 5,118 buses of width >= 4)
+## Final result (2,854 boards, 16,088 buses of width >= 4, 49,888 bus lanes open in control)
+
+Share of the control's open bus lanes that stay open when the buses are routed alone (board-clustered bootstrap 95% CI):
+
+| cut | boards | control open lanes | also open alone |
+|---|---|---|---|
+| **pooled** | 2,854 | 49,888 | **66% (62-70%)** |
+| bus-alone run finished | 2,614 | 18,845 | 60% (55-64%) |
+| both runs finished | 2,287 | 10,496 | 69% (64-73%) |
+| bus-alone run hit 900 s | 240 | 31,043 | 70% (64-75%) |
+| bus_width.8-15 (full suite) | 1,910 | 13,397 | **60% (54-65%)**; finished 61% (57-66%) |
+| bus_width.16-31 (full suite) | 712 | 21,454 | **69% (63-73%)**; finished 60% (50-69%) |
+| a BGA/grid or < 0.5 mm end | 854 | 35,331 | 75% (71-79%); finished 73% (67-78%) |
+| coarse ends only | 2,401 | 14,557 | 44% (38-49%); finished 42% (36-48%) |
+
+By kind, bus-alone run finished: QSPI 79% (72-85), SD/eMMC 73% (63-82), SPI/I2S 71%, serdes lanes 68% (60-76), RGB 66%, DDR byte 65% (49-78),
+DDR address 60%, connector ribbons 58% (51-63), GPIO banks 57% (51-63), unknown 52%, parallel memory 41% (27-54), RGMII/MII 35% (16-56).
+Buses: 5,359 fail alone (3,936 with a fine-pitch or BGA end; 2,961 lose every lane), 1,196 lose only in contention, 1,959 in contention or
+the control's budget, 7,574 fine.
+
+Two facts found since that bear on the reading:
+- The bus-alone runs had more routing layers than the control: removing the planes also turned KiCad power layers into signal layers. So
+  "fails alone" is conservative; the true share failing alone is at least this high.
+- Lanes die at the pin: in the bus-escape diagnosis, 77% of the lanes open alone have no copper at an end pad.
+
+**Verdict (pre-registered rule):** both extended strata are settled above 50% (8-15: 60%, CI 54-65%; 16-31: 69%, CI 63-73%), as is every
+other stratum and the pooled share. Completion on bus-rich boards is mostly an escape and pin-access problem that exists without any other
+net on the board. Contention with other nets explains about a third of open bus lanes at most, and it is concentrated on coarse-pitch buses
+(44% fail alone there: both matter) and on parallel memory and RGMII groups.
+
+**Direction (bus/CAMPAIGN.md):** unchanged in kind, sharper in order. Escape first: pin-access and ordered escape (E2, E3), soft escape
+reservations (D1), BGA work, placement that gives ends room (C2). Contention tools (D5 ghost corridors, D6 macro-negotiation) and the
+human-corridor oracle B2 address the minority; restrict B2 and D3 to coarse-end buses (ribbons, GPIO, parallel memory), where contention is
+half the story. The stop rule does not fire.
+
+## First look (643 boards, 5,118 buses of width >= 4)
 
 v1 of the method failed in plumbing (all runs `no_output`: the wrapper read the board id from the wrong directory); v2 is the run below.
 
@@ -48,7 +83,7 @@ Example of a clean failure: a 2-layer header-to-QFP GPIO board (18 bus nets alon
 Stratum membership by the full suites instead of their `.n100` lists (same 643 boards, more of them count in each width stratum;
 reported, not the pre-registered cut): width 8-15 67% (55-76%, 220 boards), 16-31 69% (60-77%, 191), 32-63 60% (47-71%, 97).
 
-## Verdict (pre-registered rule)
+### First-look reading
 
 At least 50%: by the rule, completion on bus-rich boards is mostly an escape, pin-access and within-bus problem, not contention with
 other nets. Contention alone explains 300 buses (6%), contention or the control's budget 754 more. The width 8-15 and 16-31 strata are
