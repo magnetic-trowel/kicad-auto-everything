@@ -138,10 +138,47 @@ Lessons from the decide-ab campaign (2026-11, 17 experiments; plan and analysis 
 - **kaeq's CPU column counts the job's own process.** A restart-wrapped job can show hours of wall
   time and seconds of CPU while its children work; check `ps` of the children before calling it hung.
 
+## Profiling a smoke
+
+Profile one smoke board per arm before a full run: the queue is shared, and an hour saved per job is
+worth more than any tuning after the fact. Profile the method the way the job runs it (same template,
+budget and environment), on one small and one medium board.
+
+- **Python (kae, restart.py, physics):** wrap the python process itself, not `sh`, `env` or `apptainer`:
+  `py-spy record --nonblocking --idle -r 25 -f raw -o prof-$$.txt -- python -m kae.route.cli ...`.
+  `--idle` keeps samples where the process waits on a child (Freerouting, kicad-cli, pcbnew), so the
+  profile adds up to wall time. A restart-wrapped method: put py-spy in the inner command, one file per
+  attempt. py-spy around a shell under kaeq has killed the method silently.
+- **Freerouting:** point `KAE_BRIDGE_FREEROUTING` at a wrapper that runs the same jar on a full JDK with
+  Java Flight Recorder: `java -XX:FlightRecorderOptions=repository=DIR,maxchunksize=4m
+  -XX:StartFlightRecording=filename=fr.jfr,dumponexit=true,settings=profile -jar freerouting.jar "$@"`.
+  The bridge kills Freerouting at its hard limit, which leaves `fr.jfr` empty; the repository keeps the
+  finished chunks (`jfr print --events jdk.ExecutionSample DIR/*.jfr`). Never install such a wrapper
+  under the bridge's default build prefix.
+- **Job steps:** `run.json` → `job_steps` has wall and CPU of prepare, run (method plus scoring) and
+  physics; `work` has a restart wrapper's attempts, judge time and CPU; the kaeq job has peak memory,
+  CPU and `cpu_peak` (threads).
+
+Report, per arm: wall and CPU per stage (placement, module stage, escape planning, Freerouting, last
+mile/repair, KiCad DRC and pcbnew calls, physics, imports and numba compiles, file I/O), the job's
+measured peak memory and CPU threads, and the largest self-time functions of the biggest stage.
+`prof_stages.py prof-*.txt` sums py-spy raw files into these stages.
+
+A speedup must change nothing. Run the unfixed and the fixed code on the profiled boards with counted
+budgets (`KAE_BUDGET=work PYTHONHASHSEED=0 KAE_WORKERS=1`) and compare the output board, the scorer's
+`drc.json` and the physics JSON (dates, paths and timing fields aside). Give the harness the wall
+ceiling: `kaebench run --timeout` kills on wall time, so pass the method `--time $(( {timeout} / 4 ))`, as
+the work-mode methods do, or a loaded host cuts runs at different points. New copper gets random
+uuids, so compare boards item by item without uuids and order. Run the unfixed code twice too: a step
+that differs between two unfixed runs has to be named, not blamed on the fix. Examples: a solver with
+a wall-clock limit, or the bridge keeping or dropping a dangling stub. A change that alters any
+output beyond that A/A spread is a method change and needs its own A/B. Never change code under
+methods that are queued. Size the job's `--cpus` and `--mem` from the smoke's measured peak.
+
 ## Per board job
 
 1. **Preflight.** KiCad's Python must import pcbnew. If it can't, the job exits 75 and kaeq retries it; this is an infrastructure failure, not a board result.
-2. **Prepare.** `kaebench prepare-dir` builds the route task once per harness commit. Its task id is the hash of the board file sha256, task spec and KiCad version. The job records the task's content hash, and that of the older tasks the methods' runs were made on (see [Task aliases](#task-aliases)).
+2. **Prepare.** `kaebench prepare-dir` builds the route task once per harness commit. Its task id is the hash of the board file sha256, task spec and KiCad version. The job records the task's content hash, and that of the older tasks the methods' runs were made on (see [Task aliases](#task-aliases)). From task spec 10 (deterministic preparation) a job copies the task folder another job prepared from the same board files, harness, inputs and KiCad, from a local cache (`$KAERES_TASK_CACHE`, default `/var/tmp/$USER/kaeres-task-cache`, 20 GB or `$KAERES_TASK_CACHE_GB`, least recently used first; `off` turns it off). The prepare step then records `cached`.
 3. **Run.** Every missing method runs in one `kaebench run` (built-in adapters, interleaved) or one run per `--command` method. The human layout (the `reference` method) is scored once per board. The kaebench score becomes the run's DRC evaluation.
 4. **Physics.** `physics_board.py` runs kae's routed module physics on each new run's scored board. The brief is built from the task input, so module ids pair with the human run.
 5. **Archive.** Run folders are written atomically, with bug records. If another experiment's job wrote the same run meanwhile, the first one is kept.

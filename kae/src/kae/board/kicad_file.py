@@ -24,6 +24,7 @@ graphics of on-board footprints (as pcbnew does); off-board footprints keep thei
 `Footprint.edge_cuts`.
 """
 from kae.budget import work_mode
+import functools
 import json
 import math
 import re
@@ -873,17 +874,28 @@ _NC_REQUIRED = ("clearance", "track_width", "via_diameter", "via_drill", "microv
                 "microvia_drill", "diff_pair_width", "diff_pair_gap", "wire_width", "bus_width")
 
 
+@functools.lru_cache(maxsize=4096)
+def _nc_patterns(pat):
+    """(anchored regex or None when pat is no valid regex, wildcard regex) of a netclass pattern,
+    compiled once: a board with many patterns overflowed re's own cache (512), and every board
+    load recompiled them for every net."""
+    rx = ("" if pat.startswith("^") else "^") + pat + ("" if pat.endswith("$") else "$")
+    try:
+        anchored = re.compile(rx)
+    except re.error:
+        anchored = None
+    return anchored, re.compile(_wildcard_re(pat))
+
+
+@functools.lru_cache(maxsize=1 << 17)
 def _nc_match(pat, net):
     """KiCad's netclass pattern match: an anchored regex (EDA_PATTERN_MATCH_REGEX_ANCHORED
     adds '^' and '$' by plain concatenation, so '/SW*|/RST' matches any '/S...'), or an
-    anchored wildcard."""
-    rx = ("" if pat.startswith("^") else "^") + pat + ("" if pat.endswith("$") else "$")
-    try:
-        if re.search(rx, net) is not None:
-            return True
-    except re.error:
-        pass
-    return re.fullmatch(_wildcard_re(pat), net) is not None
+    anchored wildcard. Kept per (pattern, net): a route loads the same board several times."""
+    anchored, wild = _nc_patterns(pat)
+    if anchored is not None and anchored.search(net) is not None:
+        return True
+    return wild.fullmatch(net) is not None
 
 
 def netclass_of(rules, net):

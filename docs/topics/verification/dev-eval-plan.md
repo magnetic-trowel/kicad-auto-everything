@@ -19,7 +19,7 @@ Tags: [P] primary, [V] vendor or self-report, [I] inference, [M] measured in thi
 | Host | Shared benchmark host: 128 threads, 251 GB, 2 NUMA nodes, **shared**. Budget: ≤ 50 cores, ≤ 96 GB. `$HOME` is NFS, local NVMe has 356 GB free |
 | Toolchain | `kaebench doctor` passes: KiCad 10.0.7 (Apptainer image), Freerouting 2.5.0 |
 | Corpus | local board corpus `kae-boards` (never committed): 13,749 KiCad-10-loadable boards, 10,902 fully routed, 2,412 drc-clean (2-layer 2,028, 4-layer 332, 6+ 52; median 27 footprints, p90 111; 1,663 repos; 193 noncommercial, private evaluation only). The committed benchmark manifest has 297, of which 112 qualified ([harness](harness.md)) |
-| Routing baseline | Freerouting 2.5.0, k = 1, 600 s: A 0.62, B 0.35 with adapter fixes. C 0.04 with the **stock** adapter only; the fixed adapter has never run on C [M] |
+| Routing baseline | (Historical; the control is now the pinned fork, see bench/README.md.) Freerouting 2.5.0, k = 1, 600 s: A 0.62, B 0.35 with adapter fixes. C 0.04 with the **stock** adapter only; the fixed adapter has never run on C [M] |
 | Placement baseline | None run. The place track has defects (below) |
 
 ## Harness defects found

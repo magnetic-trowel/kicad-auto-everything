@@ -27,7 +27,7 @@ Keys: expert state machine, review gates, Olney 85% gate, layer count, EVM reuse
 - Metrics: union of legality (CP, NRR/PRR), efficiency and physics (Quilter PRCs); human boards score NRR 93.58%; MGS is diagnostic only; kaebench `cpk` (any-clean@k) is ≥ PCBWorld CP@5. → [rules](../topics/verification/quality-metrics.md#metric-rules), [cpk](../topics/verification/quality-metrics.md#kaebench-cpk-vs-cp5)
 
 ## Benchmarks, harness and dev-eval
-- No ISPD/ICCAD PCB contest exists; PCBWorld-Bench (routing) and Cypress (placement) are de-facto standards; re-run Freerouting 2.5.0, not the published 2.1.0 baseline. → [conclusions](../topics/verification/benchmarks.md#benchmark-conclusions)
+- No ISPD/ICCAD PCB contest exists; PCBWorld-Bench (routing) and Cypress (placement) are de-facto standards; re-run Freerouting: the pinned fork, not the published 2.1.0. → [conclusions](../topics/verification/benchmarks.md#benchmark-conclusions)
 - LLMs must act through the engine: GPT-5.4 CP 0.65 interactive vs 0.02 engine-free (D3-A); PCBWorld evaluates 99 D3-A and 10 of 287 D3-B boards. → [LLM agents](../topics/routing/pcbworld.md#llm-agents), [datasets](../topics/routing/pcbworld.md#datasets)
 - Plan: 11 tracks: routing/placement leaderboards plus intent, physics, checklist, trust, blind review. → [tracks](../topics/verification/benchmark-plan.md#benchmark-tracks)
 - kaebench: no method scores itself; score v2 rebuilds the board from allowed changes only and runs `kicad-cli` DRC in a fresh process; external methods run sandboxed; 112 of 297 boards qualify on KiCad 10.0.7. → [invariants](../topics/verification/harness.md#harness-invariants), [yield](../topics/verification/harness.md#qualification-yield-and-first-baseline)

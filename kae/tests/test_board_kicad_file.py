@@ -389,3 +389,26 @@ def test_chamfered_roundrect_is_polygons_only():
     for clearance they grew copper 0.064 mm into it, and Board.to_dict crashed on them."""
     g = kicad_file.round_chamfer_rect(1.4, 0.9, 0.2 * 0.9, 0.3 * 0.9, ["top_left", "bottom_right"])
     assert g.geom_type in ("Polygon", "MultiPolygon") and abs(g.area - 1.1731) < 1e-3
+
+
+def test_netclass_pattern_match_is_kicads_and_cached():
+    """_nc_match is kept per (pattern, net) with its regexes compiled once (a board with one pattern
+    per net, 455 of them, spent 12 s per load recompiling them); the answers are the uncached ones."""
+    import re
+    from kae.board.kicad_file import _nc_match, _wildcard_re
+
+    def uncached(pat, net):
+        rx = ("" if pat.startswith("^") else "^") + pat + ("" if pat.endswith("$") else "$")
+        try:
+            if re.search(rx, net) is not None:
+                return True
+        except re.error:
+            pass
+        return re.fullmatch(_wildcard_re(pat), net) is not None
+    pats = ["VCC*", "SIG[12]", "/SW*|/RST", "^GND$", "a(b", "D?", "*", "/USB_D+", "+3V3", "[", "N$1"]
+    nets = ["VCC", "VCC_3V3", "SIG1", "SIG3", "/SW1", "/RSTX", "/RST", "GND", "GNDA", "a(b", "D1", "D10",
+            "/USB_D+", "/USB_DD", "+3V3", "N$1", "[", ""]
+    for _ in range(2):          # the second round answers from the cache
+        for p in pats:
+            for n in nets:
+                assert _nc_match(p, n) == uncached(p, n), (p, n)
