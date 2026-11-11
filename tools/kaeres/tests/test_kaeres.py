@@ -492,3 +492,56 @@ def test_method_timeout_cap_is_a_method_param():
     assert K.method_timeout(m(), row) == 4 * 3600
     assert K.method_timeout(m(timeout_cap_s="30000"), row) == 21600
     assert K.method_timeout(m(timeout_cap_s="30000"), dict(footprints=20)) == 7200
+
+
+def _fake_prepare(tmp_path, monkeypatch, spec=11):
+    """_prepare with a fake harness of task spec `spec`; returns (call, number of kaebench runs)."""
+    runs = []
+    monkeypatch.setattr(kaeres, "_venv", lambda hc: (tmp_path / "code", tmp_path / "venv"))
+    monkeypatch.setattr(kaeres, "harness_task_spec", lambda hc: spec)
+    monkeypatch.setattr(kaeres, "kicad_version", lambda: "10.0.7")
+    monkeypatch.setenv("KAERES_TASK_CACHE", str(tmp_path / "cache"))
+
+    def fake_run(cmd, log, env, timeout):
+        work = Path(cmd[cmd.index("--workdir") + 1])
+        task = work / "tasks" / cmd[cmd.index("--only") + 1]
+        _touch(task / "route" / "input" / "board.kicad_pcb")
+        (task / "task.json").write_text('{"tasks": {"route": {}}}')
+        runs.append(cmd)
+        return 0, False
+    monkeypatch.setattr(kaeres, "run_logged", fake_run)
+
+    def call(job, board_text="(kicad_pcb a)"):
+        ws = tmp_path / job
+        src = ws / "src" / "b1"
+        src.mkdir(parents=True, exist_ok=True)
+        (src / "board.kicad_pcb").write_text(board_text)
+        steps = {}
+        task, rc, to = kaeres._prepare("b1", "h" * 40, ["route"], ws, {}, ws / "log", steps)
+        return task, steps
+    return call, runs
+
+
+def test_a_second_job_copies_the_preparation_of_the_same_board_files(tmp_path, monkeypatch):
+    """Jobs of one board prepared the same task again and again (each 20-340 s of KiCad DRCs)."""
+    call, runs = _fake_prepare(tmp_path, monkeypatch)
+    t1, s1 = call("job1")
+    t2, s2 = call("job2")
+    assert len(runs) == 1 and "cached" not in s1["prepare"] and s2["prepare"]["cached"]
+    assert (t2 / "task.json").read_text() == (t1 / "task.json").read_text()
+    assert (t2 / "route" / "input" / "board.kicad_pcb").exists()
+    call("job3", board_text="(kicad_pcb b)")      # other board bytes: prepared afresh
+    assert len(runs) == 2
+
+
+def test_no_task_cache_before_deterministic_preparation(tmp_path, monkeypatch):
+    """Before task spec 10 prepare drew random uuids: a copy is not what the job would prepare."""
+    call, runs = _fake_prepare(tmp_path, monkeypatch, spec=9)
+    call("job1")
+    call("job2")
+    assert len(runs) == 2 and not (tmp_path / "cache").exists()
+    call2, runs2 = _fake_prepare(tmp_path / "off", monkeypatch)
+    monkeypatch.setenv("KAERES_TASK_CACHE", "off")
+    call2("job1")
+    call2("job2")
+    assert len(runs2) == 2
