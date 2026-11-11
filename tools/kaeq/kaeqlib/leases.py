@@ -286,3 +286,18 @@ def adapt_hold(hold, hist, cfg, now):
     if loss < cfg["overcommit_loss_target"] / 2:
         return max(0.0, hold - 0.05), loss
     return hold, loss
+
+
+def keep_flags(rec, cfg, now, no_freeze_until=0.0, swapped=None):
+    """Mark a batch job's lease record (lease_plan's input) as the daemon does: "dear" if it is expected to reach
+    keep_gb or has keep_core_h of work in it (kept running: never frozen for a grant), "keep" if dear or still in
+    its run window after a thaw, and the share of its forecast growth set aside (keep_reserve_frac; swapped: what
+    it has in swap, if not rec's). Timed jobs are kept by lease_plan itself. Returns whether the job is dear."""
+    if rec.get("timed"):
+        return False
+    dear = rec["expect"] >= cfg["keep_gb"] * 1024 or rec["invest"] >= cfg["keep_core_h"] * 3600
+    rec["keep"], rec["dear"] = dear or no_freeze_until > now, dear      # (a frozen expensive job is thawed and kept)
+    if dear and cfg["keep_reserve_frac"] > 0:
+        sw = rec.get("swapped", 0.0) if swapped is None else swapped
+        rec["reserve_mb"] = cfg["keep_reserve_frac"] * max(0.0, rec["expect"] - rec["use"] - sw)
+    return dear

@@ -13,7 +13,7 @@ from .consts import GB, MEM_BINS, TICK
 from .cpu import adapt_runq_q, burst_fits, quantile
 from .gitsnap import drop_worktree, git, ref
 from .host import Host, TICK_HZ, at_high, cg_anon_refaults, cg_freeze, cg_frozen, cg_high_mb, cg_mem, cg_mem_pressure, cg_pressure, cg_set_high, cg_swap_mb, compress, compress_room_mb, job_cgroup, job_cpus, job_usage, kill_tree, pid_alive, shutil_which, uncompress
-from .leases import adapt_hold, adapt_z, lease_plan, max_rise, mem_hist, owner_correlation, pooled_headroom, warm_headroom
+from .leases import keep_flags, adapt_hold, adapt_z, lease_plan, max_rise, mem_hist, owner_correlation, pooled_headroom, warm_headroom
 from .store import BEAT, CONF, DB, HOME, HOST, LOCK, OVERCOMMIT, RISE_HIST, backup_db, close_trace, config, db, deployed, digest, dlog, drop_scratch, du_mb, event, jobdir, load_overcommit, load_rise_hist, pinned_host, rc_path, scratchdir, write_trace
 from .units import active_for, fdur, fgb, frozen_for, times
 
@@ -362,12 +362,7 @@ class Daemon:
                              held_out=swapped if st.get("squeezed") else 0.0, cg=cg))
             jj = jobs[-1]
             if not jj["timed"]:
-                dear = (jj["expect"] >= cfg["keep_gb"] * 1024 or jj["invest"] >= cfg["keep_core_h"] * 3600)
-                window = st.get("no_freeze_until", 0.0) > now
-                jj["keep"], jj["dear"] = dear or window, dear      # (a frozen expensive job is thawed and kept)
-                st["dear"] = dear
-                if dear and cfg["keep_reserve_frac"] > 0:
-                    jj["reserve_mb"] = cfg["keep_reserve_frac"] * max(0.0, jj["expect"] - m[0] - swapped)
+                st["dear"] = keep_flags(jj, cfg, now, st.get("no_freeze_until", 0.0), swapped)
         for jid in set(self.lease_st) - set(cgs):
             del self.lease_st[jid]
         if cfg["heavy_boost"] and now - self.demote_ts >= 30:
