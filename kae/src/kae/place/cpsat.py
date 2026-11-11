@@ -20,6 +20,8 @@ weighted half-perimeter wirelength over pins (pin offsets rounded to the grid).
 from __future__ import annotations
 
 import time
+
+from kae.budget import cpsat_charge, cpsat_limit
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -302,14 +304,15 @@ class Model:
 
     def solve(self, time_s, workers=2, seed=0, log=False, stop_first=False):
         s = cp_model.CpSolver()
-        s.parameters.max_time_in_seconds = max(0.05, float(time_s))
         s.parameters.num_workers = max(1, int(workers))
+        cpsat_limit(s.parameters, time_s)
         s.parameters.random_seed = int(seed)
         if stop_first:
             s.parameters.stop_after_first_solution = True
         s.parameters.log_search_progress = bool(log)
         t0 = time.monotonic()
         st = s.solve(self.m)
+        cpsat_charge(s)
         self.status = s.status_name(st)
         self.wall = time.monotonic() - t0
         self.solver = s

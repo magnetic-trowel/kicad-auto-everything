@@ -54,7 +54,8 @@ def root():
 
 
 def enabled():
-    return root() is not None
+    """A cache replay is charged by its recorded seconds, which depend on the host: off in work mode."""
+    return root() is not None and os.environ.get("KAE_BUDGET") != "work"    # (this module is stdlib only)
 
 
 # ---- clock --------------------------------------------------------------------------------

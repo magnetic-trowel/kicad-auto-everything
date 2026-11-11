@@ -1073,17 +1073,15 @@ def _job_group(bid, row, hc, kae, items, human, ws, env, log, kicad, a, size, ph
                                       "-k", str(k), "--timeout", str(method_timeout(m, row)), "--all", "--only", bid,
                                       "--name", f"cmd-{m['id']}", "-j", "1"], log, cenv,
                                 timeout=k * (method_timeout(m, row) + 1800) + 3600)
-    human_run = find_run(bid, human["id"], 0, task_id) if human else (None, None)
     adirs = {}
     for m, att in todo:
         rn = f"base-{hc[:8]}" if m["recipe"]["runner"]["type"] != "command" else f"cmd-{m['id']}"
         adirs[(m["id"], att)] = work / "results" / rn / f"m{m['id']}" / m["recipe"]["kind"] / bid / f"attempt-{att}"
     human_adir = adirs.get((human["id"], 0)) if human else None
-    human_types = {}
-    if human_adir and (human_adir / "attempt.json").exists():
-        human_types = (read_json(human_adir / "attempt.json").get("score") or {}).get("errors_by_type") or {}
-    elif human_run[0]:
-        human_types = ((read_json(human_run[0] / "evals" / f"{evs['drc']}.json") or {}).get("score") or {}).get("errors_by_type") or {}
+    fresh = (read_json(human_adir / "attempt.json") or {}) if human_adir else {}
+    fresh_types = (fresh.get("score") or {}).get("errors_by_type")
+    human_base = (dict(types=fresh_types, source="exact", evaluator=evs["drc"]) if fresh_types is not None
+                  else human_drc_baseline(bid, human, task_id, evs["drc"]))
 
     # routed physics of every new run's scored board (and the human board), one brief from the task input
     boards = {}
@@ -1119,7 +1117,7 @@ def _job_group(bid, row, hc, kae, items, human, ws, env, log, kicad, a, size, ph
             bugs.add("harness", "attempt_missing", f"kaebench wrote no attempt.json for {m['name']}", log_tail=tail(log, 60))
             continue
         if m["recipe"]["runner"]["type"] != "reference":
-            _run_bugs(rb, m, aj, adir, human_types)
+            _run_bugs(rb, m, aj, adir, human_base)
         if aj.get("status") == "score_error":
             rb.add("harness", "score_error", aj.get("error"), signature=f"harness:score_error:{_normalize(aj.get('error'))}",
                    evidence=["score_error.log"])
@@ -1156,7 +1154,7 @@ def _board_json(bid, row):
 
 
 RESTART_FILES = {"summary.json": "restarts.json", "report.json": "restart-report.json",
-                 "report-origin.json": "restart-report-origin.json"}
+                 "report-origin.json": "restart-report-origin.json", "fr-telemetry.tar": "fr-telemetry.tar"}
 
 
 def _keep_restart_files(art, tmp):
@@ -1257,7 +1255,47 @@ def _java_exceptions(log):
     return out
 
 
-def _run_bugs(bugs, m, row, adir, human_types):
+def human_drc_baseline(bid, human, task_id, evaluator):
+    """What the human layout's DRC errors are, for comparing a method on this board. source "exact": the
+    human run on task_id scored by evaluator. "fallback": the human's newest evaluation otherwise (another
+    evaluator, or a run on another task of the board; a task spec bump leaves many boards with only that).
+    "none": no scored human run, so types is None: not the same thing as a human layout with no errors."""
+    d, _ = find_run(bid, human["id"], 0, task_id) if human else (None, None)
+    on_task = d is not None
+    if human and d is None:
+        d, _ = find_run(bid, human["id"], 0)
+    scored = {k: v for k, v in evals_of(d).items() if ((v or {}).get("score") or {}).get("errors_by_type") is not None} if d else {}
+    if not scored:
+        return dict(types=None, source="none", evaluator=None)
+    key = evaluator if evaluator in scored else max(scored, key=lambda k: scored[k].get("at") or "")
+    return dict(types=scored[key]["score"]["errors_by_type"], source="exact" if on_task and key == evaluator else "fallback",
+                evaluator=key, on_task=on_task)
+
+
+def _drc_bugs(bugs, who, errors_by_type, base):
+    """DRC bug records of one run: per type, the errors beyond what the human layout has on the same board.
+    Comparisons not against the experiment's own human score get their own signature, to stay apart."""
+    ev = ["evals/", "output.kicad_pcb.gz"]
+    meta = dict(source=base["source"], evaluator=base["evaluator"])
+    for typ, n in sorted((errors_by_type or {}).items()):
+        if base["source"] == "none":
+            bugs.add(who, "drc", f"{n} {typ} error(s); no human baseline", signature=f"{who}:drc:{typ}:no-human-baseline",
+                     drc_type=typ, count=n, evidence=ev, human_baseline=meta)
+            continue
+        h = base["types"].get(typ, 0)
+        if n - h <= 0:
+            continue
+        if base["source"] == "exact":
+            bugs.add(who, "drc", f"{n - h} {typ} error(s) beyond the human layout's {h}", signature=f"{who}:drc:{typ}",
+                     drc_type=typ, count=n - h, evidence=ev, human_baseline=meta)
+        else:
+            where = "" if base.get("on_task") else ", on another task of this board"
+            bugs.add(who, "drc", f"{n - h} {typ} error(s) beyond the human layout's {h} "
+                     f"(fallback: human scored by evaluator {base['evaluator']}{where}, not the experiment's)",
+                     signature=f"{who}:drc:{typ}:human-fallback", drc_type=typ, count=n - h, evidence=ev, human_baseline=meta)
+
+
+def _run_bugs(bugs, m, row, adir, human_base):
     """Bug records for one method's attempt. Signatures start with the method name."""
     who = m["name"]
     st = row.get("status")
@@ -1297,12 +1335,8 @@ def _run_bugs(bugs, m, row, adir, human_types):
         bad = [k for k, v in (s.get("integrity") or {}).items() if not v]
         bugs.add(who, "integrity", f"invalid output: {bad} foreign={(s.get('foreign') or {}).get('by_kind')}",
                  signature=f"{who}:integrity:{','.join(sorted(bad))}", evidence=ev + ["evals/"])
-    # DRC errors the method created: per type, beyond what the human layout has on the same board
-    for typ, n in sorted((s.get("errors_by_type") or {}).items()):
-        extra = n - human_types.get(typ, 0)
-        if extra > 0:
-            bugs.add(who, "drc", f"{extra} {typ} error(s) beyond the human layout's {human_types.get(typ, 0)}",
-                     signature=f"{who}:drc:{typ}", drc_type=typ, count=extra, evidence=["evals/", "output.kicad_pcb.gz"])
+    # DRC errors the method created
+    _drc_bugs(bugs, who, s.get("errors_by_type"), human_base)
 
 
 # ------------------------------------------------------------------ reading results back
@@ -1439,6 +1473,7 @@ def exp_rows(e):
         for p in (bd / "prepare-failures").glob(f"{e['harness']['commit'][:12]}.json"):
             fails.append(read_json(p))
         task_meta = None
+        human_base = human_drc_baseline(bid, human, exp_task_id(e, bid, "route"), evs["drc"]) if human else dict(types=None, source="none", evaluator=None)
         for m, att in ((m, att) for m in want for att in range(1 if m is want[0] and human else e.get("attempts") or 1)):
             d, r = find_run(bid, m["id"], att, exp_task_id(e, bid, _run_kind(dict(method_id=m["id"]))))
             if d is None:
@@ -1460,7 +1495,13 @@ def exp_rows(e):
                      human_clean=task_meta.get("human_clean"), qualified=task_meta.get("qualified"),
                      layers=b.get("layers"), footprints=b.get("footprints"), collection=b.get("collection"), license_tier=b.get("license_tier"))
             rows.append(v)
-            bugs += read_json(d / "bugs.json", [])
+            # a run's bugs.json keeps what its job knew; its DRC records are re-based on today's human baseline
+            recs = read_json(d / "bugs.json", [])
+            if use["drc"] is not None and (human is None or m["id"] != human["id"]):
+                rb = Bugs(bid)
+                _drc_bugs(rb, m["name"], (ed[use["drc"]].get("score") or {}).get("errors_by_type"), human_base)
+                recs = [x for x in recs if x.get("category") != "drc"] + rb.items
+            bugs += recs
             if human is None or m["id"] != human["id"]:
                 made.append(r.get("finished"))
         ts = [datetime.fromisoformat(t) for t in made if t]
@@ -1610,6 +1651,15 @@ def method_table(rows, names, title):
     return out + [""]
 
 
+def _bus_section(rows, name):
+    """Report-only bus scorecard tables when the experiment's runs have them (tools/kaeres/busreport.py)."""
+    try:
+        import busreport
+        return busreport.section_for_experiment(rows, name)
+    except ImportError:
+        return []
+
+
 def cmd_exp_report(a):
     e = load_exp(a.name)
     d = exp_dir(a.name)
@@ -1694,6 +1744,7 @@ def cmd_exp_report(a):
             per[r["method"]].update(json.loads(r["errors_by_type"]))
     for typ in sorted(set().union(*per.values()), key=lambda t: -sum(per[n][t] for n in names))[:25]:
         rep.append(f"| {typ} | " + " | ".join(str(per[n][typ]) for n in names) + " |")
+    rep += _bus_section(rows, a.name)
     rep += ["", "### Router final states", "", "| method | COMPLETED | TIMED_OUT | other | none |", "|---|---|---|---|---|"]
     for m in ms.values():
         fs = Counter((r["final_state"] or "none") for r in rows if r["method_id"] == m["id"] and r["attempt"] == 0)
@@ -1705,8 +1756,6 @@ def cmd_exp_report(a):
     nondrc = [ln for ln in bl[head + 2:] if ":drc:" not in ln.split("|")[1]]
     rep += ["", f"Not DRC findings (crashes, exceptions, translation and harness bugs), {len(nondrc)} signatures:", "",
             bl[head], bl[head + 1]] + nondrc[:30]
-    if (d / "PAIRS.md").exists():              # report-only (tools/kaeres/pair_report.py); no effect on any score
-        rep += ["", (d / "PAIRS.md").read_text()]
     (d / "REPORT.md").write_text("\n".join(rep) + "\n")
     print(f"wrote {d / 'REPORT.md'}, results.csv ({len(rows)} rows), bugs/ ({len(bugs)} records)")
 
@@ -1870,6 +1919,7 @@ def cmd_rephysics_job(a):
     kv = code_dir(a.kae).with_name(code_dir(a.kae).name + ".venv-kae")
     pt = board_dir(bid) / "pintypes.json"
     written = 0
+    rebuild_errors = []
     groups = defaultdict(list)
     for d, r in todo:
         groups[r["harness_commit"]].append((d, r))
@@ -1897,6 +1947,8 @@ def cmd_rephysics_job(a):
             got = man["runs"].get(r["run"]) or {}
             if got.get("board"):
                 boards[r["run"]] = got["board"]
+            elif got.get("error"):
+                rebuild_errors.append(f"{r['run']}: {got['error']}")
         if not boards:
             continue
         pout = ws / f"physics-{hc[:8]}.json"
@@ -1915,7 +1967,12 @@ def cmd_rephysics_job(a):
                 **({"traceback": ph["traceback"]} if ph.get("traceback") else {})))
             written += 1
     print(f"{bid}: {written} physics evaluation(s) by {pid}", flush=True)
+    for x in rebuild_errors:
+        print(f"{bid}: rebuild failed: {x}", flush=True)
     shutil.rmtree(ws / "w", ignore_errors=True)
+    if not written and rebuild_errors:     # exit 0 here reads as "done" to the queue, with nothing measured
+        print(f"{bid}: no run could be rebuilt; no physics evaluation written", flush=True)
+        return 1
     return 0
 
 
@@ -2029,6 +2086,9 @@ def main():
     s.add_argument("--content-only", action="store_true",
                    help="only prepare the tasks and record their content and that of the methods' older tasks")
     s.set_defaults(f=cmd_job)
+    s = sub.add_parser("bus", help="report-only bus scorecard over stored runs: bus submit | report (tools/kaeres/busreport.py)")
+    s.set_defaults(f=lambda a: subprocess.call([sys.executable, str(HERE / "busreport.py"), *a.rest]))
+    s.add_argument("rest", nargs=argparse.REMAINDER)
     s = sub.add_parser("board", help="every run and score of one board")
     s.add_argument("id")
     s.set_defaults(f=cmd_board)

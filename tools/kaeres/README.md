@@ -41,7 +41,8 @@ Consequences:
       run.json                        method, task, harness commit, timing, CPU, router outcome
       output.kicad_pcb.gz             the method's output board
       adapter.log.gz, router-report.json, board.ses.gz, artifacts/ (router input, kept when a bug was seen)
-      restarts.json                   restart.py's per-attempt log
+      restarts.json                   restart.py's per-attempt log; each route attempt's `fr` holds its Freerouting telemetry: `loops[i].unrouted` per pass, whole `fallback` attempts, `start_necked`, `pour_connected`, `pour_cut_off` (one entry per logged line), for the first routing and each repair round; top-level `fr_raw` says what fr-telemetry.tar holds and how much was dropped
+      fr-telemetry.tar                every Freerouting run's whole log and result file, `<attempt>/<name>.gz`; attempts' telemetry together stay within 20 MB as stored per run on a board (restart.py, FR_RAW_LIMIT): past that the bulkiest raw parts go first, and `manifest.json` in the tar lists each one kept or dropped
       restart-report.json             the kept attempt's own report (a joint loop: iterations, windows, stop reason)
       restart-report-origin.json      when that board was resumed or had a final pass: the report of the fresh attempt it descends from
       evals/<eval-id>.json            score (DRC) or physics, per evaluator; <eval-id>.drc.json.gz
@@ -100,6 +101,12 @@ Lessons from experiments that ran and measured nothing (2026-11):
   (status, scores, bug records) before submitting the full one.
 - **`results.csv` holds attempt 0 only** (cp1's attempt). A multi-seed comparison reads every attempt from
   the run folders (`boards/<id>/runs/<slug>.<method8>.a<k>/`).
+- **Counted-work budgets.** With `KAE_BUDGET=work` and `PYTHONHASHSEED=0` in a method's environment,
+  its `--time` is nominal seconds of counted work (`kae.budget`): the same budget does the same work on any
+  host, `restart.py` runs its attempts in batches judged in order, and wall time is only a ceiling (4× an
+  attempt's budget; a run that hits it reports `ceiling_hit` and has failed). Keep `KAE_WORKERS=1`. Freerouting
+  gets a pass cap and its job timeout stops mattering. See
+  [counted budgets](../../docs/research/benchmark-drift-2611.md#fix-budgets-in-counted-work-not-seconds).
 - **Timed jobs.** Runs budget on wall time, so their kaeq jobs must be class `timed` (never frozen).
   Before kaeq had classes, jobs frozen for memory ran shorter and worse, unevenly between arms;
   `kaeq`'s jobs table records `freezes` and `frozen_s` per job.
@@ -190,7 +197,7 @@ Each record has `board`, `method` (a method name, `harness` or `physics`), `cate
 | `java_exception`, `java_oom` | exceptions in the router log (`exception`, `frame`, `count`), even when output was written |
 | `unconnected_mismatch` | KiCad finds more unconnected items than the router reported incomplete: connections lost in translation |
 | `integrity` | the output changed something a route result may not |
-| `drc` | DRC errors of one type (`drc_type`, `count`) beyond the human layout's on the same board |
+| `drc` | DRC errors of one type (`drc_type`, `count`) beyond the human layout's on the same board. `human_baseline` says what they were compared with: the experiment's own human score (signature `...:drc:<type>`), else the human's newest evaluation (`...:human-fallback`), else none (`...:no-human-baseline`, `count` is all of the run's errors). `exp report` recomputes these from the run's scores, without changing `bugs.json` |
 | `over_time` | the attempt overran its timeout by more than 5 % |
 | `physics_error` | kae's physics failed on a board or module |
 

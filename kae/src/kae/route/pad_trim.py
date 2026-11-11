@@ -33,6 +33,7 @@ their angle to the edge's normal (an acute wedge between track and pad edge is a
 """
 from __future__ import annotations
 
+from kae.budget import now as clock_now
 import argparse
 import json
 import math
@@ -262,7 +263,7 @@ def run(input_path, output_path, overlap=None, workdir=None, timeout=1800, reend
     from . import constraints as CN
     from . import drc
     import time
-    end_t = time.monotonic() + timeout
+    end_t = clock_now() + timeout
     inp = Path(input_path).resolve()
     wd = Path(workdir or tempfile.mkdtemp(prefix="kae-trim-"))
     wd.mkdir(parents=True, exist_ok=True)
@@ -282,7 +283,7 @@ def run(input_path, output_path, overlap=None, workdir=None, timeout=1800, reend
         rep.update(kept=len(trims), stats_out=stats(new, info), gate=False,
                    _entries=J.diff_entries("trim", text, new, {t[0]["uuid"]: t[0]["uuid"] for t in trims}))
         return rep
-    base_rep = drc.run(staged, wd / "in.drc.json", timeout=max(10, end_t - time.monotonic()))
+    base_rep = drc.run(staged, wd / "in.drc.json", timeout=max(10, end_t - clock_now()))
     base = drc.summary(base_rep)
     rep["drc_in"] = base
     cand = wd / "out" / "board.kicad_pcb"
@@ -296,10 +297,10 @@ def run(input_path, output_path, overlap=None, workdir=None, timeout=1800, reend
     # every re-end (keeping the plain cuts), then everything
     steps = [1.0, 2.5, "reend", "all"]
     for rnd in range(len(steps) + 1):
-        if not trims or len(skip) >= len(trims) or end_t - time.monotonic() < 10:
+        if not trims or len(skip) >= len(trims) or end_t - clock_now() < 10:
             break
         cand.write_text(write(text, trims, skip), encoding="utf-8")
-        r = drc.run(cand, wd / f"out.r{rnd}.json", timeout=max(10, end_t - time.monotonic()))
+        r = drc.run(cand, wd / f"out.r{rnd}.json", timeout=max(10, end_t - clock_now()))
         s = drc.summary(r)
         worse = {t: n for t, n in s["by_type"].items() if n > base["by_type"].get(t, 0)}
         if s["unconnected"] > base["unconnected"]:

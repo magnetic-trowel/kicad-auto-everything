@@ -31,6 +31,7 @@ tangents and arcs), so the critical copper keeps its grid shape and the report s
 """
 from __future__ import annotations
 
+from kae.budget import now as clock_now
 import copy
 import dataclasses
 import heapq
@@ -149,7 +150,7 @@ def tighten(s, fills=None, opts=None, log=None):
     module docstring). Changes the session in place (space, module copper and hops, physics,
     s.arcs). Returns the report: counters, physics before and after per module, rails'
     resistance, critical copper length and corners before and after, seconds."""
-    t0 = time.monotonic()
+    t0 = clock_now()
     o = {**DEFAULTS, **{k: v for k, v in (s.opts or {}).items() if k in DEFAULTS}, **(opts or {})}
     log = log or getattr(s, "log", None) or (lambda *a: None)
     tol = float(o["tighten_tol"])
@@ -160,7 +161,7 @@ def tighten(s, fills=None, opts=None, log=None):
     if o["arc_policy"] == "keep45":
         rep["skipped"] = ("arc_policy keep45: taut has no segment-only mode (its paths are tangents and arcs), "
                           "so the critical copper keeps its grid shape")
-        rep["seconds"] = round(time.monotonic() - t0, 3)
+        rep["seconds"] = round(clock_now() - t0, 3)
         return rep
     if o["arc_policy"] != "arcs":
         raise ValueError(f"arc_policy {o['arc_policy']!r}: 'arcs' or 'keep45'")
@@ -169,7 +170,7 @@ def tighten(s, fills=None, opts=None, log=None):
     rep["before"] = copper_stats(s)
     cand = {it.uuid for it in sp.routed if it.kind == "track" and _owner_id(it) not in FIXED_OWNERS}
     if not cand:
-        rep.update(groups=0, seconds=round(time.monotonic() - t0, 3), after=rep["before"])
+        rep.update(groups=0, seconds=round(clock_now() - t0, 3), after=rep["before"])
         return rep
     by_uuid = {it.uuid: it for it in sp.routed}
     mods = {m.id: m for m in list(s.modules) + list(getattr(s.ctx, "rail_modules", []) or [])}
@@ -193,14 +194,14 @@ def tighten(s, fills=None, opts=None, log=None):
     pours = o["tighten_pours"] if fills is not None else "refill"
     topts = dict(pours=pours, pairs="fixed", passes=int(o["tighten_passes"]))
     T = _taut_cls()
-    t1 = time.monotonic()
+    t1 = clock_now()
     tt = T(s.path, topts, log=lambda m: log(f"tighten: {m}"), board=board, info=s.info, space=tsp,
            brief=s.brief, fills=fills)
     tt.cand, tt.origin, tt.events = cand, {}, []
     tt.run_passes()
     rep["taut"] = dict(tried=tt.stats.get("tried", 0), improved=tt.stats.get("improved", 0),
                        skipped=dict(tt.stats.get("skipped", {})), passes=len(tt.stats.get("passes", [])),
-                       seconds=round(time.monotonic() - t1, 2), pours=topts["pours"])
+                       seconds=round(clock_now() - t1, 2), pours=topts["pours"])
 
     # ---- groups: branches sharing an input track move together
     up = {}
@@ -257,7 +258,7 @@ def tighten(s, fills=None, opts=None, log=None):
     rep["groups"] = len(groups)
     rep["branches_tightened"] = sum(1 for _ in tt.events)
     if not groups:
-        rep.update(after=rep["before"], seconds=round(time.monotonic() - t0, 3))
+        rep.update(after=rep["before"], seconds=round(clock_now() - t0, 3))
         return rep
 
     # ---- the guard
@@ -463,7 +464,7 @@ def tighten(s, fills=None, opts=None, log=None):
         kept_nets = {n for g in groups if g.k in acc for n in g.nets}
         rep.update(kept=len(acc), refused=len(refused), refused_why=why, modules=per,
                    hazards=[h for h in tt.hazards if set(h.get("objects") or []) & kept_nets],
-                   after=copper_stats(s), seconds=round(time.monotonic() - t0, 3))
+                   after=copper_stats(s), seconds=round(clock_now() - t0, 3))
         log(f"tighten: {len(groups)} groups ({rep['branches_tightened']} branch rewrites), {len(acc)} kept, "
             f"{len(refused)} refused {why or ''}; {rep['before']['length_mm']} -> {rep['after']['length_mm']} mm, "
             f"corners {rep['before']['corners']} -> {rep['after']['corners']}; {rep['seconds']:.1f}s")

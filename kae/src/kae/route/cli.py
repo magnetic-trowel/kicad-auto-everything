@@ -39,6 +39,8 @@ The report ends with "hazards" and "hazard_summary" (kae.hazards): among them a 
 OUTPUT with the safety checks forced on whatever the project's severities say (--recheck,
 kae.board_hazards). Exit status: 0 when a routed board was written, 2 otherwise.
 """
+from kae.budget import start_run as _start_run
+from kae.budget import now as clock_now
 import argparse
 import json
 import sys
@@ -121,6 +123,8 @@ def main(argv=None):
     f.add_argument("--report")
     recheck_args(f)
     a = ap.parse_args(argv)
+    if getattr(a, "time", None):
+        _start_run(float(a.time))
     from kae.route import bridge
     if a.cmd == "finish":
         from kae.route import finish
@@ -148,7 +152,7 @@ def main(argv=None):
 
 
 def _finish(a, run, opts):
-    t0 = time.monotonic()
+    t0 = clock_now()
     for kv in a.set:
         k, _, v = kv.partition("=")
         try:

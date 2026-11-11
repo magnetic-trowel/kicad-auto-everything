@@ -19,6 +19,7 @@
 The output is written as soon as a routed board exists and replaced only by better ones,
 so a run that is killed still leaves its best board. Returns a JSON-able report.
 """
+from kae.budget import now as clock_now
 import json
 import os
 import shutil
@@ -175,7 +176,7 @@ def severities(board_path):
 
 
 def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None, log=_log):
-    t0 = time.monotonic()
+    t0 = clock_now()
     fork = stepcache.fork_context(input_path, seed, time_s, opts)   # KAE_STEP_CACHE: fork points
     opts = {**DEFAULT_OPTS, **(opts or {})}
     input_path, output_path = Path(input_path).resolve(), Path(output_path).resolve()
@@ -187,7 +188,7 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
     original_input = input_path
 
     def left():
-        return time_s - (time.monotonic() - t0)
+        return time_s - (clock_now() - t0)
 
     try:
         if opts.get("pairs") == "first":
@@ -211,7 +212,7 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             from .escape import has_grid
             balls = has_grid(info)    # no ball grid: no escape stage (its staging and Space cost time)
         if planes or (zoned and share) or balls:
-            te = time.monotonic()
+            te = clock_now()
             staged = drc.stage_board(input_path, input_path, wd / "escapes")
             fills = pcbnew_io.zone_fills(staged)["zones"] if zoned else []   # refilled with the board's rules
         if zoned and share and opts.get("planes", "cost") == "cost":
@@ -222,7 +223,7 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             from . import lastmile
             esc = wd / "escapes" / "escaped.kicad_pcb"
             got = lastmile.plane_escapes(staged, info, p, fills if planes else [], esc, sev=sev, log=log, balls=balls,
-                                         deadline=time.monotonic() + max(10.0, opts.get("escape_share", 0.15) * left()),
+                                         deadline=clock_now() + max(10.0, opts.get("escape_share", 0.15) * left()),
                                          escape_opts=opts)
             report["plane_escapes"] = {k: v for k, v in got.items() if k not in ("added", "escape")}
             if got.get("escape"):
@@ -236,7 +237,7 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
                 input_path = esc_in
                 info = pcbnew_io.export_dsn(input_path, kdsn)
                 p = constraints.plan(info, input_path, opts)
-            report["plane_escapes"]["seconds"] = round(time.monotonic() - te, 1)
+            report["plane_escapes"]["seconds"] = round(clock_now() - te, 1)
         p.plane_policy = plane_policy(opts)
         p.plane_cost = opts.get("plane_cost")
         p.strict_planes = opts.get("strict_planes") or []
@@ -254,7 +255,7 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
         specctra.write(tree, dsn)
         translate.write_rules(p, dsn)
         log(f"plan: {len(p.classes)} classes, {len(p.obstacle_classes)} obstacle classes, "
-            f"{report['translate'].get('obstacles')} obstacles ({time.monotonic() - t0:.1f}s)")
+            f"{report['translate'].get('obstacles')} obstacles ({clock_now() - t0:.1f}s)")
         if p.notes.get("dru_rejected"):
             log(f"rules: KiCad drops the .kicad_dru ({p.notes['dru_rejected']}); no custom rules applied")
 
@@ -300,7 +301,7 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             report["import_check"] = imp["import_check"]
             report.setdefault("hazards", []).extend(imp["hazards"])
             report["status"] = "routed"
-        stepcache.save_fork(fork, "routed", {"board": output_path, "ses": run.ses}, time.monotonic() - t0)
+        stepcache.save_fork(fork, "routed", {"board": output_path, "ses": run.ses}, clock_now() - t0)
         # the input's locked tracks and vias (pre-routes): exported as fixed wiring, never
         # returned by Freerouting, kept as they are by KiCad's import; the repair loop never
         # rips, widens or unlocks them
@@ -340,13 +341,13 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
                     final_rep = tv_rep or final_rep
             if diag_s and final_rep and (report["repair"].get("final") or {}).get("unconnected"):
                 report["blocked"] = diagnose(output_path, input_path, original_input, info, p, final_rep, sev, wd,
-                                             deadline=time.monotonic() + max(5.0, left() - 8), log=log, opts=opts)
+                                             deadline=clock_now() + max(5.0, left() - 8), log=log, opts=opts)
                 report.setdefault("hazards", []).extend(report["blocked"].get("hazards") or [])
         elif opts.get("drc", True) and left() > 20:
             staged = drc.stage_board(output_path, input_path, wd / "drc")
             rep = drc.run(staged, wd / "drc" / "drc.json", timeout=max(10, left() - 5))
             report["drc"] = drc.summary(rep)
-        stepcache.save_fork(fork, "repaired", {"board": output_path}, time.monotonic() - t0)
+        stepcache.save_fork(fork, "repaired", {"board": output_path}, clock_now() - t0)
         if opts.get("pairs") == "post" and left() > 30:
             # couple the pairs the routed board already has, in place; kept only when KiCad finds it no worse
             report["pairs"] = _pairs_post(output_path, input_path, wd, opts, report, left, log, seed, final_rep)
@@ -366,12 +367,12 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             for c in blk["packages"]:
                 report.setdefault("hazards", []).extend(c.get("hazards") or [])
             blk["summary"] = [c["summary"] for c in blk["packages"]] + list(blk.get("summary") or [])
-        stepcache.save_fork(fork, "final", {"board": output_path}, time.monotonic() - t0, report)
+        stepcache.save_fork(fork, "final", {"board": output_path}, clock_now() - t0, report)
         return report
     finally:
         report["opts"] = {k: v for k, v in opts.items()
                           if k not in ("crit_zones", "fixed_uuids", "severities", "soft_fixed", "physics_guard")}
-        report["seconds"] = round(time.monotonic() - t0, 2)
+        report["seconds"] = round(clock_now() - t0, 2)
         if own_wd and not opts.get("keep"):
             shutil.rmtree(wd, ignore_errors=True)
         else:
@@ -503,7 +504,7 @@ def last_mile_only(input_path, board_path, output_path, time_s=120.0, seed=0, wo
     1,363 s of 1,519 s with 2 open connections that a last mile closes in 33 s). Returns a
     report like route()'s."""
     from . import repair
-    t0 = time.monotonic()
+    t0 = clock_now()
     opts = {**DEFAULT_OPTS, **(opts or {})}
     input_path, output_path = Path(input_path).resolve(), Path(output_path).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -525,7 +526,7 @@ def last_mile_only(input_path, board_path, output_path, time_s=120.0, seed=0, wo
         fixed = {r["uuid"] for r in routing(input_path) if r.get("locked")}   # the input's pre-routes
         opts["fixed_uuids"] = sorted(fixed)
         staged = drc.stage_board(output_path, input_path, wd / "start")
-        rep = drc.run(staged, wd / "start" / "drc.json", timeout=max(10, deadline - time.monotonic()))
+        rep = drc.run(staged, wd / "start" / "drc.json", timeout=max(10, deadline - clock_now()))
         best = drc.summary(rep)
         report["start"] = best
         log(f"last mile only: {best['errors']} errors {best['by_type']}, {best['unconnected']} unconnected")
@@ -538,7 +539,7 @@ def last_mile_only(input_path, board_path, output_path, time_s=120.0, seed=0, wo
         report.update(rounds=rounds, final=final, status="repaired")
         return report
     finally:
-        report["seconds"] = round(time.monotonic() - t0, 2)
+        report["seconds"] = round(clock_now() - t0, 2)
         if own_wd and not opts.get("keep"):
             shutil.rmtree(wd, ignore_errors=True)
         else:

@@ -32,7 +32,6 @@ from __future__ import annotations
 import math
 import re
 import tempfile
-import time
 import uuid as _uuid
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -43,6 +42,7 @@ from shapely.geometry import Point
 
 from kae.board import pcbnew_io
 from kae.board.kicad_file import load
+from kae.budget import now as clock_now
 
 from . import constraints as CN
 from . import critical_write as W
@@ -831,7 +831,7 @@ def post_pass(routed_path, out_path, time_s=120.0, opts=None, log=_log):
     """E37 alternative: re-lay already-routed pairs as pairs inside a finished board. Each pair's existing
     unlocked copper is ripped for its own attempt and restored if the pair does not close, so the pass never
     opens a connection. Returns a JSON-able report; out_path = routed_path with the pairs replaced."""
-    t0 = time.monotonic()
+    t0 = clock_now()
     routed_path, out_path = Path(routed_path), Path(out_path)
     board = load(routed_path)
     with tempfile.TemporaryDirectory(prefix="kae-pair-") as d:
@@ -850,7 +850,7 @@ def post_pass(routed_path, out_path, time_s=120.0, opts=None, log=_log):
     rep = dict(pairs=[], counts=dict(detected=len(pairs)))
     tracks, vias, remove = [], [], []
     for pr in r.order(pairs):
-        if time.monotonic() - t0 > time_s:
+        if clock_now() - t0 > time_s:
             rep["pairs"].append(dict(p=pr.p, n=pr.n, status="skipped", reason="budget"))
             continue
         old = [it for it in r.sp.existing if it.net in (pr.p, pr.n) and not it.locked and it.kind in ("track", "via")]
@@ -888,13 +888,13 @@ def post_pass(routed_path, out_path, time_s=120.0, opts=None, log=_log):
     for e in rep["pairs"]:
         c[e["status"]] = c.get(e["status"], 0) + 1
     rep["counts"].update(c, tracks=len(tracks), vias=len(vias))
-    rep["seconds"] = round(time.monotonic() - t0, 2)
+    rep["seconds"] = round(clock_now() - t0, 2)
     return rep
 
 
 def route_pairs(board_path, out_path, time_s=120.0, opts=None, log=_log, board=None, info=None, sev=None):
     """Pairs of `board_path` routed and locked into a copy at `out_path`. Returns a JSON-able report."""
-    t0 = time.monotonic()
+    t0 = clock_now()
     board_path, out_path = Path(board_path), Path(out_path)
     board = board or load(board_path)
     if info is None:
@@ -920,12 +920,12 @@ def route_pairs(board_path, out_path, time_s=120.0, opts=None, log=_log, board=N
             s = board_path.with_suffix(ext)
             if s.exists() and s.resolve() != out_path.with_suffix(ext).resolve():
                 shutil.copy2(s, out_path.with_suffix(ext))
-        rep["seconds"] = round(time.monotonic() - t0, 2)
+        rep["seconds"] = round(clock_now() - t0, 2)
         return rep
     r = Router(board, info, sev, opts=o, log=log)
     tracks, vias = [], []
     for pr in r.order(pairs):
-        if time.monotonic() - t0 > time_s:
+        if clock_now() - t0 > time_s:
             rep["pairs"].append(dict(p=pr.p, n=pr.n, tier=pr.tier, status="skipped", reason="budget"))
             continue
         try:
@@ -952,5 +952,5 @@ def route_pairs(board_path, out_path, time_s=120.0, opts=None, log=_log, board=N
     for e in rep["pairs"]:
         c[e["status"]] = c.get(e["status"], 0) + 1
     rep["counts"].update(c, tracks=len(tracks), vias=len(vias))
-    rep["seconds"] = round(time.monotonic() - t0, 2)
+    rep["seconds"] = round(clock_now() - t0, 2)
     return rep

@@ -773,3 +773,100 @@ def test_intrinsic_footprint_violations_are_not_the_placers():
     rn = dict(type="clearance", items=[dict(description="Pad 2 [SCDAT6] of RN2 on F.Cu"),
                                       dict(description="Pad 1 [SCDAT7] of RN2 on F.Cu")])
     assert _own_cutout(rn) and not _own_cutout(dict(type="clearance", items=rn["items"][:1]))
+
+
+def test_anchor_fixes_only_parts_with_no_spot(monkeypatch):
+    """place.pipeline._anchor_tight_parts: a part the grid gives no spot free of the fixed
+    geometry is fixed at an exactly clean spot (the check runs on the fixture's real geometry;
+    the 'no spot' verdict is forced, since this fixture has room); others are left alone."""
+    from kae.place import exact as ex
+    from kae.place import pipeline as pl
+    monkeypatch.setattr(pl, "ANCHOR_AREA_SHARE", 0.0)
+    P = Problem.build(load(FIXTURE))
+    tight = max(P.mov, key=lambda q: P.parts[q].area)
+    real = ex._candidates
+    calls = {}
+
+    def fake(P_, st, i, S, pad, ks, w_rot, limit, edge=False):
+        calls[i] = calls.get(i, 0) + 1
+        return [] if i == tight and calls[i] == 1 else real(P_, st, i, S, pad, ks, w_rot, limit, edge=edge)
+
+    monkeypatch.setattr(ex, "_candidates", fake)
+    rep = {}
+    poses, hung = pl._anchor_tight_parts(P, rep, lambda m: None)
+    assert list(poses) == [P.parts[tight].uuid] and hung == []
+    assert rep["anchored"]["parts"][0]["anchored"] is True
+
+
+def test_anchor_at_an_exact_only_spot_needs_kicad(monkeypatch):
+    """No grid-free spot: the exact check's spots are fixed only when KiCad's DRC agrees; otherwise the part keeps
+    the overhang and stays with the normal stages."""
+    from kae.place import exact as ex
+    from kae.place import pipeline as pl
+    monkeypatch.setattr(pl, "ANCHOR_AREA_SHARE", 0.0)
+    real = ex._candidates
+    for verdict, anchored in (((False, "hole_clearance 2"), False), ((True, "clean"), True)):
+        P = Problem.build(load(FIXTURE))
+        tight = max((q for q in P.mov if P.parts[q].has_courtyard), key=lambda q: P.parts[q].area)
+        calls = {"n": 0}
+
+        def fake(P_, st, i, S, pad, ks, w_rot, limit, edge=False):
+            if i == tight:
+                calls["n"] += 1
+                if calls["n"] <= 2:            # no spot at all, and none grid-free with the overhang
+                    return []
+            return real(P_, st, i, S, pad, ks, w_rot, limit, edge=edge)
+
+        monkeypatch.setattr(ex, "_candidates", fake)
+        asked = []
+        monkeypatch.setattr(pl, "_kicad_agrees", lambda *a: (asked.append(a[3]), verdict)[1])
+        rep = {}
+        poses, hung = pl._anchor_tight_parts(P, rep, lambda m: None, board_path="x.kicad_pcb")
+        row = rep["anchored"]["parts"][0]
+        assert row["grid_free"] is False and asked and row["anchored"] is anchored
+        assert (P.parts[tight].uuid in poses) is anchored and (hung == []) is anchored
+        assert len(asked) == (1 if anchored else pl.ANCHOR_KICAD_TRIES)
+
+
+def test_a_board_whose_only_free_part_is_anchored_writes_its_pose(monkeypatch):
+    """Regression (loop-legal-ab2): when the anchored part was the board's only free part, place() returned no poses
+    and the part stayed at its staged pose, off the board."""
+    import dataclasses
+
+    from kae.place import exact as ex
+    from kae.place import pipeline as pl
+    monkeypatch.setattr(pl, "ANCHOR_AREA_SHARE", 0.0)
+    b = load(FIXTURE)
+    P0 = Problem.build(b)
+    keep = P0.parts[max((q for q in P0.mov if P0.parts[q].has_courtyard), key=lambda q: P0.parts[q].area)].uuid
+    b = dataclasses.replace(b, footprints=[f if f.uuid == keep else dataclasses.replace(f, locked=True) for f in b.footprints])
+    real = ex._candidates
+    first = {"done": False}
+
+    def fake(P_, st, i, S, pad, ks, w_rot, limit, edge=False):
+        if not first["done"]:
+            first["done"] = True
+            return []                      # tight: no spot free of the fixed geometry
+        return real(P_, st, i, S, pad, ks, w_rot, limit, edge=edge)
+
+    monkeypatch.setattr(ex, "_candidates", fake)
+    res = pl.place(b, seed=0, time_s=20.0, physics=False, workers=1)
+    assert res.report.get("anchored", {}).get("uuids") == [keep]
+    assert keep in res.poses
+
+
+def test_round_pads_and_holes_measure_within_the_arc_error():
+    """Regression (melexinvn-bs-kombo): a 3 mm NPTH hole and a 1.7 mm round pad 0.2402 mm apart, under a 0.25 mm
+    hole clearance. KiCad measures arcs exactly and flags it; with 8 segments per quarter circle both polygons sat
+    inside their circles and read 0.2491 mm, which the exact check (tolerance 0.005) passed."""
+    from kae.board.model import Pad
+    from kae.place.legalize import ARC_ERR, hole_shape, pad_shape
+    gap = 0.2402
+    hole = Pad(number="", net="", kind="np_thru_hole", shape="circle", size=(3.0, 3.0), lx=0.0, ly=0.0, lrot=0.0,
+               x=0.0, y=0.0, layers=["F.Cu", "B.Cu"], drill=3.0)
+    d = 1.5 + gap + 0.85
+    pad = Pad(number="15", net="+3V3", kind="thru_hole", shape="oval", size=(1.7, 1.7), lx=d * 0.6, ly=d * 0.8, lrot=0.0,
+              x=0.0, y=0.0, layers=["F.Cu", "B.Cu"], drill=1.0)
+    measured = hole_shape(hole).distance(pad_shape(pad))
+    assert gap <= measured <= gap + 2 * ARC_ERR + 1e-9
+    assert measured < 0.25 - 0.005           # the exact check's test: it now reports the violation

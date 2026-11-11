@@ -164,6 +164,41 @@ def test_freerouting_asks_the_fork_for_the_table(tmp_path):
     assert FR.pin_entry_stats(log) == dict(pin_layers=3, tails=2, raw=1, inserted=4)
 
 
+def test_telemetry_reads_passes_fallback_necks_and_pours():
+    log = """INFO Auto-routing pass #1 on board 'a' was completed in 5.67 seconds with score 893.71 (21 unrouted and 2 violations), using 8 CPU
+INFO Auto-routing pass #2 on board 'b' was completed in 4.42 seconds with score 934.12 (13 unrouted and 0 violations), using 12 CPU
+INFO Auto-routing pass #1 on board 'c' was completed in 1.00 seconds with score 989.00 (2 unrouted and 0 violations), using 13 CPU
+INFO Start necked: 7 connection(s) of nets that needed the neck before routed at the neck width without a class-width search, 2 did not route.
+INFO Start necked: 1 connection(s) of nets that needed the neck before routed at the neck width without a class-width search, 0 did not route.
+INFO Connected 8 group(s) of copper that foreign tracks had cut off from the fill of their pour.
+WARN 3 pin(s) or via(s) are cut off from the fill of their pour by foreign tracks
+"""
+    report = dict(phases=dict(fallback=dict(chosen="continue", attempts=[
+        dict(strategy="default", stop_reason="stagnation", unrouted=1, new_or_changed_violations=0, duration_seconds=49.6, router_score=7.5),
+        dict(strategy="continue", stop_reason="completed", unrouted=0, new_or_changed_violations=0, duration_seconds=11.4)])))
+    t = FR.telemetry(report, log)
+    assert [lp["unrouted"] for lp in t["loops"]] == [[21, 13], [2]]
+    assert t["loops"][0]["seconds"] == [5.67, 4.42] and t["loops"][0]["violations"] == [2, 0]
+    assert t["fallback"]["chosen"] == "continue" and t["fallback"]["attempts"][1]["strategy"] == "continue"
+    assert t["fallback"]["attempts"][0]["router_score"] == 7.5 and t["fallback"]["attempts"][0]["seconds"] == 49.6
+    assert t["start_necked"] == [dict(routed=7, failed=2), dict(routed=1, failed=0)]
+    assert t["pour_connected"] == [8] and t["pour_cut_off"] == [3]
+    assert FR._summary(report, log)["telemetry"] == t
+    assert FR.telemetry({}, "") == {} and "telemetry" not in FR._summary(dict(final_state="COMPLETED"), "")
+
+
+def test_raw_log_and_result_are_kept_when_asked(tmp_path, monkeypatch):
+    result = tmp_path / "board.result.json"
+    result.write_text("{}")
+    ses = tmp_path / "board.ses"
+    FR._keep_raw(ses, "pass log", result)
+    assert not list(tmp_path.glob("raw/*"))
+    monkeypatch.setenv("KAE_FR_RAW_DIR", str(tmp_path / "raw"))
+    FR._keep_raw(ses, "pass log", result)
+    assert sorted(p.suffix for p in (tmp_path / "raw").iterdir()) == [".json", ".log"]
+    assert next((tmp_path / "raw").glob("*.log")).read_text() == "pass log"
+
+
 def test_plan_mode_is_written(monkeypatch):
     monkeypatch.setenv("KAE_FR_PIN_ENTRIES", "plan")
     monkeypatch.delenv("KAE_FR_RAILS", raising=False)

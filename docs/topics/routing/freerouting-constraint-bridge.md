@@ -58,7 +58,7 @@ Plumbing [P]: KiCad names DSN layers by user names ("GND" for In1.Cu), bridged b
 
 ### Freerouting build
 
-The bridge runs the magnetic-trowel fork when installed (`tools/research/routing/install_freerouting_fork.sh`, or `KAE_BRIDGE_FREEROUTING`); kaebench's `freerouting` adapter keeps upstream 2.5.0, so the human-placement baseline is unchanged. The fork adds `router.min_trace_width_um`, a floor under every neck-down (pad necks, fanout micro-neckdown, neck-width retries) [P: magnetic-trowel/freerouting#2]; older builds log it as unknown and ignore it.
+The bridge runs the Freerouting build it is told to: `KAE_BRIDGE_FREEROUTING`, else the build pinned in `$KAE_HOME/kae-freerouting.pin` (`tools/research/routing/install_freerouting_fork.sh REF --pin` writes it), else `KAE_FREEROUTING`; with none it stops with an error. It never takes the newest install: that once made experiment wrappers every run's router. Production is the magnetic-trowel fork; kaebench's `freerouting` adapter keeps upstream 2.5.0, so the human-placement baseline is unchanged. The fork adds `router.min_trace_width_um`, a floor under every neck-down (pad necks, fanout micro-neckdown, neck-width retries) [P: magnetic-trowel/freerouting#2]; older builds log it as unknown and ignore it.
 
 ### Freerouting 2.5.0 behaviour the translation relies on
 

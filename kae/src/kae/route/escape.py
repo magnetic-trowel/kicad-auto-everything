@@ -56,6 +56,7 @@ blocked (kae.route.blocked's format: cause "rule", summary), laid, wanted}.
 """
 from __future__ import annotations
 
+from kae.budget import now as clock_now
 import math
 import time
 
@@ -782,7 +783,7 @@ def plan_grid(sp, pkg, info, opts=None, deadline=None, order=None):
     rounded greedily (sites exclusive); stage 2: each layer's integer flow with the vias
     fixed and a commodity per side, so that escapes leave towards their nets' other ends.
     `order`: bus net lists (not used yet)."""
-    t0 = time.monotonic()
+    t0 = clock_now()
     ctx = _setup(sp, pkg, info, opts)
     ok = _site_ok(sp, ctx)
     M, opt, plane, _ = _stage1(sp, ctx, ok, pads=bool((opts or {}).get("escape_via_in_pad")))
@@ -792,7 +793,7 @@ def plan_grid(sp, pkg, info, opts=None, deadline=None, order=None):
                 rules={l: {k: round(v, 4) for k, v in r.items() if v is not None} for l, r in ctx["R"].items()},
                 variables=M.n, rows=len(M.rows))
     if x is None:
-        plan.update(status="no solution", seconds=round(time.monotonic() - t0, 1))
+        plan.update(status="no solution", seconds=round(clock_now() - t0, 1))
         return plan, ctx, {}, []
     plan["lp"] = round(float(sum(x[v] for v in opt.values())), 1)
     # flexibility: a ball's legal options (layer and site); the scarce ones choose first, the
@@ -823,7 +824,7 @@ def plan_grid(sp, pkg, info, opts=None, deadline=None, order=None):
     paths = {}
 
     def layer_plan(l, assigned):
-        left = 20.0 if deadline is None else max(3.0, min(20.0, deadline - time.monotonic()))
+        left = 20.0 if deadline is None else max(3.0, min(20.0, deadline - clock_now()))
         got = _stage2(sp, ctx, l, assigned, taken, left)
         if got is None or len(got) < len(assigned):
             # the sides cost escapes (or no integer plan in time): one commodity escapes as
@@ -842,7 +843,7 @@ def plan_grid(sp, pkg, info, opts=None, deadline=None, order=None):
     # the balls the rounding left out: each layer in turn takes them if it then escapes more
     for l in real:
         lost = [k for k in ctx["sig"] if not any(k in got for _a, got in per_layer.values())]
-        if not lost or (deadline is not None and time.monotonic() > deadline):
+        if not lost or (deadline is not None and clock_now() > deadline):
             break
         add = []
         for k in lost:
@@ -876,7 +877,7 @@ def plan_grid(sp, pkg, info, opts=None, deadline=None, order=None):
     plan["planned"] = len(paths)
     plan["plane_vias"] = len(plane_vias)
     plan["by_layer"] = {l: sum(1 for q in paths.values() if q["layer"] == l) for l in ctx["layers"]}
-    plan["seconds"] = round(time.monotonic() - t0, 1)
+    plan["seconds"] = round(clock_now() - t0, 1)
     return plan, ctx, paths, plane_vias
 
 
@@ -1027,7 +1028,7 @@ def certificate(sp, pkg, info, opts=None, log=print, deadline=None):
         return e is not None and e >= demand - 0.5
 
     def more_time():
-        return deadline is None or time.monotonic() < deadline
+        return deadline is None or clock_now() < deadline
     cur = dict(w=min(R[l]["w"] for l in real), c=min(R[l]["c"] for l in real), c_pad=meta["cpad"],
                D=min(R[l]["D"] for l in real))
     dr = min(R[l]["drill"] for l in real)
@@ -1334,7 +1335,7 @@ def _lay_grid(sp, ctx, paths, plane_vias, info, deadline=None, tracks=True):
                 continue
             rec["via"] = [round(v[0], 4), round(v[1], 4)]
             rec["via_size"] = list(via_size.get((pd.net, rec["via"][0], rec["via"][1]), sp.via_size(pd.net)))
-        if deadline is not None and time.monotonic() > deadline:
+        if deadline is not None and clock_now() > deadline:
             continue
         start = pd.pos if l == B else tuple(rec["via"])
         pts = _plan_points(ctx, q, start, slots, R[l]["w"] + R[l]["c"])
@@ -1353,7 +1354,7 @@ def _lay_grid(sp, ctx, paths, plane_vias, info, deadline=None, tracks=True):
                 break
     # then a search for the escapes their planned path did not fit, while time allows
     for rec in recs:
-        if rec["laid"] or "_pts" not in rec or (deadline is not None and time.monotonic() > deadline):
+        if rec["laid"] or "_pts" not in rec or (deadline is not None and clock_now() > deadline):
             continue
         k, pts = rec["_k"], rec["_pts"]
         q, pd = paths[k], balls[k][0]
@@ -1534,7 +1535,7 @@ def run(sp, info, opts=None, log=print, deadline=None):
                     out["blocked"].append(c)
                     out["packages"].append(dict(ref=pkg["ref"], kind="ring", certificate=c["summary"]))
                 continue
-            if deadline is not None and time.monotonic() > deadline:
+            if deadline is not None and clock_now() > deadline:
                 log(f"escape plan {pkg['ref']}: no time left")
                 continue
             routed = _routed_inside(sp, pkg)

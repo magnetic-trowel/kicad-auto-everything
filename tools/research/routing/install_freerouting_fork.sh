@@ -5,14 +5,21 @@
 # Build the magnetic-trowel/freerouting fork and install it where kae's bridge finds it:
 #   $KAE_HOME/kae-freerouting-fork-<sha>/bin/freerouting
 # with its own Java runtime (jlink, the modules of the upstream 2.5.0 bundle), so it runs in
-# the benchmark sandbox without a system JDK. kae.route.freerouting prefers the newest such
-# install (or KAE_BRIDGE_FREEROUTING); kaebench's own `freerouting` adapter keeps using the
+# the benchmark sandbox without a system JDK. kae.route.freerouting runs the build named by
+# KAE_BRIDGE_FREEROUTING or pinned in $KAE_HOME/kae-freerouting.pin, never the newest install:
+# --pin makes this build the pinned one. kaebench's own `freerouting` adapter keeps using the
 # upstream release, so the human+Freerouting baseline does not change.
 #
-#   tools/research/routing/install_freerouting_fork.sh [REF] [SRC_DIR]
+#   tools/research/routing/install_freerouting_fork.sh [REF] [SRC_DIR] [--pin]
 # REF defaults to origin/master; SRC_DIR to $KAE_HOME/src/freerouting (cloned if missing).
 # Gradle provisions the JDK 25 toolchain the fork needs.
 set -euo pipefail
+PIN=0
+ARGS=()
+for a in "$@"; do
+  if [ "$a" = "--pin" ]; then PIN=1; else ARGS+=("$a"); fi
+done
+set -- "${ARGS[@]+"${ARGS[@]}"}"
 KAE_HOME=${KAE_HOME:-$HOME/.cache/kaebench}
 REF=${1:-origin/master}
 SRC=${2:-$KAE_HOME/src/freerouting}
@@ -27,8 +34,15 @@ git -C "$SRC" fetch -q --prune origin
 git -C "$SRC" checkout -q --detach "$REF"
 SHA=$(git -C "$SRC" rev-parse --short=7 HEAD)
 DEST=$KAE_HOME/kae-freerouting-fork-$SHA
+pin() {
+  if [ "$PIN" = 1 ]; then
+    echo "$DEST/bin/freerouting" > "$KAE_HOME/kae-freerouting.pin"
+    echo "pinned: $DEST/bin/freerouting ($KAE_HOME/kae-freerouting.pin)"
+  fi
+}
 if [ -x "$DEST/bin/freerouting" ]; then
   echo "already installed: $DEST/bin/freerouting"
+  pin
   exit 0
 fi
 # Gradle's wrapper needs a java to start: JAVA_HOME, else java on PATH, else a JDK in KAE_HOME
@@ -59,3 +73,4 @@ echo "$SHA $(git -C "$SRC" log -1 --format=%s)" > "$TMP/VERSION"
 mv "$TMP" "$DEST"
 "$DEST/bin/freerouting" --help 2>&1 | grep -m1 "Freerouting v" || true
 echo "installed: $DEST/bin/freerouting"
+pin

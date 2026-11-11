@@ -18,6 +18,7 @@ re-routed by Freerouting, opts region_level) was no better.
 """
 from __future__ import annotations
 
+from kae.budget import now as clock_now
 from shapely.geometry import box
 
 from . import critical_write as W
@@ -101,7 +102,7 @@ def _region(gr, sp, fp, net, src, others, margin, rippable, deadline=None, log=N
     order = [net] + [n for n in nets if n != net]
     pres = REGION_PRES[0]
     for k in range(REGION_ITERS):
-        if deadline is not None and time.monotonic() > deadline:
+        if deadline is not None and clock_now() > deadline:
             return undo()
         for n in order:
             sp.remove(routes[n])

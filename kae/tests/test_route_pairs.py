@@ -1,9 +1,9 @@
 # SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""kae.route.pairs: which nets are a pair, whether it matters, and what the copper shows."""
+"""kae.route.pairs: which nets are a pair, whether it matters, and the hazard from the bus scorecard's pair rows."""
 from types import SimpleNamespace
 
-from kae.board.model import NetClass, Net, Rules, Track, Via
+from kae.board.model import NetClass, Net, Rules
 from kae.route import pairs as P
 
 
@@ -13,10 +13,6 @@ def board(tracks=(), vias=(), custom=(), classes=None, nets=("/USB_D+", "/USB_D-
                   custom=list(custom))
     return SimpleNamespace(nets={n: Net(name=n, netclass=netclass.get(n, "Default")) for n in nets},
                            tracks=list(tracks), vias=list(vias), rules=rules, footprints=[])
-
-
-def track(net, x0, y0, x1, y1, w=0.2, layer="F.Cu"):
-    return Track(uuid=f"{net}{x0}{y0}", net=net, layer=layer, width=w, start=(x0, y0), end=(x1, y1))
 
 
 def test_detect_finds_kicad_pairs_and_ranks_them():
@@ -39,27 +35,36 @@ def test_custom_rule_is_rule_tier():
     assert tiers == {"rule"}
 
 
-def test_measure_coupled_parallel_tracks():
-    b = board(tracks=[track("/USB_D+", 0, 0, 20, 0), track("/USB_D-", 0, 0.45, 20, 0.45)], vias=[])
-    m = P.measure(b, P.Pair(p="/USB_D+", n="/USB_D-"))
-    assert m["routed"] and m["skew"] == 0.0 and m["coupled_share"] == 1.0 and m["vias_p"] == 0
-
-
-def test_measure_uncoupled_and_skew():
-    b = board(tracks=[track("/USB_D+", 0, 0, 20, 0), track("/USB_D-", 0, 5, 25, 5)],
-              vias=[Via(uuid="v", net="/USB_D+", x=20, y=0, size=0.6, drill=0.3, layers=["F.Cu", "B.Cu"])])
-    m = P.measure(b, P.Pair(p="/USB_D+", n="/USB_D-"))
-    assert m["skew"] == 5.0 and m["coupled_share"] == 0.0 and m["vias_p"] == 1 and m["vias_n"] == 0
-
-
-def test_hazard_only_for_pairs_that_matter():
-    b = board(tracks=[track("/USB_D+", 0, 0, 20, 0), track("/USB_D-", 0, 5, 25, 5),
-                      track("/BAT+", 0, 9, 30, 9), track("/BAT-", 0, 12, 30, 12)])
-    assert P.hazards(b) == []
-    brief = dict(diff_pairs=[dict(p="/USB_D+", n="/USB_D-", interface="usb2", speed="hs", confidence=0.9)])
-    hz = P.hazards(b, brief=brief)
+def test_hazard_entries_only_for_measured_pairs_that_matter():
+    row = lambda p, tier, cpl, skew, lim: dict(p=p, n=p[:-1] + "-", tier=tier, coupled_3w=cpl, skew_mm=skew, len_mean=20.0,  # noqa: E731
+                                              limit=dict(skew_mm=lim, source="test"))
+    rows = [row("/USB_D+", "interface", 0.1, 3.0, 1.27), row("/BAT+", "name", 0.0, 9.0, None),
+            row("/TX+", "rule", 0.9, 0.05, 0.127), dict(p="/RX+", n="/RX-", tier="rule", coupled_3w=None)]
+    hz = P.hazard_entries(rows)
     assert [h["code"] for h in hz] == ["pair_uncoupled", "pair_skew"]
-    assert "/USB_D+//USB_D-" in hz[0]["objects"][0]
+    assert hz[0]["objects"] == ["/USB_D+//USB_D-"] and hz[1]["objects"] == ["/USB_D+//USB_D-"]
+    assert P.hazard_entries([row("/TX+", "rule", 0.9, 0.05, 0.127)]) == []
+
+
+def _usb_board(gap):
+    """Two connectors 20 mm apart joined by D+/D-, the D- leg `gap` from D+ (centre to centre) along its run."""
+    from test_bus import CONN, fp, mk_board, tr
+    j = fp("J1", CONN, [(0.0, 0.0), (0.0, 0.65), (0.0, 3.0)], ["/USB_D+", "/USB_D-", "/ID"])     # a terminal: 3 signal pins
+    u = fp("J2", CONN, [(20.0, 0.0), (20.0, 0.65), (20.0, 3.0)], ["/USB_D+", "/USB_D-", "/ID"])
+    b = mk_board([j, u])
+    b.tracks += tr("/USB_D+", (0.0, 0.0), (20.0, 0.0))
+    b.tracks += tr("/USB_D-", (0.0, 0.65), (0.0, gap), (20.0, gap), (20.0, 0.65))
+    return b
+
+
+def test_scorecard_pair_rows_carry_tier_and_feed_the_hazard():
+    from kae.bus.scorecard import board_scorecard
+    near, far = _usb_board(0.45), _usb_board(6.0)
+    rows = P.report(near, board_scorecard(near))
+    assert rows and rows[0]["p"] in ("/USB_D+", "/USB_D-") and rows[0]["tier"] == "interface"
+    assert rows[0]["coupled_3w"] > 0.5 and "no_ref_mm" in rows[0]
+    assert [h["code"] for h in P.hazards(near)] == []
+    assert "pair_uncoupled" in [h["code"] for h in P.hazards(far)]
 
 
 def test_offset_polyline_right_angle_is_mitred():
