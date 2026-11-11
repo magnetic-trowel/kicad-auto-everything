@@ -99,3 +99,32 @@ Physics cannot be judged: only 2 boards were fully routed in both arms.
 **What it means.** For open connections, extra compute is better spent on restarts of the staged pipeline than on windows. Windows remove opens (16 % at two budgets against the natural split), but a restart, which re-places from scratch, removes more. That fits the window bench's diagnosis: the windows run out of useful moves (repeats rise to 53 %), while each restart samples a new placement.
 
 The case left for the joint loop is physics: the module stage and the windows' physics acceptance. These boards could not measure it. Window-choice work (`window-choice-proposal-2611.md`) would now have to beat restarts, not the current windows.
+
+## Physics at equal compute on boards that route (`loop-physics-matched`, 2026-11-11)
+Plan: `tools/kaeres/experiments/loop-physics-matched/PLAN.md` (pre-registered). Same W and R as `loop-compute-matched`. 160 boards tagged `physics_inputs_ok` with easy or moderate route demand, one per repo family; KiCad and the physics evaluator scored all 320 runs.
+
+| | W joint + windows | R staged + restarts |
+|---|---|---|
+| fully routed | 106 | 117 |
+| clean (cp1) | 101 | 115 |
+| legal | 155 | 158 |
+| open connections | 1,454 | 904 (W +61 %, 5 boards fewer, 50 more, p < 0.0001) |
+| DRC errors | 190 | 17 (most from one board's illegal placement under W) |
+| CPU | 89.5 h | 79.7 h (W/R 1.12; R stops at its first clean board) |
+
+**Physics.** On the 95 boards both arms route fully, over the modules valued in both: median Σu ratio W/R **0.815**, beyond the J21 floor (1.04 at n ≥ 80). W is lower on 70 boards and higher on 25, sign-flip p < 0.0001. **Decided: W better on physics, so no second batch is needed.** Per kind (reported, not decided):
+
+| kind | boards | median W/R | p |
+|---|---|---|---|
+| decap | 91 | 0.831 | 0.001 |
+| chain | 17 | 0.831 | 0.006 |
+| cell | 20 | 0.795 | 0.08 |
+| crystal | 8 | 0.626 | 0.08 |
+
+Only 2 full-intent boards fell in this batch, too few for a subset.
+
+**The case for joint, as pre-registered, fails on its opens guard.** W's physics is 18 % better where both route, but it leaves 61 % more open connections and 14 fewer clean boards at about the same compute.
+
+The physics win is the joint chassis's (the module stage places and routes critical copper first), not necessarily the windows': R is the staged pipeline without the module stage. J1's ladder separates the two (staged, + modules, + finish, + windows).
+
+**What it means for the default:** the integrated loop buys physics at the price of completion, and restarts buy completion. A method that wants both needs the module stage's physics without its cost in open connections. Candidates are the module stage under the restart wrapper (J1's arm b), or modules with `finish_release` on every restart. That is a different question from the windows'.
