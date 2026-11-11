@@ -27,7 +27,7 @@ so switching branches or editing afterwards does not affect queued jobs. Needs g
 Default owner is `repo@branch`; failures print `repo@branch:sha`.
 
 Workflow: submit -> start `kaeq wait` in the background -> keep working. When it exits
-(1 = problems printed, 0 = all done, 2 = timeout: just call it again), fix what it
+(1 = problems printed, 0 = all done, 2 = timeout: just call it again, 3 = only health warnings about your running jobs: read them, then call it again), fix what it
 reports, `kaeq retry`, and start `kaeq wait` again. Estimate `--cpus`/`--mem` honestly:
 `--mem` is a job's starting memory grant. A job that needs more is not killed: a timed job gets it first (a batch job makes room); a batch job pauses at its
 grant, frozen, until the queue can give it more (1 GB or 25%, more when much is free) and gets it back when it

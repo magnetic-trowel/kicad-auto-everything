@@ -144,6 +144,15 @@ DEFAULTS = {
     # timed_hold_auto it adapts every overcommit_every_s so that work lost to such requeues stays near
     # overcommit_loss_target of the timed work done over overcommit_window_s (up by 0.1 above it, down by 0.05
     # below half of it). A job requeued evict_protect_after times keeps its whole grant set aside.
+    # health: the daemon watches for its own failure symptoms (each was found this way by hand once) and reports
+    # them (log, kaeqtop, the job owner's `kaeq wait`, at most once an hour each): a job stalled on memory at a
+    # limit kaeq set (full avg60 above health_mem_pct for health_after_s), frozen over health_frozen_s, running
+    # without a readable cgroup, timed_wait held while no timed job runs, or no timed start for
+    # health_timed_idle_s while timed jobs wait and CPUs are idle
+    "health_mem_pct": 20.0,
+    "health_after_s": 300,
+    "health_frozen_s": 3600,
+    "health_timed_idle_s": 1800,
     "default_class": "batch",  # class of a job submitted without --class: batch (packs tighter, may be paused)
     # expensive batch jobs are kept running (a frozen job holds its memory for nothing, and big ones most): a batch
     # job expected to reach keep_gb, or with keep_core_h of work in it, is never frozen for a grant and never
@@ -1318,6 +1327,18 @@ def close_trace(j, state):
         pass
 
 
+DEPLOYED = os.path.join(os.path.dirname(os.path.realpath(__file__)), "DEPLOYED.json")
+
+
+def deployed():
+    """What install.sh recorded about this copy of kaeq (commit, branch, in main or not), or {}."""
+    try:
+        with open(DEPLOYED) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
 def cg_pressure(cg):
     """(some_s, full_s): cumulative seconds in which some / all of a job's runnable threads waited for a CPU
     (its scope's cpu.pressure; needs no delegated cpu controller). None without a scope."""
@@ -1448,6 +1469,9 @@ class Daemon:
         if self.rise_hist:
             self.organic = self.rise_hist[-1][1]
         self.rise, self.rise_ts = None, 0.0
+        # a job that ended while frozen (before cancel closed its freeze) still had frozen_since: close it now
+        self.c.execute("UPDATE jobs SET frozen_s=frozen_s+MAX(0,COALESCE(finished,?)-frozen_since),frozen_since=0 "
+                       "WHERE state!='running' AND frozen_since>0", (time.time(),))
         self.lease_st = {}       # job id -> {slack_since, stall_since, set, frozen_since, last, rate}: memory leases
         self.cpu_s, self.cpu_ts = {}, 0.0
         self.cpuj = {}           # job id -> CPU samples every 10 s: {t, cpu, some, full, rates: [(t, cores)], ...}
@@ -1458,6 +1482,8 @@ class Daemon:
         self.growth = []
         self.timed_preempt_ts = 0.0
         self.mem_stalled = set()     # jobs the last lease pass left waiting (frozen) for memory
+        self.health_ts, self.health_first, self.health_said = 0.0, {}, {}   # health(): issues and when first seen
+        self.started_at, self.last_timed_start = time.time(), time.time()
         self.squeezing, self.squeeze_ts, self.squeezed_add = None, 0.0, {}   # squeeze in flight; MB per job to record
         self.demoted, self.demote_ts = set(), 0.0   # jobs moved one CPU step down (heavy_boost)
         self.oc = load_overcommit()  # {hold, hist: [(t, done core-s, lost core-s)]}: the adaptive overcommit
@@ -1671,6 +1697,12 @@ class Daemon:
             except OSError:
                 pass
             self.last_backup = now
+        try:
+            self.health(cfg, now, c.execute("SELECT * FROM jobs WHERE state='running'").fetchall())
+        except (OSError, sqlite3.Error) as e:
+            dlog(f"health check failed: {e}")
+        self.sys.setdefault("health", [])
+        self.sys["deployed"] = deployed()
         tmp = f"{BEAT}.tmp{os.getpid()}"
         with open(tmp, "w") as f:
             json.dump({"pid": os.getpid(), "ts": now, "sys": self.sys}, f)
@@ -2111,6 +2143,63 @@ class Daemon:
         else:
             self.calm_since = 0.0
 
+    def health(self, cfg, now, running):
+        """Every 60 s: look for kaeq's own failure symptoms; report each issue once it has lasted its threshold,
+        at most once an hour (log, sys["health"] for kaeqtop, a "health" event to the job's owner)."""
+        if now - self.health_ts < 60:
+            return
+        self.health_ts = now
+        seen, out = {}, []
+        lease_on = cfg["mem_pool"] == "lease" and self.use_cgroup(cfg)
+
+        def issue(key, j, msg, after=0.0):
+            first = self.health_first.get(key) or now
+            seen[key] = first
+            if now - first < after:
+                return
+            out.append(msg)
+            if now - self.health_said.get(key, 0.0) >= 3600:
+                self.health_said[key] = now
+                dlog(f"health: {msg}")
+                if j is not None:
+                    event(self.c, j, "health", f"#{j['id']} {msg} | {j['name'] or j['cmd'][:60]}")
+        for j in running:
+            cg = self.cgroups.get(j["id"])
+            st = self.lease_st.get(j["id"]) or {}
+            if lease_on and now - (j["started"] or now) > 120 and (not cg or not os.path.isdir(cg) or cg_mem(cg) is None):
+                issue(("nocg", j["id"]), j, f"runs without a readable cgroup: kaeq cannot see or lease its memory",
+                      cfg["health_after_s"])
+                continue
+            if j["frozen_since"] and now - j["frozen_since"] > cfg["health_frozen_s"]:
+                issue(("frozen", j["id"]), j, f"frozen {fdur(now - j['frozen_since'])}"
+                      + (" (for CPU)" if st.get("cpu_frozen") else " (waiting for memory)"))
+            if cg and isinstance(st.get("set"), (int, float)) and not j["frozen_since"]:
+                try:
+                    full = float([l for l in open(os.path.join(cg, "memory.pressure")) if l.startswith("full")][0]
+                                 .split()[2].split("=")[1])
+                except (OSError, IndexError, ValueError):
+                    full = 0.0
+                if full > cfg["health_mem_pct"]:
+                    issue(("throttled", j["id"]), j, f"stalled on memory {full:.0f}% of the time at the limit kaeq set "
+                          f"({fgb(st['set'])}): it hardly progresses", cfg["health_after_s"])
+        timed_running = any((j["qos"] or "timed") == "timed" for j in running)
+        if not timed_running and self.timed_wait >= cfg["timed_wait_start"]:
+            issue(("stale_wait",), None, f"timed_wait {self.timed_wait:.0%} with no timed job running: timed starts "
+                  f"are refused for nothing", cfg["health_after_s"])
+        waiting = self.c.execute("SELECT COUNT(*) FROM jobs WHERE state='queued' AND qos='timed' AND not_before<=?",
+                                 (now,)).fetchone()[0]
+        pool = len(job_cpus(cfg) or ()) or cfg["threads"] - cfg["reserve_cpu"]
+        if waiting and now - self.last_timed_start > cfg["health_timed_idle_s"] \
+                and self.sys.get("ours_cpu", 0) + self.others_ema < pool - 8:
+            issue(("timed_idle",), None, f"no timed job started for {fdur(now - self.last_timed_start)} while {waiting} "
+                  f"wait and CPUs are idle")
+        dep = deployed()
+        if dep and dep.get("installed_at", 0) > self.started_at:
+            issue(("restart",), None, f"kaeq {dep.get('sha', '?')[:7]} was installed after this daemon started: "
+                  f"systemctl --user restart kaeq", cfg["health_after_s"])
+        self.health_first = seen
+        self.sys["health"] = out
+
     def thawed(self, jid, now):
         """Record the end of a job's freeze: its length goes into frozen_s."""
         st = self.lease_st.get(jid) or {}
@@ -2322,6 +2411,8 @@ class Daemon:
         self.c.execute("UPDATE jobs SET state='running',pid=?,started=?,deadline=?,peak_mb=0,note=NULL,grant_mb=?,"
                        "frozen_s=0,frozen_since=0,freezes=0,cpu_s=0,cpu_wait_s=0,cpu_stall_s=0,cpu_peak=0,squeezed_mb=0 WHERE id=?",
                        (p.pid, time.time(), time.time() + j["timeout_s"], grant, j["id"]))
+        if timed:
+            self.last_timed_start = time.time()
         dlog(f"start #{j['id']} attempt {j['attempt']} pid {p.pid} mem {fgb(j['mem_mb'])} "
              f"{'timed' if timed else 'batch'} {j['name'] or j['cmd'][:60]}")
         return True
@@ -2679,7 +2770,8 @@ def cmd_inbox(a):
 
 
 def cmd_wait(a):
-    """Block until a problem or 'all done'. Exit 1 = problems, 0 = all done, 2 = timeout (call again)."""
+    """Block until a problem or 'all done'. Exit 1 = problems, 0 = all done, 2 = timeout (call again),
+    3 = only health warnings about running jobs (read them, then call again)."""
     owner = a.owner or default_owner()
     t_end = time.time() + parse_dur(a.timeout)
     while True:
@@ -2690,7 +2782,8 @@ def cmd_wait(a):
             ns = c.execute("SELECT COUNT(*) FROM jobs WHERE owner=? AND state IN ('queued','running')", (owner,)).fetchone()[0]
             if ns:
                 print(f"({ns} still active; run `kaeq wait --owner {owner}` again to keep listening)")
-            sys.exit(1 if any(r["kind"] in PROBLEM for r in rows) else 0)
+            # 1: problems; 3: only health warnings (jobs still run: look, then wait again); 0: all done
+            sys.exit(1 if any(r["kind"] in PROBLEM for r in rows) else 3 if all(r["kind"] == "health" for r in rows) else 0)
         if not c.execute("SELECT 1 FROM jobs WHERE owner=? AND state IN ('queued','running') LIMIT 1", (owner,)).fetchone():
             print(f"nothing active for owner {owner}")
             sys.exit(0)
@@ -2779,7 +2872,9 @@ def cmd_cancel(a):
     if not (a.ids or a.owner or a.tag):
         sys.exit("give job ids, --owner or --tag")
     for j in rows:
-        c.execute("UPDATE jobs SET state='cancelled',finished=?,note='cancelled' WHERE id=?", (time.time(), j["id"]))
+        now = time.time()      # (an open freeze ends with the job: its time goes into frozen_s)
+        c.execute("UPDATE jobs SET state='cancelled',finished=?,note='cancelled',frozen_s=frozen_s+"
+                  "CASE WHEN frozen_since>0 THEN ?-frozen_since ELSE 0 END,frozen_since=0 WHERE id=?", (now, now, j["id"]))
         drop_worktree(j)
         if j["state"] == "running":
             kill_tree(j["pid"], job_cgroup(j["pid"]) if j["pid"] and pid_alive(j["pid"]) else None)
@@ -2832,6 +2927,12 @@ def cmd_doctor(a):
     d = Daemon()
     cfg = config()
     ok = lambda b: "ok " if b else "NO "
+    dep = deployed()
+    print(f"{ok(dep.get('in_main') and not dep.get('dirty'))} deployed: "
+          + (f"{dep.get('sha', '?')[:7]} ({dep.get('branch')}{', local changes' if dep.get('dirty') else ''}"
+             f"{', in main' if dep.get('in_main') else ', NOT in main'}), installed "
+             f"{time.strftime('%Y-%m-%d %H:%M', time.localtime(dep.get('installed_at', 0)))}" if dep
+             else "unknown (installed before install.sh recorded it)"))
     try:
         os.sched_setscheduler(0, os.SCHED_IDLE, os.sched_param(0))
         sched = True
