@@ -310,3 +310,57 @@ def test_restart_reports_are_kept_with_the_run(tmp_path):
     assert (tmp / "restarts.json").read_text() == '{"attempt_log": []}'
     assert (tmp / "restart-report.json").read_text() == '{"iterations": []}'
     assert not (tmp / "restart-report-origin.json").exists()
+
+
+def _rebuild_boards():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("rebuild_boards", Path(__file__).resolve().parent.parent / "rebuild_boards.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_rebuild_call_matches_the_harness_scorers_signature():
+    rb = _rebuild_boards()
+
+    class New:
+        @staticmethod
+        def _rebuild(op, out, inp, rules, work, ref=None, flags=()):
+            return flags
+
+    class Old:
+        @staticmethod
+        def _rebuild(op, out, inp, rules, work, ref=None):
+            return "no flags"
+    assert rb.rebuild_call(New, "transplant-routing", 1, 2, 3, 4, 5) == ("--zones",)
+    assert rb.rebuild_call(Old, "transplant-routing", 1, 2, 3, 4, 5) == "no flags"
+
+
+def test_rephysics_job_fails_when_no_run_could_be_rebuilt(tmp_path, monkeypatch, capsys):
+    """A rephysics job whose every rebuild failed exited 0 with 0 evaluations (a harness venv without _rebuild(flags=)):
+    the queue saw it done, nothing was measured."""
+    import json
+    d = tmp_path / "runs" / "r1"
+    d.mkdir(parents=True)
+    r = dict(run="r1", harness_commit="h" * 40, task_id="t", attempt=0, method_id="m")
+    monkeypatch.setattr(kaeres, "corpus_rows", lambda: {"b1": dict(path="boards/b1")})
+    monkeypatch.setattr(kaeres, "evaluators_for", lambda h, k, kc: dict(physics="pid"))
+    monkeypatch.setattr(kaeres, "kicad_version", lambda: "10.0.7")
+    monkeypatch.setattr(kaeres, "_rephysics_todo", lambda bid, mids, pid: [(d, r)])
+    monkeypatch.setattr(kaeres, "board_size_mb", lambda row: 1.0)
+    monkeypatch.setattr(kaeres, "env_sh", dict)
+    monkeypatch.setattr(kaeres, "code_dir", lambda c: tmp_path / "code")
+    monkeypatch.setattr(kaeres, "board_dir", lambda bid: tmp_path)
+    monkeypatch.setattr(kaeres, "_run_kind", lambda r: "route")
+    monkeypatch.setenv("KAEQ_SCRATCH", str(tmp_path))
+
+    def fake_run(cmd, log, env, timeout):
+        out = Path(cmd[cmd.index("--out") + 1])
+        out.write_text(json.dumps(dict(input="i", board_sha256=None, runs=dict(
+            r1=dict(error="TypeError: _rebuild() got an unexpected keyword argument 'flags'")))))
+        return 0, False
+    monkeypatch.setattr(kaeres, "run_logged", fake_run)
+    a = type("A", (), dict(board="b1", harness="h" * 40, kae="k" * 40, methods="m"))()
+    assert kaeres.cmd_rephysics_job(a) == 1
+    out = capsys.readouterr().out
+    assert "0 physics evaluation(s)" in out and "unexpected keyword" in out and "no run could be rebuilt" in out

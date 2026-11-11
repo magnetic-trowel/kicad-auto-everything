@@ -1909,6 +1909,7 @@ def cmd_rephysics_job(a):
     kv = code_dir(a.kae).with_name(code_dir(a.kae).name + ".venv-kae")
     pt = board_dir(bid) / "pintypes.json"
     written = 0
+    rebuild_errors = []
     groups = defaultdict(list)
     for d, r in todo:
         groups[r["harness_commit"]].append((d, r))
@@ -1936,6 +1937,8 @@ def cmd_rephysics_job(a):
             got = man["runs"].get(r["run"]) or {}
             if got.get("board"):
                 boards[r["run"]] = got["board"]
+            elif got.get("error"):
+                rebuild_errors.append(f"{r['run']}: {got['error']}")
         if not boards:
             continue
         pout = ws / f"physics-{hc[:8]}.json"
@@ -1954,7 +1957,12 @@ def cmd_rephysics_job(a):
                 **({"traceback": ph["traceback"]} if ph.get("traceback") else {})))
             written += 1
     print(f"{bid}: {written} physics evaluation(s) by {pid}", flush=True)
+    for x in rebuild_errors:
+        print(f"{bid}: rebuild failed: {x}", flush=True)
     shutil.rmtree(ws / "w", ignore_errors=True)
+    if not written and rebuild_errors:     # exit 0 here reads as "done" to the queue, with nothing measured
+        print(f"{bid}: no run could be rebuilt; no physics evaluation written", flush=True)
+        return 1
     return 0
 
 
