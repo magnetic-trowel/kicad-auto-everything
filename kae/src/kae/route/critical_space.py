@@ -376,10 +376,26 @@ class Space:
             self._req_cache[key] = v
         return v
 
+    def floor_width(self, net, layer):
+        """The narrowest track kae lays for `net` on `layer`: the board's minimum or, when the
+        board states none (min_track_width 0 and no rule), the narrowest class width, which is
+        the bridge's neck in that case (constraints.plan). With a floor of 0, a width ladder
+        that ended at the minimum laid zero-width copper (chassis-soft M: 63 locked segments
+        on 9 boards, all with min_track_width 0)."""
+        mn, opt, mx = self.width_limits(net, layer)
+        if mn > 0:
+            return mn
+        f = getattr(self, "_class_floor", None)
+        if f is None:
+            ws = [w for rc in self.plan.classes.values() for w in rc.widths.values() if w and w > 0]
+            f = self._class_floor = min(ws) if ws else 0.0
+        f = min(f, opt) if f > 0 and opt > 0 else (f or opt)
+        return min(f, mx) if mx else f
+
     def clamp_width(self, net, layer, w):
-        """w inside [min, max] of `net` on `layer`, in whole micrometres."""
-        mn, _, mx = self.width_limits(net, layer)
-        w = CN.up(max(w, mn), 0.001)
+        """w inside [floor_width, max] of `net` on `layer`, in whole micrometres."""
+        _, _, mx = self.width_limits(net, layer)
+        w = CN.up(max(w, self.floor_width(net, layer)), 0.001)
         if mx is not None and w > mx + 1e-9:
             w = mx
         return w

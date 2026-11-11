@@ -1381,3 +1381,53 @@ def test_copper_hotter_than_nearby_parts_is_a_warning_and_past_the_laminate_a_bl
     assert warm["severity"] == "warn" and warm["evidence"]["T_parts_warn_C"] == 105.0
     assert "105" in warm["message"]
     assert cool["severity"] == "info"
+
+
+# ----------------------------------------------------------------------------- no stated minimum width
+def _no_min_session(tmp_path):
+    """The synthetic board with min_track_width 0 (no stated minimum), as on the 9 corpus boards
+    where the module stage laid zero-width copper (chassis-soft M, 2026-11)."""
+    import json
+    from kae.board.kicad_file import load
+    from kae.route.critical import Session
+    p = F.write_board(tmp_path)
+    pro = json.loads((tmp_path / "board.kicad_pro").read_text())
+    pro["board"]["design_settings"]["rules"]["min_track_width"] = 0.0
+    (tmp_path / "board.kicad_pro").write_text(json.dumps(pro))
+    b = load(p)
+    info = F.synth_info(b)
+    info["settings"]["min_track"] = 0.0
+    return Session(p, info=info, board=b, log=lambda *a: None)
+
+
+def test_no_stated_minimum_floors_widths_at_the_narrowest_class(tmp_path):
+    s = _no_min_session(tmp_path)
+    sp = s.space
+    assert sp.width_limits("VIN", "F.Cu")[0] == 0.0                  # the board states none
+    floor = min(w for rc in sp.plan.classes.values() for w in rc.widths.values())
+    assert floor > 0
+    for net in ("VIN", "GND", "+3V3", "Net-(U2-XTAL1)"):
+        assert sp.floor_width(net, "F.Cu") == floor
+        assert sp.clamp_width(net, "F.Cu", 0.0) == floor
+    # a stated minimum is kept as it is
+    t = F.session(tmp_path / "stated")
+    mn = t.space.width_limits("VIN", "F.Cu")[0]
+    assert mn > 0 and t.space.floor_width("VIN", "F.Cu") == mn
+
+
+def test_module_stage_never_lays_zero_width_copper(tmp_path, monkeypatch):
+    """Every width ladder ends at the minimum (route_chain: [opt, min]); with no stated minimum
+    that was 0, and a zero-width track always fits. Here every hop is asked for width 0 only:
+    whatever the stage lays is at least the floor."""
+    from kae.route import critical_modules as CM
+    real = CM.route_hop
+
+    def zero_only(ctx, m, tag, net, sources, targets, widths, *a, **kw):
+        return real(ctx, m, tag, net, sources, targets, [0.0], *a, **kw)
+    monkeypatch.setattr(CM, "route_hop", zero_only)
+    s = _no_min_session(tmp_path)
+    s.route()
+    tracks = [it for it in s.space.routed if it.kind == "track"]
+    assert tracks
+    for it in tracks:
+        assert it.width >= s.space.floor_width(it.net, next(iter(it.layers))) - 1e-9 > 0, it.owner
