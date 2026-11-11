@@ -479,3 +479,16 @@ def test_mfg_table_is_silent_without_measurements_and_labels_not_targets():
     out = kaeres.mfg_table([dict(_r("a", "b1", 0, True), **c)], ["a", "absent"])
     assert "not targets" in out[0] and "Manufacturability" in out[0]
     assert out[6].split(" | ")[1:6] == ["1", "2.000", "0.900", "30.0", "1"] and "1 / 0 / 0 / 0" in out[6]
+
+
+def test_method_timeout_cap_is_a_method_param():
+    import importlib.util
+    from pathlib import Path
+    spec = importlib.util.spec_from_file_location("kaeres_cap", Path(__file__).resolve().parents[1] / "kaeres.py")
+    K = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(K)
+    m = lambda **p: dict(recipe=dict(params=dict(timeout_s="7200", timeout_scale="sqrt-fp40", **p)))  # noqa: E731
+    row = dict(footprints=360)                     # sqrt(9) = 3: 21,600 s uncapped
+    assert K.method_timeout(m(), row) == 4 * 3600
+    assert K.method_timeout(m(timeout_cap_s="30000"), row) == 21600
+    assert K.method_timeout(m(timeout_cap_s="30000"), dict(footprints=20)) == 7200
