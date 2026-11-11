@@ -45,8 +45,9 @@ task. k = 5 matches PCBWorld's five rollouts; the fork is deterministic, so it r
 deterministic baselines once too).
 
 Reproduction arms, PCBWorld's own runner and scorer, unchanged (`tools/research/pcbworld/README.md`):
-the human reference; Freerouting 2.1.0 `-mp 10` (their pinned jar), 20 runs per board (4 seeds × 5 rollouts,
-as their Table 21/22); KRT 561f158 once (deterministic).
+the human reference, and KRT 561f158 once (deterministic; a rival router). Amended 2026-11-11, before any
+result: stock Freerouting 2.1.0 is not run (stock releases are not measured, and Freerouting is deterministic,
+so repeated runs measure nothing); its 0.80 / 0.78 is cited as PCBWorld's published row, labelled as theirs.
 
 ## Scoring, side by side
 
@@ -66,8 +67,7 @@ as their Table 21/22); KRT 561f158 once (deterministic).
   CP 1.00 and Pot. / WL / vias at the paper's Reference row (D3-A 23.16 / 170.2 / 1.18; D3-B 63.96 / 570.3 /
   6.70). Their own README says rebuilt guide widths differ from the paper's on 40 of 679 boards, so small
   differences are expected and listed.
-- Freerouting 2.1.0 through their runner lands within noise of 0.80 / 0.78 (@5) and 0.75 / 0.64 (@1); KRT
-  near 0.74 / 0.20 (their README: KRT inputs changed since the paper).
+- KRT through their runner near 0.74 / 0.20 (their README: KRT inputs changed since the paper).
 - Transplant check: the human layout's copper transplanted onto their unrouted board scores the same as
   their own routed guide board under their scorer, and every run's transplant reports no missing nets.
 - Our scorer on the human reference: count boards not clean under KiCad 10.0.7 (cp of `human`), with types.
@@ -86,4 +86,4 @@ only. We state no winner on differences inside that.
 ## Cost (information)
 
 Under 30 CPU-h for our arms (w2's estimate; ≤ 100-pad boards). PCBWorld's chain: engine build ~1 CPU-h on 32
-cores, the 1,182-board conversion a few CPU-h, their reproduction arms ~5 CPU-h.
+cores, the 1,182-board conversion a few CPU-h, KRT well under 1 CPU-h.
