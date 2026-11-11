@@ -90,13 +90,19 @@ def frame(c, cfg, sampler, args, width):
         with open(kaeq.BEAT) as f:
             beat = json.load(f)
         bsys, bage = beat.get("sys", {}), now - beat.get("ts", 0)
-        dstate = f"daemon pid {beat.get('pid')}, last tick {dur(bage)} ago" + ("  << NOT TICKING" if bage > 30 else "")
+        dep = bsys.get("deployed") or {}
+        dstate = (f"daemon pid {beat.get('pid')}, last tick {dur(bage)} ago" + ("  << NOT TICKING" if bage > 30 else "")
+                  + (f", kaeq {dep.get('sha', '?')[:7]} ({dep.get('branch')}"
+                     f"{', local changes' if dep.get('dirty') else ''}{'' if dep.get('in_main') else ', NOT in main'})"
+                     if dep else ""))
     except (OSError, ValueError):
         bsys, dstate = {}, "daemon heartbeat missing  << is kaeq running?"
     running = c.execute("SELECT * FROM jobs WHERE state='running'").fetchall()
     use = sampler.sample(running)
 
     L.append(f"kaeqtop  {kaeq.HOST}  {time.strftime('%Y-%m-%d %H:%M:%S')}   {dstate}")
+    for h in (bsys.get("health") or [])[:5]:        # the daemon's own failure symptoms (kaeq.Daemon.health)
+        L.append(f"HEALTH  {h}")
     L.append("")
     # machine, as the scheduler sees it
     threads = bsys.get("threads") or cfg["threads"]

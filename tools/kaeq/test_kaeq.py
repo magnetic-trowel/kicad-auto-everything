@@ -1096,3 +1096,50 @@ def test_a_retried_job_is_leased_in_its_new_scope(kq, tmp_path):
     drive(kq, d, lambda: d.c.execute("SELECT grant_mb FROM jobs").fetchone()[0] > 300, secs=20)   # its lease grows
     d.c.execute("UPDATE jobs SET state='cancelled'")
     kq.kill_tree(d.c.execute("SELECT pid FROM jobs").fetchone()[0], d.cgroups.get(1))
+
+
+def test_the_daemon_reports_its_own_failure_symptoms(kq, tmp_path):
+    import argparse
+    clock = [0]
+
+    def idle_cpus():
+        clock[0] += 4000
+        return 0, clock[0]
+    kq.cpu_ticks = idle_cpus
+    conf = json.load(open(kq.CONF)); conf.update(health_after_s=100, health_frozen_s=600, health_timed_idle_s=600)
+    json.dump(conf, open(kq.CONF, "w"))
+    d = kq.Daemon()
+    submit(kq, "sleep 30", name="b", qos="batch")
+    drive(kq, d, lambda: states(d)["b"] == "running")
+    cfg, now = kq.config(), time.time()
+    d.c.execute("UPDATE jobs SET frozen_since=? WHERE name='b'", (now - 4000,))      # frozen over an hour
+    d.timed_wait = 0.5                                                              # with no timed job running
+    run = lambda: d.c.execute("SELECT * FROM jobs WHERE state='running'").fetchall()
+    d.health_ts = 0.0
+    d.health(cfg, now, run())
+    assert any("frozen" in h for h in d.sys["health"])                             # at once (past its threshold)
+    assert not any("timed_wait" in h for h in d.sys["health"])                     # not yet: it must last
+    d.health(cfg, now + 200, run())
+    assert any("timed_wait" in h for h in d.sys["health"])
+    ev = d.c.execute("SELECT kind, msg FROM events WHERE kind='health'").fetchall()
+    assert len(ev) == 1 and "frozen" in ev[0]["msg"]                               # the job's owner is told, once
+    d.health(cfg, now + 400, run())
+    assert len(d.c.execute("SELECT * FROM events WHERE kind='health'").fetchall()) == 1   # not again within the hour
+    # kaeq wait: exit 3 for health warnings alone (jobs still run)
+    with pytest.raises(SystemExit) as e:
+        kq.cmd_wait(argparse.Namespace(owner="t", timeout="5s"))
+    assert e.value.code == 3
+    # a cancelled job's open freeze is closed into its frozen time
+    kq.cmd_cancel(argparse.Namespace(ids=["1"], owner=None, tag=None))
+    j = d.c.execute("SELECT * FROM jobs WHERE name='b'").fetchone()
+    assert j["frozen_since"] == 0 and j["frozen_s"] >= 3999
+
+
+def test_a_daemon_start_closes_freezes_left_open_on_ended_jobs(kq):
+    c = kq.db()
+    c.execute("INSERT INTO jobs(owner,cmd,cpus,mem_mb,timeout_s,state,submitted,started,finished,frozen_s,frozen_since) "
+              "VALUES('t','x',1,1,60,'cancelled',0,100,500,10,300)")
+    c.commit()
+    kq.Daemon()
+    j = c.execute("SELECT frozen_s, frozen_since FROM jobs").fetchone()
+    assert j["frozen_since"] == 0 and j["frozen_s"] == pytest.approx(10 + 200)

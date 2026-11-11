@@ -9,6 +9,21 @@ mkdir -p ~/.local/bin
 mkdir -p ~/.local/share/kaeq
 install -m 755 "$here/kaeq.py" ~/.local/share/kaeq/kaeq.py
 install -m 755 "$here/kaeqtop.py" ~/.local/share/kaeq/kaeqtop.py
+# what is deployed: commit, branch, local changes, whether main has it (kaeq doctor, kaeqtop, the daemon's health check)
+python3 - "$here" <<'PY'
+import json, subprocess, sys, time, os
+here = sys.argv[1]
+g = lambda *a: subprocess.run(["git", "-C", here, *a], capture_output=True, text=True)
+sha = g("rev-parse", "HEAD").stdout.strip()
+rec = dict(sha=sha, branch=g("rev-parse", "--abbrev-ref", "HEAD").stdout.strip(),
+           dirty=bool(g("status", "--porcelain", "--", ".").stdout.strip()),
+           in_main=g("merge-base", "--is-ancestor", sha, "origin/main").returncode == 0 if sha else None,
+           installed_at=time.time())
+with open(os.path.expanduser("~/.local/share/kaeq/DEPLOYED.json"), "w") as f:
+    json.dump(rec, f)
+print(f"deployed {sha[:7]} ({rec['branch']}{', local changes' if rec['dirty'] else ''}"
+      f"{', in main' if rec['in_main'] else ', NOT in main'})")
+PY
 ln -sf ~/.local/share/kaeq/kaeq.py ~/.local/bin/kaeq
 ln -sf ~/.local/share/kaeq/kaeqtop.py ~/.local/bin/kaeqtop
 # user-level skill: sessions in any repo/branch get the usage text
