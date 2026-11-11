@@ -1,13 +1,19 @@
 # SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 """restart.py with a stand-in kicad-cli (no KiCad): the final pass on the kept board."""
+import gzip
+import importlib.util
 import json
 import os
 import subprocess
 import sys
+import tarfile
 from pathlib import Path
 
 RESTART = Path(__file__).resolve().parents[1] / "restart.py"
+_spec = importlib.util.spec_from_file_location("restart_under_test", RESTART)
+restart = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(restart)
 
 # a kicad-cli that reads "OPEN=n" from the board and reports n unconnected items
 FAKE_CLI = """#!/usr/bin/env python3
@@ -201,3 +207,92 @@ def test_finish_runs_on_a_clean_board_and_is_not_kept_when_worse(tmp_path):
     assert r.returncode == 0, r.stdout + r.stderr
     fz = summary["attempt_log"][-1]
     assert fz["k"] == "finish" and not fz["kept"] and "OPEN=0" in out.read_text()
+
+
+def test_kept_attempts_report_and_its_fresh_origin_are_stored(tmp_path):
+    """A kept fresh attempt's JSON report goes to report.json; when a final pass is kept instead, that
+    router's report does, and the fresh attempt it descends from goes to report-origin.json."""
+    loop = """echo '{"iterations": [1, 2], "stop": "time"}'; echo '(kicad_pcb OPEN=2)' > @OUT@"""
+    r, out, summary = _run(tmp_path, loop, """echo '{"route": 1}'; echo '(kicad_pcb OPEN=0)' > @OUT@""")
+    assert r.returncode == 0, r.stdout + r.stderr
+    wd = tmp_path / "work" / "restarts"
+    assert summary["best_attempt"] == "final"
+    assert json.loads((wd / "report.json").read_text()) == {"route": 1}
+    origin = json.loads((wd / "report-origin.json").read_text())
+    assert origin["iterations"] == [1, 2] and origin["stop"] == "time" and origin["origin_attempt"] == 0
+
+
+def test_attempts_keep_their_freerouting_telemetry(tmp_path):
+    """Each attempt's record in summary.json holds the Freerouting telemetry of its route report."""
+    rep = ('{"router": {"report": {"telemetry": {"loops": [{"unrouted": [3, 1]}]}}}, '
+           '"repair": {"rounds": [{"router": {"telemetry": {"pour_cut_off": 2}}}]}}')
+    r, out, summary = _run(tmp_path, f"echo '{rep}'; echo '(kicad_pcb OPEN=0)' > @OUT@", "")
+    assert r.returncode == 0, r.stdout + r.stderr
+    fr = summary["attempt_log"][0]["fr"]
+    assert fr["first"]["loops"][0]["unrouted"] == [3, 1] and fr["repair"] == [{"pour_cut_off": 2}]
+
+
+def _raw_attempts(wd, sizes):
+    for k, n in enumerate(sizes):
+        d = wd / f"a{k}" / "fr-raw"
+        d.mkdir(parents=True)
+        (d / "1-1-board.log").write_bytes(os.urandom(n))   # random: gzip cannot shrink it
+
+
+def _fr_summary(n_chars):
+    return dict(attempt_log=[dict(k=0, fr=dict(first=dict(loops=[dict(unrouted=[1] * n_chars)])))])
+
+
+def test_raw_freerouting_files_all_kept_under_the_limit(tmp_path):
+    _raw_attempts(tmp_path, [1000, 2000])
+    rec = restart.keep_fr_raw(tmp_path, _fr_summary(5), limit=100_000)
+    assert rec["parts_kept"] == 2 and rec["parts_dropped"] == 0 and rec["stored_bytes"] == (tmp_path / "fr-telemetry.tar").stat().st_size
+    with tarfile.open(tmp_path / "fr-telemetry.tar") as t:
+        assert json.load(t.extractfile("manifest.json"))["dropped"] == []
+        assert len(gzip.decompress(t.extractfile("a1/1-1-board.log.gz").read())) == 2000
+    assert not list(tmp_path.glob("a*/fr-raw"))
+
+
+def test_raw_freerouting_files_over_the_limit_drop_the_bulkiest_first_and_say_so(tmp_path):
+    _raw_attempts(tmp_path, [60_000, 30_000, 5_000])
+    summary = _fr_summary(200)
+    rec = restart.keep_fr_raw(tmp_path, summary, limit=50_000)
+    tar = tmp_path / "fr-telemetry.tar"
+    compact = len(json.dumps(summary, indent=1)) - len(json.dumps(dict(attempt_log=[dict(k=0)]), indent=1))
+    assert tar.stat().st_size + compact <= 50_000
+    assert rec["parts_dropped"] == 1 and rec["dropped_raw_bytes"] == 60_000
+    with tarfile.open(tar) as t:
+        m = json.load(t.extractfile("manifest.json"))
+        assert [d["name"] for d in m["dropped"]] == ["a0/1-1-board.log.gz"] and m["limit_bytes"] == 50_000
+        assert {p["name"] for p in m["parts"]} == {"a1/1-1-board.log.gz", "a2/1-1-board.log.gz"}
+
+
+def test_raw_freerouting_files_that_cannot_fit_leave_a_record_and_no_tar(tmp_path):
+    _raw_attempts(tmp_path, [2000])
+    rec = restart.keep_fr_raw(tmp_path, _fr_summary(5), limit=100)
+    assert rec["file"] is None and rec["parts_dropped"] == 1 and not (tmp_path / "fr-telemetry.tar").exists()
+
+
+def test_attempts_are_told_where_to_keep_raw_freerouting_files(tmp_path):
+    r, out, summary = _run(tmp_path, "mkdir -p $KAE_FR_RAW_DIR; echo log > $KAE_FR_RAW_DIR/1-1-board.log; echo '(kicad_pcb OPEN=0)' > @OUT@", "")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert summary["fr_raw"]["parts_kept"] == 1 and summary["fr_raw"]["file"] == "fr-telemetry.tar"
+
+
+def test_a_failed_attempt_keeps_why(tmp_path):
+    """An attempt that exits non-zero keeps its report's status and error and the end of its log."""
+    fail = """echo 'Traceback: pcbnew worker did not start' >&2; echo '{"status": "error", "error": "PcbnewError: x"}'; exit 2"""
+    r, out, summary = _run(tmp_path, fail, "")
+    rec = summary["attempt_log"][0]
+    assert rec["rc"] == 2
+    assert rec["failure"]["status"] == "error" and rec["failure"]["error"] == "PcbnewError: x"
+    assert "pcbnew worker did not start" in rec["failure"]["log_tail"]
+
+
+def test_a_kept_fresh_attempt_has_no_origin_report(tmp_path):
+    loop = """echo '{"iterations": [1], "stop": "no improvement"}'; echo '(kicad_pcb OPEN=0)' > @OUT@"""
+    r, out, summary = _run(tmp_path, loop, "")
+    assert r.returncode == 0, r.stdout + r.stderr
+    wd = tmp_path / "work" / "restarts"
+    assert json.loads((wd / "report.json").read_text())["stop"] == "no improvement"
+    assert not (wd / "report-origin.json").exists()

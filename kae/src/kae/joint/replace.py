@@ -31,6 +31,7 @@ The placer's own machinery does the work (kae.place: Problem, State, make_anneal
 """
 from __future__ import annotations
 
+from kae.budget import now as clock_now
 import dataclasses
 import math
 import time
@@ -86,7 +87,7 @@ def replace_window(board, window, brief, history=None, seed=0, time_s=20.0, term
     from kae.place.problem import Problem
     from kae.place.state import State, grid_violations
 
-    t0 = time.monotonic()
+    t0 = clock_now()
     log = log or (lambda *a, **k: None)
     rep = dict(window=window.to_dict(), seed=seed)
     fp_of = {fp.uuid: fp for fp in board.footprints}
@@ -172,11 +173,11 @@ def replace_window(board, window, brief, history=None, seed=0, time_s=20.0, term
     rep["legal_grid"] = not bad
     if bad:
         rep["rejected"] = "illegal after repair"
-        rep["seconds"] = round(time.monotonic() - t0, 2)
+        rep["seconds"] = round(clock_now() - t0, 2)
         return Result(report=rep)
     ex = exact_check(P, st, parts=sub)
     if ex:
-        left = max(2.0, t0 + time_s - time.monotonic())
+        left = max(2.0, t0 + time_s - clock_now())
         cl = exactmod.repair(P, st, time_s=left, allowed=set(sub))
         cl.pop("findings", None)
         rep["closed_loop"] = cl
@@ -184,7 +185,7 @@ def replace_window(board, window, brief, history=None, seed=0, time_s=20.0, term
     rep["exact"] = ex
     if ex:
         rep["rejected"] = f"{len(ex)} exact violations"
-        rep["seconds"] = round(time.monotonic() - t0, 2)
+        rep["seconds"] = round(clock_now() - t0, 2)
         return Result(report=rep)
     poses = {}
     for i in sub:
@@ -194,5 +195,5 @@ def replace_window(board, window, brief, history=None, seed=0, time_s=20.0, term
         if math.dist(new[:2], old[:2]) > 1e-4 or abs((new[2] - old[2] + 180) % 360 - 180) > 1e-3:
             poses[p.uuid] = new
     rep["moved"] = sorted(P.parts[i].ref for i in sub if P.parts[i].uuid in poses)
-    rep["seconds"] = round(time.monotonic() - t0, 2)
+    rep["seconds"] = round(clock_now() - t0, 2)
     return Result(poses=poses, report=rep)

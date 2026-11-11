@@ -43,6 +43,7 @@ locked tracks, and arcs.
 """
 from __future__ import annotations
 
+from kae.budget import now as clock_now
 import argparse
 import json
 import math
@@ -205,7 +206,7 @@ def plan(text, info, sp, gr, overlap=0.05, log=print, deadline=None, rails="midd
         outcome[k] = outcome.get(k, 0) + 1
 
     for s in segs:
-        if deadline is not None and time.monotonic() > deadline:
+        if deadline is not None and clock_now() > deadline:
             note("time")
             break
         if s["uuid"] in done or s["locked"] or (only is not None and s["uuid"] not in only):
@@ -531,7 +532,7 @@ def run(input_path, output_path, overlap=None, workdir=None, timeout=3600, rails
     from .bridge import severities
     from .critical_grid import GridRouter
     from .critical_space import Space
-    t0 = time.monotonic()
+    t0 = clock_now()
     end_t = t0 + timeout
     inp = Path(input_path).resolve()
     wd = Path(workdir or tempfile.mkdtemp(prefix="kae-reroute-"))
@@ -550,10 +551,10 @@ def run(input_path, output_path, overlap=None, workdir=None, timeout=3600, rails
     power = {n for n in nets if n not in ground and PE.current_net(n)}
     currents = PC.pad_currents(op, pad_nets, power, ground) if op else {}
     hazards = []
-    t1 = time.monotonic()
+    t1 = clock_now()
     changes, outcome, octo = plan(text, info, sp, gr, ovl, log=log, deadline=t0 + 0.6 * timeout, rails=rails,
                                   target=target, currents=currents, hazards=hazards, only=only)
-    t_plan = time.monotonic() - t1
+    t_plan = clock_now() - t1
     rep = dict(board=str(inp), target=target, overlap=ovl, octilinear=octo, outcome=outcome, planned=len(changes),
                stats_in=PT.stats(text, info), setup_s=round(t1 - t0, 1), plan_s=round(t_plan, 1),
                len_old_mm=round(sum(c["old_len"] for c in changes), 3),
@@ -567,10 +568,10 @@ def run(input_path, output_path, overlap=None, workdir=None, timeout=3600, rails
                               neck=c.get("neck")) for c in changes}
         rep.update(kept=len(changes), stats_out=PT.stats(new, info), necks=sum(1 for c in changes if c.get("neck")),
                    len_delta_mm=round(sum(c["new_len"] - c["old_len"] for c in changes), 3), hazards=hazards,
-                   total_s=round(time.monotonic() - t0, 1), gate=False,
+                   total_s=round(clock_now() - t0, 1), gate=False,
                    _entries=J.diff_entries("tails", text, new, journal_keys(changes), meta))
         return rep
-    base_rep = drc.run(staged, wd / "in.drc.json", timeout=max(10, end_t - time.monotonic()))
+    base_rep = drc.run(staged, wd / "in.drc.json", timeout=max(10, end_t - clock_now()))
     base = drc.summary(base_rep)
     rep["drc_in"] = base
     cand = wd / "out" / "board.kicad_pcb"
@@ -581,10 +582,10 @@ def run(input_path, output_path, overlap=None, workdir=None, timeout=3600, rails
     skip, final = set(), None
     steps = [1.0, 2.5, "all"]
     for rnd in range(len(steps) + 1):
-        if not changes or len(skip) >= len(changes) or end_t - time.monotonic() < 10:
+        if not changes or len(skip) >= len(changes) or end_t - clock_now() < 10:
             break
         cand.write_text(write(text, changes, skip), encoding="utf-8")
-        r = drc.run(cand, wd / f"out.r{rnd}.json", timeout=max(10, end_t - time.monotonic()))
+        r = drc.run(cand, wd / f"out.r{rnd}.json", timeout=max(10, end_t - clock_now()))
         s = drc.summary(r)
         worse = {t: n for t, n in s["by_type"].items() if n > base["by_type"].get(t, 0)}
         if s["unconnected"] > base["unconnected"]:
@@ -628,7 +629,7 @@ def run(input_path, output_path, overlap=None, workdir=None, timeout=3600, rails
         s_ = inp.with_suffix(ext)
         if s_.exists() and s_.resolve() != out.with_suffix(ext).resolve():
             shutil.copy2(s_, out.with_suffix(ext))
-    rep["total_s"] = round(time.monotonic() - t0, 1)
+    rep["total_s"] = round(clock_now() - t0, 1)
     rep["hazards"] = hazards
     return rep
 

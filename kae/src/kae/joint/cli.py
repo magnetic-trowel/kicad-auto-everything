@@ -30,6 +30,8 @@ or the placer reads); "no_output".
 """
 from __future__ import annotations
 
+from kae.budget import start_run as _start_run
+from kae.budget import now as clock_now
 import argparse
 import json
 import shutil
@@ -76,16 +78,16 @@ def run(a):
     # the finishing stage belongs to the loop: the staged baseline (--max-iters 0) has none
     lopts = dict(opts, max_iters=a.max_iters, modules=not a.no_modules)
     lopts.setdefault("finish", (a.max_iters is None or a.max_iters > 0) and not a.no_finish)
-    # the loop's windows and its finishing stage run the last mile; on the first route it
-    # only takes their time (pmw3610, 900 s: iteration 0 took 234 s without, 381-518 s with,
-    # leaving 0-2 windows). The staged baseline keeps the bridge's default (last mile on
-    # since c9c49d6). --set first_last_mile=1 overrides.
+    # The first route keeps the bridge's last mile (on since c9c49d6), loop or not. It used to be off
+    # when a finishing stage followed, to leave time for windows; loop-window-bench (J14, 69 boards,
+    # natural budget) found it on gives 7 % fewer open connections (36 boards fewer, 23 more,
+    # p 0.020) at the same CPU: windows start from a board with fewer opens. --set first_last_mile=0
+    # restores the old behaviour.
     if lopts["finish"]:
-        sopts.setdefault("first_last_mile", False)
         # the bridge's "blocked" diagnosis is for the final board (loop: rep["final"]["blocked"])
         sopts.setdefault("first_blocked", False)
     rep = dict(status="error")
-    t0 = time.monotonic()
+    t0 = clock_now()
     pre = _mtime(out)
     loop = stages = None
     try:
@@ -189,6 +191,8 @@ def main(argv=None):
     from kae.physics import exact as EX
     EX.add_cli_args(r)                      # --physics-fidelity fast | exact | multi, --physics-k
     a = ap.parse_args(argv)
+    if getattr(a, "time", None):
+        _start_run(float(a.time))
     EX.configure(a.physics_fidelity, a.physics_k)
     from kae.cli import _numba_cache
     _numba_cache()

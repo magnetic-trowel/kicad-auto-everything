@@ -38,6 +38,9 @@ import argparse
 import json
 import sys
 import time
+
+from kae.budget import start_run as _start_run
+from kae.budget import now as clock_now
 from pathlib import Path
 
 
@@ -72,9 +75,9 @@ def cmd_place(a):
     from kae.board.kicad_file import load
     from kae.place.pipeline import place
     from kae.place.writer import write
-    t0 = time.monotonic()
+    t0 = clock_now()
     board = load(a.input)
-    _log(f"loaded {a.input}: {len(board.footprints)} footprints ({time.monotonic() - t0:.2f}s)")
+    _log(f"loaded {a.input}: {len(board.footprints)} footprints ({clock_now() - t0:.2f}s)")
     stages = {x.strip() for x in a.stages.split(",") if x.strip()}
     unknown = stages - {"seed", "anneal", "legalize"}
     if unknown:
@@ -98,9 +101,9 @@ def cmd_place(a):
 
     def verify(r, end):
         # a rung of the severity ladder: written and judged by KiCad's DRC loop within its share
-        t1 = time.monotonic()
+        t1 = clock_now()
         r.report["writer"] = write(a.input, a.output, r.poses, mode=a.writer, log=_log)
-        r.report["write_s"] = round(time.monotonic() - t1, 2)
+        r.report["write_s"] = round(clock_now() - t1, 2)
         on_disk.append(r)
         clean, wr = (None, None)
         if r.state is not None:
@@ -121,14 +124,14 @@ def cmd_place(a):
             res.report["writer"] = write(a.input, a.output, res.poses, mode=a.writer, log=_log)
             res.report["severity_ladder"]["rewritten"] = True
     else:
-        t1 = time.monotonic()
+        t1 = clock_now()
         wrep = write(a.input, a.output, res.poses, mode=a.writer, log=_log) if res.poses else None
         if wrep is None:
             import shutil
             shutil.copy2(a.input, a.output)
             wrep = dict(writer="copy", moved=0)
         res.report["writer"] = wrep
-        res.report["write_s"] = round(time.monotonic() - t1, 2)
+        res.report["write_s"] = round(clock_now() - t1, 2)
         if a.drc != "off" and res.poses and res.state is not None:
             kicad_clean, wrep2 = _kicad_loop(a, res, t0, write)
             if wrep2 is not None:
@@ -143,7 +146,7 @@ def cmd_place(a):
     if res.poses and int(setting("connector_edge", a.input)) >= 1:
         from kae.place.pipeline import edge_hazards
         edge_hazards(res.report, board, res.poses)
-    res.report["total_s"] = round(time.monotonic() - t0, 2)
+    res.report["total_s"] = round(clock_now() - t0, 2)
     legal = not res.report.get("exact") and not res.report.get("outline_incomplete") and kicad_clean is not False
     res.report["legal"] = bool(legal)
     _hazards(res.report, a, "place", t0, brief=getattr(res, "brief", None), board=board)
@@ -194,11 +197,11 @@ def _kicad_loop(a, res, t0, write, end=None):
     judged_types = {}
     limit = (t0 + 0.97 * float(a.time)) if end is None else (end - 0.03 * float(a.time))
     for it in range(a.drc_rounds + 1):
-        left = limit - time.monotonic()
+        left = limit - clock_now()
         if left < 15.0:
             rounds.append(dict(round=it, skipped="time"))
             break
-        t = time.monotonic()
+        t = clock_now()
         report, err, crashes = None, None, 0
         for attempt in range(1 + DRC_RETRIES):
             # a fresh staged copy each attempt; the first verdict may take nearly all that is
@@ -210,7 +213,7 @@ def _kicad_loop(a, res, t0, write, end=None):
                 from kae.place.problem import FIXED_ERROR_CHECKS
                 kdrc.promote_severities(staged, [c for c in FIXED_ERROR_CHECKS
                                                  if not (c == "courtyards_overlap" and P.cy_shrink > 0)])
-            left = limit - time.monotonic()
+            left = limit - clock_now()
             try:
                 report = kdrc.run(staged, Path(staged).parent / "drc.json",
                                   timeout=max(10.0, min(600.0, (left - 5.0) if it == 0 else 0.5 * left)))
@@ -229,7 +232,7 @@ def _kicad_loop(a, res, t0, write, end=None):
         fb = X.kicad_feedback(P, st, report)
         rounds.append(dict(round=it, errors=fb["errors"], by_type=fb["by_type"], fixed_only=fb["fixed_only"],
                            placer_by_type=fb.get("placer_by_type", {}),
-                           seconds=round(time.monotonic() - t, 1), **({"crashes": crashes} if crashes else {})))
+                           seconds=round(clock_now() - t, 1), **({"crashes": crashes} if crashes else {})))
         _log(f"KiCad DRC round {it}: {fb['errors']} placement errors {fb['by_type']}")
         clean = fb["errors"] == fb["fixed_only"]
         judged = fb["errors"] - fb["fixed_only"]
@@ -238,7 +241,7 @@ def _kicad_loop(a, res, t0, write, end=None):
             best = (judged, it, st.X.copy(), st.Y.copy(), st.K.copy(), dict(res.poses), judged_types)
         if clean or it == a.drc_rounds:
             break
-        left = limit - time.monotonic()
+        left = limit - clock_now()
         rounds[-1]["repair"] = X.repair(P, st, time_s=max(3.0, min(120.0, 0.4 * left)), log=_log)
         rounds[-1]["repair"].pop("findings", None)
         rep_r = rounds[-1]["repair"]
@@ -246,7 +249,7 @@ def _kicad_loop(a, res, t0, write, end=None):
             # the repair re-placed parts without the silkscreen: the silk pass again (pic-
             # programmer with its interface fixed: 40 parts evicted, 18 silk errors after)
             try:
-                left = limit - time.monotonic()
+                left = limit - clock_now()
                 rep_r["silk_fix"] = X.fix_silk(P, st, time_s=max(2.0, min(30.0, 0.15 * left)), log=_log)
             except Exception as e:      # noqa: BLE001 - a polish pass; never lose the placement
                 rep_r["silk_fix"] = dict(error=f"{type(e).__name__}: {e}")
@@ -306,7 +309,7 @@ def _probe_select(a, board, kw, t0, write):
     tmp = tempfile.mkdtemp(prefix="kae-probe-")
     cands = []
     for k in range(n):
-        if k and time.monotonic() - t0 > usable - place_s - waves * probe_s:
+        if k and clock_now() - t0 > usable - place_s - waves * probe_s:
             break
         kk = dict(kw)
         if k and jitter > 0:
@@ -341,7 +344,7 @@ def _probe_select(a, board, kw, t0, write):
         except Exception as e:      # noqa: BLE001 - a probe that fails leaves the candidate unranked
             _log(f"probe of seed {c['seed']} failed: {type(e).__name__}: {e}")
             return None
-    t_probe = time.monotonic()
+    t_probe = clock_now()
     with ThreadPoolExecutor(max_workers=par) as ex:
         for c, unc in zip(cands, ex.map(probe, cands)):
             c["unconnected"] = unc
@@ -356,7 +359,7 @@ def _probe_select(a, board, kw, t0, write):
     shutil.rmtree(tmp, ignore_errors=True)
     res = best["res"]
     res.report["probe_select"] = dict(n=n, parallel=par, jitter=jitter, place_s=round(place_s, 1),
-                                      probe_s=round(probe_s, 1), probe_wall_s=round(time.monotonic() - t_probe, 1),
+                                      probe_s=round(probe_s, 1), probe_wall_s=round(clock_now() - t_probe, 1),
                                       chosen=best["seed"],
                                       candidates=[{k: c[k] for k in ("seed", "jitter", "legal", "physics", "unconnected")}
                                                   for c in cands])
@@ -385,9 +388,9 @@ def _hazards(report, a, kind, t0, brief=None, board=None):
         mode = "off"                 # --drc off: no KiCad for this run (ablations, unit tests)
     else:
         mode = getattr(a, "recheck", "auto")
-    t = time.monotonic()
+    t = clock_now()
     finish(report, a.output, a.input, kind=kind, mode=mode, deadline=deadline, brief=brief, board=board, log=_log)
-    report.setdefault("recheck", {})["total_s"] = round(time.monotonic() - t, 2)
+    report.setdefault("recheck", {})["total_s"] = round(clock_now() - t, 2)
     s = report["hazard_summary"]
     _log(f"hazards: {s['block']} block, {s['warn']} warn, {s['info']} info"
          + (f" (blocked: {', '.join(s.get('block_codes') or {})})" if s["blocked"] else ""))
@@ -475,6 +478,8 @@ def main(argv=None):
     dru_check.add_arguments(sd)
     sd.set_defaults(fn=dru_check.run)
     a = ap.parse_args(argv)
+    if getattr(a, "time", None):
+        _start_run(float(a.time))
     nc = _numba_cache()
     if nc:
         _log(f"numba cache: read-only {nc[0]} copied to {nc[1]}")

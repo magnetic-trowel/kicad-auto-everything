@@ -599,9 +599,13 @@ def test_lease_plan_freezes_growers_when_the_buffer_is_eaten(kq):
 
 def test_timed_jobs_waiting_for_cpus_freeze_the_newest_batch_job(kq, tmp_path):
     d = _lease_daemon(kq, tmp_path, cpu_freeze_every_s=0, threads=512, reserve_cpu=0)  # admits both on a busy host
+    kq.runnable_threads = lambda: 0          # independent of how busy the test host is
+    _clk = [0]
+    kq.cpu_ticks = lambda: (0, _clk.__setitem__(0, _clk[0] + 4000) or _clk[0])   # and of other users' load
     submit(kq, "sleep 60", name="old", qos="batch")
     submit(kq, "sleep 60", name="new", qos="batch")
-    drive(kq, d, lambda: list(states(d).values()) == ["running", "running"] and len(d.cgroups) == 2)
+    submit(kq, "sleep 60", name="timed", qos="timed")        # timed_wait only means something while one runs
+    drive(kq, d, lambda: list(states(d).values()) == ["running"] * 3 and len(d.cgroups) == 3)
     d.timed_wait = 0.5                       # as if timed jobs waited for CPUs half the time
     running = d.c.execute("SELECT * FROM jobs WHERE state='running'").fetchall()
     d.cpu_freeze(kq.config(), time.time(), running)
@@ -615,7 +619,7 @@ def test_timed_jobs_waiting_for_cpus_freeze_the_newest_batch_job(kq, tmp_path):
     j = d.c.execute("SELECT * FROM jobs WHERE id=2").fetchone()
     assert j["freezes"] == 1 and j["frozen_s"] >= 0 and not j["frozen_since"]
     d.c.execute("UPDATE jobs SET state='cancelled'")
-    for i in (1, 2):
+    for i in (1, 2, 3):
         kq.kill_tree(d.c.execute("SELECT pid FROM jobs WHERE id=?", (i,)).fetchone()[0], d.cgroups.get(i))
 
 
@@ -892,10 +896,15 @@ def test_batch_cpu_admission_needs_a_lasting_dip_and_its_quantile_adapts(kq):
 
 def test_a_batch_job_starved_of_cpu_is_frozen_compressed_and_thawed_when_there_is_room(kq, tmp_path):
     d = _lease_daemon(kq, tmp_path, cpu_freeze_every_s=0, threads=512, reserve_cpu=0)
+    kq.runnable_threads = lambda: 0          # independent of how busy the test host is
+    _clk = [0]
+    kq.cpu_ticks = lambda: (0, _clk.__setitem__(0, _clk[0] + 4000) or _clk[0])   # and of other users' load
     submit(kq, "python3 -c 'import time\na = bytearray(300 << 20)\nfor i in range(0, len(a), 4096): a[i] = 1\n"
                "time.sleep(40)'", name="b", qos="batch", mem="400M")
     submit(kq, "sleep 40", name="later", qos="batch")
-    drive(kq, d, lambda: d.cgroups.get(1) and 1 in d.cpuj and kq.cg_mem(d.cgroups[1])[0] > 250, secs=30)
+    submit(kq, "sleep 40", name="timed", qos="timed")        # timed_wait only means something while one runs
+    drive(kq, d, lambda: d.cgroups.get(1) and 1 in d.cpuj and kq.cg_mem(d.cgroups[1])[0] > 250
+          and states(d)["timed"] == "running", secs=30)
     d.cpuj[1]["starved_since"] = time.time() - 300            # as if its threads had waited for a CPU 5 min
     d.timed_wait = 0.03                                        # (not calm: no thaw in the same pass)
     running = d.c.execute("SELECT * FROM jobs WHERE state='running'").fetchall()
@@ -908,7 +917,7 @@ def test_a_batch_job_starved_of_cpu_is_frozen_compressed_and_thawed_when_there_i
     d.cpu_freeze(kq.config(), time.time(), running)          # room in the run queue: thawed
     assert not kq.cg_frozen(d.cgroups[1])
     d.c.execute("UPDATE jobs SET state='cancelled'")
-    for i in (1, 2):
+    for i in (1, 2, 3):
         kq.kill_tree(d.c.execute("SELECT pid FROM jobs WHERE id=?", (i,)).fetchone()[0], d.cgroups.get(i))
 
 
@@ -1007,3 +1016,67 @@ def test_a_memory_limit_reverted_behind_kaeqs_back_is_set_again_and_told_to_syst
     drive(kq, d, lambda: kq.cg_high_mb(d.cgroups[1]) is None, secs=20)    # set again
     d.c.execute("UPDATE jobs SET state='cancelled'")
     kq.kill_tree(d.c.execute("SELECT pid FROM jobs").fetchone()[0], d.cgroups.get(1))
+
+
+def test_timed_wait_does_not_outlive_the_timed_jobs(kq, tmp_path):
+    """With no timed job running nobody waits: a stale timed_wait must not keep batch jobs frozen or block timed starts."""
+    d = _lease_daemon(kq, tmp_path, cpu_freeze_every_s=0, threads=512, reserve_cpu=0, thaw_min_run_s=0)
+    kq.runnable_threads = lambda: 0          # independent of how busy the test host is
+    _clk = [0]
+    kq.cpu_ticks = lambda: (0, _clk.__setitem__(0, _clk[0] + 4000) or _clk[0])   # and of other users' load
+    submit(kq, "sleep 60", name="b", qos="batch", mem="100M")
+    drive(kq, d, lambda: states(d)["b"] == "running" and 1 in d.cgroups, secs=20)
+    d.timed_wait = 0.5                                 # left over from timed jobs that have ended: freezes it
+    running = d.c.execute("SELECT * FROM jobs WHERE state='running'").fetchall()
+    d.cpu_freeze(kq.config(), time.time(), running)
+    assert kq.cg_frozen(d.cgroups[1]) and d.lease_st[1].get("cpu_frozen")
+    d.tick()
+    assert d.timed_wait == 0.0
+    drive(kq, d, lambda: not kq.cg_frozen(d.cgroups[1]), secs=20)     # thawed
+    submit(kq, "sleep 60", name="t", qos="timed", mem="100M")
+    drive(kq, d, lambda: states(d)["t"] == "running", secs=20)         # and a timed job can start
+    # while a timed job runs, a tick without a new sample keeps the value
+    d.timed_wait = 0.03
+    d.sample_cpu(kq.config(), time.time(), d.c.execute("SELECT * FROM jobs WHERE state='running'").fetchall(), {})
+    assert d.timed_wait == 0.03
+    d.c.execute("UPDATE jobs SET state='cancelled'")
+    for i in (1, 2):
+        kq.kill_tree(d.c.execute("SELECT pid FROM jobs WHERE id=?", (i,)).fetchone()[0], d.cgroups.get(i))
+
+
+def test_a_starving_head_waiting_for_memory_is_not_overtaken_by_short_jobs(kq):
+    """A head held for (starving) that needs more memory than is free: short-running jobs and fillers may not take
+    memory it needs, so it starts as soon as enough frees; they may start only from memory beyond its need."""
+    clock = [0]
+
+    def idle_cpus():
+        clock[0] += 4000
+        return 0, clock[0]
+    kq.cpu_ticks = idle_cpus
+    kq.runnable_threads = lambda: 0
+    conf = json.load(open(kq.CONF)); conf.update(threads=64, reserve_cpu=0, cgroup="off", starve_after_s=0, heavy_boost=False)
+    json.dump(conf, open(kq.CONF, "w"))
+    d = kq.Daemon()
+    now = time.time()
+    for i in range(6):          # history: owner "s" runs short jobs (so it may backfill)
+        d.c.execute("INSERT INTO jobs(owner,cmd,cpus,mem_mb,timeout_s,state,submitted,started,finished) "
+                    "VALUES('s','x',1,1000,60,'ok',?,?,?)", (now - 100, now - 90, now - 80))
+    submit(kq, "sleep 20", name="busy", qos="timed", mem="10G")   # our jobs hold memory that will free
+    drive(kq, d, lambda: states(d)["busy"] == "running")
+    submit(kq, "sleep 20", name="head", qos="timed", prio=6, mem="9G")
+    submit(kq, "sleep 20", name="short", qos="batch", prio=5, mem="2G", owner="s")
+    d.c.execute("UPDATE jobs SET mem_mb=2048 WHERE name='short'")
+    for _ in range(3):
+        d.admit(kq.config(), time.time(), 5 * 1024.0, 0.0, 1)   # 5 GB free: the head (9 GB) does not fit
+    assert states(d)["head"] == "queued" and states(d)["short"] == "queued"   # and the short job may not take it
+    d.admit(kq.config(), time.time(), 9.5 * 1024.0, 0.0, 1)     # enough freed: the head starts
+    assert states(d)["head"] == "running"
+    d.admit(kq.config(), time.time(), 12 * 1024.0, 0.0, 2)      # beyond its need, others go on
+    assert states(d)["short"] == "running"
+    # a head needing more than all our jobs could free (it waits on other users) holds no memory
+    submit(kq, "sleep 20", name="huge", qos="timed", prio=7, mem="500G")
+    submit(kq, "sleep 20", name="short2", qos="batch", prio=5, mem="2G", owner="s")
+    d.c.execute("UPDATE jobs SET mem_mb=2048 WHERE name='short2'")
+    d.admit(kq.config(), time.time(), 5 * 1024.0, 0.0, 3)
+    assert states(d)["huge"] == "queued" and states(d)["short2"] == "running"
+    d.c.execute("UPDATE jobs SET state='cancelled' WHERE state IN ('queued','running')")

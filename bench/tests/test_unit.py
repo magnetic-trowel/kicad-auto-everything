@@ -828,3 +828,17 @@ def test_run_measured_counts_cpu_inside_the_bwrap_sandbox():
     if r.returncode != 0:
         pytest.skip(f"bwrap cannot run here: {r.stderr[-200:]}")
     assert u["cpu_s"] > 1.2, u
+
+
+def test_command_keeps_restart_reports_as_artifacts(tmp_path):
+    """restart.py's reports sit in the work directory, which the runner deletes after the attempt;
+    a link is not copied (the runner reads it outside the sandbox)."""
+    w = tmp_path / "w"
+    d = w / "restarts"
+    d.mkdir(parents=True)
+    (d / "summary.json").write_text("{}")
+    (d / "report.json").write_text("{}")
+    (d / "report-origin.json").symlink_to(tmp_path / "elsewhere")
+    (tmp_path / "elsewhere").write_text("secret")
+    assert sorted(p.name for p in adapters._restart_reports(w)) == ["report.json", "summary.json"]
+    assert adapters._restart_reports(tmp_path / "empty") == []

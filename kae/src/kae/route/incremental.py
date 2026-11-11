@@ -27,6 +27,7 @@ A run that writes no session leaves OUTPUT = INPUT (status no_session).
 """
 from __future__ import annotations
 
+from kae.budget import now as clock_now
 import shutil
 import tempfile
 import time
@@ -60,7 +61,7 @@ def route_open(input_path, output_path, seed=0, time_s=30.0, workdir=None, opts=
     JSON-able report (status routed | no_session | error, router seconds and state,
     seconds by step)."""
     from . import bridge as BR
-    t0 = time.monotonic()
+    t0 = clock_now()
     o = {**BR.DEFAULT_OPTS, **DEFAULTS, **(opts or {})}
     o["repair"] = False
     input_path, output_path = Path(input_path).resolve(), Path(output_path).resolve()
@@ -71,13 +72,13 @@ def route_open(input_path, output_path, seed=0, time_s=30.0, workdir=None, opts=
     rep = dict(input=str(input_path), seed=seed, budget_s=time_s, steps={})
 
     def step(name, t):
-        rep["steps"][name] = round(time.monotonic() - t, 2)
+        rep["steps"][name] = round(clock_now() - t, 2)
 
     def left():
-        return time_s - (time.monotonic() - t0)
+        return time_s - (clock_now() - t0)
 
     try:
-        t = time.monotonic()
+        t = clock_now()
         kdsn = wd / "kicad.dsn"
         info = pcbnew_io.export_dsn(input_path, kdsn)
         o["severities"] = BR.severities(input_path)
@@ -87,7 +88,7 @@ def route_open(input_path, output_path, seed=0, time_s=30.0, workdir=None, opts=
             o["crit_zones"] = [z for z in pcbnew_io.zone_fills(input_path)["zones"]
                                if (z.get("name") or "").startswith(crit)]
         step("export", t)
-        t = time.monotonic()
+        t = clock_now()
         p = constraints.plan(info, input_path, o)
         if hasattr(BR, "plane_policy"):
             p.plane_policy = BR.plane_policy(o)
@@ -102,7 +103,7 @@ def route_open(input_path, output_path, seed=0, time_s=30.0, workdir=None, opts=
             translate.write_rules(p, dsn)
         step("plan", t)
 
-        t = time.monotonic()
+        t = clock_now()
         settings = dict(BR.router_settings(p, o))
         if not o.get("optimizer"):
             settings["optimizer.enabled"] = "false"
@@ -117,13 +118,14 @@ def route_open(input_path, output_path, seed=0, time_s=30.0, workdir=None, opts=
                              state=(run.report or {}).get("final_state"), settings=settings,
                              autorouter_stop=(run.report or {}).get("autorouter_stop"),
                              optimizer_stop=(run.report or {}).get("optimizer_stop"),
-                             incomplete=_incomplete(wd / "board.result.json"))
+                             incomplete=_incomplete(wd / "board.result.json"),
+                             **({"telemetry": run.report["telemetry"]} if (run.report or {}).get("telemetry") else {}))
         log(f"freerouting: rc={run.rc} {run.seconds:.1f}s state={(run.report or {}).get('final_state')}")
         if run.ses is None:
             shutil.copy2(input_path, output_path)
             rep["status"] = "no_session"
             return rep
-        t = time.monotonic()
+        t = clock_now()
         ses = specctra.read(run.ses)
         rep["session"] = translate.fix_session(ses, p)
         ses_k = wd / "board_kicad.ses"
@@ -144,7 +146,7 @@ def route_open(input_path, output_path, seed=0, time_s=30.0, workdir=None, opts=
             shutil.copy2(input_path, output_path)
         return rep
     finally:
-        rep["seconds"] = round(time.monotonic() - t0, 2)
+        rep["seconds"] = round(clock_now() - t0, 2)
         if own_wd and not o.get("keep"):
             shutil.rmtree(wd, ignore_errors=True)
         else:

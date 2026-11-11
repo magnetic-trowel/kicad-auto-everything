@@ -5,8 +5,8 @@
 Scope: how much a wall-clock-budgeted benchmark run moves with the shared host's load, which comparisons that invalidates, and the guard and budget change it led to. Not here: the experiments' own verdicts -> [zone-aware placement](placement/zone-aware-placement.md), [BGA window repair](routing/bga-window-repair.md).
 Keys: host load, drift, reproducibility, wall-clock budget, reused runs, replicate, --reuse-runs, kaeres exp create, SMT, work budget, counted budget, zone-keepout-ab2, post-audit baselines
 
-**Status:** measured; guard in kaeres (branch `results-2611b`); budgets in counted work instead of
-seconds are the fix being built.
+**Status:** measured; guard in kaeres; counted-work budgets built and accepted on five of six flows
+(section "Fix"), one limit left in KiCad's ratsnest.
 **First published:** 2026-11-08.
 
 ## The measurement
@@ -58,9 +58,53 @@ how to register a replicate (same recipe plus `--param replicate=<tag>`); `--reu
 ## Fix: budgets in counted work, not seconds
 
 Side-by-side arms only make comparisons fair; each result still depends on the load during the run, so
-numbers from different weeks never compare and seed noise is inflated. The fix is to stop on counted
-work (annealer moves, solver deterministic time, Freerouting passes, repair rounds, restart attempts)
-with wall time kept only as a safety ceiling, so a run does the same work whatever the host is doing.
-Profiling says three stages take most of the time and get converted first: Freerouting (40–72 % of
-wall time), the placer's annealer (25–40 %) and the last mile (11–29 %)
-([audit § performance](audit-2611.md#performance-measured-alongside)).
+numbers from different weeks never compare and seed noise is inflated. Hardware cycle counters are not
+available to users on this host, so budgets count work. `KAE_BUDGET=work` (with `PYTHONHASHSEED=0` and
+`KAE_WORKERS=1`) makes `--time` mean nominal seconds of counted work (`kae.budget`, branch `work-budget`);
+the default stays wall time.
+
+| stage | counted | nominal seconds per unit |
+|---|---|---|
+| annealer | moves (compiled / Python-priced) | 1.74e-5 / 1.36e-4 |
+| CP-SAT floorplan, legaliser | the solver's deterministic time, one worker | 4.0 |
+| Freerouting | passes done × pins² of the board; its budget becomes a pass cap | 9e-5 |
+| KiCad DRC | runs × MB of board file | 4.27 |
+| last mile | path searches | 0.054 |
+| any deadline check | one poll (a loop that only polls still ends) | 1e-3 (exact repair 5e-3) |
+
+Rates are medians over three boards (65–328 pins) on a quiet host (`tools/research/budget/calibrate.py`).
+Per-pass Freerouting time follows pins² (7–9.8e-5 s per pin²); per MB of `.dsn` it varied 9×.
+Wall time is only a ceiling: 4× a run's budget, past which every deadline has passed and the report says
+`ceiling_hit` (the run has failed). `restart.py` runs attempts in batches, judged whole and in launch order,
+so its schedule does not depend on which attempt ends first.
+
+Load dependence that had to go, beyond the clock itself:
+- CP-SAT `interleave_search` was not repeatable even with one worker (seed wirelength 258 vs 434); plain
+  single-worker search is.
+- The compiled annealer steered proposals by measured physics-term time.
+- KiCad writes copper in UUID order, and a routed board's UUIDs are new on every import. Two unloaded runs
+  differed because of it. The loader, pcbnew's lists, DRC reports and the board copy DRC reads are sorted by
+  content, and DSN wires are split into canonical two-point pieces (KiCad's export joins consecutive
+  segments depending on file order).
+- The step cache is off in work mode (a replay charges its recorded seconds).
+
+### Acceptance: the same command alone and under load
+
+`tools/research/budget/acceptance.py` pins a command to 2 CPUs, runs it alone and again with busy loops on
+those CPUs, and compares placement and copper. Before the change a 60 s placement of a 25-part board put all
+25 parts elsewhere. After it:
+
+| flow | board | result | loaded / alone wall time |
+|---|---|---|---|
+| placement | 25 parts | identical | 0.31 (first run paid numba's compile) |
+| router | small | identical, 222 items | 1.55 |
+| router | medium | identical, 818 items | 1.58 |
+| staged | large | identical, 1,319 items | 0.69 (other jobs slowed the unloaded run; 1.77 at an earlier commit, same hash) |
+| restart wrapper, staged inside | medium | identical, 667 items, same attempt kept | 1.84 |
+| staged, no restarts | medium | same placement and first Freerouting run; **16 vs 15 open** | 1.20 |
+
+The last row is the known limit: KiCad's ratsnest names one of several equally near pieces of copper in an
+unconnected item, not by file order, and a repair round's rip-up follows what it names. On that board it moved
+the result by one connection. Determinism is not proven beyond these boards.
+
+Counted budgets start a new benchmark era: results are not comparable with wall-clock runs.

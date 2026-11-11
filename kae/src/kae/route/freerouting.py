@@ -9,16 +9,21 @@ results, so every run gets a private, empty user-data
 folder (`--user_data_path`) and an environment without FREEROUTING__* variables, and every
 setting the bridge depends on is passed on the command line.
 
-The bridge prefers the magnetic-trowel fork (it honours `min_trace_width_um`; see
-tools/research/routing/install_freerouting_fork.sh): KAE_BRIDGE_FREEROUTING, else the newest
-KAE_HOME/kae-freerouting-fork-*/bin/freerouting. Without one it falls back as kaebench does:
-KAE_FREEROUTING (a binary or a .jar), the native bundle in KAE_HOME (default
-~/.cache/kaebench), `freerouting` on PATH, a jar in KAE_HOME. Settings an older build does not
-know are logged as unknown and ignored.
+The build is always named, never guessed (command()): KAE_BRIDGE_FREEROUTING, else the build
+pinned in KAE_HOME/kae-freerouting.pin (default KAE_HOME ~/.cache/kaebench; written by
+tools/research/routing/install_freerouting_fork.sh REF --pin), else KAE_FREEROUTING; with none of
+them it fails. It used to take the newest KAE_HOME/kae-freerouting-fork-* by file time, so an
+experiment's wrapper installed there silently became every run's router. The bridge wants the
+magnetic-trowel fork (it honours `min_trace_width_um`). Settings an older build does not know are
+logged as unknown and ignored.
 """
+import re
+
+from kae import budget
 import fcntl
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -41,27 +46,36 @@ class FreeroutingError(RuntimeError):
     pass
 
 
+PIN_FILE = "kae-freerouting.pin"
+
+
+def _as_command(path):
+    return ["java", "-jar", path] if str(path).endswith(".jar") else [str(path)]
+
+
 def command():
-    """Command prefix for Freerouting."""
+    """Command prefix for Freerouting: KAE_BRIDGE_FREEROUTING, else the build named in
+    KAE_HOME/kae-freerouting.pin (a path, absolute or relative to KAE_HOME), else KAE_FREEROUTING.
+    Raises FreeroutingError when none is set or the pinned build is missing: a run never picks a
+    build by itself."""
     env = os.environ.get("KAE_BRIDGE_FREEROUTING")
     if env:
-        return ["java", "-jar", env] if env.endswith(".jar") else [env]
-    fork = sorted(KAE_HOME.glob("kae-freerouting-fork-*/bin/freerouting"), key=lambda q: q.stat().st_mtime)
-    if fork:
-        return [str(fork[-1])]
+        return _as_command(env)
+    pin = KAE_HOME / PIN_FILE
+    if pin.is_file():
+        text = pin.read_text().strip()
+        path = Path(text).expanduser()
+        if not path.is_absolute():
+            path = KAE_HOME / path
+        if not text or not path.is_file():
+            raise FreeroutingError(f"{pin} names {text!r}, which is not a file: fix or rewrite the pin")
+        return _as_command(path)
     env = os.environ.get("KAE_FREEROUTING")
     if env:
-        return ["java", "-jar", env] if env.endswith(".jar") else [env]
-    native = sorted(KAE_HOME.glob("freerouting-*-linux-x64/bin/freerouting"))
-    if native:
-        return [str(native[-1])]
-    exe = shutil.which("freerouting")
-    if exe:
-        return [exe]
-    jars = sorted(KAE_HOME.glob("freerouting-*.jar"))
-    if jars:
-        return ["java", "-jar", str(jars[-1])]
-    raise FreeroutingError("Freerouting not found; set KAE_FREEROUTING or run bench/scripts/setup.sh")
+        return _as_command(env)
+    raise FreeroutingError(
+        f"No Freerouting build is pinned: set KAE_BRIDGE_FREEROUTING, or write a build's path into {pin} "
+        "(tools/research/routing/install_freerouting_fork.sh REF --pin does)")
 
 
 @dataclass
@@ -185,8 +199,42 @@ GRACE_S = 45.0
 SLOT_WARN = 0.10     # a slot wait above this share of the budget is logged
 
 
+def _pins(dsn):
+    """Pins on the nets of a Specctra file: a pass's time grows as its square."""
+    try:
+        text = Path(dsn).read_text(errors="replace")
+    except OSError:                      # the router reports a missing input itself
+        return 1
+    return max(1, sum(len(m.split()) for m in re.findall(r"\(pins\s+([^)]*)\)", text)))
+
+
+PASS_DONE = re.compile(r"Auto-routing pass #\d+ on board .* was completed")
+
+
 def route(dsn, ses, workdir, *, passes=0, settings=None, budget_s=600.0, margin_s=None, hard_s=None,
           log_path=None):
+    """_route (below). In work mode (kae.budget) the budget is a pass cap, budget_s / the nominal
+    seconds of one pass over this .dsn: Freerouting is deterministic while its job timeout does not
+    fire, so the timeout is only the run's wall ceiling, and the passes done are charged."""
+    size = _pins(dsn) ** 2
+    if not budget.work_mode():
+        run = _route(dsn, ses, workdir, passes=passes, settings=settings, budget_s=budget_s, margin_s=margin_s,
+                     hard_s=hard_s, log_path=log_path)
+        budget.charge("fr_pass_pin2", max(1, len(PASS_DONE.findall(run.log or ""))) * size)    # counted only
+        return run
+    cap = max(1, int(budget_s / max(1e-9, budget.clock().rates["fr_pass_pin2"] * size)))
+    passes = min(passes, cap) if passes else cap
+    wall = budget.wall_timeout(budget_s)
+    run = _route(dsn, ses, workdir, passes=passes, settings=settings, budget_s=wall, margin_s=30.0,
+                 hard_s=wall + GRACE_S, log_path=log_path)
+    done = len(PASS_DONE.findall(run.log or ""))
+    budget.charge("fr_pass_pin2", max(1, done) * size)
+    run.report["passes_done"], run.report["passes_cap"] = done, passes
+    return run
+
+
+def _route(dsn, ses, workdir, *, passes=0, settings=None, budget_s=600.0, margin_s=None, hard_s=None,
+           log_path=None):
     """Route `dsn` into `ses`. `passes` caps the autorouter passes (0 = until it stops
     improving). Freerouting's own deadline (job_timeout) is `budget_s` less its start-up
     (`margin_s`, default min(15 s, 10%)) and less the time spent waiting for a host slot
@@ -209,6 +257,7 @@ def route(dsn, ses, workdir, *, passes=0, settings=None, budget_s=600.0, margin_
             return hit
     # the wait for a slot is part of the caller's budget: Freerouting gets what is left of it,
     # and after the budget it runs without a slot (a wait without end would hang the caller)
+    # (work mode: a wait costs no budget, so it waits as long as the wall ceiling allows)
     slot = _Slot(timeout=max(1.0, budget_s - margin - 5.0)).__enter__()
     waited = slot.waited or 0.0
     if slot.gave_up:
@@ -245,6 +294,7 @@ def route(dsn, ses, workdir, *, passes=0, settings=None, budget_s=600.0, margin_
         report = json.loads(result.read_text())
     except (OSError, ValueError):
         pass
+    _keep_raw(ses, out, result)
     if key:
         _store(key, p.returncode, dt, timed_out, out or "", report, ses, result, workdir, job_s)
     return Run(rc=p.returncode, ses=ses if ses.exists() and ses.stat().st_size > 0 else None, log=out or "",
@@ -367,6 +417,7 @@ def _replay(key, ses, result, workdir, budget_s, margin, hard_s, log_path, passe
             report = json.loads(result.read_text())
         except (OSError, ValueError):
             report = {}
+        _keep_raw(ses, log, result)
         stepcache.charge("freerouting", True, meta["seconds"], time.monotonic() - t0, k)
         return Run(rc=meta["rc"], ses=ses, log=log, seconds=meta["seconds"], timed_out=False,
                    report=dict(_summary(report, log), slot_wait_s=0.0, job_timeout_s=round(job_s, 1),
@@ -399,6 +450,66 @@ def _optimizer_stop(log):
     return None
 
 
+_PASS_LINE = re.compile(r"Auto-routing pass #(\d+) on board '[^']*' was completed in ([\d.]+) seconds "
+                        r"with score ([\d.]+) \((\d+) unrouted and (\d+) violations")
+_NECK_LINE = re.compile(r"Start necked: (\d+) connection.*?, (\d+) did not route")
+_POUR_CONNECTED = re.compile(r"Connected (\d+) group\(s\) of copper that foreign tracks")
+_POUR_CUT_OFF = re.compile(r"(\d+) pin\(s\) or via\(s\) are cut off from the fill")
+
+
+def _keep_raw(ses, log, result):
+    """With KAE_FR_RAW_DIR set (restart.py sets it per attempt), a copy of this run's whole log and
+    result file goes there; the work directory holding them is deleted when the bridge ends."""
+    d = os.environ.get("KAE_FR_RAW_DIR")
+    if not d:
+        return
+    try:
+        Path(d).mkdir(parents=True, exist_ok=True)
+        stem = f"{time.time_ns()}-{os.getpid()}-{ses.stem}"
+        (Path(d) / f"{stem}.log").write_text(log or "")
+        if result.is_file():
+            shutil.copy2(result, Path(d) / f"{stem}.result.json")
+    except OSError as e:
+        print(f"[kae.route {time.strftime('%H:%M:%S')}] warning: could not keep the Freerouting log: {e}", flush=True)
+
+
+def telemetry(report, log):
+    """What happened inside a Freerouting run, from its log and result file: `loops` holds, for
+    each pass loop of the run (the first, then one per fallback attempt that routed), the unrouted
+    count and seconds per pass (`unrouted`, `seconds`); `fallback` the fork's fallback attempts
+    (strategy, stop reason, unrouted, seconds; `chosen` is the attempt kept); `start_necked` the
+    connections routed at the neck width from the start (`routed`, `failed`); `pour_connected`
+    groups of copper the fork joined after foreign tracks cut them off from a pour and
+    `pour_cut_off` the pads and vias still cut off, which its connectivity counts as connected.
+    `start_necked`, `pour_connected` and `pour_cut_off` are lists, one entry per line the fork
+    logged. `fallback` is the result file's whole entry, each attempt also under the short names
+    `violations` and `seconds`. A telemetry with nothing to say is {}. Nothing is left out or
+    capped here: the size limit is on what is stored (restart.py, keep_fr_raw)."""
+    out = {}
+    loops, last = [], None
+    for m in _PASS_LINE.finditer(log or ""):
+        n = int(m.group(1))
+        if last is None or n <= last:
+            loops.append(dict(unrouted=[], seconds=[], violations=[]))
+        loops[-1]["unrouted"].append(int(m.group(4)))
+        loops[-1]["seconds"].append(round(float(m.group(2)), 2))
+        loops[-1]["violations"].append(int(m.group(5)))
+        last = n
+    if loops:
+        out["loops"] = loops
+    fb = ((report or {}).get("phases") or {}).get("fallback") or {}
+    if fb.get("attempts"):
+        out["fallback"] = dict(fb, attempts=[dict(a, violations=a.get("new_or_changed_violations"),
+                                                  seconds=a.get("duration_seconds")) for a in fb["attempts"]])
+    if necks := [dict(routed=int(m.group(1)), failed=int(m.group(2))) for m in _NECK_LINE.finditer(log or "")]:
+        out["start_necked"] = necks
+    if pours := [int(m.group(1)) for m in _POUR_CONNECTED.finditer(log or "")]:
+        out["pour_connected"] = pours
+    if cut := [int(m.group(1)) for m in _POUR_CUT_OFF.finditer(log or "")]:
+        out["pour_cut_off"] = cut
+    return out
+
+
 def _summary(d, log=""):
     """The parts of Freerouting's result file the bridge reports, plus why each stage stopped:
     `autorouter_stop` is the fork's StopReason for the chosen attempt (COMPLETED: nothing left
@@ -415,4 +526,5 @@ def _summary(d, log=""):
                 optimizer_score=d.get("optimizer_score"), cpu_s=use.get("cpu_time"),
                 peak_mb=use.get("peak_memory"), app_version=d.get("app_version"),
                 autorouter_stop=ar_stop, optimizer_stop=_optimizer_stop(log),
-                **({"pin_entries": pe} if (pe := pin_entry_stats(log)) else {}))
+                **({"pin_entries": pe} if (pe := pin_entry_stats(log)) else {}),
+                **({"telemetry": t} if (t := telemetry(d, log)) else {}))

@@ -36,6 +36,7 @@ set KiCad has judged no worse: never worse than the input by type, nor in unconn
 """
 from __future__ import annotations
 
+from kae.budget import now as clock_now
 import json
 import math
 import re
@@ -596,7 +597,7 @@ def _gate(state, input_board, project_board, jr, workdir, base_report=None, budg
     types already found noisy on this board (a second gate on the first one's output).
     Returns dict(kept={ids}, text, drc_in, drc_out, worse_full, noise, rounds, drc_runs, seconds)."""
     from . import drc
-    t0 = time.monotonic()
+    t0 = clock_now()
     run = drc_run or drc.run
     wd = Path(workdir)
     wd.mkdir(parents=True, exist_ok=True)
@@ -606,7 +607,7 @@ def _gate(state, input_board, project_board, jr, workdir, base_report=None, budg
     rounds = []
 
     def left():
-        return 3600.0 if deadline is None else deadline - time.monotonic()
+        return 3600.0 if deadline is None else deadline - clock_now()
 
     def check(text, tag, fresh=False):
         d = wd / tag
@@ -623,7 +624,7 @@ def _gate(state, input_board, project_board, jr, workdir, base_report=None, budg
     res = dict(kept=set(), drc_in=drc.summary(base[0]), drc_in_reused=reused, noise=sorted(known_noise),
                rounds=rounds)
     if not allids:
-        res.update(text=jr.input, drc_out=res["drc_in"], drc_runs=runs[0], seconds=round(time.monotonic() - t0, 1),
+        res.update(text=jr.input, drc_out=res["drc_in"], drc_runs=runs[0], seconds=round(clock_now() - t0, 1),
                    report=base[0])
         return res
     # a check at KiCad's error limit reports some 199 of its violations, which ones by the items' order
@@ -816,7 +817,7 @@ def _gate(state, input_board, project_board, jr, workdir, base_report=None, budg
             state["best"] = best
     kept = best["kept"]
     res.update(kept=kept, text=jr.text(kept) if kept else jr.input, drc_out=drc.summary(best["rep"]), report=best["rep"], probes=probes[0],
-               drc_runs=runs[0], seconds=round(time.monotonic() - t0, 1))
+               drc_runs=runs[0], seconds=round(clock_now() - t0, 1))
     return res
 
 

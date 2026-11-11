@@ -1969,6 +1969,8 @@ class Daemon:
                 wait, span = wait + df, span + dt   # thread of a multi-threaded job waiting counted, too touchy)
         if span:
             self.timed_wait = 0.7 * self.timed_wait + 0.3 * min(1.0, wait / span)
+        elif not any((j["qos"] or "timed") == "timed" for j in running):
+            self.timed_wait = 0.0    # no timed job runs, so none waits (span is also 0 between a running job's samples)
         if now - self.runq_class_ts >= 10:          # threads ready to run, by class and by scheduling policy
             self.runq_class_ts, self.runq_class = now, {"timed": 0, "batch": 0, "idle": 0}
             for j in running:
@@ -2175,12 +2177,19 @@ class Daemon:
             head = next((j for j in queued if not self.is_filler(j, cfg)), queued[0])
             if fit is not None and fit is not head and now - head["submitted"] > cfg["starve_after_s"] \
                     and not self.is_filler(head, cfg):
-                # head is starving: hold the room for it, but let jobs that end soon use it meanwhile,
-                # so the head waits at most about backfill_short_s longer once its room frees
+                # head is starving: hold the room for it. Jobs that end soon (short owners) and fillers may still
+                # start, but only if they leave the head's memory free: a backfill job must never delay it. (Letting
+                # short jobs take freed memory regardless meant a head needing more than any one job frees never
+                # started while short jobs kept coming: a priority-6 timed job waited behind 179 short batch starts
+                # an hour.)
+                # The reservation applies when our own jobs finishing can free the head's memory; a head that needs
+                # more (it waits on other users) holds no memory, or it would block the queue indefinitely.
                 short = self.short_owners(cfg) if short is None else short
-                # (a filler takes only spare CPU: it may start too, if it leaves the head's memory free)
-                fit = next((j for j in queued if fits(j) and (j["owner"] in short or self.is_filler(j, cfg)
-                            and mem_room - self.need_mb(j, cfg) >= self.need_mb(head, cfg))), None)
+                ours = sum(r["grant_mb"] or self.need_mb(r, cfg) for r in running)
+                reserve_head = self.need_mb(head, cfg) <= max(0.0, mem_room) + ours
+                fit = next((j for j in queued if fits(j) and (j["owner"] in short or self.is_filler(j, cfg))
+                            and (mem_room - self.need_mb(j, cfg) >= self.need_mb(head, cfg)
+                                 or not reserve_head and not self.is_filler(j, cfg))), None)
             if fit is None:
                 # jobs that fit in memory but wait for CPUs: what the runq_q controller weighs idle CPUs against
                 self.cpu_waiting = any(self.need_mb(j, cfg) <= mem_room and j["cpus"] > cpu_room for j in queued[:50])

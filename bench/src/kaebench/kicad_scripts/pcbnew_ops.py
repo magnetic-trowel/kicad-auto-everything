@@ -17,6 +17,8 @@ process from the harness. Every operation prints one JSON object on stdout.
     python pcbnew_ops.py transplant-routing OUTPUT INPUT DEST [REFERENCE] [--zones]
     python pcbnew_ops.py transplant-placement OUTPUT INPUT DEST [REFERENCE] [--zones]
     python pcbnew_ops.py covered-micro-arcs BOARD [MAX_MM]
+    python pcbnew_ops.py layer-use BOARD
+    python pcbnew_ops.py restrict-layers IN OUT PLAN_JSON
 """
 import hashlib
 import json
@@ -353,6 +355,119 @@ def classify_mech(path):
         rows.append(r)
     rows.sort(key=lambda r: r["uuid"])
     _out(dict(ok=True, path=path, rules_version=mech_rules.RULES_VERSION, footprints=rows))
+
+
+def _cu_stack(board):
+    """The enabled copper layers, top to bottom (id, name)."""
+    return [(l, board.GetStandardLayerName(l)) for l in board.GetEnabledLayers().CuStack()]
+
+
+def layer_use(path):
+    """Copper use per inner layer (layer_plan.py says what counts) and the facts plan() needs."""
+    board = _load(path)
+    stack = _cu_stack(board)
+    inner = {l: n for l, n in stack[1:-1]}
+    used, routing = {}, 0
+
+    def mark(layer, kind):
+        if layer in inner:
+            used.setdefault(inner[layer], {}).setdefault(kind, 0)
+            used[inner[layer]][kind] += 1
+
+    for t in board.GetTracks():
+        routing += 1
+        if t.GetClass() == "PCB_VIA":  # only the ends of a blind or buried via are its own
+            mark(t.TopLayer(), "via_end")
+            mark(t.BottomLayer(), "via_end")
+        else:
+            mark(t.GetLayer(), "track")
+    copper_zones = 0
+    zones = list(_zones(board)) + [z for fp in board.GetFootprints() for z in fp.Zones()]
+    for z in zones:
+        if z.GetIsRuleArea():
+            continue
+        copper_zones += 1
+        for l in inner:
+            if z.IsOnLayer(l):
+                mark(l, "zone")
+    for d in board.GetDrawings():
+        mark(d.GetLayer(), "graphic")
+    for fp in board.GetFootprints():
+        for d in fp.GraphicalItems():
+            mark(d.GetLayer(), "graphic")
+        for p in fp.Pads():
+            if p.GetAttribute() in (pcbnew.PAD_ATTRIB_SMD, pcbnew.PAD_ATTRIB_CONN):
+                for l in inner:
+                    if p.IsOnLayer(l):
+                        mark(l, "pad")
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
+    named = [n for l, n in stack[1:-1] if board.GetLayerName(l) != n]
+    _out(dict(ok=True, copper_layers=len(stack), inner_used=sorted(used), used_by=used, routing_items=routing,
+              copper_zones=copper_zones, has_stackup="(stackup" in text, named_inner=named))
+
+
+def restrict_layers(src, dst, plan_json):
+    """Apply a layer_plan.plan: cut the copper stack, forbid unused layers with a board-wide rule
+    area, and make the stackup block agree (total thickness kept)."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import layer_plan
+
+    with open(plan_json, encoding="utf-8") as f:
+        plan = json.load(f)
+    board = _load(src, seed=True)
+    bbox = board.GetBoundingBox()
+    if plan["copper_layers"] < board.GetCopperLayerCount():
+        kept = pcbnew.LSET()
+        board.SetCopperLayerCount(plan["copper_layers"])
+        board.SetEnabledLayers(board.GetEnabledLayers())
+        for l, _ in _cu_stack(board):
+            kept.AddLayer(l)
+        def trim(z):  # a keepout's layers that are gone; returns whether any stay
+            ls = pcbnew.LSET()
+            for l in z.GetLayerSet().Seq():
+                if not pcbnew.IsCopperLayer(l) or kept.Contains(l):
+                    ls.AddLayer(l)
+            if len(list(ls.Seq())) == 0:
+                return False
+            z.SetLayerSet(ls)
+            return True
+        for z in _zones(board):
+            if z.GetIsRuleArea() and not trim(z):
+                board.Remove(z)
+        for fp in board.GetFootprints():
+            for z in fp.Zones():
+                if z.GetIsRuleArea():
+                    trim(z)
+    if plan["forbidden"]:
+        ids = {n: l for l, n in _cu_stack(board)}
+        layers = pcbnew.LSET()
+        for name in plan["forbidden"]:
+            layers.AddLayer(ids[name])
+        z = pcbnew.ZONE(board)
+        z.SetIsRuleArea(True)
+        z.SetZoneName(layer_plan.ZONE_NAME)
+        z.SetDoNotAllowTracks(True)
+        z.SetDoNotAllowZoneFills(True)
+        z.SetDoNotAllowVias(False)
+        z.SetDoNotAllowPads(False)
+        z.SetDoNotAllowFootprints(False)
+        z.SetLayerSet(layers)
+        margin = pcbnew.FromMM(5)
+        x0, y0, x1, y1 = bbox.GetLeft() - margin, bbox.GetTop() - margin, bbox.GetRight() + margin, bbox.GetBottom() + margin
+        o = z.Outline()
+        o.NewOutline()
+        for x, y in ((x0, y0), (x1, y0), (x1, y1), (x0, y1)):
+            o.Append(x, y)
+        board.Add(z)
+    _save(board, dst)
+    with open(dst, encoding="utf-8") as f:
+        text = f.read()
+    new = layer_plan.merge_stackup(text, plan["copper_layers"])
+    if new != text:
+        with open(dst, "w", encoding="utf-8") as f:
+            f.write(new)
+    _out(dict(ok=True, path=dst))
 
 
 def lock_footprints(src, dst, uuids_json):
@@ -1039,6 +1154,10 @@ def main(argv):
             transplant_routing(*args[:4], zones="--zones" in argv)
         elif op == "transplant-placement":
             transplant_placement(*args[:4], zones="--zones" in argv)
+        elif op == "layer-use":
+            layer_use(args[0])
+        elif op == "restrict-layers":
+            restrict_layers(args[0], args[1], args[2])
         elif op == "covered-micro-arcs":
             covered_micro_arcs(args[0], *(float(a) for a in args[1:2]))
         else:
