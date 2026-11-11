@@ -138,6 +138,40 @@ Lessons from the decide-ab campaign (2026-11, 17 experiments; plan and analysis 
 - **kaeq's CPU column counts the job's own process.** A restart-wrapped job can show hours of wall
   time and seconds of CPU while its children work; check `ps` of the children before calling it hung.
 
+## Profiling a smoke
+
+Profile one smoke board per arm before a full run: the queue is shared, and an hour saved per job is
+worth more than any tuning after the fact. Profile the method the way the job runs it (same template,
+budget and environment), on one small and one medium board.
+
+- **Python (kae, restart.py, physics):** wrap the python process itself, not `sh`, `env` or `apptainer`:
+  `py-spy record --nonblocking --idle -r 25 -f raw -o prof-$$.txt -- python -m kae.route.cli ...`.
+  `--idle` keeps samples where the process waits on a child (Freerouting, kicad-cli, pcbnew), so the
+  profile adds up to wall time. A restart-wrapped method: put py-spy in the inner command, one file per
+  attempt. py-spy around a shell under kaeq has killed the method silently.
+- **Freerouting:** point `KAE_BRIDGE_FREEROUTING` at a wrapper that runs the same jar on a full JDK with
+  Java Flight Recorder: `java -XX:FlightRecorderOptions=repository=DIR,maxchunksize=4m
+  -XX:StartFlightRecording=filename=fr.jfr,dumponexit=true,settings=profile -jar freerouting.jar "$@"`.
+  The bridge kills Freerouting at its hard limit, which leaves `fr.jfr` empty; the repository keeps the
+  finished chunks (`jfr print --events jdk.ExecutionSample DIR/*.jfr`). Never install such a wrapper
+  under the bridge's default build prefix.
+- **Job steps:** `run.json` → `job_steps` has wall and CPU of prepare, run (method plus scoring) and
+  physics; `work` has a restart wrapper's attempts, judge time and CPU; the kaeq job has peak memory,
+  CPU and `cpu_peak` (threads).
+
+Report, per arm: wall and CPU per stage (placement, module stage, escape planning, Freerouting, last
+mile/repair, KiCad DRC and pcbnew calls, physics, imports and numba compiles, file I/O), the job's
+measured peak memory and CPU threads, and the largest self-time functions of the biggest stage.
+`prof_stages.py prof-*.txt` sums py-spy raw files into these stages.
+
+A speedup must change nothing. Run the unfixed and the fixed code on the profiled boards with counted
+budgets (`KAE_BUDGET=work PYTHONHASHSEED=0 KAE_WORKERS=1`) and compare the output board, the scorer's
+`drc.json` and the physics JSON (dates, paths and timing fields aside). Run the unfixed code
+twice too: a step that differs between two unfixed runs (a solver with a wall-clock limit) has to be
+named, not blamed on the fix. A change that alters any output is a method change and needs its own
+A/B. Never change code under methods that are queued. Size the job's `--cpus` and `--mem` from the
+smoke's measured peak.
+
 ## Per board job
 
 1. **Preflight.** KiCad's Python must import pcbnew. If it can't, the job exits 75 and kaeq retries it; this is an infrastructure failure, not a board result.
