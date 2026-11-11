@@ -279,6 +279,16 @@ def test_attempts_are_told_where_to_keep_raw_freerouting_files(tmp_path):
     assert summary["fr_raw"]["parts_kept"] == 1 and summary["fr_raw"]["file"] == "fr-telemetry.tar"
 
 
+def test_a_failed_attempt_keeps_why(tmp_path):
+    """An attempt that exits non-zero keeps its report's status and error and the end of its log."""
+    fail = """echo 'Traceback: pcbnew worker did not start' >&2; echo '{"status": "error", "error": "PcbnewError: x"}'; exit 2"""
+    r, out, summary = _run(tmp_path, fail, "")
+    rec = summary["attempt_log"][0]
+    assert rec["rc"] == 2
+    assert rec["failure"]["status"] == "error" and rec["failure"]["error"] == "PcbnewError: x"
+    assert "pcbnew worker did not start" in rec["failure"]["log_tail"]
+
+
 def test_a_kept_fresh_attempt_has_no_origin_report(tmp_path):
     loop = """echo '{"iterations": [1], "stop": "no improvement"}'; echo '(kicad_pcb OPEN=0)' > @OUT@"""
     r, out, summary = _run(tmp_path, loop, "")
