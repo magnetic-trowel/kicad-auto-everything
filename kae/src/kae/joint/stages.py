@@ -65,7 +65,9 @@ def _project(src_board, dst_board):
 
 # Every `opts` key the stages read (kae.joint.cli rejects a --set key that neither these, the
 # loop's DEFAULTS, the placer's limits (kae.route.constraints.DEFAULTS) nor bridge.KEY name).
+ESCAPE_KEYS = ("escape_mm", "escape_cost", "escape_pins")
 STAGE_KEYS = frozenset({
+    *ESCAPE_KEYS,
     # set by kae.joint.cli from its flags
     "keep", "no_physics", "no_modules", "budget_s", "route_parallel", "first_last_mile", "first_blocked",
     # placer and module stage
@@ -218,7 +220,10 @@ class KaeStages:
         if time_s is None and self.opts.get("budget_s"):
             t_mod = max(t_mod, 0.05 * float(self.opts["budget_s"]))   # a long budget: more module search
         try:
-            sess = Session(lay.board, brief=brief, opts=dict(rails="none"), log=lambda m: None, board=board,
+            # the critical router's escape corridors (kae.route.critical escape_mm / escape_cost / escape_pins):
+            # other nets' module copper keeps out of dense ICs' pin escapes when set (off by default)
+            copts = dict(rails="none", **{k: self.opts[k] for k in ESCAPE_KEYS if self.opts.get(k) is not None})
+            sess = Session(lay.board, brief=brief, opts=copts, log=lambda m: None, board=board,
                            terms=self.terms)
             moved, copper, rep = optimize_modules(board, brief, terms=self.terms, locked=sorted(locked),
                                                   log=lambda m: self.log(f"modules: {m}"), time_s=t_mod, session=sess,
@@ -259,7 +264,8 @@ class KaeStages:
         new.info["modules"] = dict(seconds=round(dt_mod, 1), budget_s=round(t_mod, 1),
                                    stop="clock" if float(rep.get("seconds") or 0.0) >= 0.95 * t_mod else "done",
                                    moved=sorted(rep.get("moved") or {}),
-                                   copper=len(copper), modules=[dict(id=m["id"], u0=m.get("u0"), u=m.get("u"),
+                                   copper=len(copper), escape_corridors=len(getattr(sess.router, "escapes", ()) or ()),
+                                   modules=[dict(id=m["id"], u0=m.get("u0"), u=m.get("u"),
                                                                      status=m.get("status"))
                                                                 for m in rep.get("modules") or []])
         return new
