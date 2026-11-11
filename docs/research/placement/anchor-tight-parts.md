@@ -107,10 +107,10 @@ By type, off → on (staged; joint):
 
 **The guard fails, so the experiment fails.**
 - Three boards legal 3 of 3 under control are 0 of 3 with the change, in both chains: mikeysklar-c7kfo-nicenano-breakout, sparkybobo-dmxdemonstrator-receiver-io and vail-cw-vail-adapter-vail-v1-pcb.
-- Each is a tiny carrier (4-6 parts) for a castellated module (nice!nano, QT Py). None has a KiCad placement error. All three are illegal by the benchmark's `outside` rule: more pad centres off the board than in the human layout.
-- Why: the module's footprint has two pads per pin (castellated and through-hole), so `Problem._straddle_check` lets one row hang over the edge (`outside_ok`). With the overhang, the anchoring found a spot with five through-hole pads wholly off the board.
-- KiCad's DRC raises nothing for copper entirely outside the outline, so the KiCad check cannot catch it either.
-- The control's closed loop finds a spot with every pad on the board.
+- Each is a tiny carrier (4-6 parts) whose only free part is the anchored module (nice!nano, QT Py). None has a KiCad placement error. All three are illegal by the benchmark's `outside` rule.
+- Cause (corrected 2026-11-10, after reproducing it): with the module anchored, no free part was left. `place()` then took its "nothing to place" return, which wrote no poses, so the module stayed at its staged pose off the board. Routing to it added copper_edge errors.
+- A first reading blamed the straddle allowance; the reproduction showed the module was never written.
+- Fixed in commit "write anchored poses when no free part is left", with a regression test. On seeds 0 and 1, all three boards are legal.
 - Staged opens also rise 3.6 % (1,095 → 1,134), beyond the plan's +3 % bound; joint opens fall 2.4 %.
 
 The known boards, legal of 3 seeds (staged; joint, off → on):
@@ -120,4 +120,4 @@ The known boards, legal of 3 seeds (staged; joint, off → on):
 - melexinvn: 3 → 3; 3 → 3. The first version's regression is fixed by the KiCad check.
 - Also fixed, 0 → 3 in both chains: meo98-picostack, hollyrock-ecoconnect, 0rax-xiao-base; zlosynth goes 0-1 → 3.
 
-**Next.** An anchored spot must keep every pad centre on the board: ignore `outside_ok` when choosing it, since the harness counts pads off the board against the human layout. Then pre-register a third run on the same 60 boards. Not the 103-board extension of this run: its guard already failed on a known mechanism.
+**Next.** Fix the write, and also require every pad centre of an anchored spot on the board. Then pre-register a third run on the same 60 boards (`loop-legal-ab3`), not this run's 103-board extension.
