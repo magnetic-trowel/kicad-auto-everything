@@ -5,7 +5,7 @@
 Scope: what `kae.joint`'s window stage gains as its budget grows, and the window fixes J2, J4, J5, J14 (J3: [window-outcomes-2611](window-outcomes-2611.md) on branch `loop-j3-unfixable-drc`). Not here: the chassis verdict (J1).
 Keys: joint loop, windows, window_budget_factor, budget curve, min_iter_s, route_share, first_last_mile, legal_time, revert_illegal, J2, J4, J5, J14, J15
 
-**Status:** windows work, but only with time beyond today's budget. With two budgets of window time open connections fall 16 % (27 boards better, 10 worse, p 0.033) at 2.8 times the CPU. A third and fourth budget add little. No fix to how the budget is split or to the legalizer passed.
+**Status:** windows work, but only with time beyond today's budget. With two budgets of window time open connections fall 16 % (27 boards better, 10 worse, p 0.033) at 2.8 times the CPU. A third and fourth budget add little. No fix to how the budget is split or to the legalizer passed. At equal compute, restarts beat windows as a replacement, but windows as polish on the board restarts kept (the last 30 % of the allowance) remove 9.6 % of the opens left (129 boards, p 0.0003; [polish](#windows-as-polish-after-restarts-loop-polish-2026-11-11)).
 **First published:** 2026-11-10, branch `loop-exp`, experiment `loop-window-bench-v2` (plan `tools/kaeres/experiments/loop-window-bench/PLAN.md`, pre-registered), commit f2f4151.
 
 ## Setup
@@ -128,3 +128,27 @@ Only 2 full-intent boards fell in this batch, too few for a subset.
 The physics win is the joint chassis's (the module stage places and routes critical copper first), not necessarily the windows': R is the staged pipeline without the module stage. J1's ladder separates the two (staged, + modules, + finish, + windows).
 
 **What it means for the default:** the integrated loop buys physics at the price of completion, and restarts buy completion. A method that wants both needs the module stage's physics without its cost in open connections. Candidates are the module stage under the restart wrapper (J1's arm b), or modules with `finish_release` on every restart. That is a different question from the windows'.
+
+## Windows as polish after restarts (`loop-polish`, 2026-11-11)
+Plan: `tools/kaeres/experiments/loop-polish/PLAN.md` (pre-registered, with a smoke addendum and a first-batch read). Commit f2f4151. 129 boards: `loop-compute-matched`'s 69 and the first 60 of the extension list (`loop-polish-ext1`), pooled as the plan says. Analysis: `tools/kaeres/experiments/loop-polish/analyze.py`.
+- **R, restarts alone:** `loop-compute-matched`'s R, run again in the same jobs.
+- **P-late:** R for 70 % of the allowance, then the joint loop on the kept board for the rest (`restart.py --finish`, `--no-modules`). The loop locks everything on the kept board, joins what is open, then runs windows and its finishing stage.
+- **P-half:** the same with 50 % for the loop.
+
+| | P-late | P-half | R |
+|---|---|---|---|
+| open connections | **5,804 (−9.6 %)** | 5,515 (−14.1 %) | 6,417 |
+| boards fewer / more against R | 54 / 31 | 58 / 37 | |
+| mean d, sign-flip p | −0.070, **0.0003** | −0.040, 0.066 | |
+| clean (cp1, k = 1) | 23 | 20 | 18 |
+| legal | 77 | 75 | 76 |
+| DRC errors | 3,482 (+0.5 %) | 3,635 (+5.0 %) | 3,463 |
+| placement errors | 1,527 | 1,497 | 1,527 |
+| CPU | 156.7 h | 150.1 h | 159.4 h |
+
+**Verdict (pre-registered rule: p < 0.025, at least 3 % fewer opens; guards: errors and placement errors within +3 %, cp1 not lower): P-late wins.** P-half is undecided: it removes more opens in total, but less consistently (p 0.066), and its DRC errors break the +3 % guard.
+- The second batch replicates the first: P-late −16.2 %, 29 / 11, p 0.0015 on its 60 boards alone, against −6.5 %, p 0.08 on the first 69.
+- DRC errors by type are within a few dozen of R's for every type: solder-mask bridges 1,393 vs 1,333, clearance 480 vs 447, copper-edge clearance 620 vs 648.
+- Physics is not judged: only 12 boards are fully routed in both arms (the plan needs 38).
+
+**What it means.** Restarts beat windows as a replacement (`loop-compute-matched`). Windows spent on the board the restarts kept still earn their compute: the last 30 % of an allowance removes about 10 % of the opens restarts leave. Restarts typically find their kept board after about 70 % of the allowance anyway. Per the plan, the 70/30 split is now the candidate wrapper for the merit methods, to be tested next on the merit suite. The windows line is not closed.

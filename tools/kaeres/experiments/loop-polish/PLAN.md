@@ -51,3 +51,11 @@ No rule changes.
 - **Physics:** 5-6 boards fully routed in all arms, so it is not judged.
 
 Per the rule above, the next batch runs: the first 60 boards of `boards-extension.txt` (`boards-ext1.txt`), experiment `loop-polish-ext1`, same three methods. The decision is then on all boards pooled with the same thresholds, and the guards are applied to the pooled totals. Undecided after that: one more batch of 60, then report undecided.
+
+## Pooled read (2026-11-11, 129 boards: `loop-polish` and `loop-polish-ext1`)
+- **P-late vs R:** opens 5,804 vs 6,417 (−9.6 %), 54 boards fewer and 31 more, mean d −0.070, p 0.0003. Guards: DRC errors 3,482 vs 3,463 (+0.5 %), placement errors 1,527 vs 1,527, cp1 23 vs 18. **P-late wins.**
+- **P-half vs R:** opens 5,515 vs 6,417 (−14.1 %), 58 / 37, mean d −0.040, p 0.066: undecided. DRC errors +5.0 %, so its guard fails as well.
+- The extension alone: P-late −16.2 %, p 0.0015; P-half −13.9 %, p 0.51.
+- CPU P-late 156.7 h, P-half 150.1 h, R 159.4 h. Physics is not judged (12 boards fully routed in all arms).
+
+Per the rule above, P-late's split (restarts for 70 %, the joint loop on the kept board for 30 %) becomes the candidate for the merit methods' wrapper, tested next on the merit suite. `analyze.py` here reproduces these numbers.
