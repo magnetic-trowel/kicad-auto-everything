@@ -57,6 +57,8 @@ _EMMC = Limit(6.0, None, 0, False, "eMMC speed unknown; HS400 would be 1.27 mm (
 _RGMII = Limit(74.0, None, None, False, "RGMII v2.0 +/-500 ps; TI PHYs ask 1.5 mm")
 _QSPI = Limit(None, None, None, False, "QSPI: report only without a clock above 100 MHz")
 _PAIR = {"pcie": Limit(0.127, 4, None, True, "PCIe intra-pair 5 mil (TI)"),
+         "usb2": Limit(1.27, 4, None, True, "USB2 intra-pair 50 mil (TI SPRAAR7J)"),
+         "ethernet_mdi": Limit(1.27, None, None, False, "Ethernet MDI intra-pair 50 mil (10/100, TI, Pulse); 1G would be 0.51 mm"),
          "usb3": Limit(0.127, 2, None, True, "USB3 intra-pair 5 mil (TI)"),
          "hdmi": Limit(3.7, 2, None, True, "HDMI intra-pair 0.15 Tbit, about 25 ps"),
          "mipi": Limit(0.7, 2, None, True, "MIPI D-PHY intra-pair (Qualcomm 0.7 mm)"),
