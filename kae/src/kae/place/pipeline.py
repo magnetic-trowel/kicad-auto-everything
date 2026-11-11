@@ -671,9 +671,11 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
     deadline = t0 + budget
     log(f"problem: {n} movable, {len(P.parts) - n} fixed, {len(P.nets)} nets, grid {P.g} mm, budget {budget:.0f}s")
     if n == 0:
+        # nothing left to place, but parts fixed here (edge-pinned connectors, anchored tight parts) still move:
+        # without them a board whose only free part was anchored kept it at its staged pose, off the board
         st = State(P)
         rep.update(legal_grid=True, exact=exact_check(P, st))
-        return Result(poses=dict(mated), report=rep, state=st, problem=P)
+        return Result(poses={**mated, **pinned}, report=rep, state=st, problem=P)
 
     # ---- physics: place terms (both arms report them; only the physics arm optimizes them),
     #      structures -> macros
@@ -1070,7 +1072,10 @@ def _anchor_tight_parts(P, rep, log, board_path=None):
         if not cands:
             S0, pad0 = exactmod._tables(P, st, skip, obstacles=False)
             cands = exactmod._candidates(P, st, i, S0, pad0, ks, 0.0, ANCHOR_SPOTS, edge=True)
-        clean = (c for c in cands if not E.findings_at(i, c[1], c[2], c[3], first=True))
+        # every pad centre on the board: the straddle allowance (outside_ok) lets a castellated module's second
+        # pad row hang off the edge, which KiCad's DRC does not flag but the benchmark counts against the human
+        # layout (loop-legal-ab2: three module carriers lost legality that way)
+        clean = (c for c in cands if _pads_on_board(P, st, i, c) and not E.findings_at(i, c[1], c[2], c[3], first=True))
         row = dict(ref=p.ref, overhang=bool(hung), grid_free=grid_free, tried=len(cands))
         if grid_free:
             spot = next(clean, None)
@@ -1101,6 +1106,18 @@ def _anchor_tight_parts(P, rep, log, board_path=None):
         log(f"anchor: {p.ref} fixed at {poses[p.uuid][:3]} (no spot free of the fixed parts)")
     rep["anchored"] = dict(uuids=sorted(poses), parts=rows, seconds=round(time.monotonic() - t0, 2))
     return poses, [r["ref"] for r in rows if not r["anchored"]]
+
+
+def _pads_on_board(P, st, i, spot):
+    """Whether every pad centre of part i at `spot` ((cost, X, Y, K)) lies inside the outline."""
+    import shapely
+    saved = (st.X[i], st.Y[i], st.K[i])
+    st.X[i], st.Y[i], st.K[i] = spot[1], spot[2], spot[3]
+    try:
+        xy = st.pins_xy(i)
+    finally:
+        st.X[i], st.Y[i], st.K[i] = saved
+    return bool(len(xy) == 0 or shapely.contains_xy(P.outline, xy[:, 0], xy[:, 1]).all())
 
 
 def _kicad_agrees(P, st, i, spot, board_path):

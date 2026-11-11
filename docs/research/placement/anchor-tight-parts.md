@@ -5,7 +5,7 @@
 Scope: why three boards with clean human layouts were never legal under kae placement, and the fix in `kae.place.pipeline`. Not here: legality in general -> [kae-exact-legality](kae-exact-legality.md).
 Keys: legality, anchor_tight, tight part, courtyard overhang, allow_overhang, kae.place.pipeline._anchor_tight_parts, J19, openremise, vik-pmw3360, esp32 flight controller
 
-**Status:** partial. The root cause is verified and the fix makes the two boards it was built for legal every time. It fails its pre-registered A/B overall: legal 21 vs 18 and 21 vs 17 of 60 cells, not significant, with one board made illegal by it. Not merged.
+**Status:** partial, not merged. The root cause is verified. A second version (KiCad-verified spots, `loop-legal-ab2`, 60 boards) cuts placement errors 29 % with strong significance in both chains, but fails its pre-registered guard: three small module carriers lose legality to pads hanging off the board edge.
 **First published:** 2026-11-09, branch `loop-legality`.
 
 ## The failure
@@ -76,3 +76,48 @@ The three boards (legal of 3 seeds, off → on, staged; joint):
 The regression: melexinvn-bs-kombo goes from 3 of 3 legal to 0 of 3 in both chains, KiCad reporting 2 hole_clearance errors. Its connector J2 has no grid-free spot, so it was anchored at a spot only the exact check judged. That check passes a hole clearance KiCad then flags, while the control's closed loop found a legal spot anyway. sparkfun-sparkpunk shows the same pattern (BAT1, +2 clearance errors, illegal in every arm). Opens: staged 424 → 326, joint 423 → 441 (+4 %, above the 2.8 % A/A floor). lenaschimmel-bestelampe accounts for most of that rise (42 → 75), and there the part is only given the overhang, not anchored.
 
 **Next.** Keep anchoring for grid-free spots. For a spot only the exact check accepts (openremise needs one), verify it with KiCad's DRC of the placed part before fixing it, or else fall back to the overhang only. Then rerun on these 20 boards. Separately, the exact model's hole_clearance blind spot needs a case of its own.
+
+## Second A/B: `loop-legal-ab2` (2026-11-10)
+
+Plan: `tools/kaeres/experiments/loop-legal-ab2/PLAN.md` on branch `loop-legal-exp2` (commit 9260dbb), pre-registered.
+- Change since the first A/B: a spot only the exact check accepts is fixed only if KiCad's DRC agrees, else the part keeps the overhang.
+- Both arms carry PR #52's arc fix.
+- Boards: 60 tight-part boards (scans of the merit suite, the stored outputs and the qualified corpus), seeds 0-2, J1's restart wrapper. KiCad scored all 720 runs.
+
+| arm | legal | legal_strict | clean | opens | errors | placement errors | CPU h |
+|---|---|---|---|---|---|---|---|
+| staged, anchoring off | 105 | 104 | 73 | 1,095 | 3,294 | 1,582 | 103.8 |
+| staged, anchoring on | 114 | 110 | 77 | 1,134 | 2,260 | 1,148 | 101.5 |
+| joint, anchoring off | 105 | 104 | 72 | 1,327 | 3,339 | 1,574 | 116.1 |
+| joint, anchoring on | 114 | 111 | 71 | 1,295 | 2,296 | 1,128 | 117.4 |
+
+**Primary passes.** Placement errors per board, paired: staged 9 boards fewer and 2 more, mean d −0.107, p 0.010; joint 10 fewer and 1 more, mean d −0.122, p 0.005. Both are under the plan's 0.025.
+
+By type, off → on (staged; joint):
+
+| Type | staged | joint |
+|---|---|---|
+| shorting_items | 252 → 79 | 206 → 57 |
+| pth_inside_courtyard | 147 → 0 | 151 → 6 |
+| courtyards_overlap | 146 → 133 | 176 → 128 |
+| items_not_allowed | 61 → 36 | 69 → 36 |
+| hole_to_hole | 10 → 1 | 8 → 0 |
+| copper_edge_clearance | 465 → 442 | 470 → 444 |
+| clearance | 368 → 334 | 356 → 334 |
+
+**The guard fails, so the experiment fails.**
+- Three boards legal 3 of 3 under control are 0 of 3 with the change, in both chains: mikeysklar-c7kfo-nicenano-breakout, sparkybobo-dmxdemonstrator-receiver-io and vail-cw-vail-adapter-vail-v1-pcb.
+- Each is a tiny carrier (4-6 parts) whose only free part is the anchored module (nice!nano, QT Py). None has a KiCad placement error. All three are illegal by the benchmark's `outside` rule.
+- Cause (corrected 2026-11-10, after reproducing it): with the module anchored, no free part was left. `place()` then took its "nothing to place" return, which wrote no poses, so the module stayed at its staged pose off the board. Routing to it added copper_edge errors.
+- A first reading blamed the straddle allowance; the reproduction showed the module was never written.
+- Fixed in commit "write anchored poses when no free part is left", with a regression test. On seeds 0 and 1, all three boards are legal.
+- Staged opens also rise 3.6 % (1,095 → 1,134), beyond the plan's +3 % bound; joint opens fall 2.4 %.
+
+The known boards, legal of 3 seeds (staged; joint, off → on):
+- openremise: 0 → 3; 0 → 3.
+- esp32 flight: 0 → 3; 0 → 3.
+- vik-pmw3360: 3 → 3; 1 → 3.
+- melexinvn: 3 → 3; 3 → 3. The first version's regression is fixed by the KiCad check.
+- Also fixed, 0 → 3 in both chains: meo98-picostack, hollyrock-ecoconnect, 0rax-xiao-base; zlosynth goes 0-1 → 3.
+
+**Next.** Fix the write, and also require every pad centre of an anchored spot on the board. Then pre-register a third run on the same 60 boards (`loop-legal-ab3`), not this run's 103-board extension.
