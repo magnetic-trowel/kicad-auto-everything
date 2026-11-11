@@ -418,3 +418,47 @@ def test_placement_error_types_match_the_scorer():
     src = (Path(__file__).resolve().parents[3] / "bench" / "src" / "kaebench" / "score.py").read_text()
     node = next(n for n in ast.parse(src).body if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == "PLACEMENT_ERROR_TYPES")
     assert ast.literal_eval(node.value) == kaeres.PLACEMENT_ERROR_TYPES
+
+
+def test_physics_valued_excludes_flat_three_modules_and_caps_u():
+    ph = dict(modules=dict(a=dict(u=0.5), b=dict(u=None), c=dict(u=7.0)))
+    assert kaeres.physics_valued(ph) == (5.5, 2)
+    assert kaeres.physics_valued(dict(modules=dict(a=dict(u=None)))) == (None, 0)
+    assert kaeres.physics_valued({}) == (None, 0)
+
+
+def test_u_cap_matches_the_scorecard():
+    import re as _re
+    src = (Path(__file__).resolve().parents[3] / "kae" / "src" / "kae" / "joint" / "scorecard.py").read_text()
+    assert float(_re.search(r"^U_CAP = ([0-9.]+)", src, _re.M).group(1)) == kaeres.PHYSICS_U_CAP
+
+
+def test_physics_table_means_only_over_boards_with_observations():
+    def r(m, b, tot, val, obs, vs=None, vvs=None):
+        return dict(method=m, board=b, attempt=0, physics_total=tot, physics_valued_total=val, physics_observations=obs,
+                    physics_vs_human=vs, physics_valued_vs_human=vvs)
+    rows = [r("a", "b1", 4.0, 1.0, 2, 1.0, 2.0), r("a", "b2", 6.0, None, 0, 1.0, None), r("human", "b1", 3.0, 1.0, 2, 1.0, 1.0)]
+    out = kaeres.physics_table(rows, ["human", "a"])
+    assert out[6].split(" | ")[:3] == ["| human", "1", "0"]
+    cells = out[7].split(" | ")
+    assert cells[:8] == ["| a", "2", "1", "2.0", "4.000", "1.000", "1.000", "2.000 |"]
+
+
+def test_intent_totals_leave_out_loss_part_and_count_observations(tmp_path):
+    status = dict(tiers=dict(cost=30.0), terms=[dict(tier="cost", obs="loss.copper", contribution=20.0),
+                                                dict(tier="cost", obs="loss.part", contribution=10.0)])
+    assert kaeres.intent_totals(status, dict(observations=[1, 2])) == (30.0, 20.0, 2)
+    assert kaeres.intent_totals(dict(tiers=None), {}) == (None, None, 0)
+    (tmp_path / "b1").mkdir(); (tmp_path / "b2").mkdir()
+    import json
+    (tmp_path / "b1" / "human.status.json").write_text(json.dumps(status))
+    (tmp_path / "b1" / "human.ev.json").write_text(json.dumps(dict(observations=[1])))
+    (tmp_path / "b1" / "abcdef012345.status.json").write_text(json.dumps(dict(status, tiers=dict(cost=40.0))))
+    (tmp_path / "b1" / "abcdef012345.ev.json").write_text(json.dumps(dict(observations=[1])))
+    (tmp_path / "b2" / "human.status.json").write_text(json.dumps(dict(tiers=dict(cost=0.0), terms=[])))
+    (tmp_path / "b2" / "human.ev.json").write_text(json.dumps(dict(observations=[])))
+    rows = [dict(attempt=0, board="b1", run="x", method_id="m", method="human"), dict(attempt=0, board="b2", run="x", method_id="m", method="human"),
+            dict(attempt=0, board="b1", run="r", method_id="abcdef012345", method="arm")]
+    out = kaeres.intent_table(rows, ["human", "arm"], tmp_path)
+    assert out[6].split(" | ")[:6] == ["| human", "2", "1", "30.0", "20.0", "1.000 |"]
+    assert out[7].split(" | ")[:6] == ["| arm", "1", "0", "40.0", "30.0", "1.500 |"]

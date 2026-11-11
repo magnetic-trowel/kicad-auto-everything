@@ -1340,6 +1340,18 @@ def _run_bugs(bugs, m, row, adir, human_base):
 
 
 # ------------------------------------------------------------------ reading results back
+PHYSICS_U_CAP = 5.0   # kae.joint.scorecard.U_CAP (a test keeps them equal): the cap of physics_total
+
+
+def physics_valued(ph):
+    """(valued-only total, number of modules with a value) of a physics evaluation: physics_total without the flat 3
+    counted for modules that have no value. A board where nothing could be measured has no valued total (None)."""
+    us = [v.get("u") for v in (ph.get("modules") or {}).values() if v.get("u") is not None]
+    if not us:
+        return None, 0
+    return round(sum(min(PHYSICS_U_CAP, max(0.0, float(u))) for u in us), 4), len(us)
+
+
 def run_view(bid, d, r, evs, human_phys=None):
     """One flat row: a run with the given evaluators' results."""
     ed = evals_of(d)
@@ -1367,7 +1379,10 @@ def run_view(bid, d, r, evs, human_phys=None):
                router_introduced_violations=((rep.get("board_statistics") or {}).get("clearance_violations") or {}).get("router_introduced_count"),
                physics_total=ph.get("physics_total"), physics_modules=ph.get("n_modules"), physics_missing=ph.get("n_missing"),
                physics_open=ph.get("n_open"), worst_rail_mohm=ph.get("worst_rail_mohm"), physics_error=ph.get("error"),
-               physics_vs_human=None, module_ratio_median=None, scored=bool(s), physics_scored=bool(ph))
+               physics_vs_human=None, module_ratio_median=None, scored=bool(s), physics_scored=bool(ph),
+               physics_valued_total=None, physics_observations=None, physics_valued_vs_human=None)
+    if ph and not ph.get("error"):
+        row["physics_valued_total"], row["physics_observations"] = physics_valued(ph)
     if human_phys and ph and not ph.get("error") and not human_phys.get("error"):
         if human_phys.get("physics_total"):
             row["physics_vs_human"] = round(ph["physics_total"] / human_phys["physics_total"], 4)
@@ -1375,6 +1390,9 @@ def run_view(bid, d, r, evs, human_phys=None):
                   if x.get("value") and not x.get("open_hops")
                   and (hm := (human_phys.get("modules") or {}).get(k) or {}).get("value") and not hm.get("open_hops")]
         row["module_ratio_median"] = round(statistics.median(ratios), 4) if ratios else None
+        hv = physics_valued(human_phys)[0]
+        if hv and row["physics_valued_total"] is not None:
+            row["physics_valued_vs_human"] = round(row["physics_valued_total"] / hv, 4)
     return row
 
 
@@ -1743,6 +1761,75 @@ def winnable_table(rows, names, spec=None):
     return out + [""]
 
 
+def physics_table(rows, names):
+    """physics_total beside the valued-only total and how many boards measured anything: a module with no value counts a
+    flat 3 in physics_total, and a board with no observation counts only that (E6, E28), so per-board means here use only
+    the boards with at least one observation."""
+    rows = [r for r in rows if r["attempt"] == 0]
+    out = ["### Physics: valued only, and where anything was measured", "",
+           "Σu = `physics_total` (modules without a value count 3, 36-56 % of the sum on these boards). Σu valued = the same "
+           "sum over the modules that have a value. Boards with no measured module (`observations` 0) are left out of both means; "
+           "no module kind in this evaluator is layout-independent, so Σu valued is also the layout-dependent total here "
+           "(see Intent physics for intent evaluations). Report-only.", "",
+           "| method | boards with physics | observations 0 (left out) | observations / board | Σu mean | Σu valued mean | Σu vs human (median) | Σu valued vs human (median) |",
+           "|---|---|---|---|---|---|---|---|"]
+    for n in names:
+        rs = [r for r in rows if r["method"] == n and r.get("physics_total") is not None]
+        if not rs:
+            continue
+        seen = [r for r in rs if r.get("physics_observations")]
+        out.append(f"| {n} | {len(rs)} | {len(rs) - len(seen)} | {_f(_mean([r['physics_observations'] for r in seen]), 1)} | "
+                   f"{_f(_mean([r['physics_total'] for r in seen]), 3)} | {_f(_mean([r['physics_valued_total'] for r in seen]), 3)} | "
+                   f"{_f(_med([r.get('physics_vs_human') for r in seen]), 3)} | {_f(_med([r.get('physics_valued_vs_human') for r in seen]), 3)} |")
+    return out + [""]
+
+
+LAYOUT_INDEPENDENT_OBS = ("loss.part",)   # intent observations whose value a layout cannot change (E25: ratio 1.00, sd 0)
+
+
+def intent_totals(status, ev):
+    """(cost total, layout-dependent cost, observations) of one kae.excite intent evaluation (its status and ev json).
+    The cost total is `tiers.cost` (mW_eq); the layout-dependent total leaves out terms of LAYOUT_INDEPENDENT_OBS. None
+    where the status has no cost."""
+    cost = (status.get("tiers") or {}).get("cost")
+    n_obs = len(ev.get("observations") or [])
+    if cost is None:
+        return None, None, n_obs
+    excl = sum(t.get("contribution") or 0.0 for t in status.get("terms") or []
+               if t.get("tier") == "cost" and t.get("obs") in LAYOUT_INDEPENDENT_OBS)
+    return float(cost), round(float(cost) - excl, 3), n_obs
+
+
+def intent_table(rows, names, root):
+    """Costs of external intent evaluations (`root/<board>/<run or method id or human>.{status,ev}.json`, from
+    tools/research/physics/eval_intent.sh), with and without layout-independent terms, per board means only where
+    something was measured. Read only with --intent: kaeres does not store these."""
+    root = Path(root)
+    rows = [r for r in rows if r["attempt"] == 0]
+    got = defaultdict(dict)
+    for r in rows:
+        keys = [r["run"], r["method_id"], r["method_id"][:8]] + (["human"] if r.get("method") == "human" else [])
+        d = root / r["board"]
+        key = next((k for k in keys if (d / f"{k}.status.json").exists()), None)
+        if key:
+            got[r["method"]][r["board"]] = intent_totals(read_json(d / f"{key}.status.json") or {}, read_json(d / f"{key}.ev.json") or {})
+    out = ["### Intent physics (external evaluations)", "",
+           f"From `{root}`. Cost = `tiers.cost` (mW_eq). Layout cost leaves out `{'`, `'.join(LAYOUT_INDEPENDENT_OBS)}`, which a layout cannot "
+           "change. Boards with no observation (nothing measured) are left out of the means. Report-only.", "",
+           "| method | boards | no observations (left out) | cost mean | layout cost mean | layout cost / human (median, boards measured in both) |",
+           "|---|---|---|---|---|---|"]
+    hum = got.get("human", {})
+    for n in names:
+        d = got.get(n)
+        if not d:
+            continue
+        seen = {b: v for b, v in d.items() if v[2] and v[0] is not None}
+        ratios = [v[1] / hum[b][1] for b, v in seen.items() if v[1] and b in hum and hum[b][2] and hum[b][1]]
+        out.append(f"| {n} | {len(d)} | {len(d) - len(seen)} | {_f(_mean([v[0] for v in seen.values()]), 1)} | "
+                   f"{_f(_mean([v[1] for v in seen.values()]), 1)} | {_f(_med(ratios), 3)} |")
+    return out + [""]
+
+
 def cmd_exp_report(a):
     e = load_exp(a.name)
     d = exp_dir(a.name)
@@ -1825,6 +1912,9 @@ def cmd_exp_report(a):
                             f"Split {sp} ({'≤ 31' if sp == 'A' else '≤ 100' if sp == 'B' else '> 100'} pads)")
     for lab, test in (("2 layers", lambda n: n == 2), ("4 layers", lambda n: n == 4), ("6+ layers", lambda n: (n or 0) >= 6)):
         rep += method_table([r for r in rows if test(r["layers"])], names, lab)
+    rep += physics_table(rows, names)
+    if getattr(a, "intent", None):
+        rep += intent_table(rows, names, a.intent)
     rep += ["### DRC error types (errors on ok attempts)", "", "| type | " + " | ".join(names) + " |", "|---|" + "---|" * len(names)]
     per = {n: Counter() for n in names}
     for r in rows:
@@ -2164,6 +2254,7 @@ def main():
         s.add_argument("name")
         if n == "report":
             s.add_argument("--baseline", help="method name the others are paired against (default: the experiment's first)")
+            s.add_argument("--intent", metavar="DIR", help="also report external intent evaluations from DIR/<board>/<run>.status.json (tools/research/physics/eval_intent.sh)")
         s.set_defaults(f=f)
     s = sub.add_parser("job", help="one board (what each queued job runs)")
     s.add_argument("--experiment"), s.add_argument("--board", required=True)
