@@ -58,6 +58,8 @@ import numpy as np
 import shapely
 from shapely.geometry import LineString, Point, Polygon, box
 
+from kae import budget as _budget
+
 from .critical_space import EXACT_TOL, INF, TOL
 
 ENTRY_PENALTY_MM = 2.0     # extra cost (mm of track) of entering a pad other than through a rule-D anchor
@@ -795,6 +797,11 @@ class GridRouter:
         xs, ys = tb[0::4] + tb[1::4], tb[2::4] + tb[3::4]
         tx0, tx1, ty0, ty1 = min(xs), max(xs), min(ys), max(ys)
         vc = self.via_cost if via_cost is None else via_cost
+        # counted work (kae.budget): the critical router's searches are the module stage's work, so in work mode
+        # its deadline binds and its time comes out of the attempt's budget (it charged nothing before): one
+        # search (with the work since the last clock event: raster, setup, the module's physics), then its A*
+        # expansions
+        _budget.charge("crit_search", 1.0)
         if phys is not None:
             # physics-priced search (kae.em.route): phys(grid, layers) gives the move-cost arrays
             from kae.em.route import search_flat
@@ -809,6 +816,7 @@ class GridRouter:
             path, nexp = self.K.astar(flat, vmask, src.astype(np.int64), dst, nl, grid.ny, grid.nx, grid.res, float(vc),
                                       int(tx0), int(tx1), int(ty0), int(ty1), int(self.max_exp))
         self.stats["expansions"] += int(nexp)
+        _budget.charge("crit_expansion", float(nexp))
         if path.size == 0:
             # the old entry's cells were goals too (at a price): no path to them either, unless
             # the search ran out of expansions on the dearer board
