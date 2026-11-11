@@ -826,3 +826,30 @@ def test_anchor_at_an_exact_only_spot_needs_kicad(monkeypatch):
         assert row["grid_free"] is False and asked and row["anchored"] is anchored
         assert (P.parts[tight].uuid in poses) is anchored and (hung == []) is anchored
         assert len(asked) == (1 if anchored else pl.ANCHOR_KICAD_TRIES)
+
+
+def test_a_board_whose_only_free_part_is_anchored_writes_its_pose(monkeypatch):
+    """Regression (loop-legal-ab2): when the anchored part was the board's only free part, place() returned no poses
+    and the part stayed at its staged pose, off the board."""
+    import dataclasses
+
+    from kae.place import exact as ex
+    from kae.place import pipeline as pl
+    monkeypatch.setattr(pl, "ANCHOR_AREA_SHARE", 0.0)
+    b = load(FIXTURE)
+    P0 = Problem.build(b)
+    keep = P0.parts[max((q for q in P0.mov if P0.parts[q].has_courtyard), key=lambda q: P0.parts[q].area)].uuid
+    b = dataclasses.replace(b, footprints=[f if f.uuid == keep else dataclasses.replace(f, locked=True) for f in b.footprints])
+    real = ex._candidates
+    first = {"done": False}
+
+    def fake(P_, st, i, S, pad, ks, w_rot, limit, edge=False):
+        if not first["done"]:
+            first["done"] = True
+            return []                      # tight: no spot free of the fixed geometry
+        return real(P_, st, i, S, pad, ks, w_rot, limit, edge=edge)
+
+    monkeypatch.setattr(ex, "_candidates", fake)
+    res = pl.place(b, seed=0, time_s=20.0, physics=False, workers=1)
+    assert res.report.get("anchored", {}).get("uuids") == [keep]
+    assert keep in res.poses
