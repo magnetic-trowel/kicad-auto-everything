@@ -23,7 +23,7 @@ Written 2026-11-11, before any run of this experiment. **Not submitted:** it wai
 
 **Budgets and builds:**
 - `--time` is two R allowances: 2 × 900 s × sqrt(fp/40) of nominal work, counted-work budgets (`KAE_BUDGET=work`, `PYTHONHASHSEED=0`, `KAE_WORKERS=1`). The harness timeout, 4 × that, is the wall ceiling.
-- Above about 160 footprints, kaeres's 4-hour job cap bounds that ceiling, so those boards get a smaller allowance, the same in both arms.
+- kaeres's fixed 4-hour per-attempt cap would bind above about 160 footprints and cut phase 2 short exactly where the arms differ, so it is lifted. The harness timeout is 8,000 s × sqrt(fp/40): the wrapper's own ceiling (4 × the two phases' nominal budget) plus about 10 % for its DRCs and physics, with `timeout_cap_s` 200,000 (PR #59, merged into this branch). The largest of the 160 boards (395 footprints) gets about 7 h, within kaeq's 24-hour job limit.
 - Freerouting is pinned to the production fork d137fd1 (`KAE_BRIDGE_FREEROUTING`).
 - Seed 0, k = 1, both arms of a board in the same interleaved jobs.
 
