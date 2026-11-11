@@ -325,7 +325,7 @@ def kicad_python():
     raise ToolError("no Python with pcbnew found; set KAE_KICAD_PYTHON or KAE_KICAD_WRAP")
 
 
-STOCK_PIN = "freerouting-stock.pin"
+FR_PIN = "kae-freerouting.pin"   # the same pin as the bridge (kae.route.freerouting): the fork is the control
 
 
 def _fr_command(path):
@@ -334,16 +334,16 @@ def _fr_command(path):
 
 @functools.lru_cache(maxsize=None)
 def freerouting_cmd():
-    """Command prefix for the stock Freerouting of the benchmark (upstream 2.5.0 unless pinned
-    otherwise): KAE_FREEROUTING, else the build named in KAE_HOME/freerouting-stock.pin (a path,
-    absolute or relative to KAE_HOME; bench/scripts/setup.sh writes it). Never the newest install:
-    picking by sort order made an RC nightly installed beside 2.5.0 the default. Raises ToolError
-    when none is set or the pinned build is missing. The bridge's fork has its own pin
-    (kae.route.freerouting, kae-freerouting.pin)."""
+    """Command prefix for the benchmark's Freerouting: KAE_FREEROUTING, else the build named in
+    KAE_HOME/kae-freerouting.pin (a path, absolute or relative to KAE_HOME; the bridge uses the
+    same pin, written by tools/research/routing/install_freerouting_fork.sh REF --pin). Never the
+    newest install: picking by sort order made an RC nightly installed beside 2.5.0 the default.
+    There is no stock default; upstream releases run only when named. Raises ToolError when none
+    is set or the pinned build is missing."""
     env = os.environ.get("KAE_FREEROUTING")
     if env:
         return _fr_command(env)
-    pin = KAE_HOME / STOCK_PIN
+    pin = KAE_HOME / FR_PIN
     if pin.is_file():
         text = pin.read_text().strip()
         path = Path(text).expanduser()
@@ -352,8 +352,8 @@ def freerouting_cmd():
         if not text or not path.is_file():
             raise ToolError(f"{pin} names {text!r}, which is not a file: fix or rewrite the pin")
         return _fr_command(path)
-    raise ToolError(f"No stock Freerouting is pinned: set KAE_FREEROUTING, or write a build's path into {pin} "
-                    "(bench/scripts/setup.sh writes it for the release it installs)")
+    raise ToolError(f"No Freerouting is pinned: set KAE_FREEROUTING, or write a build's path into {pin} "
+                    "(tools/research/routing/install_freerouting_fork.sh REF --pin does)")
 
 
 def freerouting_identity(cmd):

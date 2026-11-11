@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""kaebench's stock Freerouting is named (KAE_FREEROUTING or a pin), never the newest install."""
+"""kaebench's Freerouting is named (KAE_FREEROUTING or the bridge's pin), never the newest install."""
 import hashlib
 
 import pytest
@@ -34,21 +34,22 @@ def test_two_installs_without_a_pin_raise(home):
 
 
 def test_the_pin_names_the_build(home):
-    stock = _bundle(home, "freerouting-2.5.0-linux-x64")
+    fork = _bundle(home, "kae-freerouting-fork-d137fd1")
+    _bundle(home, "freerouting-2.5.0-linux-x64")
     _bundle(home, "freerouting-2.6.0-RC10-20261106-linux-x64")
-    (home / tools.STOCK_PIN).write_text("freerouting-2.5.0-linux-x64/bin/freerouting\n")
-    assert tools.freerouting_cmd() == [str(stock)]
+    (home / tools.FR_PIN).write_text("kae-freerouting-fork-d137fd1/bin/freerouting\n")
+    assert tools.freerouting_cmd() == [str(fork)]
 
 
 def test_a_pin_to_a_missing_build_fails(home):
-    (home / tools.STOCK_PIN).write_text("freerouting-9.9.9-linux-x64/bin/freerouting")
+    (home / tools.FR_PIN).write_text("freerouting-9.9.9-linux-x64/bin/freerouting")
     with pytest.raises(tools.ToolError, match="not a file"):
         tools.freerouting_cmd()
 
 
 def test_environment_wins_over_the_pin(home, monkeypatch):
     stock = _bundle(home, "freerouting-2.5.0-linux-x64")
-    (home / tools.STOCK_PIN).write_text(str(stock))
+    (home / tools.FR_PIN).write_text(str(stock))
     monkeypatch.setenv("KAE_FREEROUTING", "/opt/fr/freerouting-2.5.0.jar")
     assert tools.freerouting_cmd() == ["java", "-jar", "/opt/fr/freerouting-2.5.0.jar"]
 

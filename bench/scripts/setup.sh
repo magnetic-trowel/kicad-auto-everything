@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# Set up a kaebench host (Ubuntu 22.04/24.04 x86_64): KiCad 10, Freerouting 2.5.0, venv.
+# Set up a kaebench host (Ubuntu 22.04/24.04 x86_64): KiCad 10, Freerouting 2.5.0 (explicit use only), venv.
 # Works without sudo: KiCad then runs from the official kicad/kicad image via
 # Apptainer/Singularity (installed rootless into KAE_HOME if absent; needs unprivileged
 # user namespaces), and the venv comes from uv if python3-venv is missing.
@@ -146,10 +146,10 @@ if [ "$DO_FR" = 1 ]; then
     chmod +x "$DEST/bin/freerouting" "$DEST/lib/runtime/bin/"* "$DEST/lib/runtime/lib/jspawnhelper" 2>/dev/null || true
     rm -f "$ZIP"
   fi
-  # kaebench's stock Freerouting is the build named in this pin, never the newest install
-  if [ ! -s "$KAE_HOME/freerouting-stock.pin" ]; then
-    echo "$DEST/bin/freerouting" > "$KAE_HOME/freerouting-stock.pin"
-    echo "pinned stock Freerouting: $DEST/bin/freerouting"
+  # upstream 2.5.0 is for explicit use only (KAE_FREEROUTING). kaebench and the bridge run the build
+  # pinned in $KAE_HOME/kae-freerouting.pin, the magnetic-trowel fork (the control):
+  if [ ! -s "$KAE_HOME/kae-freerouting.pin" ]; then
+    echo "No Freerouting pinned yet: run tools/research/routing/install_freerouting_fork.sh <ref> --pin"
   fi
 fi
 
