@@ -16,11 +16,12 @@ TAGS = Path(sys.argv[1] if len(sys.argv) > 1 else "board-tags")
 
 
 def features():
-    ids = (TAGS / "structural" / "all_ids.txt").read_text().split()
+    # each row names its board ("id"); the rows are not in all_ids.txt's order (zipping the two by line, as this
+    # did until 2026-11-11, gave most boards another board's pads, density and layers)
     F = {}
-    for b, line in zip(ids, open(TAGS / "structural" / "features.jsonl")):
+    for line in open(TAGS / "structural" / "features.jsonl"):
         d = json.loads(line)
-        F[b] = dict(pads=d.get("n_pads_cu") or d.get("n_pads"), dens=d.get("pads_per_cm2"), layers=d.get("cu_layers"))
+        F[d["id"]] = dict(pads=d.get("n_pads_cu") or d.get("n_pads"), dens=d.get("pads_per_cm2"), layers=d.get("cu_layers"))
     S = lambda n: set((TAGS / "suites" / f"{n}.txt").read_text().split())  # noqa: E731
     for t in ("easy", "moderate"):
         for b in S(f"route_demand.{t}"):

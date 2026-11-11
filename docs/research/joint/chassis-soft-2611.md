@@ -5,7 +5,7 @@
 Scope: whether the joint chassis's physics gain and its cost in open connections come from the module stage, and whether that cost is the module copper acting as a wall to Freerouting. Not here: the windows ([window-budget-2611](window-budget-2611.md), branch `loop-exp`).
 Keys: module stage, critical copper, Freerouting wire types, shove_fixed, USER_FIXED, module_soft, copper survival, physics, restarts
 
-**Status:** module stage **partial**: it decidedly improves routed physics but decidedly costs open connections. Rippable module copper (`module_soft`) **did not work** as a fix. Not merged.
+**Status:** module stage **partial**: it decidedly improves routed physics but decidedly costs open connections. Rippable module copper (`module_soft`) **did not work** as a fix. Most of the cost in opens comes from a clock bug, found after the verdict: the module stage ran past its time and starved the first route ([gating](#gating-is-there-a-class-where-m-costs-no-opens-and-still-gains-physics)). Re-measured with the clock fixed in `module-escape` (Addendum 3). Not merged.
 **First published:** 2026-11-11, branch `chassis-soft` (`module_soft` and the survival measure in `kae/src/kae/joint/stages.py`), experiment `chassis-soft` (`tools/kaeres/experiments/chassis-soft/PLAN.md`, pre-registered).
 
 ## Mechanism checked in code
@@ -61,19 +61,25 @@ M vs R, per stratum (opens: M total vs R total, boards where M has fewer/more; p
 | R routed fully (0 opens) | 119 | 23 vs 0 | 0 / 11 | 98, 0.812 |
 | R 1-5 opens | 14 | 100 vs 39 | 3 / 10 | 0 |
 | R > 5 opens | 27 | 1,432 vs 953 | 5 / 20 | 0 |
-| ≤ 94 copper pads | 54 | 574 vs 342 | 2 / 14 | 33, 0.808 |
-| 94-234 pads | 53 | 415 vs 309 | 4 / 12 | 34, 0.790 |
-| > 234 pads | 53 | 566 vs 341 | 2 / 15 | 31, 0.853 |
-| ≤ 3 pads / cm² | 54 | 356 vs 220 | 4 / 12 | 37, 0.856 |
-| 3-7 pads / cm² | 53 | 272 vs 146 | 1 / 15 | 31, 0.648 |
-| > 7 pads / cm² | 53 | 927 vs 626 | 3 / 14 | 30, 0.852 |
-| 2 copper layers | 137 | 1,409 vs 917 | 6 / 36 | 86, 0.791 |
-| 4+ copper layers | 23 | 146 vs 75 | 2 / 5 | 12, 0.861 |
+| ≤ 129 copper pads | 54 | 21 vs 15 | 1 / 3 (p 0.25) | 45, 0.685 |
+| 129-255 pads | 53 | 52 vs 19 | 2 / 11 | 37, 0.875 |
+| > 255 pads | 53 | 1,482 vs 958 | 5 / 27 | 16, 0.852 |
+| ≤ 3 pads / cm² | 54 | 103 vs 102 | 1 / 3 (p 0.50) | 42, 0.869 |
+| 3-7 pads / cm² | 53 | 844 vs 546 | 3 / 20 | 28, 0.769 |
+| > 7 pads / cm² | 53 | 608 vs 344 | 4 / 18 | 28, 0.732 |
+| 2 copper layers | 123 | 355 vs 237 | 6 / 24 | 84, 0.775 |
+| 4+ copper layers | 37 | 1,200 vs 755 | 2 / 17 | 14, 0.853 |
 | `route_demand` easy | 101 | 394 vs 243 | 2 / 15 | 74, 0.822 |
 | `route_demand` moderate | 59 | 1,161 vs 749 | 6 / 26 | 24, 0.807 |
 
-- **By the bare board:** no class identifiable before routing avoids M's cost. In every pad-count, density, layer-count and route-demand stratum M has more opens on more boards, and gains physics.
-- **By outcome:** the only class where M is nearly free is "R routes it fully": M then leaves opens on 11 of 119 boards (23 opens in all) and gains 19 % physics. But that class needs R's result, so it is not a gate, only a portfolio.
+**Corrected 2026-11-11.** The first version of this table joined the board features (`board-tags/structural/features.jsonl`) to boards by line number, zipped with `all_ids.txt`. The rows are not in that order; each carries its own `id`. Most boards were given another board's pad count, density and layer count, so the pad, density and layer rows were wrong. They are now joined by `id`. The outcome and `route_demand` rows did not use those features and are unchanged.
+
+What changed:
+- The first version found no class identifiable before routing where M was free. Joined correctly, there are two: small boards (≤ 129 copper pads: 21 vs 15 opens, more on 3 boards and fewer on 1) and sparse boards (≤ 3 pads / cm²: 103 vs 102). M gains physics on both (median 0.685 on 45 small boards, 0.869 on 42 sparse ones).
+- M's cost sits on large boards: 1,482 of its 1,555 opens are on the 53 boards with more than 255 pads. Most of it is on 4+ layer boards (1,200 vs 755), not 2-layer ones as the first version said.
+
+- **By the bare board:** M is nearly free on small or sparse boards and costs opens on everything larger or denser. That is also where the module stage overran its clock and starved the first route. A case study of these runs (in the exploration notes, not in the repository) finds the module stage's measured share of the attempt budget sorts the boards the same way. Below 0.10 of the budget (89 boards), M and R leave 113 vs 106 opens. At 0.25 or more (37 boards), they leave 1,219 vs 700. So a pad-count gate would mostly be a stand-in for the time bug. The gate should be re-measured once the module stage keeps its clock (`module-escape`, Addendum 3).
+- **By outcome:** "R routes it fully" is still the class where M is nearly free (11 of 119 boards with any opens, 23 opens in all, 19 % physics gain). It needs R's result, so it is a portfolio rule, not a gate.
 
 ### Portfolio: keep M where it routes as well as R, else R
 Per board, M is kept if it is legal and its opens are no more than R's; otherwise R. M was chosen on 115 of 160 boards.
