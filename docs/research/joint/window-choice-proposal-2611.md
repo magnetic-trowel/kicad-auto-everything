@@ -41,3 +41,22 @@ J14 (`first_last_mile=1`) cut opens 11 % at today's budget (24 of 37 boards, und
 - Design 2's offline check reads `final.blocked`, already stored.
 - Each A/B is two arms on the 40 bench boards, about 50 CPU-h per arm at two window budgets.
 - Run after `loop-compute-matched` decides whether windows are worth their compute at all. If restarts win at equal compute, these designs must beat restarts too, not only the current windows.
+
+## Offline replay against restarts (2026-11-10)
+Script: `tools/kaeres/experiments/loop-window-bench/replay_choice.py`, run on stored loop reports. The bar is the restarts' lead in `loop-compute-matched`: R left 1,170 fewer open connections than W over the 69 boards at equal allowance. These are upper bounds: each assumes the design turns wasted window time into windows as productive as the loop's best ones.
+
+On the 69 boards, W ran 2,146 windows:
+- 1,227 new part sets: 163 kept, removing 1,220 opens in 33.9 h.
+- 919 repeats: 47 kept, removing 157 opens in 14.7 h.
+- 811 ended illegal.
+- 1,177 were routed, removing 1,377 opens (1.17 per routed window).
+
+| design | what the replay can bound | bound on extra opens removed | against the 1,170 needed |
+|---|---|---|---|
+| 1. tabu on tried part sets | repeats' 14.7 h spent at the new windows' yield (36 opens/h), minus the 157 repeats removed | ≤ +373 | a third, and only if new windows exist to fill the time: the loop stops because it has none ("no window left", J3) |
+| 3. windows sized to contain a legal spot | the 811 illegal windows made legal and as productive as routed ones | ≤ +949 | under, and generous: illegal windows sit where the board is crowded |
+| 2. windows from the blocked diagnosis | the stored diagnosis covers 784 of 4,038 final opens (614 congestion, 170 blocked; 3,254 undiagnosed, time-capped) and names a cause, not the blocking parts | not boundable without new diagnosis code | n/a |
+
+Even added together with every optimistic assumption, 1 and 3 reach about +1,320, just past the gap. A realistic fraction does not. The same data on the 40 bench boards gives the same picture: at two budgets the tabu bound is +328 − 53 and sizing +415; at four budgets +516 − 76 and +440.
+
+**Verdict: build none of them now.** None shows a plausible path to beating restarts as a replacement for them. The one design the data leaves open is a different arrangement: windows as polish on the best restart attempt (restarts first, then windows on the kept board within the same allowance), measured against restarts alone. That would test whether windows add anything on top of restarts, which is the only role this data still allows them.
