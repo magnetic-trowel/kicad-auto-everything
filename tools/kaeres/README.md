@@ -166,11 +166,14 @@ measured peak memory and CPU threads, and the largest self-time functions of the
 
 A speedup must change nothing. Run the unfixed and the fixed code on the profiled boards with counted
 budgets (`KAE_BUDGET=work PYTHONHASHSEED=0 KAE_WORKERS=1`) and compare the output board, the scorer's
-`drc.json` and the physics JSON (dates, paths and timing fields aside). Run the unfixed code
-twice too: a step that differs between two unfixed runs (a solver with a wall-clock limit) has to be
-named, not blamed on the fix. A change that alters any output is a method change and needs its own
-A/B. Never change code under methods that are queued. Size the job's `--cpus` and `--mem` from the
-smoke's measured peak.
+`drc.json` and the physics JSON (dates, paths and timing fields aside). Give the harness the wall
+ceiling: `kaebench run --timeout` kills on wall time, so pass the method `--time $(( {timeout} / 4 ))`, as
+the work-mode methods do, or a loaded host cuts runs at different points. New copper gets random
+uuids, so compare boards item by item without uuids and order. Run the unfixed code twice too: a step
+that differs between two unfixed runs has to be named, not blamed on the fix. Examples: a solver with
+a wall-clock limit, or the bridge keeping or dropping a dangling stub. A change that alters any
+output beyond that A/A spread is a method change and needs its own A/B. Never change code under
+methods that are queued. Size the job's `--cpus` and `--mem` from the smoke's measured peak.
 
 ## Per board job
 
