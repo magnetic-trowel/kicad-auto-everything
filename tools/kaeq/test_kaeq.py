@@ -17,6 +17,8 @@ def kq(tmp_path, monkeypatch):
     monkeypatch.setenv("KAEQ_HOME", str(tmp_path))
     monkeypatch.setenv("KAEQ_OWNER", "t")
     sys.path.insert(0, HERE)
+    for m in [m for m in sys.modules if m == "kaeqlib" or m.startswith("kaeqlib.")]:
+        del sys.modules[m]          # kaeqlib.store reads KAEQ_HOME when imported: a fresh import per test
     import kaeq
     importlib.reload(kaeq)
     with open(kaeq.CONF, "w") as f:
