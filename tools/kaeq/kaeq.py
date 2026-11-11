@@ -1249,7 +1249,9 @@ def job_usage(j, sessions, per_pid, cgroups):
     session stay in it), else every process in its session. CPU comes from the scope's cpu.stat
     when it has one: it includes children that have already exited (a job running many short
     subprocesses otherwise looks idle)."""
-    cg = cgroups.get(j["id"]) or job_cgroup(j["pid"])
+    cg = cgroups.get(j["id"])
+    if not cg or not os.path.isdir(cg):      # (a cached scope of an earlier attempt is gone: look it up again)
+        cg = job_cgroup(j["pid"])
     if cg:
         cgroups[j["id"]] = cg
         try:
@@ -1706,7 +1708,9 @@ class Daemon:
         c = self.c
         jobs, cgs, other, fleet = [], {}, 0.0, 0.0
         for j in running:
-            cg = self.cgroups.get(j["id"]) or (job_cgroup(j["pid"]) if j["pid"] else None)
+            cg = self.cgroups.get(j["id"])
+            if not cg or not os.path.isdir(cg):  # (a cached scope of an earlier attempt is gone: look it up again)
+                cg = job_cgroup(j["pid"]) if j["pid"] else None
             m = cg_mem(cg) if cg else None
             if m is None:      # no scope (yet): what it declared and has not used yet stays set aside
                 other += max(0.0, self.need_mb(j, cfg) - usage.get(j["id"], (0.0, 0))[0])
@@ -2311,6 +2315,10 @@ class Daemon:
             return False
         self.popen[j["id"]] = p
         self.cpu_s.pop(j["id"], None)
+        # a new attempt has a new scope: nothing cached about the last one may carry over (a retried job's lease
+        # kept reading its first attempt's gone cgroup, so it was never leased: held at its first grant, throttled)
+        for cache in (self.cgroups, self.lease_st, self.cpuj, self.trace, self.prev_ours):
+            cache.pop(j["id"], None)
         self.c.execute("UPDATE jobs SET state='running',pid=?,started=?,deadline=?,peak_mb=0,note=NULL,grant_mb=?,"
                        "frozen_s=0,frozen_since=0,freezes=0,cpu_s=0,cpu_wait_s=0,cpu_stall_s=0,cpu_peak=0,squeezed_mb=0 WHERE id=?",
                        (p.pid, time.time(), time.time() + j["timeout_s"], grant, j["id"]))
