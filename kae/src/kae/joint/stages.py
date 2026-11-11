@@ -65,9 +65,8 @@ def _project(src_board, dst_board):
 
 # Every `opts` key the stages read (kae.joint.cli rejects a --set key that neither these, the
 # loop's DEFAULTS, the placer's limits (kae.route.constraints.DEFAULTS) nor bridge.KEY name).
-ESCAPE_KEYS = ("escape_mm", "escape_cost", "escape_pins")
 STAGE_KEYS = frozenset({
-    *ESCAPE_KEYS,
+    "module_poses_only",
     # set by kae.joint.cli from its flags
     "keep", "no_physics", "no_modules", "budget_s", "route_parallel", "first_last_mile", "first_blocked",
     # placer and module stage
@@ -220,9 +219,9 @@ class KaeStages:
         if time_s is None and self.opts.get("budget_s"):
             t_mod = max(t_mod, 0.05 * float(self.opts["budget_s"]))   # a long budget: more module search
         try:
-            # the critical router's escape corridors (kae.route.critical escape_mm / escape_cost / escape_pins):
-            # other nets' module copper keeps out of dense ICs' pin escapes when set (off by default)
-            copts = dict(rails="none", **{k: self.opts[k] for k in ESCAPE_KEYS if self.opts.get(k) is not None})
+            # --set crit.KEY=VALUE: any option of the critical session (kae.route.critical DEFAULTS: escape_mm,
+            # guards, rails_joint, complete_mm, island_mm ...); rails="none" stays unless set
+            copts = dict(rails="none", **{k[5:]: v for k, v in self.opts.items() if k.startswith("crit.")})
             sess = Session(lay.board, brief=brief, opts=copts, log=lambda m: None, board=board,
                            terms=self.terms)
             moved, copper, rep = optimize_modules(board, brief, terms=self.terms, locked=sorted(locked),
@@ -253,6 +252,16 @@ class KaeStages:
         write_joint(lay.board, out, moved, copper, hazards=self.writer_hz)
         _project(self.input, out)
         new.poses.update({u: tuple(p) for u, p in moved.items()})
+        if self.opts.get("module_poses_only"):
+            # an ablation: the module stage's part moves stay, its copper and guard pours go, so the bridge routes
+            # every net from that placement
+            from kae.route import critical_write as W
+            bare = self._path(it, "modules_bare")
+            W.edit(out, bare, remove=[c.uuid for c in copper if c.uuid])
+            _project(self.input, bare)
+            shutil.copy2(bare, out)
+            _project(self.input, out)
+            copper, owners, guards = [], {}, {}
         new.crit |= {c.uuid for c in copper}
         new.owners.update(owners)
         for m in mods:

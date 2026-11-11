@@ -386,8 +386,10 @@ def test_copper_totals_lines_and_arcs():
     assert vias == 2 and length == pytest.approx(5 + math.pi + 1.5 * math.pi + 0.5 * math.pi, rel=1e-6)
 
 
-def test_escape_corridor_options_are_accepted_by_the_joint_cli():
-    import kae.joint.stages as S
+def test_crit_options_are_accepted_by_the_joint_cli():
     from kae.joint.cli import _known_key
-    assert S.ESCAPE_KEYS == ("escape_mm", "escape_cost", "escape_pins")
-    assert all(_known_key(k) for k in S.ESCAPE_KEYS)
+    from kae.joint.stages import STAGE_KEYS
+    for k in ("crit.escape_mm", "crit.guards", "crit.rails_joint", "crit.complete_mm", "crit.island_mm"):
+        assert _known_key(k), k
+    assert not _known_key("crit.no_such_option")
+    assert "module_poses_only" in STAGE_KEYS
