@@ -52,7 +52,7 @@ Keys: pipeline, stage order, pad entry, taut arcs, power copper, necks, DRC gate
 - **Measured** (12 pad-edge boards, 300 s, two seeds): `plan` cuts oblique/acute entries 472/97 → 279/79 and 498/101 → 277/75. Unconnected 253 → 234 and 223 → 220, dominated by nekoink's noise. Errors rise +18 and +33, nearly all `starved_thermal` on two boards. Rails cost completion (234 → 314) [M: [results](../../../bench/results/2026-11-05-fr-entry-phase2-167451c.md)]. Keep it off until the thermal errors are gone.
 - **Still finished in stage 7:** raw ends (285 of 2,206 at listed pins), the repair rounds' grid joins and the last mile.
 
-**Where the portfolio runs it.** Attempts run stages 1–6. The restart wrapper's final pass (`--final`) on the kept board runs the last mile, then stage 7, with its time reserved from the start (`final_reserve`). A single attempt (`kae.route.cli route`) runs stage 7 at its end when time is left.
+**Where the portfolio runs it.** Attempts run stages 1–6. The kept board gets the last mile (`--final`, time reserved from the start), then stage 7 in the time routing leaves ([§ 7.1](#71-finish-runs-in-the-time-left)). A single attempt (`kae.route.cli route`) runs stage 7 at its end when time is left.
 
 ### As built (stages 1, 2, 3, 5, 6; branch `rf-plan`)
 
@@ -106,7 +106,7 @@ Where the code differs from the table above, and why [I]:
 - **KiCad DRC runs.** Today, power copper, `pad_trim` and the taut pass (when added) each run a DRC in and out plus ddmin rounds. Finish runs one DRC of its input (reused from the final pass's judgement, which already has it) and one of its output, plus ddmin only when the output is worse.
 - **Incremental.** Taut and rule D work per branch; a retweak or an in-loop arm passes the changed nets only.
 - **Cache.** Stage 7's output is a deterministic function of the input board, code and options; it goes into the step cache like Freerouting's sessions. A/B arms that differ only after stage 6 share everything before it.
-- **Budget.** The final pass reserves time for finish: about one DRC plus taut's measured 6–150 s plus power copper's 6–341 s on the 12 boards. A board too big for its reserve finishes stage (a) and (b) and reports that (c) was skipped.
+- **Budget.** Nothing is reserved for finish ([§ 7.1](#71-finish-runs-in-the-time-left)). Its parts cost about one DRC plus taut's measured 6–150 s plus power copper's 6–341 s on the 12 boards; a part whose estimate does not fit is skipped and reported (`finish_part_skipped`).
 
 ## 6. What the A/B measures
 
@@ -134,9 +134,31 @@ Reported per arm: cp1 and cpk, completion, errors by type, `clean_strict`, obliq
 | ddmin only when the output is worse | Attribution (entries the new violations name; for violations that name none, entries within 1 mm, then 2.5 mm), then re-admission of what it reverted: entries clear of every named item first, a failing batch split by what KiCad names (or, naming nothing, by distance) before halving; ddmin (stages, net halves, entry halves, breadth first) only when attribution fails | Attribution reverts whole neighbourhoods (dream117er kept 124 of 164 without re-admission) |
 | One gate on stage 7's journal | Then a re-plan: the stages after the earliest one with reverts run again on the gated board, behind a second gate whose input DRC is the first gate's last (32 DRC runs for both) | A revert takes what built on it; the chained passes plan power copper around taut's gated result instead (lenaschimmel power 45 kept without, 118 with; the chain 87) |
 | Zones above 5 A | Power copper's vector mode written as zones, only for nets whose operating current (operating facts) exceeds `zone_above_a`; their tracks stay | Without operating facts no net has a current, so no board gets a zone |
-| Final pass: last mile then finish | `restart.py --final` (last mile, kept when better) then `--finish` (kept when no worse, clean boards too), each reserved from the start; the finish's `@DRC@` is the judge's report of the kept board | Finishing does not aim to change the rank, so "better" would never keep it; a clean board still gets its shapes |
-| One attempt runs finish when time is left | `bridge.route` opts `finish` (default off) reuses the repair loop's DRC of the board; `power_copper` and `pad_trim` now run through finish | The portfolio finishes once on the kept board (P6) |
+| Final pass: last mile then finish | `restart.py --final` (last mile, kept when better) then `--finish` (kept when no worse, clean boards too); only the last mile is reserved; the finish's `@DRC@` is the judge's report of the kept board | Finishing does not aim to change the rank, so "better" would never keep it; a clean board still gets its shapes |
+| One attempt runs finish when time is left | `kae.route.cli route` runs it by default (`--no-finish` off); it reuses the repair loop's DRC of the board; `power_copper` and `pad_trim` run through finish. `bridge.route`'s library default stays off (joint stages, placement probes) | The portfolio finishes once on the kept board (P6): its attempts get `KAE_FINISH_KEPT=1` and defer |
 | Arm D on "each import" | In `repair.loop` rounds only (opts `import_tails`); the first import's copper is finished by stage 7 | The first import has no round DRC of its own to judge the tails against |
+
+### 7.1 Finish runs in the time left
+
+Stage 2 of the A/B (213 boards; arm C, finish with its time reserved from the start, against A, no finish) [M: `rf-ab-s2`, s2-boards findings]:
+- **Physics.** C/A: copper loss 0.65×, rail drop 0.65×, supply peak 0.94×; C is about equal to the human layouts on copper loss and rail drop.
+- **Completion.** C/A −0.5 % (p = 0.0008), unconnected 3,107 → 3,653. Seed-matched first waves (no reserve yet) are no worse: best per board 10,417 (A), 10,246 (C).
+- **Reserve cost.** On the 50 boards open in either arm, attempt seconds fell 297,620 → 252,593 (−45,027) for 11,695 s of finish reserve: 4 attempts run at once, so each reserved wall second costs `parallel` = 4 attempt seconds. On the 163 complete boards the reserve (146,601 s) cost nothing: a clean attempt ended the run early.
+- **Overruns.** Finish was killed past its `--time` on 5 open boards (zotino, gecko5, mystorm, kestrel, z280): the taut pass ignored its timeout (about 200 s; z280 −71 s left after it).
+
+Built (branch `route-finish-default`) [I]:
+
+| Rule | Code |
+|---|---|
+| Routing gets its time first: no finish reserve | `restart.py final_reserve` (last mile only); `portfolio.run(finish=...)` |
+| A clean attempt ends the run early: finish gets the time left | `restart.py finish_pass`, `portfolio.finish_pass` |
+| Not clean: the final last mile gets all the time left, finish runs in what remains; finish's estimates pick the parts that fit | same; `finish.run` per part `estimate` + gate |
+| Under `FINISH_RUN_MIN_S` (30 s) left: skipped; skipped, killed or failed are hazards (`finish_part_skipped`, `finish_failed`) in the kept board's report | `restart.py finish_hazards`, `add_hazards`; `portfolio.finish_hazards` |
+| Finish never exceeds `--time`: it plans against `--time` less `safety_margin` (15 s + 5 %, at most ¼) for a late gate DRC and the exit; a part gets what is left less the gate | `finish.safety_margin`, `finish._run` |
+| Taut honours its deadline: checked before every branch and the pairs pass; it stops cleanly and keeps (journals) what it finished, with `taut_time_limited` | `taut.Taut.run_passes(deadline)`, `taut.run` |
+| Kept only when KiCad ranks it no worse, as before | `_one_pass(keep_equal=True)`; `portfolio.finish_pass` |
+
+Defaults: finish is on in `kae.route.cli route` (`--no-finish`) and in `kae.route.portfolio` (last mile then finish; `--no-finish`), kae's own restart portfolio. `restart.py` is the harness's method-agnostic wrapper, so `--finish` stays explicit there: a default would change Freerouting and placer methods too. Every kae recipe for it passes `--final` (lastmile) and `--finish` (`kae.route.cli finish`). `import_tails`, `escape_ground_vias`, `tighten` and `entry_guard` stay off. Registered kaeres methods pin their kae and harness commits, so they keep their behaviour. Open: the joint loop's portfolio finishing stage runs without finish (`finish=None`), and `kae.route.critical_cli` does not finish; work-mode budgets (`KAE_BUDGET=work`) still give finish a fixed 10 % share.
 
 The finish result is cached (`stepcache.board_key`: input board and project files, options and the operating facts' content, code, KiCad version), unless a part was skipped or the gate stopped for time.
 

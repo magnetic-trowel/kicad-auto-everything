@@ -36,7 +36,7 @@ def test_first_clean_attempt_wins_and_stops_the_others(tmp_path, monkeypatch):
     out = tmp_path / "out.kicad_pcb"
     t = time.monotonic()
     rep = portfolio.run("in.kicad_pcb", out, seed=0, time_s=600, parallel=3, first_s=40, router="fake_router",
-                        extra=["HANG"], workdir=tmp_path / "wd", log=lambda m: None, final=None)
+                        extra=["HANG"], workdir=tmp_path / "wd", log=lambda m: None, final=None, finish=None)
     assert rep["stop"] == "clean" and rep["best"]["k"] == 2 and tuple(rep["best"]["rank"]) == (0, 0)
     assert out.read_text() == "board 2"
     assert time.monotonic() - t < 60                       # the hanging attempts were stopped, not waited for
@@ -48,7 +48,7 @@ def test_without_a_clean_attempt_the_best_is_kept_and_budgets_grow(tmp_path, mon
     (tmp_path / "fake_router.py").write_text(FAKE.replace("0 if k == 2 else 2", "2 if k == 3 else 5"))
     out = tmp_path / "out.kicad_pcb"
     rep = portfolio.run("in.kicad_pcb", out, seed=0, time_s=160, parallel=2, first_s=20, growth=2.0,
-                        router="fake_router", workdir=tmp_path / "wd", log=lambda m: None, final=None)
+                        router="fake_router", workdir=tmp_path / "wd", log=lambda m: None, final=None, finish=None)
     assert rep["stop"] == "time"
     assert tuple(rep["best"]["rank"]) == (2, 0) and out.read_text() == "board 3"
     budgets = [a["budget"] for a in rep["attempts"]]
@@ -60,7 +60,7 @@ def test_attempts_that_fail_at_once_end_the_run(tmp_path, monkeypatch):
     monkeypatch.setenv("PYTHONPATH", str(tmp_path) + os.pathsep + os.environ.get("PYTHONPATH", ""))
     t = time.monotonic()
     rep = portfolio.run("in.kicad_pcb", tmp_path / "out.kicad_pcb", time_s=600, parallel=2, first_s=60,
-                        router="broken_router", workdir=tmp_path / "wd", log=lambda m: None, final=None)
+                        router="broken_router", workdir=tmp_path / "wd", log=lambda m: None, final=None, finish=None)
     assert rep["stop"] == "failed" and rep["best"] is None and len(rep["attempts"]) == 4
     assert time.monotonic() - t < 30
 
@@ -78,7 +78,7 @@ def test_mixed_routers_cycle_through_their_modules(tmp_path, monkeypatch):
     out = tmp_path / "out.kicad_pcb"
     rep = portfolio.run("in.kicad_pcb", out, time_s=300, parallel=2, first_s=60,
                         router=["router_a", ("router_b", ["--x"])], workdir=tmp_path / "wd", log=lambda m: None,
-                        final=None)
+                        final=None, finish=None)
     assert rep["stop"] == "clean" and rep["best"]["router"] == "router_b" and out.read_text() == "router_b"
     assert {a["router"] for a in rep["attempts"]} == {0, 1}
 
@@ -94,7 +94,7 @@ def test_a_clean_board_of_the_first_router_is_preferred(tmp_path, monkeypatch):
     monkeypatch.setenv("PYTHONPATH", str(tmp_path) + os.pathsep + os.environ.get("PYTHONPATH", ""))
     out = tmp_path / "out.kicad_pcb"
     rep = portfolio.run("in.kicad_pcb", out, time_s=300, parallel=2, first_s=60,
-                        router=["slow_a", "fast_b"], workdir=tmp_path / "wd", log=lambda m: None, final=None)
+                        router=["slow_a", "fast_b"], workdir=tmp_path / "wd", log=lambda m: None, final=None, finish=None)
     assert rep["stop"] == "clean" and rep["best"]["router"] == "slow_a" and out.read_text() == "slow_a"
 
 
@@ -163,7 +163,7 @@ def test_the_kept_board_gets_a_final_last_mile_with_time_reserved(tmp_path, monk
     out = tmp_path / "out.kicad_pcb"
     t = time.monotonic()
     rep = portfolio.run("in.kicad_pcb", out, seed=0, time_s=160, parallel=2, first_s=20, router="fake_router",
-                        workdir=tmp_path / "wd", log=lambda m: None, final="fake_lastmile")
+                        workdir=tmp_path / "wd", log=lambda m: None, final="fake_lastmile", finish=None)
     assert rep["final"]["kept"] and rep["final"]["budget"] >= portfolio.final_reserve(160, portfolio.FINAL_DRC_S) - 31
     assert tuple(rep["best"]["rank"]) == (0, 0) and rep["best"]["final"]
     assert out.read_text() == "board 3 + last mile"
@@ -176,6 +176,61 @@ def test_a_final_last_mile_that_is_not_better_leaves_the_kept_board(tmp_path, mo
     (tmp_path / "fake_lastmile.py").write_text(LASTMILE.replace("unconnected=0", "unconnected=3"))
     out = tmp_path / "out.kicad_pcb"
     rep = portfolio.run("in.kicad_pcb", out, seed=0, time_s=160, parallel=2, first_s=20, router="fake_router",
-                        workdir=tmp_path / "wd", log=lambda m: None, final="fake_lastmile")
+                        workdir=tmp_path / "wd", log=lambda m: None, final="fake_lastmile", finish=None)
     assert rep["final"] is not None and not rep["final"]["kept"]
     assert tuple(rep["best"]["rank"]) == (2, 0) and out.read_text() == "board 3"
+
+
+FINISHER = '''
+import json, sys
+a = sys.argv[1:]
+cmd = a[0]
+if cmd == "lastmile":
+    inp, board, out = a[1:4]
+    open(out, "w").write(open(board).read() + " + last mile")
+    open(a[a.index("--report") + 1], "w").write(json.dumps(dict(mode="last mile only",
+        final=dict(errors=0, unconnected=1, by_type={}))))
+elif cmd == "finish":
+    inp, board, out = a[1:4]
+    open(out, "w").write(open(board).read() + " + finish %s" % a[a.index("--time") + 1])
+    open(a[a.index("--report") + 1], "w").write(json.dumps(dict(drc_out=dict(errors=0, unconnected=UNC, by_type={}),
+        parts=dict(ran=["tails", "taut"], skipped={"power": "time"}, failed={}),
+        hazards=[dict(code="finish_part_skipped", severity="warn", category="data", message="power: time")])))
+'''
+
+
+def test_the_kept_board_is_finished_in_the_time_left(tmp_path, monkeypatch):
+    """Lastmile then finish by default; attempts of kae.route.cli would get --no-finish; nothing is
+    reserved for the finish, which runs after the final pass and is kept when no worse."""
+    _fake(tmp_path, monkeypatch)
+    (tmp_path / "fake_router.py").write_text(FAKE.replace("0 if k == 2 else 2", "2 if k == 3 else 5"))
+    (tmp_path / "fake_fin.py").write_text(FINISHER.replace("UNC", "1"))
+    out = tmp_path / "out.kicad_pcb"
+    t = time.monotonic()
+    rep = portfolio.run("in.kicad_pcb", out, seed=0, time_s=200, parallel=2, first_s=20, router="fake_router",
+                        workdir=tmp_path / "wd", log=lambda m: None, final="fake_fin", finish="fake_fin")
+    assert rep["final"]["kept"] and rep["finish"]["kept"] and not rep["finish"].get("skipped")
+    assert out.read_text().startswith("board 3 + last mile + finish")
+    assert time.monotonic() - t < 200 + 5
+    assert any(h["code"] == "finish_part_skipped" for h in rep["best_report"]["hazards"])
+
+
+def test_a_worse_finish_is_not_kept_and_a_late_one_is_skipped(tmp_path, monkeypatch):
+    _fake(tmp_path, monkeypatch)
+    (tmp_path / "fake_router.py").write_text(FAKE.replace("0 if k == 2 else 2", "2 if k == 3 else 5"))
+    (tmp_path / "fake_fin.py").write_text(FINISHER.replace("UNC", "4"))
+    out = tmp_path / "out.kicad_pcb"
+    rep = portfolio.run("in.kicad_pcb", out, seed=0, time_s=200, parallel=2, first_s=20, router="fake_router",
+                        workdir=tmp_path / "wd", log=lambda m: None, final="fake_fin", finish="fake_fin")
+    assert not rep["finish"]["kept"] and out.read_text() == "board 3 + last mile"
+    rec = portfolio.finish_pass("fake_fin", "in", dict(k=0, out=out, rank=(1, 0)), out, tmp_path,
+                                time.monotonic() + 5, lambda r: (0, 0), lambda p: None)
+    assert rec["skipped"].startswith("time:") and rec["hazards"][0]["code"] == "finish_part_skipped"
+
+
+def test_kae_route_cli_attempts_defer_their_finish(monkeypatch):
+    from kae.route import cli
+    monkeypatch.delenv("KAE_FINISH_KEPT", raising=False)
+    assert cli.finish_default(None) is True and cli.finish_default(False) is False
+    monkeypatch.setenv("KAE_FINISH_KEPT", "1")
+    assert cli.finish_default(None) is False and cli.finish_default(True) is True

@@ -75,6 +75,7 @@ DEFAULTS = dict(
     eps_topo=3e-3,
 )
 
+WRITE_S = 10.0                            # s: kept from a deadline for writing the board and its journal
 MIN_SEG = 0.01                            # mm: a straight piece shorter than this is absorbed by its neighbour
 FOLD_DEG = 2.0                            # degrees off a full reversal: copper going out and back over itself
 LEN_ABS, LEN_REL = 1.0, 0.2              # a tail taking copper off a land may grow this much (pad_reroute's limit)
@@ -1060,15 +1061,29 @@ class Taut:
             self.sp.invalidate(l)
 
     # ---------------------------------------------------------------- passes
-    def run_passes(self):
+    def run_passes(self, deadline=None):
+        """Tighten every branch, pass after pass (module docstring). `deadline` (a clock_now() value):
+        checked before every branch and before the pairs pass; past it the passes stop cleanly and
+        what is applied stays (each branch is applied whole, already checked exactly), with
+        stats["stopped"] = "time" and a `taut_time_limited` hazard."""
         t0 = clock_now()
+
+        def late():
+            if deadline is None or clock_now() < deadline:
+                return False
+            self.stats["stopped"] = "time"
+            return True
         for k in range(self.o["passes"]):
+            if late():
+                break
             t1 = clock_now()
             chains = self.chains()
             chains.sort(key=lambda c: -(_plen(c[4]) - math.dist(c[4][0], c[4][-1])))
             gain = {}
             n_imp = 0
             for net, layer, w, recs, pts, kinds in chains:
+                if late():
+                    break
                 self.stats["tried"] += 1
                 try:
                     got = self.tighten(net, layer, w, recs, pts, kinds)
@@ -1082,7 +1097,7 @@ class Taut:
                 self.necks[net] = self.necks.get(net, 0) + got.get("necks", 0)
                 self.over_fixed[net] = self.over_fixed.get(net, 0) + got.get("over_in", 0) - got.get("over", 0)
                 n_imp += 1
-            if self.o["pairs"] == "coupled" and self.pair_of:
+            if self.o["pairs"] == "coupled" and self.pair_of and not late():
                 for got in self.pairs_pass():
                     for net in got:
                         gain[net] = gain.get(net, 0.0) + got[net]
@@ -1093,10 +1108,20 @@ class Taut:
                                              max_net_gain_mm=round(mx, 5), s=round(clock_now() - t1, 1)))
             self.log(f"[taut] pass {k}: {len(chains)} branches, {n_imp} shorter, -{tot:.3f} mm "
                      f"(largest net -{mx:.4f} mm) in {clock_now() - t1:.1f}s")
-            if mx <= self.o["conv_eps"]:
+            if mx <= self.o["conv_eps"] or self.stats.get("stopped"):
                 break
         self.stats["improved"] = sum(p["improved"] for p in self.stats["passes"])
         self.t_passes = clock_now() - t0
+        if self.stats.get("stopped") == "time":
+            from kae import hazards as H
+            done = len(self.stats["passes"])
+            self.log(f"[taut] stopped for time after {self.stats['tried']} branches ({done} passes begun)")
+            self.hazards.append(H.make(
+                "taut_time_limited", "info", "data",
+                f"The taut pass stopped at its deadline after {self.stats['tried']} branches in {done} passes; "
+                f"the branches it tightened are kept, the rest keep their routed shape.",
+                objects=[], evidence=dict(tried=self.stats["tried"], passes=done, seconds=round(self.t_passes, 1)),
+                fix="Give the finish stage more time (kae.route.cli finish --time) to tighten the rest."))
         return self.stats
 
     # ---------------------------------------------------------------- revert (exact)
@@ -1515,7 +1540,9 @@ def run(input_path, output_path, opts=None, workdir=None, timeout=1800, log=prin
     wd.mkdir(parents=True, exist_ok=True)
     staged = W.stage(inp, wd / "in", "board")
     tt = Taut(staged, o, log=log)
-    tt.run_passes()
+    # the passes stop in time for what follows: writing and journaling the result (gate=False, the
+    # finish stage, whose own gate is outside `timeout`), or this run's own DRC gate
+    tt.run_passes(deadline=t0 + (timeout - min(WRITE_S, 0.2 * timeout) if not gate else 0.6 * timeout))
     t_plan = clock_now() - t0
     if not gate:
         from . import journal as J

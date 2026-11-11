@@ -451,7 +451,9 @@ class KaeStages:
                                                         min(max(120.0, time_s / 6), time_s / 1.5))),
                             growth=float(self.opts.get("portfolio_growth", 2.0)),
                             router=[(m, list(a)) for m, a in routers], workdir=d / "runs",
-                            log=lambda m: self.log(m))
+                            log=lambda m: self.log(m), finish=None)
+        # finish=None: the loop's recheck and retweak judge this board next, as before finish existed;
+        # where finish belongs in the joint loop is open (routing-stages.md, "Finish runs in the time left")
         if not raw.exists():
             raise RuntimeError(f"portfolio: no board ({rep.get('stop')})")
         _project(self.input, raw)

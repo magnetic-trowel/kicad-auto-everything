@@ -30,9 +30,12 @@ KiCad's DRC itself (`gate=False`: each returns its changes as kae.route.journal 
 
 `pad_trim` (`trim`) can be added to `parts` (the bridge's pad_entry=edge cut).
 
-Time (`time_s`): each part runs only when its estimate from the board's size (`estimate`) and the
-gate's fit in what is left; a board too big for its reserve runs (a) and (b) and reports (c) as
-skipped. The result is cached in the step cache (KAE_STEP_CACHE) by input board, project files,
+Time (`time_s`): finish never runs past it. It plans against `time_s` less a safety margin
+(`safety_margin`: 15 s + 5 %, at most a quarter) for a gate DRC started late and the exit. Each part
+runs only when its estimate from the board's size (`estimate`) and the gate's fit in what is left; a
+part gets what is left less the gate's estimate, and the taut pass checks it between branches and
+passes, keeping (and journaling) what it finished. A board too big for its time runs (a) and (b)
+and reports (c) as skipped (`finish_part_skipped`). The result is cached in the step cache (KAE_STEP_CACHE) by input board, project files,
 code and options, unless a part was skipped or the gate stopped for time.
 """
 from __future__ import annotations
@@ -69,6 +72,14 @@ DEFAULTS = dict(
 # power copper's planning 2-15 s. A board without tracks (a task input) counts pads.
 COEF = dict(tails=(5.0, 0.02), taut=(5.0, 0.12), power=(5.0, 0.03), trim=(3.0, 0.005))
 DRC_COEF = (3.0, 0.02)       # one KiCad DRC: about 8 s at 300 pads, 30 s at 1,300 (zones refilled)
+
+
+SAFETY_S = (15.0, 0.05)      # s: the margin finish keeps below its --time: fixed, and per second of budget
+
+
+def safety_margin(time_s):
+    """Seconds finish keeps free below its budget `time_s` (at most a quarter of it)."""
+    return round(min(0.25 * time_s, SAFETY_S[0] + SAFETY_S[1] * time_s), 1)
 
 
 def size_of(board_path):
@@ -120,6 +131,8 @@ def _summary(part, rep):
         out["nets_changed"] = len(out["nets_changed"])
     if part == "taut" and "stats" in rep:
         out["passes"] = rep["stats"].get("passes")
+        if rep["stats"].get("stopped"):
+            out["stopped"] = rep["stats"]["stopped"]
     if part == "power" and "nets" in rep:
         out["zone_nets"] = rep["nets"].get("zones")
     return out
@@ -165,7 +178,11 @@ def _run(inp, out, project, o, workdir, time_s, base_report, drc_s, log):
     from kae import hazards as H
     from . import drc
     t0 = clock_now()
-    deadline = None if time_s is None else t0 + float(time_s)
+    # the parts and the gate plan against `deadline`; the margin below it covers what may still run
+    # after them: a gate DRC started just before the deadline (journal: timeout >= 10 s), writing the
+    # board, and the caller's exit (kae.route.cli finish's recheck is skipped with under 20 s left)
+    margin = None if time_s is None else safety_margin(float(time_s))
+    deadline = None if time_s is None else t0 + float(time_s) - margin
     own = workdir is None
     wd = Path(workdir).resolve() if workdir else Path(tempfile.mkdtemp(prefix="kae-finish-", dir=out.parent))
     wd.mkdir(parents=True, exist_ok=True)
@@ -174,7 +191,7 @@ def _run(inp, out, project, o, workdir, time_s, base_report, drc_s, log):
         return float("inf") if deadline is None else deadline - clock_now()
 
     rep = dict(input=str(inp), project=str(project), parts=dict(ran=[], skipped={}, failed={}), stages={},
-               seconds={}, hazards=[])
+               seconds={}, hazards=[], budget_s=time_s, margin_s=margin)
     cacheable = True
     try:
         staged = drc.stage_board(inp, project, wd / "in")
@@ -202,7 +219,7 @@ def _run(inp, out, project, o, workdir, time_s, base_report, drc_s, log):
             dst = drc.stage_board(cur, project, wd / part / "out")
             try:
                 r = _pass(part, cur, dst, o, wd / part / "work",
-                          timeout=max(30, int(left() - est["gate"])) if deadline else 3600, log=log)
+                          timeout=max(1, int(left() - est["gate"])) if deadline else 3600, log=log)
             except Exception as e:      # noqa: BLE001 - one part never costs the board
                 import traceback
                 traceback.print_exc()
@@ -253,7 +270,7 @@ def _run(inp, out, project, o, workdir, time_s, base_report, drc_s, log):
                 dst = drc.stage_board(cur2, project, wd / "r2" / part / "out")
                 try:
                     rr = _pass(part, cur2, dst, o, wd / "r2" / part / "work",
-                               timeout=max(30, int(left() - est["gate"])) if deadline else 3600, log=log)
+                               timeout=max(1, int(left() - est["gate"])) if deadline else 3600, log=log)
                 except Exception as e:      # noqa: BLE001
                     r2.setdefault("failed", {})[part] = f"{type(e).__name__}: {e}"[:300]
                     continue

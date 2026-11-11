@@ -24,12 +24,16 @@ Its board replaces the kept one only when KiCad's DRC ranks it better. For a rou
 last mile alone (kae.route.cli lastmile): an attempt that ended late is not punished for it.
 
 With --finish COMMAND, the board kept after that (clean or not) gets the finish stage (for kae,
-`python -m kae.route.finish @BEST@ @OUT@ --project @IN@ --time @TIME@ --input-drc @DRC@ --drc-s @DRC_S@`,
+`python -m kae.route.cli finish @IN@ @BEST@ @OUT@ --time @TIME@ --input-drc @DRC@ --drc-s @DRC_S@`,
 docs/topics/routing/routing-stages.md stage 7): @DRC@ is the judge's DRC report of @BEST@, so the
-finish's gate need not run the input again. Its time is reserved from the start too
-(finish_estimate: --finish-s, or an estimate from the input's pad count plus two DRCs), and its
-board replaces the kept one when KiCad ranks it no worse. summary.json's "finish" says which parts
-ran and which were skipped for time.
+finish's gate need not run the input again. Routing gets its time first: no time is reserved for
+finish (a reserved wall second costs `parallel` attempt seconds on a board that is not complete).
+Finish runs when a clean attempt ends the run early, in the time left, or after the final pass, in
+whatever remains (at least FINISH_RUN_MIN_S plus one judgement, else it is skipped); the finish
+command's own estimates decide which of its parts fit. Its board replaces the kept one when KiCad
+ranks it no worse. Attempts get KAE_FINISH_KEPT=1 (kae.route.cli route then defers its own finish).
+summary.json's "finish" says which parts ran and which were skipped; a finish skipped, killed or
+failed, and the finish's own hazards, are added to restarts/report.json's hazards.
 
 With --history, every judged attempt adds the nets KiCad found open on its board to a failure
 history (restarts/history.json, {net: attempts that left it open}; record_open), and every attempt
@@ -78,6 +82,7 @@ WORK = os.environ.get("KAE_BUDGET") == "work"
 WORK_CEILING = 4.0
 WORK_FINAL_SHARE, WORK_FINISH_SHARE = 0.15, 0.10     # of --time, for --final and --finish
 FINAL_MIN_S = 60.0  # the final pass at least, beyond one DRC of the board (a last mile's joins and refill)
+FINISH_RUN_MIN_S = 30.0   # the finish pass runs only with this much (beyond one judgement) left
 
 
 def _stepcache():
@@ -417,15 +422,13 @@ def finish_estimate(a, inp, judge_est):
 
 
 def final_reserve(a, judge_est, inp=None):
-    """Seconds kept free from the start for the final passes: the last mile (--final; --final-s,
-    else FINAL_MIN_S plus one DRC of the board, as long as the slowest judgement so far) and the
-    finish (--finish: finish_estimate), each with the judgement of its board. 0 without either."""
-    r = 0.0
+    """Seconds kept free from the start for the final pass: the last mile (--final; --final-s,
+    else FINAL_MIN_S plus one DRC of the board, as long as the slowest judgement so far) with the
+    judgement of its board. 0 without it. The finish (--finish) has no reserve: it runs in the time
+    a clean attempt or the final pass leaves (routing-stages.md, "Finish runs in the time left")."""
     if a.final:
-        r += (a.final_s or FINAL_MIN_S + judge_est) + judge_est + 10.0
-    if a.finish:
-        r += finish_estimate(a, inp, judge_est) + judge_est + 10.0
-    return r
+        return (a.final_s or FINAL_MIN_S + judge_est) + judge_est + 10.0
+    return 0.0
 
 
 def _last_json(path):
@@ -578,13 +581,12 @@ def _one_pass(a, kind, command, best, inp, base, wd, end, b, judge_est, meter, s
 
 def final_pass(a, best, inp, base, wd, end, judge_est, meter, stop, cpu_s, base_pairs=()):
     """One more pass of --final on the board kept, whenever its attempt ended: the time left up to
-    the end (at least what final_reserve kept free) less one judgement and the finish's reserve.
-    Returns its record (kept: whether KiCad's DRC ranks its board better than the kept one), None
-    when there is nothing to do (no board, or a clean one)."""
+    the end (at least what final_reserve kept free) less one judgement; routing comes first, so the
+    finish gets what the last mile leaves. Returns its record (kept: whether KiCad's DRC ranks its
+    board better than the kept one), None when there is nothing to do (no board, or a clean one)."""
     if best is None or best.get("rank") is None or best["rank"][:2] == (0, 0):
         return None
-    fin_res = (finish_estimate(a, inp, judge_est) + judge_est + 10.0) if a.finish else 0.0
-    b = WORK_FINAL_SHARE * a.time if WORK else max(20.0, end - time.monotonic() - judge_est - 10.0 - fin_res)
+    b = WORK_FINAL_SHARE * a.time if WORK else max(20.0, end - time.monotonic() - judge_est - 10.0)
     return _one_pass(a, "final", a.final, best, inp, base, wd, end, b, judge_est, meter, stop, cpu_s, base_pairs,
                      keep_equal=False)
 
@@ -593,14 +595,21 @@ def finish_pass(a, best, inp, base, wd, end, judge_est, meter, stop, cpu_s, base
     """--finish on the board kept (after --final), clean or not: the time left less one judgement.
     Its board replaces the kept one when KiCad ranks it no worse (finishing shapes copper; it does
     not aim to change the rank). The record carries the finish's own report summary (which parts
-    ran, were skipped or failed; its DRC runs). None without a board."""
+    ran, were skipped or failed; its DRC runs). None without a board; a record with `skipped` when
+    less than FINISH_RUN_MIN_S is left (the finish never runs past the end)."""
     if best is None or best.get("rank") is None:
         return None
-    b = WORK_FINISH_SHARE * a.time if WORK else max(20.0, end - time.monotonic() - judge_est - 10.0)
+    b = WORK_FINISH_SHARE * a.time if WORK else end - time.monotonic() - judge_est - 10.0
+    if b < FINISH_RUN_MIN_S:
+        log(f"finish pass skipped: {b:.0f}s left after the routing")
+        return dict(k="finish", skipped=f"time: {max(0.0, b):.0f} s left after routing, "
+                                        f"{FINISH_RUN_MIN_S:.0f} s needed", budget=round(max(0.0, b)),
+                    estimate_s=round(finish_estimate(a, inp, judge_est)), resumed_from=best["k"], kept=False)
     info = _one_pass(a, "finish", a.finish, best, inp, base, wd, end, b, judge_est, meter, stop, cpu_s, base_pairs,
                      keep_equal=True)
     rep = _last_json(wd / "finish" / "log")
     if rep:
+        info["hazards"] = [h for h in rep.get("hazards") or [] if isinstance(h, dict)]
         info["finish"] = dict(parts=rep.get("parts"), drc_runs=rep.get("drc_runs"),
                               drc_in_reused=rep.get("drc_in_reused"), entries=rep.get("entries"),
                               kept_entries=rep.get("kept"), noise=rep.get("noise"), seconds=rep.get("seconds"),
@@ -714,9 +723,11 @@ def main():
     ap.add_argument("--finish", default="",
                     help="command for the finish stage on the kept board after --final (@IN@, @BEST@, @OUT@, @SEED@, "
                          "@TIME@, @DRC@: the judge's DRC report of @BEST@, @DRC_S@: one judgement's seconds), "
-                         "its time reserved from the start; kept when KiCad ranks it no worse, clean boards too")
+                         "in the time routing leaves (nothing reserved); kept when KiCad ranks it no worse, clean "
+                         "boards too. Attempts get KAE_FINISH_KEPT=1")
     ap.add_argument("--finish-s", type=float, default=0.0,
-                    help="seconds for the finish pass; 0 = an estimate from the input's pad count plus two DRCs")
+                    help="the finish pass's estimate in seconds, reported when it is skipped; 0 = from the input's "
+                         "pad count plus two DRCs")
     ap.add_argument("--history", action="store_true",
                     help="keep a history of the nets judged attempts left open (restarts/history.json) and pass "
                          "its path to every attempt in KAE_ROUTE_HISTORY")
@@ -803,6 +814,7 @@ def main():
         ch = dict(charge=str(d / "charge.jsonl")) if SC else {}
         p = subprocess.Popen(["sh", "-c", c], cwd=d, stdout=open(d / "log", "w"), stderr=subprocess.STDOUT,
                              start_new_session=True, env=dict(os.environ, KAE_RESUME="1" if resume else "0",
+                                                              **({"KAE_FINISH_KEPT": "1"} if a.finish else {}),
                                                               **charge_env(ch), **fr_raw_env(d)))
         running[p] = dict(k=k, seed=s, budget=round(b), out=o, t=time.monotonic(),
                           resumed_from=frm["k"] if resume else None, **ch)
@@ -938,9 +950,11 @@ def main():
     fz = finish_pass(a, best, inp, base, wd, end, judge_est, meter, stop, cpu_s,
                      (b0 or {}).get("overlaps", ())) if a.finish else None
     carry = best["out"].parent if best else None   # the routed board's own report (blocked, hazards)
+    fz_hazards = finish_hazards(fz) if fz is not None else []
     if fz is not None:
         judge_cpu += fz.pop("judge_cpu_s", 0.0)
         judge_wall += fz.pop("judge_wall_s", 0.0)
+        fz.pop("hazards", None)
         done.append(fz)
         if fz.get("kept"):
             best = fz
@@ -953,7 +967,8 @@ def main():
                 judge_wall_s=round(judge_wall, 1), wall_s=round(time.monotonic() - t0, 1), budget_s=a.time,
                 parallel=a.parallel, peak_rss_mb=max([d.get("peak_rss_mb", 0) for d in done] + [0]),
                 wall_to_best_s=best and round(best["t"] + best["wall_s"] - t0, 1),
-                finish=(fz or {}).get("finish") if a.finish else None)
+                finish=(((fz or {}).get("finish") or ({"skipped": fz["skipped"]} if fz and fz.get("skipped") else None))
+                        if a.finish else None))
     if SC:   # wall_s and the attempts' times above are charged time; real_wall_s is what passed
         tot = dict(hits=SC.STATS["hits"], misses=SC.STATS["misses"], uncacheable=SC.STATS["uncacheable"],
                    charged_s=SC.STATS["charged_s"], saved_s=SC.STATS["saved_s"])
@@ -978,6 +993,7 @@ def main():
     shutil.copy2(best["out"], out)
     log(f"kept #{best['k']} (seed {best['seed']}): {best['rank']}")
     carry_report(carry or best["out"].parent, wd)
+    add_hazards(wd / "report.json", fz_hazards)
     origin_report(best, done, wd)
     return 0
 
@@ -1004,6 +1020,60 @@ def carry_report(attempt_dir, wd):
                 for s in b.get("summary") or []:
                     log(f"blocked: {s}")
             return
+
+
+def _hazard(code, severity, message, evidence, fix):
+    """One entry of kae.hazards' schema (this file is stdlib only)."""
+    return dict(code=code, severity=severity, category="data", message=message, objects=["finish"],
+                evidence=evidence, fix=fix)
+
+
+def finish_hazards(fz):
+    """Hazards of the finish pass for the kept board's report: skipped for time, killed or failed
+    (finish_part_skipped / finish_failed), and the finish command's own (when its board was kept,
+    all of them; otherwise only its finish_* ones, which say what did not run)."""
+    out = []
+    if fz.get("skipped"):
+        out.append(_hazard("finish_part_skipped", "info",
+                           f"The finish stage did not run: {fz['skipped']}; the board keeps the router's copper "
+                           f"shapes and widths (no rule D tails, taut arcs or power copper).",
+                           dict(reason=fz["skipped"], estimate_s=fz.get("estimate_s")),
+                           "Give the run more time, or run kae.route.cli finish on the board."))
+        return out
+    if fz.get("killed") or fz.get("rc"):
+        why = "killed at its deadline" if fz.get("killed") else f"exit status {fz.get('rc')}"
+        out.append(_hazard("finish_failed", "warn",
+                           f"The finish stage did not complete ({why}); the board is the routed one.",
+                           dict(rc=fz.get("rc"), killed=bool(fz.get("killed")), budget_s=fz.get("budget"),
+                                wall_s=fz.get("wall_s")),
+                           "Report the board; the routed copper is intact."))
+    own = fz.get("hazards") or []
+    out += own if fz.get("kept") else [h for h in own if str(h.get("code", "")).startswith("finish_")]
+    return out
+
+
+def add_hazards(path, hazards):
+    """Append `hazards` to the report at `path` (restarts/report.json) and its hazard_summary counts."""
+    if not hazards:
+        return
+    try:
+        rep = json.loads(path.read_text())
+    except (OSError, ValueError):
+        rep = {}
+    if not isinstance(rep, dict):
+        return
+    have = {(h.get("code"), h.get("message")) for h in rep.get("hazards") or [] if isinstance(h, dict)}
+    new = [h for h in hazards if (h.get("code"), h.get("message")) not in have]
+    rep["hazards"] = list(rep.get("hazards") or []) + new
+    sm = rep.get("hazard_summary")
+    if isinstance(sm, dict):
+        for h in new:
+            sev = h.get("severity", "warn")
+            sm[sev] = sm.get(sev, 0) + 1
+            sm["total"] = sm.get("total", 0) + 1
+            if "shown" in sm:
+                sm["shown"] += 1
+    path.write_text(json.dumps(rep, indent=1))
 
 
 def origin_report(best, done, wd):

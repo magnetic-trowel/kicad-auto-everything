@@ -18,6 +18,12 @@ The kept board then gets one last mile of its own (`final`: kae.route.cli lastmi
 bridge.last_mile_only), whatever its attempt's timing, with time reserved for it from the start
 (final_reserve): an attempt that ended late, or was stopped at its deadline, is not punished for
 it. Its board replaces the kept one only when it ranks better. A board routed fully skips it.
+Then the kept board, routed fully or not, gets the finish stage (`finish`: kae.route.cli finish,
+stage 7 of docs/topics/routing/routing-stages.md: rule D tails, taut arcs, power copper behind one
+KiCad DRC gate) in whatever time is left: none is reserved for it, since a reserved wall second
+costs `parallel` attempt seconds on a board that is not complete. With less than FINISH_MIN_S left
+it is skipped (`finish_part_skipped` in the report's hazards); its board replaces the kept one when
+it ranks no worse. Attempts of kae.route.cli run with --no-finish (the portfolio finishes once).
 
 Each attempt is a separate `python -m <router> route` process (kae.route.cli or
 kae.route.critical_cli), so it can be stopped, and its own report decides its rank:
@@ -30,7 +36,7 @@ ranked results the router listed first wins, so list the physics-first router fi
 
     python -m kae.route.portfolio route IN OUT [--seed S] [--time T] [--parallel P]
         [--first-s F] [--growth G] [--router kae.route.cli|kae.route.critical_cli] [--no-final]
-        [-- ARGS...]
+        [--no-finish] [-- ARGS...]
 """
 from __future__ import annotations
 
@@ -50,6 +56,7 @@ MARGIN_S = 15.0      # left at the end of the run to copy the winner
 FINAL_MIN_S = 60.0   # the final last mile at least, beyond one DRC of the board (as restart.py)
 FINAL_DRC_S = 60.0   # one DRC of the board until the input's own DRC has been timed
 FINAL_SHARE = 0.25   # the final's reserve is at most this share of a short run's budget
+FINISH_MIN_S = 30.0  # the finish runs only with this much left (it plans its parts within it)
 INF = float("inf")
 
 
@@ -100,12 +107,13 @@ def final_reserve(time_s, drc_s):
 
 
 def run(inp, out, seed=0, time_s=1800.0, parallel=4, first_s=120.0, growth=2.0,
-        router="kae.route.cli", extra=(), workdir=None, log=print, final="kae.route.cli"):
+        router="kae.route.cli", extra=(), workdir=None, log=print, final="kae.route.cli", finish="kae.route.cli"):
     """`router`: a module name, or a list of module names or (module, [args]) pairs; attempts
     cycle through them and `extra` goes to every one. When a routed-fully result comes from a router
     other than the first, the first router's attempts still running are allowed to finish before
     the run ends, and their board is preferred. `final`: the module whose `lastmile` command gives
-    the kept board its final last mile (None: no final pass)."""
+    the kept board its final last mile (None: no final pass). `finish`: the module whose `finish`
+    command finishes the kept board in the time left (None: no finish)."""
     routers = [(r, []) if isinstance(r, str) else (r[0], list(r[1]))
                for r in ([router] if isinstance(router, str) else router)]
     inp, out = Path(inp).resolve(), Path(out).resolve()
@@ -144,8 +152,10 @@ def run(inp, out, seed=0, time_s=1800.0, parallel=4, first_s=120.0, growth=2.0,
         d = wd / f"a{k}"
         d.mkdir(exist_ok=True)
         o, r = d / "board.kicad_pcb", d / "report.json"
+        # kae.route.cli attempts never finish themselves: the portfolio finishes the kept board once
+        nofin = ["--no-finish"] if mod == "kae.route.cli" else []
         argv = [sys.executable, "-m", mod, "route", str(inp), str(o), "--seed", str(s),
-                "--time", f"{b:.0f}", "--report", str(r), *rargs, *extra]
+                "--time", f"{b:.0f}", "--report", str(r), *nofin, *rargs, *extra]
         p = subprocess.Popen(argv, stdout=open(d / "log", "w"), stderr=subprocess.STDOUT,
                              start_new_session=True)
         running[p] = dict(k=k, seed=s, budget=round(b), out=o, report=r, t=time.monotonic(), router=ri)
@@ -229,6 +239,9 @@ def run(inp, out, seed=0, time_s=1800.0, parallel=4, first_s=120.0, growth=2.0,
             if fin_rec.get("kept"):
                 best = dict(best, out=fin_rec["out"], report=fin_rec["report"], rank=fin_rec["rank"] + best["rank"][2:],
                             final=True)
+    fz_rec = None
+    if best is not None and finish and not failed:
+        fz_rec = finish_pass(finish, inp, best, out, wd, end, rank, stop, log)
     report = dict(input=str(inp), budget_s=time_s, parallel=parallel, first_s=first_s, growth=growth,
                   routers=[[m, a_] for m, a_ in routers], extra=list(extra), seconds=round(time.monotonic() - t0, 1),
                   stop="clean" if clean else ("failed" if failed else "time"), input_errors=base, attempts=[
@@ -237,6 +250,8 @@ def run(inp, out, seed=0, time_s=1800.0, parallel=4, first_s=120.0, growth=2.0,
                       for a in done],
                   final=None if fin_rec is None else {x: fin_rec.get(x) for x in
                                                       ("seed", "budget", "rank", "errors", "rc", "seconds", "kept")},
+                  finish=None if fz_rec is None else {x: fz_rec.get(x) for x in
+                                                      ("budget", "rank", "rc", "seconds", "kept", "skipped", "parts")},
                   best=None if best is None else dict(k=best["k"], seed=best["seed"], rank=best["rank"][:2],
                                                      router=routers[best["router"]][0],
                                                      final=best.get("final", False)))
@@ -244,8 +259,75 @@ def run(inp, out, seed=0, time_s=1800.0, parallel=4, first_s=120.0, growth=2.0,
         best_rep = json.loads(best["report"].read_text()) if best else None
     except (OSError, ValueError):
         best_rep = None
+    if fz_rec is not None and isinstance(best_rep, dict):
+        best_rep.setdefault("hazards", []).extend(fz_rec.get("hazards") or [])
+        if fz_rec.get("kept"):
+            best_rep["finish"] = fz_rec.get("report_summary")
     report["best_report"] = best_rep
     return report
+
+
+def finish_hazards(rec):
+    """Hazards for the kept board's report: the finish skipped for time or failed, and the finish's
+    own (all when its board was kept, else only its finish_* ones)."""
+    out = []
+    if rec.get("skipped"):
+        out.append(dict(code="finish_part_skipped", severity="info", category="data", objects=["finish"],
+                        message=f"The finish stage did not run: {rec['skipped']}; the board keeps the router's "
+                                f"copper shapes and widths.", evidence=dict(reason=rec["skipped"]),
+                        fix="Give the portfolio more time, or run kae.route.cli finish on the board."))
+        return out
+    if rec.get("rc") not in (0, None) or rec.get("killed"):
+        out.append(dict(code="finish_failed", severity="warn", category="data", objects=["finish"],
+                        message=f"The finish stage did not complete (exit status {rec.get('rc')}); the board is the "
+                                f"routed one.", evidence=dict(rc=rec.get("rc"), budget_s=rec.get("budget")),
+                        fix="Report the board; the routed copper is intact."))
+    own = rec.get("own_hazards") or []
+    out += own if rec.get("kept") else [h for h in own if str(h.get("code", "")).startswith("finish_")]
+    return out
+
+
+def finish_pass(module, inp, best, out, wd, end, rank, stop, log=print):
+    """The finish stage (`module` finish: kae.route.finish) on the kept board, in the time left up to
+    `end` (nothing was reserved for it). Skipped with less than FINISH_MIN_S left. Its board replaces
+    `out` when `rank` puts it no worse than the kept one (finish shapes copper; it does not aim to
+    change the rank, and its own gate keeps DRC no worse). Returns its record with `hazards`."""
+    b = end - time.monotonic()
+    if b < FINISH_MIN_S:
+        rec = dict(budget=round(max(0.0, b)), kept=False,
+                   skipped=f"time: {max(0.0, b):.0f} s left after routing, {FINISH_MIN_S:.0f} s needed")
+        log(f"[portfolio] finish skipped: {rec['skipped']}")
+        rec["hazards"] = finish_hazards(rec)
+        return rec
+    d = wd / "finish"
+    d.mkdir(parents=True, exist_ok=True)
+    o, r = d / "board.kicad_pcb", d / "report.json"
+    argv = [sys.executable, "-m", module, "finish", str(inp), str(best["out"]), str(o), "--time", f"{b:.0f}",
+            "--report", str(r)]
+    log(f"[portfolio] finish on #{best['k']}'s board: budget {b:.0f}s")
+    t = time.monotonic()
+    p = subprocess.Popen(argv, stdout=open(d / "log", "w"), stderr=subprocess.STDOUT, start_new_session=True)
+    killed = False
+    try:
+        p.wait(timeout=b + GRACE_S)
+    except subprocess.TimeoutExpired:
+        stop(p)
+        killed = True
+    try:
+        rep = json.loads(r.read_text())
+    except (OSError, ValueError):
+        rep = None
+    rep = rep if isinstance(rep, dict) else {}
+    rk = rank({"final": rep["drc_out"]}) if isinstance(rep.get("drc_out"), dict) else (INF, INF)
+    kept = o.exists() and not killed and p.returncode == 0 and rk <= tuple(best["rank"][:2])
+    if kept:
+        shutil.copyfile(o, out)
+    log(f"[portfolio] finish rank {rk}: {'kept' if kept else 'not kept'}")
+    rec = dict(budget=round(b), rank=rk, rc=p.returncode, killed=killed, seconds=round(time.monotonic() - t, 1),
+               kept=kept, parts=rep.get("parts"), own_hazards=[h for h in rep.get("hazards") or [] if isinstance(h, dict)],
+               report_summary={k: rep.get(k) for k in ("parts", "drc_in", "drc_out", "drc_runs", "kept", "seconds")})
+    rec["hazards"] = finish_hazards(rec)
+    return rec
 
 
 def final_pass(module, inp, best, out, wd, seed, end, rank, stop, log=print):
@@ -301,6 +383,8 @@ def main(argv=None):
                         "arguments after a colon; repeat to mix routers (the first wins ties)")
     r.add_argument("--no-final", action="store_true",
                    help="no final last mile on the kept board (by default it gets one, with time reserved)")
+    r.add_argument("--no-finish", action="store_true",
+                   help="no finish stage on the kept board (by default it gets one in the time routing leaves)")
     r.add_argument("--workdir")
     r.add_argument("--report")
     a = ap.parse_args(argv)
@@ -312,7 +396,8 @@ def main(argv=None):
         routers.append((mod, rest.split()))
     rep = run(a.input, a.output, seed=a.seed, time_s=a.time, parallel=a.parallel, first_s=a.first_s,
               growth=a.growth, router=routers, extra=extra, workdir=a.workdir,
-              log=lambda m: print(m, file=sys.stderr, flush=True), final=None if a.no_final else "kae.route.cli")
+              log=lambda m: print(m, file=sys.stderr, flush=True), final=None if a.no_final else "kae.route.cli",
+              finish=None if a.no_finish else "kae.route.cli")
     text = json.dumps(rep, default=str)
     if a.report:
         Path(a.report).write_text(text)

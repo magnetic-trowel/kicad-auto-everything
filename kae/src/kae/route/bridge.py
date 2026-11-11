@@ -142,8 +142,10 @@ DEFAULT_OPTS = dict(
     import_tails=False,      # arm D: in each repair round, rule D tails (exact check only) on the tracks the
                              # session import added; a tail the round's DRC names goes back to its raw shape
     finish=False,            # at the end, when time is left: kae.route.finish (stage 7: rule D tails, taut arcs,
-                             # power copper, one journaled DRC gate; never worse). Off by default: the restart
-                             # portfolio runs it once on the kept board (restart.py --finish), not per attempt
+                             # power copper, one journaled DRC gate; never worse). Off for library callers (the
+                             # joint loop's stages, placement probes); on by default in `kae.route.cli route`
+                             # unless KAE_FINISH_KEPT=1, which a restart portfolio sets for its attempts: it
+                             # runs finish once on the kept board (restart.py --finish, kae.route.portfolio)
     finish_parts=None,       # with finish: its parts (default finish.PARTS: tails, taut, power)
     finish_min_s=60.0,       # with finish: run it only with this much time left
     power_copper=False,      # power copper alone, through finish (parts ["power"]): widen rails and grounds,
@@ -346,7 +348,18 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
                                            base_report=final_rep if opts.get("repair") else None, log=log)
             report.setdefault("hazards", []).extend(report["finish"].pop("hazards", None) or [])
         elif parts:
-            report["finish"] = dict(skipped=f"time: {left():.0f} s left", parts=parts)
+            from kae import hazards as H
+            why = f"time: {left():.0f} s left, {float(opts.get('finish_min_s') or 60.0):.0f} s needed"
+            report["finish"] = dict(skipped=why, parts=parts)
+            report.setdefault("hazards", []).append(H.make(
+                "finish_part_skipped", "info", "data",
+                f"The finish stage ({', '.join(parts)}) did not run: routing used the time ({why}); the board "
+                f"has the router's copper shapes and widths.",
+                objects=list(parts), evidence=dict(reason=why, parts=list(parts)),
+                fix="Run python -m kae.route.cli finish on the board, or route with more --time."))
+        elif opts.get("finish_deferred"):
+            # a portfolio attempt (KAE_FINISH_KEPT=1): the wrapper finishes the board it keeps (P6)
+            report["finish"] = dict(skipped="deferred: the restart portfolio finishes the kept board")
         if report.get("blocked_packages"):
             # packages no routing can escape under the board's rules (escape.certificate), in front
             # of the per-connection diagnosis

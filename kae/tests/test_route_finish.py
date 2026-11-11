@@ -449,3 +449,37 @@ def test_gate_keeps_what_was_verified_when_a_later_drc_times_out(tmp_path):
     g = J.gate(src, src, jr, tmp_path / "g", drc_run=run, log=lambda *a: None)
     assert g["kept"] == {"tails:a", "taut:net:N1", "power:B"} and g["gate_error"] and g["time_limited"]
     assert set(J.items(g["text"])) == {"A2", "B"}
+
+
+def test_finish_never_runs_past_its_time(tmp_path, monkeypatch):
+    """Parts that use every second they are given, and a slow DRC: finish still ends within --time,
+    keeping its safety margin, and hands each part no more than what is left less the gate."""
+    import time as _t
+    from kae.route import finish, drc
+    t0 = _board(_seg("A", "N1", (0, 0), (5, 0)), _seg("B", "N2", (0, 5), (5, 5)))
+    given = []
+
+    def greedy_pass(part, src, dst, o, wd, timeout, log):
+        given.append((part, timeout))
+        _t.sleep(min(timeout, 3.0))
+        text = Path(src).read_text()
+        J.write(text, dst, src)
+        return dict(_entries=[])
+    monkeypatch.setattr(finish, "_pass", greedy_pass)
+
+    def slow_drc(board, out_json, timeout=900, cache=True):
+        _t.sleep(min(timeout, 1.0))
+        rep = _rep()
+        Path(out_json).write_text(json.dumps(rep))
+        return rep
+    monkeypatch.setattr(drc, "run", slow_drc)
+    monkeypatch.setattr(finish, "estimate", lambda b, d=None, parts=finish.PARTS: dict(
+        {p: 1.0 for p in parts}, drc=1.0, gate=2.0, total=len(parts) + 7.0))
+    src = tmp_path / "in.kicad_pcb"
+    src.write_text(t0)
+    start = _t.monotonic()
+    rep = finish.run(src, tmp_path / "out" / "board.kicad_pcb", time_s=24, workdir=tmp_path / "w", log=lambda *a: None)
+    took = _t.monotonic() - start
+    assert took <= 24 and rep["margin_s"] == finish.safety_margin(24) > 0
+    assert all(t <= 24 - rep["margin_s"] for _, t in given)
+    assert rep["parts"]["ran"] and (tmp_path / "out" / "board.kicad_pcb").exists()

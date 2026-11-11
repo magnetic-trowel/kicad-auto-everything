@@ -182,7 +182,8 @@ def test_judge_reports_unconnected_items_a_project_ignores(tmp_path):
 
 def test_final_pass_runs_last_mile_then_finish(tmp_path):
     """--final then --finish: the last mile's board is judged (its drc.json is the finish's @DRC@),
-    the finish runs on the board kept and replaces it when no worse; both times are reserved."""
+    the finish runs on the board kept and replaces it when no worse; only the last mile's time is
+    reserved, the finish runs in what is left."""
     finish = ("test -s @DRC@ && grep -q OPEN=0 @BEST@ && test @DRC_S@ && "
               "sed 's/OPEN=0/OPEN=0 finished/' @BEST@ > @OUT@ && "
               "echo '{\"parts\": {\"ran\": [\"tails\", \"taut\"], \"skipped\": {\"power\": \"time\"}}, \"drc_runs\": 1}'")
@@ -196,9 +197,48 @@ def test_final_pass_runs_last_mile_then_finish(tmp_path):
     assert fin["kept"] and fz["kept"] and fz["resumed_from"] == "final"
     assert "finished" in out.read_text()
     assert summary["finish"]["parts"]["skipped"] == {"power": "time"} and summary["finish"]["drc_runs"] == 1
-    # reserved from the start: the last mile's 20 s and the finish's 20 s, each with a judgement and 10 s
-    assert summary["attempt_log"][0]["budget"] <= 300 - 2 * (20 + 10) - 30
+    # reserved from the start: the last mile's 20 s with a judgement and 10 s; nothing for the finish
+    b0 = summary["attempt_log"][0]["budget"]
+    assert 300 - 75 - (20 + 10) - 15 <= b0 <= 300 - 75 - (20 + 10)
     assert fin["budget"] >= 20 and fz["budget"] >= 20
+
+
+def test_attempts_defer_their_own_finish_to_the_wrapper(tmp_path):
+    """With --finish, attempts get KAE_FINISH_KEPT=1 (kae.route.cli route then skips its own finish)."""
+    r, out, summary = _run(tmp_path, "echo \"(kicad_pcb OPEN=0 K=$KAE_FINISH_KEPT)\" > @OUT@", "",
+                           extra=["--finish", "exit 3"])
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "K=1" in out.read_text()
+    (tmp_path / "nofinish").mkdir()
+    r2, out2, _ = _run(tmp_path / "nofinish", "echo \"(kicad_pcb OPEN=0 K=$KAE_FINISH_KEPT)\" > @OUT@", "")
+    assert "K=)" in out2.read_text()
+
+
+def test_finish_skipped_when_routing_left_too_little_time(tmp_path):
+    """No reserve: a finish that would get less than FINISH_RUN_MIN_S is skipped, with a hazard."""
+    import time as _t
+    import types
+    a = types.SimpleNamespace(finish="true", finish_s=20.0, time=100.0)
+    best = dict(k="final", rank=(0, 0, 3, 0, 0))
+    fz = restart.finish_pass(a, best, tmp_path / "in.kicad_pcb", {}, tmp_path, _t.monotonic() + 25.0, 5.0,
+                             None, None, None)
+    assert fz["skipped"].startswith("time:") and not fz["kept"] and fz["estimate_s"] == 20
+    hz = restart.finish_hazards(fz)
+    assert [h["code"] for h in hz] == ["finish_part_skipped"]
+    rep = tmp_path / "report.json"
+    rep.write_text(json.dumps(dict(hazards=[], hazard_summary=dict(info=0, total=0, shown=0))))
+    restart.add_hazards(rep, hz)
+    got = json.loads(rep.read_text())
+    assert got["hazards"][0]["code"] == "finish_part_skipped" and got["hazard_summary"]["info"] == 1
+
+
+def test_finish_killed_or_failed_is_a_hazard():
+    hz = restart.finish_hazards(dict(k="finish", killed=True, rc=-9, budget=100, wall_s=105, kept=False,
+                                     hazards=[dict(code="finish_part_skipped", severity="info"),
+                                              dict(code="drc_clearance", severity="warn")]))
+    assert [h["code"] for h in hz] == ["finish_failed", "finish_part_skipped"]
+    kept = restart.finish_hazards(dict(k="finish", rc=0, kept=True, hazards=[dict(code="drc_clearance")]))
+    assert [h["code"] for h in kept] == ["drc_clearance"]
 
 
 def test_finish_runs_on_a_clean_board_and_is_not_kept_when_worse(tmp_path):

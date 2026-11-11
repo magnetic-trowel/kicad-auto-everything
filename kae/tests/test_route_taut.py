@@ -424,3 +424,44 @@ def test_merge_tiny_absorbs_micro_segments_and_cuts_a_fold():
     assert _merge_tiny([("seg", (0, 0), (1, 0)), ("seg", (1, 0), (0.8, 0))]) == [("seg", (0, 0), (0.8, 0))]
     # a 90 degree corner is left alone
     assert len(_merge_tiny([("seg", (0, 0), (1, 0)), ("seg", (1, 0), (1, 1))])) == 2
+
+
+@pytest.mark.kicad
+def test_taut_stops_at_its_deadline_and_keeps_what_it_finished(tmp_path, monkeypatch):
+    """A deadline that passes after the first branch: the passes stop cleanly, that branch's copper is
+    written and journaled, the report says why (stats stopped, taut_time_limited)."""
+    from kae.board import pcbnew_io
+    if not pcbnew_io.available():
+        pytest.skip("no Python with pcbnew")
+    from kae.route import taut
+    src = _detour_board(tmp_path)
+    full = taut.run(src, tmp_path / "full.kicad_pcb", workdir=tmp_path / "w0", log=lambda *a: None, gate=False)
+    assert len(full["nets_changed"]) >= 2 and not full["stats"].get("stopped")
+    real, late = taut.clock_now, [False]
+    orig = taut.Taut.tighten
+
+    def once(self, *a, **k):
+        got = orig(self, *a, **k)
+        if got is not None:
+            late[0] = True                      # the clock jumps past every deadline after one shorter branch
+        return got
+    monkeypatch.setattr(taut.Taut, "tighten", once)
+    monkeypatch.setattr(taut, "clock_now", lambda: real() + (1e6 if late[0] else 0.0))
+    rep = taut.run(src, tmp_path / "out.kicad_pcb", workdir=tmp_path / "w", log=lambda *a: None, gate=False,
+                   timeout=600)
+    assert rep["stats"]["stopped"] == "time" and len(rep["stats"]["passes"]) == 1
+    assert 1 <= len(rep["nets_changed"]) < len(full["nets_changed"])
+    assert len(rep["_entries"]) >= 1 and (tmp_path / "out.kicad_pcb").exists()
+    assert any(h["code"] == "taut_time_limited" for h in rep["hazards"])
+
+
+@pytest.mark.kicad
+def test_taut_with_a_tiny_budget_returns_in_time(tmp_path):
+    from kae.board import pcbnew_io
+    if not pcbnew_io.available():
+        pytest.skip("no Python with pcbnew")
+    from kae.route import taut
+    src = _detour_board(tmp_path)
+    rep = taut.run(src, tmp_path / "out.kicad_pcb", workdir=tmp_path / "w", log=lambda *a: None, gate=False,
+                   timeout=0.01)
+    assert rep["stats"]["stopped"] == "time" and rep["stats"]["tried"] == 0 and rep["nets_changed"] == []
