@@ -68,3 +68,6 @@ A 2-board smoke of the two arms above was queued and cancelled before it started
 - An arm that moves opens and holds physics is the lead for a fix. One that moves opens but loses physics names the piece that carries both.
 
 **Costs (information only):** six arms × 139 boards × about 0.7 CPU-h, about 580 CPU-h.
+
+## Addendum 2, before any run (2026-11-11)
+To check in the smoke that each knob took effect, the module stage now also reports `copper_by_owner` (what it laid, by module kind or rail and by piece, counted before an ablation drops it) and `guard_zones`. The first route already reports its `guards`. That is a new commit, so the methods are registered again at it and the experiment is named `module-ablation2`; `module-ablation` holds no runs. Arms, boards and rules are unchanged.

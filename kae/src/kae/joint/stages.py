@@ -25,6 +25,7 @@ Stage by stage:
 from __future__ import annotations
 
 from kae.budget import now as clock_now
+import collections
 import json
 import math
 import os
@@ -252,6 +253,12 @@ class KaeStages:
         write_joint(lay.board, out, moved, copper, hazards=self.writer_hz)
         _project(self.input, out)
         new.poses.update({u: tuple(p) for u, p in moved.items()})
+        # what the module stage laid, by owner (module kind or rail, and the piece: e.g. decap/loop, rail/trunk,
+        # decap/pad = a completion join, decap/island = an island join, stitch, spokes), before any ablation drops it
+        by_owner = collections.Counter()
+        for c in copper:
+            o = getattr(c, "owner", None) or ("?", "?")
+            by_owner[f"{str(o[0]).split(':')[0]}/{str(o[1] if len(o) > 1 else '').split(':')[0]}"] += 1
         if self.opts.get("module_poses_only"):
             # an ablation: the module stage's part moves stay, its copper and guard pours go, so the bridge routes
             # every net from that placement
@@ -273,7 +280,8 @@ class KaeStages:
         new.info["modules"] = dict(seconds=round(dt_mod, 1), budget_s=round(t_mod, 1),
                                    stop="clock" if float(rep.get("seconds") or 0.0) >= 0.95 * t_mod else "done",
                                    moved=sorted(rep.get("moved") or {}),
-                                   copper=len(copper), escape_corridors=len(getattr(sess.router, "escapes", ()) or ()),
+                                   copper=len(copper), copper_by_owner=dict(by_owner), guard_zones=sum(len(g) for g in guards.values()),
+                                   escape_corridors=len(getattr(sess.router, "escapes", ()) or ()),
                                    modules=[dict(id=m["id"], u0=m.get("u0"), u=m.get("u"),
                                                                      status=m.get("status"))
                                                                 for m in rep.get("modules") or []])
