@@ -4,6 +4,13 @@
 
 Written 2026-11-09, before any run of this experiment. Ledger E36, E37, R60, R61. Code: the commit recorded by `setup.sh`.
 
+## Amendment, 2026-11-11 (before any result was read)
+The primary pair measures are now the bus scorecard's (`kae.bus.scorecard`, merged in #51): **`coupled_3w`** (share of each leg's pad-to-pad length whose partner runs within 3 trace widths edge to edge, same layer) replaces the coupled share within 0.5 mm over all copper, and **pad-to-pad skew** (`skew_mm`, difference of the two legs' pad-to-pad path lengths) replaces the difference of the legs' total copper. Vias per pair are 2 x `vias_lane`; the 4 mm minimum applies to the control's `len_mean`.
+
+Why: the repository now measures pairs once, in the scorecard; `kae.route.pairs` (#42, merged) dropped its second measurement and `tools/kaeres/pair_report.py` with it. Keeping the old measure for this experiment alone would mean two definitions of the same quantity. Decided on 2026-11-11, when 4 of 240 jobs had finished (two boards with all three arms) and no pair of any run had been measured. While checking which runs existed, the DRC columns of `results.csv` for those two boards were seen; this change does not touch the guardrails, which come from those columns. Thresholds, guardrails, arms, boards and the decision rule are unchanged. What the scorecard measures differently: only pairs with a pad-to-pad path between two common end parts in both arms (fewer pairs than all copper), and no stubs. The tier is still `kae.route.pairs`, read from the human board with its project rules (`analyze.py`).
+
+How to read it now: `kaeres exp report diffpair-ab3`; `kaeres bus submit diffpair-ab3 --boards @tools/kaeres/experiments/diffpair-ab/boards.txt --method "kae bridge dp-control 486f2f1" --method "kae bridge dp-first 486f2f1" --method "kae bridge dp-post 486f2f1" --kae <this branch's head>`; then, in a kae venv, `analyze.py diffpair-ab3 "<control>" "<arm>"` once per arm. The experiment's name is `diffpair-ab3` (three arms); `diffpair-ab` below is the plan's original name.
+
 ## Question
 Does routing high-speed differential pairs as pairs first (`kae.route.pair_route`, locked copper) give coupled, length-matched pairs at no cost in opens or DRC errors, compared with the bridge routing them as unrelated nets? From bare placement (the benchmark's route task); no human copper is kept or restored.
 

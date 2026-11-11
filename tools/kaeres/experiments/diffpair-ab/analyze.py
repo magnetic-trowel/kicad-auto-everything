@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""diffpair-ab analysis: the pre-registered numbers (PLAN.md). Needs `kaeres exp report` and `pair_report.py` run.
+"""diffpair-ab analysis: the pre-registered numbers (PLAN.md, amended 2026-11-11). Needs `kaeres exp report NAME`
+(results.csv, the guardrails) and the bus scorecard of every run (`kaeres bus submit NAME --boards @boards.txt --method
+... --kae <commit with kae.route.pairs on the scorecard>`), and runs in a venv with the kae package:
 
-    python analyze.py NAME CONTROL_METHOD_NAME ARM_METHOD_NAME [--min-len 4]     (once for each arm)
+    python analyze.py NAME CONTROL_METHOD_NAME ARM_METHOD_NAME [--eid BUS_EVALUATOR] [--min-len 4]     (once for each arm)
 
-Pairs: tier rule or interface, both legs routed in both arms and at least --min-len mm a leg in the control.
+Pairs: the scorecard's pair rows (kae.bus.scorecard: coupled_3w, pad-to-pad skew_mm, vias_lane, len_mean, no_ref_mm,
+ref_changes), measured in both arms, len_mean at least --min-len mm in the control, tier rule or interface. The tier is
+taken from the human board with its project rules (kae.route.pairs.detect): busreport loads run outputs without rules,
+so the scorecard's own `tier` cannot see net classes and would put rule-tier pairs of unknown interface under "name".
 Pair statistics are paired by (board, p); intervals bootstrap over boards (a board's pairs are not independent).
 """
 import argparse
 import csv
+import gzip
 import json
 import os
 import random
@@ -18,6 +24,31 @@ from collections import defaultdict
 from pathlib import Path
 
 STORE = Path(os.environ.get("KAE_RESULTS") or Path.home() / "kae-baselines")
+CORPUS = Path(os.environ.get("KAE_BOARDS") or Path.home() / "kae-boards")
+
+
+def scorecard(board, run, eid=None):
+    """The bus scorecard of a run (evaluator eid, else the newest), or None."""
+    d = STORE / "boards" / board / "runs" / run / "bus"
+    fs = [d / f"{eid}.json.gz"] if eid else sorted(d.glob("*.json.gz"), key=lambda f: f.stat().st_mtime) if d.is_dir() else []
+    fs = [f for f in fs if f.exists()]
+    if not fs:
+        return None
+    with gzip.open(fs[-1], "rt") as f:
+        return json.load(f)
+
+
+def human_tiers(board):
+    """(p, n) sorted -> (tier, interface) from the human board with its project rules (kae.route.pairs.detect)."""
+    from kae.board.kicad_file import load
+    from kae.circuit.brief import build
+    from kae.route import pairs as P
+    b = load(CORPUS / "boards" / board / "board.kicad_pcb")
+    try:
+        brief = build(b)
+    except Exception:  # noqa: BLE001 - names and classes still tier the pairs
+        brief = None
+    return {pr.key(): (pr.tier, pr.interface) for pr in P.detect(b, brief=brief)}
 B = 4000
 SEED = 20261109
 
@@ -42,6 +73,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("name"), ap.add_argument("control"), ap.add_argument("pairs")
     ap.add_argument("--min-len", type=float, default=4.0)
+    ap.add_argument("--eid", help="bus scorecard evaluator id (default: each run's newest scorecard)")
     a = ap.parse_args()
     d = STORE / "experiments" / a.name
     res = {}
@@ -85,20 +117,30 @@ def main():
     types = sorted({t for x in per for t in list(x["ty_c"]) + list(x["ty_p"])})
     gr["errors_by_type"] = {t: [sum(x["ty_c"].get(t, 0) for x in per), sum(x["ty_p"].get(t, 0) for x in per)] for t in types}
     out["guardrails"] = gr
-    # pairs
-    pc = defaultdict(dict)
-    for r in csv.DictReader(open(d / "pairs.csv")):
-        if r["method"] in (a.control, a.pairs, "human") and r["board"] in both_ok and r["routed"] == "True" and r["tier"] in ("rule", "interface"):
-            pc[(r["board"], r["p"])][r["method"]] = r
-    keep = {k: v for k, v in pc.items() if a.control in v and a.pairs in v and float(v[a.control]["len_p"]) >= a.min_len and float(v[a.control]["len_n"]) >= a.min_len}
+    # pairs, from the bus scorecards of both arms' runs
     per_board = defaultdict(list)
     rows = []
-    for (b, p), v in keep.items():
-        c, x = v[a.control], v[a.pairs]
-        rows.append(dict(board=b, p=p, iface=c["interface"], tier=c["tier"], cpl_c=fl(c["coupled_share"]), cpl_p=fl(x["coupled_share"]),
-                         sk_c=fl(c["skew"]), sk_p=fl(x["skew"]), v_c=fl(c["vias_p"]) + fl(c["vias_n"]), v_p=fl(x["vias_p"]) + fl(x["vias_n"]),
-                         ref_c=fl(c["ref_changes"]), ref_p=fl(x["ref_changes"]), nr_c=fl(c["no_ref_mm"]), nr_p=fl(x["no_ref_mm"])))
-        per_board[b].append(rows[-1])
+    missing = []
+    for b in both_ok:
+        sc = {m: scorecard(b, res[(b, m)]["run"], a.eid) for m in (a.control, a.pairs)}
+        if any(v is None or v.get("error") for v in sc.values()):
+            missing.append(b)
+            continue
+        tiers = human_tiers(b)
+        by = {m: {(r.get("p"), r.get("n")): r for r in v.get("pairs") or [] if r.get("p")} for m, v in sc.items()}
+        for key, c in by[a.control].items():
+            x = by[a.pairs].get(key)
+            tier, iface = tiers.get(tuple(sorted(key)), (None, c.get("iface")))
+            if x is None or tier not in ("rule", "interface") or c.get("coupled_3w") is None or x.get("coupled_3w") is None:
+                continue
+            if (c.get("len_mean") or 0.0) < a.min_len:
+                continue
+            rows.append(dict(board=b, p=key[0], iface=iface, tier=tier, cpl_c=c["coupled_3w"], cpl_p=x["coupled_3w"],
+                             sk_c=c.get("skew_mm"), sk_p=x.get("skew_mm"), v_c=2.0 * (c.get("vias_lane") or 0.0),
+                             v_p=2.0 * (x.get("vias_lane") or 0.0), ref_c=c.get("ref_changes"), ref_p=x.get("ref_changes"),
+                             nr_c=c.get("no_ref_mm"), nr_p=x.get("no_ref_mm")))
+            per_board[b].append(rows[-1])
+    out["boards_without_scorecards"] = missing
     bl = list(per_board.values())
 
     def pair_stats(sample):
