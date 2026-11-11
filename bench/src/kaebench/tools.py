@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Locate and drive external tools: kicad-cli, KiCad's Python (pcbnew), Freerouting."""
 import functools
+import hashlib
 import json
 import os
 import shlex
@@ -324,22 +325,54 @@ def kicad_python():
     raise ToolError("no Python with pcbnew found; set KAE_KICAD_PYTHON or KAE_KICAD_WRAP")
 
 
+STOCK_PIN = "freerouting-stock.pin"
+
+
+def _fr_command(path):
+    return ["java", "-jar", str(path)] if str(path).endswith(".jar") else [str(path)]
+
+
 @functools.lru_cache(maxsize=None)
 def freerouting_cmd():
-    """Command prefix for Freerouting (native bundle preferred; the JAR needs Java 25)."""
+    """Command prefix for the stock Freerouting of the benchmark (upstream 2.5.0 unless pinned
+    otherwise): KAE_FREEROUTING, else the build named in KAE_HOME/freerouting-stock.pin (a path,
+    absolute or relative to KAE_HOME; bench/scripts/setup.sh writes it). Never the newest install:
+    picking by sort order made an RC nightly installed beside 2.5.0 the default. Raises ToolError
+    when none is set or the pinned build is missing. The bridge's fork has its own pin
+    (kae.route.freerouting, kae-freerouting.pin)."""
     env = os.environ.get("KAE_FREEROUTING")
     if env:
-        return [env] if not env.endswith(".jar") else ["java", "-jar", env]
-    native = sorted(KAE_HOME.glob("freerouting-*-linux-x64/bin/freerouting"))
-    if native:
-        return [str(native[-1])]
-    exe = shutil.which("freerouting")
-    if exe:
-        return [exe]
-    jars = sorted(KAE_HOME.glob("freerouting-*.jar"))
-    if jars:
-        return ["java", "-jar", str(jars[-1])]
-    raise ToolError("Freerouting not found; run bench/scripts/setup.sh or set KAE_FREEROUTING")
+        return _fr_command(env)
+    pin = KAE_HOME / STOCK_PIN
+    if pin.is_file():
+        text = pin.read_text().strip()
+        path = Path(text).expanduser()
+        if not path.is_absolute():
+            path = KAE_HOME / path
+        if not text or not path.is_file():
+            raise ToolError(f"{pin} names {text!r}, which is not a file: fix or rewrite the pin")
+        return _fr_command(path)
+    raise ToolError(f"No stock Freerouting is pinned: set KAE_FREEROUTING, or write a build's path into {pin} "
+                    "(bench/scripts/setup.sh writes it for the release it installs)")
+
+
+def freerouting_identity(cmd):
+    """{path, sha256} of the program a Freerouting command runs (the jar of a native bundle, else
+    the file itself), for the run's records; {} when it cannot be read."""
+    path = Path(cmd[-1] if cmd[:2] == ["java", "-jar"] else cmd[0])
+    target = path
+    if not str(path).endswith(".jar"):
+        jars = sorted(path.resolve().parent.parent.glob("lib/**/*.jar"))
+        if jars:
+            target = jars[0]
+    try:
+        h = hashlib.sha256()
+        with open(target, "rb") as f:
+            for block in iter(lambda: f.read(1 << 20), b""):
+                h.update(block)
+        return dict(path=str(path), file=str(target), sha256=h.hexdigest())
+    except OSError:
+        return {}
 
 
 def ops_script():
@@ -426,6 +459,7 @@ def versions():
     try:
         cmd = freerouting_cmd()
         out["freerouting"] = " ".join(cmd)
+        out["freerouting_identity"] = freerouting_identity(cmd)
     except ToolError as e:
         out["freerouting"] = f"unavailable: {e}"
     return out

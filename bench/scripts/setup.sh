@@ -146,6 +146,11 @@ if [ "$DO_FR" = 1 ]; then
     chmod +x "$DEST/bin/freerouting" "$DEST/lib/runtime/bin/"* "$DEST/lib/runtime/lib/jspawnhelper" 2>/dev/null || true
     rm -f "$ZIP"
   fi
+  # kaebench's stock Freerouting is the build named in this pin, never the newest install
+  if [ ! -s "$KAE_HOME/freerouting-stock.pin" ]; then
+    echo "$DEST/bin/freerouting" > "$KAE_HOME/freerouting-stock.pin"
+    echo "pinned stock Freerouting: $DEST/bin/freerouting"
+  fi
 fi
 
 if python3 -c "import ensurepip, venv" 2>/dev/null; then
