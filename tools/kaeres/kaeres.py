@@ -150,7 +150,17 @@ def env_sh():
     return out
 
 
+_KICAD_VERSION = []
+
+
 def kicad_version():
+    """KiCad's version string (kicad-cli version), asked once per process."""
+    if not _KICAD_VERSION:
+        _KICAD_VERSION.append(_kicad_version())
+    return _KICAD_VERSION[0]
+
+
+def _kicad_version():
     wrap = (os.environ.get("KAE_KICAD_WRAP") or env_sh().get("KAE_KICAD_WRAP", "")).split()
     try:
         return sh([*wrap, "kicad-cli", "version"]).splitlines()[-1].strip()
@@ -936,19 +946,81 @@ def _venv(hc):
     return d, venv
 
 
+DETERMINISTIC_SPEC = 10   # prepare gives byte-identical task files from this task spec on (Task aliases)
+TASK_CACHE_GB = 20.0
+
+
+def task_cache_dir(bid, phc, inputs, src):
+    """Where a job keeps or finds the preparation of board bid by harness phc for these inputs:
+    $KAERES_TASK_CACHE (default /var/tmp/$USER/kaeres-task-cache; "off" turns it off), one folder
+    per board files' content (src: the job's board folder), harness, inputs and KiCad. None when
+    off or when phc prepares with a task spec before DETERMINISTIC_SPEC (a copy would then not
+    be what the job prepares itself)."""
+    root = os.environ.get("KAERES_TASK_CACHE", str(Path("/var/tmp") / (os.environ.get("USER") or str(os.getuid()))
+                                                    / "kaeres-task-cache"))
+    spec = harness_task_spec(phc)
+    if root in ("", "0", "off") or spec is None or spec < DETERMINISTIC_SPEC:
+        return None
+    h = hashlib.sha256(json.dumps([phc, sorted(inputs), kicad_version()]).encode())
+    for f in sorted(Path(src).iterdir()):
+        h.update(f"{f.name}\0{sha256_file(f)}\0".encode())
+    return Path(root) / f"{bid}.{h.hexdigest()[:20]}"
+
+
+def _cache_put(task, cache):
+    """Copy a prepared task into the cache atomically, then trim the cache to $KAERES_TASK_CACHE_GB
+    (default TASK_CACHE_GB), least recently used first. A failure only costs a later prepare."""
+    tmp = cache.with_name(f".{cache.name}.{os.getpid()}")
+    try:
+        shutil.copytree(task, tmp, ignore=shutil.ignore_patterns("roundtrip"))
+        os.replace(tmp, cache)
+    except OSError:
+        shutil.rmtree(tmp, ignore_errors=True)
+        return
+    try:
+        cap = float(os.environ.get("KAERES_TASK_CACHE_GB") or TASK_CACHE_GB) * 2 ** 30
+        entries = []
+        for d in cache.parent.iterdir():
+            if d.is_dir() and not d.name.startswith("."):
+                entries.append((d.stat().st_atime, sum(f.stat().st_size for f in d.rglob("*") if f.is_file()), d))
+        total = sum(s for _, s, _ in entries)
+        for _, s, d in sorted(entries):
+            if total <= cap:
+                break
+            if d != cache:
+                shutil.rmtree(d, ignore_errors=True)
+                total -= s
+    except OSError:
+        pass
+
+
 def _prepare(bid, phc, inputs, ws, env, log, steps, step="prepare"):
-    """kaebench prepare-dir of the board with harness phc (once per job): (task directory or None, rc, timed out)."""
+    """kaebench prepare-dir of the board with harness phc (once per job): (task directory or None, rc, timed out).
+    A preparation another job made of the same board files, harness, inputs and KiCad is copied from the
+    task cache instead (task_cache_dir); the step then records `cached`."""
     _, venv = _venv(phc)
     work = ws / f"w-{phc[:8]}"
     task = work / "tasks" / bid
     have = (read_json(task / "task.json") or {}).get("tasks") or {}
     rc, to = 0, False
     if not all(k in have for k in inputs):
+        cache = None if have else task_cache_dir(bid, phc, inputs, ws / "src" / bid)
+        if cache is not None and (cache / "task.json").exists():
+            with Step(step, steps):
+                shutil.rmtree(task, ignore_errors=True)
+                shutil.copytree(cache, task)
+                os.utime(cache)   # recently used
+            steps[step]["cached"] = str(cache)
+            print(f"{bid}: task prepared by {phc[:7]} copied from {cache}", flush=True)
+            return task, 0, False
         with Step(step, steps):
             rc, to = run_logged([venv / "bin" / "kaebench", "--workdir", work, "prepare-dir", "--dir", ws / "src",
                         "--board-glob", "board.kicad_pcb", "--only", bid, "--kinds", ",".join(inputs), "-j", "1",
                         *(["--force"] if have else [])],
                        log, dict(env, PATH=f"{venv / 'bin'}:{env.get('PATH', '')}"), timeout=3 * 3600)
+        if cache is not None and rc == 0 and not to and (task / "task.json").exists():
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            _cache_put(task, cache)
     return (task if (task / "task.json").exists() else None), rc, to
 
 
