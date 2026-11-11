@@ -1080,3 +1080,19 @@ def test_a_starving_head_waiting_for_memory_is_not_overtaken_by_short_jobs(kq):
     d.admit(kq.config(), time.time(), 5 * 1024.0, 0.0, 3)
     assert states(d)["huge"] == "queued" and states(d)["short2"] == "running"
     d.c.execute("UPDATE jobs SET state='cancelled' WHERE state IN ('queued','running')")
+
+
+def test_a_retried_job_is_leased_in_its_new_scope(kq, tmp_path):
+    """An attempt's scope is gone when it ends; the next attempt must not be read through the old one, or its
+    memory is never leased (held at its first grant) and counts as only declared."""
+    d = _lease_daemon(kq, tmp_path)
+    submit(kq, "python3 -c 'import time\na = bytearray(300 << 20)\nfor i in range(0, len(a), 4096): a[i] = 1\n"
+               "time.sleep(1)\nraise SystemExit(1)'", name="r", qos="batch", mem="200M", retries=1)
+    drive(kq, d, lambda: states(d)["r"] == "running" and d.cgroups.get(1), secs=20)
+    first = d.cgroups[1]
+    drive(kq, d, lambda: d.c.execute("SELECT attempt FROM jobs").fetchone()[0] == 2 and states(d)["r"] == "running"
+          and d.cgroups.get(1) and d.cgroups[1] != first, secs=40)
+    assert os.path.isdir(d.cgroups[1])
+    drive(kq, d, lambda: d.c.execute("SELECT grant_mb FROM jobs").fetchone()[0] > 300, secs=20)   # its lease grows
+    d.c.execute("UPDATE jobs SET state='cancelled'")
+    kq.kill_tree(d.c.execute("SELECT pid FROM jobs").fetchone()[0], d.cgroups.get(1))
