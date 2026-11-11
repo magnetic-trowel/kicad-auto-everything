@@ -49,6 +49,9 @@ DEFAULTS = dict(
     history_amount=1.0,    # history added per failed connection's corridor bin (utilization units)
     place_share=0.30,      # share of the budget for the placer
     route_share=0.6,       # share of what is left after placing and the module stage, for the first route
+    module_clock=False,    # the module stage keeps its clock (stages.module_clock) and the first route gets
+                           # route_share of what was left before the module stage (the time it would get
+                           # without modules; module-casestudy: the overrun starved it)
     reserve=25.0,          # seconds kept for the final write and DRC (at least 4 % of the budget)
     physics_spots=True,    # flagged modules make windows too
     min_iter_s=60.0,       # an iteration is not started with less than this left
@@ -214,9 +217,13 @@ class JointLoop:
         else:
             lay = st.layout_from(start)
         t_place = clock_now() - t
+        left0 = left()
         if o.get("modules", True):
             lay = st.modules(lay, 0)
         route_s = max(30.0, o["route_share"] * left())
+        if o.get("module_clock"):
+            # what it would get without the module stage, but never more than 90 % of what is left
+            route_s = max(30.0, min(o["route_share"] * left0, 0.9 * left()))
         lay = st.route(lay, 0, seed=seed, time_s=route_s)
         card, fb = st.evaluate(lay, 0)
         t_iter0 = clock_now() - t

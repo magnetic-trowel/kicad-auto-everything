@@ -147,12 +147,18 @@ def _edge_hazards(rep, input_path, out):
         rep.setdefault("hazards", []).extend(hz)
 
 
+CRIT_EXTRA = ("rails_joint",)   # critical-session options read with a default but not listed in its DEFAULTS
+
+
 def _known_key(k):
-    """A --set key something reads: the loop, the stages, the placer's limits, bridge.KEY."""
+    """A --set key something reads: the loop, the stages, the placer's limits, bridge.KEY, crit.KEY (an option of
+    the module stage's kae.route.critical session, one of its DEFAULTS)."""
     from kae.route.constraints import DEFAULTS as LIMITS
+    from kae.route.critical import DEFAULTS as CRIT
 
     from .stages import STAGE_KEYS
-    return k in _loop_keys() or k in STAGE_KEYS or k in LIMITS or (k.startswith("bridge.") and len(k) > 7)
+    return (k in _loop_keys() or k in STAGE_KEYS or k in LIMITS or (k.startswith("bridge.") and len(k) > 7)
+            or (k.startswith("crit.") and (k[5:] in CRIT or k[5:] in CRIT_EXTRA)))
 
 
 def _loop_keys():

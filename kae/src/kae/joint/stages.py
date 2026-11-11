@@ -25,6 +25,7 @@ Stage by stage:
 from __future__ import annotations
 
 from kae.budget import now as clock_now
+import collections
 import json
 import math
 import os
@@ -66,6 +67,7 @@ def _project(src_board, dst_board):
 # Every `opts` key the stages read (kae.joint.cli rejects a --set key that neither these, the
 # loop's DEFAULTS, the placer's limits (kae.route.constraints.DEFAULTS) nor bridge.KEY name).
 STAGE_KEYS = frozenset({
+    "module_poses_only", "module_clock",
     # set by kae.joint.cli from its flags
     "keep", "no_physics", "no_modules", "budget_s", "route_parallel", "first_last_mile", "first_blocked",
     # placer and module stage
@@ -218,11 +220,18 @@ class KaeStages:
         if time_s is None and self.opts.get("budget_s"):
             t_mod = max(t_mod, 0.05 * float(self.opts["budget_s"]))   # a long budget: more module search
         try:
-            sess = Session(lay.board, brief=brief, opts=dict(rails="none"), log=lambda m: None, board=board,
+            # --set crit.KEY=VALUE: any option of the critical session (kae.route.critical DEFAULTS: escape_mm,
+            # guards, rails_joint, complete_mm, island_mm ...); rails="none" stays unless set
+            copts = dict(rails="none", **{k[5:]: v for k, v in self.opts.items() if k.startswith("crit.")})
+            for k in ("kinds", "guards"):         # crit.kinds=decap,crystal: a list without JSON's quotes
+                if isinstance(copts.get(k), str):
+                    copts[k] = tuple(x for x in copts[k].strip("[]").replace(" ", "").split(",") if x)
+            sess = Session(lay.board, brief=brief, opts=copts, log=lambda m: None, board=board,
                            terms=self.terms)
             moved, copper, rep = optimize_modules(board, brief, terms=self.terms, locked=sorted(locked),
                                                   log=lambda m: self.log(f"modules: {m}"), time_s=t_mod, session=sess,
-                                                  rails=only is None, modules=None if only is None else list(only))
+                                                  rails=only is None, modules=None if only is None else list(only),
+                                                  clock=bool(self.opts.get("module_clock")), t_start=t0)
         except Exception as e:
             import traceback
             traceback.print_exc(file=sys.stderr)
@@ -231,10 +240,13 @@ class KaeStages:
             _project(self.input, out)
             new.info["modules"] = dict(error=f"{type(e).__name__}: {e}")
             return new
-        owners = {}
+        t_opt = clock_now()
+        owners, piece = {}, {}
         for item in sess.space.routed:
             if item.uuid and item.owner:
                 owners[item.uuid] = str(item.owner[0])
+                piece[item.uuid] = (str(item.owner[0]).split(":")[0] + "/"
+                                    + str(item.owner[1] if len(item.owner) > 1 else "").split(":")[0])
         guards = {}
         mods = list(sess.modules)
         try:
@@ -245,21 +257,41 @@ class KaeStages:
                     guards[m.id] = g
         finally:
             sess.modules = mods
+        t_guard = clock_now()
         write_joint(lay.board, out, moved, copper, hazards=self.writer_hz)
         _project(self.input, out)
         new.poses.update({u: tuple(p) for u, p in moved.items()})
+        # what the module stage laid, by owner (module kind or rail, and the piece: e.g. decap/loop, rail/trunk,
+        # decap/pad = a completion join, decap/island = an island join, stitch, spokes), before any ablation drops it
+        by_owner = collections.Counter(piece.get(getattr(c, "uuid", None), "?/?") for c in copper)
+        if self.opts.get("module_poses_only"):
+            # an ablation: the module stage's part moves stay, its copper and guard pours go, so the bridge routes
+            # every net from that placement
+            from kae.route import critical_write as W
+            bare = self._path(it, "modules_bare")
+            W.edit(out, bare, remove=[c.uuid for c in copper if c.uuid])
+            _project(self.input, bare)
+            shutil.copy2(bare, out)
+            _project(self.input, out)
+            copper, owners, guards = [], {}, {}
         new.crit |= {c.uuid for c in copper}
         new.owners.update(owners)
         for m in mods:
             new.status[m.id] = m.status
             new.guards.pop(m.id, None)
         new.guards.update(guards)
+        t_write = clock_now()
         new.stage = self._stage_values(out, it)
         dt_mod = clock_now() - t0
         new.info["modules"] = dict(seconds=round(dt_mod, 1), budget_s=round(t_mod, 1),
                                    stop="clock" if float(rep.get("seconds") or 0.0) >= 0.95 * t_mod else "done",
                                    moved=sorted(rep.get("moved") or {}),
-                                   copper=len(copper), modules=[dict(id=m["id"], u0=m.get("u0"), u=m.get("u"),
+                                   copper=len(copper), copper_by_owner=dict(by_owner), guard_zones=sum(len(g) for g in guards.values()),
+                                   escape_corridors=len(getattr(sess.router, "escapes", ()) or ()),
+                                   clock=rep.get("clock"), opt_s=rep.get("seconds"), opt_phase_s=rep.get("phase_s"),
+                                   phase_s=dict(session_and_modules=round(t_opt - t0, 1), guards=round(t_guard - t_opt, 1),
+                                                write=round(t_write - t_guard, 1), stage_values=round(clock_now() - t_write, 1)),
+                                   modules=[dict(id=m["id"], u0=m.get("u0"), u=m.get("u"),
                                                                      status=m.get("status"))
                                                                 for m in rep.get("modules") or []])
         return new
