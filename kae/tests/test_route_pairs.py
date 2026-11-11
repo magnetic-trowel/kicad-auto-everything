@@ -65,3 +65,18 @@ def test_scorecard_pair_rows_carry_tier_and_feed_the_hazard():
     assert rows[0]["coupled_3w"] > 0.5 and "no_ref_mm" in rows[0]
     assert [h["code"] for h in P.hazards(near)] == []
     assert "pair_uncoupled" in [h["code"] for h in P.hazards(far)]
+
+
+def test_scorecard_tier_sees_a_pair_class_with_no_interface():
+    from kae.board.model import NetClass, Rules
+    from kae.bus.scorecard import board_scorecard
+    from test_bus import CONN, fp, mk_board, tr
+    nets = ["/SIG_P", "/SIG_N", "/X"]
+    b = mk_board([fp("J1", CONN, [(0.0, 0.0), (0.0, 0.65), (0.0, 3.0)], nets), fp("J2", CONN, [(20.0, 0.0), (20.0, 0.65), (20.0, 3.0)], nets)])
+    b.rules = Rules(netclasses={"Default": NetClass(name="Default", diff_pair_width=0.2, diff_pair_gap=0.25),
+                                "HS": NetClass(name="HS", diff_pair_width=0.12, diff_pair_gap=0.12)})
+    for n in ("/SIG_P", "/SIG_N"):
+        b.nets[n].netclass = "HS"
+    b.tracks += tr("/SIG_P", (0.0, 0.0), (20.0, 0.0)) + tr("/SIG_N", (0.0, 0.65), (20.0, 0.65))
+    rows = [r for r in board_scorecard(b)["pairs"] if r.get("p") in ("/SIG_P", "/SIG_N")]
+    assert rows and rows[0]["tier"] == "rule"
