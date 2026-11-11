@@ -462,3 +462,20 @@ def test_intent_totals_leave_out_loss_part_and_count_observations(tmp_path):
     out = kaeres.intent_table(rows, ["human", "arm"], tmp_path)
     assert out[6].split(" | ")[:6] == ["| human", "2", "1", "30.0", "20.0", "1.000 |"]
     assert out[7].split(" | ")[:6] == ["| arm", "1", "0", "40.0", "30.0", "1.500 |"]
+
+
+def test_mfg_of_prefers_a_refilled_measurement():
+    ed = dict(a=dict(mfg=dict(refilled=False, fab_class_jlcpcb="hdi"), at="2026-11-09"),
+              b=dict(mfg=dict(refilled=True, fab_class_jlcpcb="standard"), at="2026-11-01"), c=dict(score=dict(clean=True)))
+    assert kaeres.mfg_of(ed)["fab_class_jlcpcb"] == "standard"
+    assert kaeres.mfg_of(dict(c=dict(score={}))) == {}
+
+
+def test_mfg_table_is_silent_without_measurements_and_labels_not_targets():
+    r0 = dict(_r("a", "b1", 0, True), mfg_fab_class_jlcpcb=None, mfg_acute_per_m=None)
+    assert kaeres.mfg_table([r0], ["a"]) == []
+    c = {f"mfg_{k}": v for k, v in dict(ca_short_per_m_pours=2.0, width_at_class_min=0.9, copper_pair_diff_pp=30.0, copper_flag=True, vip_small_signal=2,
+                                        fab_class_jlcpcb="standard", phantom_share=0.1, exp_breakout_40um=0.001, acute_per_m=1.5).items()}
+    out = kaeres.mfg_table([dict(_r("a", "b1", 0, True), **c)], ["a", "absent"])
+    assert "not targets" in out[0] and "Manufacturability" in out[0]
+    assert out[6].split(" | ")[1:6] == ["1", "2.000", "0.900", "30.0", "1"] and "1 / 0 / 0 / 0" in out[6]
