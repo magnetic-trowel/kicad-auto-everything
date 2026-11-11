@@ -2,8 +2,26 @@
 <!-- SPDX-License-Identifier: CC-BY-4.0 -->
 # kaeq: job queue for a shared machine
 
-A single stdlib-Python file. Many Claude sessions submit shell commands; one daemon
+Stdlib-only Python. Many Claude sessions submit shell commands; one daemon
 starts them as room appears and tells the *submitting* session what broke.
+
+## Layout
+
+| File | What it is |
+|---|---|
+| `kaeq.py` | the CLI (`kaeq submit`, `status`, `wait`, ...); re-exports everything below |
+| `kaeqlib/daemon.py` | the daemon: each tick admits, leases, freezes, measures, reports health |
+| `kaeqlib/leases.py` | memory policy, pure: `lease_plan` (grants, freezes, evictions), the pooled forecast, `keep_flags` |
+| `kaeqlib/cpu.py` | CPU admission, pure: the run-queue quantile and its controller, timed jobs' pooled bursts |
+| `kaeqlib/forecast.py` | run-time model (owner x board) and the queue forecast kaeqtop shows |
+| `kaeqlib/host.py` | the machine: `Host` (what the daemon reads; tests pass their own) and cgroup/systemd actions |
+| `kaeqlib/store.py` | paths, config and `DEFAULTS`, the database, events, job logs, traces, the deployed record |
+| `kaeqlib/gitsnap.py`, `units.py`, `consts.py` | git snapshots; sizes, durations, job times; shared constants |
+| `kaeqtop.py` | the live text view |
+| `sim.py`, `sim_freeze.py` | trace replay; `sim_freeze` runs kaeq's own `lease_plan` (`--policies kaeq:setting=value,...`) |
+
+Policy changes go in the pure modules and can be replayed on recorded traces (`sim_freeze.py`) before they
+reach the live queue. `install.sh` installs `kaeq.py`, `kaeqlib/` and `kaeqtop.py` together.
 
 ## Setup (once, on the host)
 

@@ -8,6 +8,8 @@ mkdir -p ~/.local/bin
 # a stable copy: the daemon must not change (or vanish) when this checkout switches branches
 mkdir -p ~/.local/share/kaeq
 install -m 755 "$here/kaeq.py" ~/.local/share/kaeq/kaeq.py
+rm -rf ~/.local/share/kaeq/kaeqlib && mkdir -p ~/.local/share/kaeq/kaeqlib
+install -m 644 "$here"/kaeqlib/*.py ~/.local/share/kaeq/kaeqlib/
 install -m 755 "$here/kaeqtop.py" ~/.local/share/kaeq/kaeqtop.py
 # what is deployed: commit, branch, local changes, whether main has it (kaeq doctor, kaeqtop, the daemon's health check)
 python3 - "$here" <<'PY'
