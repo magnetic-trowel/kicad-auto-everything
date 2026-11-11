@@ -35,6 +35,8 @@ when KiCad's DRC on the re-opened board is better.
 """
 from __future__ import annotations
 
+from kae.budget import charge
+from kae.budget import now as clock_now
 import numpy as np
 from shapely import STRtree
 from shapely.geometry import Point, Polygon, box
@@ -227,6 +229,7 @@ def _try(gr, sp, net, src, others, win, widths):
     dst = [a for p in others for a in _anchors(p, max(widths) / 2 + 0.02, clip=win)]
     if not dst:
         return None
+    charge("lastmile_try")
     grid = gr.window([Anchor(win, tuple(sp.cu))], margin=0.0)
     for w in widths:
         # only the layers whose rules allow this width (sdi-mipi: ddr3 0.2 mm outside, at most
@@ -377,7 +380,7 @@ def close(board, info, plan, fills, out, nets=None, sev=None, fixed=(), log=prin
     locked. `board` has its project files beside it; `fills`: pcbnew_io.zone_fills(board)
     ["zones"] (refilled with those rules); `fixed`: uuids never ripped (pre-routes); `soft`:
     locked uuids a last rip-up tier may take out (critical copper; the caller judges the
-    physics). `max_joins` bounds the joins (None: no bound), `deadline` (time.monotonic())
+    physics). `max_joins` bounds the joins (None: no bound), `deadline` (clock_now())
     the time: no join starts after it; `rip` False: joins around everything only, nothing is
     ripped. Rip-up works in transactions (see below); `txn` False keeps every join (for a caller
     that reroutes the ripped nets afterwards). Returns {joined, failed, ripped: [uuid],
@@ -386,7 +389,7 @@ def close(board, info, plan, fills, out, nets=None, sev=None, fixed=(), log=prin
     cap = max_joins if max_joins is not None else float("inf")
 
     def more():
-        return joins < cap and (deadline is None or time.monotonic() < deadline)
+        return joins < cap and (deadline is None or clock_now() < deadline)
     soft = set(soft or ())
     b = load(board)
     sp = Space(b, info, plan=plan, sev=sev or {})
@@ -648,8 +651,8 @@ def plane_escapes(board, info, plan, fills, out, sev=None, log=print, deadline=N
         # the plan needs its LP whatever the share: escape_min_s at least (a restart's later
         # attempts reuse it from the cache, escape._cache_get)
         esc = dict(packages=[], blocked=[], laid=0, wanted=0) if eo.get("escape_plan") is False else escape.run(sp, info, eo, log=log,
-                         deadline=None if deadline is None else time.monotonic() + max(
-                             float(eo.get("escape_min_s", 45.0)), 0.7 * max(0.0, deadline - time.monotonic())))
+                         deadline=None if deadline is None else clock_now() + max(
+                             float(eo.get("escape_min_s", 45.0)), 0.7 * max(0.0, deadline - clock_now())))
         rep["escape"] = esc
         if not lay_plan:
             rep["dog_bones"] = escape.dog_bones(sp, info, log=log)    # after the plan: it plans the bare board
@@ -659,7 +662,7 @@ def plane_escapes(board, info, plan, fills, out, sev=None, log=print, deadline=N
     if fp and CN.setting_env("escape_ground_vias", board, escape_opts):
         rep["ground_vias"] = ground_vias(sp, b, plan, fp, log=log)
     for net in sorted(fp):
-        if deadline is not None and time.monotonic() > deadline:
+        if deadline is not None and clock_now() > deadline:
             break
         if not any(it.net == net and it.kind == "pad" for it in sp.pads):
             continue
@@ -671,7 +674,7 @@ def plane_escapes(board, info, plan, fills, out, sev=None, log=print, deadline=N
         if not planes:
             continue
         for p in ps:
-            if deadline is not None and time.monotonic() > deadline:
+            if deadline is not None and clock_now() > deadline:
                 break
             if any(n.kind == "fill" for n in p) or not any(n.kind == "pad" for n in p):
                 continue

@@ -9,13 +9,17 @@ results, so every run gets a private, empty user-data
 folder (`--user_data_path`) and an environment without FREEROUTING__* variables, and every
 setting the bridge depends on is passed on the command line.
 
-The bridge prefers the magnetic-trowel fork (it honours `min_trace_width_um`; see
-tools/research/routing/install_freerouting_fork.sh): KAE_BRIDGE_FREEROUTING, else the newest
-KAE_HOME/kae-freerouting-fork-*/bin/freerouting. Without one it falls back as kaebench does:
-KAE_FREEROUTING (a binary or a .jar), the native bundle in KAE_HOME (default
-~/.cache/kaebench), `freerouting` on PATH, a jar in KAE_HOME. Settings an older build does not
-know are logged as unknown and ignored.
+The build is always named, never guessed (command()): KAE_BRIDGE_FREEROUTING, else the build
+pinned in KAE_HOME/kae-freerouting.pin (default KAE_HOME ~/.cache/kaebench; written by
+tools/research/routing/install_freerouting_fork.sh REF --pin), else KAE_FREEROUTING; with none of
+them it fails. It used to take the newest KAE_HOME/kae-freerouting-fork-* by file time, so an
+experiment's wrapper installed there silently became every run's router. The bridge wants the
+magnetic-trowel fork (it honours `min_trace_width_um`). Settings an older build does not know are
+logged as unknown and ignored.
 """
+import re
+
+from kae import budget
 import fcntl
 import json
 import os
@@ -42,27 +46,36 @@ class FreeroutingError(RuntimeError):
     pass
 
 
+PIN_FILE = "kae-freerouting.pin"
+
+
+def _as_command(path):
+    return ["java", "-jar", path] if str(path).endswith(".jar") else [str(path)]
+
+
 def command():
-    """Command prefix for Freerouting."""
+    """Command prefix for Freerouting: KAE_BRIDGE_FREEROUTING, else the build named in
+    KAE_HOME/kae-freerouting.pin (a path, absolute or relative to KAE_HOME), else KAE_FREEROUTING.
+    Raises FreeroutingError when none is set or the pinned build is missing: a run never picks a
+    build by itself."""
     env = os.environ.get("KAE_BRIDGE_FREEROUTING")
     if env:
-        return ["java", "-jar", env] if env.endswith(".jar") else [env]
-    fork = sorted(KAE_HOME.glob("kae-freerouting-fork-*/bin/freerouting"), key=lambda q: q.stat().st_mtime)
-    if fork:
-        return [str(fork[-1])]
+        return _as_command(env)
+    pin = KAE_HOME / PIN_FILE
+    if pin.is_file():
+        text = pin.read_text().strip()
+        path = Path(text).expanduser()
+        if not path.is_absolute():
+            path = KAE_HOME / path
+        if not text or not path.is_file():
+            raise FreeroutingError(f"{pin} names {text!r}, which is not a file: fix or rewrite the pin")
+        return _as_command(path)
     env = os.environ.get("KAE_FREEROUTING")
     if env:
-        return ["java", "-jar", env] if env.endswith(".jar") else [env]
-    native = sorted(KAE_HOME.glob("freerouting-*-linux-x64/bin/freerouting"))
-    if native:
-        return [str(native[-1])]
-    exe = shutil.which("freerouting")
-    if exe:
-        return [exe]
-    jars = sorted(KAE_HOME.glob("freerouting-*.jar"))
-    if jars:
-        return ["java", "-jar", str(jars[-1])]
-    raise FreeroutingError("Freerouting not found; set KAE_FREEROUTING or run bench/scripts/setup.sh")
+        return _as_command(env)
+    raise FreeroutingError(
+        f"No Freerouting build is pinned: set KAE_BRIDGE_FREEROUTING, or write a build's path into {pin} "
+        "(tools/research/routing/install_freerouting_fork.sh REF --pin does)")
 
 
 @dataclass
@@ -186,8 +199,42 @@ GRACE_S = 45.0
 SLOT_WARN = 0.10     # a slot wait above this share of the budget is logged
 
 
+def _pins(dsn):
+    """Pins on the nets of a Specctra file: a pass's time grows as its square."""
+    try:
+        text = Path(dsn).read_text(errors="replace")
+    except OSError:                      # the router reports a missing input itself
+        return 1
+    return max(1, sum(len(m.split()) for m in re.findall(r"\(pins\s+([^)]*)\)", text)))
+
+
+PASS_DONE = re.compile(r"Auto-routing pass #\d+ on board .* was completed")
+
+
 def route(dsn, ses, workdir, *, passes=0, settings=None, budget_s=600.0, margin_s=None, hard_s=None,
           log_path=None):
+    """_route (below). In work mode (kae.budget) the budget is a pass cap, budget_s / the nominal
+    seconds of one pass over this .dsn: Freerouting is deterministic while its job timeout does not
+    fire, so the timeout is only the run's wall ceiling, and the passes done are charged."""
+    size = _pins(dsn) ** 2
+    if not budget.work_mode():
+        run = _route(dsn, ses, workdir, passes=passes, settings=settings, budget_s=budget_s, margin_s=margin_s,
+                     hard_s=hard_s, log_path=log_path)
+        budget.charge("fr_pass_pin2", max(1, len(PASS_DONE.findall(run.log or ""))) * size)    # counted only
+        return run
+    cap = max(1, int(budget_s / max(1e-9, budget.clock().rates["fr_pass_pin2"] * size)))
+    passes = min(passes, cap) if passes else cap
+    wall = budget.wall_timeout(budget_s)
+    run = _route(dsn, ses, workdir, passes=passes, settings=settings, budget_s=wall, margin_s=30.0,
+                 hard_s=wall + GRACE_S, log_path=log_path)
+    done = len(PASS_DONE.findall(run.log or ""))
+    budget.charge("fr_pass_pin2", max(1, done) * size)
+    run.report["passes_done"], run.report["passes_cap"] = done, passes
+    return run
+
+
+def _route(dsn, ses, workdir, *, passes=0, settings=None, budget_s=600.0, margin_s=None, hard_s=None,
+           log_path=None):
     """Route `dsn` into `ses`. `passes` caps the autorouter passes (0 = until it stops
     improving). Freerouting's own deadline (job_timeout) is `budget_s` less its start-up
     (`margin_s`, default min(15 s, 10%)) and less the time spent waiting for a host slot
@@ -210,6 +257,7 @@ def route(dsn, ses, workdir, *, passes=0, settings=None, budget_s=600.0, margin_
             return hit
     # the wait for a slot is part of the caller's budget: Freerouting gets what is left of it,
     # and after the budget it runs without a slot (a wait without end would hang the caller)
+    # (work mode: a wait costs no budget, so it waits as long as the wall ceiling allows)
     slot = _Slot(timeout=max(1.0, budget_s - margin - 5.0)).__enter__()
     waited = slot.waited or 0.0
     if slot.gave_up:

@@ -22,6 +22,8 @@
 """
 from __future__ import annotations
 
+from kae.budget import cpsat_charge, cpsat_limit
+from kae.budget import now as clock_now
 import math
 import time
 from dataclasses import dataclass, field
@@ -562,16 +564,17 @@ def micro_place(P, members, structs, anchor, time_s=2.0, top_k=3, workers=2, see
     m.minimize(sum(obj))
     layouts = []
     rot_lits = [l for i in members if i != anchor for l in V[i][2]]
-    t_end = time.monotonic() + time_s * top_k
+    t_end = clock_now() + time_s * top_k
     for _ in range(top_k):
-        left = t_end - time.monotonic()
+        left = t_end - clock_now()
         if left <= 0.05:
             break
         s = cp_model.CpSolver()
-        s.parameters.max_time_in_seconds = min(time_s, left)
         s.parameters.num_workers = workers
+        cpsat_limit(s.parameters, min(time_s, left))
         s.parameters.random_seed = seed
         st = s.solve(m)
+        cpsat_charge(s)
         if st not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
             break
         off = {}
@@ -612,7 +615,7 @@ def build_macros(P, structs, time_s=10.0, top_k=3, workers=2, seed=0, log=None, 
     n_try = max(top_k, candidates) if terms is not None else top_k
     # the budget: half to the CP-SAT proposals, half to annealing them on the terms (whose
     # deltas cost milliseconds on big boards); a macro never takes more than its share
-    t_start = time.monotonic()
+    t_start = clock_now()
     deadline = t_start + time_s
     per = max(0.3, 0.5 * time_s / len(groups) / max(1, n_try))
     out = []
@@ -630,10 +633,10 @@ def build_macros(P, structs, time_s=10.0, top_k=3, workers=2, seed=0, log=None, 
                 rerank(P, mac, terms)
                 # anneal the best few layouts on the place terms themselves, within this
                 # macro's share of what is left of the budget
-                share = max(0.0, deadline - time.monotonic()) / max(1, len(groups) - gi)
+                share = max(0.0, deadline - clock_now()) / max(1, len(groups) - gi)
                 for lay0 in list(mac.layouts[:top_k]):
                     better = refine(P, mac, lay0, terms, seed=seed,
-                                    deadline=time.monotonic() + max(0.05, share / top_k))
+                                    deadline=clock_now() + max(0.05, share / top_k))
                     if better is not None:
                         mac.layouts.append(better)
                 rerank(P, mac, terms)
@@ -726,11 +729,11 @@ def refine(P, mac, lay, terms, moves=3000, seed=0, w_overlap=5.0, w_compact=0.02
     r0 = max(2, int(2.0 / g))
     T0 = 0.05 * max(1e-3, abs(phys))
     best = None
-    t_start = time.monotonic()
+    t_start = clock_now()
     tfrac = 0.0
     for it in range(moves):
         if deadline is not None and (it & 31) == 0:
-            now = time.monotonic()
+            now = clock_now()
             if now > deadline:
                 break
             tfrac = (now - t_start) / max(1e-6, deadline - t_start)

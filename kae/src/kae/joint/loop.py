@@ -32,6 +32,7 @@ same result whenever no time budget binds (a time-bound stage stops at the clock
 """
 from __future__ import annotations
 
+from kae.budget import now as clock_now
 import time
 
 from .feedback import CongestionHistory, error_spots, physics_spots, plan_windows, unrouted_spots
@@ -190,12 +191,12 @@ class JointLoop:
     def run(self, output, time_s=900.0, seed=0, start=None):
         """start: an already placed board path (skip the placer), else the stages place."""
         o = self.opts
-        t0 = time.monotonic()
+        t0 = clock_now()
         reserve = max(float(o["reserve"]), 0.04 * time_s)
         deadline = t0 + time_s
 
         def left():
-            return deadline - time.monotonic() - reserve
+            return deadline - clock_now() - reserve
 
         fin_res = max(float(o["finish_min_s"]), float(o["finish_share"]) * time_s) if o["finish"] else 0.0
 
@@ -207,18 +208,18 @@ class JointLoop:
         rep = dict(seed=seed, time_s=time_s, opts={k: v for k, v in o.items()}, iterations=rows)
         self.rep = rep            # what the run got done so far, if a later stage raises (cli: "partial")
         # ---- iteration 0: the staged pipeline
-        t = time.monotonic()
+        t = clock_now()
         if start is None:
             lay = st.place(derive_seed(seed, 0), time_s=max(20.0, o["place_share"] * time_s))
         else:
             lay = st.layout_from(start)
-        t_place = time.monotonic() - t
+        t_place = clock_now() - t
         if o.get("modules", True):
             lay = st.modules(lay, 0)
         route_s = max(30.0, o["route_share"] * left())
         lay = st.route(lay, 0, seed=seed, time_s=route_s)
         card, fb = st.evaluate(lay, 0)
-        t_iter0 = time.monotonic() - t
+        t_iter0 = clock_now() - t
         rows.append(self._row(0, card, accepted=True, why="staged pipeline", seconds=round(t_iter0, 1),
                               place_s=round(t_place, 1), stages=dict(lay.info)))
         self.log(f"iter 0: {card.unconnected} unconnected, {card.errors} errors, {card.placement_errors} placement "
@@ -231,7 +232,7 @@ class JointLoop:
         tries = {}
         max_att = int(o["max_attempts"]) if o["max_attempts"] is not None else 2 + int(time_s // 1800)
         rep["max_attempts"] = max_att
-        cycles, cycle_t0, cycle_kept, idle = 0, time.monotonic(), 0, 0
+        cycles, cycle_t0, cycle_kept, idle = 0, clock_now(), 0, 0
         # a window costs far less than iteration 0 (local re-place, local rip-up, incremental
         # route): start from the minimum and learn from the windows themselves
         est = float(o["min_iter_s"])
@@ -264,10 +265,10 @@ class JointLoop:
                 if idle >= int(o["patience_cycles"]):
                     stop = f"no improvement (cycle {cycles})"
                     break
-                if o["recycle"] and spots and time.monotonic() - cycle_t0 >= o["min_cycle_s"]:
+                if o["recycle"] and spots and clock_now() - cycle_t0 >= o["min_cycle_s"]:
                     tries = {}
                     cycles += 1
-                    cycle_t0, cycle_kept = time.monotonic(), 0
+                    cycle_t0, cycle_kept = clock_now(), 0
                     self.log(f"cycle {cycles}: all windows tried; again with new seeds")
                     continue
                 stop = "no window left to try"
@@ -277,7 +278,7 @@ class JointLoop:
             attempt = tries.get(base0.key, 0)
             win = escalate(base0, attempt, parts, bounds, o_win)
             it += 1
-            t = time.monotonic()
+            t = clock_now()
             bump = sorted({r for s in win.spots if s.kind == "unrouted" for r in s.refs})
             legal = {}
             for s in win.spots:
@@ -295,7 +296,7 @@ class JointLoop:
             tries[base0.key] = attempt + 1
             if cand is None:
                 rows.append(dict(iter=it, window=win.to_dict(), accepted=False, why=rrep.get("outcome"),
-                                 seconds=round(time.monotonic() - t, 1), repair=rrep))
+                                 seconds=round(clock_now() - t, 1), repair=rrep))
                 self.log(f"iter {it}: window {list(win.refs)}: {rrep.get('outcome')}")
                 continue
             try:
@@ -303,11 +304,11 @@ class JointLoop:
             except Exception as e:  # noqa: BLE001
                 self.log(f"evaluate failed: {type(e).__name__}: {e}")
                 rows.append(dict(iter=it, window=win.to_dict(), accepted=False, why=f"evaluate error: {e}",
-                                 seconds=round(time.monotonic() - t, 1), repair=rrep))
+                                 seconds=round(clock_now() - t, 1), repair=rrep))
                 continue
             self._history(hist, cand, fb)
             keep, why = accept(best_card, card, phys_slack=o["phys_slack"], eff_tiebreak=bool(o["eff_tiebreak"]))
-            dt = time.monotonic() - t
+            dt = clock_now() - t
             est = max(float(o["min_iter_s"]), 0.5 * est + 0.5 * dt)
             rows.append(self._row(it, card, window=win.to_dict(), accepted=keep, why=why, seconds=round(dt, 1),
                                   repair=rrep, history=hist.summary()))
@@ -345,7 +346,7 @@ class JointLoop:
                 if not released:
                     break
             it += 1
-            t = time.monotonic()
+            t = clock_now()
             try:
                 # the first try leaves time for the second one
                 share = 0.6 if (mode is None and len(tries_fin) > 1) else 0.85
@@ -354,7 +355,7 @@ class JointLoop:
                 keep, why = accept(best_card, card, phys_slack=o["phys_slack"], eff_tiebreak=bool(o["eff_tiebreak"]))
             except Exception as e:  # noqa: BLE001 - the incumbent stands
                 cand, card, fb, keep, why = None, None, None, False, f"error: {type(e).__name__}: {e}"
-            dt = time.monotonic() - t
+            dt = clock_now() - t
             row = dict(iter=it, finish=mode or True, released=released, accepted=keep, why=why, seconds=round(dt, 1))
             if card is not None:
                 row = self._row(it, card, finish=mode or True, released=released, accepted=keep, why=why,
@@ -376,7 +377,7 @@ class JointLoop:
         if (o["finish"] and not finished and not best_card.clean and nets and best_card.checked.get("drc", True)
                 and hasattr(st, "close_open")):
             it += 1
-            t = time.monotonic()
+            t = clock_now()
             budget = max(float(o["last_mile_min_s"]), left())
             try:
                 cand = st.close_open(best, it, nets, time_s=budget)
@@ -384,7 +385,7 @@ class JointLoop:
                 keep, why = accept(best_card, card, phys_slack=o["phys_slack"], eff_tiebreak=bool(o["eff_tiebreak"]))
             except Exception as e:  # noqa: BLE001 - the incumbent stands
                 cand, card, fb, keep, why = None, None, None, False, f"error: {type(e).__name__}: {e}"
-            dt = time.monotonic() - t
+            dt = clock_now() - t
             row = dict(iter=it, finish="last mile", accepted=keep, why=why, seconds=round(dt, 1), budget_s=round(budget, 1))
             if card is not None:
                 row = self._row(it, card, finish="last mile", accepted=keep, why=why, seconds=round(dt, 1),
@@ -404,8 +405,8 @@ class JointLoop:
         # finishing bridge's own diagnosis when it made this board, else one run now (OUTPUT is
         # written); the BGA escape certificates (balls no routing can escape) ride along
         rep["final"].update(self._final_blocked(st, best, best_card, best_fb, best_it, rows, it,
-                                                lambda: deadline - time.monotonic(), time_s))
-        rep["seconds"] = round(time.monotonic() - t0, 1)
+                                                lambda: deadline - clock_now(), time_s))
+        rep["seconds"] = round(clock_now() - t0, 1)
         self.log(f"stop: {stop}; final {best_card.unconnected} unconnected, {best_card.errors} errors, physics "
                  f"{best_card.physics:.3f}; {rep['accepted']} of {len(rows) - 1} iterations kept ({rep['seconds']}s)")
         return rep

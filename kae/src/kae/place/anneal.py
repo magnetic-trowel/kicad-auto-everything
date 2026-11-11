@@ -32,6 +32,8 @@ does not bind.
 """
 from __future__ import annotations
 
+from kae.budget import charge, cpu_now
+from kae.budget import now as clock_now
 import math
 import random
 import time
@@ -697,13 +699,13 @@ class Annealer:
 
     def run(self, cpu_s, moves_per_part=4000, max_moves=None, log_every=0.25, deadline=None):
         """Anneal for at most cpu_s CPU seconds (and, with `deadline`, until that
-        time.monotonic(): under CPU contention wall time runs ahead of CPU time)."""
+        clock_now(): under CPU contention wall time runs ahead of CPU time)."""
         n = len(self.active)
         if n == 0:
             return self.report(0.0)
         N = max_moves or moves_per_part * n
         self.leg_total = self.total_leg()
-        t0 = time.process_time()
+        t0 = cpu_now()
         r0 = max(2, int(0.25 * self._span()))
         # initial temperature from uphill deltas of sampled moves (not applied)
         ups = []
@@ -726,17 +728,17 @@ class Annealer:
         batch = 200
         next_log = log_every
         best = None
-        w0 = time.monotonic()
+        w0 = clock_now()
         wall = (deadline - w0) if deadline is not None else None
         self.ended = "moves"
         while done < N:
             # cool on whichever runs out first: planned moves, CPU budget or wall time, so a
             # run cut short by its budget still ends cold (not at a random hot state)
             frac = done / N
-            el = time.process_time() - t0
+            el = cpu_now() - t0
             tf = el / cpu_s if cpu_s > 0 else 0.0
             if wall:
-                tf = max(tf, (time.monotonic() - w0) / wall)
+                tf = max(tf, (clock_now() - w0) / wall)
             if tf > frac + 0.02:          # only when a budget binds (a seeded run stays repeatable)
                 frac = tf
                 self.ended = "budget"
@@ -752,6 +754,7 @@ class Annealer:
                     continue
                 S, newpos, kind = mv
                 self.try_move(S, newpos, T, lam, kind)
+            charge("anneal_move_py", batch)
             done += batch
             if self.leg_total == 0:
                 c = self.cost(lam)
@@ -768,10 +771,11 @@ class Annealer:
                 mv = self.propose(1)
                 if mv is not None:
                     self.try_move(mv[0], mv[1], T1, self.lam1, mv[2])
+            charge("anneal_move_py", 5 * batch)
             done += 5 * batch
         self.final_lam = self.lam0 * (self.lam1 / self.lam0) ** min(1.0, done / N)
         self.best_legal = best
-        return self.report(time.process_time() - t0, planned=N, done=done)
+        return self.report(cpu_now() - t0, planned=N, done=done)
 
     def report(self, cpu, planned=0, done=0):
         return dict(cpu_s=round(cpu, 2), planned_moves=planned, moves=done,

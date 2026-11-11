@@ -23,6 +23,7 @@ board's bounding box, so those load with on_board=False. Board.outline adds the 
 graphics of on-board footprints (as pcbnew does); off-board footprints keep theirs in
 `Footprint.edge_cuts`.
 """
+from kae.budget import work_mode
 import json
 import math
 import re
@@ -1099,6 +1100,11 @@ def load(path, *, arc_tol=geom.ARC_TOL, rules=True):
             rd.zone(node)
     tracks = [rd.track(n, False) for n in kids(tree, "segment")] + [rd.track(n, True) for n in kids(tree, "arc")]
     vias = [rd.via(n) for n in kids(tree, "via")]
+    if work_mode():
+        # KiCad writes tracks in UUID order, and a routed board's UUIDs are new on every import: the
+        # file's order differs from run to run, and with it everything that iterates over the copper
+        tracks.sort(key=lambda t: (t.layer, t.net, t.start, t.end, t.mid or (), t.width))
+        vias.sort(key=lambda v: (v.x, v.y, v.net, v.size, v.drill))
 
     # outline: board-level Edge.Cuts decide what is on the board; on-board footprints'
     # Edge.Cuts (cut-outs, card edges) join the outline as pcbnew does

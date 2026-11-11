@@ -36,6 +36,7 @@ whose new copper is then too close to the restored copper), then by distance, th
 """
 from __future__ import annotations
 
+from kae.budget import now as clock_now
 import argparse
 import json
 import math
@@ -101,7 +102,7 @@ class Taut:
         from .bridge import severities
         from .critical_space import Space, Item
         from . import power_copper as PC
-        t0 = time.monotonic()
+        t0 = clock_now()
         self.Item = Item
         self.o = {**DEFAULTS, **(opts or {})}
         self.log = log
@@ -153,7 +154,7 @@ class Taut:
         self.hazards, self._flagged, self._currents = [], set(), None
         self.necks, self.over_fixed = {}, {}           # per net: necks made, overhanging entries removed
         self.changed_nets = set()
-        self.t_setup = time.monotonic() - t0
+        self.t_setup = clock_now() - t0
         log(f"[taut] {len(self.recs)} tracks, {len(self.fixed_nets)} nets fixed "
             f"({', '.join(f'{k} {v}' for k, v in self._count_why().items())}); setup {self.t_setup:.1f}s")
 
@@ -1040,9 +1041,9 @@ class Taut:
 
     # ---------------------------------------------------------------- passes
     def run_passes(self):
-        t0 = time.monotonic()
+        t0 = clock_now()
         for k in range(self.o["passes"]):
-            t1 = time.monotonic()
+            t1 = clock_now()
             chains = self.chains()
             chains.sort(key=lambda c: -(_plen(c[4]) - math.dist(c[4][0], c[4][-1])))
             gain = {}
@@ -1069,13 +1070,13 @@ class Taut:
             tot = sum(gain.values())
             mx = max(gain.values()) if gain else 0.0
             self.stats["passes"].append(dict(branches=len(chains), improved=n_imp, gain_mm=round(tot, 4),
-                                             max_net_gain_mm=round(mx, 5), s=round(time.monotonic() - t1, 1)))
+                                             max_net_gain_mm=round(mx, 5), s=round(clock_now() - t1, 1)))
             self.log(f"[taut] pass {k}: {len(chains)} branches, {n_imp} shorter, -{tot:.3f} mm "
-                     f"(largest net -{mx:.4f} mm) in {time.monotonic() - t1:.1f}s")
+                     f"(largest net -{mx:.4f} mm) in {clock_now() - t1:.1f}s")
             if mx <= self.o["conv_eps"]:
                 break
         self.stats["improved"] = sum(p["improved"] for p in self.stats["passes"])
-        self.t_passes = time.monotonic() - t0
+        self.t_passes = clock_now() - t0
         return self.stats
 
     # ---------------------------------------------------------------- revert (exact)
@@ -1479,7 +1480,7 @@ def run(input_path, output_path, opts=None, workdir=None, timeout=1800, log=prin
     tightened copper is written and returned as kae.route.journal entries (one per net) in
     rep["_entries"]."""
     from . import power_copper as PC
-    t0 = time.monotonic()
+    t0 = clock_now()
     o = {**DEFAULTS, **(opts or {})}
     inp = Path(input_path).resolve()
     wd = Path(workdir or tempfile.mkdtemp(prefix="kae-taut-"))
@@ -1487,7 +1488,7 @@ def run(input_path, output_path, opts=None, workdir=None, timeout=1800, log=prin
     staged = W.stage(inp, wd / "in", "board")
     tt = Taut(staged, o, log=log)
     tt.run_passes()
-    t_plan = time.monotonic() - t0
+    t_plan = clock_now() - t0
     if not gate:
         from . import journal as J
         out = Path(output_path)
@@ -1499,7 +1500,7 @@ def run(input_path, output_path, opts=None, workdir=None, timeout=1800, log=prin
                    passes_s=round(getattr(tt, "t_passes", 0.0), 2),
                    necks=sum(tt.necks.get(n, 0) for n in nets),
                    overhang_fixed=sum(tt.over_fixed.get(n, 0) for n in nets), hazards=list(tt.hazards), gate=False,
-                   total_s=round(time.monotonic() - t0, 2))
+                   total_s=round(clock_now() - t0, 2))
         rep["stats"]["hazards"] = len(tt.hazards)
         pairs = {n: "pair:" + "|".join(sorted((n, m))) for n, m in (getattr(tt, "pair_of", None) or {}).items()}
         rep["_entries"] = J.diff_entries("taut", staged.read_text(encoding="utf-8"), out.read_text(encoding="utf-8"),
@@ -1607,14 +1608,14 @@ def run(input_path, output_path, opts=None, workdir=None, timeout=1800, log=prin
                hazards=list(tt.hazards))
     rep["stats"]["hazards"] = len(tt.hazards)
     if o.get("power_copper"):
-        t1 = time.monotonic()
+        t1 = clock_now()
         pc_out = out.with_name(out.stem + ".pc.kicad_pcb")
         pc = PC.run(out, pc_out, opts=o.get("power_copper_opts"), workdir=wd / "pc", timeout=timeout, log=log)
         shutil.copy2(pc_out, out)
         pc.pop("rounds", None)
         rep["power_copper"] = pc
-        rep["power_copper_s"] = round(time.monotonic() - t1, 2)
-    rep["total_s"] = round(time.monotonic() - t0, 2)
+        rep["power_copper_s"] = round(clock_now() - t1, 2)
+    rep["total_s"] = round(clock_now() - t0, 2)
     return rep
 
 

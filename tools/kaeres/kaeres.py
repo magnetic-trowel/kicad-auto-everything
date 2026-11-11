@@ -1651,6 +1651,15 @@ def method_table(rows, names, title):
     return out + [""]
 
 
+def _bus_section(rows, name):
+    """Report-only bus scorecard tables when the experiment's runs have them (tools/kaeres/busreport.py)."""
+    try:
+        import busreport
+        return busreport.section_for_experiment(rows, name)
+    except ImportError:
+        return []
+
+
 def cmd_exp_report(a):
     e = load_exp(a.name)
     d = exp_dir(a.name)
@@ -1735,6 +1744,7 @@ def cmd_exp_report(a):
             per[r["method"]].update(json.loads(r["errors_by_type"]))
     for typ in sorted(set().union(*per.values()), key=lambda t: -sum(per[n][t] for n in names))[:25]:
         rep.append(f"| {typ} | " + " | ".join(str(per[n][typ]) for n in names) + " |")
+    rep += _bus_section(rows, a.name)
     rep += ["", "### Router final states", "", "| method | COMPLETED | TIMED_OUT | other | none |", "|---|---|---|---|---|"]
     for m in ms.values():
         fs = Counter((r["final_state"] or "none") for r in rows if r["method_id"] == m["id"] and r["attempt"] == 0)
@@ -1909,6 +1919,7 @@ def cmd_rephysics_job(a):
     kv = code_dir(a.kae).with_name(code_dir(a.kae).name + ".venv-kae")
     pt = board_dir(bid) / "pintypes.json"
     written = 0
+    rebuild_errors = []
     groups = defaultdict(list)
     for d, r in todo:
         groups[r["harness_commit"]].append((d, r))
@@ -1936,6 +1947,8 @@ def cmd_rephysics_job(a):
             got = man["runs"].get(r["run"]) or {}
             if got.get("board"):
                 boards[r["run"]] = got["board"]
+            elif got.get("error"):
+                rebuild_errors.append(f"{r['run']}: {got['error']}")
         if not boards:
             continue
         pout = ws / f"physics-{hc[:8]}.json"
@@ -1954,7 +1967,12 @@ def cmd_rephysics_job(a):
                 **({"traceback": ph["traceback"]} if ph.get("traceback") else {})))
             written += 1
     print(f"{bid}: {written} physics evaluation(s) by {pid}", flush=True)
+    for x in rebuild_errors:
+        print(f"{bid}: rebuild failed: {x}", flush=True)
     shutil.rmtree(ws / "w", ignore_errors=True)
+    if not written and rebuild_errors:     # exit 0 here reads as "done" to the queue, with nothing measured
+        print(f"{bid}: no run could be rebuilt; no physics evaluation written", flush=True)
+        return 1
     return 0
 
 
@@ -2068,6 +2086,9 @@ def main():
     s.add_argument("--content-only", action="store_true",
                    help="only prepare the tasks and record their content and that of the methods' older tasks")
     s.set_defaults(f=cmd_job)
+    s = sub.add_parser("bus", help="report-only bus scorecard over stored runs: bus submit | report (tools/kaeres/busreport.py)")
+    s.set_defaults(f=lambda a: subprocess.call([sys.executable, str(HERE / "busreport.py"), *a.rest]))
+    s.add_argument("rest", nargs=argparse.REMAINDER)
     s = sub.add_parser("board", help="every run and score of one board")
     s.add_argument("id")
     s.set_defaults(f=cmd_board)

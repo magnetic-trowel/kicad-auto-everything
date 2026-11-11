@@ -76,3 +76,36 @@ def test_outside_reads_only_edge_cuts_graphics(tmp_path):
                  '\t(footprint "R" (locked yes) (layer "F.Cu") (at 20 10) (pad "1" smd rect (at 0 0) (size 1 1)))\n'
                  '\t(footprint "R" (layer "F.Cu") (at 200 120) (pad "1" smd rect (at 0 0) (size 1 1)))\n)\n')
     assert restart.outside(b) == 2  # the parts at (10, 10) and (200, 120); the locked one may overhang
+
+
+def _work_run(monkeypatch, tmp_path, name, delays):
+    """restart.main in work mode on a fake method: attempt k (seed k) writes `opens` from its seed
+    after delays[k % len(delays)] seconds. Returns the attempts' (k, seed, budget, resumed_from)."""
+    def fake_drc(board, inp, timeout):
+        text = Path(board).read_text()
+        return dict(types={}, unconnected=int(text.split()[1]) if text.startswith("opens") else 50, overlaps=[])
+    monkeypatch.setattr(restart, "WORK", True)
+    monkeypatch.setattr(restart, "drc", fake_drc)
+    monkeypatch.setattr(restart, "outside", lambda b: 0)
+    d = tmp_path / name
+    d.mkdir()
+    inp = d / "in.kicad_pcb"
+    inp.write_text("input\n")
+    out = d / "o" / "board.kicad_pcb"
+    table = " ".join(f"{k}:{x}" for k, x in enumerate(delays))
+    cmd = ("for kv in " + table + "; do k=${kv%:*}; [ $k = $(( @SEED@ % " + str(len(delays)) + " )) ] && sleep ${kv#*:}; done; "
+           "echo opens $(( 40 - @SEED@ % 7 )) > @OUT@")
+    monkeypatch.setattr(sys, "argv", ["restart.py", "--input", str(inp), "--output", str(out), "--time", "400", "--parallel", "2",
+                                      "--first-s", "50", "--screen", "--", cmd])
+    monkeypatch.chdir(d)
+    assert restart.main() == 0
+    import json
+    s = json.loads(next(d.rglob("summary.json")).read_text())
+    return [(x["k"], x["seed"], x["budget"], x.get("resumed_from")) for x in s["attempt_log"]], s
+
+
+def test_work_mode_schedule_does_not_depend_on_which_attempt_ends_first(monkeypatch, tmp_path):
+    a, sa = _work_run(monkeypatch, tmp_path, "fast_first", [0, 1.5, 0, 1.5])
+    b, sb = _work_run(monkeypatch, tmp_path, "slow_first", [1.5, 0, 1.5, 0])
+    assert a == b and len(a) >= 4
+    assert sa["best_seed"] == sb["best_seed"] and sa["best_rank"] == sb["best_rank"]

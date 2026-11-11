@@ -32,6 +32,8 @@ seconds with `workers` threads.
 from __future__ import annotations
 
 import collections
+
+from kae.budget import now as clock_now
 import math
 import os
 import time
@@ -145,7 +147,7 @@ def _escalate(P, st, workers, seed, log, time_s, relax_ok=False, hard_end=None):
                 continue
         ts = time_s
         if hard_end is not None:
-            ts = min(time_s, hard_end - time.monotonic())
+            ts = min(time_s, hard_end - clock_now())
             if ts < 1.0:
                 steps.append(dict(step=step, skipped="time"))
                 break
@@ -405,7 +407,7 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
                       note="the project does not waive courtyards_overlap, so level_c is the same as strict")
         res.report["severity_ladder"] = ladder
         return res
-    t0 = time.monotonic()
+    t0 = clock_now()
     end = t0 + float(time_s)
     src = None
     if brief is None:           # once for both rungs
@@ -432,14 +434,14 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         e1 = {}
         ladder["strict"] = dict(severity="strict", skipped=aborted,
                                 utilization=(r1.report.get("problem") or {}).get("utilization"),
-                                seconds=round(time.monotonic() - t0, 1))
+                                seconds=round(clock_now() - t0, 1))
         why = dict(errors=None, by_type={}, source="occupancy", reason=aborted)
         log(f"severity ladder: strict skipped ({aborted}); level_c with the whole time")
     else:
         if verify is not None and r1.poses:
             r1.verified = verify(r1, t0 + t_strict)
         e1 = placement_errors(r1)
-        ladder["strict"] = _rung_summary(r1, time.monotonic() - t0)
+        ladder["strict"] = _rung_summary(r1, clock_now() - t0)
         if not e1:
             ladder.update(rungs=1, fallback=None)
             r1.report["severity_ladder"] = ladder
@@ -447,7 +449,7 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         why = dict(errors=sum(e1.values()), by_type=e1,
                    source="exact check and KiCad DRC" if kicad_checked(r1) else "exact check")
     ladder["fallback"] = why
-    left = end - time.monotonic()
+    left = end - clock_now()
     if not aborted:
         log(f"severity ladder: strict left {why['errors']} placement errors {e1}; level_c with {left:.0f} s left")
     if left < LADDER_MIN_S and not aborted:
@@ -460,20 +462,20 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
             objects=[], evidence=dict(used="strict", strict_errors=e1, seconds_left=round(left, 1)),
             fix="Re-place with more time, or with --severity level_c."))
         return r1
-    t1 = time.monotonic()
+    t1 = clock_now()
     res2 = kicad_reserve(left)
     r2 = _place_rung(board, time_s=left - res2, brief=brief, severity="level_c", hard_end=t1 + left - res2, **kw)
     if verify is not None and r2.poses:
         r2.verified = verify(r2, end)
     e2 = placement_errors(r2)
-    ladder["level_c"] = _rung_summary(r2, time.monotonic() - t1)
+    ladder["level_c"] = _rung_summary(r2, clock_now() - t1)
     if src is not None:
         r2.report["brief"]["source"] = src
     # a rung KiCad has judged beats one only the exact check has; two judged rungs compare KiCad's counts
     keep_c = bool(aborted) or rung_rank(r2) < rung_rank(r1)
     res = r2 if keep_c else r1
     ladder.update(rungs=1 if aborted else 2, chosen="level_c" if keep_c else "strict",
-                  seconds=round(time.monotonic() - t0, 1))
+                  seconds=round(clock_now() - t0, 1))
     res.report["severity_ladder"] = ladder
     if keep_c:
         P, st = r2.problem, r2.state
@@ -520,19 +522,19 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
     passes), so a rung ends in its share; `max_util`: return at once, with report['aborted'] and
     no poses, when the parts' occupancy on a side is over this fraction of the board (they
     cannot all fit)."""
-    t0 = time.monotonic()
+    t0 = clock_now()
 
     def cap(s):     # a stage's time, within hard_end
-        return s if hard_end is None else max(1.0, min(s, hard_end - time.monotonic()))
+        return s if hard_end is None else max(1.0, min(s, hard_end - clock_now()))
 
     def late():
-        return hard_end is not None and time.monotonic() >= hard_end - 1.0
+        return hard_end is not None and clock_now() >= hard_end - 1.0
     log = log or (lambda *a, **k: None)
     workers = workers or _default_workers()
     rep = dict(seed=seed, time_s=time_s, physics=physics, workers=workers, stages={})
 
     def stage(name, t):
-        rep["stages"][name] = round(time.monotonic() - t, 3)
+        rep["stages"][name] = round(clock_now() - t, 3)
 
     def trace(name, state):
         # physics after each stage that can move parts (anneal, legalize, the exact repairs),
@@ -541,7 +543,7 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
             physics_trace(rep, name, report_terms, {p.uuid: state.pose(p.i) for p in P.parts})
 
     # ---- brief (net roles for both arms; structures only with physics)
-    t = time.monotonic()
+    t = clock_now()
     src = "given"
     if brief is None:
         try:
@@ -557,7 +559,7 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
                         labels=len((brief or {}).get("labels") or []))
     stage("brief", t)
 
-    t = time.monotonic()
+    t = clock_now()
     # Footprints that carry Edge.Cuts but sit in the staging area: the task does not say where
     # the board edge they draw goes. Held where they are and reported (default), or, with
     # edge_mate, put where their open pieces close the outline exactly.
@@ -663,7 +665,7 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
         u = max(rep["problem"]["utilization"])
         rep["aborted"] = f"occupancy {u:.3f} of the board on a side, over {max_util:g}: the parts cannot all fit"
         log(f"{P.severity_mode}: {rep['aborted']}")
-        rep["seconds"] = round(time.monotonic() - t0, 2)
+        rep["seconds"] = round(clock_now() - t0, 2)
         return Result(poses={}, report=rep, state=None, problem=P)
     n = len(P.mov)
     budget = plan_budget(time_s, n)
@@ -683,7 +685,7 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
     anneal_args = dict(anneal_args or {})
     terms_knobs = anneal_args.pop("terms_knobs", None) or {}
     seed_jitter = float(anneal_args.pop("seed_jitter", 0.0) or 0.0)
-    t = time.monotonic()
+    t = clock_now()
     if not (brief or {}).get("structures"):
         tsrc = "none (no structures in the brief)"     # nothing to price: skip the build
         rep["scorecard"] = dict(total_linear=0.0, total=0.0, structures=0, over_budget=0)
@@ -704,7 +706,7 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
             report_terms, tsrc = None, "none"
     stage("terms", t)
     if physics:
-        t = time.monotonic()
+        t = clock_now()
         terms = report_terms
         structs = clusters.structures(P, brief)
         macros = clusters.build_macros(P, structs, time_s=min(0.1 * budget, 30.0), workers=workers,
@@ -730,7 +732,7 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
 
     # ---- fixed copper zones (kae.place.zones): the seed's anchors and annealer's table (None
     # when off or nothing to price), and the report's (every part, both terms, any weights)
-    t = time.monotonic()
+    t = clock_now()
     zone_pull = float(setting("zone_pull", board_path, opts))
     zone_keep = float(setting("zone_keepout", board_path, opts))
     zone_tab = zonesmod.build(P, pull=zone_pull, keepout=zone_keep) if (zone_pull > 0 or zone_keep > 0) else None
@@ -738,7 +740,7 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
     stage("zones", t)
 
     # ---- seed: quadratic + spread, then CP-SAT floorplan
-    t = time.monotonic()
+    t = clock_now()
     free_macros = [m for m in macros if not m.anchored]
     n_items = len(free_macros) + len(P.mov) - sum(len([i for i in m.members if P.parts[i].movable])
                                                    for m in free_macros)
@@ -754,7 +756,7 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
                     X, Y = P.grid_of(ax + dx * P.g, ay + dy * P.g)
                     st.X[i], st.Y[i], st.K[i] = X, Y, k
     stage("seed_spread", t)
-    t = time.monotonic()
+    t = clock_now()
     items = []
     in_macro = set()
     for mac in macros:
@@ -772,7 +774,7 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
     if len(items) <= FLOORPLAN_MAX_ITEMS:
         # small boards: CP-SAT places everything at once (NoOverlap2D, 4 rotations, macros with
         # their layouts), minimizing weighted HPWL with a little displacement from the spread
-        fp_time = max(2.0, 0.25 * (deadline - time.monotonic()))
+        fp_time = max(2.0, 0.25 * (deadline - clock_now()))
         sol, model = seedmod.floorplan(P, items, fp_time, workers=workers, seed=seed, w_wl=1.0, w_disp=0.05,
                                        net_w=net_w, log=log)
         rep["floorplan"] = dict(status=model.status, seconds=round(model.wall, 2), items=len(items),
@@ -795,7 +797,7 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
             if m2 < P.margin or (m2 == P.margin and (macros or rep.get("bodies_relaxed") or bands_dropped)):
                 P.set_margin(m2)
                 items = [cpsat.single(P, i, int(st.X[i]), int(st.Y[i]), int(st.K[i])) for i in P.mov]
-                sol, model = seedmod.floorplan(P, items, max(2.0, 0.15 * (deadline - time.monotonic())),
+                sol, model = seedmod.floorplan(P, items, max(2.0, 0.15 * (deadline - clock_now())),
                                                workers=workers, seed=seed, w_wl=1.0, w_disp=0.05,
                                                net_w=net_w, log=log)
                 retries.append(dict(margin=m2, status=model.status, seconds=round(model.wall, 2)))
@@ -812,21 +814,21 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
     stage("floorplan", t)
     viol = grid_violations(st)
     if viol:
-        t = time.monotonic()
+        t = clock_now()
         # big boards: the bisection spread is density-feasible, so the greedy fit does it
         # (windows would spend the budget on hundreds of small overlaps)
-        rep["legalize_seed"] = legalize(P, st, time_s=max(3.0, 0.15 * (deadline - time.monotonic())),
+        rep["legalize_seed"] = legalize(P, st, time_s=max(3.0, 0.15 * (deadline - clock_now())),
                                         workers=workers, seed=seed, log=log, window_share=0.0 if big else 0.6)
         if grid_violations(st):
             rep["legalize_seed_escalation"] = _escalate(P, st, workers, seed, log, max(3.0, 0.1 * budget), relax_ok,
                                                         hard_end=hard_end)
         stage("legalize_seed", t)
-    if big and not grid_violations(st) and time.monotonic() < deadline - 0.5 * budget:
+    if big and not grid_violations(st) and clock_now() < deadline - 0.5 * budget:
         # big boards: CP-SAT floorplans region by region (the global one stops at
         # FLOORPLAN_MAX_ITEMS); legal in, legal out
-        t = time.monotonic()
+        t = clock_now()
         rep["regional_floorplan"] = seedmod.regional_refine(
-            P, st, free_macros, net_w, time_s=min(60.0, 0.15 * (deadline - time.monotonic())), workers=workers,
+            P, st, free_macros, net_w, time_s=min(60.0, 0.15 * (deadline - clock_now())), workers=workers,
             seed=seed, log=log, hold=getattr(P, "zone_pinned", ()))
         stage("regional_floorplan", t)
     seed_state = st.copy()
@@ -838,7 +840,7 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
     # ---- anneal
     final = seed_state
     if anneal:
-        t = time.monotonic()
+        t = clock_now()
         kw = dict(w_phys=1.0 if terms is not None else 0.0, order=order,
                   w_cong=float(setting("place_w_cong", board_path, opts)))
         kw.update(anneal_args or {})
@@ -900,18 +902,18 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
             rep["anneal_args"] = dict(anneal_args)
         seed_cost = ann.cost(ann.lam1) if seed_legal else None
         seed_terms = ann.terms_report()
-        cpu = max(1.0, 0.6 * (deadline - time.monotonic() - 3.0))
+        cpu = max(1.0, 0.6 * (deadline - clock_now() - 3.0))
         # wall clock too: on a loaded host CPU seconds lag behind the caller's timeout
         arep = ann.run(cpu_s=cpu, deadline=deadline - 0.1 * budget)
         ann.write_back()
         rep["anneal"] = arep
         stage("anneal", t)
-        t = time.monotonic()
+        t = clock_now()
         cand = ann.st
         trace("seed", seed_state)
         trace("anneal", cand)
         if grid_violations(cand):
-            rep["legalize"] = legalize(P, cand, time_s=max(3.0, deadline - time.monotonic()), workers=workers,
+            rep["legalize"] = legalize(P, cand, time_s=max(3.0, deadline - clock_now()), workers=workers,
                                        seed=seed, log=log)
             trace("legalize", cand)
         stage("legalize", t)
@@ -941,7 +943,7 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
         P.set_margin(0.0)
         rep["margin_dropped"] = True
         viol = grid_violations(st)
-    if viol and time.monotonic() < deadline + 0.1 * budget and not late():
+    if viol and clock_now() < deadline + 0.1 * budget and not late():
         rep["legalize_final"] = legalize(P, st, time_s=cap(max(3.0, 0.1 * budget)), workers=workers, seed=seed,
                                          log=log)
         viol = grid_violations(st)
@@ -949,13 +951,13 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
         trace("legalize_escalation", st)
     rep["legal_grid"] = not viol
     rep["margin_mm"] = P.margin
-    t = time.monotonic()
+    t = clock_now()
     rep["exact"] = exact_check(P, st)
     stage("exact_check", t)
     if rep["exact"]:
         # closed loop: legality is not a score; repair against the exact check until it is
         # clean or the caller's time (less the writer's share) is up, then say why not
-        t = time.monotonic()
+        t = clock_now()
         # leave the KiCad DRC its share (kae.cli runs it on the written board): ~0.1 s a part
         reserve = min(0.2 * float(time_s), 5.0 + 0.1 * len(P.parts))
         left = max(5.0, t0 + 0.9 * float(time_s) - 15.0 - reserve - t)
@@ -969,7 +971,7 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
     if order and not late():
         # protection-order rules an annealer cut short left broken: the protection part to the
         # nearest clean spot that keeps them, the physics total bounded (kae.place.exact)
-        t = time.monotonic()
+        t = clock_now()
         reserve = min(0.2 * float(time_s), 5.0 + 0.1 * len(P.parts))
         # a few seconds even when the stages ran over (a loaded host is when it is needed)
         left = cap(max(5.0, min(0.05 * budget + 5.0, t0 + 0.9 * float(time_s) - 15.0 - reserve - t)))
@@ -988,7 +990,7 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
         stage("order_fix", t)
     if exactmod.silk_on(P) and not late():
         # silkscreen where the project makes it an error: a soft pass, legality kept
-        t = time.monotonic()
+        t = clock_now()
         if "silk_text" not in rep:
             rep["silk_text"] = exactmod.refine_silk_text(P, log=log)
         reserve = min(0.2 * float(time_s), 5.0 + 0.1 * len(P.parts))
@@ -1020,7 +1022,7 @@ def _place_rung(board, seed=0, time_s=300.0, physics=True, brief=None, workers=N
                                                     breakdown=False)
         except Exception as e:
             rep["physics_error"] = f"{type(e).__name__}: {e}"
-    rep["seconds"] = round(time.monotonic() - t0, 2)
+    rep["seconds"] = round(clock_now() - t0, 2)
     poses = st.poses()
     poses.update(mated)          # held fixed here, but movable in the file: write them too
     poses.update(pinned)
@@ -1257,7 +1259,7 @@ def local_replace(board, parts, window_mm=None, time_s=30.0, seed=0, physics=Tru
     clock, so a windowed re-place is deterministic under load. Ends exactly
     legal for the moved parts when it can (kae.place.exact.repair, only `parts` move).
     Returns Result(poses of the re-placed parts, report, state, problem)."""
-    t0 = time.monotonic()
+    t0 = clock_now()
     log = log or (lambda *a, **k: None)
     if brief is None:
         try:
@@ -1315,14 +1317,14 @@ def local_replace(board, parts, window_mm=None, time_s=30.0, seed=0, physics=Tru
             rep["greedy"] = greedy_subset(P, st, bad, log)
         rep["exact"] = exact_check(P, st, parts=sub)
         if rep["exact"]:
-            left = max(2.0, t0 + time_s - time.monotonic())
+            left = max(2.0, t0 + time_s - clock_now())
             rep["closed_loop"] = exactmod.repair(P, st, time_s=left, log=log, allowed=set(sub))
             rep["closed_loop"].pop("findings", None)
             rep["exact"] = exact_check(P, st, parts=sub)
         gv = grid_verdict(P, st, rep["exact"])
         rep["legal_grid"] = gv["legal_grid"]
         rep["grid_conservative"] = gv["grid_conservative"]
-    rep["seconds"] = round(time.monotonic() - t0, 2)
+    rep["seconds"] = round(clock_now() - t0, 2)
     poses = {P.parts[i].uuid: st.pose(i) for i in sub}
     return Result(poses=poses, report=rep, state=st, problem=P)
 

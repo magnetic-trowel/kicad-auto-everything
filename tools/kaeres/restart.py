@@ -70,6 +70,13 @@ import time
 from pathlib import Path
 
 GRACE_S = 30.0  # an attempt is killed this long after its own budget
+# Counted-work budgets (KAE_BUDGET=work, kae.budget): the attempts' --time is nominal seconds of work.
+# The schedule must not depend on which attempt ends first, so attempts run in batches (up to --parallel,
+# all waited for, judged in order); the plan's clock adds each batch's budget, and wall time is only
+# the ceiling (WORK_CEILING x an attempt's budget, as in kae.budget).
+WORK = os.environ.get("KAE_BUDGET") == "work"
+WORK_CEILING = 4.0
+WORK_FINAL_SHARE, WORK_FINISH_SHARE = 0.15, 0.10     # of --time, for --final and --finish
 FINAL_MIN_S = 60.0  # the final pass at least, beyond one DRC of the board (a last mile's joins and refill)
 
 
@@ -533,7 +540,7 @@ def _one_pass(a, kind, command, best, inp, base, wd, end, b, judge_est, meter, s
     p = subprocess.Popen(["sh", "-c", c], cwd=d, stdout=open(d / "log", "w"), stderr=subprocess.STDOUT,
                          start_new_session=True, env=dict(os.environ, KAE_RESUME="1", **charge_env(info), **fr_raw_env(d)))
     while reap(p, info) is None:
-        if time.monotonic() + saved(info) > min(t + b + GRACE_S, end - judge_est - 5):
+        if time.monotonic() + saved(info) > min(t + (WORK_CEILING if WORK else 1.0) * b + GRACE_S, end - judge_est - 5):
             stop(p, info)
             info["killed"] = True
             break
@@ -560,7 +567,7 @@ def final_pass(a, best, inp, base, wd, end, judge_est, meter, stop, cpu_s, base_
     if best is None or best.get("rank") is None or best["rank"][:2] == (0, 0):
         return None
     fin_res = (finish_estimate(a, inp, judge_est) + judge_est + 10.0) if a.finish else 0.0
-    b = max(20.0, end - time.monotonic() - judge_est - 10.0 - fin_res)
+    b = WORK_FINAL_SHARE * a.time if WORK else max(20.0, end - time.monotonic() - judge_est - 10.0 - fin_res)
     return _one_pass(a, "final", a.final, best, inp, base, wd, end, b, judge_est, meter, stop, cpu_s, base_pairs,
                      keep_equal=False)
 
@@ -572,7 +579,7 @@ def finish_pass(a, best, inp, base, wd, end, judge_est, meter, stop, cpu_s, base
     ran, were skipped or failed; its DRC runs). None without a board."""
     if best is None or best.get("rank") is None:
         return None
-    b = max(20.0, end - time.monotonic() - judge_est - 10.0)
+    b = WORK_FINISH_SHARE * a.time if WORK else max(20.0, end - time.monotonic() - judge_est - 10.0)
     info = _one_pass(a, "finish", a.finish, best, inp, base, wd, end, b, judge_est, meter, stop, cpu_s, base_pairs,
                      keep_equal=True)
     rep = _last_json(wd / "finish" / "log")
@@ -714,13 +721,15 @@ def main():
         nfp = inp.read_text(errors="replace").count("(footprint ")
         a.first_s *= max(1.0, nfp / 40) ** 0.5
         log(f"{nfp} footprints: first wave {a.first_s:.0f}s")
-    end = t0 + a.time
+    end = t0 + (2 * WORK_CEILING * a.time if WORK else a.time)
+    plan_s = a.time * (1.0 - (WORK_FINAL_SHARE if a.final else 0.0) - (WORK_FINISH_SHARE if a.finish else 0.0))
+    plan_used = [0.0]        # work mode: nominal seconds of the batches launched so far
     base_dir = wd / "input"  # the input's own DRC errors (silk, rules) are not the method's
     base_dir.mkdir(exist_ok=True)
     shutil.copy2(inp, base_dir / "board.kicad_pcb")
     w = time.monotonic()
-    b0 = drc(base_dir / "board.kicad_pcb", inp, 0.2 * a.time)
-    judge_est = max(1.0, time.monotonic() - w)   # seconds one judgement takes (the slowest seen)
+    b0 = drc(base_dir / "board.kicad_pcb", inp, a.time if WORK else 0.2 * a.time)
+    judge_est = 0.0 if WORK else max(1.0, time.monotonic() - w)   # seconds one judgement takes (the slowest seen)
 
     def deadline():
         # attempts stop in time for the last wave to be judged one by one before the end
@@ -728,6 +737,9 @@ def main():
         # past its time, the harness killed it and kept nothing)
         return end - max(min(0.25 * a.time, 60 + 0.05 * a.time), a.parallel * judge_est + GRACE_S + 15) \
             - final_reserve(a, judge_est, inp)
+
+    def left():
+        return plan_s - plan_used[0] if WORK else deadline() - time.monotonic()
     base = (b0 or {}).get("types", {})
     history = {}
     if a.history:
@@ -735,7 +747,7 @@ def main():
         record_open(None, history, wd / "history.json")
     sh = None
     if a.screen:
-        sh = Halving(*rung_plan(deadline() - time.monotonic(), a.parallel, a.screen_s or a.first_s, a.eta), eta=a.eta)
+        sh = Halving(*rung_plan(left(), a.parallel, a.screen_s or a.first_s, a.eta), eta=a.eta)
         log(f"successive halving: rung budgets {[round(b) for b in sh.budgets]} s, {sh.n0} placements")
     log(f"input DRC errors by type: {base}")
     running, done, k = {}, [], 0
@@ -748,11 +760,11 @@ def main():
         # the method's budget follows the schedule; slack only lets an attempt run past it (up to
         # the overall deadline), it does not shrink the budget of late attempts
         if sh is not None:
-            cand, rung, b, src_k = sh.next(deadline() - time.monotonic())
-            b = min(b, deadline() - time.monotonic())
+            cand, rung, b, src_k = sh.next(left())
+            b = min(b, left())
             frm = next(x for x in done if x["k"] == src_k) if src_k is not None else None
         else:
-            b = min(a.first_s * a.growth ** (k // a.parallel), deadline() - time.monotonic())
+            b = min(a.first_s * a.growth ** (k // a.parallel), left())
             frm = best if (a.resume > 0 and k >= a.parallel and best is not None and best["rank"] is not None
                            and k % a.parallel < round(a.resume * a.parallel)) else None
         if b < 20 or (a.max_attempts and k >= a.max_attempts):
@@ -810,8 +822,16 @@ def main():
                     i.setdefault("dead_at", time.monotonic())
         return live
     BUSY[0] = busy
-    while launch() if len(running) < a.parallel else False:
-        pass
+
+    def fill():
+        """Start attempts while slots are free (work mode: a whole batch, only when none is running)."""
+        if WORK and running:
+            return
+        while len(running) < a.parallel and launch():
+            pass
+        if WORK and running:
+            plan_used[0] += max(i["budget"] for i in running.values())
+    fill()
     while running:
         if SC and all("hold" in i for i in running.values()):   # nothing computes: skip to the first hold's end
             SC.advance(min(i["hold"] for i in running.values()) - time.monotonic())
@@ -819,10 +839,13 @@ def main():
             time.sleep(1)
         meter.sample([p.pid for p in running if "hold" not in running[p]])
         now = time.monotonic()
+        if WORK and any(alive(p.pid) and now <= i["t"] + i["budget"] * WORK_CEILING + GRACE_S for p, i in running.items()):
+            continue                 # the batch is judged whole, in launch order
         for p, info in list(running.items()):
             if "hold" not in info:
                 spent = now + saved(info)   # the attempt's own clock: charged time counts as elapsed
-                over = spent > info["t"] + info["budget"] * a.slack + GRACE_S or spent > deadline() + GRACE_S
+                over = (spent > info["t"] + info["budget"] * WORK_CEILING + GRACE_S) if WORK else (
+                    spent > info["t"] + info["budget"] * a.slack + GRACE_S or spent > deadline() + GRACE_S)
                 if reap(p, info) is None and not over:
                     continue
                 if p.returncode is None:
@@ -844,7 +867,7 @@ def main():
             else:
                 rank = judge(info["out"], inp, base, max(10.0, end - w0 - 5), a.check_placement,
                              (b0 or {}).get("overlaps", ()))
-                judge_est = max(judge_est, time.monotonic() - w0)
+                judge_est = 0.0 if WORK else max(judge_est, time.monotonic() - w0)
             judge_cpu += child_cpu() - c0
             judge_wall += time.monotonic() - w0
             info.update(rc=p.returncode, rank=rank)
@@ -882,8 +905,7 @@ def main():
                     stop(p, info)
             running.clear()
             break
-        while len(running) < a.parallel and launch():
-            pass
+        fill()
     fin = final_pass(a, best, inp, base, wd, end, judge_est, meter, stop, cpu_s,
                      (b0 or {}).get("overlaps", ())) if a.final else None
     if fin is not None:
