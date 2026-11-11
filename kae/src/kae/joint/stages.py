@@ -73,7 +73,7 @@ STAGE_KEYS = frozenset({
     "replace_time", "replace_margin", "cong_mult", "history_scale", "bump_mm", "legal_mm", "net_mult",
     "phys_mult", "big_pads", "max_cross",
     # routing
-    "window_router", "window_route_s", "window_route_max_s", "window_passes", "window_rounds",
+    "module_soft", "window_router", "window_route_s", "window_route_max_s", "window_passes", "window_rounds",
     "window_restart_open", "window_last_mile", "min_route_s", "finish_rounds", "finish_last_mile",
     "portfolio_routers", "portfolio_first_s", "portfolio_growth",
     # evaluation
@@ -477,7 +477,13 @@ class KaeStages:
         from kae.route.critical_recheck import merge_guards
         t0 = time.monotonic()
         locked = self._path(it, "route_in")
-        W.edit(lay.board, locked, lock=sorted(lay.crit) if finish else "all", drop_guards=True)
+        # module_soft: the first route gets the module stage's copper unlocked and typed shove_fixed, so
+        # Freerouting may rip it where it walls off a connection (a locked or `route` wire is a USER_FIXED wall)
+        soft = it == 0 and not finish and bool(self.opts.get("module_soft")) and bool(lay.crit)
+        if soft:
+            W.edit(lay.board, locked, unlock=sorted(lay.crit), drop_guards=True)
+        else:
+            W.edit(lay.board, locked, lock=sorted(lay.crit) if finish else "all", drop_guards=True)
         guards = merge_guards([g for _, gs in sorted(lay.guards.items()) for g in gs])
         if guards:
             W.append_items(locked, locked, zones=guards)
@@ -513,6 +519,8 @@ class KaeStages:
                 # mile (kae.route.lastmile: grid joins with negotiated rip-up)
                 bopts.update(rounds=self.opts.get("finish_rounds", "auto"),
                              last_mile=bool(self.opts.get("finish_last_mile", True)))
+            if soft:
+                bopts.update(wire_type="shove_fixed", wire_scope="all")
             rep = BR.route(locked, raw, seed=seed, time_s=time_s, workdir=self.wd / f"it{it:02d}" / "bridge",
                            opts=bopts, log=lambda m: self.log(f"bridge: {m}"))
         out = self._path(it, "routed")
@@ -533,6 +541,12 @@ class KaeStages:
                                  router_s=(rep.get("router") or {}).get("seconds"),
                                  errors=fin.get("errors"), unconnected=fin.get("unconnected"),
                                  blocked=rep.get("blocked"))
+        if it == 0 and not finish and lay.crit:
+            # how much of the module stage's copper the first route left in place (soft: rippable; else locked)
+            try:
+                new.info["route"]["module_copper"] = dict(copper_survival(locked, lay.crit, out), soft=soft)
+            except Exception as e:  # noqa: BLE001 - a measurement only
+                new.info["route"]["module_copper"] = dict(error=f"{type(e).__name__}: {e}"[:200], soft=soft)
         return new
 
     def diagnose(self, lay, drc_report, it, time_s):
@@ -831,6 +845,27 @@ def _cover_moves(board, window, poses):
                  max(a for a, _ in xy) + 0.5, max(c for _, c in xy) + 0.5)
         x0, y0, x1, y1 = min(x0, b[0]), min(y0, b[1]), max(x1, b[2]), max(y1, b[3])
     return dataclasses.replace(window, rect=(x0, y0, x1, y1))
+
+
+def copper_survival(before, uuids, after, tol=0.001):
+    """Length of the tracks `uuids` of board `before` (mm) and how much of it board `after` still has: a track counts
+    as kept when `after` has a track of the same net and layer with the same two ends (either order, within `tol` mm)."""
+    from kae.board.kicad_file import load
+
+    def key(t):
+        q = lambda p: (round(p[0] / tol), round(p[1] / tol))  # noqa: E731
+        return t.net, t.layer, frozenset((q(t.start), q(t.end)))
+
+    def length(t):
+        return ((t.end[0] - t.start[0]) ** 2 + (t.end[1] - t.start[1]) ** 2) ** 0.5
+
+    want = set(uuids)
+    b0 = [t for t in load(before).tracks if t.uuid in want]
+    have = {key(t) for t in load(after).tracks}
+    kept = [t for t in b0 if key(t) in have]
+    total = sum(length(t) for t in b0)
+    return dict(tracks=len(b0), kept_tracks=len(kept), mm=round(total, 2), kept_mm=round(sum(length(t) for t in kept), 2),
+                share=round(sum(length(t) for t in kept) / total, 4) if total else None)
 
 
 def place_stops(rep):

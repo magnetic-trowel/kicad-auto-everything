@@ -384,3 +384,16 @@ def test_copper_totals_lines_and_arcs():
            vias=[1, 2])
     length, vias = copper_totals(b)
     assert vias == 2 and length == pytest.approx(5 + math.pi + 1.5 * math.pi + 0.5 * math.pi, rel=1e-6)
+
+
+def test_copper_survival_matches_tracks_by_net_layer_and_ends(monkeypatch):
+    from types import SimpleNamespace as NS
+
+    import kae.board.kicad_file as KF
+    from kae.joint.stages import copper_survival
+    T = lambda u, a, b, net="N", layer="F.Cu": NS(uuid=u, net=net, layer=layer, start=a, end=b)  # noqa: E731
+    boards = {"before": NS(tracks=[T("m1", (0, 0), (3, 4)), T("m2", (3, 4), (3, 10)), T("x", (9, 9), (9, 8))]),
+              "after": NS(tracks=[T("new", (3, 4), (0, 0)), T("y", (3, 4), (3, 10), layer="B.Cu")])}
+    monkeypatch.setattr(KF, "load", lambda p: boards[p])
+    r = copper_survival("before", {"m1", "m2"}, "after")
+    assert r["tracks"] == 2 and r["kept_tracks"] == 1 and r["mm"] == 11.0 and r["kept_mm"] == 5.0
