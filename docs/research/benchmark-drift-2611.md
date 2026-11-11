@@ -70,10 +70,20 @@ the default stays wall time.
 | Freerouting | passes done × pins² of the board; its budget becomes a pass cap | 9e-5 |
 | KiCad DRC | runs × MB of board file | 4.27 |
 | last mile | path searches | 0.054 |
+| critical router (joint module stage) | grid searches / their A* expansions | 0.10 / 7.9e-7 |
 | any deadline check | one poll (a loop that only polls still ends) | 1e-3 (exact repair 5e-3) |
 
 Rates are medians over three boards (65–328 pins) on a quiet host (`tools/research/budget/calibrate.py`).
 Per-pass Freerouting time follows pins² (7–9.8e-5 s per pin²); per MB of `.dsn` it varied 9×.
+
+**The critical router was charged late (2026-11-11).** Until then the critical-copper grid router
+(`kae.route.critical_grid`, the joint module stage's routing) charged nothing. In work mode the module stage
+cost no budget, its own deadline never bound, and the stages after it got the time they would have had
+without it. Every work-mode run of a method with a module stage before this fix got that stage for free:
+`module-ablation2` and Stage 2's critical/joint arms. Time-mode runs (`chassis-soft`, J1) paid for it in wall
+time. Its rates are medians of six time-mode runs of the module stage on three boards (178–814 pads) on the
+shared host: 0.08–0.17 s per search (the larger boards dearer; a search's charge carries the module setup and
+physics since the previous clock event) and 3.6e-7–1.1e-6 s per expansion.
 Wall time is only a ceiling: 4× a run's budget, past which every deadline has passed and the report says
 `ceiling_hit` (the run has failed). `restart.py` runs attempts in batches, judged whole and in launch order,
 so its schedule does not depend on which attempt ends first.

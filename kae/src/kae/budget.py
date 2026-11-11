@@ -46,6 +46,12 @@ RATES = {
                                 # per MB of .dsn it varied 9x, and the largest board had a smaller .dsn)
     "drc_mb": 4.27,             # one KiCad DRC (with zone refill) per MB of board file
     "lastmile_try": 0.054,      # one last-mile path search (exact grid, one connection)
+    # the critical-copper grid router (kae.route.critical_grid; the joint module stage, kae.route.critical),
+    # calibrated 2026-11-11 on three boards (178-814 pads, 6 module-stage runs in time mode; shared host, so less
+    # exact than the above). Before it was charged, a module stage in work mode cost no budget at all
+    "crit_search": 0.10,        # one search with the work since the last clock event (module setup, its physics;
+                                # 0.08-0.17 s, the larger boards dearer)
+    "crit_expansion": 7.9e-7,   # one A* expansion of that search (3.6e-7 - 1.1e-6 s)
     "seconds": 1.0,             # work already measured in nominal seconds by the caller
 }
 CEILING_FACTOR = 4.0    # a run past CEILING_FACTOR x its nominal budget in wall time has failed
