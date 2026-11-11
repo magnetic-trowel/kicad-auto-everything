@@ -372,8 +372,9 @@ def evaluate(ev, intent=None, brief=None):
             val = dom[0]
         shown = (lambda x: f"{x:.4g} C") if inst[0][1]["unit"] == "C" else (lambda x: U.fmt(x, unit_))
         row.update(value=shown(val), dominant=dom[1].get("label"), rests_on=_rests(dom[1], ev))
-        if dom[1].get("f_Hz"):
-            row["f_MHz"] = round(max(dom[1]["f_Hz"]) / 1e6, 1)
+        f_hz = [f for f in (dom[1].get("f_Hz") or []) if f is not None]   # a DC observation has no frequency
+        if f_hz:
+            row["f_MHz"] = round(max(f_hz) / 1e6, 1)
         contrib = 0.0
         if bound is not None:
             excess = [(v - bound) if side_ == "max" else (bound - v) for v, _ in inst]
