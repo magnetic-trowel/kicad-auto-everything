@@ -773,3 +773,20 @@ def test_intrinsic_footprint_violations_are_not_the_placers():
     rn = dict(type="clearance", items=[dict(description="Pad 2 [SCDAT6] of RN2 on F.Cu"),
                                       dict(description="Pad 1 [SCDAT7] of RN2 on F.Cu")])
     assert _own_cutout(rn) and not _own_cutout(dict(type="clearance", items=rn["items"][:1]))
+
+
+def test_round_pads_and_holes_measure_within_the_arc_error():
+    """Regression (melexinvn-bs-kombo): a 3 mm NPTH hole and a 1.7 mm round pad 0.2402 mm apart, under a 0.25 mm
+    hole clearance. KiCad measures arcs exactly and flags it; with 8 segments per quarter circle both polygons sat
+    inside their circles and read 0.2491 mm, which the exact check (tolerance 0.005) passed."""
+    from kae.board.model import Pad
+    from kae.place.legalize import ARC_ERR, hole_shape, pad_shape
+    gap = 0.2402
+    hole = Pad(number="", net="", kind="np_thru_hole", shape="circle", size=(3.0, 3.0), lx=0.0, ly=0.0, lrot=0.0,
+               x=0.0, y=0.0, layers=["F.Cu", "B.Cu"], drill=3.0)
+    d = 1.5 + gap + 0.85
+    pad = Pad(number="15", net="+3V3", kind="thru_hole", shape="oval", size=(1.7, 1.7), lx=d * 0.6, ly=d * 0.8, lrot=0.0,
+              x=0.0, y=0.0, layers=["F.Cu", "B.Cu"], drill=1.0)
+    measured = hole_shape(hole).distance(pad_shape(pad))
+    assert gap <= measured <= gap + 2 * ARC_ERR + 1e-9
+    assert measured < 0.25 - 0.005           # the exact check's test: it now reports the violation
