@@ -50,6 +50,8 @@ from __future__ import annotations
 import math
 import re
 
+from kae.budget import now as clock_now
+
 from .critical_grid import Anchor
 from .critical_modules import Module, _commit_vias, anchor, dT_max, hop_layers, route_hop, via_candidates, width_ladder
 from .critical_physics import (T_PLATE, drop_width, heat_hazard, ipc2221_width, r_track, r_via, via_hazard,
@@ -294,14 +296,33 @@ def rail_currents(ctx):
     return {r["net"]: r["design"] for r in rail_plan(ctx)}
 
 
-def route_rails(ctx, mode="auto"):
-    """Route the rails (and ground returns) of the brief; returns a report per rail."""
+def _late(ctx):
+    """Past the module stage's deadline (route_rails' `deadline`; none: never)."""
+    dl = getattr(ctx, "rail_deadline", None)
+    return dl is not None and clock_now() > dl
+
+
+def route_rails(ctx, mode="auto", deadline=None):
+    """Route the rails (and ground returns) of the brief; returns a report per rail.
+    deadline (kae.budget.now() time): no rail, branch, completion join or ground via is started after it; the
+    rails cut short say clock="cut" (the module stage's clock, optimize_modules clock=True)."""
+    ctx.rail_deadline = deadline
+    try:
+        return _route_rails(ctx, mode)
+    finally:
+        ctx.rail_deadline = None
+
+
+def _route_rails(ctx, mode):
     rails = rail_plan(ctx)
     report = []
     ground_load = {}
     ground_nom = {}               # the same without the E5 margin (hazard severity)
     gnd_pour = any(ctx.sp.zones_of(g) for g in ctx.gnd)
     for rl in rails:
+        if _late(ctx):
+            report.append(dict(net=rl["net"], routed=False, clock="skipped"))
+            continue
         rep = _route_rail(ctx, rl, mode, gnd_pour)
         report.append(rep)
         if rep.get("routed"):
@@ -311,7 +332,9 @@ def route_rails(ctx, mode="auto"):
             ground_load[rl["src"]] = ground_load.get(rl["src"], 0.0) + rl["design"]
             ground_nom[rl["src"]] = ground_nom.get(rl["src"], 0.0) + _nominal(rl)
     for g in sorted(ctx.gnd):
-        if ground_load and ctx.sp.zones_of(g):
+        if ground_load and ctx.sp.zones_of(g) and _late(ctx):
+            report.append(dict(net=g, clock="skipped"))
+        elif ground_load and ctx.sp.zones_of(g):
             report.append(_route_ground(ctx, g, ground_load, rails, mode, ground_nom))
     return report
 
@@ -422,6 +445,9 @@ def _route_rail(ctx, rl, mode, gnd_pour):
     has_zone = bool(ctx.sp.zones_of(net))
     order = sorted(rl["loads"], key=lambda u: -_dist_part(ctx, u, rl["parts"][u], (st.x, st.y)))
     for u in order:
+        if _late(ctx):
+            rep["clock"] = "cut"
+            break
         a = rl["loads"][u]
         # the trunk (to the farthest load) carries the design current, every other branch its
         # own load: when the trunk is left to the router, a light load is not a trunk
@@ -549,6 +575,8 @@ def _complete_net(ctx, m, net, seeds, w, reach):
         todo.append(t)
     n = 0
     for _ in range(len(todo)):
+        if _late(ctx):
+            break
         comp = sp.component(net, seeds)
         if not comp:
             break
@@ -733,6 +761,8 @@ def _route_ground(ctx, g, ground_load, rails, mode, ground_nom=None):
         for u in rl["loads"]:
             src_of.setdefault(u, rl["src"])
     for u, a in sorted(ground_load.items(), key=lambda kv: -kv[1]):
+        if _late(ctx):
+            break
         f = ctx.fp.get(u)
         if f is None:
             continue
@@ -763,6 +793,8 @@ def _route_ground(ctx, g, ground_load, rails, mode, ground_nom=None):
     if not pours and mode == "all":
         # no ground pour: each routed load's ground pin to its source's ground pin
         for u, a in sorted(ground_load.items(), key=lambda kv: -kv[1]):
+            if _late(ctx):
+                break
             s = src_of.get(u)
             if s is None or s == u:
                 continue

@@ -71,3 +71,42 @@ A 2-board smoke of the two arms above was queued and cancelled before it started
 
 ## Addendum 2, before any run (2026-11-11)
 To check in the smoke that each knob took effect, the module stage now also reports `copper_by_owner` (what it laid, by module kind or rail and by piece, counted before an ablation drops it) and `guard_zones`. The first route already reports its `guards`. That is a new commit, so the methods are registered again at it and the experiment is named `module-ablation2`; `module-ablation` holds no runs. Arms, boards and rules are unchanged.
+
+## Addendum 3, before any run of this design (2026-11-11): the module stage's clock; the experiment is `module-clock`
+`module-ablation2` is not run (its 4-job smoke and the profiling runs of its arms are the only runs). A case study of `chassis-soft`'s stored runs found that 72 % of M's extra open connections over R come from a time bug: the module stage's clock covered only its part-move passes. Routing every module, the rails (with their completion joins) and the corner joins ran past it, up to 8×, and the first route got what was left (23 s instead of 180-345 s on the largest boards). Every arm above inherits that overrun, so the ablation is redesigned on a fixed base.
+
+**Corrections to the text above:**
+- On the 160 boards, 123 are 2-layer, not 137 (`chassis-soft`'s `gating.py` joined board features by line; fixed on that branch).
+- `crit.complete_mm` and `crit.island_mm` do nothing in the joint module stage: completion and island joins run only in `kae.route.critical.Session.route`. M-nojoin would have been M. The joins the joint stage does lay are the rails' own completion joins (inside `route_rails`, owner `rail/pad`) and the corner joins (necks to pad centres, so Freerouting sees the module copper connected).
+- Profiling (gecko5 cpuaddon, 814 pads, time mode): of 240 s in the module stage, 46 s were the modules and 186 s the rails; the profile is dominated by `route_rails` → `_complete_net` → `route_hop` → `_entry_by_physics`.
+
+**Code** (branch `module-escape`, next commit):
+- `--set module_clock=1` (a loop and stage option, off by default). The module stage then keeps `module_time` (90 s, or 5 % of the budget) for all of its work, counted from the stage's start, Session build included. The deadline is checked before every module, every candidate trial, each rail, rail branch, rail completion join and ground return, and the tightening; whatever is not started is reported in the stage's `clock.skipped`. The corner joins always run (they connect copper already laid, under a second on the largest board profiled). Modules go decaps, rail groups and crystals first, then cells and paths, chains last (`MODULE_CLOCK_RANK`), in the brief's order within a rank.
+- With `module_clock` the first route gets `route_share` (0.6) of what was left before the module stage, the time it would get without modules, capped at 90 % of what is left after it.
+- **Counted work for the module stage.** The critical grid router charged no work, so in work mode (`KAE_BUDGET=work`, as here) the module stage's clock never advanced and M did not overrun at all: `module-ablation2`'s M would not have shown the bug. Each grid search now charges `crit_search` (0.10 nominal s, with the setup and physics since the previous clock event) and its A* expansions `crit_expansion` (7.9e-7 s each), calibrated in time mode with `KAE_BUDGET_PROFILE=1` on three boards (178-814 pads, `tools/research/budget/calibrate.py`). This applies to every arm, M included: M's module stage now spends work as it spends time, so M reproduces the overrun under counted budgets.
+- `crit.kinds=decap,crystal` (a comma list) selects module kinds without JSON quoting in the wrapper's command.
+- The module stage reports `opt_phase_s` (modules, rails, joins and tightening), `phase_s` and `clock`; `copper_by_owner` now reads the owners from the critical space (it reported `?/?` before).
+
+**Arms** (`setup-clock.sh`, all at the new commit, same wrapper, budgets and Freerouting d137fd1 as above; every arm `--max-iters 0`):
+
+| arm | flags | question |
+|---|---|---|
+| M | none | the module stage as it was (control for the bug) |
+| M-clock | `module_clock=1` | the fixed base |
+| M-clock-local | `module_clock=1`, `crit.kinds=decap,crystal`, `crit.rails_joint=none` | only decap and crystal copper: no cells, paths, chains or rails, so no rail joins (corner joins stay, they are connectivity) |
+| M-clock-noguard | `module_clock=1`, `crit.guards=[]` | no guard pours |
+| M-clock-norails | `module_clock=1`, `crit.rails_joint=none` | no rail copper |
+
+M-esc and M-poses are dropped. M-esc adds grid cost to a stage that overran; the case study expects little from it before the clock is fixed. M-poses is bounded by M-clock-local, which keeps the moves and the copper that carries the physics.
+
+**Boards (142, `boards-clock.txt`):** the 139 above plus the 3 boards of the share set below that were in neither (`ebothor-dts-board-cc-debug`, `jduanen-acoustic-camera-front-end`, `pcbcorpus-brown-studios-minuet-minuet`).
+- **Share set (37, `boards-share37.txt`):** the `chassis-soft` boards where M's module stage took at least 25 % of its first-wave attempt budget (stage seconds / the budget of the wrapper's attempt 0, both from M's stored reports). 24 of them are in the mechanism set.
+- Mechanism set (41) and physics set (98) as above.
+
+**Decision:**
+- **The bug's effect, M-clock vs M:** opens on the share set (primary) and on the 41, paired `d`, sign-flip. M-clock fixes the bug if mean `d` < 0 with p < 0.05 on the share set and its total opens there are at least 3 % lower (the rule above). Guard: physics on the 98, median Σu ratio M-clock/M within the J21 floor.
+- **Each ablation against M-clock** (3 comparisons, p < 0.017 each): opens on the share set (primary) and on the 41; the same physics guard on the 98. Interpretation as in the first addendum: an arm that moves opens and holds physics is the lead for the default; one that moves opens but loses physics names the piece that carries both.
+- Pooled 142-board results, cp1, legal, DRC errors per type, CPU per arm, and per arm the knob check from the reports (`copper_by_owner`, `guard_zones`, `clock`, the first route's `router_s`) are reported for every arm.
+- `chassis-soft`'s R is a reference only (other build and budgets).
+
+**Costs (information only):** five arms × 142 boards × about 0.7 CPU-h, about 500 CPU-h; fewer if M-clock's shorter module stage holds.
