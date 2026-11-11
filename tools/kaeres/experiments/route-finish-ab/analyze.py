@@ -64,7 +64,7 @@ def arm_of(name):
 
 
 class Data:
-    def __init__(self, exp, out, churn="exclude", only_arms=None, twin=None):
+    def __init__(self, exp, out, churn="exclude", only_arms=None, twin=None, drop=None):
         self.e = jl(STORE / "experiments" / exp / "experiment.json")
         if not self.e:
             sys.exit(f"no experiment {exp}")
@@ -76,6 +76,10 @@ class Data:
         self._a0 = None
         if only_arms:
             self.arms = [a for a in self.arms if a in only_arms]
+        self.drop = defaultdict(set)
+        for x in drop or []:
+            a_, _, b_ = x.partition(":")
+            self.drop[a_].add(b_)
         self.src = defaultdict(lambda: defaultdict(set))   # arm -> source -> boards
         self.churn_mode = churn
         self.churn = {p.parent.name for p in self.out.glob("rescore-*/*/churn.json") if p.parent.parent.name != "rescore-A0"
@@ -115,7 +119,13 @@ class Data:
         # a re-score at the experiment's harness (fork.sh rescore:<id|B|A0>) wins over the stored score;
         # boards whose re-scores are only uuid churn (churn_check.py) have no consistent score at this scorer:
         # left out of every arm (--churn exclude), or given each run's own stored score (--churn stored)
+        if b in self.drop.get(arm, ()):     # --drop ARM:BOARD (a known artefact, reported)
+            self.src[arm]["dropped"].add(b)
+            return None
         if b in self.churn and self.churn_mode == "exclude":
+            self.src[arm]["left out (uuid churn)"].add(b)
+            return None
+        if arm == "A0r" and b in self.a0_churn:   # A0's outputs against a task of different random uuids
             self.src[arm]["left out (uuid churn)"].add(b)
             return None
         key = {"B": "B", "A0r": "A0"}.get(arm, (self.ids.get(arm) or "")[:12])
@@ -123,9 +133,6 @@ class Data:
         if r and r.get("status") == "ok" and b not in self.churn:
             self.src[arm]["rescore"].add(b)
             return r.get("score")
-        if arm == "A0r" and b in self.a0_churn:   # A0's outputs against a task of different random uuids
-            self.src[arm]["left out (uuid churn)"].add(b)
-            return None
         if b in self.churn and arm == "A0r":   # no score of A0 against its own task at this scorer
             self.src[arm]["left out (uuid churn)"].add(b)
             return None
@@ -837,11 +844,12 @@ def main():
     ap.add_argument("--section", default="gates,routing,geometry,dfm,physics,hazards,stages")
     ap.add_argument("--churn", choices=("exclude", "stored"), default="exclude",
                     help="boards whose re-score is only uuid churn: left out of every arm, or each run's stored score")
+    ap.add_argument("--drop", action="append", metavar="ARM:BOARD", help="leave one arm's score of a board out")
     ap.add_argument("--twin", help="experiment holding the A/A twin (arm A2)")
     ap.add_argument("--arms", help="comma list of arms to report (default: every arm with data)")
     ap.add_argument("--offset-list", help="write the (board, arm) pairs whose physics needs offset-averaging")
     a = ap.parse_args()
-    D = Data(a.exp, a.out, a.churn, a.arms.split(",") if a.arms else None, a.twin)
+    D = Data(a.exp, a.out, a.churn, a.arms.split(",") if a.arms else None, a.twin, a.drop)
     print(f"# route-finish A/B: {a.exp}\n\nArms {', '.join(D.arms)}; methods "
           + ", ".join(f"{k} `{v}`" for k, v in D.ids.items()) + f"; DRC evaluator `{D.drc_eval}`; {len(D.boards)} boards.\n")
     fns = dict(routing=sec_routing, geometry=sec_geometry, physics=lambda d: sec_physics(d, a.offset_list),
