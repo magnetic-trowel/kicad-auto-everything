@@ -324,6 +324,18 @@ def open_items_from_drc(drc):
     return counts, len(items) >= 499
 
 
+def _pair_extras(board, pr):
+    """A pair's tier (how much it matters: board rule, interface, name only) and where it runs against its reference
+    plane (kae.route.pairs); report-only like the rest."""
+    from kae.route import pairs as P
+    try:
+        tier, _ = P.tier_of(board, pr["p"], pr["n"], pr.get("iface") or "")
+        no_ref, changes = P.reference_stats(board, P.Pair(p=pr["p"], n=pr["n"]))
+        return dict(tier=tier, no_ref_mm=no_ref, ref_changes=changes)
+    except Exception:  # noqa: BLE001 - a description; never stops the scorecard
+        return {}
+
+
 def board_scorecard(board, drc=None, decompose=False, bs=None):
     """The scorecard of one routed board: dict with `buses`, `pairs` and the source of the open counts.
 
@@ -356,8 +368,9 @@ def board_scorecard(board, drc=None, decompose=False, bs=None):
         rows.append(rec)
     pair_rows = []
     for pr in bs.pairs:
-        rec = {k: pr[k] for k in ("kind", "iface", "width", "a", "b", "ev", "dist", "names", "nets") if k in pr}
+        rec = {k: pr[k] for k in ("kind", "p", "n", "iface", "width", "a", "b", "ev", "dist", "names", "nets") if k in pr}
         rec["multi_lanes"] = 0
+        rec.update(_pair_extras(board, pr))
         lim = L.for_bus(dict(pr, kind="pair"), bs.part)
         rec["limit"] = lim.asdict()
         lanes = pr.get("_lanes")
