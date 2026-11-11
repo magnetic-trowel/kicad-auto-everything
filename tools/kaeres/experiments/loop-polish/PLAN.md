@@ -41,3 +41,13 @@ Plumbing only, and the two boards stay in the batch:
 - In both P arms the wrapper ran the joint loop as its `--finish` pass on the kept board. It ran 326-1,379 s, and on one board its board was kept.
 - The pass gets the time left after the restarts, at least its reserve. When the restarts' last attempt ends early it can get more than the nominal split (1,646 s on one board). This is how `restart.py --finish` works and is the same for both splits.
 No rule changes.
+
+## First batch read (2026-11-11): undecided, so the extension runs as pre-registered
+69 boards, 138 runs.
+- **P-half vs R:** opens 3,783 vs 4,405 (−14.1 %), 37 boards fewer and 17 more, mean d −0.053, p 0.032. That is not under 0.025.
+  - DRC errors 3,507 vs 3,353: +4.6 %, above the win guard's +3 %.
+- **P-late vs R:** opens 4,118 vs 4,405 (−6.5 %), 25 / 20, p 0.085. Errors 3,365 vs 3,353.
+- **Other measures:** cp1 3 / 3 vs 1; placement errors equal; CPU P 94.7 / 98.9 h vs R 99.8 h.
+- **Physics:** 5-6 boards fully routed in all arms, so it is not judged.
+
+Per the rule above, the next batch runs: the first 60 boards of `boards-extension.txt` (`boards-ext1.txt`), experiment `loop-polish-ext1`, same three methods. The decision is then on all boards pooled with the same thresholds, and the guards are applied to the pooled totals. Undecided after that: one more batch of 60, then report undecided.
