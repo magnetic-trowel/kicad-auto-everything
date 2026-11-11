@@ -1746,6 +1746,8 @@ def cmd_exp_report(a):
     nondrc = [ln for ln in bl[head + 2:] if ":drc:" not in ln.split("|")[1]]
     rep += ["", f"Not DRC findings (crashes, exceptions, translation and harness bugs), {len(nondrc)} signatures:", "",
             bl[head], bl[head + 1]] + nondrc[:30]
+    if (d / "PAIRS.md").exists():              # report-only (tools/kaeres/pair_report.py); no effect on any score
+        rep += ["", (d / "PAIRS.md").read_text()]
     (d / "REPORT.md").write_text("\n".join(rep) + "\n")
     print(f"wrote {d / 'REPORT.md'}, results.csv ({len(rows)} rows), bugs/ ({len(bugs)} records)")
 

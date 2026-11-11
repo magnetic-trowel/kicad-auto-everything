@@ -592,5 +592,12 @@ def finish(report, output=None, project_board=None, kind="route", mode="auto", d
         meta = dict(ran=False, error=f"{type(e).__name__}: {e}"[:200])
     if not meta.get("ran"):
         extra += summary_hazards(report, skip=SKIP_BY_KIND.get(kind, ()))
+    if kind == "route" and output and Path(output).exists():
+        try:
+            from kae.board.kicad_file import load as load_board
+            from kae.route.pairs import hazards as pair_hazards
+            extra += pair_hazards(load_board(output), brief=brief)
+        except Exception as e:      # noqa: BLE001 - a report is always written
+            extra.append(H.make("pair_check_failed", "info", "data", f"Pair coupling not checked: {e}"[:200]))
     report["recheck"] = meta
     return H.finalize(report, extra=extra)
