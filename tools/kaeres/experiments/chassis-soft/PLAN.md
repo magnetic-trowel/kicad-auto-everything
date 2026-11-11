@@ -37,3 +37,10 @@ The 160 boards of `loop-physics-matched` (`boards.txt`): `physics_inputs_ok` and
 
 ## Costs (information only)
 J1's wrapper is about 0.66 CPU-h per board and arm: about 320 CPU-h for 160 boards and 3 arms.
+
+## Addendum after the 2-board smoke (2026-11-11, before the other 158)
+Plumbing only, and both boards stay in the batch. All 6 runs finished and were scored, with physics evaluated. The survival record works:
+- On jordanaceto-micro-ox, M kept all 31 module tracks (44.7 mm) on the first route; M-soft kept 10 of 27 (19.0 of 41.8 mm).
+- The other board had no module copper (no record).
+
+"Kept" means the same geometry. Copper Freerouting ripped and re-laid elsewhere counts as not kept. No rule changes.
