@@ -2,9 +2,9 @@
 # SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# module-escape (PLAN.md): the module stage (J1 arm b) with and without the critical router's escape corridors, under
+# module-ablation (PLAN.md): the module stage (J1 arm b) against escape corridors and ablations of its pieces, under
 # J1's restart wrapper, counted-work budgets, one pinned Freerouting build.
-#   SHA=<pushed commit> tools/kaeres/experiments/module-escape/setup.sh
+#   SHA=<pushed commit> tools/kaeres/experiments/module-escape/setup.sh  (experiment module-ablation)
 set -euo pipefail
 cd "$(dirname "$0")/../../../.."
 K="python3 tools/kaeres/kaeres.py"
@@ -25,5 +25,9 @@ add() {  # NAME DESCRIPTION JOINT_FLAGS
     --command "$WRAP '$CP $RES $E -m kae.joint.cli run @IN@ @OUT@ --seed @SEED@ --time @TIME@ $3; fi'" \
     --param timeout_s=3600 --param timeout_scale=sqrt-fp40 --param parallel=4 --code kae=.@$SHA --harness $SHA
 }
-add "kae modesc M $S7 (restarts)"     "M: staged with the module stage (J1 arm b), escape corridors off"              "--max-iters 0"
-add "kae modesc Mesc $S7 (restarts)"  "M-esc: as M, the critical router keeps escape corridors of 1.5 mm out of dense ICs" "--max-iters 0 --set escape_mm=1.5"
+add "kae modesc M $S7 (restarts)"        "M: staged with the module stage (J1 arm b), the control"                       "--max-iters 0"
+add "kae modesc Mesc $S7 (restarts)"     "M-esc: M with escape corridors of 1.5 mm out of dense ICs (crit.escape_mm)"   "--max-iters 0 --set crit.escape_mm=1.5"
+add "kae modesc Mnoguard $S7 (restarts)" "M-noguard: M without the modules' guard pours (crit.guards=[])"              "--max-iters 0 --set crit.guards=[]"
+add "kae modesc Mnorails $S7 (restarts)" "M-norails: M without the rail copper (crit.rails_joint=none)"                "--max-iters 0 --set crit.rails_joint=none"
+add "kae modesc Mnojoin $S7 (restarts)"  "M-nojoin: M without the completion and island joins (crit.complete_mm=0, crit.island_mm=0)" "--max-iters 0 --set crit.complete_mm=0 --set crit.island_mm=0"
+add "kae modesc Mposes $S7 (restarts)"   "M-poses: the module stage's part moves only, its copper and guards dropped before the first route" "--max-iters 0 --set module_poses_only=1"

@@ -39,3 +39,32 @@ Corridors exist only where an IC has at least 32 pads. On a board without one th
 
 ## Costs (information only)
 About 0.7 CPU-h per board and arm under the wrapper: about 200 CPU-h for 139 boards and 2 arms.
+
+## Addendum, before any run (2026-11-11): ablation arms; the experiment is `module-ablation`
+A 2-board smoke of the two arms above was queued and cancelled before it started, so no run of this design exists. Reading `stages.py` and `critical.py` shows that `chassis-soft`'s M-soft unlocked the module copper but kept the guard pours. `KaeStages.route` appends the modules' guard zones on every route: keep-out ground pours under each cell, path and crystal module's hull plus 0.5 mm, on the plane layer. On a 2-layer board, 137 of the 160, that is the bottom pour. Other pre-laid pieces are suspects as well.
+
+**Code** (same branch, next commit):
+- `--set crit.KEY=VALUE` passes any option of the module stage's critical session (its DEFAULTS, plus `rails_joint`). This replaces the escape-only keys above, and `escape_mm` is now `crit.escape_mm`.
+- `--set module_poses_only=1` keeps the module stage's part moves and drops all its copper and guard pours before the first route.
+- Defaults are unchanged.
+
+**Arms**, all in the same interleaved jobs per board, sharing one M control:
+
+| arm | flags (on top of `--max-iters 0`) | what it removes or adds |
+|---|---|---|
+| M | none | control |
+| M-esc | `crit.escape_mm=1.5` | adds escape corridors out of dense ICs |
+| M-noguard | `crit.guards=[]` | no guard pours |
+| M-norails | `crit.rails_joint=none` | no rail copper (critical_rails) |
+| M-nojoin | `crit.complete_mm=0`, `crit.island_mm=0` | no completion and island joins |
+| M-poses | `module_poses_only=1` | the module stage's placement only; no copper, no guards |
+
+**Decision, per arm against M**, with five comparisons, so p < 0.01 each:
+- Primary: opens on the 41 mechanism boards (paired `d`, sign-flip).
+- Guard: physics on the 98 physics boards (median Σu ratio arm/M against the J21 floor).
+- The aim is descriptive as well: where M's opens cost lives, and what share of M's physics gain each piece carries. M-poses bounds the share from placement alone.
+- Pooled 139-board results are reported for every arm.
+- The success criterion for M-esc above stands (half of M's gap to R on the mechanism set).
+- An arm that moves opens and holds physics is the lead for a fix. One that moves opens but loses physics names the piece that carries both.
+
+**Costs (information only):** six arms × 139 boards × about 0.7 CPU-h, about 580 CPU-h.
