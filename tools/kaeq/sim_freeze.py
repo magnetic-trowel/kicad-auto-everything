@@ -287,7 +287,7 @@ class KaeqPolicy(sim.MemPolicy):
         run.grant = sim_.need(run.job)
 
     def on_tick(self, s):
-        from kaeqlib.leases import keep_flags, lease_plan, pooled_headroom
+        from kaeqlib.leases import expected_size, keep_flags, lease_plan, pooled_headroom
         # kaeq's times are epoch seconds and treat 0 as "not started": shift the replay's clock (from 0) for it
         OFF = 1e6
         cfg, now = self.cfg, s.t + OFF
@@ -300,7 +300,9 @@ class KaeqPolicy(sim.MemPolicy):
                        frozen=r.frozen, grew=r.grew, timed=r.timed, waited_frozen=frozen_s - st.get("base", 0.0),
                        protected=r.job.preempts >= cfg["evict_protect_after"], invest=r.invest,
                        compressed=r.frozen and r.zfree > 0, mpress=0.0, swapped=r.zfree if r.frozen else 0.0,
-                       owner=r.job.tpl.owner, expect=max(s.need(r.job), r.peak), held_out=0.0)
+                       owner=r.job.tpl.owner, held_out=0.0,
+                       expect=expected_size(r.job.tpl.mem_mb, getattr(s.learner.owners.get(r.job.tpl.owner), "ratio", None),
+                                            r.peak, r.active, cfg))
             keep_flags(rec, cfg, now, r.guard_until + OFF if r.guard_until else 0.0)
             recs.append(rec)
             by[id(r)] = r

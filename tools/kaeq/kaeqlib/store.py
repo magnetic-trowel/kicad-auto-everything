@@ -108,6 +108,12 @@ DEFAULTS = {
     # admission and warm-up on what jobs really use: once an owner has mem_learn_min_jobs finished jobs, a new job
     # of it needs its --mem x (p95 of the owner's peak/--mem) x mem_learn_margin, never more than --mem
     "mem_learn_min_jobs": 20,
+    # what a RUNNING job is expected to grow into (expected_size): its owner's median peak/--mem once
+    # forecast_min_jobs have finished; else, after forecast_trust_s, forecast_trust_margin x the most it has used;
+    # else its --mem. (forecast_trust_s 1e9 and forecast_min_jobs 1e9: the declared --mem, as before.)
+    "forecast_min_jobs": 3,
+    "forecast_trust_s": 600,
+    "forecast_trust_margin": 1.5,
     "mem_learn_margin": 1.1,
     # compress a frozen job's memory: let its scope swap (memory.swap.max) and reclaim it (memory.reclaim), into
     # zram swap only ("zram"), any swap ("any", e.g. for tests), or "off". Swap that is not zram is disk: slow

@@ -684,6 +684,7 @@ def test_jobs_that_are_not_memory_heavy_move_one_cpu_step_down(kq, tmp_path):
     submit(kq, "python3 -c " + repr(prog).replace("\\n", "\n"), name="t", qos="timed", mem="6G")
     drive(kq, d, lambda: len(d.cgroups) == 2)
     d.ratios, d.ratios_ts = {"t": 0.01}, time.time() + 3600   # its owner's history now says: light after all
+    d.forecast_ratios = {"t": [0.01] * 3}
     d.demote_ts = 0.0
     drive(kq, d, lambda: d.demoted == {1, 2}, secs=20)
     tids = lambda i: [int(x) for x in open(d.cgroups[i] + "/cgroup.threads").read().split()]
@@ -1145,3 +1146,18 @@ def test_a_daemon_start_closes_freezes_left_open_on_ended_jobs(kq):
     kq.Daemon()
     j = c.execute("SELECT frozen_s, frozen_since FROM jobs").fetchone()
     assert j["frozen_since"] == 0 and j["frozen_s"] == pytest.approx(10 + 200)
+
+
+def test_a_running_jobs_expected_size_comes_from_evidence_before_its_declaration(kq):
+    cfg = dict(kq.DEFAULTS)
+    # three of its owner's jobs finished at 0.1-0.3 of --mem: --mem x median x margin
+    assert kq.expected_size(16000, [0.1, 0.2, 0.3], 900, 30, cfg) == pytest.approx(16000 * 0.2 * cfg["mem_learn_margin"])
+    # no history, young: its declaration
+    assert kq.expected_size(16000, None, 900, 30, cfg) == 16000
+    # no history, past forecast_trust_s: a margin over what it has shown
+    assert kq.expected_size(16000, [0.5], 900, 900, cfg) == pytest.approx(900 * cfg["forecast_trust_margin"])
+    # never below what it has used
+    assert kq.expected_size(1000, [0.1, 0.1, 0.1], 5000, 30, cfg) == 5000
+    # the old rule, by settings: declared --mem
+    old = dict(cfg, forecast_min_jobs=10 ** 9, forecast_trust_s=10 ** 9)
+    assert kq.expected_size(16000, [0.1, 0.2, 0.3], 900, 900, old) == 16000

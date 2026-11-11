@@ -301,3 +301,18 @@ def keep_flags(rec, cfg, now, no_freeze_until=0.0, swapped=None):
         sw = rec.get("swapped", 0.0) if swapped is None else swapped
         rec["reserve_mb"] = cfg["keep_reserve_frac"] * max(0.0, rec["expect"] - rec["use"] - sw)
     return dear
+
+
+def expected_size(declared, ratios, max_use, age, cfg):
+    """How big a running job is expected to get (MB), from evidence before declarations: with forecast_min_jobs
+    of its owner's finished jobs, its --mem x their median peak/--mem (x mem_learn_margin); else, once it has run
+    forecast_trust_s, forecast_trust_margin x the most it has used; else its declared --mem. Never below what it
+    has used. (Declared --mem alone, counted as growth to come for every job of a new owner, held tens of GB for
+    jobs using a tenth of it.)"""
+    if ratios and len(ratios) >= cfg["forecast_min_jobs"]:
+        e = declared * sorted(ratios)[len(ratios) // 2] * cfg["mem_learn_margin"]
+    elif age >= cfg["forecast_trust_s"]:
+        e = max_use * cfg["forecast_trust_margin"]
+    else:
+        e = declared
+    return max(e, max_use)
