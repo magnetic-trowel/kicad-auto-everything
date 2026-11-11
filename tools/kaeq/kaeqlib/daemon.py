@@ -13,7 +13,7 @@ from .consts import GB, MEM_BINS, TICK
 from .cpu import adapt_runq_q, burst_fits, quantile
 from .gitsnap import drop_worktree, git, ref
 from .host import Host, TICK_HZ, at_high, cg_anon_refaults, cg_freeze, cg_frozen, cg_high_mb, cg_mem, cg_mem_pressure, cg_pressure, cg_set_high, cg_swap_mb, compress, compress_room_mb, job_cgroup, job_cpus, job_usage, kill_tree, pid_alive, shutil_which, uncompress
-from .leases import keep_flags, adapt_hold, adapt_z, lease_plan, max_rise, mem_hist, owner_correlation, pooled_headroom, warm_headroom
+from .leases import expected_size, keep_flags, adapt_hold, adapt_z, lease_plan, max_rise, mem_hist, owner_correlation, pooled_headroom, warm_headroom
 from .store import BEAT, CONF, DB, HOME, HOST, LOCK, OVERCOMMIT, RISE_HIST, backup_db, close_trace, config, db, deployed, digest, dlog, drop_scratch, du_mb, event, jobdir, load_overcommit, load_rise_hist, pinned_host, rc_path, scratchdir, write_trace
 from .units import active_for, fdur, fgb, frozen_for, times
 
@@ -39,7 +39,8 @@ class Daemon:
         self.trace = {}          # job id -> RSS samples (every ~10 s) for its memory histogram
         self.profiles, self.profiles_ts = {}, 0.0
         self.rho, self.rho_ts = {}, 0.0  # owner -> (measured correlation, pairs)
-        self.ratios, self.ratios_ts = {}, 0.0  # owner -> p95 of peak / --mem
+        self.ratios, self.ratios_ts = {}, 0.0  # owner -> median of peak / --mem (from mem_learn_min_jobs finished jobs)
+        self.forecast_ratios = {}  # owner -> its finished jobs' peak / --mem (from forecast_min_jobs; expected_size)
         self.ratio_samples = {}  # owner -> its jobs' peak / --mem, sorted
         self.organic = 0.0       # cumulative growth of running jobs' RSS (starts and finishes excluded)
         self.last_rss = {}
@@ -358,7 +359,8 @@ class Daemon:
                              compressed=bool(st.get("compressed") and st.get("frozen_since")),
                              mpress=0.0 if st.get("frozen_since") or not at_high(cg, st.get("set")) else cg_mem_pressure(cg),
                              swapped=0.0 if st.get("squeezed") else swapped,   # squeezed: cold, stays out
-                             owner=j["owner"], expect=max(self.need_mb(j, cfg), st["max_use"]),
+                             owner=j["owner"], expect=expected_size(j["mem_mb"], self.forecast_ratios.get(j["owner"]),
+                                                                    st["max_use"], active_for(j, now), cfg),
                              held_out=swapped if st.get("squeezed") else 0.0, cg=cg))
             jj = jobs[-1]
             if not jj["timed"]:
@@ -1055,7 +1057,7 @@ class Daemon:
         otherwise size every job of their owner by their ratio."""
         if now - self.ratios_ts < 300:
             return
-        out, samples = {}, {}
+        out, samples, fore = {}, {}, {}
         for (o,) in self.c.execute("SELECT DISTINCT owner FROM jobs WHERE state IN ('queued','running')").fetchall():
             r = sorted(p / m for m, p in self.c.execute(
                 "SELECT mem_mb, peak_mb FROM jobs WHERE owner=? AND state='ok' AND peak_mb>0 AND mem_mb>0 "
@@ -1063,7 +1065,9 @@ class Daemon:
             if len(r) >= cfg["mem_learn_min_jobs"]:
                 out[o] = r[len(r) // 2]
                 samples[o] = r
-        self.ratios, self.ratio_samples, self.ratios_ts = out, samples, now
+            if len(r) >= cfg["forecast_min_jobs"]:
+                fore[o] = r
+        self.ratios, self.ratio_samples, self.forecast_ratios, self.ratios_ts = out, samples, fore, now
 
     def need_mb(self, j, cfg):
         """Memory a job is expected to need: --mem, scaled by its owner's median peak/--mem (x mem_learn_margin).

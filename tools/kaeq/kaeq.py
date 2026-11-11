@@ -25,7 +25,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))   # kaeqlib sits next to this file
 from kaeqlib.consts import GB, MEM_BINS, TICK  # noqa: E402
 from kaeqlib.units import parse_cpus, parse_size, parse_dur, fgb, fdur, frozen_for, active_for, times  # noqa: E402
-from kaeqlib.leases import mem_hist, pooled_headroom, max_rise, pearson, owner_correlation, warm_headroom, lease_plan, adapt_z, adapt_hold  # noqa: E402
+from kaeqlib.leases import expected_size, keep_flags, mem_hist, pooled_headroom, max_rise, pearson, owner_correlation, warm_headroom, lease_plan, adapt_z, adapt_hold  # noqa: E402
 from kaeqlib.cpu import quantile, adapt_runq_q, burst_fits  # noqa: E402
 from kaeqlib.forecast import size_model, given_so_far, board_of, runtime_model, expected_durations, forecast_queue  # noqa: E402
 from kaeqlib.host import Host, TICK_HZ, at_high, cg_anon_refaults, cg_freeze, cg_frozen, cg_high_mb, cg_mem, cg_mem_pressure, cg_pressure, cg_set_high, cg_swap_mb, compress, compress_room_mb, cpu_ticks, job_cgroup, job_cpus, job_usage, kill_tree, meminfo, pid_alive, proc_by_session, runnable_threads, set_unit_prop, shutil_which, uncompress, user_pressure  # noqa: E402,F401
