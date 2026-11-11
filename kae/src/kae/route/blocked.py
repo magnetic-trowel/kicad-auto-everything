@@ -35,6 +35,7 @@ It is deterministic (no seeds) and bounded by `deadline`. Lengths are mm.
 """
 from __future__ import annotations
 
+from kae.budget import now as clock_now
 import math
 import time
 
@@ -366,7 +367,7 @@ def diagnose(board, info, plan, fills, report, sev=None, input_ids=(), deadline=
     final board with its project files beside it (drc.stage_board), `fills` its refilled
     zones (pcbnew_io.zone_fills()["zones"]), `report` its KiCad DRC report, `input_ids` the
     uuids of the input's tracks and vias (pre-routes: not ours to take out)."""
-    t0 = time.monotonic()
+    t0 = clock_now()
     b = load(board)
     sp = Space(b, info, plan=plan, sev=sev or {})
     from . import fab
@@ -390,7 +391,7 @@ def diagnose(board, info, plan, fills, report, sev=None, input_ids=(), deadline=
         widths = LM.widths_of(sp, net)
         wmin = min(widths)
         for k in range(len(ps) - 1, 0, -1):
-            if n >= max_conns or (deadline is not None and time.monotonic() > deadline):
+            if n >= max_conns or (deadline is not None and clock_now() > deadline):
                 out["undiagnosed"] += 1
                 continue
             n += 1
@@ -424,7 +425,7 @@ def diagnose(board, info, plan, fills, report, sev=None, input_ids=(), deadline=
                 h["evidence"].update(required=bd.get("required"), available=bd.get("available"), at=bd.get("at"))
                 hz.append(h)
     out["hazards"] = hz
-    out["seconds"] = round(time.monotonic() - t0, 1)
+    out["seconds"] = round(clock_now() - t0, 1)
     return out
 
 
@@ -606,7 +607,7 @@ def main(argv=None):
         inb = load(a.input)
         ids = {t.uuid for t in inb.tracks} | {v.uuid for v in inb.vias}
         res = diagnose(staged, info, plan, fills, rep, sev=opts["severities"], input_ids=ids,
-                       deadline=time.monotonic() + a.time, log=lambda m: None)
+                       deadline=clock_now() + a.time, log=lambda m: None)
         for line in res["summary"]:
             print(line)
         print(f"{len(res['blocked'])} blocked, {len(res['congestion'])} congestion, "

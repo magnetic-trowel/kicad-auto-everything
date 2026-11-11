@@ -101,6 +101,12 @@ Lessons from experiments that ran and measured nothing (2026-11):
   (status, scores, bug records) before submitting the full one.
 - **`results.csv` holds attempt 0 only** (cp1's attempt). A multi-seed comparison reads every attempt from
   the run folders (`boards/<id>/runs/<slug>.<method8>.a<k>/`).
+- **Counted-work budgets.** With `KAE_BUDGET=work` and `PYTHONHASHSEED=0` in a method's environment,
+  its `--time` is nominal seconds of counted work (`kae.budget`): the same budget does the same work on any
+  host, `restart.py` runs its attempts in batches judged in order, and wall time is only a ceiling (4× an
+  attempt's budget; a run that hits it reports `ceiling_hit` and has failed). Keep `KAE_WORKERS=1`. Freerouting
+  gets a pass cap and its job timeout stops mattering. See
+  [counted budgets](../../docs/research/benchmark-drift-2611.md#fix-budgets-in-counted-work-not-seconds).
 - **Timed jobs.** Runs budget on wall time, so their kaeq jobs must be class `timed` (never frozen).
   Before kaeq had classes, jobs frozen for memory ran shorter and worse, unevenly between arms;
   `kaeq`'s jobs table records `freezes` and `frozen_s` per job.

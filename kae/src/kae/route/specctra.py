@@ -12,6 +12,7 @@ Units: a DSN has `(resolution um 10)` and `(unit um)` in KiCad's export, so coor
 widths are micrometres; a SES has its own `(resolution um 10)` (tenths of a micrometre) in
 `routes` and `placement`. `unit_scale(tree)` gives the factor to millimetres.
 """
+from kae.budget import work_mode
 import re
 
 _TOK = re.compile(r'\(|\)|"[^"]*"|[^\s()"]+')
@@ -52,7 +53,27 @@ def parse(text):
 
 def read(path):
     with open(path, encoding="utf-8", errors="replace") as f:
-        return parse(f.read())
+        tree = parse(f.read())
+    if work_mode():                # KiCad exports the wires in UUID order, new on every import of a routed board
+        wiring = find(tree, "wiring")
+        if wiring is not None:
+            wiring[1:] = sorted((w for n in wiring[1:] for w in _wire_pieces(n)), key=repr)
+    return tree
+
+
+def _wire_pieces(node):
+    """A DSN (wire (path layer width x y x y ...) ...) as two-point wires, each from its smaller end:
+    which consecutive segments KiCad's export joins into one path depends on the file's order."""
+    path = find(node, "path") if isinstance(node, list) and node and node[0] == "wire" else None
+    if path is None or len(path) < 7:
+        return [node]
+    k = node.index(path)
+    pts = [(path[i], path[i + 1]) for i in range(3, len(path) - 1, 2)]
+    out = []
+    for p, q in zip(pts, pts[1:]):
+        a, b = sorted((p, q), key=lambda t: (float(t[0]), float(t[1])))
+        out.append(node[:k] + [path[:3] + [a[0], a[1], b[0], b[1]]] + node[k + 1:])
+    return out
 
 
 def atom(a):

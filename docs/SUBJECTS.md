@@ -969,7 +969,7 @@ Use: `grep -i '<term>' docs/SUBJECTS.md`. The first link is the likeliest main d
 - corridor overflow: [research/placement/kae-routability-estimators#idea-and-how-it-works](research/placement/kae-routability-estimators.md#idea-and-how-it-works)
 - cost model: [physics/research-gaps#tier-1-blocking-or-highest-leverage](topics/physics/research-gaps.md#tier-1-blocking-or-highest-leverage)
 - COST_ESTIMATOR: [routing/kicad-pns-router#line-placer-shove-and-optimizer](topics/routing/kicad-pns-router.md#line-placer-shove-and-optimizer)
-- counted budget: [research/benchmark-drift-2611](research/benchmark-drift-2611.md)
+- counted budget: [research/benchmark-drift-2611#acceptance-the-same-command-alone-and-under-load](research/benchmark-drift-2611.md#acceptance-the-same-command-alone-and-under-load)
 - counterfactual: [ux/explanations-and-alternatives#contrastive-and-counterfactual-explanation-of-solver-output](topics/ux/explanations-and-alternatives.md#contrastive-and-counterfactual-explanation-of-solver-output)
 - counterfactual coupling map: [ideas/physics-first/lens-cd#b-jobs-verbs-and-explanations](ideas/physics-first/lens-cd.md#b-jobs-verbs-and-explanations)
 - coupled relations: [llm/spatial-reasoning-limits#limits](topics/llm/spatial-reasoning-limits.md#limits); [digests/llm-data-ux#what-llms-can-and-cannot-do](digests/llm-data-ux.md#what-llms-can-and-cannot-do)

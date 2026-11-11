@@ -17,6 +17,7 @@ board stays the judge.
 """
 from __future__ import annotations
 
+from kae.budget import now as clock_now
 import math
 import os
 import re
@@ -98,7 +99,7 @@ def legalize(P, st, time_s=30.0, workers=2, seed=0, k=8, max_rounds=8, log=None,
     2. Greedy: whatever is still illegal goes to the nearest free spot, largest first,
        evicting smaller parts when nothing is free nearby (`greedy`).
     3. Small boards only (<= GLOBAL_MAX parts): one CP-SAT model over every part."""
-    t0 = time.monotonic()
+    t0 = clock_now()
     deadline = t0 + time_s
     win_deadline = t0 + window_share * time_s
     rep = dict(rounds=0, windows=0, solved=0, global_used=False, start_violators=0)
@@ -110,12 +111,12 @@ def legalize(P, st, time_s=30.0, workers=2, seed=0, k=8, max_rounds=8, log=None,
             rep["start_violators"] = len(viol)
             for i in force:
                 viol.setdefault(i, []).append(("kicad", None))
-        if not viol or time.monotonic() > win_deadline:
+        if not viol or clock_now() > win_deadline:
             break
         rep["rounds"] = rnd + 1
         bad = set(viol)
         for gr in _groups(st, bad, radius_mm=4.0):
-            now = time.monotonic()
+            now = clock_now()
             if now > win_deadline:
                 break
             key = tuple(gr)
@@ -140,14 +141,14 @@ def legalize(P, st, time_s=30.0, workers=2, seed=0, k=8, max_rounds=8, log=None,
                 log(f"legalize window {gr[:4]} free={len(free)} status={model.status} {model.wall:.2f}s")
     viol = grid_violations(st)
     if viol:
-        rep["greedy"] = greedy(P, st, list(viol), log=log, time_s=max(1.0, deadline - time.monotonic()))
+        rep["greedy"] = greedy(P, st, list(viol), log=log, time_s=max(1.0, deadline - clock_now()))
         viol = grid_violations(st)
-    if viol and time.monotonic() < deadline and len(P.mov) <= GLOBAL_MAX:
+    if viol and clock_now() < deadline and len(P.mov) <= GLOBAL_MAX:
         rep["global_used"] = True
         items = [cpsat.single(P, i, int(st.X[i]), int(st.Y[i]), int(st.K[i])) for i in P.mov]
         obstacles = [(ob.side, ob.g) for ob in P.obstacles]
         model = cpsat.Model(P, items, obstacles, w_disp=1.0, w_rot=1.0)
-        sol = model.solve(max(1.0, deadline - time.monotonic()), workers=workers, seed=seed)
+        sol = model.solve(max(1.0, deadline - clock_now()), workers=workers, seed=seed)
         rep["global_status"] = model.status
         if sol is not None:
             for it, i, (X, Y, v) in zip(items, P.mov, sol):
@@ -155,7 +156,7 @@ def legalize(P, st, time_s=30.0, workers=2, seed=0, k=8, max_rounds=8, log=None,
         viol = grid_violations(st)
     rep["end_violators"] = len(viol)
     rep["violations"] = {P.parts[i].ref: [str(r) for r in rs[:3]] for i, rs in list(viol.items())[:20]}
-    rep["seconds"] = round(time.monotonic() - t0, 2)
+    rep["seconds"] = round(clock_now() - t0, 2)
     return rep
 
 
@@ -370,7 +371,7 @@ def _greedy_fast(P, st, parts, log, w_rot, ripup, max_ripups, t0, time_s=None):
     # first pass: a free spot near where the part wants to be
     out_of_time = False
     for i in parts:
-        if time_s is not None and time.monotonic() - t0 > time_s:
+        if time_s is not None and clock_now() - t0 > time_s:
             out_of_time = True
             queue.append(i)
             continue
@@ -407,7 +408,7 @@ def _greedy_fast(P, st, parts, log, w_rot, ripup, max_ripups, t0, time_s=None):
                                    opp, opp_n, brd, brd_n, int(min(reach, max_d)))
         return None if c < 0 else (c, X, Y, ks[k], "ripup")
     while queue:
-        if out_of_time or (time_s is not None and time.monotonic() - t0 > time_s):
+        if out_of_time or (time_s is not None and clock_now() - t0 > time_s):
             out_of_time = True
             break
         i = queue.pop(0)
@@ -455,7 +456,7 @@ def _greedy_fast(P, st, parts, log, w_rot, ripup, max_ripups, t0, time_s=None):
     unplaced += queue
     moved = sum(math.hypot((st.X[i] - x) * P.g, (st.Y[i] - y) * P.g) for i, (x, y) in start.items())
     rep = dict(placed=len(placed_set), unplaced=[P.parts[i].ref for i in unplaced], moved_mm=round(moved, 2),
-               ripups=ripups, seconds=round(time.monotonic() - t0, 2), compiled=True, out_of_time=out_of_time)
+               ripups=ripups, seconds=round(clock_now() - t0, 2), compiled=True, out_of_time=out_of_time)
     if log:
         log(f"greedy legalization: {len(placed_set)} placed, {len(unplaced)} without a spot, {ripups} rip-ups, "
             f"moved {moved:.1f} mm ({rep['seconds']}s)")
@@ -472,7 +473,7 @@ def greedy(P, st, parts, log=None, w_rot=None, ripup=True, max_ripups=None, comp
     evicted and placed again (rip-up; evictions only go to smaller parts, so it ends).
     Always ends legal for the parts it places; returns {placed, unplaced: [refs], moved_mm,
     ripups}."""
-    t0 = time.monotonic()
+    t0 = clock_now()
     parts = sorted({i for i in parts if P.parts[i].movable}, key=lambda i: -P.parts[i].area)
     if not parts:
         return dict(placed=0, unplaced=[], moved_mm=0.0, ripups=0, seconds=0.0)
@@ -560,7 +561,7 @@ def greedy(P, st, parts, log=None, w_rot=None, ripup=True, max_ripups=None, comp
     unplaced += queue
     moved = sum(math.hypot((st.X[i] - x) * P.g, (st.Y[i] - y) * P.g) for i, (x, y) in start.items())
     rep = dict(placed=len(placed_set), unplaced=[P.parts[i].ref for i in unplaced], moved_mm=round(moved, 2),
-               ripups=ripups, seconds=round(time.monotonic() - t0, 2))
+               ripups=ripups, seconds=round(clock_now() - t0, 2))
     if log:
         log(f"greedy legalization: {len(placed_set)} placed, {len(unplaced)} without a spot, {ripups} rip-ups, "
             f"moved {moved:.1f} mm ({rep['seconds']}s)")
