@@ -34,3 +34,10 @@ Seed 0, k = 1, interleaved in the kaeq timed class.
 ## What follows
 - If neither P arm wins, the windows line is concluded: windows do not earn their compute, neither instead of restarts nor on top of them. The research docs say so.
 - If a P arm wins, its split becomes the candidate for the merit methods' wrapper, tested next on the merit suite.
+
+## Addendum after the 2-board smoke (2026-11-10, before the other 67)
+Plumbing only, and the two boards stay in the batch:
+- All six runs finished inside the timeout, and KiCad scored them.
+- In both P arms the wrapper ran the joint loop as its `--finish` pass on the kept board. It ran 326-1,379 s, and on one board its board was kept.
+- The pass gets the time left after the restarts, at least its reserve. When the restarts' last attempt ends early it can get more than the nominal split (1,646 s on one board). This is how `restart.py --finish` works and is the same for both splits.
+No rule changes.
