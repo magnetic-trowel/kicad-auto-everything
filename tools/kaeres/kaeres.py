@@ -546,11 +546,13 @@ def heap_gb(size_mb):
 
 def method_timeout(m, row):
     """Seconds per attempt. With timeout_scale=sqrt-fp40, bigger boards get more: the base times
-    sqrt(footprints / 40) when that is above 1, at most 4 h."""
+    sqrt(footprints / 40) when that is above 1, at most timeout_cap_s (default 4 h; a method whose
+    own ceiling is longer, e.g. two counted-work phases at 4x their nominal budget, sets it)."""
     p = m["recipe"]["params"]
     t = int(p.get("timeout_s", 900))
     if p.get("timeout_scale") == "sqrt-fp40":
-        t = int(min(4 * 3600, t * max(1.0, (row.get("footprints") or 0) / 40) ** 0.5))
+        cap = float(p.get("timeout_cap_s", 4 * 3600))
+        t = int(min(cap, t * max(1.0, (row.get("footprints") or 0) / 40) ** 0.5))
     return t
 
 
