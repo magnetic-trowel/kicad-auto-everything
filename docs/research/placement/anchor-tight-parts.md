@@ -5,7 +5,7 @@
 Scope: why three boards with clean human layouts were never legal under kae placement, and the fix in `kae.place.pipeline`. Not here: legality in general -> [kae-exact-legality](kae-exact-legality.md).
 Keys: legality, anchor_tight, tight part, courtyard overhang, allow_overhang, kae.place.pipeline._anchor_tight_parts, J19, openremise, vik-pmw3360, esp32 flight controller
 
-**Status:** partial, not merged. The root cause is verified. A second version (KiCad-verified spots, `loop-legal-ab2`, 60 boards) cuts placement errors 29 % with strong significance in both chains, but fails its pre-registered guard: three small module carriers lose legality to pads hanging off the board edge.
+**Status:** worked (third run, `loop-legal-ab3`, below; PR #56). Earlier status: partial, not merged. The root cause is verified. A second version (KiCad-verified spots, `loop-legal-ab2`, 60 boards) cuts placement errors 29 % with strong significance in both chains, but fails its pre-registered guard: three small module carriers lose legality to pads hanging off the board edge.
 **First published:** 2026-11-09, branch `loop-legality`.
 
 ## The failure
@@ -121,3 +121,14 @@ The known boards, legal of 3 seeds (staged; joint, off → on):
 - Also fixed, 0 → 3 in both chains: meo98-picostack, hollyrock-ecoconnect, 0rax-xiao-base; zlosynth goes 0-1 → 3.
 
 **Next.** Fix the write, and also require every pad centre of an anchored spot on the board. Then pre-register a third run on the same 60 boards (`loop-legal-ab3`), not this run's 103-board extension.
+
+## Third A/B: `loop-legal-ab3` (2026-11-11): passes
+Same 60 boards, arms and seeds as `loop-legal-ab2`. The changes were the write fix and the every-pad-on-the-board rule, with an explicit opens bound pre-registered. All four conditions hold in both chains:
+- **Placement errors per board:** staged 8 boards fewer, 4 more, p 0.017; joint 12 fewer, 1 more, p 0.001. Totals 1,525 → 1,147 and 1,596 → 1,149.
+- **Guard:** no board loses legality.
+- **Opens:** −5.8 % staged (1,162 → 1,095), −6.2 % joint (1,398 → 1,312).
+- **DRC errors:** 3,235 → 2,214 and 3,310 → 2,221.
+
+Also: legal 105 → 122 and 106 → 124 of 180 (Fisher p 0.08, 0.06); clean 73 → 87 and 72 → 83; CPU 103.8 → 96.6 h and 111.5 → 106.3 h.
+
+Every board this work is about is legal 3 of 3 with the change: openremise, esp32 flight, vik-pmw3360, melexinvn, the three module carriers, meo98, hollyrock, 0rax-xiao, zlosynth. PR #56.
