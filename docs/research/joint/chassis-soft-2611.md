@@ -84,12 +84,13 @@ Per board, M is kept if it is legal and its opens are no more than R's; otherwis
 | portfolio (M + R) | 934 | 111 | n 95, median 0.826 | 205.5 h (M 110.2 + R 95.3) |
 | R' (`loop-physics-matched`'s R: `--parallel 1`, 3.15 B wall, same boards) | 904 | 115 | n 102, median 1.023 | 79.7 h |
 | best of R and R' | 843 | 119 | | 175.0 h |
+| portfolio, harness-ranked (legal, opens, DRC errors; M on 113 boards) | 938 | 114 | n 93, median 0.826 | 205.5 h |
 
 **At comparable compute**, two restart runs (175 h) beat the portfolio (205 h) on opens: 843 vs 934, portfolio worse on 21 boards and better on 5, p 0.019. They also win on clean boards, 119 vs 111. The portfolio is better on physics: median 0.826 against the best restart run, n 97, p < 0.0001.
 
 There is no R at exactly twice the allowance. R' is a different wrapper setting, so "best of R and R'" stands in for it.
 
-The portfolio clean count (111) falls below R's (114) because the rule picks M on equal opens even where M has a DRC error R does not. A portfolio ranked like the harness (legal, opens, errors) would fix that; it was not run.
+The first rule picks M on equal opens even where M has a DRC error that R does not, so its clean count (111) falls below R's (114). Ranked like the harness (legal, then opens, then DRC errors), the portfolio matches R's clean count (114) and keeps the physics gain (0.826): 938 opens, 121 errors against R's 124. It still routes worse than two restart runs (843 opens, 119 clean).
 
 **Reading:** M's physics is real and survives a portfolio. It costs either completion (M alone) or compute that would buy more completion as restarts. A user who values physics on boards that route can run M and R and keep M where it routes. The default for completion stays R.
 

@@ -90,6 +90,16 @@ def main():
     print(f"  opens {po} vs R {ro}; clean {sum(bool(port[b]['s'].get('clean')) for b in B)} vs R {sum(bool(D[b]['R']['s'].get('clean')) for b in B)}; "
           f"physics vs R: n {len(xs)}, median {(math.exp(st.median(xs)) if xs else float('nan')):.3f}, p {A.sign_flip(xs):.4f}; "
           f"CPU M + R {(cpu_m + cpu_r) / 3600:.1f} h vs R {cpu_r / 3600:.1f} h")
+    # the harness's ranking: legal first, then fewer open connections, then fewer DRC errors; M kept when it ranks no worse
+    rank = lambda r: (0 if r["s"].get("legal") else 1, r["s"]["unconnected"], r["s"].get("errors") or 0)  # noqa: E731
+    port2 = {b: D[b]["M"] if rank(D[b]["M"]) <= rank(D[b]["R"]) else D[b]["R"] for b in B}
+    po2 = sum(port2[b]["s"]["unconnected"] for b in B)
+    xs2 = [x for x in (phys_ratio(port2[b], D[b]["R"]) for b in B) if x is not None and abs(x) > 1e-12]
+    print(f"\nPortfolio, harness-ranked (legal, opens, DRC errors): M chosen on {sum(1 for b in B if port2[b] is D[b]['M'])} of {len(B)}")
+    print(f"  opens {po2} vs R {ro}; clean {sum(bool(port2[b]['s'].get('clean')) for b in B)} vs R "
+          f"{sum(bool(D[b]['R']['s'].get('clean')) for b in B)}; errors {sum(port2[b]['s'].get('errors') or 0 for b in B)} vs R "
+          f"{sum(D[b]['R']['s'].get('errors') or 0 for b in B)}; physics vs R: n {len(xs2)}, median "
+          f"{(math.exp(st.median(xs2)) if xs2 else float('nan')):.3f}, p {A.sign_flip(xs2):.4f}; CPU as above")
     return B, D
 
 
