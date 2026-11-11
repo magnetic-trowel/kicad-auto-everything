@@ -19,7 +19,8 @@ E="$WENV NUMBA_CACHE_DIR=\$PWD/numba OMP_NUM_THREADS=1 KAE_BRIDGE_FREEROUTING=$F
 FIN="$CP $E -m kae.route.cli lastmile @IN@ @BEST@ @OUT@ --seed @SEED@ --time @TIME@"
 RES="if [ \"\$KAE_RESUME\" = 1 ]; then $E -m kae.route.cli route @BEST@ @OUT@ --seed @SEED@ --time @TIME@; else"
 R_CMD="$CP $RES $E -m kae.joint.cli run @IN@ @OUT@ --seed @SEED@ --time @TIME@ --max-iters 0 --no-modules; fi"
-M_CMD="$CP $RES $E -m kae.joint.cli run @IN@ @OUT@ --seed @SEED@ --time @TIME@ --max-iters 0; fi"
+# the alternative is M-clock: the module stage keeping its clock (module-escape PLAN, Addendum 3)
+M_CMD="$CP $RES $E -m kae.joint.cli run @IN@ @OUT@ --seed @SEED@ --time @TIME@ --max-iters 0 --set module_clock=1; fi"
 # --time = two R allowances of 900 s x sqrt(fp/40) nominal work (= timeout x 9/40); the harness timeout, 8,000 s x
 # sqrt(fp/40), is the wrapper's own ceiling (4 x that nominal work) plus about 10 % for its DRCs and physics, never capped
 wrap() {  # extra
@@ -28,5 +29,5 @@ wrap() {  # extra
 common=(--kind joint-fixed --param timeout_s=8000 --param timeout_scale=sqrt-fp40 --param timeout_cap_s=200000 --param parallel=4 --code kae=.@$SHA --harness $SHA)
 $K method add "kae cfirst bestR $S7 (restarts)" --description "best of two restart runs of staged (J1 arm a): --policy completion-first without --alt; at $S7" \
   --command "$(wrap "")" "${common[@]}"
-$K method add "kae cfirst CF $S7 (restarts)" --description "completion-first: staged restarts, then the module stage (J1 arm b) if that board is clean, else another restart run; at $S7" \
+$K method add "kae cfirst CF $S7 (restarts)" --description "completion-first: staged restarts, then the module stage with its clock (M-clock) if that board is clean, else another restart run; at $S7" \
   --command "$(wrap "--alt '$M_CMD'")" "${common[@]}"

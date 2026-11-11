@@ -19,7 +19,7 @@ Written 2026-11-11, before any run of this experiment. **Not submitted:** it wai
 
 ## Arms (`setup.sh`; joint-fixed; J1's wrapper settings `--parallel 4 --first-s 300 --scale-first --slack 1.15 --resume 0.5 --final lastmile --check-placement`)
 - **bestR:** `--policy completion-first` without `--alt`. This is always two restart runs of R (`--max-iters 0 --no-modules`), seeds S and S+1, best kept: best-of-two-R through the same code.
-- **CF:** `--policy completion-first --alt M`, where M is `--max-iters 0` with the module stage.
+- **CF:** `--policy completion-first --alt M-clock`, where M-clock is `--max-iters 0 --set module_clock=1`: the module stage keeping its clock, with the first route's time from the attempt budget (branch `module-escape`, its PLAN's Addendum 3, merged into this branch). The module stage as it was ran past its clock and starved the first route, which caused most of its cost in open connections. This draft is held until `module-clock` reads out, and the choice of M-clock or an ablation of it as `--alt` follows that result.
 
 **Budgets and builds:**
 - `--time` is two R allowances: 2 × 900 s × sqrt(fp/40) of nominal work, counted-work budgets (`KAE_BUDGET=work`, `PYTHONHASHSEED=0`, `KAE_WORKERS=1`). The harness timeout, 4 × that, is the wall ceiling.
