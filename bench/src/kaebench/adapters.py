@@ -270,6 +270,15 @@ def _router_report(path):
                 cpu_time_s=use.get("cpu_time"), peak_memory_mb=use.get("peak_memory"))
 
 
+def _restart_reports(workdir):
+    """What tools/kaeres/restart.py leaves in the work directory, which the runner deletes: its
+    per-attempt log and the kept attempt's own report. Links are left out: this copy runs outside
+    the sandbox, and only files the method wrote belong in the results."""
+    d = Path(workdir) / "restarts"
+    return [d / n for n in ("summary.json", "report.json", "report-origin.json", "fr-telemetry.tar")
+            if (d / n).is_file() and not (d / n).is_symlink()]
+
+
 class Command(Adapter):
     """Any external tool: a command template run in the work directory, sandboxed.
 
@@ -314,10 +323,11 @@ class Command(Adapter):
             ok = board_path(out).exists()
             return AdapterResult(board_path(out) if ok else None,
                                  f"timed out after {timeout}s\n{e.stdout or ''}{e.stderr or ''}",
-                                 dict(timed_out=True, partial=ok, sandboxed=self.sandbox.enabled))
+                                 dict(timed_out=True, partial=ok, sandboxed=self.sandbox.enabled,
+                                      artifacts=_restart_reports(w)))
         ok = board_path(out).exists()
         return AdapterResult(board_path(out) if ok else None, log,
-                             dict(rc=r.returncode, sandboxed=self.sandbox.enabled))
+                             dict(rc=r.returncode, sandboxed=self.sandbox.enabled, artifacts=_restart_reports(w)))
 
 
 def make(name, command=None, passes=None, sandbox=None, freerouting=None):

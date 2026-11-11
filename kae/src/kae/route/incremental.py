@@ -117,7 +117,8 @@ def route_open(input_path, output_path, seed=0, time_s=30.0, workdir=None, opts=
                              state=(run.report or {}).get("final_state"), settings=settings,
                              autorouter_stop=(run.report or {}).get("autorouter_stop"),
                              optimizer_stop=(run.report or {}).get("optimizer_stop"),
-                             incomplete=_incomplete(wd / "board.result.json"))
+                             incomplete=_incomplete(wd / "board.result.json"),
+                             **({"telemetry": run.report["telemetry"]} if (run.report or {}).get("telemetry") else {}))
         log(f"freerouting: rc={run.rc} {run.seconds:.1f}s state={(run.report or {}).get('final_state')}")
         if run.ses is None:
             shutil.copy2(input_path, output_path)
