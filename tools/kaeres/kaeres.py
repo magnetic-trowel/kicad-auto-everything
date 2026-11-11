@@ -1455,6 +1455,28 @@ def cmd_rerun(a):
 
 
 # ------------------------------------------------------------------ experiment reports
+def clean_net_of_input(row, input_drc):
+    """xc, "clean net of the input": valid, nothing unconnected, and no DRC error type above its count in
+    the route task's input (input_drc: the human placement with its copper stripped). The same test
+    restart.py stops on. Report-only; `clean` is unchanged. None when the input's DRC is not known.
+    Fair for route-only methods: a method that moves parts no longer has the input's errors to inherit,
+    so for placing methods (`kind` not route) reports mark it instead of comparing it."""
+    if input_drc is None or input_drc.get("errors_by_type") is None:
+        return None
+    if not row.get("valid") or row.get("unconnected") != 0:
+        return False
+    base = input_drc["errors_by_type"]
+    return all(n <= base.get(t, 0) for t, n in json.loads(row.get("errors_by_type") or "{}").items())
+
+
+def route_input_drc(e, bid, r=None):
+    """The route task's input DRC a run's xc is measured against: the experiment's route task of the board, else
+    (given run r, when the experiment's task is not in the store) the run's own task if it is a route task.
+    Unknown, None, otherwise, rather than guessed."""
+    t = task_meta(bid, exp_task_id(e, bid, "route") or "") or (task_meta(bid, r["task_id"]) if r and _run_kind(r) == "route" else None)
+    return ((((t or {}).get("record") or {}).get("tasks") or {}).get("route") or {}).get("input_drc")
+
+
 def exp_rows(e):
     """(rows, bugs, prepare failures) of an experiment: each method's runs (every attempt) on each board's task of the
     experiment (exp_task_id; a run on another task is not comparable and is left out), viewed through
@@ -1473,6 +1495,7 @@ def exp_rows(e):
         for p in (bd / "prepare-failures").glob(f"{e['harness']['commit'][:12]}.json"):
             fails.append(read_json(p))
         task_meta = None
+        route_drc = route_input_drc(e, bid)
         human_base = human_drc_baseline(bid, human, exp_task_id(e, bid, "route"), evs["drc"]) if human else dict(types=None, source="none", evaluator=None)
         for m, att in ((m, att) for m in want for att in range(1 if m is want[0] and human else e.get("attempts") or 1)):
             d, r = find_run(bid, m["id"], att, exp_task_id(e, bid, _run_kind(dict(method_id=m["id"]))))
@@ -1490,6 +1513,8 @@ def exp_rows(e):
             v = run_view(bid, d, r, use, human_physics(bid, r["task_id"], use))
             v["evaluator_drc"], v["evaluator_physics"] = use["drc"], use["physics"]
             v["foreign_evaluator"] = use["drc"] is not None and use["drc"] != evs["drc"]  # scored, but by another scorer
+            v["kind"] = _run_kind(r)
+            v["xc"] = clean_net_of_input(v, route_drc if route_drc is not None else route_input_drc(e, bid, r))
             b = read_json(bd / "board.json") or {}
             v.update(repo=task_meta.get("repo"), split=task_meta.get("split"), pads=(task_meta.get("reference") or {}).get("stats", {}).get("pads"),
                      human_clean=task_meta.get("human_clean"), qualified=task_meta.get("qualified"),
@@ -1612,6 +1637,14 @@ def paired_table(rows, base, names, repos):
     return out + [""]
 
 
+def _xc_cell(rs):
+    """xc share of a method's attempt-0 rows (not counted where the input's DRC is unknown), † for a placing method."""
+    known = [r.get("xc") for r in rs if r.get("xc") is not None]
+    if not known:
+        return "—"
+    return _f(_mean([1.0 if x else 0.0 for x in known])) + ("" if all(r.get("kind", "route") == "route" for r in rs) else "†")
+
+
 def method_table(rows, names, title):
     """Per-method table. DRC errors and physics are averaged over the ok runs that have a value, which
     differ by method (a board with no output drops out instead of counting as worst, which favours
@@ -1620,11 +1653,11 @@ def method_table(rows, names, title):
     every = rows
     rows = [r for r in rows if r["attempt"] == 0]
     ce, cp = _common(rows, names, "errors"), _common(rows, names, "physics_total")
-    out = [f"### {title}", "", "| method | boards | ok | cp1 (clean) | k | cpk (any clean) | completion | not closed | DRC errors / board (boards) | "
+    out = [f"### {title}", "", "| method | boards | ok | cp1 (clean) | xc (clean net of input; † placing method, not comparable) | k | cpk (any clean) | completion | not closed | DRC errors / board (boards) | "
            f"DRC errors / board, {len(ce)} common boards | "
            "timeouts | no output | errors | CPU s median / p90 / total h | restarts median / p90 | wall s median | "
            f"physics Σu (boards) | physics Σu, {len(cp)} common boards | Σu vs human (median) | module ratio (median) |",
-           "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+           "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for n in names:
         rs = [r for r in rows if r["method"] == n]
         if not rs:
@@ -1635,7 +1668,7 @@ def method_table(rows, names, title):
         errs = [r["errors"] for r in ok if r["errors"] is not None]
         phys = [r["physics_total"] for r in rs if r["physics_total"] is not None]
         out.append("| " + " | ".join([
-            n, str(len(rs)), str(len(ok)), _f(_mean([1.0 if r["clean"] else 0.0 for r in rs])), str(k), _f(cpk),
+            n, str(len(rs)), str(len(ok)), _f(_mean([1.0 if r["clean"] else 0.0 for r in rs])), _xc_cell(rs), str(k), _f(cpk),
             _f(_mean([r["completion"] if r["completion"] is not None else 0.0 for r in rs])),
             str(sum(1 for r in ok if (r["unconnected"] or 0) > 0)), f"{_f(_mean(errs), 2)} ({len(errs)})",
             _f(_mean([r["errors"] for r in ok if r["board"] in ce]), 2),
@@ -1717,7 +1750,11 @@ def cmd_exp_report(a):
                 "(runs reused from other experiments). Host load moves results by ~14 % on this host (zone-keepout-ab2), "
                 "so differences on those boards are not reliable; register replicates and run the arms side by side."]
     rep += ["", "Columns: cp1 = share of boards routed clean (valid, 0 unconnected, 0 DRC errors) on attempt 0; k = the most "
-            "attempts a board has; cpk = share of boards with any clean attempt among k (equal to cp1 when k = 1). A method "
+            "attempts a board has; cpk = share of boards with any clean attempt among k (equal to cp1 when k = 1). "
+            "xc (clean net of the input) = valid, 0 unconnected, and no DRC error type above its count in the route task's "
+            "input DRC (the human placement, copper stripped): the same test restart.py stops on, report-only, `clean` "
+            "unchanged. It is meant for route-only methods; a placing method (marked †) moves parts, so the input's errors are "
+            "not its to inherit and its xc is not comparable. A method "
             "named *restarts* is wrapped by restart.py, so one of its runs is already the best of its internal restarts "
             "(restarts column): its cp1 is a best-of-N over seeds within one wall budget; completion = "
             "share of initially unconnected items routed (0 for no output); not closed = boards with unconnected items left; "

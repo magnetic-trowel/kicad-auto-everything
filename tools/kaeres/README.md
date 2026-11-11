@@ -49,8 +49,8 @@ Consequences:
       bugs.json                       bug records of this run
   experiments/<name>/
     experiment.json, boards.txt       methods, harness and kae commits, evaluators
-    REPORT.md, results.csv            per method: cp1, k, cpk, completion, not closed, DRC errors, timeouts, CPU, physics;
-                                      paired tests against a baseline (below)
+    REPORT.md, results.csv            per method: cp1, xc, k, cpk, completion, not closed, DRC errors, timeouts, CPU, physics;
+                                      paired tests against a baseline (below); column definitions in "Report columns"
     bugs/BY-SIGNATURE.md, index.jsonl bugs grouped by signature: the work list for a fixing agent
   index.sqlite                        rebuildable cache over everything (kaeres index)
 ```
@@ -181,6 +181,12 @@ Before task spec 10, prepare drew random uuids for objects that a board file sto
 - **Alias.** `find_run` counts a run made on another task of the same board file, kind and KiCad when that task's content, as prepared by the run's own harness (`task_prepared_by`, else `harness_commit`), equals a content recorded for the wanted task. Inputs that differ never alias. A spec-9 preparation of a board without uuids is random, so it never equals the seeded one.
 - **Old tasks.** Their content is computed lazily. The first job on a board at a newer spec re-prepares the board with each older harness commit whose runs it could reuse (`fill_old_contents`, one prepare per commit), if that harness's code is in `code/`. `kaeres job --content-only --harness H --board B --method M ...` does only this, so the queue can do it ahead of an experiment.
 - **Older-spec methods.** From spec 10 on, a method pinned to a harness of an older task spec runs, with its own harness, on tasks prepared by the experiment's harness (`prep_harness`), and `exp create` accepts it. Its stored runs on unchanged boards are reused; on changed boards it runs again, on a deterministic task. Runs keep the DRC evaluation of the harness that scored them, as before.
+
+## Report columns
+
+`exp report` writes `REPORT.md` and `results.csv`. The columns below are report-only: they never change a score, a task or a stored evaluation, and they are not targets.
+
+- **`xc`** (clean net of the input; beside `cp1`): valid, 0 unconnected, and no DRC error type above its count in the route task's `record.tasks.route.input_drc` (the human placement with the copper stripped). It is the test `restart.py` stops on. `cp1` needs zero errors of any type, including ones the task hands the method (a courtyard overlap of the human's). On route-only methods `xc` reads as "the method added nothing". A placing method moves parts, so the input's errors are not its to inherit, and `xc` of a placing method (kind not `route`) is printed with a dagger and is not comparable. `results.csv` has `xc`, and `kind` so the route-only rows can be picked.
 
 ## Bug records
 
