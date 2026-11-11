@@ -70,3 +70,32 @@ Same two arms (`ctl`, `j14`) on the extension's 29 boards, pooled with the first
 - Errors 3,505 vs 3,458 (+1.4 %); cp1 1 vs 1; CPU 31.1 vs 31.6 h.
 - Mechanism: iteration 0 ends with the bridge's last mile, so the windows and the finish start from fewer opens (7,010 down to 6,388 after iteration 0), at no extra median time.
 - Default changed in PR #54 (branch `joint-first-last-mile`).
+
+## Compute-matched: windows against restarts (`loop-compute-matched`, 2026-11-10)
+Plan: `tools/kaeres/experiments/loop-compute-matched/PLAN.md` (pre-registered, with an addendum after the smoke). Commit f2f4151. 69 boards: the 40 above and the 29 of the extension.
+- **W, joint plus two budgets of windows:** the bench's `w2 ctl` recipe, run again.
+- **R, staged plus restarts:** J1's staged arm under `restart.py --parallel 1`.
+- Both arms get the same timeout (3.15 B) on one process lane and ran interleaved; KiCad scored all 138 runs.
+
+| | W joint + windows | R staged + restarts |
+|---|---|---|
+| open connections | 5,655 | 4,485 |
+| boards fewer / more (W against R) | 13 / 46 | |
+| mean d, sign-flip p | +0.142, 0.0001 | |
+| first 40 / extension 29 | 3,562 / 2,093 | 2,960 / 1,525 (p 0.028 / < 0.001) |
+| cp1, legal | 1, 20 | 1, 20 |
+| completion (mean) | 0.829 | 0.868 |
+| DRC errors | 3,542 | 3,472 |
+| placement errors | 1,429 | 1,450 |
+| CPU | 88.1 h | 99.6 h (W/R 0.88) |
+| windows (kept) / restart attempts | 2,146 (210), on 68 boards | median 8 attempts |
+
+**Verdict: restarts win at equal allowance.** The joint loop with two budgets of windows leaves 26 % more open connections than the staged pipeline restarted in the same time. That holds on 46 of 59 boards that differ, and in both batches. W used 12 % less CPU, because the loop stops when no window is left, but that does not offset a 26 % opens deficit.
+
+Errors and placement errors are nearly equal. The starved_thermal gap (203 vs 75) is again the jetson board.
+
+Physics cannot be judged: only 2 boards were fully routed in both arms.
+
+**What it means.** For open connections, extra compute is better spent on restarts of the staged pipeline than on windows. Windows remove opens (16 % at two budgets against the natural split), but a restart, which re-places from scratch, removes more. That fits the window bench's diagnosis: the windows run out of useful moves (repeats rise to 53 %), while each restart samples a new placement.
+
+The case left for the joint loop is physics: the module stage and the windows' physics acceptance. These boards could not measure it. Window-choice work (`window-choice-proposal-2611.md`) would now have to beat restarts, not the current windows.
