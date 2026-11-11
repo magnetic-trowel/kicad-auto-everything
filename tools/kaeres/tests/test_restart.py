@@ -296,3 +296,21 @@ def test_a_kept_fresh_attempt_has_no_origin_report(tmp_path):
     wd = tmp_path / "work" / "restarts"
     assert json.loads((wd / "report.json").read_text())["stop"] == "no improvement"
     assert not (wd / "report-origin.json").exists()
+
+
+def test_completion_first_runs_alt_on_a_clean_board_and_keeps_it_when_no_worse(tmp_path):
+    """Phase 1 routes everything (OPEN=0, clean): the second run is --alt, kept when it ranks no worse."""
+    r, out, s = _run(tmp_path, "echo '(kicad_pcb OPEN=0 first)' > @OUT@", None, time_s=200,
+                     extra=("--policy", "completion-first", "--alt", "echo '(kicad_pcb OPEN=0 alt)' > @OUT@"))
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert s["second"] == "alt" and s["kept"] == 2 and "alt" in out.read_text()
+
+
+def test_completion_first_restarts_again_when_the_first_board_is_open(tmp_path):
+    """Phase 1 leaves opens: the second run is COMMAND again with the next seed (never --alt); the better is kept."""
+    r, out, s = _run(tmp_path, "if [ @SEED@ -ge 1000 ]; then echo '(kicad_pcb OPEN=1 second)' > @OUT@; "
+                               "else echo '(kicad_pcb OPEN=3 first)' > @OUT@; fi", None, time_s=200,
+                     extra=("--policy", "completion-first", "--alt", "echo '(kicad_pcb OPEN=0 alt)' > @OUT@"))
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert s["second"] == "restart" and s["kept"] == 2 and "second" in out.read_text()
+    assert [p["seed"] for p in s["phases"]] == [0, 1]
