@@ -63,8 +63,8 @@ def cmd_job(a):
     import resource
     import shutil
     import tempfile
-    from kae.board.kicad_file import load
     from kae.bus.scorecard import board_scorecard
+    rows = K.corpus_rows()
     resource.setrlimit(resource.RLIMIT_AS, (24 * 2 ** 30, 24 * 2 ** 30))
     tmpd = Path(tempfile.mkdtemp(prefix="busrep", dir=os.environ.get("KAEQ_SCRATCH") or "/var/tmp"))
     rc = 0
@@ -79,9 +79,8 @@ def cmd_job(a):
         if not pcb.exists():
             continue
         try:
-            with gzip.open(pcb, "rb") as f, open(tmpd / "b.kicad_pcb", "wb") as g:
-                shutil.copyfileobj(f, g)
-            board = load(str(tmpd / "b.kicad_pcb"), rules=False)
+            row = rows.get(bid)
+            board = load_output(pcb, K.CORPUS / row["path"] if row else None, tmpd)
             rec.update(board_scorecard(board, drc=_drc_of(rd), decompose=True))
         except Exception as e:     # one board's failure must not lose the chunk
             rec["error"] = repr(e)[:400]
@@ -93,6 +92,42 @@ def cmd_job(a):
         os.replace(tmp, out)
     shutil.rmtree(tmpd, ignore_errors=True)
     return rc
+
+
+def load_output(pcb_gz, project_dir, tmpd):
+    """A run's output board, loaded with its project's rules: the corpus board's .kicad_pro and .kicad_dru are put
+    beside it (a run keeps only its board, and a route task keeps the human's project rules). Net classes live in the
+    .kicad_pro, so without it the scorecard's pair tier cannot see a class that declares a pair (kae.route.pairs). A
+    corpus board with no .kicad_pro (KiCad 5) gives its classes from its own net_class blocks. Falls back to the board
+    alone when the rules cannot be read."""
+    import shutil
+    from kae.board.kicad_file import load
+    dst = Path(tmpd) / "b.kicad_pcb"
+    with gzip.open(pcb_gz, "rb") as f, open(dst, "wb") as g:
+        shutil.copyfileobj(f, g)
+    for ext in (".kicad_pro", ".kicad_dru"):
+        t = dst.with_suffix(ext)
+        if t.exists():
+            t.unlink()
+        src = Path(project_dir) / f"board{ext}" if project_dir else None
+        if src is not None and src.exists():
+            shutil.copy2(src, t)
+    try:
+        board = load(str(dst), rules=True)
+    except Exception:  # noqa: BLE001 - a board whose rules cannot be read is still measured
+        return load(str(dst), rules=False)
+    legacy = Path(project_dir) / "board.kicad_pcb" if project_dir else None
+    if legacy is not None and legacy.exists() and not (Path(project_dir) / "board.kicad_pro").exists():
+        # a KiCad 5 corpus board keeps its classes in the board file; the KiCad 10 output carries none of them
+        try:
+            human = load(str(legacy), rules=True)
+            board.rules = human.rules
+            for n in board.nets.values():
+                if n.name in human.nets:
+                    n.netclass = human.nets[n.name].netclass
+        except Exception:  # noqa: BLE001 - keep the output's own rules
+            pass
+    return board
 
 
 def _boards(spec):

@@ -42,3 +42,31 @@ def test_decomposition_shares_add_to_one_and_tables_render():
     per = {"human": {"ddr_byte": recs}, "fr": {"ddr_byte": recs}}
     text = "\n".join(B.tables(per, {"human": 2, "fr": 2}, {}))
     assert "Skew decomposition" in text and "Against the human" in text
+
+
+def test_outputs_load_with_the_projects_net_classes(tmp_path):
+    """A run keeps only its board; the scorecard's pair tier needs the net classes of the project's .kicad_pro."""
+    import gzip
+    import json
+    import pytest
+    pytest.importorskip("kae.board.kicad_file")
+    from kae.board.kicad_file import load
+    from kae.route.pairs import tier_of
+    fixture = Path(__file__).resolve().parents[3] / "bench" / "tests" / "fixtures" / "two_pads.kicad_pcb"
+    text = fixture.read_text().replace('"N1"', '"SIG_P"').replace('"N2"', '"SIG_N"')
+    run = tmp_path / "output.kicad_pcb.gz"
+    with gzip.open(run, "wt") as f:
+        f.write(text)
+    proj = tmp_path / "corpus"
+    proj.mkdir()
+    (proj / "board.kicad_pro").write_text(json.dumps(dict(net_settings=dict(
+        classes=[dict(name="Default", clearance=0.2, track_width=0.2, diff_pair_width=0.2, diff_pair_gap=0.25),
+                 dict(name="HS", clearance=0.15, track_width=0.15, diff_pair_width=0.12, diff_pair_gap=0.12)],
+        netclass_patterns=[dict(pattern="SIG_*", netclass="HS")]))))
+    work = tmp_path / "work"
+    work.mkdir()
+    board = B.load_output(run, proj, work)
+    assert board.nets["SIG_P"].netclass.split(",")[0] == "HS"     # KiCad 10 names the effective class "HS,Default"
+    assert tier_of(board, "SIG_P", "SIG_N")[0] == "rule"        # a class that sets its own pair width and gap
+    bare = load(str(work / "b.kicad_pcb"), rules=False)          # what busreport loaded before: no class, no rule tier
+    assert tier_of(bare, "SIG_P", "SIG_N")[0] == "name"
