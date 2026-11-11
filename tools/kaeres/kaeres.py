@@ -1006,13 +1006,16 @@ def _prepare(bid, phc, inputs, ws, env, log, steps, step="prepare"):
     if not all(k in have for k in inputs):
         cache = None if have else task_cache_dir(bid, phc, inputs, ws / "src" / bid)
         if cache is not None and (cache / "task.json").exists():
-            with Step(step, steps):
+            try:
+                with Step(step, steps):
+                    shutil.rmtree(task, ignore_errors=True)
+                    shutil.copytree(cache, task)
+                    os.utime(cache)   # recently used
+                steps[step]["cached"] = str(cache)
+                print(f"{bid}: task prepared by {phc[:7]} copied from {cache}", flush=True)
+                return task, 0, False
+            except (OSError, shutil.Error):   # evicted by another job meanwhile: prepare it here
                 shutil.rmtree(task, ignore_errors=True)
-                shutil.copytree(cache, task)
-                os.utime(cache)   # recently used
-            steps[step]["cached"] = str(cache)
-            print(f"{bid}: task prepared by {phc[:7]} copied from {cache}", flush=True)
-            return task, 0, False
         with Step(step, steps):
             rc, to = run_logged([venv / "bin" / "kaebench", "--workdir", work, "prepare-dir", "--dir", ws / "src",
                         "--board-glob", "board.kicad_pcb", "--only", bid, "--kinds", ",".join(inputs), "-j", "1",
