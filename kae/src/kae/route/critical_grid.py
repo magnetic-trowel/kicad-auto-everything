@@ -62,6 +62,8 @@ from kae import budget as _budget
 
 from .critical_space import EXACT_TOL, INF, TOL
 
+PREPARE_MIN = 64   # cells from which _cells prepares the anchor's shape (same answers, an index built once)
+
 ENTRY_PENALTY_MM = 2.0     # extra cost (mm of track) of entering a pad other than through a rule-D anchor
 GOAL_TRIES = 3             # rule-D anchors whose route fails verification, tried before the old entry
 
@@ -599,6 +601,8 @@ class GridRouter:
         if i0 > i1 or j0 > j1:
             return np.zeros(0, np.int64)
         X, Y = grid.coords(i0, i1, j0, j1)
+        if X.size >= PREPARE_MIN:
+            shapely.prepare(g)      # many cells against one shape (a fill's anchor): index it once
         m = shapely.contains_xy(g, X, Y)
         jj, ii = np.nonzero(m)
         k = li * plane + (jj + j0) * grid.nx + (ii + i0)
