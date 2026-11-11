@@ -156,6 +156,8 @@ class KaeStages:
         rep = res.report
         # connectors the placer pinned to the edge stay there: the windows must not pull them in
         self.locked |= set((rep.get("edge_pinned") or {}).get("uuids") or ())
+        # big parts fixed before the seed (place.pipeline._anchor_tight_parts) stay there too
+        self.locked |= set((rep.get("anchored") or {}).get("uuids") or ())
         legal = bool(rep.get("legal_grid") and not rep.get("exact") and not rep.get("outline_incomplete"))
         b = self._load(out)
         info = dict(place=dict(seconds=round(clock_now() - t0, 1), legal=legal, hpwl=rep.get("hpwl"),
