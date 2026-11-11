@@ -152,7 +152,7 @@ Built (branch `route-finish-default`) [I]:
 |---|---|
 | Routing gets its time first: no finish reserve | `restart.py final_reserve` (last mile only); `portfolio.run(finish=...)` |
 | A clean attempt ends the run early: finish gets the time left | `restart.py finish_pass`, `portfolio.finish_pass` |
-| Not clean: the final last mile gets all the time left, finish runs in what remains; finish's estimates pick the parts that fit | same; `finish.run` per part `estimate` + gate |
+| Not clean: the final last mile gets all the time left less 1.5 judgements (`FINAL_JUDGE_SLACK`: a DRC of its board can run 30 % over the slowest seen, and an unjudged board is not kept), finish runs in what remains; finish's estimates pick the parts that fit | same; `finish.run` per part `estimate` + gate |
 | Under `FINISH_RUN_MIN_S` (30 s) left: skipped; skipped, killed or failed are hazards (`finish_part_skipped`, `finish_failed`) in the kept board's report | `restart.py finish_hazards`, `add_hazards`; `portfolio.finish_hazards` |
 | Finish never exceeds `--time`: it plans against `--time` less `safety_margin` (15 s + 5 %, at most ¼) for a late gate DRC and the exit; a part gets what is left less the gate | `finish.safety_margin`, `finish._run` |
 | Taut honours its deadline: checked before every branch and the pairs pass; it stops cleanly and keeps (journals) what it finished, with `taut_time_limited` | `taut.Taut.run_passes(deadline)`, `taut.run` |

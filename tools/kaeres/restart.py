@@ -83,6 +83,11 @@ WORK_CEILING = 4.0
 WORK_FINAL_SHARE, WORK_FINISH_SHARE = 0.15, 0.10     # of --time, for --final and --finish
 FINAL_MIN_S = 60.0  # the final pass at least, beyond one DRC of the board (a last mile's joins and refill)
 FINISH_RUN_MIN_S = 30.0   # the finish pass runs only with this much (beyond one judgement) left
+# the final pass leaves this many judgements' time for its own judgement: a routed board's DRC varies
+# (dilemma-3: attempts 123-140 s, the last mile's board over 171 s), and a board the judge cannot
+# finish is not kept (route-finish-default smoke: 140 -> 112 open lost, the finish reserve had
+# hidden that slack)
+FINAL_JUDGE_SLACK = 1.5
 
 
 def _stepcache():
@@ -581,12 +586,12 @@ def _one_pass(a, kind, command, best, inp, base, wd, end, b, judge_est, meter, s
 
 def final_pass(a, best, inp, base, wd, end, judge_est, meter, stop, cpu_s, base_pairs=()):
     """One more pass of --final on the board kept, whenever its attempt ended: the time left up to
-    the end (at least what final_reserve kept free) less one judgement; routing comes first, so the
+    the end (at least what final_reserve kept free) less FINAL_JUDGE_SLACK judgements; routing comes first, so the
     finish gets what the last mile leaves. Returns its record (kept: whether KiCad's DRC ranks its
     board better than the kept one), None when there is nothing to do (no board, or a clean one)."""
     if best is None or best.get("rank") is None or best["rank"][:2] == (0, 0):
         return None
-    b = WORK_FINAL_SHARE * a.time if WORK else max(20.0, end - time.monotonic() - judge_est - 10.0)
+    b = WORK_FINAL_SHARE * a.time if WORK else max(20.0, end - time.monotonic() - FINAL_JUDGE_SLACK * judge_est - 10.0)
     return _one_pass(a, "final", a.final, best, inp, base, wd, end, b, judge_est, meter, stop, cpu_s, base_pairs,
                      keep_equal=False)
 
