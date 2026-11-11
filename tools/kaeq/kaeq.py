@@ -22,6 +22,12 @@ import sqlite3
 import subprocess
 import sys
 import time
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))   # kaeqlib sits next to this file
+from kaeqlib.consts import GB, MEM_BINS, TICK  # noqa: E402
+from kaeqlib.units import parse_cpus, parse_size, parse_dur, fgb, fdur, frozen_for, active_for, times  # noqa: E402
+from kaeqlib.leases import mem_hist, pooled_headroom, max_rise, pearson, owner_correlation, warm_headroom, lease_plan, adapt_z, adapt_hold  # noqa: E402
+from kaeqlib.cpu import quantile, adapt_runq_q, burst_fits  # noqa: E402
+from kaeqlib.forecast import size_model, given_so_far, board_of, runtime_model, expected_durations, forecast_queue  # noqa: E402
 
 HOME = os.path.expanduser(os.environ.get("KAEQ_HOME", "~/.kaeq"))
 USER = os.environ.get("USER") or str(os.getuid())
@@ -63,8 +69,6 @@ HOST = socket.gethostname().split(".")[0]
 DB_BACKUP = os.path.join(HOME, f"queue.{HOST}.db.bak")
 LOCK = os.path.join(HOME, "daemon.lock")
 BEAT = os.path.join(HOME, f"daemon.{HOST}.json")
-GB = 1 << 30
-TICK = 2.0
 ACTIVE = ("queued", "running")
 PROBLEM = ("failed", "timeout", "oom", "lost")
 ENV_KEEP = ("PATH", "VIRTUAL_ENV", "PYTHONPATH", "LD_LIBRARY_PATH", "HOME", "LANG")
@@ -333,34 +337,6 @@ def config():
     return cfg
 
 
-def frozen_for(j, now):
-    """Seconds this attempt of a job has spent frozen (waiting for memory), the current freeze included."""
-    fs = j["frozen_since"] if "frozen_since" in j.keys() else 0
-    return (j["frozen_s"] if "frozen_s" in j.keys() else 0) + (max(0.0, now - fs) if fs else 0.0)
-
-
-def active_for(j, now):
-    """Seconds this attempt of a job has been allowed to run: wall time since its start minus time frozen.
-    --timeout counts this, so a job the queue pauses often is not penalized for it."""
-    if not j["started"]:
-        return 0.0
-    if j["state"] == "queued":     # requeued: its last attempt's times were moved to lost_*
-        return 0.0
-    end = j["finished"] if j["state"] != "running" and j["finished"] else now
-    return max(0.0, end - j["started"] - frozen_for(j, end))
-
-
-def parse_cpus(spec):
-    out = set()
-    for part in str(spec).split(","):
-        if "-" in part:
-            a, b = part.split("-")
-            out.update(range(int(a), int(b) + 1))
-        elif part.strip():
-            out.add(int(part))
-    return out
-
-
 def job_cpus(cfg):
     """CPUs jobs are pinned to (inherited by every child): a hard cap that leaves reserve_cpu free. None = no pinning."""
     spec = cfg["cpu_affinity"]
@@ -371,48 +347,6 @@ def job_cpus(cfg):
         n = max(1, min(len(mine), cfg["threads"]) - cfg["reserve_cpu"])
         return set(mine[:n])
     return parse_cpus(spec)
-
-
-def parse_size(s):
-    m = re.fullmatch(r"([\d.]+)\s*([kmgt]?)b?", str(s).strip().lower())
-    if not m:
-        raise ValueError(f"bad size {s!r} (use e.g. 512M, 8G)")
-    return float(m.group(1)) * {"": 1 << 20, "k": 1 << 10, "m": 1 << 20, "g": GB, "t": GB << 10}[m.group(2)]
-
-
-def parse_dur(s):
-    m = re.fullmatch(r"([\d.]+)\s*([smhd]?)", str(s).strip().lower())
-    if not m:
-        raise ValueError(f"bad duration {s!r} (use e.g. 90s, 15m, 2h)")
-    return int(float(m.group(1)) * {"": 1, "s": 1, "m": 60, "h": 3600, "d": 86400}[m.group(2)])
-
-
-def fgb(mb):
-    return f"{mb / 1024:.1f}G"
-
-
-def fdur(s):
-    s = int(s)
-    return f"{s}s" if s < 120 else f"{s // 60}m" if s < 7200 else f"{s // 3600}h"
-
-
-def times(j, now=None):
-    """A job's time accounting in one phrase: active time (what --timeout counts), time frozen waiting for memory
-    and how often, CPU time, and what earlier attempts that were thrown away (requeued) had used."""
-    now = now or time.time()
-    out = f"ran {fdur(active_for(j, now))}"
-    fz = frozen_for(j, now)
-    if fz or j["freezes"]:
-        out += f" (+{fdur(fz)} frozen, {j['freezes']}x{', now' if j['frozen_since'] else ''})"
-    if j["cpu_s"]:
-        out += f" cpu {fdur(j['cpu_s'])}"
-    if "squeezed_mb" in j.keys() and j["squeezed_mb"] >= 1:
-        out += f" (squeezed {fgb(j['squeezed_mb'])} of cold memory into zram)"
-    if "cpu_wait_s" in j.keys() and j["cpu_wait_s"] >= 1:
-        out += f" (waited for CPUs {fdur(j['cpu_wait_s'])}, all threads {fdur(j['cpu_stall_s'])})"
-    if j["lost_run_s"]:
-        out += f" | earlier attempts {fdur(j['lost_run_s'])}, cpu {fdur(j['lost_cpu_s'])}"
-    return out
 
 
 def git(root, *args, env=None):
@@ -550,278 +484,6 @@ def kill_tree(pid, cg=None, sig=signal.SIGKILL):
                     pass
     except OSError:
         pass
-
-
-MEM_BINS = 20
-
-
-def mem_hist(samples, peak):
-    """How a job spent its life: counts of RSS samples in MEM_BINS equal slices of its peak."""
-    h = [0] * MEM_BINS
-    for r in samples:
-        h[min(MEM_BINS - 1, int(r / peak * MEM_BINS))] += 1
-    return h
-
-
-def pooled_headroom(jobs, z, rho, rho_of=None):
-    """Memory to set aside for running jobs' growth when they rarely peak together.
-    jobs: [(owner, expect_mb, rss_mb, profile or None)]: expect = the most it may reach (its peak x
-    margin, or its declared --mem while it warms up); profile = share of lifetime its owner's jobs
-    spend at each slice of their peak (MEM_BINS weights). A job without a profile counts its whole
-    headroom (expect - rss). A profiled job's RSS at a random moment is expect x (slice upper edge),
-    so its growth is max(0, that - rss): mean + z std over all of them, jobs of one owner correlated
-    by rho (or rho_of[owner], measured), owners independent; never less than the largest single
-    headroom, never more than the sum. Returns (set aside, sum of headrooms)."""
-    full = worst = 0.0
-    biggest = 0.0
-    mu = 0.0
-    var = 0.0
-    by_owner = {}
-    for owner, expect, rss, prof in jobs:
-        room = max(0.0, expect - rss)
-        worst += room
-        if prof is None:
-            full += room
-            continue
-        biggest = max(biggest, room)
-        g = [max(0.0, expect * (k + 1) / MEM_BINS - rss) for k in range(MEM_BINS)]  # growth if at slice k
-        m = sum(w * x for w, x in zip(prof, g))
-        m2 = sum(w * x * x for w, x in zip(prof, g))
-        sd = max(0.0, m2 - m * m) ** 0.5
-        mu += m
-        o = by_owner.setdefault(owner, [0.0, 0.0])
-        o[0] += sd
-        o[1] += sd * sd
-    for owner, (lin, sq) in by_owner.items():
-        r = (rho_of or {}).get(owner, rho)
-        var += (1 - r) * sq + r * lin * lin
-    pooled = max(biggest, mu + z * var ** 0.5)
-    return min(worst, full + pooled), worst
-
-
-def size_model(rows):
-    """Run time against size for one owner: rows [(mem_mb, active_s)] of finished jobs. --mem stands in for size
-    (submitters size it per board). Fits log(active) = a + b log(mem) by least squares when there are at least 8
-    jobs and their --mem varies, else a constant (the median). Returns (predict(mem) -> s, ratios): ratios are
-    the sorted actual/predicted of those jobs, how far reality strays from the model."""
-    import math
-    rows = [(m, t) for m, t in rows if m and m > 0 and t and t > 0]
-    if len(rows) < 3:
-        return None, []
-    xs, ys = [math.log(m) for m, _ in rows], [math.log(t) for _, t in rows]
-    mx, my = sum(xs) / len(xs), sum(ys) / len(ys)
-    vx = sum((x - mx) ** 2 for x in xs) / len(xs)
-    if len(rows) >= 8 and vx > 0.05:
-        b = max(0.0, min(2.0, sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / len(xs) / vx))
-        a = my - b * mx
-        pred = lambda m: math.exp(a + b * math.log(max(m, 1.0)))
-    else:
-        med = sorted(t for _, t in rows)[len(rows) // 2]
-        pred = lambda m: med
-    return pred, sorted(t / pred(m) for m, t in rows)
-
-
-def given_so_far(pred, active, ratios):
-    """Expected total run time of a job predicted to take pred that has run active so far: the mean of the
-    owner's actual/predicted ratios at least active/pred (how jobs that got this far ended), else 1.3 x active."""
-    k = active / pred if pred > 0 else 0.0
-    tail = [r for r in ratios if r >= k]
-    if k <= (ratios[0] if ratios else 1.0):
-        return pred * (sum(ratios) / len(ratios) if ratios else 1.0)
-    return pred * sum(tail) / len(tail) if tail else 1.3 * active
-
-
-def board_of(name):
-    """The board a job runs on, from its name: the longest ':'-separated part of 12+ characters
-    (e.g. "escape-ab3:seeed-studio-oshw-...:0", "phys:<board>:<method>"), else None."""
-    toks = [t for t in (name or "").split(":") if len(t) >= 12]
-    return max(toks, key=len) if toks else None
-
-
-def runtime_model(c, limit=30000):
-    """Run time as owner speed x board difficulty, from the last `limit` finished jobs: log(active) = owner +
-    board, fitted by alternating medians (owners) and shrunk means (boards seen once count little). The same
-    boards run under many owners, and a board slow for one method is slow for the others. Returns (owner effect
-    {owner: log s}, board effect {board: log}, residual ratios {owner: sorted actual/predicted})."""
-    import math
-    rows = [(o, board_of(n), math.log(t)) for o, n, t in c.execute(
-        "SELECT owner, name, finished-started-COALESCE(frozen_s,0) AS t FROM jobs WHERE state='ok' AND started IS NOT "
-        "NULL AND finished-started-COALESCE(frozen_s,0) > 0 ORDER BY finished DESC LIMIT ?", (limit,))]
-    lo, lb = {}, {}
-    for _ in range(8):
-        acc = {}
-        for o, b, y in rows:
-            acc.setdefault(o, []).append(y - lb.get(b, 0.0))
-        lo = {o: sorted(v)[len(v) // 2] for o, v in acc.items()}
-        acc = {}
-        for o, b, y in rows:
-            if b:
-                acc.setdefault(b, []).append(y - lo[o])
-        lb = {b: sum(v) / (len(v) + 1) for b, v in acc.items()}   # shrunk: a board seen once counts half (backtested best)
-    res = {}
-    for o, b, y in rows:
-        res.setdefault(o, []).append(math.exp(y - lo[o] - lb.get(b, 0.0)))
-    return lo, lb, {o: sorted(v) for o, v in res.items()}
-
-
-def expected_durations(c, jobs, now=None, model=None):
-    """{job id: (expected active seconds, source)}, by what is known: the same name ran before ("name": a retry,
-    or the same board and method again); owner speed x board difficulty ("board", runtime_model); the owner's
-    size model when the board is new ("size", size_model); a new owner on a known board: the board x a typical
-    owner ("board~"); else half its --timeout ("guess"). A running job's figure is its expected total given how
-    long it has run already (given_so_far, from how its owner's runs strayed from these predictions)."""
-    import math
-    now = now or time.time()
-    lo, lb, resid = model or runtime_model(c)
-    typical = sorted(lo.values())[len(lo) // 2] if lo else 0.0
-    sizes, out = {}, {}
-    names = {j["name"] for j in jobs if j["name"]}
-    by_name = {}
-    if names:
-        q = ",".join("?" * len(names))
-        for n, act in c.execute(f"SELECT name, finished-started-COALESCE(frozen_s,0) FROM jobs WHERE state='ok' "
-                                f"AND started IS NOT NULL AND name IN ({q}) ORDER BY finished", tuple(names)):
-            by_name[n] = act                                  # the latest wins
-    for j in jobs:
-        o, b = j["owner"], board_of(j["name"])
-        ratios = resid.get(o) or [1.0]
-        if j["name"] in by_name and by_name[j["name"]] > 0:
-            d, src = by_name[j["name"]], "name"
-        elif o in lo and b in lb:
-            d, src = math.exp(lo[o] + lb[b]), "board"
-        else:
-            if o not in sizes:
-                sizes[o] = size_model(c.execute(
-                    "SELECT mem_mb, finished-started-COALESCE(frozen_s,0) FROM jobs WHERE owner=? AND state='ok' "
-                    "AND started IS NOT NULL ORDER BY finished DESC LIMIT 100", (o,)).fetchall())
-            pred, sr = sizes[o]
-            if pred:
-                d, src, ratios = pred(j["mem_mb"]), "size", sr or ratios
-            elif b in lb:
-                d, src = math.exp(typical + lb[b]), "board~"
-            else:
-                d, src, ratios = 0.5 * j["timeout_s"], "guess", [1.0]
-        if j["state"] == "running" and j["started"]:
-            act = max(0.0, now - j["started"] - (j["frozen_s"] or 0.0) - (now - j["frozen_since"] if j["frozen_since"] else 0.0))
-            d = given_so_far(d, act, ratios)
-        out[j["id"]] = (min(d, j["timeout_s"]), src)
-    return out
-
-
-def forecast_queue(running, queued, dur, mem, cpus, mem_cap, cpu_cap, now, horizon=14 * 86400):
-    """Replay the queue forward: when does each owner start and finish? running/queued: job rows; dur: {id:
-    expected active s}; mem/cpus: {id: footprint}; mem_cap/cpu_cap: what jobs may hold. Running jobs end after
-    their expected time left (at least a tenth of it, or a minute, once overdue). Starts follow the daemon's order
-    (priority, then the owner with the fewest running, then submission), the first owner's next job that fits
-    (backfill across owners). Returns {owner: (first start or None, finish)}."""
-    import heapq
-    ev, cnt, used_m, used_c, res = [], {}, 0.0, 0.0, {}
-    for j in running:
-        d = dur[j["id"]]
-        act = max(0.0, now - (j["started"] or now) - (j["frozen_s"] or 0.0))
-        end = now + max(d - act, 0.1 * d, 60.0)
-        heapq.heappush(ev, (end, j["id"], j["owner"], mem[j["id"]], cpus[j["id"]]))
-        cnt[j["owner"]] = cnt.get(j["owner"], 0) + 1
-        used_m, used_c = used_m + mem[j["id"]], used_c + cpus[j["id"]]
-        res[j["owner"]] = [now, max(res.get(j["owner"], [now, now])[1], end)]
-    mem_cap, cpu_cap = max(mem_cap, used_m), max(cpu_cap, used_c)
-    per = {}
-    for j in sorted(queued, key=lambda j: (-j["prio"], j["submitted"])):
-        per.setdefault(j["owner"], []).append(j)
-    for q in per.values():
-        q.reverse()                                   # pop() takes the next
-    t = now
-    while per and t < now + horizon:
-        started = True
-        while started:
-            started = False
-            heads = sorted(per, key=lambda o: (-per[o][-1]["prio"], cnt.get(o, 0), per[o][-1]["submitted"]))
-            for o in heads:
-                j = per[o][-1]
-                if mem[j["id"]] <= mem_cap - used_m and (cpus[j["id"]] <= cpu_cap - used_c or not ev):
-                    per[o].pop()
-                    if not per[o]:
-                        del per[o]
-                    end = t + dur[j["id"]]
-                    heapq.heappush(ev, (end, j["id"], o, mem[j["id"]], cpus[j["id"]]))
-                    cnt[o] = cnt.get(o, 0) + 1
-                    used_m, used_c = used_m + mem[j["id"]], used_c + cpus[j["id"]]
-                    r = res.setdefault(o, [t, end])
-                    r[1] = max(r[1], end)
-                    started = True
-                    break
-        if not ev:
-            break
-        end, _, o, m, cp = heapq.heappop(ev)
-        t = max(t, end)
-        cnt[o] -= 1
-        used_m, used_c = used_m - m, used_c - cp
-    return {o: (r[0] if r[0] > now else None, r[1]) for o, r in res.items()}
-
-
-def max_rise(series, window):
-    """Largest G[j] - G[i] with i <= j and t_j - t_i <= window, over [(t, G)] sorted by t (a sliding minimum)."""
-    from collections import deque
-    best, q = 0.0, deque()  # indexes of increasing G within the window
-    for j, (t, g) in enumerate(series):
-        while q and series[q[0]][0] < t - window:
-            q.popleft()
-        while q and series[q[-1]][1] >= g:
-            q.pop()
-        q.append(j)
-        best = max(best, g - series[q[0]][1])
-    return best
-
-
-def pearson(a, b):
-    n = len(a)
-    ma, mb = sum(a) / n, sum(b) / n
-    va, vb = sum((x - ma) ** 2 for x in a), sum((y - mb) ** 2 for y in b)
-    if va <= 0 or vb <= 0:
-        return None
-    return sum((x - ma) * (y - mb) for x, y in zip(a, b)) / (va * vb) ** 0.5
-
-
-def owner_correlation(series, prior, window=90, min_samples=30):
-    """Correlation between one owner's concurrently running jobs, measured: the mean Pearson r over
-    pairs of their last `window` RSS samples (taken on the same ticks), negative r counted as 0 and
-    pairs where either job is flat (coefficient of variation < 5%) skipped, shrunk towards `prior`
-    as 2 pseudo-pairs. series: [RSS samples] per job. Returns (rho, pairs used)."""
-    ok = []
-    for s in series:
-        if len(s) >= min_samples:
-            t = s[-window:]
-            m = sum(t) / len(t)
-            if m > 0 and (sum((x - m) ** 2 for x in t) / len(t)) ** 0.5 / m >= 0.05:
-                ok.append(t)
-    rs = []
-    for i in range(len(ok)):
-        for k in range(i + 1, len(ok)):
-            n = min(len(ok[i]), len(ok[k]))
-            r = pearson(ok[i][-n:], ok[k][-n:])
-            if r is not None:
-                rs.append(max(0.0, r))
-    return (sum(rs) + 2 * prior) / (len(rs) + 2), len(rs)
-
-
-def warm_headroom(jobs, z):
-    """What jobs still warming up may yet grow by. jobs: [(rss, full_headroom, mem_mb, ratios or None)]:
-    ratios = the owner's finished jobs' peak/--mem; without them a job counts its full headroom. With
-    them, a job's peak is --mem x a random draw from those ratios (job sizes vary independently from
-    one board to the next): mean + z std of the growth, at least the largest single headroom,
-    capped at its full headroom per job and at the sum overall."""
-    full = worst = biggest = mu = var = 0.0
-    for rss, room, mem, rs in jobs:
-        worst += room
-        if not rs:
-            full += room
-            continue
-        g = [min(room, max(0.0, mem * r - rss)) for r in rs]
-        m = sum(g) / len(g)
-        mu += m
-        var += sum((x - m) ** 2 for x in g) / len(g)
-        biggest = max(biggest, room)
-    return min(worst, full + max(biggest, mu + z * var ** 0.5))
 
 
 def cg_mem(cg):
@@ -1026,154 +688,6 @@ def cg_set_high(cg, mb):
         return False
 
 
-def lease_plan(jobs, real_mb, cfg, now, buffer=0.0, timed_held=None, credit=0.0, free_now=None):
-    """One pass of the memory leases. jobs: [{id, prio, started, grant, use, slack_since, stall_since, grew}] (MB, s;
-    grew: MB the job grew since the last tick). real_mb: memory really free beyond the reserve (MemAvailable). A grant
-    is a limit, not a reservation: what is free for grants and new jobs is real_mb minus `buffer` (room for the
-    fleet's growth between two ticks), minus the unused grants of jobs younger than lease_warm_s (they are still
-    growing into them), minus lease_hold_frac of every other job's unused grant. Should real_mb fall below the
-    buffer anyway (jobs grew into room they were granted but nobody set aside), the jobs that grew this tick are
-    frozen at what they use, lowest priority and newest first; while real_mb stays above half the buffer, the
-    oldest of highest priority keeps running, so peaks take turns. Grants far above use
-    for a while (and past the job's first warmup_s) are trimmed (that memory is free again); jobs near their grant get one more step each, by
-    priority then age, while memory is free; of the rest, those at their grant (within lease_freeze_mb, or two
-    ticks of their growth "rate", MB/s) are stalled and wait frozen, the others run on in the room they have. A job
-    stalled lease_stall_s with nothing freeing names a victim among jobs of no higher priority: the one furthest
-    past mem_overrun x its declared --mem ("declared", MB; a runaway), else the newest other job (a job within its declaration that only
-    waits for other users' memory keeps waiting).
-    Jobs with timed=True (class "timed") are never stalled: their unused grant counts as taken (timed_hold_frac),
-    they get memory before batch jobs, and one that needs more than is free names the newest batch job (a frozen
-    one first) as `timed_victim`, to be requeued. Only batch jobs are frozen or chosen as victims.
-    Returns {grants: {id: MB}, slack_since, stall_since, stalled: [ids], free, held, victim, timed_victim}."""
-    grants = {j["id"]: j["grant"] for j in jobs}
-    slack = {j["id"]: j.get("slack_since") or 0.0 for j in jobs}
-    stall = {j["id"]: j.get("stall_since") or 0.0 for j in jobs}
-    rel = cfg["lease_release_gb"] * 1024
-    for j in jobs:
-        g, u = grants[j["id"]], j["use"]
-        young = now - (j["started"] or now) < cfg.get("warmup_s", 300)   # still growing into its declared --mem
-        if g - u > max(rel, cfg.get("lease_release_frac", 0.25) * u) and not young:
-            slack[j["id"]] = slack[j["id"]] or now
-            if now - slack[j["id"]] >= cfg["lease_release_after_s"]:
-                ng = max(u * 1.25, u + 1024)
-                if ng < g:
-                    grants[j["id"]] = ng      # what it no longer holds is free again (held, below)
-                slack[j["id"]] = 0.0
-        else:
-            slack[j["id"]] = 0.0
-    warm = cfg.get("lease_warm_s", 120)
-    hold = cfg.get("lease_hold_frac", 1.0)
-    thold = cfg.get("timed_hold_frac", 1.0)
-    young = lambda j: now - (j["started"] or now) < warm
-    # kept running: timed, or expensive batch, or batch in its run window after a thaw (but below half the buffer
-    # the window gives way: a just-thawed job may be frozen again)
-    keep = lambda j: j.get("timed") or j.get("dear") or (j.get("keep") and real_mb >= buffer / 2)
-    if timed_held is None:
-        held = sum(max(0.0, grants[j["id"]] - j["use"])
-                   * (1.0 if young(j) or j.get("protected") else thold if j.get("timed") else hold) for j in jobs
-                   if young(j) or j.get("timed") or j.get("reserve_mb") is None)
-    else:   # timed jobs past warm-up: their forecast growth (timed_held), computed by the daemon
-        held = timed_held + sum(max(0.0, grants[j["id"]] - j["use"]) * (1.0 if young(j) else hold)
-                                for j in jobs if young(j) or not j.get("timed") and j.get("reserve_mb") is None)
-    # expensive batch jobs: the growth they are forecast to need is set aside in full, so new jobs do not take it
-    held += sum(j["reserve_mb"] for j in jobs if j.get("reserve_mb") is not None and not young(j) and not j.get("timed"))
-    held += sum(j.get("swapped", 0.0) for j in jobs if not j.get("compressed"))   # thawed: still coming back
-    # (a squeezed running job's cold pages are passed as swapped=0: they stay out unless it touches them)
-    free_mb = real_mb - buffer - held + credit     # credit: squeezable memory of timed jobs (squeeze_credit)
-    # what the guard, the evictions and kept jobs' room-making go by: memory really free beyond the reserve (real_mb
-    # also leaves out what jobs started this tick declared, before their scope shows: right for admission, but
-    # not a shortage to requeue or freeze for)
-    real_mb = real_mb if free_now is None else free_now
-    stalled = []
-    if real_mb < buffer:     # the fleet grew into the buffer: freeze who grew, the least valuable first
-        grew = sorted((j for j in jobs if j.get("grew", 0.0) > 0 and not keep(j)),
-                      key=lambda j: (j["prio"], -(j["started"] or 0)))
-        if grew and real_mb > buffer / 2:
-            grew.pop()                   # the oldest of highest priority grows on while there is half a buffer
-        for j in grew:
-            grants[j["id"]] = min(grants[j["id"]], j["use"])
-            stalled.append(j["id"])
-            stall[j["id"]] = stall[j["id"]] or now
-    # below half the buffer, freezing growers is not enough (a frozen job keeps its memory, and a timed job is
-    # never frozen): requeue the job whose restart loses the least work per MB it frees (it starts again from
-    # scratch, so its results are unaffected); a job requeued evict_protect_after times is spared
-    evict = None
-    if real_mb < buffer / 2:
-        cand = [j for j in jobs if not j.get("protected") and j["use"] > 256]
-        if cand:                         # (jobs kept running for being expensive go last)
-            evict = min(cand, key=lambda j: (bool(j.get("keep")), j.get("invest", 0.0) / j["use"]))["id"]
-    short = []                           # kept jobs that need memory nobody can give
-    by_id = {j["id"]: j for j in jobs}
-    # memory goes first to a compressed frozen job (it waits to come back), then kept jobs, then by priority, age
-    for j in sorted(jobs, key=lambda j: (not j.get("compressed"), not keep(j), -j["prio"], j["started"] or 0)):
-        if j["id"] in stalled:
-            continue
-        g, u = grants[j["id"]], j["use"] + (j.get("swapped", 0.0) if j.get("compressed") else 0.0)  # it holds that
-        if j.get("mpress", 0.0) > cfg.get("lease_press_pct", 10.0):
-            u = max(u, g)                # thrashing at its limit: it needs more whatever its use says
-        margin = max(cfg["lease_margin_mb"], cfg.get("lease_margin_frac", 0.0) * g)
-        if u < g - margin:
-            stall[j["id"]] = 0.0
-            continue
-        step = max(cfg["lease_step_gb"] * 1024, cfg["lease_step_frac"] * g, u + margin - g)
-        if free_mb > 4 * step:           # plenty free: grow well ahead of a fast-growing job
-            step = max(step, 0.5 * g)
-        back = 0.0   # (a compressed job's u includes what it has in swap: its step makes room for all of it)
-        # a batch job gets a whole step or waits frozen: fed in crumbs it would sit throttled at memory.high, which
-        # stalls it and builds the pressure systemd-oomd kills for (a timed job is never throttled: crumbs are fine)
-        if free_mb - back >= (min(step, 256.0) if keep(j) else step):
-            take = min(step, free_mb - back)
-            grants[j["id"]] = g + take
-            free_mb -= take + back
-            stall[j["id"]] = 0.0
-        elif keep(j):
-            stall[j["id"]] = 0.0         # never frozen: it runs on (unthrottled), and a batch job makes room
-            if u >= g - max(cfg.get("lease_freeze_mb", 256), 2 * TICK * j.get("rate", 0.0)):
-                short.append(j["id"])
-        elif j.get("frozen") or u >= g - max(cfg.get("lease_freeze_mb", 256), 2 * TICK * j.get("rate", 0.0)):
-            stalled.append(j["id"])      # at its grant with nothing to give: it waits, frozen (a frozen job stays
-                                         # frozen until it gets more: frozen, it shows no growth to judge by)
-            stall[j["id"]] = stall[j["id"]] or now
-        else:
-            stall[j["id"]] = 0.0         # wants more but still has room of its own: it runs on
-    victim = None
-    # how long a job has waited: its current stall, or all its time frozen since the last victim made room for
-    # it (a job thawed for a moment and frozen again, over and over, waits as long as one never thawed)
-    waited = {j["id"]: max(now - stall[j["id"]] if stall[j["id"]] else 0.0, j.get("waited_frozen", 0.0)) for j in jobs}
-    long_ = [i for i in stalled if waited[i] >= cfg["lease_stall_s"]]
-    waiter = None
-    if long_:
-        by = {j["id"]: j for j in jobs}
-        s = waiter = max(long_, key=lambda i: waited[i])
-        peers = [j for j in jobs if j["prio"] <= by[s]["prio"] and not keep(j)]
-        over = [j for j in peers if j["use"] > j.get("declared", float("inf")) * cfg.get("mem_overrun", 1.5)]
-        if over:                    # the job furthest past what it declared (a runaway), whichever it is
-            victim = max(over, key=lambda j: j["use"] - j["declared"])["id"]
-        else:                       # everyone within their declaration: the newest other job
-            others = [j for j in peers if j["id"] != s]
-            victim = max(others, key=lambda j: j["started"] or 0)["id"] if others else None
-        if victim is not None:
-            stall[s] = now          # the next victim only after another lease_stall_s
-    # a kept job needs memory and it is really short: make room by freezing the newest batch job not kept (its
-    # memory is compressed: about a third comes free); only for a timed job, once all such jobs are frozen, is
-    # the newest frozen one requeued (requeueing for expensive batch jobs lost far more work than it saved in
-    # trace replays)
-    timed_victim = None
-    batch = [j for j in jobs if not keep(j) and j["id"] not in (victim, evict)]
-    if short and batch and real_mb <= buffer:
-        running = [j for j in batch if not j.get("frozen") and j["id"] not in stalled]
-        if running:
-            j = max(running, key=lambda j: (-j["prio"], j["started"] or 0))
-            grants[j["id"]] = min(grants[j["id"]], j["use"])
-            stalled.append(j["id"])
-            stall[j["id"]] = stall[j["id"]] or now
-        elif any(by_id[i].get("timed") for i in short):
-            timed_victim = max(batch, key=lambda j: (-j["prio"], j["started"] or 0))["id"]
-    return dict(grants=grants, slack_since=slack, stall_since=stall, stalled=stalled, free=free_mb, held=held,
-                victim=victim, waiter=waiter if victim is not None else None, timed_victim=timed_victim, short=short,
-                evict=evict if evict != victim else None)
-
-
 RISE_HIST = os.path.join(HOME, f"memrise.{HOST}.json")
 OVERCOMMIT = os.path.join(HOME, f"overcommit.{HOST}.json")
 
@@ -1186,33 +700,6 @@ def load_overcommit():
         return {}
 
 
-def adapt_z(z, hist, cfg, now):
-    """The next timed_z (std deviations of forecast growth set aside for timed jobs), from the work lost to
-    requeues like adapt_hold: +0.5 above overcommit_loss_target, -0.25 below half of it, within [0, 6]."""
-    new, loss = adapt_hold(z / 6.0, hist, cfg, now)
-    if loss is None:
-        return z, None
-    if loss > cfg["overcommit_loss_target"]:
-        return min(6.0, z + 0.5), loss
-    if loss < cfg["overcommit_loss_target"] / 2:
-        return max(0.0, z - 0.25), loss
-    return z, loss
-
-
-def adapt_hold(hold, hist, cfg, now):
-    """The next timed_hold_frac: work lost to requeues over overcommit_window_s, as a share of the timed work done,
-    against overcommit_loss_target. hist: [(t, cumulative core-s done, cumulative core-s lost)]."""
-    old = [h for h in hist if h[0] >= now - cfg["overcommit_window_s"]]
-    if len(old) < 2 or old[-1][1] - old[0][1] < 3600:      # under a core-hour of work: no evidence yet
-        return hold, None
-    loss = (old[-1][2] - old[0][2]) / (old[-1][1] - old[0][1])
-    if loss > cfg["overcommit_loss_target"]:
-        return min(1.0, hold + 0.1), loss
-    if loss < cfg["overcommit_loss_target"] / 2:
-        return max(0.0, hold - 0.05), loss
-    return hold, loss
-
-
 def load_rise_hist():
     try:
         with open(RISE_HIST) as f:
@@ -1222,26 +709,6 @@ def load_rise_hist():
 
 
 TICK_HZ = os.sysconf("SC_CLK_TCK")
-
-
-def quantile(values, q):
-    v = sorted(values)
-    return v[min(len(v) - 1, int(q * len(v)))] if v else 0.0
-
-
-def adapt_runq_q(q, samples, pool, cfg):
-    """The next runq_q from the last runq_adapt_s of (runnable threads, jobs waiting for a CPU start) samples:
-    oversubscribed too often -> more cautious (+0.05), idle CPUs too often while jobs wait -> bolder (-0.05).
-    Returns (q, oversubscribed share, idle-while-waiting share)."""
-    if not samples:
-        return q, 0.0, 0.0
-    over = sum(1 for r, _ in samples if r > pool) / len(samples)
-    idle = sum(1 for r, w in samples if w and r < pool - cfg["runq_idle_cpus"]) / len(samples)
-    if over > cfg["runq_over_target"]:
-        q = min(0.95, q + 0.05)
-    elif idle > cfg["runq_idle_target"]:
-        q = max(0.5, q - 0.05)
-    return q, over, idle
 
 
 def runnable_threads():
@@ -1351,13 +818,6 @@ def cg_pressure(cg):
         return out.get("some", 0.0), out.get("full", 0.0)
     except (OSError, ValueError, KeyError):
         return None
-
-
-def burst_fits(jobs, new, cap):
-    """Whether timed jobs' CPU fits: jobs and new are (mean, peak) cores; their means add up, their bursts
-    (peak - mean) are pooled as independent (root of the summed squares), as phases rarely coincide."""
-    allj = list(jobs) + [new]
-    return sum(m for m, _ in allj) + sum(max(0.0, p - m) ** 2 for m, p in allj) ** 0.5 <= cap
 
 
 def dlog(msg):
