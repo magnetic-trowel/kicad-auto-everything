@@ -51,7 +51,7 @@ madd "$PN" --kind route --description "pnr route_only (tools/research/pnr at $S7
   --command "$WENV $FRENV {py:kae} {code:harness}/tools/kaeres/restart.py --input {input} --output {output} --time {timeout} --seed {attempt} --parallel 1 --first-s 100000 --scale-first --slack 100 --max-attempts 1 -- '$PNRENV sh {code:pnr}/tools/research/xf_common/xf_run.sh {code:pnr}/tools/research/pnr/methods.py:route_only @IN@ @OUT@ @TIME@ @SEED@'" \
   --param timeout_s=900 --param timeout_scale=sqrt-fp40 --param parallel=1 --code "pnr=.@$SHA" "${CODE[@]}"
 
-FC="s2 fr-fork d137fd1 mp10"                   # registered by Stage 2 (method ee60f1285b0e, harness ef75baa)
+FC=${FC:-b07f426d7c2f}                          # "s2 fr-fork d137fd1 mp10", registered by Stage 2 at harness 3a482ed
 
 # ---------------------------------------------------------------- experiments (all created before any run)
 X=(--harness "$SHA" --kae "$SHA")

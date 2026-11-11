@@ -30,13 +30,13 @@ where time goes on more than a trivial board.
 ## Arms
 
 All route-only, from the bare placement (kaebench's route task: copper stripped, zones kept), harness and kae
-at main ef75baa, KiCad 10.0.7, `setup.sh` in this folder.
+at main 3a482ed (Stage 2's harness), KiCad 10.0.7, `setup.sh` in this folder.
 
 | Arm | Method | k | Budget |
 |---|---|---|---|
-| kae bridge | `d3 bridge ef75baa (restarts)`: Stage 2's bridge recipe without operating facts (none exist for these boards). `KAE_BUDGET=work PYTHONHASHSEED=0 KAE_WORKERS=1`; Freerouting fork d137fd1 named in `KAE_BRIDGE_FREEROUTING` and `KAE_FREEROUTING` in the wrapper and every inner command | 5 (seeds 0-4) | counted work, nominal 900 s × sqrt(fp/40), wall ceiling 4× |
-| pnr | `d3 pnr route_only ef75baa (restarts)`: `tools/research/pnr` route_only at ef75baa, one attempt | 5 (seeds 0-4) | wall clock 900 s × sqrt(fp/40) (pnr has no counted budget) |
-| Freerouting fork | `s2 fr-fork d137fd1 mp10` (Stage 2's method): kaebench adapter, `-mp 10` as PCBWorld's control, `-mt 1` | 1 (deterministic) | wall ceiling 3600 s × sqrt(fp/40) |
+| kae bridge | `d3 bridge 3a482ed (restarts)`: Stage 2's bridge recipe without operating facts (none exist for these boards). `KAE_BUDGET=work PYTHONHASHSEED=0 KAE_WORKERS=1`; Freerouting fork d137fd1 named in `KAE_BRIDGE_FREEROUTING` and `KAE_FREEROUTING` in the wrapper and every inner command | 5 (seeds 0-4) | counted work, nominal 900 s × sqrt(fp/40), wall ceiling 4× |
+| pnr | `d3 pnr route_only 3a482ed (restarts)`: `tools/research/pnr` route_only at 3a482ed, one attempt | 5 (seeds 0-4) | wall clock 900 s × sqrt(fp/40) (pnr has no counted budget) |
+| Freerouting fork | `s2 fr-fork d137fd1 mp10` (Stage 2's method b07f426d7c2f): kaebench adapter, `-mp 10` as PCBWorld's control, `-mt 1` | 1 (deterministic) | wall ceiling 3600 s × sqrt(fp/40) |
 | human | the reference layout, scored by both chains | - | - |
 
 Not run: stock Freerouting 2.5.0 (obsolete, user 2026-11-11); the staged place-and-route pipeline, because
