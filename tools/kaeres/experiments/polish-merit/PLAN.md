@@ -67,3 +67,11 @@ Plumbing only, and the two boards stay in the experiment. Commit 76fae3c.
   - In both arms most wall time is waiting on Freerouting (24-27 %) and the pcbnew worker (about 30 %).
   - No simple speedup with identical output stood out. kaeres's sizing is kept.
 No rule changes.
+
+## Note (2026-11-11, after submission): Freerouting's optimizer in work mode
+Another session found that in work mode Freerouting's optimizer phase (on boards it routes completely) is neither charged nor capped by passes.
+- It normally stops when a pass improves less than its threshold, which is deterministic.
+- It can also be cut by the 4× wall ceiling (`optimizer: timed_out` in the bridge's route stops). That depends on host load.
+- A fix that caps optimizer passes from the budget is on branch `fr-budget-calibration`.
+
+This experiment predates that fix, and both arms share the exposure, so the paired comparison stands. `analyze.py` here (loop-polish's analysis plus this) reports each run's optimizer stops and, per arm, the number of runs with a `timed_out` optimizer. This covers the kept attempt's and its origin's stored reports; other attempts' reports are not stored. An imbalance between arms is read before any conclusion. At 62 boards: no `timed_out` in either arm.
