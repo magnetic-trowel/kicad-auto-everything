@@ -26,7 +26,7 @@ kaebench doctor
 - `source bench/.venv/bin/activate` picks up the KiCad wrapper. Force this route with `--kicad container`.
 - The container sees `$HOME`, `/tmp` and the current directory. For a `--workdir` elsewhere, export `APPTAINER_BIND=/that/path`.
 
-Other OSes or setups: point `KAE_KICAD_CLI` / `KAE_KICAD_PYTHON` at KiCad 10. Both accept a command with a wrapper, e.g. `flatpak run --command=kicad-cli org.kicad.KiCad`, or use `KAE_KICAD_WRAP` as a prefix for both. The Python must be able to `import pcbnew`. Freerouting is the build named by `KAE_FREEROUTING` (a binary or JAR; the JAR needs Java 25), else the one pinned in `$KAE_HOME/kae-freerouting.pin` (the magnetic-trowel fork, the same pin the bridge uses); with neither, runs stop with an error. Nothing picks the newest install. Run `pytest bench/tests` to check the install.
+Other OSes or setups: point `KAE_KICAD_CLI` / `KAE_KICAD_PYTHON` at KiCad 10. Both accept a command with a wrapper, e.g. `flatpak run --command=kicad-cli org.kicad.KiCad`, or use `KAE_KICAD_WRAP` as a prefix for both. The container set-up points `KAE_KICAD_WRAP` at `kicad-exec`, which shows KiCad only the CPUs a job may use (`KAE_KICAD_THREADS`, else the queue's `KAEQ_CPUS`, else `nproc`; `KAE_KICAD_THREADS=0` turns the cap off): KiCad otherwise starts one thread per CPU on the machine. The Python must be able to `import pcbnew`. Freerouting is the build named by `KAE_FREEROUTING` (a binary or JAR; the JAR needs Java 25), else the one pinned in `$KAE_HOME/kae-freerouting.pin` (the magnetic-trowel fork, the same pin the bridge uses); with neither, runs stop with an error. Nothing picks the newest install. Run `pytest bench/tests` to check the install.
 
 ## Usage
 

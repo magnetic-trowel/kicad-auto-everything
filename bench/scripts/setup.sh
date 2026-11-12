@@ -91,7 +91,12 @@ install_kicad_container() {
       "$tool" build --sandbox "$dir" "docker://kicad/kicad:$KICAD_IMAGE_TAG"
     [ -n "${APPTAINER_CACHEDIR:-}" ] || rm -rf "$KAE_HOME/apptainer-cache"   # keep a user-set cache
   fi
-  ENV_LINES+=("export KAE_KICAD_WRAP=\"$tool exec $dir\"")
+  # kicad-exec sizes KiCad's thread pool to the job's CPUs (see the script); cpus/N is what it shows KiCad
+  install -m 755 "$BENCH_DIR/scripts/kicad-exec" "$KAE_HOME/kicad-exec"
+  mkdir -p "$KAE_HOME/cpus"
+  local n
+  for n in $(seq 1 "$(getconf _NPROCESSORS_ONLN)"); do printf '0-%d\n' $((n - 1)) > "$KAE_HOME/cpus/$n"; done
+  ENV_LINES+=("export KAE_KICAD_WRAP=\"$KAE_HOME/kicad-exec $tool $dir\"")
 }
 
 case "$KICAD_MODE" in

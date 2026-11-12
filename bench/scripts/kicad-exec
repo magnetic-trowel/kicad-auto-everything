@@ -1,0 +1,30 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# kicad-exec TOOL IMAGE CMD...: run CMD in the KiCad container (TOOL is apptainer or singularity) with KiCad's
+# thread pool sized to this job's CPUs. setup.sh installs it into $KAE_HOME and points KAE_KICAD_WRAP at it.
+#
+# Why: KiCad 10 starts one pool thread per CPU the machine has online (std::thread::hardware_concurrency), not per
+# CPU the job may use. It ignores CPU affinity, and pcbnew in Python ignores MaximumThreads in kicad_advanced too
+# (the advanced config falls back to its defaults when no wx application exists yet). So a 2-CPU queue job on a
+# 128-CPU host ran 128 threads: DRC bursts far past its grant, and a zone refill was seen to deadlock.
+# The container is shown a CPU count of N instead (/sys/devices/system/cpu/online reads "0-(N-1)"), and KiCad's
+# pool gets N threads. Results do not depend on it; only how fast KiCad runs.
+#
+# N is $KAE_KICAD_THREADS if set (0: no cap), else $KAEQ_CPUS (the queue's grant), else the CPUs this process
+# may run on (nproc follows affinity and cpusets). The files it binds are written once by setup.sh.
+set -eu
+tool=$1 image=$2
+shift 2
+n=${KAE_KICAD_THREADS:-${KAEQ_CPUS:-$(nproc)}}
+n=$(awk -v x="$n" 'BEGIN { c = int(x); if (c < x) c++; print c }')   # a fractional grant rounds up
+online=$(getconf _NPROCESSORS_ONLN)
+cpus=$(dirname "$0")/cpus/$n
+if [ "$n" -gt 0 ] 2>/dev/null && [ "$n" -lt "$online" ]; then
+    if [ -r "$cpus" ]; then
+        exec "$tool" exec --bind "$cpus:/sys/devices/system/cpu/online" "$image" "$@"
+    fi
+    echo "kicad-exec: no $cpus (re-run bench/scripts/setup.sh); KiCad will start $online threads" >&2
+fi
+exec "$tool" exec "$image" "$@"
