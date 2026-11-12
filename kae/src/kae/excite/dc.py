@@ -25,7 +25,7 @@ Observers (requirements: the intent file's, else these priors):
     loss     copper dissipation (sum of J V over the pads, less the lumped parts' own) against
              LOSS_SHARE of the power the loads take
     drop     per load, rail plus ground drop from its rail's source (rail-side minus load-side, plus
-             load ground minus source ground) against DROP_SHARE of the rail voltage
+             load ground minus source ground, at least 0) against DROP_SHARE of the rail voltage
     heating  per track, the temperature rise by IPC-2221 (conservative against IPC-2152) of the
              current through its cross-section, against DT_MAX
 """
@@ -522,7 +522,8 @@ def _mean(V, toks):
 
 def observe(pl, cv, V, info, tracks=None):
     """The DC observers at one corner from its solve: dict(loss=(u, P_cu, budget), drops=[(ref, rail, u,
-    dV, budget)], heat=[(track index, u, dT, I)])."""
+    dV, budget)], drops_signed=[(ref, rail, signed dV)], heat=[(track index, u, dT, I)]). dV >= 0: a load whose
+    ground sits below its source's (a ground shift) reads 0, its signed value in drops_signed."""
     inj = injections(pl, cv)
     net, x = info["net"], info["x"]
     P_all = float(np.real(sum(a * V[t] for t, a in inj.items() if t in V and V[t] is not None)))
@@ -536,7 +537,7 @@ def observe(pl, cv, V, info, tracks=None):
     # (perfect) whatever the copper lost, or P_cu of every rail was divided by the known rails' budget
     P_del = sum(xk * (pl.volts.get(ld["rail"]) or 3.3) for ld, xk in zip(pl.loads, xs))
     budget = pl.loss_share * P_del
-    out = dict(loss=(P_cu / budget if budget > 0 else 0.0, P_cu, budget), drops=[], heat=[])
+    out = dict(loss=(P_cu / budget if budget > 0 else 0.0, P_cu, budget), drops=[], drops_signed=[], heat=[])
     for ld, xk in zip(pl.loads, xs):
         f = pl.feeds.get(ld["rail"])
         if f is None or xk <= 0:
@@ -556,7 +557,14 @@ def observe(pl, cv, V, info, tracks=None):
         if gs is not None and gl is not None:
             dv += gl - gs
         b = pl.drop_share * (pl.volts.get(ld["rail"]) or 3.3)
-        out["drops"].append((ld["ref"], ld["rail"], dv / b, dv, b))
+        # the drop is what the load loses of its source's voltage, so never below 0. The signed sum can be negative
+        # by physics, not by a reference choice: another rail's return current through shared ground copper (or a
+        # source whose own ground pin carries current) puts the load's ground below the source's, and the load then
+        # sees more than the source's voltage. That is no drop (and no credit against one); the signed value is kept
+        # for the reader (`drops_signed`).
+        out["drops_signed"].append((ld["ref"], ld["rail"], dv))
+        d = max(dv, 0.0)
+        out["drops"].append((ld["ref"], ld["rail"], d / b, d, b))
     if tracks:
         for k, (I, w_eff, t_mm, ext) in enumerate(tracks(x)):
             dT = ipc_dT(abs(I), w_eff, t_mm, ext)

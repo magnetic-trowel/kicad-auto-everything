@@ -573,8 +573,8 @@ def _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes,
             P_ += float(ac_copper[c])
             ob["loss"] = (P_ / bud if bud > 0 else 0.0, P_, bud)
         loss.append(ob["loss"])
-        for ref, rail, u, dv, bnd in ob["drops"]:
-            drops.setdefault((ref, rail), [None] * ncp)[c] = (u, dv, bnd)
+        for (ref, rail, u, dv, bnd), (_, _, sdv) in zip(ob["drops"], ob["drops_signed"]):
+            drops.setdefault((ref, rail), [None] * ncp)[c] = (u, dv, bnd, sdv)
         heat.append(max(ob["heat"], key=lambda h: h[1]) if ob["heat"] else None)
     rows = []
     us = [x[0] for x in loss]
@@ -595,8 +595,11 @@ def _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes,
         u_ = [v[0] if v else 0.0 for v in vals]
         for c in range(ncp):
             tot[c] += HA.phi(u_[c])
-        v0 = vals[0] or (0.0, 0.0, 0.0)
+        v0 = vals[0] or (0.0, 0.0, 0.0, 0.0)
+        # values >= 0 (kae.excite.dc.observe); signed: rail plus ground difference as solved, negative where the
+        # load's ground sits below its source's (another rail's return current in shared ground copper)
         obs.append(dict(id="drop.rail", unit="V", values=[v[1] if v else 0.0 for v in vals], u=u_,
+                        signed=[v[3] if v else 0.0 for v in vals],
                         scope=dict(kind="dc_drop", load=ref, rail=rail, parts=[ref], nets=[rail]),
                         reference=dict(value=v0[2], basis=f"{dcp.drop_share:.0%} of the rail's voltage"),
                         label=f"DC drop from {rail}'s source to {ref}"))
@@ -703,7 +706,7 @@ def apply_tcr(rows, tcr, tot, notes, hazards):
         if not t or not fac:
             continue
         us, vals = t["us"], t["vals"]
-        new_u, new_v = [], []
+        new_u, new_v, fs = [], [], []
         for c in range(len(us)):
             if c < len(fac):
                 if t["nets"]:
@@ -716,6 +719,7 @@ def apply_tcr(rows, tcr, tot, notes, hazards):
             # never below the 20 C value: the corners pair the DC band's peak currents with the heat band's ambient at
             # random, and a cold ambient must not lower the sampled worst drop (a cold board's copper is the better case)
             f = max(f, 1.0)
+            fs.append(f)
             nu = us[c] * f
             tot[c] += HA.phi(nu) - HA.phi(us[c])
             new_u.append(nu)
@@ -725,6 +729,8 @@ def apply_tcr(rows, tcr, tot, notes, hazards):
         ob = t.get("obs")
         if ob is not None:
             ob["values"], ob["u"] = new_v, new_u
+            if "signed" in ob:
+                ob["signed"] = [v * f for v, f in zip(ob["signed"], fs)]
             ob["label"] += " (copper at its temperature)"
     for rw in (tcr or {}).get("runaway", []):
         if not rw["runaway"]:

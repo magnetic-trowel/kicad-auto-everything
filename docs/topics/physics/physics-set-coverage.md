@@ -84,6 +84,14 @@ The before column is the old code on the human layouts of stage 1, and routed ar
 
 Capacitive pickup is not in the fast evaluator's `pickup.peak` (only `kae.excite.wideband` adds Cm; the fast one uses capacitance for switch-node loss). On the radio boards with RF nets it is small: above 10 fF only 2 of 11 boards, ≤ 3.3 mV into 50 Ω, against 64–521 mV inductive on the same victims; the second figure was on a false victim later removed.
 
+### 6. Rail drop is never negative [M]
+
+`drop.rail` of a load is its rail's loss from the source's output pins to the load's supply pins plus its ground's rise from the source's ground pins to the load's ground pins (`kae.excite.dc.observe`). Before 2026-11-12 the signed sum was reported, and 23 values in stage 2 were negative (down to −1.6 mV, larger on a few boards), with zero price, so ratios across arms crossed zero.
+
+- **The sign is physics, not a reference choice.** Potentials are differences inside one connected net, so no ground node enters. In the case taken apart (Green Lion's BMS shield, negative at 13–15 of 19 corners in every arm) the rail part was ≥ 0 and the ground part negative: another rail's return current, or the source's own ground-pin current, flows through ground copper shared with the load and leaves the source's ground pin above the load's. There CN7 is both the +5 V source and the +12 V load; the 0.3 A of +12 V returns from CN7's ground pins to J1, putting them 11 mV above IC1's ground; IC1's rail part is +1.2 mV, the sum −10 mV. The load then sees more than the source's voltage.
+- **Definition.** A drop is what the load loses of its source's voltage, so `drop.rail` = max(0, signed sum). The signed value stays in the observation's `signed` list for the reader. A cost term with a plain rate on drop.rail had paid a credit for a negative drop; it no longer does. `harm.phi` already priced a negative drop at 0.
+- **Not covered:** an over-voltage at a load (signed < 0) is not a requirement any intent states today; a term for it would read `signed`.
+
 ## Conflicts and open questions
 
 - **Module aggressor priors** (50 mA in 5 ns behind 1 µF) are stand-ins; a radio module's transmit bursts are larger but slower. A datasheet value should replace them.
