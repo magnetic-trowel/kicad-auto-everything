@@ -21,6 +21,28 @@ SETS = {n: set((HERE / f).read_text().split()) for n, f in
         (("share37", "boards-share37.txt"), ("mech41", "boards-mechanism.txt"), ("phys98", "boards-physics.txt"))}
 
 
+def opt_stops(rd):
+    """Freerouting's optimizer stops in the stored reports of a run (the kept attempt's and its origin's): every
+    `stops.optimizer` found. In work mode the optimizer was neither charged nor capped by passes until
+    fr-budget-calibration; "timed_out" means the 4x wall ceiling cut it (load-dependent)."""
+    out = []
+
+    def walk(x):
+        if isinstance(x, dict):
+            st_ = x.get("stops")
+            if isinstance(st_, dict) and st_.get("optimizer") is not None:
+                out.append(str(st_["optimizer"]))
+            for v in x.values():
+                walk(v)
+        elif isinstance(x, list):
+            for v in x:
+                walk(v)
+    for fn in ("restart-report.json", "restart-report-origin.json"):
+        if (rd / fn).exists():
+            walk(json.loads((rd / fn).read_text()))
+    return out
+
+
 def sign_flip(xs, n=50000, seed=0):
     xs = [x for x in xs if x]
     if not xs:
@@ -53,6 +75,7 @@ def load(exp):
                     stg = its[0].get("stages") or {}
                     r["mod"], r["route"] = stg.get("modules") or {}, stg.get("route") or {}
                     break
+            r["opt"] = opt_stops(rd)
             if "s" in r:
                 D[b][ids[mid]] = r
     return D
@@ -117,10 +140,21 @@ def knobs(D):
               f"router s median {st.median([r['route'].get('router_s') or 0 for r in rows if r.get('route')] or [0]):.0f}; owners {dict(own)}")
 
 
+def optimizer(D):
+    print("\nFreerouting optimizer stops (kept and origin attempts' reports; timed_out = cut by the wall ceiling)")
+    for arm in ARM.values():
+        rows = [D[b][arm] for b in D if arm in D[b]]
+        if rows:
+            c = collections.Counter(x.lower() for r in rows for x in r.get("opt") or [])
+            to = sum(any("timed_out" in x.lower() for x in r.get("opt") or []) for r in rows)
+            print(f"  {arm:16s} runs {len(rows):3d}, runs with an optimizer timed_out {to}; stops {dict(c)}")
+
+
 def main(exp):
     D = load(exp)
     print(f"{exp}: {len(D)} boards with runs")
     knobs(D)
+    optimizer(D)
     compare(D, "M-clock", "M", 0.05)
     for a in ("M-clock-local", "M-clock-noguard", "M-clock-norails"):
         compare(D, a, "M-clock", 0.017)
