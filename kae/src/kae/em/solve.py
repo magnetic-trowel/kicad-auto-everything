@@ -26,6 +26,7 @@ import scipy.fft as sfft
 import scipy.sparse as sp
 import scipy.sparse.linalg as sla
 
+from . import blas as BL
 from . import kernels as KN
 from .mesh import MM, Network
 
@@ -34,6 +35,11 @@ import os
 # threads of the FFTs and the compiled kernels: a shared host's other users come first (numba otherwise
 # starts one thread per core); KAE_EM_THREADS overrides
 WORKERS = int(os.environ.get("KAE_EM_THREADS", "8"))
+# BLAS on one thread: a threaded OpenBLAS sums in an order set by its thread count, and the iterative solves grow
+# that to ~1e-9 of the result, so the same board gave other numbers on another machine (kae.em.blas); the FFTs and
+# kernels above carry the parallel work and sum alike at any count
+BLAS_THREADS = int(os.environ.get("KAE_EM_BLAS_THREADS", "1"))
+BLAS_SET = BL.set_threads(BLAS_THREADS)
 
 try:
     import numba

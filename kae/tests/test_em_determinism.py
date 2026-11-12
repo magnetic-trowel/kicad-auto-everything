@@ -1,8 +1,11 @@
 # SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The physics evaluator gives the same numbers for the same copper: the order a file lists its tracks and vias
-in never changes the mesh (kae.em.kicad.canonical_order)."""
+in never changes the mesh (kae.em.kicad.canonical_order), and the thread count never changes a solve (kae.em.blas)."""
+import os
 import random
+import subprocess
+import sys
 from types import SimpleNamespace
 
 import numpy as np
@@ -57,3 +60,46 @@ def test_canonical_order_sorts_in_place_by_content():
     canonical_order(a), canonical_order(b)
     assert [t.uuid for t in a.tracks] == [t.uuid for t in b.tracks]
     assert [v.uuid for v in a.vias] == [v.uuid for v in b.vias]
+
+
+_PROBE = r"""
+import numpy as np
+from kae.em import solve as ES
+from kae.em.mesh import Layer, Mesh
+m = Mesh.over(0, 0, 24, 18, 0.25, [Layer("T", 1.6, 0.035, 2), Layer("B", 0.0, 0.035, 2)])
+m.rect(0, "A", 1, 1, 23, 4); m.rect(0, "A", 1, 1, 4, 17); m.rect(0, "A", 20, 1, 23, 17)
+m.rect(1, "G", 0.5, 0.5, 23.5, 17.5)
+m.paint_line(0, "S", [(6, 8), (18, 9), (18, 15)], 0.2)
+for name, l, x, y, net in [("a", 0, 21.5, 15, "A"), ("g", 1, 21.5, 15, "G"), ("s0", 0, 6, 8, "S"), ("s1", 0, 18, 15, "S"),
+                           ("g0", 1, 6, 8, "G"), ("g1", 1, 18, 15, "G"), ("a2", 0, 2.5, 2.5, "A"), ("g2", 1, 2.5, 2.5, "G")]:
+    m.terminal(name, l, xy=(x, y), net=net)
+m.part("a2", "g2", R=0.5, L=1e-9)
+m.part("s1", "g1", R=50.0)
+net = ES.Network(m); op = ES.Operator(net)
+out = []
+for f in (0.0, 5e7):
+    res = ES.potentials_many(m, [{"a": 1.0, "g": -1.0}, {"s0": 1.0, "g0": -1.0}, {"s0": 1.0, "a": -1.0}], f, net=net,
+                             op=op, tol=1e-4)
+    for V, info in res:
+        out += [complex(V[t]) for t in sorted(V) if V[t] is not None and np.isfinite(V[t])]
+print(" ".join(f"{z.real.hex()},{z.imag.hex()}" for z in out))
+"""
+
+
+def _probe(threads):
+    env = dict(os.environ, KAE_EM_THREADS=str(threads), OMP_NUM_THREADS=str(threads),
+               OPENBLAS_NUM_THREADS=str(threads), MKL_NUM_THREADS=str(threads), PYTHONHASHSEED=str(threads))
+    env.pop("KAE_EM_BLAS_THREADS", None)
+    src = os.path.join(os.path.dirname(__file__), "..", "src")
+    env["PYTHONPATH"] = os.pathsep.join([os.path.abspath(src)] + [p for p in [env.get("PYTHONPATH")] if p])
+    r = subprocess.run([sys.executable, "-W", "ignore", "-c", _PROBE], env=env, capture_output=True, text=True,
+                       timeout=600)
+    assert r.returncode == 0, r.stderr[-2000:]
+    return r.stdout.split()
+
+
+def test_a_field_solve_is_bit_identical_at_any_thread_count():
+    """A DC and a 50 MHz COCG solve of a plane, a pour and a thin track, in fresh processes at 1 and 4 threads (and
+    two hash seeds). A threaded OpenBLAS (SuperLU's solves) had moved the 50 MHz potentials by up to 5e-9."""
+    one, four = _probe(1), _probe(4)
+    assert len(one) == 48 and one == four
