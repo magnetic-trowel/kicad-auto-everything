@@ -298,8 +298,9 @@ def optimize_modules(board, brief, terms=None, locked=(), info=None, poses=None,
     clock: keep `time_s` for the whole stage (from `t_start`, the caller's start, e.g. before its
     Session was built), not only for the part moves: the deadline is checked before every module,
     every candidate trial, each rail, branch, rail completion join and ground return, and the
-    tightening (the corner joins always run: they connect what was laid), and the modules go decaps,
-    rail groups and crystals first, chains last (MODULE_CLOCK_RANK). Without it the clock covers
+    tightening (the corner joins always run: they connect what was laid). The modules go decaps,
+    rail groups and crystals first, chains last (MODULE_CLOCK_RANK), each routed at its pose before
+    any module's move passes start. Without it the clock covers
     the move passes only and routing every module, the rails and the joins ran past it, up to 8x
     (module-casestudy: the overrun starved the first route)."""
     from .critical import Session
@@ -345,12 +346,9 @@ def optimize_modules(board, brief, terms=None, locked=(), info=None, poses=None,
         # worst cluster can change with a move); the value when no allocation is known
         u_ = mm.physics.get("u")
         return u_ if u_ is not None else mm.physics.get("value")
-    for m in mods:
-        if over():
-            rep["clock"]["skipped"].append(m.id)
-            continue
+    def first(m):
+        """Route module m at its current pose; its report row and movable parts."""
         route_module(ctx, m)
-        v0 = score(m)
         mrep = dict(id=m.id, kind=m.kind, value0=m.physics.get("value"), u0=m.physics.get("u"), moves=[])
         movable = []
         for u in _active_parts(m):
@@ -362,6 +360,10 @@ def optimize_modules(board, brief, terms=None, locked=(), info=None, poses=None,
                 continue
             movable.append(u)
         mrep["movable"] = [ctx.fp[u].ref for u in movable]
+        return mrep, movable, score(m)
+
+    def improve(m, mrep, movable, v0):
+        """The move passes of module m (its copper re-routed for every trial), then its report row."""
         best = v0
         for _ in range(passes):
             if v0 is None or not movable or clock_now() - t0 > time_s:
@@ -409,6 +411,22 @@ def optimize_modules(board, brief, terms=None, locked=(), info=None, poses=None,
         rep["modules"].append(mrep)
         log(f"{m.id}: {mrep['value0']} -> {mrep['value']} {m.physics.get('unit', '')} "
             f"({len(mrep['moves'])} moves of {mrep['movable']})")
+
+    if clock:
+        # every module routed at its pose first (value order), then the move passes with what is left: one
+        # module's moves must not spend the time the next module's copper needs (gecko5: the crystal's 36 trials
+        # took the whole stage and no decap was routed)
+        firsts = []
+        for m in mods:
+            if over():
+                rep["clock"]["skipped"].append(m.id)
+                continue
+            firsts.append((m, *first(m)))
+        for m, mrep, movable, v0 in firsts:
+            improve(m, mrep, movable, v0)
+    else:
+        for m in mods:
+            improve(m, *first(m))
     sess.modules = [m for m in mods if m.id not in set(rep["clock"]["skipped"])] if clock else mods
     t_mods = clock_now()
     if rails and window is None and modules is None and sess.opts.get("rails_joint", "auto") != "none":

@@ -110,3 +110,30 @@ M-esc and M-poses are dropped. M-esc adds grid cost to a stage that overran; the
 - `chassis-soft`'s R is a reference only (other build and budgets).
 
 **Costs (information only):** five arms × 142 boards × about 0.7 CPU-h, about 500 CPU-h; fewer if M-clock's shorter module stage holds.
+
+## Addendum 4, after profiling and before any full run (2026-11-11): every module routed before any moves; the experiment is `module-clock2`
+Before submitting, the five arms were profiled directly: one attempt each under py-spy, counted work, at f1fb619, on whippet-106 (459 pads) and gecko5 cpuaddon (814 pads). A 2-board kaeres smoke of `module-clock` also ran at f1fb619. Findings:
+- **M overruns in work mode now.** The critical router's work is charged (also PR #69). M's module stage spent 175 (whippet) and 173 (gecko5) nominal s against its 90 s. M-clock spent 93.5 and 93.2, and its first route got the time back (596 vs 504 s and 551 vs 473 s of routing stage).
+- **A fault in the first clock design.** On gecko5, M-clock routed only the crystal: the crystal module's move trials (2 passes × 3 parts × up to 6 candidates, each re-routing the module) spent the whole 90 s, so every decap, the buck cell and the power path were skipped. M-clock-local was then the same board as M-clock.
+- **Fix (next commit):** with `module_clock`, every module is first routed at its pose in value order, and only then do the move passes run with what is left. Re-checked on gecko5 in work mode: all 18 modules routed, the rails started and were cut at the deadline, and the stage spent 90.6 of 90 nominal s. Without `module_clock` nothing changes (M is as before).
+- **The knobs, on these two boards.**
+  - Guard zones were 0 in M-clock-noguard and 1 in the other M-clock arms on gecko5.
+  - M laid rail copper (`rail/*` owners) on both boards. The re-checked M-clock laid it on gecko5 until the deadline cut it.
+  - M-clock-local laid only decap and crystal owners.
+  - On whippet the clock skipped the rails in every M-clock arm, so the rail ablations were the same board there. The kaeres smoke at the new commit checks the knobs again per arm. Where the clock leaves no time for rails, M-clock-norails equals M-clock by construction. That is part of the answer (the rails then cost nothing), not a fault.
+- Arms, boards, rules and thresholds are unchanged. The methods are registered again at the new commit, and the experiment is named `module-clock2`. `module-clock` holds only the smoke at f1fb619.
+
+## Addendum 5, after the `module-clock2` smoke (2026-11-11, before the other 140 boards)
+Plumbing only, and the two boards stay in the experiment. Commit 6499398, smoke on whippet-106 and gecko5 cpuaddon. Every arm ran to the end with a scored board.
+- **whippet, all five arms.**
+  - The module stage took 1.34× its budget in M and 1.05× in every M-clock arm.
+  - The first route's router time was 80 s in M and 105-123 s in the M-clock arms.
+  - Opens were 17 in M and 9 in M-clock: one board, no inference.
+  - Rails were skipped by the clock in M-clock and M-clock-noguard, and off by flag in the other two.
+- **gecko5, M-clock-local and M-clock-norails.**
+  - M-clock-local laid only decap and crystal copper and kept the crystal's guard (1 zone).
+  - M-clock-norails kept cell, path, decap and crystal copper and no rail copper (3 guard zones).
+  - Both routed every module within the clock: 93.7 and 91.3 nominal s of 90.
+- gecko5's M, M-clock and M-clock-noguard were the last job still running when the full run was submitted. The same arms ran in the direct profiling at the previous commit, and M-clock was re-checked at this one (Addendum 4).
+- **Sizing:** gecko5 jobs peaked at 10.4 GB against kaeres's 8.5 GB request. kaeq's measured admission grows grants, so this is left to it.
+No rule changes.
