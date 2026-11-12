@@ -122,3 +122,18 @@ Before submitting, the five arms were profiled directly: one attempt each under 
   - M-clock-local laid only decap and crystal owners.
   - On whippet the clock skipped the rails in every M-clock arm, so the rail ablations were the same board there. The kaeres smoke at the new commit checks the knobs again per arm. Where the clock leaves no time for rails, M-clock-norails equals M-clock by construction. That is part of the answer (the rails then cost nothing), not a fault.
 - Arms, boards, rules and thresholds are unchanged. The methods are registered again at the new commit, and the experiment is named `module-clock2`. `module-clock` holds only the smoke at f1fb619.
+
+## Addendum 5, after the `module-clock2` smoke (2026-11-11, before the other 140 boards)
+Plumbing only, and the two boards stay in the experiment. Commit 6499398, smoke on whippet-106 and gecko5 cpuaddon. Every arm ran to the end with a scored board.
+- **whippet, all five arms.**
+  - The module stage took 1.34× its budget in M and 1.05× in every M-clock arm.
+  - The first route's router time was 80 s in M and 105-123 s in the M-clock arms.
+  - Opens were 17 in M and 9 in M-clock: one board, no inference.
+  - Rails were skipped by the clock in M-clock and M-clock-noguard, and off by flag in the other two.
+- **gecko5, M-clock-local and M-clock-norails.**
+  - M-clock-local laid only decap and crystal copper and kept the crystal's guard (1 zone).
+  - M-clock-norails kept cell, path, decap and crystal copper and no rail copper (3 guard zones).
+  - Both routed every module within the clock: 93.7 and 91.3 nominal s of 90.
+- gecko5's M, M-clock and M-clock-noguard were the last job still running when the full run was submitted. The same arms ran in the direct profiling at the previous commit, and M-clock was re-checked at this one (Addendum 4).
+- **Sizing:** gecko5 jobs peaked at 10.4 GB against kaeres's 8.5 GB request. kaeq's measured admission grows grants, so this is left to it.
+No rule changes.
