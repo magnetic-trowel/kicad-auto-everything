@@ -76,7 +76,7 @@ GRACE_S = 30.0  # an attempt is killed this long after its own budget
 # the ceiling (WORK_CEILING x an attempt's budget, as in kae.budget).
 WORK = os.environ.get("KAE_BUDGET") == "work"
 WORK_CEILING = 4.0
-WORK_FINAL_SHARE, WORK_FINISH_SHARE = 0.15, 0.10     # of --time, for --final and --finish
+WORK_FINAL_SHARE, WORK_FINISH_SHARE = 0.15, 0.10     # of --time, for --final and --finish (unless --final-s / --finish-s)
 FINAL_MIN_S = 60.0  # the final pass at least, beyond one DRC of the board (a last mile's joins and refill)
 
 
@@ -416,6 +416,17 @@ def finish_estimate(a, inp, judge_est):
     return max(FINISH_MIN_S, FINISH_COEF[0] + FINISH_COEF[1] * pads + 2 * judge_est + 5.0)
 
 
+def work_final_s(a):
+    """Work mode: the nominal seconds of the --final pass, --final-s, else WORK_FINAL_SHARE of --time."""
+    return (a.final_s or WORK_FINAL_SHARE * a.time) if a.final else 0.0
+
+
+def work_finish_s(a):
+    """Work mode: the nominal seconds of the --finish pass, --finish-s, else WORK_FINISH_SHARE of --time (until
+    2026-11-11 work mode ignored --finish-s: a 30 % finish got 10 % and the other 20 % went unused)."""
+    return (a.finish_s or WORK_FINISH_SHARE * a.time) if a.finish else 0.0
+
+
 def final_reserve(a, judge_est, inp=None):
     """Seconds kept free from the start for the final passes: the last mile (--final; --final-s,
     else FINAL_MIN_S plus one DRC of the board, as long as the slowest judgement so far) and the
@@ -584,7 +595,7 @@ def final_pass(a, best, inp, base, wd, end, judge_est, meter, stop, cpu_s, base_
     if best is None or best.get("rank") is None or best["rank"][:2] == (0, 0):
         return None
     fin_res = (finish_estimate(a, inp, judge_est) + judge_est + 10.0) if a.finish else 0.0
-    b = WORK_FINAL_SHARE * a.time if WORK else max(20.0, end - time.monotonic() - judge_est - 10.0 - fin_res)
+    b = work_final_s(a) if WORK else max(20.0, end - time.monotonic() - judge_est - 10.0 - fin_res)
     return _one_pass(a, "final", a.final, best, inp, base, wd, end, b, judge_est, meter, stop, cpu_s, base_pairs,
                      keep_equal=False)
 
@@ -596,7 +607,7 @@ def finish_pass(a, best, inp, base, wd, end, judge_est, meter, stop, cpu_s, base
     ran, were skipped or failed; its DRC runs). None without a board."""
     if best is None or best.get("rank") is None:
         return None
-    b = WORK_FINISH_SHARE * a.time if WORK else max(20.0, end - time.monotonic() - judge_est - 10.0)
+    b = work_finish_s(a) if WORK else max(20.0, end - time.monotonic() - judge_est - 10.0)
     info = _one_pass(a, "finish", a.finish, best, inp, base, wd, end, b, judge_est, meter, stop, cpu_s, base_pairs,
                      keep_equal=True)
     rep = _last_json(wd / "finish" / "log")
@@ -739,7 +750,7 @@ def main():
         a.first_s *= max(1.0, nfp / 40) ** 0.5
         log(f"{nfp} footprints: first wave {a.first_s:.0f}s")
     end = t0 + (2 * WORK_CEILING * a.time if WORK else a.time)
-    plan_s = a.time * (1.0 - (WORK_FINAL_SHARE if a.final else 0.0) - (WORK_FINISH_SHARE if a.finish else 0.0))
+    plan_s = max(0.0, a.time - work_final_s(a) - work_finish_s(a))
     plan_used = [0.0]        # work mode: nominal seconds of the batches launched so far
     base_dir = wd / "input"  # the input's own DRC errors (silk, rules) are not the method's
     base_dir.mkdir(exist_ok=True)
