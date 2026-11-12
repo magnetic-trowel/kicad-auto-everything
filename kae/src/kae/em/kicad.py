@@ -46,8 +46,33 @@ def _arc_points(t, n=16):
     return [(ux + r * math.cos(a0 + sweep * k / n), uy + r * math.sin(a0 + sweep * k / n)) for k in range(n + 1)]
 
 
+def _track_key(t):
+    mid = getattr(t, "mid", None)
+    return (str(t.layer), str(t.net or ""), float(t.width), tuple(t.start), tuple(t.end),
+            (0,) if mid is None else (1,) + tuple(mid), str(getattr(t, "uuid", "") or ""))
+
+
+def _via_key(v):
+    return (float(v.x), float(v.y), str(v.net or ""), float(v.size), float(v.drill), tuple(v.layers),
+            str(getattr(v, "uuid", "") or ""))
+
+
+def canonical_order(b):
+    """Put a board's tracks (and arcs) and vias in an order set by their content, not by the file. The raster
+    is painted item by item, and where two pieces of copper claim one cell the later wins (Mesh.paint,
+    Mesh.paint_line; a thin track's bars keep the first track's length scale): a router that wrote the same
+    copper in another order got a different mesh, and loss and drop differed by about 1 % on byte-identical
+    copper. In place; returns b."""
+    if getattr(b, "tracks", None):
+        b.tracks = sorted(b.tracks, key=_track_key)
+    if getattr(b, "vias", None):
+        b.vias = sorted(b.vias, key=_via_key)
+    return b
+
+
 class BoardMesh:
-    """Mesh of board `path` (or a loaded board b) in window (x0, y0, x1, y1), mm."""
+    """Mesh of board `path` (or a loaded board b) in window (x0, y0, x1, y1), mm. The board's tracks and vias are
+    meshed in canonical order (canonical_order), so the file's item order never changes the mesh."""
 
     def __init__(self, path, window, pitch, nsub=2, b=None, fills=None, layers=None, nets=None):
         from shapely.geometry import LineString, Point, box
@@ -58,6 +83,8 @@ class BoardMesh:
         from kae.place.legalize import pad_shape
         if b is None:
             b = load(path)
+        tracks = sorted(b.tracks, key=_track_key)        # canonical_order, without reordering the caller's board
+        vias = sorted(b.vias, key=_via_key)
         if fills is None:
             from kae.route.critical_recheck import fills_of
             fills = fills_of(path)
@@ -82,7 +109,7 @@ class BoardMesh:
                 for pg in pgs:
                     add(net, layer, pg)
         thin = []
-        for t in b.tracks:
+        for t in tracks:
             pts = _arc_points(t) if getattr(t, "mid", None) else [t.start, t.end]
             if t.width < 3 * pitch:
                 if t.net and t.layer in self.li and LineString(pts).intersects(win):
@@ -107,7 +134,7 @@ class BoardMesh:
             ks = [order.index(l) for l in ls if l in order]
             return order[min(ks):max(ks) + 1] if ks else []
         self.span = span
-        for v in b.vias:
+        for v in vias:
             for layer in span(v.layers):
                 add(v.net, layer, Point(v.x, v.y).buffer(v.size / 2, quad_segs=8))
         for (net, layer), gs in geo.items():
@@ -127,7 +154,7 @@ class BoardMesh:
                     if layer in self.li:
                         m.lab[self.li[layer], j, i] = m.net_id(p.net)
         self.n_bridges = m.bridge_gaps()        # fine-pitch neighbours' shared cells (Mesh.paint_line)
-        for v in b.vias:
+        for v in vias:
             if win.contains(Point(v.x, v.y)) and (nets is None or v.net in nets):
                 ls = [self.li[l] for l in span(v.layers) if l in self.li]
                 if len(ls) > 1:

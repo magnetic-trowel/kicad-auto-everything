@@ -152,11 +152,12 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
     from kae.board.kicad_file import load
     from kae.circuit import brief as B
     from kae.em import solve as ES
-    from kae.em.kicad import BoardMesh
+    from kae.em.kicad import BoardMesh, canonical_order
     from .beliefs import corners
     from kae.board import pinfacts as PF
     t0 = time.time()
     b = b or load(path)
+    canonical_order(b)                       # the file's item order must not change any result
     # the schematic's pin facts the intent was compiled with (operating facts `pins`): the same circuit
     n_pins = PF.apply(b, (intent or {}).get("pins"))
     b.stackup, stack_hz, stack_text = assume_stackup(b)
