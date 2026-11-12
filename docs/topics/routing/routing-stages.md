@@ -158,6 +158,8 @@ Built (branch `route-finish-default`) [I]:
 | Taut honours its deadline: checked before every branch and the pairs pass; it stops cleanly and keeps (journals) what it finished, with `taut_time_limited` | `taut.Taut.run_passes(deadline)`, `taut.run` |
 | Kept only when KiCad ranks it no worse, as before | `_one_pass(keep_equal=True)`; `portfolio.finish_pass` |
 
+Smoke (6 boards, one seed each, not an A/B) [M]: no overrun in either arm's total; the old recipe's finish was killed past its budget on gecko5 and zotino, the new one never. On the four open boards the new default ran no finish part (2–60 s left after the last mile; taut alone needs 5 + 0.12 s per pad): open boards trade C's copper gains for routing time. Measure that trade in the next A/B.
+
 Defaults: finish is on in `kae.route.cli route` (`--no-finish`) and in `kae.route.portfolio` (last mile then finish; `--no-finish`), kae's own restart portfolio. `restart.py` is the harness's method-agnostic wrapper, so `--finish` stays explicit there: a default would change Freerouting and placer methods too. Every kae recipe for it passes `--final` (lastmile) and `--finish` (`kae.route.cli finish`). `import_tails`, `escape_ground_vias`, `tighten` and `entry_guard` stay off. Registered kaeres methods pin their kae and harness commits, so they keep their behaviour. Open: the joint loop's portfolio finishing stage runs without finish (`finish=None`), and `kae.route.critical_cli` does not finish; work-mode budgets (`KAE_BUDGET=work`) still give finish a fixed 10 % share.
 
 The finish result is cached (`stepcache.board_key`: input board and project files, options and the operating facts' content, code, KiCad version), unless a part was skipped or the gate stopped for time.
