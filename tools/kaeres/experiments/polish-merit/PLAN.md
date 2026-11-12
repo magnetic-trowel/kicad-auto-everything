@@ -52,4 +52,18 @@ The merit suite: `merit-500r3`'s 213 boards, none added or dropped. They are als
 2 boards × 2 arms, profiled per arm (py-spy one board per arm; time per stage: restarts, last mile, the loop's first route, windows, its finishing stage; judging). Plumbing only: the arms and rules do not change after it unless the smoke shows a plumbing fault, recorded here as an addendum.
 
 ## Costs (information only)
-See the addendum written at submit time (`exp submit --dry-run` sizes).
+Nominal work is 3.15 × 900 s × sqrt(fp/40), summed over the 213 boards: about 219 CPU-h per arm (mean sqrt(fp/40) 1.31, largest board 833 footprints). With judging, DRC and physics that is about 500 CPU-h for both arms, in 424 jobs.
+
+## Addendum after the smoke (2026-11-11, before the other 211 boards)
+Plumbing only, and the two boards stay in the experiment. Commit 76fae3c.
+- **secsense:** clean in both arms on the first attempt. P-late's finish got 850 s, 30 % of 2,835, and kept the board (it was already clean).
+- **aifryz sensor hub (126 footprints, 5,031 s nominal):**
+  - R ran 4 attempts and a last mile (not kept): 12 opens, 10 errors, 6,819 CPU-s.
+  - P-late ran 3 attempts and a last mile (kept, 21 opens), then the joint loop's finish with its 1,509 s: 14 opens, 9 errors, 6,677 CPU-s.
+  - CPU is matched within 2 %. Both runs have the same 8 clearance placement errors, from the input.
+- KiCad and the physics evaluator scored all four runs, with no time-outs and no `ceiling_hit`.
+- **Profile** (aifryz, py-spy per arm, direct run of the same commands; wall 1 h 45-48 min for 5,031 s nominal under load):
+  - In P-late the finish pass took 34 % of the samples. Its routing stage (bridge and Freerouting) took 28 %, and window repair 5 %.
+  - In both arms most wall time is waiting on Freerouting (24-27 %) and the pcbnew worker (about 30 %).
+  - No simple speedup with identical output stood out. kaeres's sizing is kept.
+No rule changes.
