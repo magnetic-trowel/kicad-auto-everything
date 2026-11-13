@@ -65,3 +65,20 @@ No default changes from this experiment alone: the output is a recommendation an
 the plumbing: every run valid and scored by KiCad, flips present in the output boards (back SMD parts C/P/S: 16/8/3, 17/15/0, 24/1/0), no
 copied human copper (`copy` not suspect). On sdtv2csi, all 24 back parts on the front left 15-16 open against 10. S was replaced by R, which
 uses no human side; the list grew from 150 to 300 boards from the suites.
+
+## Addendum 2026-11-13: pre-step failure exclusion (before any arm result is compared)
+An interim plumbing check (54 boards, no decision rule applied) found that the pre-step `tools/research/place/side_front.py`
+misreads the board area on 3 of 54 boards: `board_area_mm2` is 0 on cypress-small-8 and greatfet-foxglove, and 9.8 mm²
+on particle-iot-tracker (front fill 129.8). `board_area()` sums `board.outline` polygons, and these outlines do not parse into
+a closed polygon of the board's size. With no area, P has no budget and flips nothing, and R's fill rule sends almost every
+SMD part to the back (back SMD 41 -> 115, 68 -> 151, 55 -> 150): the opposite of the R policy. There R measures the bug, not
+the policy.
+
+**Exclusion (pre-registered, same for every arm):** a board leaves the analysis, in all arms, if the pre-step's `KAE_SIDE`
+line reports `board_area_mm2 <= 0` or `front_fill_before > 1` (front courtyards larger than the board: the area is wrong).
+The value is a property of the input board (the same deterministic computation in P and R), so the rule cannot favour
+an arm. Boards where every arm ends `no_output` because the input itself is broken (sinara-hw-rf-detector:
+`invalid_outline`, every attempt rc 2) are excluded the same way. Excluded boards are listed in the report with the reason,
+and the main result is also shown with them included, for transparency. A legitimately full board (fill <= 1, e.g.
+siderakb at 0.70) stays in. Expected: about 15 of 300 boards. Any extension uses a fixed `board_area()` on a new commit,
+registered as new methods.
