@@ -1,0 +1,17 @@
+antmicro-arvsom-arvsom
+antmicro-polarfire-som-polarfire-som
+antmicro-sdi-mipi-video-converter-hw-sdi-mipi-video-converter
+bastardkb-dilemma-dilemma-3
+dimoustroufis-librewave-ecp5-librewave-ecp5
+folknology-mystorm-mystorm
+gregification-beems-mini-orion-tem
+heypcb-kestrel-esc-kestrel-esc
+kocer-direct-sampling-sdr-dogrudan-sdr-a
+livitup-hrv-sstv-badge-defcon-sstv-badge
+logisim-evolution-gecko5education-gecko5education
+seeed-studio-oshw-jetson-series-reserver-j2032-v1
+sinara-hw-sinara-zotino
+sparkfun-sparkfun-thing-plus-rp2040-rp2040-thing-plus
+tpcarlson-synth-diy-sycamore
+usbarmory-usbarmory-armory
+zephray-nekoink-pcb-2

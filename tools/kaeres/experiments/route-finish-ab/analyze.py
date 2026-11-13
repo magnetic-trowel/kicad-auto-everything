@@ -50,6 +50,12 @@ def jl(p):
 
 def arm_of(name):
     n = name.lower()
+    if n.startswith("cab legacy twin"):
+        return "A2"
+    if n.startswith("cab legacy"):
+        return "A"
+    if n.startswith("cab default"):
+        return "N"
     if n.startswith("rf legacy twin"):
         return "A2"
     if n.startswith("rf legacy"):
@@ -72,7 +78,7 @@ class Data:
         self.boards = (STORE / "experiments" / exp / "boards.txt").read_text().split()
         self.ids = {arm_of(m["name"]): m["id"] for m in self.e["methods"] if arm_of(m["name"])}
         self.drc_eval = self.e["evaluators"]["drc"]
-        self.arms = [a for a in ("A0", "A0r", "A", "A2", "B", "C", "D", "E") if a in ("A0", "A0r", "B") or a in self.ids]
+        self.arms = [a for a in ("A0", "A0r", "A", "A2", "B", "C", "D", "E", "N") if a in ("A0", "A0r", "B") or a in self.ids]
         self._a0 = None
         if only_arms:
             self.arms = [a for a in self.arms if a in only_arms]
@@ -89,7 +95,7 @@ class Data:
         if twin:
             e = jl(STORE / "experiments" / twin / "experiment.json") or {}
             self.ids.update({arm_of(m["name"]): m["id"] for m in e.get("methods", []) if arm_of(m["name"])})
-            self.arms = [a for a in ("A0", "A0r", "A", "A2", "B", "C", "D", "E") if a in ("A0", "A0r", "B") or a in self.ids]
+            self.arms = [a for a in ("A0", "A0r", "A", "A2", "B", "C", "D", "E", "N") if a in ("A0", "A0r", "B") or a in self.ids]
 
     def run_dir(self, arm, b):
         if arm == "A0":
@@ -471,21 +477,21 @@ def _repos():
     return {r["id"]: r.get("repo") for r in rows}
 
 
-def smd_overhang(D, a, b):
-    """{board: (n, mm2)} on SMD lands (smd2 + smd) over the boards both arms have."""
+def smd_overhang(D, a, b, kinds=("smd2", "smd")):
+    """{board: (n, mm2)} on lands of `kinds` (default SMD: smd2 + smd) over the boards both arms have."""
     out = {}
     for bd in D.boards:
         x, y = overhang(D, a, bd), overhang(D, b, bd)
         if x is not None and y is not None:
-            out[bd] = tuple((sum(o[k][i] for k in ("smd2", "smd") if k in o)) for o in (x, y) for i in (0, 1))
+            out[bd] = tuple((sum(o[k][i] for k in kinds if k in o)) for o in (x, y) for i in (0, 1))
     return out
 
 
-def overhang_gate(D, ctrl="A", treat="C"):
+def overhang_gate(D, ctrl="A", treat="C", kinds=("smd2", "smd")):
     """C's SMD overhang against A's: per-board differences (entries; mm2), repository-resampled CI, sign-flip p.
     Fails when either difference is positive and its CI excludes 0."""
     S, cl = _stats(D), _repos()
-    d = smd_overhang(D, ctrl, treat)
+    d = smd_overhang(D, ctrl, treat, kinds)
     res = {}
     for name, i in (("entries", 0), ("mm2", 1)):
         diffs = [v[2 + i] - v[i] for v in d.values()]
@@ -601,11 +607,11 @@ def physics_rows(D, ctrl, treat):
     return rows
 
 
-def overhang_rows(D, ctrl, treat):
-    g = overhang_gate(D, ctrl, treat)
+def overhang_rows(D, ctrl, treat, kinds=("smd2", "smd"), label="SMD"):
+    g = overhang_gate(D, ctrl, treat, kinds)
     if not g:
-        return [("overhang on SMD lands", None, "no measures")]
-    return [(f"overhang on SMD lands, {n}: no rise beyond noise", not x["fail"],
+        return [(f"overhang on {label} lands", None, "no measures")]
+    return [(f"overhang on {label} lands, {n}: no rise beyond noise", not x["fail"],
              f"{ctrl} {x['control']} {treat} {x['treatment']} mean diff {x['mean_diff']} CI {x['ci']} p {x['p']:.3g} boards up {x['above']} down {x['below']}")
             for n, x in g.items()]
 
@@ -669,6 +675,9 @@ def sec_gates(D):
     """The pre-registered verdicts of PLAN.md sections 4, 9 and 10, computed."""
     arms = set(D.arms)
     out = ["## Pre-registered gates\n"]
+    if "N" in arms:
+        out.append(confirm_gates(D))
+        return "\n".join(out)
     if "A2" in arms:
         out.append(_gtable("Check: A/A twin of A (flips expected from noise alone)", not_worse(D, "A", "A2")))
     if "B" in arms:
@@ -702,6 +711,59 @@ def sec_gates(D):
             ("supply.peak or loss.loop_ac: signal-better at least twice signal-worse", hit if better else None, str(better)),
             ("ADOPT escape_ground_vias", all(x[1] for x in nw[:3]) and hit if better else None, f"{len(ground_via_boards(D))} boards")]))
     return "\n".join(out)
+
+
+def confirm_gates(D):
+    """confirm-default-ab/PLAN.md: N (the default) against A (legacy), A2 the twin of A on the large open boards."""
+    S, cl = _stats(D), _repos()
+    rows = []
+    comp = lambda s: float(s.get("completion") or 0)
+    r = paired(D, comp, "A", "N", False)
+    if r:
+        rows.append(("PRIMARY completion: N not worse than A (CI lower bound > -0.005)", r["ci"][0] > -0.005,
+                     f"A {r['mean_a']} N {r['mean_b']} diff {r['diff']} CI {r['ci']} p {r['p']} n {r['n']}"))
+    big = [b for b in D.boards if D.score("A2", b)]
+    if big:
+        dn = [comp(D.score("N", b)) - comp(D.score("A", b)) for b in big if D.score("N", b) and D.score("A", b)]
+        dt = [comp(D.score("A2", b)) - comp(D.score("A", b)) for b in big if D.score("A", b)]
+        cit = S.bootstrap_ci(dt, [cl.get(b, b) for b in big if D.score("A", b)]) if dt else None
+        inside = bool(dn and cit and cit[0] <= st.mean(dn) <= cit[1])
+        rows.append(("noise check, large open boards: N - A against A2 - A (reported; read as PLAN.md says)", None,
+                     f"N-A mean {st.mean(dn):.4f} (boards worse {sum(x < 0 for x in dn)}, better {sum(x > 0 for x in dn)}); "
+                     f"A2-A mean {st.mean(dt):.4f} CI {[round(x, 4) for x in cit]} (worse {sum(x < 0 for x in dt)}, better {sum(x > 0 for x in dt)}); "
+                     f"median |A2-A| {st.median([abs(x) for x in dt]):.4f}; N-A {'inside' if inside else 'outside'} the twin's CI; n {len(dn)}"
+                     if dn and dt else "no data"))
+    for name, ok, det in not_worse(D, "A", "N"):
+        if name != "completion":
+            rows.append((f"{name} (reported)", ok, det))
+    rows.append(validity(D, "A", "N"))
+    pb = [b for b in D.boards if phys_terms(D, "N", b)[0] and phys_terms(D, "A", b)[0]]
+    vd, by = physics_verdicts(D, "N", "A", boards=pb)
+    for o in ("loss.copper", "drop.rail"):
+        vals, c = by.get(o), vd.get(o)
+        rows.append((f"SECONDARY {o}: median N/A at most 1, more signal-better than signal-worse",
+                     (st.median(vals) <= 1 and c["signal better"] > c["signal worse"]) if vals else None,
+                     (f"median {st.median(vals):.3f}, " + ", ".join(f"{k} {n}" for k, n in sorted(c.items())) + f"; {len(pb)} boards") if vals else "no data"))
+    rows += overhang_rows(D, "A", "N", ("tht",), "THT")
+    rows += overhang_rows(D, "A", "N")
+    for arm in ("A", "N", "human"):
+        v = [x for x in (notches(D, arm, b) for b in D.boards) if x]
+        if v:
+            rows.append((f"notches < 80 deg, >= 50 um per m, {arm} (reported)", None if arm != "N" else True,
+                         f"{sum(x[0] for x in v) / max(1e-9, sum(x[1] for x in v)):.2f} on {len(v)} boards"))
+    codes = Counter()
+    nb = 0
+    for b in D.boards:
+        hz = {h.get("code") for h in hazards_of(D, "N", b)}
+        sm = (blocks(D.log("N", b), "summary") or [None])[-1] or {}
+        fin = sm.get("finish") or {}
+        skipped = (fin.get("parts") or {}).get("skipped") or {}
+        if hz & {"finish_part_skipped", "finish_failed", "taut_time_limited"} or skipped or not fin:
+            nb += 1
+        codes.update(c for c in hz if c in ("finish_part_skipped", "finish_failed", "taut_time_limited"))
+        codes["no finish record"] += not fin
+    rows.append(("finish skipped or time-limited on N's kept boards (reported)", None, f"{nb} boards; " + ", ".join(f"{k} {n}" for k, n in sorted(codes.items()))))
+    return _gtable("Confirmation: N (the default) against A (legacy)", rows)
 
 
 def ground_via_boards(D):
@@ -844,11 +906,15 @@ def main():
     ap.add_argument("--section", default="gates,routing,geometry,dfm,physics,hazards,stages")
     ap.add_argument("--churn", choices=("exclude", "stored"), default="exclude",
                     help="boards whose re-score is only uuid churn: left out of every arm, or each run's stored score")
+    ap.add_argument("--floor", action="append", metavar="OBS=FRACTION", help="noise floor of an observable (replaces FLOOR's)")
     ap.add_argument("--drop", action="append", metavar="ARM:BOARD", help="leave one arm's score of a board out")
     ap.add_argument("--twin", help="experiment holding the A/A twin (arm A2)")
     ap.add_argument("--arms", help="comma list of arms to report (default: every arm with data)")
     ap.add_argument("--offset-list", help="write the (board, arm) pairs whose physics needs offset-averaging")
     a = ap.parse_args()
+    for kv in a.floor or []:
+        k, _, v = kv.partition("=")
+        FLOOR[k] = float(v)
     D = Data(a.exp, a.out, a.churn, a.arms.split(",") if a.arms else None, a.twin, a.drop)
     print(f"# route-finish A/B: {a.exp}\n\nArms {', '.join(D.arms)}; methods "
           + ", ".join(f"{k} `{v}`" for k, v in D.ids.items()) + f"; DRC evaluator `{D.drc_eval}`; {len(D.boards)} boards.\n")
