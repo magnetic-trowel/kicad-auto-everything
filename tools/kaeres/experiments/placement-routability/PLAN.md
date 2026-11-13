@@ -100,3 +100,21 @@ seeds within one arm). So for Q3:
 - The all-board result for chan1/chan3 is still reported as pre-registered, labelled as diluted.
 The report's constant fixed-pair part is a reporting defect only (it does not change moves); it should be excluded in a
 later version of the term.
+
+## Addendum 2026-11-13: place-history (J6), power at k = 1 and the history check (written after its results were computed)
+**Power.** The size above is for the 3-seed placement-routability test. place-history runs k = 1: the paired SD of
+log1p(opens) between its arms is 0.46-0.57 per board, so 47 boards detect about a 20 % change in opens at 80 % power,
+not the 10 % this plan's rule asks for. A null here means "under about 20 % not excluded", not "no effect". The effect
+is further diluted because history acts only on fresh placements after the first wave of 4: in the history arm, the kept
+attempt descends from a first-wave placement on 23 of 45 boards.
+**History is written and read (hand check).** One board (circuitmonkey class-d-amp, the task input as prepared by a
+running job), the arm's own recipe at d21a9ac through `restart.py` (`--first-s` 120 instead of 300 to save time):
+the 4 first-wave attempts log `place history: nothing to read in ../phist (0 files)` and write
+`restarts/phist/h-<seed>-*.npz` (4 files); the fresh second-wave attempts log `place history: 4 attempts, peak 6.51`.
+**Result (k = 1, 47 boards, attempt 0).** cong30 history against cong30: opens 1839 -> 1757 (-4.5 % total; mean
+log1p difference -0.117), 24 boards better / 18 worse, two-sided sign-flip p = 0.17; DRC errors 2914 -> 2792; legal
+13 -> 13; cp1 0.000 -> 0.021. cong30 against control: opens +2.4 %, p = 0.65. The rule (opens down at least 10 % in
+total and p < 0.05) is not met. The pre-registered extension needs p in 0.05-0.2 **and** an effect of 10 % or more; the
+total-opens effect is 4.5 %, so it does not trigger and the verdict stands: history not adopted, effect under ~20 % not
+excluded. A test with the power the 10 % bar needs would add seeds (k = 3) on the same 47 boards and score only
+attempts after wave 1; that is a new experiment, not this one's extension.
