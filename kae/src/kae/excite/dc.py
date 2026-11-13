@@ -515,7 +515,7 @@ def injections(pl, cv):
     return inj
 
 
-def planned_injections(board, intent, brief=None):
+def planned_injections(board, intent, brief=None, heat=None):
     """{"REF.NUM": A} of the DC power flow at the typical point of every parameter, from the plan the
     physics evaluator scores (kae.excite.evaluate: rails, feeds, regulators, loads and their currents
     under the operating facts `intent`), positive into the copper; {} when the plan has no rail with a
@@ -535,6 +535,20 @@ def planned_injections(board, intent, brief=None):
     for s_ in srcs:
         if s_.kind == "cell":
             cv[s_.name] = {k: getattr(v, "typ", v) for k, v in (P.get(s_.name) or {}).items()}
+    if heat is not None:
+        # heat: {ref: W} the linear regulators drop, (V_in - V_out) x their rail's total current
+        tot = {}
+        for ld, x in zip(pl.loads, load_currents(pl, cv)):
+            a = x
+            for r in _chain(pl, ld["rail"]):
+                tot[r] = tot.get(r, 0.0) + a
+                a *= _ratio(pl, r, cv)
+        for r, f in pl.feeds.items():
+            if f.get("kind") == "linear" and f.get("out"):
+                vi, vo = pl.volts.get(f.get("rin")), pl.volts.get(r)
+                if vi and vo and vi > vo:
+                    ref = str(f["out"][0]).rsplit(".", 1)[0]
+                    heat[ref] = heat.get(ref, 0.0) + tot.get(r, 0.0) * (vi - vo)
     return {k: float(v) for k, v in injections(pl, cv).items() if v}
 
 

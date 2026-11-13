@@ -83,6 +83,9 @@ DEFAULTS = dict(
     tht_loss_frac=0.002,      # the necks at THT pads of a net together add at most this share of the net's routed
                               # copper loss under the DC plan (the evaluator's noise floor is ~0.6 %); a pad whose
                               # neck would need to be wider than a relief's webs keeps its copper (tht_pad_kept_wide)
+    tht_heat_dK=10.0,         # K: THT pads where a hot part holds the board this far above ambient (fin model) are on
+                              # its heat path and keep their copper (tht_pad_kept_wide)
+    tht_heat_fill=0.5,        # copper fill per layer of that fin model
     tht_gap=0.25,             # mm: grown copper of a track that passes a necked THT pad of its net (does not end in
                               # it) keeps this gap from the pad, a relief's gap (IPC-2222 9.1.2 air gap); the run
                               # is not necked
@@ -757,6 +760,8 @@ class PowerCopper:
         self.tht_amps, self._tht_geom = {}, {}
         self.tht_unknown = []     # THT pads left wide: no DC plan (connectors) or a neck over the loss budget
         self.tht_unknown_why = {} # {id(pad): (A, width the loss budget asks)} for the latter
+        self.tht_unknown_heat = {}  # {id(pad): (hot part, W, radius mm)} for pads on a hot part's heat path
+        self.tht_heat = {}        # {ref: W} linear regulators' dissipation from the DC plan
         self.tht_plan = 0         # injections in the DC plan the THT currents came from (0: none)
         self._entering = None     # ids of the THT pads the track being widened enters (None: not widening a track)
         self.necks = self._necks() if self.o.get("neck", True) else {}
@@ -1501,10 +1506,18 @@ class PowerCopper:
             all_pads = [(p.owner[0] if isinstance(p.owner, tuple) else None, p.net)
                         for pads in self.sp.pads_by_fp.values() for p in pads if p.kind == "pad"]
             own = pad_currents(op, all_pads, self.power, self.ground) if op else {}
+        heat_near = self._heat_paths(hot, op, w_min) if keep else set()
         out = {}
         floor = self._loss_floor(keep, flows) if flows is not None else {}
         self.tht_floor = {}
         for fp, p, ref, num in keep:
+            if id(p) in heat_near and not (ref in narrow or f"{ref}.{num}" in narrow):
+                # within a hot part's spreading radius: its copper carries that part's heat (any net); the
+                # pad keeps it and the commanding LLM decides (tht_pad_kept_wide, KAE_THT_NARROW)
+                skipped["heat_path"] = skipped.get("heat_path", 0) + 1
+                self.tht_unknown.append(p)
+                self.tht_unknown_heat[id(p)] = heat_near[id(p)]
+                continue
             if flows is not None:
                 fl = floor.get(id(p), 0.0)
                 if fl >= THT_RELIEF_FRAC * _short_side(p.geom) and not (ref in narrow or f"{ref}.{num}" in narrow):
@@ -1534,8 +1547,9 @@ class PowerCopper:
         when there is no plan (no rail with a source and a load), so callers do not read 0 A into it."""
         from kae.board.kicad_file import load
         from kae.excite import dc as DC
+        self.tht_heat = {}
         try:
-            inj = DC.planned_injections(load(self.path), self.op)
+            inj = DC.planned_injections(load(self.path), self.op, heat=self.tht_heat)
         except Exception as e:      # noqa: BLE001 - no plan: the caller's fallback, never a failed pass
             self.log(f"[power-copper] THT neck: no DC plan ({type(e).__name__}: {e})")
             return None
@@ -1555,31 +1569,89 @@ class PowerCopper:
         self.tht_plan = len(inj)
         return out
 
+    def _heat_paths(self, hot, op, w_min):
+        """{id(pad): (ref, W, radius)} for the THT pads within a hot part's heat-spreading radius. A part is hot
+        as in _tht_pads (the "hot" exemption covers its own pads) or by the DC plan's linear-regulator drop of
+        at least heat_min_W. Radius: where the part's dissipation P holds an infinite board fin (kernels.fin_point:
+        the board's copper layers at tht_heat_fill, k_Cu 390, FR-4 0.8, h 10 W/m^2K a face) tht_heat_dK above
+        ambient; a hot part without a known P (theta or a heat sink only) takes the fin's spreading length lambda.
+        Copper there carries that part's heat (pcb-cooling: the pour within ~1.5-2 lambda is what cools it)."""
+        from kae.physics import kernels as KN
+        from scipy.special import k0
+        watts = {}
+        for r, f in (op.get("parts") or {}).items():
+            w = (f or {}).get("P_sustained_W") if isinstance(f, dict) else None
+            if isinstance(w, (int, float)) and w > 0:
+                watts[r] = float(w)
+        for r, w in (getattr(self, "tht_heat", {}) or {}).items():
+            watts[r] = max(watts.get(r, 0.0), w)
+        refs = set(hot) | {r for r, w in watts.items() if w >= w_min}
+        if not refs:
+            return {}
+        n = len(self.sp.cu)
+        gs, lam = KN.fin_params([MAT.CU_1OZ_MM] * n, [self.o["tht_heat_fill"]] * n, self.sp.thickness)
+        dk = float(self.o["tht_heat_dK"])
+        radius = {}
+        for r in refs:
+            P = watts.get(r)
+            if not P:
+                radius[r] = lam
+                continue
+            # P K0(x) / (2 pi gs) = dK, K0 decreasing: bisect x = r / lambda
+            lo, hi = 1e-4, 20.0
+            if P * k0(lo) / (2 * math.pi * gs) < dk:
+                continue
+            for _ in range(60):
+                mid = 0.5 * (lo + hi)
+                lo, hi = (mid, hi) if P * k0(mid) / (2 * math.pi * gs) > dk else (lo, mid)
+            radius[r] = lo * lam
+        pads_of = {}
+        for fps in self.sp.pads_by_fp.values():
+            for p in fps:
+                if p.kind == "pad" and isinstance(p.owner, tuple) and p.owner[0] in radius:
+                    pads_of.setdefault(p.owner[0], []).append(p.geom)
+        src = {r: unary_union(g) for r, g in pads_of.items()}
+        out = {}
+        for fps in self.sp.pads_by_fp.values():
+            for p in fps:
+                if p.kind != "pad" or p.smd or p.hole is None:
+                    continue
+                for r, g in src.items():
+                    if (not isinstance(p.owner, tuple) or p.owner[0] != r) and g.distance(p.geom) <= radius[r]:
+                        out[id(p)] = (r, round(watts.get(r, 0.0), 3), round(radius[r], 1))
+                        break
+        return out
+
     def _loss_floor(self, keep, flows):
         """{id(pad): width} the neck may not go below so that the necks of a net together add at most
         tht_loss_frac of the net's routed copper loss under the DC plan. A neck of width w where grown copper
         would be w_f wide adds I^2 R_sq L (1/w - 1/w_f) per track entering the pad, L = neck_len + w_f / 2 (the
-        neck and the taper the round-capped wider copper needs to keep its edge neck_len off the pad), shared
-        out evenly over the net's necked pads."""
+        neck and the taper the round-capped wider copper needs to keep its edge neck_len off the pad); the
+        budget is shared out by each pad's I^2 x entries."""
         frac = float(self.o["tht_loss_frac"])
         wf = self.o["max_width"]
         L = self.o["neck_len"] + wf / 2
-        n_net = {}
-        for _f, p, _r, _n in keep:
-            n_net[p.net] = n_net.get(p.net, 0) + 1
+        stats = getattr(self, "tht_flow_stats", {}) or {}
+
+        def n_of(p, tok):
+            return max(1, ((stats.get(p.net) or {}).get("entries") or {}).get(tok, 1))
+        # each pad's share of the net's budget is its share of the necks' I^2 n: the budget goes where the
+        # current is, and a pad with no current needs none of it (all necks of a net then come out one width)
+        w2 = {}
+        for _f, p, ref, num in keep:
+            tok = f"{ref}.{num}"
+            w2[p.net] = w2.get(p.net, 0.0) + flows.get(tok, 0.0) ** 2 * n_of(p, tok)
         out = {}
         for _f, p, ref, num in keep:
-            st = (getattr(self, "tht_flow_stats", {}) or {}).get(p.net) or {}
             tok = f"{ref}.{num}"
             i = flows.get(tok, 0.0)
-            n = max(1, (st.get("entries") or {}).get(tok, 1))
-            budget = frac * st.get("loss_sq", 0.0) / n_net[p.net]
             if i <= 0:
                 continue
+            budget = frac * (stats.get(p.net) or {}).get("loss_sq", 0.0)
             if budget <= 0:
                 out[id(p)] = math.inf
                 continue
-            out[id(p)] = 1.0 / (budget / (i * i * n * L) + 1.0 / wf)
+            out[id(p)] = 1.0 / (budget / (w2[p.net] * L) + 1.0 / wf)
         return out
 
     def _zone_joined(self, p):
@@ -1645,16 +1717,21 @@ class PowerCopper:
             why = [self.tht_unknown_why.get(id(p)) for p in self.tht_unknown
                    if isinstance(p.owner, tuple) and p.owner[0] == ref]
             loss = any(w is not None for w in why)
+            hp = [self.tht_unknown_heat.get(id(p)) for p in self.tht_unknown
+                  if isinstance(p.owner, tuple) and p.owner[0] == ref and id(p) in self.tht_unknown_heat]
             out.append(H.make(
                 "tht_pad_kept_wide", "info", "assembly",
                 f"{ref}: {len(pads)} through-hole power pin(s) on {', '.join(sorted({n for _, n in pads}))} keep wide "
-                + ("copper: a neck narrow enough to relieve the joint would add more copper loss than the budget."
+                + (f"copper: they are on {hp[0][0]}'s heat path ({hp[0][1]} W, within {hp[0][2]} mm)." if hp else
+                   "copper: a neck narrow enough to relieve the joint would add more copper loss than the budget."
                    if loss else "copper: no DC plan says what current they carry, and a neck could starve a feed."),
                 objects=[ref] + [x for x, _ in pads], fix=_tht_narrow_fix(ref),
                 evidence=dict(pads=[dict(pad=x, net=n) for x, n in pads][:12], n_pads=len(pads),
                               current_a=[round(w[0], 3) for w in why if w][:12] or None,
                               loss_width_mm=[round(w[1], 3) for w in why if w][:12] or None,
-                              reason=("neck over tht_loss_frac of the net's copper loss (DC plan)" if loss else
+                              heat_path=[dict(part=h[0], W=h[1], radius_mm=h[2]) for h in hp][:4] or None,
+                              reason=("on a hot part's heat path (tht_heat_dK)" if hp else
+                                      "neck over tht_loss_frac of the net's copper loss (DC plan)" if loss else
                                       "no rail with a source and a load in the operating facts (kae.excite.dc plan)"))))
         # current needs more than a relief: the copper stays wide, and the joint pays for it
         net_of = {t.uuid: t.net for t in self.board.tracks}

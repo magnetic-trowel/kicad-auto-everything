@@ -322,3 +322,31 @@ def test_branch_currents_bus_through_pads():
     inj = {"J0.1": 0.6, "J1.1": -0.2, "J2.1": -0.2, "J3.1": -0.2}
     out = pc.branch_currents("V", tracks, [], pads, {}, inj)
     assert out["J1.1"] == pytest.approx(0.6, rel=1e-6) and out["J2.1"] == pytest.approx(0.4, rel=1e-6)
+
+
+def test_loss_budget_shared_by_current():
+    """A net's budget goes to its pads by I^2: an idle pin gets no floor, the busy ones share the budget."""
+    from types import SimpleNamespace as N
+    o = pc.PowerCopper.__new__(pc.PowerCopper)
+    o.o = dict(pc.DEFAULTS)
+    a, b, c = (N(net="V", owner=(f"J{i}", "1")) for i in range(3))
+    o.tht_flow_stats = {"V": {"loss_sq": 100.0, "entries": {}}}
+    keep = [(None, a, "J0", "1"), (None, b, "J1", "1"), (None, c, "J2", "1")]
+    fl = o._loss_floor(keep, {"J0.1": 1.0, "J1.1": 0.5, "J2.1": 0.0})
+    assert id(c) not in fl                                   # idle: necked to its routed width
+    L = o.o["neck_len"] + o.o["max_width"] / 2
+    added = sum(i * i * L * (1 / fl[id(p)] - 1 / o.o["max_width"]) for p, i in ((a, 1.0), (b, 0.5)))
+    assert added == pytest.approx(o.o["tht_loss_frac"] * 100.0, rel=1e-6)
+
+
+def test_heat_path_pads_keep_their_copper(tmp_path, plan):
+    """A part dissipating watts: THT pads within its spreading radius (any net) are on its heat path."""
+    plan(NOFLOW)
+    obj = _pc(tmp_path / "a", operating={"parts": {"D1": {"P_sustained_W": 2.0}}})     # D1 is 4 mm from J1
+    assert obj.tht_stats()["skipped"].get("heat_path") == 2 and obj.tht_stats()["necked_pads"] == 0
+    hz = [h for h in obj.tht_hazards() if h["code"] == "tht_pad_kept_wide"]
+    assert hz and "heat path" in hz[0]["message"] and hz[0]["evidence"]["heat_path"][0]["part"] == "D1"
+    near = _pc(tmp_path / "b", operating={"parts": {"D1": {"P_sustained_W": 0.3}}})  # 0.3 W reaches only the
+    assert near.tht_stats()["skipped"].get("heat_path", 0) == 1                       # adjacent pad (J1.1)
+    narrow = _pc(tmp_path / "c", {"KAE_THT_NARROW": "J1"}, operating={"parts": {"D1": {"P_sustained_W": 2.0}}})
+    assert narrow.tht_stats()["necked_pads"] == 2
