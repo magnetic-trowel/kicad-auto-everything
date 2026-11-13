@@ -95,5 +95,5 @@ This experiment predates that fix, and both arms share the exposure, so the pair
 **Reading.**
 - On the merit suite most boards end with few or no opens, and the polish has little to remove.
 - `loop-polish`'s −9.6 % came from boards chosen where the joint loop leaves connections open.
-- P-late also used 11 % more measured CPU: its finish (the joint loop) does work that counted-work budgets undercount relative to restarts.
+- P-late also used 11 % more measured CPU at the same nominal budget. Its finish (the joint loop) costs more real time per nominal second than restarts do. Why is not measured here. A candidate is the Freerouting optimizer charging gap noted above.
 - The 70/30 split is therefore not adopted as the merit default. Its gain is specific to hard boards.
