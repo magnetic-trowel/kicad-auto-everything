@@ -65,14 +65,19 @@ def test_exemptions_and_settings(monkeypatch):
 SEG = '\t(segment\n\t\t(start {} {})\n\t\t(end {} {})\n\t\t(width 0.25)\n\t\t(layer "F.Cu")\n\t\t(net "{}")\n\t\t(uuid "{}")\n\t)\n'
 
 
-def _board(tmp_path, text_vars=None):
-    """The critical fixture with a 0.25 mm VIN track from J1 pad 1 (a THT connector pad) east, with
-    free room on both sides for power copper to grow."""
+def _board(tmp_path, text_vars=None, passing=False):
+    """The critical fixture with a 0.25 mm VIN track from J1 pad 1 (a THT connector pad) east to U1's VIN
+    pin, with free room on both sides for power copper to grow; `passing`: also a GND track that runs past
+    J1 pad 2 (GND) without ending in it."""
     from kae.board.kicad_file import load
     p = F.write_board(tmp_path)
     s = p.read_text()
     i = s.rindex("\t(embedded_fonts no)")
-    s = s[:i] + SEG.format(*J1_1, 114, 111, "VIN", "0000000a-0000-0000-0000-00000000aaaa") + s[i:]
+    seg = SEG.format(*J1_1, 114, 111, "VIN", "0000000a-0000-0000-0000-00000000aaaa")
+    seg += SEG.format(114, 111, 119.69, 110.95, "VIN", "0000000a-0000-0000-0000-00000000aaab")
+    if passing:
+        seg += SEG.format(101.5, 114.6, 110, 114.6, "GND", "0000000a-0000-0000-0000-00000000aaac")
+    s = s[:i] + seg + s[i:]
     p.write_text(s)
     if text_vars:
         pro = json.loads(p.with_suffix(".kicad_pro").read_text())
@@ -81,8 +86,8 @@ def _board(tmp_path, text_vars=None):
     return p, load(p)
 
 
-def _pc(tmp_path, text_vars=None, operating=None, **opts):
-    p, b = _board(tmp_path, text_vars)
+def _pc(tmp_path, text_vars=None, operating=None, passing=False, **opts):
+    p, b = _board(tmp_path, text_vars, passing)
     if operating is not None:
         op = tmp_path / "op.json"
         op.write_text(json.dumps(operating))
@@ -92,14 +97,29 @@ def _pc(tmp_path, text_vars=None, operating=None, **opts):
     return obj
 
 
-def _width_near(obj, xy, r):
-    """Widest planned piece of the VIN track within r of the point."""
-    ws = [w for pieces in obj.edits.values() for a, b, w, *_ in pieces
+def _width_near(obj, xy, r, net="VIN"):
+    """Widest planned piece of the net's tracks within r of the point."""
+    nets = {t.uuid: t.net for t in obj.board.tracks}
+    ws = [w for u, pieces in obj.edits.items() if nets.get(u) == net for a, b, w, *_ in pieces
           if LineString([a, b]).distance(Point(xy)) < r]
     return max(ws, default=0.25)
 
 
-def test_tht_pad_necked_by_default_with_a_decision_entry(tmp_path):
+@pytest.fixture
+def plan(monkeypatch):
+    """Set the DC plan's injections power copper sees (kae.excite.dc.planned_injections)."""
+    from kae.excite import dc
+    box_ = {}
+    monkeypatch.setattr(dc, "planned_injections", lambda *a, **k: dict(box_))
+
+    def set_(inj):
+        box_.clear()
+        box_.update(inj)
+    return set_
+
+
+def test_tht_pad_necked_by_default_with_a_decision_entry(tmp_path, plan):
+    plan({"J1.1": 0.05, "U1.3": -0.05})
     obj = _pc(tmp_path)
     assert "VIN" in obj.power
     assert obj.tht_stats()["necked_pads"] >= 1
@@ -113,12 +133,13 @@ def test_tht_pad_necked_by_default_with_a_decision_entry(tmp_path):
     assert h["objects"][:2] == ["J1", "J1.1"]
     e = h["evidence"]["pads"][0]
     assert e["pad"] == "J1.1" and e["net"] == "VIN" and e["got_w_mm"] == pytest.approx(0.25)
-    assert e["would_w_mm"] > e["got_w_mm"] and e["current_a"] == 0.0
+    assert e["would_w_mm"] > e["got_w_mm"] and e["current_a"] == pytest.approx(0.05)
     assert "KAE_THT_WIDE" in h["fix"] and "'J1'" in h["fix"] and "'J1.1'" in h["fix"]
 
 
 @pytest.mark.parametrize("how", ["text_var", "opts", "pad", "off"])
-def test_tht_wide_keeps_the_width(tmp_path, how):
+def test_tht_wide_keeps_the_width(tmp_path, how, plan):
+    plan({"J1.1": 0.05, "U1.3": -0.05})
     tv, opts = None, {}
     if how == "text_var":
         tv = {"KAE_THT_WIDE": "J1"}
@@ -134,19 +155,24 @@ def test_tht_wide_keeps_the_width(tmp_path, how):
     assert not [h for h in obj.tht_hazards() if h["code"].startswith("tht_")]
 
 
-def test_tht_neck_env_default(tmp_path, monkeypatch):
+def test_tht_neck_env_default(tmp_path, monkeypatch, plan):
+    plan({"J1.1": 0.05, "U1.3": -0.05})
     monkeypatch.setenv("KAE_THT_NECK", "off")
     obj = _pc(tmp_path)
     assert obj.tht_stats()["skipped"].get("off", 0) >= 1 and obj.tht_stats()["necked_pads"] == 0
 
 
-def test_tht_current_widens_the_neck_or_keeps_the_width_with_a_hazard(tmp_path):
-    # J1 declares no current and sits on VIN: it may feed it, so it gets VIN's current
-    small = _pc(tmp_path / "a", operating={"parts": {"U1": {"I_A": 0.2}}})
-    need = pc.current_need(0.2)
+def test_tht_current_widens_the_neck_or_keeps_the_width_with_a_hazard(tmp_path, plan):
+    # the DC plan: J1 feeds VIN, U1 draws it; the track into J1.1 carries all of it
+    plan({"J1.1": 0.6, "U1.3": -0.6})
+    small = _pc(tmp_path / "a")
+    assert small.tht_amps and max(small.tht_amps.values()) == pytest.approx(0.6, rel=1e-3)
+    need = pc.current_need(0.6)
+    assert need > 0.25
     w = _width_near(small, J1_1, 0.7 + small.o["neck_len"] - 0.05)
-    assert 0.25 <= w <= max(0.25, need) + 1e-6
-    big = _pc(tmp_path / "b", operating={"parts": {"U1": {"I_A": 3.0}}})
+    assert 0.25 < w <= need + 1e-6
+    plan({"J1.1": 3.0, "U1.3": -3.0})
+    big = _pc(tmp_path / "b")
     assert big.tht_stats()["unnecked_for_current"] >= 1
     hz = [h for h in big.tht_hazards() if h["code"] == "tht_pad_heatsunk"]
     assert len(hz) == 1 and hz[0]["severity"] == "warn" and hz[0]["category"] == "assembly"
@@ -160,7 +186,8 @@ def test_tht_current_widens_the_neck_or_keeps_the_width_with_a_hazard(tmp_path):
     assert len(hz) == 1 and hz[0]["evidence"]["track_w_mm"] == pytest.approx(3.0)
 
 
-def test_hot_part_and_zone_joined_pads_are_left_alone(tmp_path):
+def test_hot_part_and_zone_joined_pads_are_left_alone(tmp_path, plan):
+    plan({"J1.1": 0.05, "U1.3": -0.05})
     hot = _pc(tmp_path / "a", operating={"parts": {"J1": {"P_sustained_W": 1.0}}})
     assert hot.tht_stats()["skipped"].get("hot", 0) >= 1 and hot.tht_stats()["necked_pads"] == 0
     p, b = _board(tmp_path / "b")
@@ -169,7 +196,8 @@ def test_hot_part_and_zone_joined_pads_are_left_alone(tmp_path):
     assert z.tht_stats()["skipped"] == {"zone": 1} and z.tht_stats()["necked_pads"] == 1     # J1.2 (GND) has no fill
 
 
-def test_decision_entries_capped_per_code(tmp_path):
+def test_decision_entries_capped_per_code(tmp_path, plan):
+    plan({"J1.1": 0.05, "U1.3": -0.05})
     obj = _pc(tmp_path)
     rec = next(iter(obj.tht_necked.values()))
     from kae import hazards as H
@@ -185,12 +213,13 @@ def test_decision_entries_capped_per_code(tmp_path):
     assert len(rep["hazards"]) == H.MAX_PER_CODE and not rep["hazard_summary"].get("omitted")
 
 
-def test_decision_reaches_the_pass_report_and_the_portfolio(tmp_path, monkeypatch):
+def test_decision_reaches_the_pass_report_and_the_portfolio(tmp_path, monkeypatch, plan):
     """power_copper.run (finish's "power" part, no gate) returns the entries in its hazards, finish
     adds every part's hazards to its report, and the portfolio carries a kept finish's hazards into
     the kept board's report (kae.route.cli's, which finalize caps)."""
     from kae.board import pcbnew_io
     from kae.route import critical_recheck, portfolio
+    plan({"J1.1": 0.05, "U1.3": -0.05})
     p, b = _board(tmp_path)
     monkeypatch.setattr(pcbnew_io, "export_dsn", lambda *a, **k: F.synth_info(b))
     monkeypatch.setattr(critical_recheck, "fills_of", lambda *a, **k: {})
@@ -203,23 +232,56 @@ def test_decision_reaches_the_pass_report_and_the_portfolio(tmp_path, monkeypatc
     assert any(h["code"] == "tht_pad_necked" for h in portfolio.finish_hazards(rec))
 
 
-def test_rail_currents_follow_the_regulator_chain():
-    op = {"nets": {"+12V": {"source": "J1", "V_V": 12.0}, "+5V": {"source": "U2", "from": "+12V", "kind": "linear", "V_V": 5.0},
-                   "+3V3": {"source": "U5", "from": "+5V", "kind": "switching", "V_V": 3.3}}}
-    r = pc.rail_currents(op, {"+12V": 0.05, "+5V": 0.5, "+3V3": 0.85})
-    sw = 0.85 * 3.3 / (0.85 * 5.0)
-    assert r["+3V3"] == pytest.approx(0.85) and r["+5V"] == pytest.approx(0.5 + sw)
-    assert r["+12V"] == pytest.approx(0.05 + 0.5 + sw)
-
-
-def test_theta_marks_a_part_hot(tmp_path):
+def test_theta_marks_a_part_hot(tmp_path, plan):
+    plan({"J1.1": 0.05, "U1.3": -0.05})
     obj = _pc(tmp_path, operating={"parts": {"J1": {"theta_jb_C_W": 5.3}}})
     assert obj.tht_stats()["skipped"].get("hot", 0) == 2 and obj.tht_stats()["necked_pads"] == 0
 
 
-def test_named_source_gets_its_rail_current(tmp_path):
-    op = {"parts": {"U1": {"I_A": 0.2}, "J1": {"I_A": 0.001}},
-          "nets": {"VIN": {"source": "J1", "V_V": 12.0}, "+3V3": {"source": "U1", "from": "VIN", "kind": "linear", "V_V": 3.3}}}
-    obj = _pc(tmp_path, operating=op)
-    j11 = next(p for p in obj.sp.pads if p.owner == ("J1", "1") and id(p) in obj.tht_amps)
-    assert obj.tht_amps[id(j11)] == pytest.approx(obj.current["VIN"] + obj.current.get("+3V3", 0.0))
+def test_without_a_dc_plan_connector_pins_stay_wide_with_a_decision_entry(tmp_path, plan):
+    plan({})
+    obj = _pc(tmp_path / "a")
+    assert obj.tht_stats()["skipped"].get("no_current") == 2 and obj.tht_stats()["necked_pads"] == 0
+    assert _width_near(obj, J1_1, 0.7 + obj.o["neck_len"] - 0.05) > 0.25 + 1e-6
+    hz = [h for h in obj.tht_hazards() if h["code"] == "tht_pad_kept_wide"]
+    assert len(hz) == 1 and hz[0]["severity"] == "info" and hz[0]["category"] == "assembly"
+    assert hz[0]["objects"][0] == "J1" and "KAE_THT_NARROW" in hz[0]["fix"]
+    # the commanding LLM necks them anyway
+    obj = _pc(tmp_path / "b", {"KAE_THT_NARROW": "J1"})
+    assert obj.tht_stats()["necked_pads"] == 2
+    assert _width_near(obj, J1_1, 0.7 + obj.o["neck_len"] - 0.05) == pytest.approx(0.25)
+    assert not [h for h in obj.tht_hazards() if h["code"] == "tht_pad_kept_wide"]
+
+
+def test_branch_currents_through_a_chain():
+    """A rail through three pads in a row: the track into the first carries all three loads."""
+    from shapely.geometry import box as B_
+    from types import SimpleNamespace as N
+
+    def t(a, b):
+        return N(net="V", layer="F.Cu", width=0.5, start=a, end=b)
+    pads = [(f"J{i}.1", B_(10 * i - 0.5, -0.5, 10 * i + 0.5, 0.5), ["F.Cu"]) for i in range(4)]
+    tracks = [t((10 * i, 0), (10 * i + 10, 0)) for i in range(3)]
+    inj = {"J0.1": 0.6, "J1.1": -0.2, "J2.1": -0.2, "J3.1": -0.2}
+    out = pc.branch_currents("V", tracks, [], pads, {}, inj)
+    assert out["J0.1"] == pytest.approx(0.6, rel=1e-6) and out["J1.1"] == pytest.approx(0.6, rel=1e-6)
+    assert out["J2.1"] == pytest.approx(0.4, rel=1e-6) and out["J3.1"] == pytest.approx(0.2, rel=1e-6)
+
+
+def test_passing_copper_is_not_necked(tmp_path, plan):
+    """A GND track that runs past J1.2 (GND) without ending in it widens there, keeping tht_gap off the pad;
+    the old rule held it at its routed width within neck_len."""
+    plan({"J1.1": 0.05, "U1.3": -0.05})
+    obj = _pc(tmp_path, passing=True)
+    from kae.route import power_copper as P
+    j12 = next(p for p in obj.sp.pads if p.owner == ("J1", "2") and id(p) in obj.tht_necks)
+    w = _width_near(obj, (104.0, 114.6), 0.05, net="GND")
+    assert w > 0.25 + 1e-6
+    # its copper keeps the gap: the widest piece there stays tht_gap off the pad
+    nets = {t.uuid: t.net for t in obj.board.tracks}
+    for u, pieces in obj.edits.items():
+        if nets.get(u) != "GND":
+            continue
+        for a, b, wd, *_ in pieces:
+            if wd > 0.25 + 1e-6:
+                assert LineString([a, b]).buffer(wd / 2).distance(j12.geom) >= P.DEFAULTS["tht_gap"] - 0.01

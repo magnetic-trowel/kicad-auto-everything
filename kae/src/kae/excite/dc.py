@@ -515,6 +515,29 @@ def injections(pl, cv):
     return inj
 
 
+def planned_injections(board, intent, brief=None):
+    """{"REF.NUM": A} of the DC power flow at the typical point of every parameter, from the plan the
+    physics evaluator scores (kae.excite.evaluate: rails, feeds, regulators, loads and their currents
+    under the operating facts `intent`), positive into the copper; {} when the plan has no rail with a
+    source and a load. For callers outside the evaluator (power copper's THT neck); no field solve."""
+    from kae.circuit import brief as B
+    from . import models as M
+    from . import sources as S
+    from .evaluate import ledger_for
+    from kae.board import pinfacts as PF
+    PF.apply(board, (intent or {}).get("pins"))         # the schematic's pin facts, as the evaluator applies them
+    brief = brief or B.build(board)
+    bd = M.build(board, brief)
+    srcs = S.add_all(bd, brief)
+    P, _ = ledger_for(bd, brief, srcs, intent)
+    pl = plan(board, brief, bd, P, srcs, intent)
+    cv = {(p.subject, p.name): p.typ for p in pl.params}
+    for s_ in srcs:
+        if s_.kind == "cell":
+            cv[s_.name] = {k: getattr(v, "typ", v) for k, v in (P.get(s_.name) or {}).items()}
+    return {k: float(v) for k, v in injections(pl, cv).items() if v}
+
+
 def _mean(V, toks):
     vals = [V[t] for t in toks if t in V and V[t] is not None and np.isfinite(V[t])]
     return float(np.mean(np.real(vals))) if vals else None

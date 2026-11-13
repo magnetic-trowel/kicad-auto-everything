@@ -254,6 +254,9 @@ DEFAULTS = dict(
     tht_wide="",                   # refs and ref.pad names (comma-separated, or a list in opts) whose THT pads keep
                                    # wide copper anyway: a heat path, a selectively soldered part (each necked pad
                                    # is a tht_pad_necked hazard naming this setting); env KAE_THT_WIDE
+    tht_narrow="",                 # refs and ref.pad names whose THT connector pins power copper necks even without a
+                                   # DC plan (each one left wide is a tht_pad_kept_wide hazard naming this setting);
+                                   # env KAE_THT_NARROW
     zone_keepout=1.0,              # placement: weight of pads whose mask opening would bridge another net's
                                    # fixed outer-layer zone or sit in a board-level mask aperture with another
                                    # net (each 0.1 x this; gecko5: all staged DRC errors, 14 -> 0); 0: off
