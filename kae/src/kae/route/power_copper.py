@@ -83,7 +83,7 @@ DEFAULTS = dict(
     tht_loss_frac=0.002,      # the necks at THT pads of a net together add at most this share of the net's routed
                               # copper loss under the DC plan (the evaluator's noise floor is ~0.6 %); a pad whose
                               # neck would need to be wider than a relief's webs keeps its copper (tht_pad_kept_wide)
-    tht_heat_dK=10.0,         # K: THT pads where a hot part holds the board this far above ambient (fin model) are on
+    tht_heat_dK=20.0,         # K: THT pads where a hot part holds the board this far above ambient (fin model) are on
                               # its heat path and keep their copper (tht_pad_kept_wide)
     tht_heat_fill=0.5,        # copper fill per layer of that fin model
     tht_gap=0.25,             # mm: grown copper of a track that passes a necked THT pad of its net (does not end in
@@ -1574,7 +1574,7 @@ class PowerCopper:
         as in _tht_pads (the "hot" exemption covers its own pads) or by the DC plan's linear-regulator drop of
         at least heat_min_W. Radius: where the part's dissipation P holds an infinite board fin (kernels.fin_point:
         the board's copper layers at tht_heat_fill, k_Cu 390, FR-4 0.8, h 10 W/m^2K a face) tht_heat_dK above
-        ambient; a hot part without a known P (theta or a heat sink only) takes the fin's spreading length lambda.
+        ambient; a hot part without a known P (theta or a heat sink only) has no heat path beyond its own pads.
         Copper there carries that part's heat (pcb-cooling: the pour within ~1.5-2 lambda is what cools it)."""
         from kae.physics import kernels as KN
         from scipy.special import k0
@@ -1595,8 +1595,7 @@ class PowerCopper:
         for r in refs:
             P = watts.get(r)
             if not P:
-                radius[r] = lam
-                continue
+                continue          # no dissipation known (theta or a heat sink only): its own pads only ("hot")
             # P K0(x) / (2 pi gs) = dK, K0 decreasing: bisect x = r / lambda
             lo, hi = 1e-4, 20.0
             if P * k0(lo) / (2 * math.pi * gs) < dk:
@@ -1622,36 +1621,46 @@ class PowerCopper:
                         break
         return out
 
+    def _routed_w(self, p):
+        """Widest routed track of p's net that ends in or runs through pad Item p (0 without one)."""
+        w = 0.0
+        for t in self.board.tracks:
+            if t.net == p.net and t.layer in p.layers and t.mid is None \
+                    and LineString([t.start, t.end]).distance(p.geom) < 1e-3:
+                w = max(w, t.width)
+        return w
+
     def _loss_floor(self, keep, flows):
         """{id(pad): width} the neck may not go below so that the necks of a net together add at most
         tht_loss_frac of the net's routed copper loss under the DC plan. A neck of width w where grown copper
         would be w_f wide adds I^2 R_sq L (1/w - 1/w_f) per track entering the pad, L = neck_len + w_f / 2 (the
-        neck and the taper the round-capped wider copper needs to keep its edge neck_len off the pad); the
-        budget is shared out by each pad's I^2 x entries."""
+        neck and the taper the round-capped wider copper needs to keep its edge neck_len off the pad). Within a
+        net the pads neck cheapest first while the budget lasts; the rest get an infinite floor (kept wide)."""
         frac = float(self.o["tht_loss_frac"])
         wf = self.o["max_width"]
         L = self.o["neck_len"] + wf / 2
         stats = getattr(self, "tht_flow_stats", {}) or {}
-
-        def n_of(p, tok):
-            return max(1, ((stats.get(p.net) or {}).get("entries") or {}).get(tok, 1))
-        # each pad's share of the net's budget is its share of the necks' I^2 n: the budget goes where the
-        # current is, and a pad with no current needs none of it (all necks of a net then come out one width)
-        w2 = {}
-        for _f, p, ref, num in keep:
-            tok = f"{ref}.{num}"
-            w2[p.net] = w2.get(p.net, 0.0) + flows.get(tok, 0.0) ** 2 * n_of(p, tok)
-        out = {}
+        # each pad's cost to neck: I^2 n L (1/w - 1/w_f), w its neck (the routed track or the current's width);
+        # within a net the cheapest pads neck first until the budget is spent (the most necks for the loss),
+        # so idle pins neck and the busiest keep their copper
+        cost = {}
         for _f, p, ref, num in keep:
             tok = f"{ref}.{num}"
             i = flows.get(tok, 0.0)
             if i <= 0:
                 continue
-            budget = frac * (stats.get(p.net) or {}).get("loss_sq", 0.0)
-            if budget <= 0:
-                out[id(p)] = math.inf
-                continue
-            out[id(p)] = 1.0 / (budget / (w2[p.net] * L) + 1.0 / wf)
+            n = max(1, ((stats.get(p.net) or {}).get("entries") or {}).get(tok, 1))
+            w = max(self._routed_w(p), current_need(i, self.o["current_margin"]), 1e-3)
+            cost.setdefault(p.net, []).append((i * i * n * L * max(0.0, 1.0 / w - 1.0 / wf), id(p)))
+        out = {}
+        for net, cs in cost.items():
+            budget = frac * (stats.get(net) or {}).get("loss_sq", 0.0)
+            spent = 0.0
+            for c, k in sorted(cs):
+                if spent + c <= budget:
+                    spent += c
+                else:
+                    out[k] = math.inf
         return out
 
     def _zone_joined(self, p):

@@ -6,6 +6,7 @@ current needs; exceptions (tht_wide, unsoldered parts, hot parts, pads joined to
 tht_pad_necked decision entry and the tht_pad_heatsunk hazard. Runs without KiCad (synthetic
 export info, no fills)."""
 import json
+import math
 
 import pytest
 from shapely.geometry import LineString, Point, box
@@ -298,20 +299,6 @@ def test_passing_copper_is_not_necked(tmp_path, plan):
                 assert LineString([a, b]).buffer(wd / 2).distance(j12.geom) >= P.DEFAULTS["tht_gap"] - 0.01
 
 
-def test_loss_floor_widens_a_neck_to_the_budget():
-    """The loss budget: necks on a net add at most tht_loss_frac of its routed copper loss."""
-    from types import SimpleNamespace as N
-    o = pc.PowerCopper.__new__(pc.PowerCopper)
-    o.o = dict(pc.DEFAULTS)
-    p = N(net="V", owner=("J1", "1"))
-    o.tht_flow_stats = {"V": {"loss_sq": 100.0, "entries": {"J1.1": 1}}}
-    fl = o._loss_floor([(None, p, "J1", "1")], {"J1.1": 0.5})[id(p)]
-    L = o.o["neck_len"] + o.o["max_width"] / 2
-    added = 0.25 * L * (1 / fl - 1 / o.o["max_width"])
-    assert added == pytest.approx(o.o["tht_loss_frac"] * 100.0, rel=1e-6)
-    assert o._loss_floor([(None, p, "J1", "1")], {"J1.1": 0.0}) == {}        # no current: no floor
-
-
 def test_branch_currents_bus_through_pads():
     """One straight track through a row of pads (no end in them): each pad is on the bus, and the copper
     into it carries what flows past."""
@@ -324,19 +311,20 @@ def test_branch_currents_bus_through_pads():
     assert out["J1.1"] == pytest.approx(0.6, rel=1e-6) and out["J2.1"] == pytest.approx(0.4, rel=1e-6)
 
 
-def test_loss_budget_shared_by_current():
-    """A net's budget goes to its pads by I^2: an idle pin gets no floor, the busy ones share the budget."""
+def test_loss_budget_necks_the_cheapest_pads_first(monkeypatch):
+    """A net's budget goes to its pads cheapest first: idle and light pins neck, the busiest keeps its copper."""
     from types import SimpleNamespace as N
     o = pc.PowerCopper.__new__(pc.PowerCopper)
     o.o = dict(pc.DEFAULTS)
+    monkeypatch.setattr(pc.PowerCopper, "_routed_w", lambda self, p: 0.25)
     a, b, c = (N(net="V", owner=(f"J{i}", "1")) for i in range(3))
-    o.tht_flow_stats = {"V": {"loss_sq": 100.0, "entries": {}}}
-    keep = [(None, a, "J0", "1"), (None, b, "J1", "1"), (None, c, "J2", "1")]
-    fl = o._loss_floor(keep, {"J0.1": 1.0, "J1.1": 0.5, "J2.1": 0.0})
-    assert id(c) not in fl                                   # idle: necked to its routed width
     L = o.o["neck_len"] + o.o["max_width"] / 2
-    added = sum(i * i * L * (1 / fl[id(p)] - 1 / o.o["max_width"]) for p, i in ((a, 1.0), (b, 0.5)))
-    assert added == pytest.approx(o.o["tht_loss_frac"] * 100.0, rel=1e-6)
+    cost_b = 0.1 ** 2 * L * (1 / 0.25 - 1 / o.o["max_width"])
+    o.tht_flow_stats = {"V": {"loss_sq": 1.5 * cost_b / o.o["tht_loss_frac"], "entries": {}}}
+    keep = [(None, a, "J0", "1"), (None, b, "J1", "1"), (None, c, "J2", "1")]
+    fl = o._loss_floor(keep, {"J0.1": 1.0, "J1.1": 0.1, "J2.1": 0.0})
+    assert id(c) not in fl and id(b) not in fl              # idle and light: necked
+    assert fl[id(a)] == math.inf                            # the busy feed: kept wide
 
 
 def test_heat_path_pads_keep_their_copper(tmp_path, plan):
@@ -346,7 +334,9 @@ def test_heat_path_pads_keep_their_copper(tmp_path, plan):
     assert obj.tht_stats()["skipped"].get("heat_path") == 2 and obj.tht_stats()["necked_pads"] == 0
     hz = [h for h in obj.tht_hazards() if h["code"] == "tht_pad_kept_wide"]
     assert hz and "heat path" in hz[0]["message"] and hz[0]["evidence"]["heat_path"][0]["part"] == "D1"
-    near = _pc(tmp_path / "b", operating={"parts": {"D1": {"P_sustained_W": 0.3}}})  # 0.3 W reaches only the
-    assert near.tht_stats()["skipped"].get("heat_path", 0) == 1                       # adjacent pad (J1.1)
+    small = _pc(tmp_path / "b", operating={"parts": {"D1": {"P_sustained_W": 0.3}}})  # 0.3 W holds no pad
+    assert small.tht_stats()["skipped"].get("heat_path", 0) == 0                       # 20 K above ambient
+    theta = _pc(tmp_path / "d", operating={"parts": {"D1": {"theta_jb_C_W": 20}}})    # no P: own pads only
+    assert theta.tht_stats()["skipped"].get("heat_path", 0) == 0
     narrow = _pc(tmp_path / "c", {"KAE_THT_NARROW": "J1"}, operating={"parts": {"D1": {"P_sustained_W": 2.0}}})
     assert narrow.tht_stats()["necked_pads"] == 2
