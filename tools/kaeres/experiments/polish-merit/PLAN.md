@@ -75,3 +75,25 @@ Another session found that in work mode Freerouting's optimizer phase (on boards
 - A fix that caps optimizer passes from the budget is on branch `fr-budget-calibration`.
 
 This experiment predates that fix, and both arms share the exposure, so the paired comparison stands. `analyze.py` here (loop-polish's analysis plus this) reports each run's optimizer stops and, per arm, the number of runs with a `timed_out` optimizer. This covers the kept attempt's and its origin's stored reports; other attempts' reports are not stored. An imbalance between arms is read before any conclusion. At 62 boards: no `timed_out` in either arm.
+
+## Result (2026-11-13, 207 boards both arms scored; `analyze.py`)
+**Undecided.**
+
+| | P-late | R | P-late vs R |
+|---|---|---|---|
+| open connections | 1,791 | 1,807 | −0.9 %; 39 boards fewer, 18 more; mean d −0.016, p 0.115 |
+| DRC errors | 5,296 | 5,417 | −2.2 % |
+| placement errors | 2,772 | 2,772 | equal |
+| cp1 | 64 | 60 | |
+| legal | 109 | 109 | |
+| measured CPU | 138.5 h | 124.9 h | P-late +11 % |
+| physics, both fully routed | | | n 11, median 0.999 (too few to judge) |
+
+- The guards hold.
+- No Freerouting optimizer `timed_out` in either arm (209 / 207 runs).
+
+**Reading.**
+- On the merit suite most boards end with few or no opens, and the polish has little to remove.
+- `loop-polish`'s −9.6 % came from boards chosen where the joint loop leaves connections open.
+- P-late also used 11 % more measured CPU: its finish (the joint loop) does work that counted-work budgets undercount relative to restarts.
+- The 70/30 split is therefore not adopted as the merit default. Its gain is specific to hard boards.
