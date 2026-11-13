@@ -30,3 +30,33 @@ Noise: the A/A joint-loop twins (`aa-joint`; no staged A/A exists): total opens 
 ## Decision rule (pre-registered)
 `array_macros` becomes the default if A lowers total opens by at least 5% (paired sign test p < 0.05), lowers opens on the array nets on at least 60% of boards with arrays, and does not lower `legal` or cp1 beyond the noise floor (3 pp). If only array-net opens fall while other opens rise by as much, it stays off and the cost is the finding: the rigid block took room.
 The whole pool runs at once; if undecided, widen the detector's pool (pads above 2,000, or more tagged boards) rather than relax the rule.
+
+## Addendum 2026-11-13: analyse boards with an array; a fixed detector as a second arm pair (before any result is compared)
+An interim plumbing check (44 boards, no decision rule applied) found that the in-run detector misses arrays the
+selection found. `kae.place.arrays.macros()` reads net pins from the **movable** parts only, so a series bus whose far
+end is a task-fixed connector loses its partner and is dropped. Selection scanned the human board, where nothing is fixed.
+On those boards A runs the control's code path: a de-facto A/A pair.
+
+**Which boards have the mechanism.** `scan_task_inputs.py` runs the detector on every board's task input (the corpus
+board with the task's fixed parts locked: the spec-11 task record's `fixed_mech`, else the prepare step's own
+`classify-mech` via `classify_fixed.py`, which matched the task record on all 4 boards that have both). Result in
+`detector-scan.jsonl`: the detector as run (caeb1e0) fires on **85 of 181** boards (`boards-fire.txt`); it agrees with
+the groups found on the stored control outputs on all 44 boards run so far. 85 boards is well under the plan's ~150, at
+which a 5 % opens effect was already marginal.
+
+**Amended analysis of `array-macro-ab` (C vs A):** the primary test (all three conditions of the decision rule) runs on
+the 85 boards of `boards-fire.txt`. The other 96 boards are reported apart as an A/A noise check (A = C's code path
+there), not pooled into the primary test. The all-board result is still shown, labelled as diluted.
+
+**Second arm pair, `array-macro-ab2` (C2 vs A2):** the detector fixed at the commit that adds this addendum: bus ends
+are looked up among every part, members are still movable parts only (`buses(..., pin_fps=all parts)`; test added).
+Fixed, it fires on 140 boards; 56 of them are boards where the first detector found nothing (`boards-ab2.txt`). C2 and
+A2 are `setup.sh` at that commit (control and `array_macros=1`), same chassis, run side by side on those 56 boards,
+attempt 0. C2 is a new control (same code path as C, new commit), so A2 is compared with C2 only.
+(mornepousse-niphargus loses its 6-part "bus" under the fix: one end net reaches a fixed part as well, so it is not a
+series bus; it stays in `boards-fire.txt` for C vs A, as run.)
+
+**Decision.** The pre-registered rule is applied to the pooled pairs (85 C/A + 56 C2/A2 = 141 boards, each paired within
+its own board and arm pair), and to each set separately as a check: the default changes only if the pooled test passes
+and neither set alone moves the other way beyond the noise floor. Array-net opens are counted with the detector of the
+arm (`analyze.py`, `detected(..., all_pins=True)` for ab2). Cost, as information: about 56 x 2 x 1.8 CPU-h = 200 CPU-h.

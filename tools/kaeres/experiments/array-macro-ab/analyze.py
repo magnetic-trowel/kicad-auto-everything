@@ -23,7 +23,7 @@ import tempfile
 import numpy as np
 
 
-def detected(board):
+def detected(board, all_pins=False):
     from kae.place import arrays as A
     from kae.place.problem import net_class_guess
     fps = [f for f in board.footprints if not f.locked and f.pads]
@@ -35,7 +35,9 @@ def detected(board):
     kinds = {k: net_class_guess(k, v, max(1, len(board.footprints))) for k, v in pins.items()}
     mats = A.matrices(fps, kinds)
     taken = {u for g in mats for u in g.cells}
-    return mats + A.buses(fps, kinds, exclude=taken)
+    # all_pins: bus ends looked up among every part (the detector as fixed at the array-macro-ab2 arm)
+    every = [f for f in board.footprints if f.pads] if all_pins else None
+    return mats + A.buses(fps, kinds, exclude=taken, pin_fps=every)
 
 
 def nets_of(board, groups):

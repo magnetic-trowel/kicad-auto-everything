@@ -57,3 +57,14 @@ def test_bus_excludes_parts_with_a_third_connection():
         NS(uuid="TP1", ref="TP1", lib_id="TP", pads=[pad("1", parts[0][1])])]   # a third pad on one net: that one drops out
     groups = A.buses(fps, {})
     assert len(groups) == 1 and groups[0].cols == 7
+
+
+def test_bus_to_a_fixed_part_found_when_all_parts_give_pins():
+    # the far end (a connector) is fixed: members are the movable parts, ends come from every part
+    parts = [series(i) for i in range(8)]
+    u1 = NS(uuid="U1", ref="U1", lib_id="BGA", pads=[pad(str(i + 1), parts[i][1]) for i in range(8)])
+    j1 = NS(uuid="J1", ref="J1", lib_id="CONN", pads=[pad(str(i + 1), parts[i][2]) for i in range(8)])
+    movable = [p[0] for p in parts] + [u1]
+    assert A.buses(movable, {}) == []
+    groups = A.buses(movable, {}, pin_fps=movable + [j1])
+    assert len(groups) == 1 and groups[0].cols == 8 and set(groups[0].cells) == {f"R{i}" for i in range(8)}

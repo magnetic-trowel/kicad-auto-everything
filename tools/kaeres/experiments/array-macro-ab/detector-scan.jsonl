@@ -1,0 +1,181 @@
+{"board": "0xd6-flip-card-mirror-rp2350-60qfn-minimal", "src": "classify-mech", "fixed": 1, "matrices": [441], "old_buses": [], "fixed_buses": [], "human_matrices": [441]}
+{"board": "0xlama-attiny-led-matrix-display-badge-led-matrix-display-badge", "src": "classify-mech", "fixed": 21, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [20]}
+{"board": "8-lambda-8-showcontrollpcbs-touchboard", "src": "classify-mech", "fixed": 98, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [96]}
+{"board": "adafruit-adafruit-eyelights-led-glasses-and-driver-pcb-adafruit-eyelights-led-glasses", "src": "task", "fixed": 12, "matrices": [116], "old_buses": [], "fixed_buses": [], "human_matrices": [116]}
+{"board": "adafruit-adafruit-is31fl3741-pcb-adafruit-is31fl3741-matrix", "src": "classify-mech", "fixed": 9, "matrices": [117], "old_buses": [], "fixed_buses": [], "human_matrices": [117]}
+{"board": "adafruit-adafruit-neokey-snap-apart-pcb-neokey-5x6-ortho-snap-apart", "src": "task", "fixed": 131, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [18]}
+{"board": "afiskon-hbr-mk2-hbr-mk2-bpfs", "src": "classify-mech", "fixed": 8, "matrices": [16], "old_buses": [], "fixed_buses": [], "human_matrices": [16]}
+{"board": "ainnovators-noob-sdr-noob-sdr", "src": "task", "fixed": 17, "matrices": [], "old_buses": [10], "fixed_buses": [10], "human_matrices": []}
+{"board": "aiwachow-micromouse-kicad-micromouse", "src": "classify-mech", "fixed": 37, "matrices": [], "old_buses": [6], "fixed_buses": [6], "human_matrices": []}
+{"board": "alheir-gatebench-gatebench", "src": "classify-mech", "fixed": 78, "matrices": [], "old_buses": [], "fixed_buses": [8], "human_matrices": []}
+{"board": "anthilla-anthc-anthc", "src": "classify-mech", "fixed": 10, "matrices": [], "old_buses": [6], "fixed_buses": [6], "human_matrices": []}
+{"board": "antmicro-dc-sci-debug-interposer-dc-sci-debug-interposer", "src": "classify-mech", "fixed": 25, "matrices": [], "old_buses": [], "fixed_buses": [38], "human_matrices": []}
+{"board": "antmicro-mec1723-espi-debugger-mec1723-espi-debugger", "src": "task", "fixed": 26, "matrices": [], "old_buses": [8], "fixed_buses": [8], "human_matrices": []}
+{"board": "antoniomr-wifi-play-board-wifi-pb", "src": "classify-mech", "fixed": 22, "matrices": [], "old_buses": [7], "fixed_buses": [7], "human_matrices": []}
+{"board": "apoluekt-openrpncalc-main", "src": "task", "fixed": 53, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [49]}
+{"board": "aronayub-kicad-matrix-project", "src": "classify-mech", "fixed": 11, "matrices": [], "old_buses": [], "fixed_buses": [8, 8, 8, 8], "human_matrices": []}
+{"board": "asmr-systems-development-boards-at42qt148-captouch", "src": "classify-mech", "fixed": 4, "matrices": [], "old_buses": [], "fixed_buses": [8], "human_matrices": []}
+{"board": "atoomnetmarc-avr-demo-board-at90s2323", "src": "classify-mech", "fixed": 136, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [128]}
+{"board": "axelvoitier-keebs-lergo", "src": "classify-mech", "fixed": 37, "matrices": [17], "old_buses": [], "fixed_buses": [], "human_matrices": [17]}
+{"board": "azonenberg-openfpga-gp4-hil", "src": "classify-mech", "fixed": 4, "matrices": [], "old_buses": [11, 11, 7], "fixed_buses": [7, 11, 11], "human_matrices": []}
+{"board": "beagleboard-beaglebone-black-wireless-beaglebone-black-wireless", "src": "classify-mech", "fixed": 26, "matrices": [], "old_buses": [6], "fixed_buses": [6], "human_matrices": []}
+{"board": "beagleboard-beaglebone-blue-beaglebone-blue", "src": "task", "fixed": 45, "matrices": [], "old_buses": [8], "fixed_buses": [8], "human_matrices": []}
+{"board": "bluthen-exposure-timing-nexta", "src": "classify-mech", "fixed": 4, "matrices": [], "old_buses": [], "fixed_buses": [10, 10], "human_matrices": []}
+{"board": "bombarie-tens-transcendance-transcendence", "src": "task", "fixed": 27, "matrices": [32], "old_buses": [], "fixed_buses": [], "human_matrices": [32]}
+{"board": "botanicfields-kicad-bf-010", "src": "classify-mech", "fixed": 14, "matrices": [], "old_buses": [], "fixed_buses": [7], "human_matrices": []}
+{"board": "brentseidel-circuits-ioboard", "src": "classify-mech", "fixed": 15, "matrices": [], "old_buses": [], "fixed_buses": [8, 8, 8, 8], "human_matrices": []}
+{"board": "brillar0101-neuralcard-neuralcard", "src": "classify-mech", "fixed": 9, "matrices": [24], "old_buses": [], "fixed_buses": [], "human_matrices": [24]}
+{"board": "calcpsu-tikeyboard-ti59-keyboard", "src": "classify-mech", "fixed": 59, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [45]}
+{"board": "carlosedp-qsfp-hdmi-storeypeak-qsfp-io", "src": "classify-mech", "fixed": 2, "matrices": [], "old_buses": [], "fixed_buses": [8], "human_matrices": []}
+{"board": "cheyao-icepi-zero-icepi-zero-2", "src": "task", "fixed": 11, "matrices": [], "old_buses": [], "fixed_buses": [8], "human_matrices": []}
+{"board": "chipiki-pxfmini-v2-rbpi-z-hat", "src": "task", "fixed": 14, "matrices": [], "old_buses": [], "fixed_buses": [10, 6], "human_matrices": []}
+{"board": "ciaa-hardware-ciaa-nxp", "src": "classify-mech", "fixed": 39, "matrices": [], "old_buses": [7], "fixed_buses": [7], "human_matrices": []}
+{"board": "computergeek1507-kicad-designs-expansion-buffer", "src": "classify-mech", "fixed": 2, "matrices": [], "old_buses": [], "fixed_buses": [16], "human_matrices": []}
+{"board": "crides-steno-steno", "src": "classify-mech", "fixed": 4, "matrices": [30], "old_buses": [], "fixed_buses": [], "human_matrices": [30]}
+{"board": "crsknr-hw-udsp-card-udsp-card", "src": "classify-mech", "fixed": 14, "matrices": [], "old_buses": [6], "fixed_buses": [7, 6], "human_matrices": []}
+{"board": "cutiepi-io-cutiepi-board-cutiepi-v2-3", "src": "classify-mech", "fixed": 16, "matrices": [], "old_buses": [], "fixed_buses": [6], "human_matrices": []}
+{"board": "dangerousprototypes-buspirateultrahardware-bpuv2a", "src": "classify-mech", "fixed": 20, "matrices": [], "old_buses": [], "fixed_buses": [10], "human_matrices": []}
+{"board": "dlehenbauer-commodore-pet-clone-mainboard", "src": "classify-mech", "fixed": 36, "matrices": [], "old_buses": [7], "fixed_buses": [8], "human_matrices": []}
+{"board": "duncmccl-armstrong-uduino", "src": "classify-mech", "fixed": 26, "matrices": [], "old_buses": [8], "fixed_buses": [8], "human_matrices": []}
+{"board": "dynamicgoose-mu-micro-deck-mu-carrier-board", "src": "classify-mech", "fixed": 31, "matrices": [], "old_buses": [], "fixed_buses": [8], "human_matrices": []}
+{"board": "e3w2q-te96-keyboard-te96", "src": "classify-mech", "fixed": 34, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [24]}
+{"board": "eez-open-dib-smx46-eez-dib-smx46-r1b6", "src": "classify-mech", "fixed": 5, "matrices": [24], "old_buses": [], "fixed_buses": [], "human_matrices": [24]}
+{"board": "eggsampler-pciedma-pciedma", "src": "classify-mech", "fixed": 9, "matrices": [], "old_buses": [], "fixed_buses": [18], "human_matrices": []}
+{"board": "emard-ulx3s-ulx3s", "src": "classify-mech", "fixed": 20, "matrices": [], "old_buses": [], "fixed_buses": [8], "human_matrices": []}
+{"board": "emdotnet-stmbl-ethernet-bob", "src": "classify-mech", "fixed": 11, "matrices": [], "old_buses": [7], "fixed_buses": [7], "human_matrices": []}
+{"board": "famichu-maglev-switch-mx-sample-numeric-keyboard", "src": "classify-mech", "fixed": 24, "matrices": [], "old_buses": [], "fixed_buses": [10], "human_matrices": []}
+{"board": "fastbeam-fastbeam-fastbeam-6a", "src": "classify-mech", "fixed": 13, "matrices": [16], "old_buses": [], "fixed_buses": [], "human_matrices": [16]}
+{"board": "fm4dd-gm-proto-e1-gm-proto-e1", "src": "classify-mech", "fixed": 13, "matrices": [], "old_buses": [], "fixed_buses": [8], "human_matrices": []}
+{"board": "freesurfer-rge-slothpu16-barrel-shifter", "src": "classify-mech", "fixed": 1, "matrices": [16], "old_buses": [], "fixed_buses": [], "human_matrices": [16]}
+{"board": "freesurfer-rge-slothpu16-register-file", "src": "classify-mech", "fixed": 1, "matrices": [16], "old_buses": [], "fixed_buses": [], "human_matrices": [16]}
+{"board": "freetronics-arduphone-phone", "src": "task", "fixed": 37, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [16]}
+{"board": "freetronics-arduphone2-phone2", "src": "classify-mech", "fixed": 37, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [16]}
+{"board": "freetronics-leopad-leopad", "src": "classify-mech", "fixed": 27, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [20]}
+{"board": "freetronics-leopadmini-leopadmini", "src": "task", "fixed": 27, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [20]}
+{"board": "freetronics-leopadretrofit-leopadretrofit", "src": "classify-mech", "fixed": 29, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [18]}
+{"board": "fri3dcamp-badge-fri3d-badge-2018-2", "src": "classify-mech", "fixed": 11, "matrices": [], "old_buses": [], "fixed_buses": [7], "human_matrices": []}
+{"board": "frooastside-frooastboard-frooastboard-walnut", "src": "task", "fixed": 92, "matrices": [48], "old_buses": [], "fixed_buses": [], "human_matrices": [48]}
+{"board": "gianlucarenzi-a130kb-mx-a130xe-cx85", "src": "classify-mech", "fixed": 27, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [16]}
+{"board": "girishji-choc-keyboard-choc-keyboard", "src": "classify-mech", "fixed": 92, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [74]}
+{"board": "git4dcc-rtb-e10-e10", "src": "task", "fixed": 10, "matrices": [], "old_buses": [], "fixed_buses": [8, 8], "human_matrices": []}
+{"board": "gitbykalimenope-hackrf-circuit-board-kicad-hackrf-one", "src": "classify-mech", "fixed": 21, "matrices": [], "old_buses": [10], "fixed_buses": [6], "human_matrices": []}
+{"board": "grassfedreeve-akohekohe-akohekohe", "src": "classify-mech", "fixed": 29, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [24]}
+{"board": "grassfedreeve-akohekohe-akohekohe-min-choc", "src": "classify-mech", "fixed": 27, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [26]}
+{"board": "greatscottgadgets-hackrf-hackrf-one", "src": "task", "fixed": 24, "matrices": [], "old_buses": [10], "fixed_buses": [6], "human_matrices": []}
+{"board": "gregdavill-advent-calendar-of-circuits-2020-gpdi", "src": "classify-mech", "fixed": 4, "matrices": [], "old_buses": [], "fixed_buses": [8], "human_matrices": []}
+{"board": "gregdavill-perplexingly-petite-pov-pppov-2", "src": "classify-mech", "fixed": 5, "matrices": [20], "old_buses": [], "fixed_buses": [], "human_matrices": [20]}
+{"board": "hackclub-onboard-icepi-zero", "src": "classify-mech", "fixed": 10, "matrices": [], "old_buses": [], "fixed_buses": [8], "human_matrices": []}
+{"board": "hanya-escpt-data", "src": "classify-mech", "fixed": 24, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [17]}
+{"board": "hotwolf-aricalculator-aricalculator-revc", "src": "classify-mech", "fixed": 4, "matrices": [38], "old_buses": [], "fixed_buses": [], "human_matrices": [38]}
+{"board": "hotwolf-aricalculator-keypad", "src": "classify-mech", "fixed": 1, "matrices": [64], "old_buses": [], "fixed_buses": [], "human_matrices": [64]}
+{"board": "hugelton-btns-btns-board", "src": "classify-mech", "fixed": 9, "matrices": [64], "old_buses": [], "fixed_buses": [], "human_matrices": [64]}
+{"board": "hyperglitch-dc2024badge-dcbadge24", "src": "task", "fixed": 4, "matrices": [26], "old_buses": [], "fixed_buses": [], "human_matrices": [26]}
+{"board": "intergalaktik-ulx4m-ls-ulx4m", "src": "classify-mech", "fixed": 19, "matrices": [], "old_buses": [], "fixed_buses": [22], "human_matrices": []}
+{"board": "interrupt-tv-diode-rom-diode-rom-16", "src": "classify-mech", "fixed": 1, "matrices": [128], "old_buses": [], "fixed_buses": [], "human_matrices": [128]}
+{"board": "iorodeo-panels-g4-single-pcb-driver-cplex-rp2040", "src": "classify-mech", "fixed": 7, "matrices": [256], "old_buses": [], "fixed_buses": [], "human_matrices": [256]}
+{"board": "iorodeo-panels-g4-single-pcb-driver-rp2350", "src": "classify-mech", "fixed": 7, "matrices": [324], "old_buses": [], "fixed_buses": [], "human_matrices": [324]}
+{"board": "iorodeo-panels-g4-single-pcb-rp2350-fit-check", "src": "classify-mech", "fixed": 7, "matrices": [256], "old_buses": [], "fixed_buses": [], "human_matrices": [256]}
+{"board": "ivanxblue-oresat-gps-hardware-usb-gps", "src": "classify-mech", "fixed": 5, "matrices": [], "old_buses": [], "fixed_buses": [7], "human_matrices": []}
+{"board": "izehouze-a-10c-ufc-a-10c-ufc", "src": "classify-mech", "fixed": 44, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [35]}
+{"board": "jabadiagm-msxgoauld-x-msx-goauld-xc7", "src": "classify-mech", "fixed": 1, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": []}
+{"board": "jackmatanky-kb-snak-rufous", "src": "classify-mech", "fixed": 31, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [30]}
+{"board": "jaxc-magna-magna", "src": "classify-mech", "fixed": 22, "matrices": [], "old_buses": [12], "fixed_buses": [12, 6], "human_matrices": []}
+{"board": "jflitton-the-c128-keyboard-project-c128-keyboard", "src": "classify-mech", "fixed": 93, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [83]}
+{"board": "jjhorton-pmod-pmod-ledarray", "src": "task", "fixed": 5, "matrices": [128], "old_buses": [], "fixed_buses": [], "human_matrices": [128]}
+{"board": "jjhorton-pmod-pmod-rgb7segment", "src": "classify-mech", "fixed": 2, "matrices": [90], "old_buses": [], "fixed_buses": [], "human_matrices": [90]}
+{"board": "jonathanferron-miyocalc40-miyocalc40", "src": "task", "fixed": 48, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [40]}
+{"board": "justsem-rp2040-868-rp2040gpstracker", "src": "classify-mech", "fixed": 13, "matrices": [], "old_buses": [6], "fixed_buses": [6], "human_matrices": []}
+{"board": "kicad-code-kicad-dexter-motorctrl", "src": "classify-mech", "fixed": 23, "matrices": [], "old_buses": [], "fixed_buses": [6], "human_matrices": []}
+{"board": "kiibohd-pcb-ic60", "src": "classify-mech", "fixed": 159, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [63]}
+{"board": "kiibohd-pcb-icedleft", "src": "task", "fixed": 87, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [38]}
+{"board": "kiibohd-pcb-whitefox", "src": "classify-mech", "fixed": 195, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [71]}
+{"board": "king-jam-xmas-2018-christmas-2018", "src": "task", "fixed": 2, "matrices": [20], "old_buses": [], "fixed_buses": [], "human_matrices": [20]}
+{"board": "krzys9876-zx-spectrum-diy-keyb2", "src": "classify-mech", "fixed": 44, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [40]}
+{"board": "kubajznicek-adaptboard-keypad-pcb", "src": "classify-mech", "fixed": 25, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [20]}
+{"board": "librerouter-boards-mega-board", "src": "classify-mech", "fixed": 40, "matrices": [], "old_buses": [14, 9], "fixed_buses": [14, 9], "human_matrices": []}
+{"board": "licentia-eu-hc91-kicad-keyboard-keyboard-91", "src": "task", "fixed": 36, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [40]}
+{"board": "logisim-evolution-gecko5education-cpuaddon", "src": "task", "fixed": 13, "matrices": [], "old_buses": [8], "fixed_buses": [8], "human_matrices": []}
+{"board": "logisim-evolution-gecko5education-gecko5education", "src": "task", "fixed": 17, "matrices": [120], "old_buses": [], "fixed_buses": [8], "human_matrices": [120]}
+{"board": "machdyne-bonbon-bonbon", "src": "classify-mech", "fixed": 11, "matrices": [], "old_buses": [], "fixed_buses": [8], "human_matrices": []}
+{"board": "machdyne-eis-eis", "src": "classify-mech", "fixed": 11, "matrices": [], "old_buses": [], "fixed_buses": [8], "human_matrices": []}
+{"board": "machdyne-keks-keks", "src": "classify-mech", "fixed": 15, "matrices": [], "old_buses": [], "fixed_buses": [8], "human_matrices": []}
+{"board": "machdyne-kuchen-kuchen", "src": "task", "fixed": 9, "matrices": [], "old_buses": [], "fixed_buses": [8], "human_matrices": []}
+{"board": "machdyne-schoko-schoko", "src": "classify-mech", "fixed": 10, "matrices": [], "old_buses": [], "fixed_buses": [8], "human_matrices": []}
+{"board": "markwestbroek-musicbrain-musicbrain-adc8", "src": "task", "fixed": 2, "matrices": [], "old_buses": [], "fixed_buses": [8], "human_matrices": []}
+{"board": "markwestbroek-musicbrain-musicbrain-gate8", "src": "task", "fixed": 2, "matrices": [], "old_buses": [], "fixed_buses": [8], "human_matrices": []}
+{"board": "matthewcieplak-super-sixteen-kicad-control-board-smt", "src": "classify-mech", "fixed": 55, "matrices": [], "old_buses": [], "fixed_buses": [8], "human_matrices": []}
+{"board": "mattybrad-drumkid2-dk2-04-top", "src": "classify-mech", "fixed": 55, "matrices": [], "old_buses": [8], "fixed_buses": [8], "human_matrices": []}
+{"board": "mattybrad-drumkid2-dk2-07", "src": "task", "fixed": 51, "matrices": [], "old_buses": [8], "fixed_buses": [8], "human_matrices": []}
+{"board": "mbfredys-pcb-3-phase-energy-monitor-smart-switch-with-energy-monitoring", "src": "classify-mech", "fixed": 43, "matrices": [], "old_buses": [], "fixed_buses": [9], "human_matrices": []}
+{"board": "mbfredys-pcb-temperature-controller-controlador-temperatura", "src": "classify-mech", "fixed": 11, "matrices": [], "old_buses": [], "fixed_buses": [8, 8], "human_matrices": []}
+{"board": "mkulesh-stm32developmentboards-stm-adapters", "src": "task", "fixed": 3, "matrices": [], "old_buses": [6], "fixed_buses": [6], "human_matrices": []}
+{"board": "mkulesh-stm32digitalclock-mcuboard", "src": "classify-mech", "fixed": 1, "matrices": [], "old_buses": [6], "fixed_buses": [6], "human_matrices": []}
+{"board": "mlab-modules-batdatunit01-batdatunit01", "src": "classify-mech", "fixed": 17, "matrices": [], "old_buses": [], "fixed_buses": [6], "human_matrices": []}
+{"board": "modos-labs-lancer-pcb", "src": "classify-mech", "fixed": 19, "matrices": [], "old_buses": [7], "fixed_buses": [7], "human_matrices": []}
+{"board": "mornepousse-niphargus-niphar", "src": "task", "fixed": 75, "matrices": [], "old_buses": [6], "fixed_buses": [], "human_matrices": []}
+{"board": "mossmann-daisho-hdmi", "src": "classify-mech", "fixed": 10, "matrices": [], "old_buses": [6], "fixed_buses": [6], "human_matrices": []}
+{"board": "naokiiwakami-cv-depot-cv-depot", "src": "task", "fixed": 32, "matrices": [], "old_buses": [], "fixed_buses": [8], "human_matrices": []}
+{"board": "nf-dj-netforce-tpu-nf-tpu-2", "src": "task", "fixed": 2, "matrices": [], "old_buses": [], "fixed_buses": [8], "human_matrices": []}
+{"board": "ohmtech-rdi-eurorack-blocks-kivu12", "src": "classify-mech", "fixed": 16, "matrices": [], "old_buses": [], "fixed_buses": [8, 8], "human_matrices": []}
+{"board": "ohwr-project-fmc-adc-500m14b4cha-fmc-adc500m", "src": "task", "fixed": 24, "matrices": [], "old_buses": [], "fixed_buses": [16], "human_matrices": []}
+{"board": "open-ephys-acquisition-board-acquisition-board-2", "src": "task", "fixed": 16, "matrices": [], "old_buses": [], "fixed_buses": [8], "human_matrices": []}
+{"board": "open-ephys-onix-fmc-host-fmc-host", "src": "classify-mech", "fixed": 10, "matrices": [], "old_buses": [], "fixed_buses": [6], "human_matrices": []}
+{"board": "open-muscle-openmuscle-band-om-60-flex", "src": "task", "fixed": 2, "matrices": [60], "old_buses": [], "fixed_buses": [], "human_matrices": [60]}
+{"board": "open-muscle-openmuscle-flexgrid-om-flexgrid-flex", "src": "classify-mech", "fixed": 1, "matrices": [60], "old_buses": [], "fixed_buses": [], "human_matrices": [60]}
+{"board": "openwch-ch585-captouchkeyboard-v2-0", "src": "task", "fixed": 5, "matrices": [48], "old_buses": [], "fixed_buses": [], "human_matrices": [48]}
+{"board": "peetz0r-why2025-badge-hardware-led-matrix", "src": "classify-mech", "fixed": 2, "matrices": [240], "old_buses": [], "fixed_buses": [], "human_matrices": [240]}
+{"board": "physical-computation-warp-hardware-warp-reva", "src": "classify-mech", "fixed": 1, "matrices": [], "old_buses": [], "fixed_buses": [6], "human_matrices": []}
+{"board": "pietptr-microdox-pcb-microdox", "src": "task", "fixed": 33, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [29]}
+{"board": "pietptr-microdox-pcb-microdox-leds", "src": "task", "fixed": 32, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [29]}
+{"board": "pietptr-microdox-pcb-print-microdox", "src": "classify-mech", "fixed": 33, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [29]}
+{"board": "pigatron-industries-xen-octasource-pgtn021-octasource-mkii-controls", "src": "task", "fixed": 23, "matrices": [16], "old_buses": [], "fixed_buses": [], "human_matrices": [16]}
+{"board": "pigatron-industries-xen-octasource-pgtn021-octasource-mkiii-controls", "src": "classify-mech", "fixed": 25, "matrices": [16], "old_buses": [], "fixed_buses": [], "human_matrices": [16]}
+{"board": "pigatron-industries-xen-octasource-pgtn021-octasource2a-controls", "src": "classify-mech", "fixed": 23, "matrices": [16], "old_buses": [], "fixed_buses": [], "human_matrices": [16]}
+{"board": "pigatron-industries-xen-octasource-pgtn021-octasource2b-controls", "src": "task", "fixed": 15, "matrices": [16], "old_buses": [], "fixed_buses": [], "human_matrices": [16]}
+{"board": "pigatron-industries-xen-octasource-pgtn021-octasource2c-controls", "src": "task", "fixed": 15, "matrices": [16], "old_buses": [], "fixed_buses": [], "human_matrices": [16]}
+{"board": "pinguz97-zynq-som-zynq-som", "src": "task", "fixed": 7, "matrices": [], "old_buses": [24], "fixed_buses": [24], "human_matrices": []}
+{"board": "piotr-binkowski-kintex-pcie-board-kintex-pcie", "src": "classify-mech", "fixed": 8, "matrices": [], "old_buses": [], "fixed_buses": [18], "human_matrices": []}
+{"board": "plinkysynth-plinky-public-plinkyblack-hwmidi-jacks", "src": "task", "fixed": 32, "matrices": [], "old_buses": [], "fixed_buses": [8, 16], "human_matrices": []}
+{"board": "pms67-hadesfcs-hades", "src": "classify-mech", "fixed": 18, "matrices": [], "old_buses": [10], "fixed_buses": [10], "human_matrices": []}
+{"board": "pparent76-own-mailbox-hardware-mailbox", "src": "classify-mech", "fixed": 5, "matrices": [], "old_buses": [6], "fixed_buses": [6], "human_matrices": []}
+{"board": "protocentral-healthypi-pc-healthypi-v1", "src": "task", "fixed": 5, "matrices": [], "old_buses": [7, 6], "fixed_buses": [7, 6], "human_matrices": []}
+{"board": "rallekralle11-dis-thermometer-termometer2", "src": "classify-mech", "fixed": 8, "matrices": [90], "old_buses": [], "fixed_buses": [], "human_matrices": [90]}
+{"board": "ricaflops-jupiter-ii-jupiter-ii-keyboard", "src": "classify-mech", "fixed": 45, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [40]}
+{"board": "rqcoon-help-help", "src": "classify-mech", "fixed": 26, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [25]}
+{"board": "rweick-ref1191-datel-n64-gameshark-ref1191", "src": "task", "fixed": 4, "matrices": [], "old_buses": [8], "fixed_buses": [8], "human_matrices": []}
+{"board": "rweick-ref1198-datel-n64-gameshark-ref1198", "src": "classify-mech", "fixed": 4, "matrices": [], "old_buses": [8], "fixed_buses": [8], "human_matrices": []}
+{"board": "salehghobari-helloboardpcb-helloboard", "src": "classify-mech", "fixed": 12, "matrices": [], "old_buses": [], "fixed_buses": [7], "human_matrices": []}
+{"board": "scottapotamas-displayport-switch-displayport-switch", "src": "task", "fixed": 4, "matrices": [], "old_buses": [], "fixed_buses": [8], "human_matrices": []}
+{"board": "secersh-etzee-etz-b11-lsc-6-choc-v2", "src": "classify-mech", "fixed": 22, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [22]}
+{"board": "secersh-etzee-etz-b11-lsp-5-choc-v2", "src": "classify-mech", "fixed": 0, "matrices": [330], "old_buses": [], "fixed_buses": [], "human_matrices": [330]}
+{"board": "secersh-etzee-etz-b11-rsc-6-ks-33", "src": "classify-mech", "fixed": 22, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [22]}
+{"board": "shaduzlabs-pink-0-pink-0", "src": "classify-mech", "fixed": 3, "matrices": [], "old_buses": [8], "fixed_buses": [8], "human_matrices": []}
+{"board": "skiselev-omega-omega-keyboard", "src": "classify-mech", "fixed": 85, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [60]}
+{"board": "smoothieware-smoothieboard2-smoothiev2-prime", "src": "task", "fixed": 58, "matrices": [], "old_buses": [9], "fixed_buses": [9], "human_matrices": []}
+{"board": "smoothieware-smoothieboard2-v2-core", "src": "task", "fixed": 48, "matrices": [], "old_buses": [9], "fixed_buses": [9], "human_matrices": []}
+{"board": "solderedelectronics-8x8-led-matrix-green-max7219-board-hardware-design-led-matrix-max7219", "src": "task", "fixed": 3, "matrices": [64], "old_buses": [], "fixed_buses": [], "human_matrices": [64]}
+{"board": "solderparty-keebdeck-basic-hw-keebdeck-basic", "src": "classify-mech", "fixed": 78, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [71]}
+{"board": "soundpuddle-soundpuddle-hardware-soundpuddle-megawing-mk1", "src": "classify-mech", "fixed": 5, "matrices": [], "old_buses": [7], "fixed_buses": [7], "human_matrices": []}
+{"board": "sourcebox-74hc595-breakout-74hc595-breakout", "src": "classify-mech", "fixed": 11, "matrices": [], "old_buses": [], "fixed_buses": [8, 8, 8, 8, 8, 8, 8, 8], "human_matrices": []}
+{"board": "sparkfun-badgerarray-sparkfun-badgerarray", "src": "task", "fixed": 4, "matrices": [56], "old_buses": [], "fixed_buses": [], "human_matrices": [56]}
+{"board": "sparkfun-led-array-8x7-sparkfun-led-array-8x7", "src": "classify-mech", "fixed": 4, "matrices": [56], "old_buses": [], "fixed_buses": [], "human_matrices": [56]}
+{"board": "sparkfun-led-ringcoder-breakout-led-ringcoder", "src": "task", "fixed": 1, "matrices": [], "old_buses": [8, 8], "fixed_buses": [8, 8], "human_matrices": []}
+{"board": "sparkfun-mp3-trigger-mp3-trigger", "src": "classify-mech", "fixed": 8, "matrices": [], "old_buses": [16], "fixed_buses": [16], "human_matrices": []}
+{"board": "sparkfun-serial-7-segment-shield-serial-7-segment-shield", "src": "classify-mech", "fixed": 1, "matrices": [], "old_buses": [], "fixed_buses": [8], "human_matrices": []}
+{"board": "spritetm-hadbadge2019-pcb-hadbadge2019", "src": "task", "fixed": 29, "matrices": [], "old_buses": [], "fixed_buses": [10], "human_matrices": []}
+{"board": "swetland-zx81-keyboard-zx81-kbd", "src": "classify-mech", "fixed": 46, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [40]}
+{"board": "tebl-rc1802-cosmac-elf-rc1802-keypad", "src": "task", "fixed": 17, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [16]}
+{"board": "tengigabytes-mokyalora-mokyalora", "src": "classify-mech", "fixed": 47, "matrices": [], "old_buses": [], "fixed_buses": [12], "human_matrices": []}
+{"board": "topola-topola-5x5-1206-led-matrix", "src": "classify-mech", "fixed": 1, "matrices": [25], "old_buses": [], "fixed_buses": [], "human_matrices": [25]}
+{"board": "tpcarlson-synth-diy-d6", "src": "task", "fixed": 50, "matrices": [], "old_buses": [], "fixed_buses": [], "human_matrices": [16]}
+{"board": "trebb-iso50-pcb", "src": "classify-mech", "fixed": 10, "matrices": [52], "old_buses": [], "fixed_buses": [], "human_matrices": [52]}
+{"board": "trol73-avr-ic-tester-tester", "src": "classify-mech", "fixed": 3, "matrices": [], "old_buses": [22], "fixed_buses": [22], "human_matrices": []}
+{"board": "vanvught-kicad-gd32f207rg-pixel-8-gd32f207rg-pixel-8", "src": "classify-mech", "fixed": 13, "matrices": [], "old_buses": [], "fixed_buses": [8, 8], "human_matrices": []}
+{"board": "vanvught-kicad-gd32f470vg-pixel-16-gd32f470vg-pixel-16", "src": "classify-mech", "fixed": 24, "matrices": [], "old_buses": [], "fixed_buses": [8, 8, 8, 8], "human_matrices": []}
+{"board": "vikulin-gammapi-zero-icepi-zero", "src": "classify-mech", "fixed": 12, "matrices": [], "old_buses": [], "fixed_buses": [8], "human_matrices": []}
+{"board": "watterott-rpi-dpi-hat-rpi-dpi-hat-v10", "src": "classify-mech", "fixed": 1, "matrices": [], "old_buses": [], "fixed_buses": [16], "human_matrices": []}
+{"board": "watterott-vcard-vcard-v10", "src": "task", "fixed": 0, "matrices": [96], "old_buses": [], "fixed_buses": [], "human_matrices": [96]}
+{"board": "wcp52-synthesizer-ad9958-dev", "src": "classify-mech", "fixed": 4, "matrices": [], "old_buses": [], "fixed_buses": [8], "human_matrices": []}
+{"board": "will127534-lora-concentrator-radio", "src": "classify-mech", "fixed": 4, "matrices": [], "old_buses": [9, 8], "fixed_buses": [8, 9], "human_matrices": []}
+{"board": "will127534-lora-concentrator-radio-pizero", "src": "classify-mech", "fixed": 3, "matrices": [], "old_buses": [10], "fixed_buses": [10], "human_matrices": []}
+{"board": "will127534-lora-concentrator-radio-rpi", "src": "task", "fixed": 3, "matrices": [], "old_buses": [9, 9], "fixed_buses": [9, 9], "human_matrices": []}

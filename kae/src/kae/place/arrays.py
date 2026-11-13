@@ -119,10 +119,12 @@ def matrices(fps, kinds, exclude=()):
     return out
 
 
-def buses(fps, kinds, exclude=()):
-    """[ArrayGroup kind bus (rows 1)]: series two-pin parts of one lib_id between the same two parts."""
+def buses(fps, kinds, exclude=(), pin_fps=None):
+    """[ArrayGroup kind bus (rows 1)]: series two-pin parts of one lib_id between the same two parts.
+    Members come from `fps`; the parts at the two ends are looked up among `pin_fps` (default `fps`):
+    pass every part of the board, so a bus whose far end is a fixed connector is still a bus."""
     pins = defaultdict(list)
-    for f in fps:
+    for f in (fps if pin_fps is None else pin_fps):
         for p in f.pads:
             if p.net:
                 pins[p.net].append((f, p))
@@ -158,6 +160,7 @@ def macros(P, used=(), log=None):
     from .clusters import Macro, _layout
     from .problem import net_class_guess
     fps = [p.fp for p in P.parts if p.movable]
+    all_fps = [p.fp for p in P.parts]
     kinds = {n.name: n.kind for n in P.nets}
     for n in {pd.net for p in P.parts for pd in p.fp.pads if pd.net}:
         kinds.setdefault(n, net_class_guess(n, 2, max(1, len(P.parts))))
@@ -165,7 +168,7 @@ def macros(P, used=(), log=None):
     index_used = {P.parts[i].fp.uuid for i in used}
     mats = matrices(fps, kinds, exclude=index_used)
     taken = index_used | {u for g in mats for u in g.cells}
-    bs = buses(fps, kinds, exclude=taken)
+    bs = buses(fps, kinds, exclude=taken, pin_fps=all_fps)
     out = []
     rep = dict(matrices=[], buses=[])
     g = P.g
