@@ -60,3 +60,5 @@ series bus; it stays in `boards-fire.txt` for C vs A, as run.)
 its own board and arm pair), and to each set separately as a check: the default changes only if the pooled test passes
 and neither set alone moves the other way beyond the noise floor. Array-net opens are counted with the detector of the
 arm (`analyze.py`, `detected(..., all_pins=True)` for ab2). Cost, as information: about 56 x 2 x 1.8 CPU-h = 200 CPU-h.
+
+**Addendum 2026-11-13 (queue):** cancelled the 58 still-queued jobs (both arms) on the 40 boards where neither the detector as run nor the fixed one finds an array (in neither `boards-fire.txt` nor `boards-ab2.txt`); their finished runs are kept and reported only as the A/A check.
