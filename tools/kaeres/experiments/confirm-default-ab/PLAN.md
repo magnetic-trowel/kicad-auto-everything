@@ -6,7 +6,7 @@ The question: does kae's new default, finish in the time left ([routing-stages](
 
 ## Arms
 
-All arms use route-finish-ab's restart portfolio (`restart.py --parallel 4 --first-s 60 --scale-first --slack 1.15 --resume 0.5 --final '<kae.route.cli lastmile>'`, 900 s × sqrt(footprints/40), at most 4 h). They pin Freerouting fork 2e1125a, take operating facts from `compiled-9867d0b`, run in the kaeq timed class at priority 5 at most, and use the code of the final SHA (physics-determinism plus the THT power-copper cap).
+All arms use route-finish-ab's restart portfolio (`restart.py --parallel 4 --first-s 60 --scale-first --slack 1.15 --resume 0.5 --final '<kae.route.cli lastmile>'`, 900 s × sqrt(footprints/40), at most 4 h). They pin Freerouting fork 2e1125a, take operating facts from `compiled-9867d0b`, run in the kaeq timed class at priority 5 at most, and use the code of the final SHA, `power-copper-tht` 4392518 (route-finish-default, the deterministic evaluator and the THT neck).
 
 | Arm | Recipe |
 |---|---|
@@ -27,6 +27,10 @@ All arms use route-finish-ab's restart portfolio (`restart.py --parallel 4 --fir
 - `large-open.boards.txt`: the 17 open boards with at least 130 footprints (budget at least 1,620 s).
 - `twin.boards.txt`: the large open boards plus the slow-physics boards (33). A2 runs here.
 - `all.boards.txt`: the 86 boards A and N run on (open, physics and slow-physics).
+
+## Context: the THT neck (not a gate)
+
+The final code (`power-copper-tht` 4392518) necks power copper into THT lands, driven by the DC plan's currents, the loss budget and heat-path exceptions. Its own 12-board check: THT overhang -45 %, physics within the floor except zx2-backplane's rail drop (+1.1 %). These figures come from that branch's work and are given for context; the gates below judge this run alone.
 
 ## Pre-registered criteria (`analyze.py --section gates`)
 
