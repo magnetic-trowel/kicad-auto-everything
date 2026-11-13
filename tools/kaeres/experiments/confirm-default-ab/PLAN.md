@@ -67,3 +67,29 @@ for arm in human <A id> <N id>; do $S/submit.py measure --arm $arm --sha <sha12>
 $S/analyze.py --exp confirm-default-ab --twin confirm-default-ab-twin --out <OUT> --floor loss.copper=0.006 \
   --floor drop.rail=0.004 --floor supply.peak=0.005
 ```
+
+## Smoke (code 321762d, physics-determinism; transistorfet z280, budget 1,064 s, seed 0)
+
+| arm | completion | unconnected | DRC errors | wall s | attempts' s | final s | finish | job peak / CPU |
+|---|---|---|---|---|---|---|---|---|
+| A | 0.956 | 14 | 16 | 1,016 | 3,355 | 133 | - | 4.8 GB, 3.4 cores (A and A2 in one job) |
+| A2 | 0.962 | 12 | 21 | 990 | 3,400 | 105 | - | |
+| N | 0.994 | 2 | 10 | 1,016 | 3,358 | 154 | skipped: 22 s left, 30 needed (`finish_part_skipped` in report.json) | 4.7 GB, 4.2 cores |
+
+All three methods ran end to end in kaeres, with valid outputs. The operating facts were found, and the `RFAB_summary`/`RFAB_report` blocks were stored. The A/A pair on this one board differs by 2 unconnected and 5 errors. N's 2 open connections are a single seed, not evidence.
+
+**Profile** (`smoke_prof.sh` outside the sandbox, same recipe; py-spy samples, all processes): restart.py waiting 58 %; route attempts 40 %, of which Freerouting is 25 % of all samples, the repair loop 7 to 8 %, the attempts' last mile 4 to 5 % and blocked 0.6 %; the final last mile 1.4 to 1.7 %; finish 0 (skipped in N). JFR recordings of Freerouting are in the profile folders (17 and 18). The finish deferral works: no attempt of N ran finish.
+
+**Right-sizing** (stage 2's 426 routing jobs): peak / kaeres's `--mem` estimate median 0.51, 95th percentile 0.62, max 1.28. Jobs used 3.6 cores on average. Full-run jobs keep `--cpus 4` and request 0.75 × the kaeres estimate; the one in 20 that needs more is requeued once with its measured peak.
+
+## Cost (stage-2 timings of the same boards)
+
+| item | job-hours | CPU-hours | longest job |
+|---|---|---|---|
+| A, 70 boards | 22.5 | 81 | 2.4 h (J2032) |
+| N, 70 boards | 22.5 | 81 | 2.4 h |
+| A2, 17 large boards | 11 | 40 | 2.4 h |
+| physics, human + A + N, 20 boards | 6 | 30 to 60 | about 1 h |
+| total | 62 | about 235 | |
+
+At 40 cores from the queue that is about 6 h of routing, then about 2 h of physics, plus the tails. Step cache: under 2 GB.
