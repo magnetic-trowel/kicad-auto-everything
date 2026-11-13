@@ -80,6 +80,9 @@ DEFAULTS = dict(
     neck=True,                # necks at the pads of small two-terminal parts (tombstoning; see neck_rule):
                               # within neck_len of such a pad, grown copper is at most the neck width
     neck_len=0.5,             # mm from the pad edge
+    tht_loss_frac=0.002,      # the necks at THT pads of a net together add at most this share of the net's routed
+                              # copper loss under the DC plan (the evaluator's noise floor is ~0.6 %); a pad whose
+                              # neck would need to be wider than a relief's webs keeps its copper (tht_pad_kept_wide)
     tht_gap=0.25,             # mm: grown copper of a track that passes a necked THT pad of its net (does not end in
                               # it) keeps this gap from the pad, a relief's gap (IPC-2222 9.1.2 air gap); the run
                               # is not necked
@@ -301,7 +304,7 @@ def tht_exempt(ref, number, kind, attrs, hot, zone_joined, wide):
     return None
 
 
-def branch_currents(net, tracks, vias, pads, fills, inj, link=1e6):
+def branch_currents(net, tracks, vias, pads, fills, inj, link=1e6, stats=None):
     """{pad token: A}: the largest current in a track that enters each pad of `net`, from a resistive solve
     of the net's routed copper under the injections `inj` ({"REF.NUM": A}, kae.excite.dc.planned_injections).
     Tracks are conductances w/L; pads, vias and fill pieces (`fills`: {layer: [polygons]}) join what touches
@@ -372,12 +375,18 @@ def branch_currents(net, tracks, vias, pads, fills, inj, link=1e6):
     for a, k, g, tag in edges:
         if tag not in (None, "track"):
             at.setdefault(k, set()).add(tag)
-    out = {}
+    out, n_in, loss = {}, {}, 0.0
     for a, k, g, tag in edges:
         if tag == "track":
             i = abs(g * (V[a] - V[k]))
+            loss += g * (V[a] - V[k]) ** 2
             for tok in at.get(a, set()) | at.get(k, set()):
                 out[tok] = max(out.get(tok, 0.0), i)
+                n_in[tok] = n_in.get(tok, 0) + 1
+    if stats is not None:
+        # loss_sq: the tracks' I^2 R in units of the sheet resistance (squares); entries: tracks into each pad
+        stats["loss_sq"] = stats.get("loss_sq", 0.0) + float(loss)
+        stats.setdefault("entries", {}).update(n_in)
     return out
 
 
@@ -727,7 +736,8 @@ class PowerCopper:
         self.tht_necked = {}      # {id(pad Item): planned widths} where the THT neck bound (tht_pad_necked)
         self.tht_skipped = {}     # {reason: n} THT power/ground pads the rule leaves alone
         self.tht_amps, self._tht_geom = {}, {}
-        self.tht_unknown = []     # THT connector pads left wide for want of a DC plan (tht_pad_kept_wide)
+        self.tht_unknown = []     # THT pads left wide: no DC plan (connectors) or a neck over the loss budget
+        self.tht_unknown_why = {} # {id(pad): (A, width the loss budget asks)} for the latter
         self.tht_plan = 0         # injections in the DC plan the THT currents came from (0: none)
         self._entering = None     # ids of the THT pads the track being widened enters (None: not widening a track)
         self.necks = self._necks() if self.o.get("neck", True) else {}
@@ -1395,7 +1405,7 @@ class PowerCopper:
                 if id(p) in tht_cur:
                     self.tht_amps[id(p)] = tht_cur[id(p)]
                     if id(p) in necks:
-                        self.tht_necks[id(p)] = necks.pop(id(p))
+                        self.tht_necks[id(p)] = max(necks.pop(id(p)), getattr(self, "tht_floor", {}).get(id(p), 0.0))
                         self._tht_geom[id(p.geom)] = p
         for fp, hbs in getattr(self.sp, "barrels_by_fp", {}).items():
             for hb in hbs:
@@ -1466,16 +1476,28 @@ class PowerCopper:
                 skipped[why] = skipped.get(why, 0) + 1
                 continue
             keep.append((fp, p, ref, num))
+        narrow = tht_wide_set(CN.setting_env("tht_narrow", self.path, self.o))
         flows = self._tht_flows({p.net for _f, p, _r, _n in keep}) if keep else None
         own = {}
         if flows is None and keep:
             all_pads = [(p.owner[0] if isinstance(p.owner, tuple) else None, p.net)
                         for pads in self.sp.pads_by_fp.values() for p in pads if p.kind == "pad"]
             own = pad_currents(op, all_pads, self.power, self.ground) if op else {}
-        narrow = tht_wide_set(CN.setting_env("tht_narrow", self.path, self.o))
         out = {}
+        floor = self._loss_floor(keep, flows) if flows is not None else {}
+        self.tht_floor = {}
         for fp, p, ref, num in keep:
             if flows is not None:
+                fl = floor.get(id(p), 0.0)
+                if fl >= THT_RELIEF_FRAC * _short_side(p.geom) and not (ref in narrow or f"{ref}.{num}" in narrow):
+                    # a neck narrow enough to act as a relief would cost more copper loss than the budget: the
+                    # pad keeps its copper and the commanding LLM decides (tht_pad_kept_wide, KAE_THT_NARROW)
+                    skipped["loss"] = skipped.get("loss", 0) + 1
+                    self.tht_unknown.append(p)
+                    self.tht_unknown_why[id(p)] = (flows.get(f"{ref}.{num}", 0.0), fl)
+                    continue
+                if fl and not (ref in narrow or f"{ref}.{num}" in narrow):
+                    self.tht_floor[id(p)] = fl
                 out[id(p)] = flows.get(f"{ref}.{num}", 0.0)
                 continue
             if kinds.get(fp) == "connector" and not (ref in narrow or f"{ref}.{num}" in narrow):
@@ -1507,10 +1529,39 @@ class PowerCopper:
                 if p.kind == "pad" and p.net in nets and isinstance(p.owner, tuple):
                     pads.setdefault(p.net, []).append((f"{p.owner[0]}.{p.owner[1]}", p.geom, p.layers))
         out = {}
+        self.tht_flow_stats = {}
         for net in nets:
+            st = self.tht_flow_stats.setdefault(net, {})
             out.update(branch_currents(net, self.board.tracks, getattr(self.board, "vias", []) or [], pads.get(net, []),
-                                       self.fills.get(net) or {}, inj))
+                                       self.fills.get(net) or {}, inj, stats=st))
         self.tht_plan = len(inj)
+        return out
+
+    def _loss_floor(self, keep, flows):
+        """{id(pad): width} the neck may not go below so that the necks of a net together add at most
+        tht_loss_frac of the net's routed copper loss under the DC plan. A neck of width w where grown copper
+        would be w_f wide adds I^2 R_sq L (1/w - 1/w_f) per track entering the pad, L = neck_len + w_f / 2 (the
+        neck and the taper the round-capped wider copper needs to keep its edge neck_len off the pad), shared
+        out evenly over the net's necked pads."""
+        frac = float(self.o["tht_loss_frac"])
+        wf = self.o["max_width"]
+        L = self.o["neck_len"] + wf / 2
+        n_net = {}
+        for _f, p, _r, _n in keep:
+            n_net[p.net] = n_net.get(p.net, 0) + 1
+        out = {}
+        for _f, p, ref, num in keep:
+            st = (getattr(self, "tht_flow_stats", {}) or {}).get(p.net) or {}
+            tok = f"{ref}.{num}"
+            i = flows.get(tok, 0.0)
+            n = max(1, (st.get("entries") or {}).get(tok, 1))
+            budget = frac * st.get("loss_sq", 0.0) / n_net[p.net]
+            if i <= 0:
+                continue
+            if budget <= 0:
+                out[id(p)] = math.inf
+                continue
+            out[id(p)] = 1.0 / (budget / (i * i * n * L) + 1.0 / wf)
         return out
 
     def _zone_joined(self, p):
@@ -1573,13 +1624,20 @@ class PowerCopper:
                                   objects=rest, fix=_tht_narrow_fix(None)))
                 break
             pads = unk[ref]
+            why = [self.tht_unknown_why.get(id(p)) for p in self.tht_unknown
+                   if isinstance(p.owner, tuple) and p.owner[0] == ref]
+            loss = any(w is not None for w in why)
             out.append(H.make(
                 "tht_pad_kept_wide", "info", "assembly",
                 f"{ref}: {len(pads)} through-hole power pin(s) on {', '.join(sorted({n for _, n in pads}))} keep wide "
-                f"copper: no DC plan says what current they carry, and a neck could starve a feed.",
+                + ("copper: a neck narrow enough to relieve the joint would add more copper loss than the budget."
+                   if loss else "copper: no DC plan says what current they carry, and a neck could starve a feed."),
                 objects=[ref] + [x for x, _ in pads], fix=_tht_narrow_fix(ref),
                 evidence=dict(pads=[dict(pad=x, net=n) for x, n in pads][:12], n_pads=len(pads),
-                              reason="no rail with a source and a load in the operating facts (kae.excite.dc plan)")))
+                              current_a=[round(w[0], 3) for w in why if w][:12] or None,
+                              loss_width_mm=[round(w[1], 3) for w in why if w][:12] or None,
+                              reason=("neck over tht_loss_frac of the net's copper loss (DC plan)" if loss else
+                                      "no rail with a source and a load in the operating facts (kae.excite.dc plan)"))))
         # current needs more than a relief: the copper stays wide, and the joint pays for it
         net_of = {t.uuid: t.net for t in self.board.tracks}
         for fp, p, amps in getattr(self, "unnecked", []):

@@ -105,6 +105,9 @@ def _width_near(obj, xy, r, net="VIN"):
     return max(ws, default=0.25)
 
 
+NOFLOW = {"U1.2": 0.05, "U1.3": -0.05}      # a DC plan whose current does not pass J1 (U1's own VIN pins)
+
+
 @pytest.fixture
 def plan(monkeypatch):
     """Set the DC plan's injections power copper sees (kae.excite.dc.planned_injections)."""
@@ -119,7 +122,7 @@ def plan(monkeypatch):
 
 
 def test_tht_pad_necked_by_default_with_a_decision_entry(tmp_path, plan):
-    plan({"J1.1": 0.05, "U1.3": -0.05})
+    plan(NOFLOW)
     obj = _pc(tmp_path)
     assert "VIN" in obj.power
     assert obj.tht_stats()["necked_pads"] >= 1
@@ -133,13 +136,13 @@ def test_tht_pad_necked_by_default_with_a_decision_entry(tmp_path, plan):
     assert h["objects"][:2] == ["J1", "J1.1"]
     e = h["evidence"]["pads"][0]
     assert e["pad"] == "J1.1" and e["net"] == "VIN" and e["got_w_mm"] == pytest.approx(0.25)
-    assert e["would_w_mm"] > e["got_w_mm"] and e["current_a"] == pytest.approx(0.05)
+    assert e["would_w_mm"] > e["got_w_mm"] and e["current_a"] == pytest.approx(0.0, abs=1e-9)
     assert "KAE_THT_WIDE" in h["fix"] and "'J1'" in h["fix"] and "'J1.1'" in h["fix"]
 
 
 @pytest.mark.parametrize("how", ["text_var", "opts", "pad", "off"])
 def test_tht_wide_keeps_the_width(tmp_path, how, plan):
-    plan({"J1.1": 0.05, "U1.3": -0.05})
+    plan(NOFLOW)
     tv, opts = None, {}
     if how == "text_var":
         tv = {"KAE_THT_WIDE": "J1"}
@@ -156,7 +159,7 @@ def test_tht_wide_keeps_the_width(tmp_path, how, plan):
 
 
 def test_tht_neck_env_default(tmp_path, monkeypatch, plan):
-    plan({"J1.1": 0.05, "U1.3": -0.05})
+    plan(NOFLOW)
     monkeypatch.setenv("KAE_THT_NECK", "off")
     obj = _pc(tmp_path)
     assert obj.tht_stats()["skipped"].get("off", 0) >= 1 and obj.tht_stats()["necked_pads"] == 0
@@ -165,14 +168,22 @@ def test_tht_neck_env_default(tmp_path, monkeypatch, plan):
 def test_tht_current_widens_the_neck_or_keeps_the_width_with_a_hazard(tmp_path, plan):
     # the DC plan: J1 feeds VIN, U1 draws it; the track into J1.1 carries all of it
     plan({"J1.1": 0.6, "U1.3": -0.6})
-    small = _pc(tmp_path / "a")
+    # under the default loss budget a neck on the only pad that carries VIN's current would cost too much:
+    # the pad keeps its copper and the LLM is told (tht_pad_kept_wide)
+    kept = _pc(tmp_path / "k")
+    assert kept.tht_stats()["skipped"].get("loss") == 1
+    assert _width_near(kept, J1_1, 0.7 + kept.o["neck_len"] - 0.05) > pc.current_need(0.6) + 1e-6
+    hz = [h for h in kept.tht_hazards() if h["code"] == "tht_pad_kept_wide"]
+    assert hz and "copper loss" in hz[0]["message"] and hz[0]["evidence"]["current_a"] == [pytest.approx(0.6, rel=1e-3)]
+    # with no loss budget to keep, the neck is the width the current needs
+    small = _pc(tmp_path / "a", tht_loss_frac=1e9)
     assert small.tht_amps and max(small.tht_amps.values()) == pytest.approx(0.6, rel=1e-3)
     need = pc.current_need(0.6)
     assert need > 0.25
     w = _width_near(small, J1_1, 0.7 + small.o["neck_len"] - 0.05)
     assert 0.25 < w <= need + 1e-6
     plan({"J1.1": 3.0, "U1.3": -3.0})
-    big = _pc(tmp_path / "b")
+    big = _pc(tmp_path / "b", tht_loss_frac=1e9)
     assert big.tht_stats()["unnecked_for_current"] >= 1
     hz = [h for h in big.tht_hazards() if h["code"] == "tht_pad_heatsunk"]
     assert len(hz) == 1 and hz[0]["severity"] == "warn" and hz[0]["category"] == "assembly"
@@ -187,7 +198,7 @@ def test_tht_current_widens_the_neck_or_keeps_the_width_with_a_hazard(tmp_path, 
 
 
 def test_hot_part_and_zone_joined_pads_are_left_alone(tmp_path, plan):
-    plan({"J1.1": 0.05, "U1.3": -0.05})
+    plan(NOFLOW)
     hot = _pc(tmp_path / "a", operating={"parts": {"J1": {"P_sustained_W": 1.0}}})
     assert hot.tht_stats()["skipped"].get("hot", 0) >= 1 and hot.tht_stats()["necked_pads"] == 0
     p, b = _board(tmp_path / "b")
@@ -197,7 +208,7 @@ def test_hot_part_and_zone_joined_pads_are_left_alone(tmp_path, plan):
 
 
 def test_decision_entries_capped_per_code(tmp_path, plan):
-    plan({"J1.1": 0.05, "U1.3": -0.05})
+    plan(NOFLOW)
     obj = _pc(tmp_path)
     rec = next(iter(obj.tht_necked.values()))
     from kae import hazards as H
@@ -219,7 +230,7 @@ def test_decision_reaches_the_pass_report_and_the_portfolio(tmp_path, monkeypatc
     the kept board's report (kae.route.cli's, which finalize caps)."""
     from kae.board import pcbnew_io
     from kae.route import critical_recheck, portfolio
-    plan({"J1.1": 0.05, "U1.3": -0.05})
+    plan(NOFLOW)
     p, b = _board(tmp_path)
     monkeypatch.setattr(pcbnew_io, "export_dsn", lambda *a, **k: F.synth_info(b))
     monkeypatch.setattr(critical_recheck, "fills_of", lambda *a, **k: {})
@@ -233,7 +244,7 @@ def test_decision_reaches_the_pass_report_and_the_portfolio(tmp_path, monkeypatc
 
 
 def test_theta_marks_a_part_hot(tmp_path, plan):
-    plan({"J1.1": 0.05, "U1.3": -0.05})
+    plan(NOFLOW)
     obj = _pc(tmp_path, operating={"parts": {"J1": {"theta_jb_C_W": 5.3}}})
     assert obj.tht_stats()["skipped"].get("hot", 0) == 2 and obj.tht_stats()["necked_pads"] == 0
 
@@ -271,7 +282,7 @@ def test_branch_currents_through_a_chain():
 def test_passing_copper_is_not_necked(tmp_path, plan):
     """A GND track that runs past J1.2 (GND) without ending in it widens there, keeping tht_gap off the pad;
     the old rule held it at its routed width within neck_len."""
-    plan({"J1.1": 0.05, "U1.3": -0.05})
+    plan(NOFLOW)
     obj = _pc(tmp_path, passing=True)
     from kae.route import power_copper as P
     j12 = next(p for p in obj.sp.pads if p.owner == ("J1", "2") and id(p) in obj.tht_necks)
@@ -285,3 +296,17 @@ def test_passing_copper_is_not_necked(tmp_path, plan):
         for a, b, wd, *_ in pieces:
             if wd > 0.25 + 1e-6:
                 assert LineString([a, b]).buffer(wd / 2).distance(j12.geom) >= P.DEFAULTS["tht_gap"] - 0.01
+
+
+def test_loss_floor_widens_a_neck_to_the_budget():
+    """The loss budget: necks on a net add at most tht_loss_frac of its routed copper loss."""
+    from types import SimpleNamespace as N
+    o = pc.PowerCopper.__new__(pc.PowerCopper)
+    o.o = dict(pc.DEFAULTS)
+    p = N(net="V", owner=("J1", "1"))
+    o.tht_flow_stats = {"V": {"loss_sq": 100.0, "entries": {"J1.1": 1}}}
+    fl = o._loss_floor([(None, p, "J1", "1")], {"J1.1": 0.5})[id(p)]
+    L = o.o["neck_len"] + o.o["max_width"] / 2
+    added = 0.25 * L * (1 / fl - 1 / o.o["max_width"])
+    assert added == pytest.approx(o.o["tht_loss_frac"] * 100.0, rel=1e-6)
+    assert o._loss_floor([(None, p, "J1", "1")], {"J1.1": 0.0}) == {}        # no current: no floor
