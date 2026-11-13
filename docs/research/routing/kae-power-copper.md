@@ -121,10 +121,28 @@ Same 10 boards, same physics. W*n* = track widening capped at *n* mm (`max_width
 - **Gate.** A wider (2.5 mm) spatial attribution is tried before ddmin, and the DRC budget is 80. Before this, magtag reverted 88 changes under the budget; now it reverts 6.
 - **Zones switch.** `--mode vector --vector-out zones` writes each vector piece as a KiCad zone: priority above the layer's zones, solid pad connection, thermal reliefs when hand soldered. Necked lands sit outside the zone outline (0.5 mm), so a solid connection never reaches them. On dream117er it wrote 31 zones, and the gate kept 28. Strips stay the default until route tasks may add zones.
 
+## Necks at through-hole pads (2026-11-13)
+
+**Why.** Route-finish-ab stage 2 (213 boards) measured copper overhanging plated through-hole (THT) pads at 4,085 mm² with finish, 168 without and 1,037 in the human layouts ([report](../../../bench/results/2026-11-11-route-finish-ab.md), branch `route-finish-ab`): power copper ran 2-3 mm rails straight into screw-terminal, header and connector pads.
+
+**What the sources say.**
+- A THT joint is made by a wave, a selective nozzle or an iron, which must heat the barrel against the copper's drain. "Reliefs remain physics for hand and wave soldering of THT pins" ([hv-and-manufacturing-physics](../../topics/physics/hv-and-manufacturing-physics.md)); a relief cuts the joint's drain 1.8-4.2× ([derivation-audit](../../topics/physics/derivation-audit.md) D7). Checklist THM-01: reliefs on plane connections "except heat-sinking or high-current pads" ([checklist](../../topics/verification/checklist-full-thermal-routing-assembly-test.md)); pcb-cooling rule 15: reliefs on THT pads except heat-carrying pins, solid above ~3 A ([pcb-cooling](../physics/pcb-cooling.md)).
+- IPC-2222 §9.1.2 sizes a relief's webs together at 60% of the land diameter ("divide 60% of the minimum land area diameter by the number of webs", quoted on the [KiCad developers' list](https://archive.lists.launchpad.net/kicad-developers/msg06584.html)) [S]. We found no IPC-7251 clause on track width into a THT land.
+
+**The rule** (`neck_rule(..., tht=True)`, `land_necks(..., tht_current=)`, the SMD neck's code). Within `neck_len` (0.5 mm) of a plated THT pad of a power or ground net, grown copper is no wider than the routed track (never narrowed) or the IPC-2221 width of 3× the pad's current, whichever is wider. The current is the part's own (`pad_currents`); a part the operating facts give no current that sits on a rail may feed it (a connector, header or terminal) and gets the net's current. If that width exceeds a relief's webs (0.6 × the land), the copper stays wide and `tht_pad_heatsunk` (warn, assembly) says so. The rule holds in every declared process: THT parts on a reflow board are still wave, selective or hand soldered.
+
+**Exceptions**, each with its reason:
+- mounting holes, heat sinks, mechanical parts, fiducials (brief part kinds) and board-only footprints: no solder joint;
+- parts the operating facts give at least `heat_min_W` (P_sustained_W) or a part heat sink: spreading copper is wanted (pcb-cooling, thermal_vias);
+- pads touching a fill of their own net: the zone's own connection (relief or solid) sets the drain, and the plane dominates any track;
+- pads or parts in the `tht_wide` setting.
+
+**Settings** (constraints.DEFAULTS; project text variable, then opts, then env): `KAE_THT_NECK` on|off (board-wide), `KAE_THT_WIDE` refs or ref.pad, comma-separated (`J1, J3.2`). Every pad the neck actually holds back is in the report's hazards as `tht_pad_necked` (info, assembly), one entry per part (at most 8, the rest in one entry) with the pad, net, planned width with and without the neck, current, and the setting that keeps it wide. Results: [2026-11-13-power-copper-tht](../../../bench/results/2026-11-13-power-copper-tht.md).
+
 ## Verdict
 
 Not finished. Every board's physics total fell and DRC was never worse, but this is ten boards, one routed attempt each, model-measured physics (no lab measurement), and the router never saw the copper. Next: an A/B through the router's final stage (`power_copper=True`) on the 99-board set with cp1/cpk, and a look at the aifryz +BATT term.
 
 ## Code
 
-`kae/src/kae/route/power_copper.py` (`PowerCopper.widen`, `ground_vias`, `stitch`, `run`, `hook`; CLI `python -m kae.route.power_copper IN OUT [--operating F]`), tests `kae/tests/test_route_power_copper.py`, bridge option `power_copper`.
+`kae/src/kae/route/power_copper.py` (`PowerCopper.widen`, `ground_vias`, `stitch`, `run`, `hook`; CLI `python -m kae.route.power_copper IN OUT [--operating F]`), tests `kae/tests/test_route_power_copper.py`, `kae/tests/test_route_power_copper_tht.py`, bridge option `power_copper`.

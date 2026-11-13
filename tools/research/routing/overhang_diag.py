@@ -9,7 +9,8 @@ Classes (the DFM reading of each):
   smd2     a land of a two-terminal SMD part (passives, diodes): wide copper into it is a tombstoning or
            wicking risk; power copper's necks should keep it at the neck width
   smd      other SMD lands (ICs, connectors, heat pads)
-  tht      plated through-hole pads: wide copper into them is normal practice for power
+  tht      plated through-hole pads: wide copper drains wave, selective and iron soldering heat; power
+           copper necks them to the width their current needs (neck_rule tht)
 Per entry: net, ref/pad, land short side, track width, overhang mm^2, and with --ref whether the track
 is the reference board's own (same uuid) or new copper, and the widest same-net track at that pad in
 the reference (a widened track is wider than it)."""

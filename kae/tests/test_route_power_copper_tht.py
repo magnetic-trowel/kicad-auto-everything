@@ -152,6 +152,12 @@ def test_tht_current_widens_the_neck_or_keeps_the_width_with_a_hazard(tmp_path):
     assert len(hz) == 1 and hz[0]["severity"] == "warn" and hz[0]["category"] == "assembly"
     assert hz[0]["objects"][0] == "J1.1" and hz[0]["evidence"]["track_w_mm"] > hz[0]["evidence"]["relief_w_mm"]
     assert not [h for h in big.tht_hazards() if h["code"] == "tht_pad_necked"]
+    # a rail written as a pour (zone_above_a) joins the pad solid: the same hazard
+    big.edits = {}
+    assert not [h for h in big.tht_hazards() if h["code"] == "tht_pad_heatsunk"]
+    big.zones = [("VIN", "F.Cu", box(103, 109.5, 108, 112.5), "z1")]
+    hz = [h for h in big.tht_hazards() if h["code"] == "tht_pad_heatsunk"]
+    assert len(hz) == 1 and hz[0]["evidence"]["track_w_mm"] == pytest.approx(3.0)
 
 
 def test_hot_part_and_zone_joined_pads_are_left_alone(tmp_path):

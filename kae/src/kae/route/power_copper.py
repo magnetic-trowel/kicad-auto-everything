@@ -1418,6 +1418,10 @@ class PowerCopper:
                     a, b, w = pc_[:3]
                     if w > relief + 1e-9 and LineString([a, b]).buffer(w / 2).distance(p.geom) < self.o["neck_len"]:
                         widest = max(widest, w)
+            # vector copper written as zones (rails above zone_above_a) joins the pad solid unless hand soldered
+            zoned = [z for z in self.zones if z[0] == p.net and z[1] in p.layers and z[2].distance(p.geom) < 1e-6]
+            if zoned and not self.hand_solder:
+                widest = max(widest, max(_short_side(z[2]) for z in zoned))
             if widest:
                 ref, num = p.owner if isinstance(p.owner, tuple) else (None, None)
                 need = current_need(amps, self.o["current_margin"])
