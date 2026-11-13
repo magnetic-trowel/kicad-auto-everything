@@ -76,3 +76,27 @@ Smokes outside the 47: placement-only on metro-m7 and vspeed (2 seeds; the term 
 one weight, 2 mm); the kaeres job path on terjeio dummy (all arms, runs scored); two sequential joint runs on vspeed for the history. That last
 smoke found the loop never wrote the history (kae.joint.cli passes the loop only its own keys); fixed before any run of the 47, so the history
 arm is the code as fixed.
+
+## Addendum 2026-11-13, before the arms' results are read (interim plumbing checks only; no decision rule applied)
+
+**Lost jobs.** `kaeres job` stores a board's runs only when the whole job ends, and 8 jobs hit their kaeq timeout (6 boards;
+bastardkb-dilemma and usbarmory lost both jobs, sdi-mipi, undercontrol, audio-latency and kestrel job :1). They were retried
+once, same commit and recipes, at about 2x the timeout. kaeq cannot change the timeout of a queued job, so the queued
+large-board jobs keep theirs; any of them that times out is retried once at 2x. The analysis waits for the retries. A board
+still missing an arm-seed after that is reported with the seeds it has (per-board mean over available seeds) and listed;
+a board with no runs is reported missing, not imputed.
+
+**Does the channel term act? (Q3)** Checked by hand on one board (kata0510-rp2040-8key, the control's output as input,
+`kae.place.pipeline.place` 60 s at d21a9ac, seeds 0 and 1, `place_w_chan` 0, 1, 3). The term is built (`channel_term`
+55 parts at w 1 and 3), but the overlap it prices between pad halos of pairs with a movable part, measured with the same
+`channel_grid`, is 0 at the end of the control's anneal on both seeds, and 0 in both arms. The term's reported value
+(256 at w 1, 768 at w 3, the same before and after the anneal) is overlap between fixed parts: a constant. On that board
+the term had nothing to act on, and chan1/chan3 differ from control by run-to-run variation only (crossings 32-62 across
+seeds within one arm). So for Q3:
+- Before the verdict, measure for every board the movable-pair channel overlap of the control placement (placement-only
+  rerun of control, seeds 0-2, as above; minutes per board). Q3 is tested on the boards where it is above 0 for any
+  seed, with the same rule; the other boards are reported as de-facto A/A pairs.
+- If fewer than 10 boards have such overlaps, Q3 is reported as "mechanism rarely present on this set", not decided.
+- The all-board result for chan1/chan3 is still reported as pre-registered, labelled as diluted.
+The report's constant fixed-pair part is a reporting defect only (it does not change moves); it should be excluded in a
+later version of the term.
