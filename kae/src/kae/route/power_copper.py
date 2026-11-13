@@ -298,6 +298,31 @@ def tht_exempt(ref, number, kind, attrs, hot, zone_joined, wide):
     return None
 
 
+def rail_currents(operating, current):
+    """{net: A} of net_currents with each rail's downstream rails added: a rail the operating facts feed
+    from another (nets.<rail>.from) draws its current from it, as kae.excite.dc's chain does: a linear
+    regulator passes its output current through, a switching one draws P_out / (0.85 x V_in) (both
+    voltages given; else as linear). A connector feeding the board's input rail carries all of it."""
+    facts = {n: d for n, d in ((operating or {}).get("nets") or {}).items() if isinstance(d, dict)}
+    kids = {}
+    for n, d in facts.items():
+        if d.get("from") and d["from"] != n:
+            kids.setdefault(d["from"], []).append(n)
+
+    def tot(r, seen):
+        a = current.get(r, 0.0)
+        for k in kids.get(r, ()):
+            if k in seen:
+                continue
+            i = tot(k, seen | {k})
+            vk, vr = facts[k].get("V_V"), (facts.get(r) or {}).get("V_V")
+            if facts[k].get("kind") == "switching" and isinstance(vk, (int, float)) and isinstance(vr, (int, float)) and vr > 0:
+                i = i * vk / (0.85 * vr)
+            a += i
+        return a
+    return {n: tot(n, {n}) for n in set(current) | set(facts)}
+
+
 def _tht_fix(ref, pad):
     """The fix text of tht_pad_necked: which setting keeps the copper wide."""
     if ref:
@@ -1304,14 +1329,15 @@ class PowerCopper:
           heat path or selectively soldered);
         - "unsoldered": mounting holes, heat sinks, mechanical parts and fiducials (kae.circuit.brief's
           part kinds), board-only footprints: no joint whose heat the copper could drain;
-        - "hot": parts the operating facts give at least heat_min_W (P_sustained_W) or a heat sink on the
-          part: copper spreading their heat is wanted (thermal_vias' and pcb-cooling's rule: no relief
+        - "hot": parts the operating facts give at least heat_min_W (P_sustained_W), a heat sink on the
+          part, or a thermal resistance (theta_jb / jc / ja): copper spreading their heat is wanted (thermal_vias' and pcb-cooling's rule: no relief
           on heat-carrying pins);
         - "zone": pads joined to a fill of their own net: the zone's own pad connection (thermal relief
           or solid, the zone's setting) already sets the joint's drain, and the plane dominates any track.
         A pad's current: pad_currents (its part's own current); a part the operating facts give no
         current that sits on a rail or ground may be what feeds it (a power-input connector, header or
-        terminal) and is given the net's current (net_currents), so a feed keeps the width it needs."""
+        terminal) and is given the net's current with the rails fed from it (rail_currents), as is the part
+        the facts name as a rail's source (nets.<rail>.source), so a feed keeps the width it needs."""
         from . import constraints as CN
         from kae.place import heat
         on = str(CN.setting_env("tht_neck", self.path, self.o)).strip().lower() not in ("0", "0.0", "off", "no", "false")
@@ -1337,12 +1363,18 @@ class PowerCopper:
         attrs = {f.uuid: set(f.attrs or ()) for f in self.board.footprints}
         op = self.op or {}
         w_min = float(CN.setting("heat_min_W", self.path, self.o))
-        hot = {r for r, w in heat.watts(op).items() if w >= w_min} | {h.get("part") for h in heat.sinks(op) if h.get("part")}
+        # hot: dissipating heat_min_W or more, a heat sink on the part, or a thermal path the facts give (theta_jb /
+        # theta_jc / theta_ja: the compiler gives them for parts whose heat matters, e.g. an LM7805's TO-220 pins)
+        hot = ({r for r, w in heat.watts(op).items() if w >= w_min} | {h.get("part") for h in heat.sinks(op) if h.get("part")}
+               | {r for r, f in (op.get("parts") or {}).items() if isinstance(f, dict)
+                  and any(f.get(k) is not None for k in ("theta_jb_C_W", "theta_jc_C_W", "theta_ja_C_W"))})
         all_pads = [(p.owner[0] if isinstance(p.owner, tuple) else None, p.net)
                     for pads in self.sp.pads_by_fp.values() for p in pads if p.kind == "pad"]
         own = pad_currents(op, all_pads, self.power, self.ground) if op else {}
         declared = {r for r, f in (op.get("parts") or {}).items() if isinstance(f, dict)
                     and (f.get("I_A") is not None or f.get("I_sustained_A") is not None)}
+        chain = rail_currents(op, self.current)
+        src = {n: d.get("source") for n, d in (op.get("nets") or {}).items() if isinstance(d, dict)}
         out = {}
         for fp, p in cand:
             ref, num = p.owner if isinstance(p.owner, tuple) else (None, None)
@@ -1351,8 +1383,8 @@ class PowerCopper:
                 skipped[why] = skipped.get(why, 0) + 1
                 continue
             a = own.get((ref, p.net), 0.0)
-            if ref not in declared:
-                a = max(a, self.current.get(p.net, 0.0))
+            if ref not in declared or src.get(p.net) == ref:
+                a = max(a, chain.get(p.net, 0.0))
             out[id(p)] = a
         self.tht_skipped = skipped
         return out

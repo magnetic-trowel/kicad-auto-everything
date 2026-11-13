@@ -201,3 +201,25 @@ def test_decision_reaches_the_pass_report_and_the_portfolio(tmp_path, monkeypatc
     assert "tht_pad_necked" in codes and rep["tht"]["necked_pads"] >= 1
     rec = dict(kept=True, own_hazards=rep["hazards"])
     assert any(h["code"] == "tht_pad_necked" for h in portfolio.finish_hazards(rec))
+
+
+def test_rail_currents_follow_the_regulator_chain():
+    op = {"nets": {"+12V": {"source": "J1", "V_V": 12.0}, "+5V": {"source": "U2", "from": "+12V", "kind": "linear", "V_V": 5.0},
+                   "+3V3": {"source": "U5", "from": "+5V", "kind": "switching", "V_V": 3.3}}}
+    r = pc.rail_currents(op, {"+12V": 0.05, "+5V": 0.5, "+3V3": 0.85})
+    sw = 0.85 * 3.3 / (0.85 * 5.0)
+    assert r["+3V3"] == pytest.approx(0.85) and r["+5V"] == pytest.approx(0.5 + sw)
+    assert r["+12V"] == pytest.approx(0.05 + 0.5 + sw)
+
+
+def test_theta_marks_a_part_hot(tmp_path):
+    obj = _pc(tmp_path, operating={"parts": {"J1": {"theta_jb_C_W": 5.3}}})
+    assert obj.tht_stats()["skipped"].get("hot", 0) == 2 and obj.tht_stats()["necked_pads"] == 0
+
+
+def test_named_source_gets_its_rail_current(tmp_path):
+    op = {"parts": {"U1": {"I_A": 0.2}, "J1": {"I_A": 0.001}},
+          "nets": {"VIN": {"source": "J1", "V_V": 12.0}, "+3V3": {"source": "U1", "from": "VIN", "kind": "linear", "V_V": 3.3}}}
+    obj = _pc(tmp_path, operating=op)
+    j11 = next(p for p in obj.sp.pads if p.owner == ("J1", "1") and id(p) in obj.tht_amps)
+    assert obj.tht_amps[id(j11)] == pytest.approx(obj.current["VIN"] + obj.current.get("+3V3", 0.0))
