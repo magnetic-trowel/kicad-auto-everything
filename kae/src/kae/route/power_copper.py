@@ -324,9 +324,21 @@ def branch_currents(net, tracks, vias, pads, fills, inj, link=1e6, stats=None):
         return nodes.setdefault(k, len(nodes))
     pads = list(pads)
     ptree = STRtree([g for _t, g, _l in pads]) if pads else None
-    for t in tracks:
-        if t.net != net:
-            continue
+    mine = [t for t in tracks if t.net == net]
+    lines = [LineString([t.start, t.end]) for t in mine]
+    ltree = STRtree(lines) if lines else None
+    # T-junctions: a track ending on another's run (not at its ends) joins it there
+    tees, of_track = {}, {}
+    for t in mine:
+        for xy in (t.start, t.end):
+            q = Point(xy)
+            for j in ltree.query(q.buffer(max(t.width, 1e-3) / 2), predicate="intersects"):
+                u = mine[j]
+                if u is t or u.layer != t.layer or math.dist(xy, u.start) < 1e-3 or math.dist(xy, u.end) < 1e-3:
+                    continue
+                if lines[j].distance(q) <= u.width / 2 + 1e-6:
+                    tees.setdefault(j, []).append((lines[j].project(q), ("e", t.layer, round(xy[0], 3), round(xy[1], 3))))
+    for ti, t in enumerate(mine):
         a = node(("e", t.layer, round(t.start[0], 3), round(t.start[1], 3)))
         b = node(("e", t.layer, round(t.end[0], 3), round(t.end[1], 3)))
         ends += [(t.layer, t.start, a), (t.layer, t.end, b)]
@@ -343,9 +355,11 @@ def branch_currents(net, tracks, vias, pads, fills, inj, link=1e6, stats=None):
                 if gb.contains(Point(t.start)) or gb.contains(Point(t.end)):
                     continue
                 cuts.append((line.project(g.centroid), tok))
-        seq = [(0.0, a)] + [(x, node(("c", tok, id(t)))) for x, tok in sorted(cuts)] + [(L, b)]
+        seq = sorted([(x, node(("c", tok, id(t)))) for x, tok in cuts] + [(x, node(k)) for x, k in tees.get(ti, ())])
+        seq = [(0.0, a)] + seq + [(L, b)]
         for (x0, n0), (x1, n1) in zip(seq, seq[1:]):
             if n0 != n1:
+                of_track[len(edges)] = ti
                 edges.append((n0, n1, t.width / max(x1 - x0, 1e-3), "track"))
         for x, tok in cuts:
             edges.append((node(("p", tok)), node(("c", tok, id(t))), link, tok))
@@ -398,10 +412,12 @@ def branch_currents(net, tracks, vias, pads, fills, inj, link=1e6, stats=None):
         if tag not in (None, "track"):
             at.setdefault(k, set()).add(tag)
     out, n_in, loss = {}, {}, 0.0
-    for a, k, g, tag in edges:
+    t_i = {}
+    for e, (a, k, g, tag) in enumerate(edges):
         if tag == "track":
             i = abs(g * (V[a] - V[k]))
             loss += g * (V[a] - V[k]) ** 2
+            t_i[of_track[e]] = max(t_i.get(of_track[e], 0.0), i)
             for tok in at.get(a, set()) | at.get(k, set()):
                 out[tok] = max(out.get(tok, 0.0), i)
                 n_in[tok] = n_in.get(tok, 0) + 1
@@ -409,6 +425,8 @@ def branch_currents(net, tracks, vias, pads, fills, inj, link=1e6, stats=None):
         # loss_sq: the tracks' I^2 R in units of the sheet resistance (squares); entries: tracks into each pad
         stats["loss_sq"] = stats.get("loss_sq", 0.0) + float(loss)
         stats.setdefault("entries", {}).update(n_in)
+        # each track's current (for the pads that grown copper of a loaded track would reach)
+        stats["track_i"] = stats.get("track_i", []) + [(lines[ti], i) for ti, i in t_i.items() if i > 0]
     return out
 
 
@@ -1547,6 +1565,7 @@ class PowerCopper:
         when there is no plan (no rail with a source and a load), so callers do not read 0 A into it."""
         from kae.board.kicad_file import load
         from kae.excite import dc as DC
+        from shapely.strtree import STRtree
         self.tht_heat = {}
         try:
             inj = DC.planned_injections(load(self.path), self.op, heat=self.tht_heat)
@@ -1567,6 +1586,19 @@ class PowerCopper:
             out.update(branch_currents(net, self.board.tracks, getattr(self.board, "vias", []) or [], pads.get(net, []),
                                        self.fills.get(net) or {}, inj, stats=st))
         self.tht_plan = len(inj)
+        # a pad within reach of a loaded track's grown copper (max_width / 2 + neck_len) is part of that path once
+        # the copper grows (wide rails merge into neighbouring pads of their net): it counts that current too
+        reach = self.o["max_width"] / 2 + self.o["neck_len"]
+        for net, plist in pads.items():
+            tr = (self.tht_flow_stats.get(net) or {}).get("track_i") or []
+            if not tr:
+                continue
+            tree = STRtree([ln for ln, _i in tr])
+            for tok, g, _l in plist:
+                for j in tree.query(g.buffer(reach)):
+                    ln, i = tr[j]
+                    if i > out.get(tok, 0.0) and ln.distance(g) <= reach:
+                        out[tok] = i
         return out
 
     def _heat_paths(self, hot, op, w_min):

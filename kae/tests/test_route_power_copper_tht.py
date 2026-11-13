@@ -340,3 +340,30 @@ def test_heat_path_pads_keep_their_copper(tmp_path, plan):
     assert theta.tht_stats()["skipped"].get("heat_path", 0) == 0
     narrow = _pc(tmp_path / "c", {"KAE_THT_NARROW": "J1"}, operating={"parts": {"D1": {"P_sustained_W": 2.0}}})
     assert narrow.tht_stats()["necked_pads"] == 2
+
+
+def test_branch_currents_t_junction():
+    """A branch ending on the middle of a feed track joins it there (routers leave T-junctions)."""
+    from shapely.geometry import box as B_
+    from types import SimpleNamespace as N
+
+    def t(a, b):
+        return N(net="V", layer="F.Cu", width=0.5, start=a, end=b)
+    pads = [("J0.1", B_(-0.5, -0.5, 0.5, 0.5), ["F.Cu"]), ("J1.1", B_(19.5, -0.5, 20.5, 0.5), ["F.Cu"]),
+            ("J2.1", B_(9.5, 9.5, 10.5, 10.5), ["F.Cu"])]
+    tracks = [t((0, 0), (20, 0)), t((10, 10), (10, 0))]
+    out = pc.branch_currents("V", tracks, [], pads, {}, {"J0.1": 0.5, "J1.1": -0.2, "J2.1": -0.3})
+    assert out["J2.1"] == pytest.approx(0.3, rel=1e-6) and out["J0.1"] == pytest.approx(0.5, rel=1e-6)
+
+
+
+def test_pad_beside_a_loaded_track_counts_its_current(tmp_path, plan):
+    """J1.2 (GND) carries nothing on the routed copper; a VIN pad would. A loaded track of a pad's own net
+    within max_width / 2 + neck_len of it lends the pad its current (grown copper merges into it)."""
+    plan({"J1.1": 0.5, "U1.3": -0.5})
+    obj = _pc(tmp_path, tht_loss_frac=1e9)
+    tr = obj.tht_flow_stats["VIN"]["track_i"]
+    assert tr and max(i for _l, i in tr) == pytest.approx(0.5, rel=1e-3)
+    j11 = next(p for p in obj.sp.pads if p.owner == ("J1", "1") and id(p) in obj.tht_amps)
+    j12 = next(p for p in obj.sp.pads if p.owner == ("J1", "2") and id(p) in obj.tht_amps)
+    assert obj.tht_amps[id(j11)] == pytest.approx(0.5, rel=1e-3) and obj.tht_amps[id(j12)] == 0.0   # other net
