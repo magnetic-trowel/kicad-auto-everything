@@ -167,3 +167,4 @@ Another session found that in work mode Freerouting's optimizer phase (on boards
 - **Guard:** opens against M-clock, paired `d`. The guard fails if total opens are more than 3 % higher with p < 0.05.
 - **Also reported:** Σu on both-routed boards against the J21 floor, rails skipped, and stage times.
 - **Caveat:** Freerouting's optimizer is uncharged in work mode; the fix is pending (note above). Both arms share it.
+- **module-rails smoke (whippet, gecko5; dd358a6):** plumbing only, every run was scored. M-clock-rails split its 91 s as 65 s modules and 26 s rails on both boards; M-clock skipped the rails on gecko5. No rule changes.
