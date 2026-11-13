@@ -305,7 +305,7 @@ def tht_exempt(ref, number, kind, attrs, hot, zone_joined, wide):
 
 
 def branch_currents(net, tracks, vias, pads, fills, inj, link=1e6, stats=None):
-    """{pad token: A}: the largest current in a track that enters each pad of `net`, from a resistive solve
+    """{pad token: A}: the largest current in a track that enters (or runs through) each pad of `net`, from a resistive solve
     of the net's routed copper under the injections `inj` ({"REF.NUM": A}, kae.excite.dc.planned_injections).
     Tracks are conductances w/L; pads, vias and fill pieces (`fills`: {layer: [polygons]}) join what touches
     them at `link`. Each connected piece is balanced (a piece whose loads' source is off it, or unrouted,
@@ -319,14 +319,33 @@ def branch_currents(net, tracks, vias, pads, fills, inj, link=1e6, stats=None):
 
     def node(k):
         return nodes.setdefault(k, len(nodes))
+    pads = list(pads)
+    ptree = STRtree([g for _t, g, _l in pads]) if pads else None
     for t in tracks:
         if t.net != net:
             continue
         a = node(("e", t.layer, round(t.start[0], 3), round(t.start[1], 3)))
         b = node(("e", t.layer, round(t.end[0], 3), round(t.end[1], 3)))
-        if a != b:
-            edges.append((a, b, t.width / max(math.dist(t.start, t.end), 1e-3), "track"))
         ends += [(t.layer, t.start, a), (t.layer, t.end, b)]
+        L = math.dist(t.start, t.end)
+        # pads the track runs through without ending in them (a bus through a row of pins): a node there
+        cuts = []
+        if ptree is not None and L > 1e-6:
+            line = LineString([t.start, t.end])
+            for j in ptree.query(line, predicate="intersects"):
+                tok, g, lys = pads[j]
+                if lys and t.layer not in set(lys):
+                    continue
+                gb = g.buffer(1e-3)
+                if gb.contains(Point(t.start)) or gb.contains(Point(t.end)):
+                    continue
+                cuts.append((line.project(g.centroid), tok))
+        seq = [(0.0, a)] + [(x, node(("c", tok, id(t)))) for x, tok in sorted(cuts)] + [(L, b)]
+        for (x0, n0), (x1, n1) in zip(seq, seq[1:]):
+            if n0 != n1:
+                edges.append((n0, n1, t.width / max(x1 - x0, 1e-3), "track"))
+        for x, tok in cuts:
+            edges.append((node(("p", tok)), node(("c", tok, id(t))), link, tok))
     if not ends:
         return {}
     tree = STRtree(shapely.points([e[1] for e in ends]))
@@ -932,15 +951,14 @@ class PowerCopper:
         return self.stats["widened"]
 
     def _entered(self, t):
-        """The THT pads (main pad Items) track t ends in: the necks that apply to it."""
+        """The THT pads (main pad Items) track t ends in or runs through: the necks that apply to it."""
         if not self._tht_geom:
             return set()
+        line = LineString(A.track_coords(t)) if t.mid is not None else LineString([t.start, t.end])
         out = set()
-        for xy in (t.start, t.end):
-            q = Point(xy)
-            for it in self.sp.query(t.layer, (xy[0], xy[1], xy[0], xy[1]), 0.01):
-                if it.kind == "pad" and id(it.geom) in self._tht_geom and it.geom.distance(q) < 1e-3:
-                    out.add(self._tht_geom[id(it.geom)])
+        for it in self.sp.query(t.layer, line.bounds, 0.01):
+            if it.kind == "pad" and id(it.geom) in self._tht_geom and it.geom.distance(line) < 1e-3:
+                out.add(self._tht_geom[id(it.geom)])
         return out
 
     def _note_tht(self, pts, cons, half, t, steps):

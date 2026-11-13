@@ -310,3 +310,15 @@ def test_loss_floor_widens_a_neck_to_the_budget():
     added = 0.25 * L * (1 / fl - 1 / o.o["max_width"])
     assert added == pytest.approx(o.o["tht_loss_frac"] * 100.0, rel=1e-6)
     assert o._loss_floor([(None, p, "J1", "1")], {"J1.1": 0.0}) == {}        # no current: no floor
+
+
+def test_branch_currents_bus_through_pads():
+    """One straight track through a row of pads (no end in them): each pad is on the bus, and the copper
+    into it carries what flows past."""
+    from shapely.geometry import box as B_
+    from types import SimpleNamespace as N
+    pads = [(f"J{i}.1", B_(10 * i - 0.5, -0.5, 10 * i + 0.5, 0.5), ["F.Cu"]) for i in range(4)]
+    tracks = [N(net="V", layer="F.Cu", width=0.5, start=(0, 0), end=(30, 0))]
+    inj = {"J0.1": 0.6, "J1.1": -0.2, "J2.1": -0.2, "J3.1": -0.2}
+    out = pc.branch_currents("V", tracks, [], pads, {}, inj)
+    assert out["J1.1"] == pytest.approx(0.6, rel=1e-6) and out["J2.1"] == pytest.approx(0.4, rel=1e-6)
