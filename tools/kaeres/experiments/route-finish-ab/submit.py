@@ -36,7 +36,7 @@ def history():
         return out
     c = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     q = ("select owner, cmd, peak_mb, started, finished, state from jobs where (owner like 'phys-%' or owner like "
-         "'rescore-%' or owner = 'ab4' or owner = 'rf-ab') and state in ('ok', 'timeout')")
+         "'rescore-%' or owner = 'ab4' or owner like 'rf-ab%' or owner = 'cab') and state in ('ok', 'timeout')")
     for owner, cmd, peak, t0, t1, state in c.execute(q):
         m = re.search(r"boards/([^/ ]+)/board\.kicad_pcb", cmd) or re.search(r"/ab4/([^ /]+)", cmd) \
             or re.search(r"measure\.sh (\S+) ", cmd)
