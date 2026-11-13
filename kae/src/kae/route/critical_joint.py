@@ -282,7 +282,7 @@ MODULE_CLOCK_RANK = {"decap": 0, "rgroup": 0, "crystal": 0, "cell": 1, "path": 1
 
 def optimize_modules(board, brief, terms=None, locked=(), info=None, poses=None, opts=None, log=None,
                      time_s=120.0, top_k=6, passes=2, rails=True, session=None, window=None, modules=None,
-                     clock=False, t_start=None):
+                     clock=False, t_start=None, rail_share=0.0):
     """Co-optimize each module's movable parts and its critical copper (see the module
     docstring). Returns (poses, copper, report): poses {uuid: (x, y, rot, side)} of the parts
     that moved, copper (tracks, vias) as kae.board.model objects (locked but for soft
@@ -307,8 +307,8 @@ def optimize_modules(board, brief, terms=None, locked=(), info=None, poses=None,
     t0 = clock_now() if t_start is None or not clock else t_start
     log = log or (lambda *a: None)
 
-    def over():
-        return clock and clock_now() - t0 > time_s
+    def over(limit=None):
+        return clock and clock_now() - t0 > (time_s if limit is None else limit)
     window = _window(window)
     sess = session or Session(board.path, brief=brief, info=info, opts=dict(opts or {}, rails="none"), log=log,
                               board=board, terms=terms)
@@ -366,7 +366,7 @@ def optimize_modules(board, brief, terms=None, locked=(), info=None, poses=None,
         """The move passes of module m (its copper re-routed for every trial), then its report row."""
         best = v0
         for _ in range(passes):
-            if v0 is None or not movable or clock_now() - t0 > time_s:
+            if v0 is None or not movable or clock_now() - t0 > (mods_s if clock else time_s):
                 break
             improved = False
             for u in movable:
@@ -385,7 +385,7 @@ def optimize_modules(board, brief, terms=None, locked=(), info=None, poses=None,
                     except Exception:  # noqa: BLE001 - screening is optional
                         pass
                 for c in legal[:top_k]:
-                    if over():
+                    if over(mods_s):
                         break
                     leg.commit(u, c)
                     route_module(ctx, m)
@@ -403,7 +403,7 @@ def optimize_modules(board, brief, terms=None, locked=(), info=None, poses=None,
                     leg.commit(u, cur_poses[u])
                 # leave the module routed at the kept pose
                 route_module(ctx, m)
-                if over():
+                if over(mods_s):
                     break
             if not improved:
                 break
@@ -412,13 +412,17 @@ def optimize_modules(board, brief, terms=None, locked=(), info=None, poses=None,
         log(f"{m.id}: {mrep['value0']} -> {mrep['value']} {m.physics.get('unit', '')} "
             f"({len(mrep['moves'])} moves of {mrep['movable']})")
 
+    # rail_share (with the clock): that share of time_s is kept for the rails, the modules stop before it
+    # (module-clock2: the clock skipped the rails on 43 of 142 boards, and worst_rail_mohm rose)
+    rails_run = rails and window is None and modules is None and sess.opts.get("rails_joint", "auto") != "none"
+    mods_s = time_s * (1.0 - float(rail_share)) if (clock and rails_run) else time_s
     if clock:
         # every module routed at its pose first (value order), then the move passes with what is left: one
         # module's moves must not spend the time the next module's copper needs (gecko5: the crystal's 36 trials
         # took the whole stage and no decap was routed)
         firsts = []
         for m in mods:
-            if over():
+            if over(mods_s):
                 rep["clock"]["skipped"].append(m.id)
                 continue
             firsts.append((m, *first(m)))

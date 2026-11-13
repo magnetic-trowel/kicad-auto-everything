@@ -137,3 +137,33 @@ Plumbing only, and the two boards stay in the experiment. Commit 6499398, smoke 
 - gecko5's M, M-clock and M-clock-noguard were the last job still running when the full run was submitted. The same arms ran in the direct profiling at the previous commit, and M-clock was re-checked at this one (Addendum 4).
 - **Sizing:** gecko5 jobs peaked at 10.4 GB against kaeres's 8.5 GB request. kaeq's measured admission grows grants, so this is left to it.
 No rule changes.
+
+## Note (2026-11-11, after submission): Freerouting's optimizer in work mode
+Another session found that in work mode Freerouting's optimizer phase (on boards it routes completely) is neither charged nor capped by passes.
+- It normally stops when a pass improves less than its threshold, which is deterministic.
+- It can also be cut by the 4× wall ceiling (`optimizer: timed_out` in the bridge's route stops). That depends on host load.
+- A fix that caps optimizer passes from the budget is on branch `fr-budget-calibration`.
+
+`module-clock2` predates that fix, and every arm shares the exposure, so the paired comparisons stand. `analyze_clock.py` reports each run's optimizer stops and, per arm, the number of runs with a `timed_out` optimizer. This covers the kept attempt's and its origin's stored reports; other attempts' reports are not stored. An imbalance between arms is read before any conclusion.
+
+## Addendum 6 (2026-11-13): module-clock2 read, and `module-rails` (pre-registered before any run)
+**module-clock2 results** (all 142 boards, analysis `analyze_clock.py`):
+- M-clock vs M: share37 opens 539 vs 851 (−36.7 %, p 0.0008). The physics guard holds. M-clock fixes the bug.
+- The ablations against M-clock are undecided.
+- **Rail check** (`rails_check.py`): M-clock's clock skipped the rails on 43 boards. On `worst_rail_mohm` (Σu does not cover rail drop), M-clock/M paired:
+  - those boards, both routed fully: n 8, median 1.26, 6 worse / 2 better, p 0.14;
+  - those boards, any routing: n 43, median 1.37, p 0.84;
+  - pooled, both routed fully: n 25, median 1.05, p 0.12.
+  - So the direction is a rail loss, not decided.
+
+**module-rails:**
+- **Arms:** M-clock (control) and M-clock-rails, which is M-clock with `--set module_rail_share=0.3`. The modules and their moves stop at 70 % of the module stage's time, and the rails keep the last 30 % (only where rails run).
+- **Code:** next commit on this branch. With the default share of 0, nothing changes.
+- **Boards (50, `boards-rails.txt`):** the 43 rail-skipped boards ∪ share37.
+- **Setup:** wrapper, budgets and Freerouting as `module-clock2` (`setup-rails.sh`).
+- **Primary:** `worst_rail_mohm` on boards both arms route fully, paired log ratio M-clock-rails/M-clock, sign-flip.
+  - M-clock-rails wins if the median ratio is < 1 with p < 0.05.
+  - It is also reported on all boards, any routing.
+- **Guard:** opens against M-clock, paired `d`. The guard fails if total opens are more than 3 % higher with p < 0.05.
+- **Also reported:** Σu on both-routed boards against the J21 floor, rails skipped, and stage times.
+- **Caveat:** Freerouting's optimizer is uncharged in work mode; the fix is pending (note above). Both arms share it.

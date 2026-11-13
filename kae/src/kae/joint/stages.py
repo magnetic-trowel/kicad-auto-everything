@@ -67,7 +67,7 @@ def _project(src_board, dst_board):
 # Every `opts` key the stages read (kae.joint.cli rejects a --set key that neither these, the
 # loop's DEFAULTS, the placer's limits (kae.route.constraints.DEFAULTS) nor bridge.KEY name).
 STAGE_KEYS = frozenset({
-    "module_poses_only", "module_clock",
+    "module_poses_only", "module_clock", "module_rail_share",
     # set by kae.joint.cli from its flags
     "keep", "no_physics", "no_modules", "budget_s", "route_parallel", "first_last_mile", "first_blocked",
     # placer and module stage
@@ -231,7 +231,8 @@ class KaeStages:
             moved, copper, rep = optimize_modules(board, brief, terms=self.terms, locked=sorted(locked),
                                                   log=lambda m: self.log(f"modules: {m}"), time_s=t_mod, session=sess,
                                                   rails=only is None, modules=None if only is None else list(only),
-                                                  clock=bool(self.opts.get("module_clock")), t_start=t0)
+                                                  clock=bool(self.opts.get("module_clock")), t_start=t0,
+                                                  rail_share=float(self.opts.get("module_rail_share", 0.0)))
         except Exception as e:
             import traceback
             traceback.print_exc(file=sys.stderr)
