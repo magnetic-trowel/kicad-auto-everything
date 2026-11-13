@@ -11,7 +11,7 @@
 #   N   cab default (restarts)       the default kae recipe for the restart portfolio: --final (last mile) and
 #                                    --finish (kae.route.cli finish on the kept board in the time left; attempts
 #                                    get KAE_FINISH_KEPT=1), nothing else set: rule D entries, no reserve
-#   A2  cab legacy twin (restarts)   A again (param replicate=2 only separates the ids), on the large open boards
+#   A2  cab legacy twin (restarts)   A again (param replicate=2 only separates the ids), on twin.boards.txt
 #
 # Everything else as route-finish-ab: restart.py --parallel 4 --first-s 60 --scale-first --slack 1.15 --resume 0.5,
 # 900 s x sqrt(footprints/40) (at most 4 h), Freerouting fork 2e1125a, operating facts by content hash, step cache.
@@ -63,8 +63,8 @@ case "$STAGE" in
   full)
     $K exp create confirm-default-ab --method "$A" --method "$N" --boards @$D/confirm-default-ab/all.boards.txt \
       --harness $SHA --kae $SHA --env KAE_STEP_CACHE=$STEP_CACHE --description "$desc" >/dev/null
-    $K exp create confirm-default-ab-twin --method "$A2" --boards @$D/confirm-default-ab/large-open.boards.txt \
-      --harness $SHA --kae $SHA --env KAE_STEP_CACHE=$STEP_CACHE --description "A/A twin on the large open boards. $desc" >/dev/null ;;
+    $K exp create confirm-default-ab-twin --method "$A2" --boards @$D/confirm-default-ab/twin.boards.txt \
+      --harness $SHA --kae $SHA --env KAE_STEP_CACHE=$STEP_CACHE --description "A/A twin on the large open boards and the 16 slow-physics boards. $desc" >/dev/null ;;
   smoke)
     $K exp create confirm-default-ab-smoke-$S7 --method "$A" --method "$N" --method "$A2" --boards "${BOARD:?BOARD}" \
       --harness $SHA --kae $SHA --env KAE_STEP_CACHE=$STEP_CACHE --description "smoke (${BOARD}) of the $desc" >/dev/null ;;

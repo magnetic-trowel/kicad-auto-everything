@@ -12,7 +12,7 @@ All arms use route-finish-ab's restart portfolio (`restart.py --parallel 4 --fir
 |---|---|
 | A | Legacy, as stage 2's A: `KAE_PAD_ENTRY=centre KAE_FR_PIN_ENTRIES=off`, no finish pass. Finish is now on by default in `kae.route.cli route`, so A's attempts pass `--no-finish` |
 | N | The default kae recipe for this wrapper: nothing set except `--final` and `--finish 'kae.route.cli finish …'`, which routing-stages §7.1 says every kae recipe passes (restart.py is method-agnostic, so finish is explicit there). The attempts get `KAE_FINISH_KEPT=1` and defer to the portfolio's single finish. The difference from stage 2's C is the code, not the flags: no reserve, finish only in the time left |
-| A2 | A again (an id-only parameter), on the 17 large open boards |
+| A2 | A again (an id-only parameter), on the 17 large open boards and the 16 slow-physics boards |
 
 `kae.route.portfolio` (kae's own portfolio: first wave 120 s, no resume or slack) is the default for a user who calls kae directly. It is not an arm: comparing it with A would change the wrapper too.
 
@@ -22,15 +22,17 @@ All arms use route-finish-ab's restart portfolio (`restart.py --parallel 4 --fir
 - `physics.boards.txt`: 20 complete boards, all with copper-loss and rail-drop terms in the human, A and C evaluations.
   - 7 of them have radio terms (`emission.cable_E` or `pickup.peak`).
   - 13 are the largest by the human's copper-loss plus rail-drop contribution.
-  - Left out: boards whose stage-2 evaluation took over an hour (16 boards, up to 10 h each), and the 7 boards with unused declared layers.
-- `large-open.boards.txt`: the 17 open boards with at least 130 footprints (budget at least 1,620 s). A2 runs here.
-- `all.boards.txt`: the 70 boards A and N run on.
+  - The 7 boards with unused declared layers are left out of everything.
+- `slow-physics.boards.txt`: 16 further complete boards with copper and rail terms whose stage-2 evaluation took over an hour (up to 10 h). They are routed in every arm but left out of physics. All 16 were complete in stage 2's A and C, and most are small (12 to 194 footprints).
+- `large-open.boards.txt`: the 17 open boards with at least 130 footprints (budget at least 1,620 s).
+- `twin.boards.txt`: the large open boards plus the slow-physics boards (33). A2 runs here.
+- `all.boards.txt`: the 86 boards A and N run on (open, physics and slow-physics).
 
 ## Pre-registered criteria (`analyze.py --section gates`)
 
-**Primary: completion.** N against A on all 70 boards. Passes when the paired 95 % CI lower bound of N - A, resampled by repository, is above -0.005 (Q2's margin).
+**Primary: completion.** N against A on all 86 boards. Passes when the paired 95 % CI lower bound of N - A, resampled by repository, is above -0.005 (Q2's margin).
 
-**Noise check.** On the large open boards, report N - A next to A2 - A: their means, the twin's 95 % CI, and how many boards are worse or better. If the primary fails and N - A's mean lies inside the twin's CI, the result is reported as "not distinguishable from run-to-run noise". It is not reported as a pass.
+**Noise check.** On the boards A2 ran (large open and slow-physics), report N - A next to A2 - A: their means, the twin's 95 % CI, and how many boards are worse or better. If the primary fails and N - A's mean lies inside the twin's CI, the result is reported as "not distinguishable from run-to-run noise". It is not reported as a pass.
 
 **Secondary: physics.** On the 20 complete boards, base evaluations only, with the deterministic evaluator from the same code (`KAE_EVAL_MAX_CELLS` default, 4,000,000).
 - `loss.copper` and `drop.rail` each pass when the median N/A ratio is at most 1 and signal-better terms outnumber signal-worse.
@@ -86,10 +88,10 @@ All three methods ran end to end in kaeres, with valid outputs. The operating fa
 
 | item | job-hours | CPU-hours | longest job |
 |---|---|---|---|
-| A, 70 boards | 22.5 | 81 | 2.4 h (J2032) |
-| N, 70 boards | 22.5 | 81 | 2.4 h |
-| A2, 17 large boards | 11 | 40 | 2.4 h |
+| A, 86 boards | 25 | 90 | 2.4 h (J2032) |
+| N, 86 boards | 25 | 90 | 2.4 h |
+| A2, 33 boards | 13.5 | 49 | 2.4 h |
 | physics, human + A + N, 20 boards | 6 | 30 to 60 | about 1 h |
-| total | 62 | about 235 | |
+| total | about 70 | about 260 | |
 
 At 40 cores from the queue that is about 6 h of routing, then about 2 h of physics, plus the tails. Step cache: under 2 GB.
