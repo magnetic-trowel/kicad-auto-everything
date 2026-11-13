@@ -116,6 +116,9 @@ def _pass(part, src, dst, o, wd, timeout, log):
         po.setdefault("zone_above_a", o.get("zone_above_a"))
         if o.get("operating"):
             po.setdefault("operating", o["operating"])
+        for k in ("tht_neck", "tht_wide"):         # the THT neck's settings (constraints.DEFAULTS)
+            if o.get(k) not in (None, ""):
+                po.setdefault(k, o[k])
         return power_copper.run(src, dst, opts=po, workdir=wd, timeout=timeout, log=log, gate=False)
     if part == "trim":
         from . import pad_trim
@@ -154,6 +157,10 @@ def run(input_path, output_path, project=None, opts=None, workdir=None, time_s=N
     out = Path(output_path).resolve()
     out.parent.mkdir(parents=True, exist_ok=True)
     key_opts = {k: v for k, v in o.items()}
+    import os
+    for k in ("KAE_THT_NECK", "KAE_THT_WIDE"):          # board-wide env defaults of power copper's THT neck
+        if os.environ.get(k):
+            key_opts["env:" + k] = os.environ[k]
     if o.get("operating") and Path(o["operating"]).exists():
         key_opts["operating"] = stepcache.file_sha(o["operating"])      # its content, not its path
     key = None

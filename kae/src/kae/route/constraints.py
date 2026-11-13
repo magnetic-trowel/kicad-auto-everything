@@ -246,6 +246,14 @@ DEFAULTS = dict(
                                    # (human): polarfire 139-151 / 268-283 / 265-361 of 465 (387), nekoink
                                    # 52-56 / 108-114 / 115-117 of 226 (196), gecko5 1-2 / 46-52 / 52-55 of 73
                                    # (61); HPWL no worse (polarfire 12.7k at 3 vs 15.8k off, same seed)
+    tht_neck="on",                 # power copper (kae.route.power_copper, finish's "power" part): "on" necks grown
+                                   # copper within neck_len of plated through-hole pads of power and ground nets to
+                                   # the width their current needs (neck_rule tht; the routed track's width is kept),
+                                   # so wave, selective and iron soldering are not starved of heat; "off": none.
+                                   # Env KAE_THT_NECK when neither the project nor opts set it
+    tht_wide="",                   # refs and ref.pad names (comma-separated, or a list in opts) whose THT pads keep
+                                   # wide copper anyway: a heat path, a selectively soldered part (each necked pad
+                                   # is a tht_pad_necked hazard naming this setting); env KAE_THT_WIDE
     zone_keepout=1.0,              # placement: weight of pads whose mask opening would bridge another net's
                                    # fixed outer-layer zone or sit in a board-level mask aperture with another
                                    # net (each 0.1 x this; gecko5: all staged DRC errors, 14 -> 0); 0: off
