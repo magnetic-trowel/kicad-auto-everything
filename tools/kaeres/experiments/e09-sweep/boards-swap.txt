@@ -1,0 +1,12 @@
+zephray-nekoink-pcb
+antmicro-rdimm-ddr4-tester-data-center-rdimm-ddr4-tester
+antmicro-sdi-mipi-video-converter-hw-sdi-mipi-video-converter
+expertsleepersltd-hardware-otterley-b-v1-2
+antmicro-polarfire-som-polarfire-som
+sparkfunx-sparkx-smol-esp32-sparkx-smol-esp32
+cmnybo-chip-lcd-dip-chip-lcd-dip
+sparkfun-nrf52840-breakout-mdbt50q-nrf52840-breakout-mdbt50q
+lowpowerlab-moteino-moteinor5usb
+fm4dd-pmod-i2c24io-i2c24io-2
+bcecoop-bce-pcb-rmlv1616a-bce-pcb-rmlv1616a
+benanderman-spork-8-control-module
