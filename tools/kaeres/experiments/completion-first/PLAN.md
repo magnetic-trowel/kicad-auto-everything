@@ -46,3 +46,8 @@ The 160 `chassis-soft` boards (`boards.txt`): `physics_inputs_ok` and route dema
 
 ## Costs (information only)
 Each arm is about two R runs: R was about 0.6 CPU-h per board under J1's wrapper in `chassis-soft`. So about 2 × 1.2 CPU-h × 160 ≈ 400 CPU-h.
+
+## Addendum before any run (2026-11-13)
+- **`--alt` is M-clock** (`--set module_clock=1`). The code is `module-escape` at dd358a6, merged here: the route-first ordering, and the critical router's work charges (#69). Its rail share stays at 0, so this is M-clock exactly as in `module-clock2`.
+- **Caveat: Freerouting's optimizer is not charged or capped in work mode.** On boards Freerouting routes completely, its optimizer runs until a pass gains less than its threshold. That is deterministic, but a load-dependent 4× wall ceiling can cut it (`optimizer: timed_out`). The fix (`fr-budget-calibration`) is pending. Both arms share the exposure. `analyze.py` reports `timed_out` counts per arm.
+- **Added descriptive comparison: staged-only R against M-clock.** Phase 1 of every run is R (`--max-iters 0 --no-modules`, seed S), with one allowance, the same allowance and build of R as `module-clock2`'s. `analyze.py` compares phase 1's opens (from `summary.json` → `phases[0].rank[2]`) with `module-clock2`'s M-clock and M on the shared boards. That shows how much of the old M's gap to R the clock fix closes. It is descriptive, not a decision: the compared runs come from different experiments.
