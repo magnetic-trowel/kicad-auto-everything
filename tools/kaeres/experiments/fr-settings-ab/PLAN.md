@@ -51,3 +51,22 @@ Expected cost: 40 boards x 11 arms, about 1,000 CPU-h with the bridge at 4 attem
 full run. R43's precondition (ledger: A/B only if the bridge necks power nets much more than humans) failed: over
 170 merit boards, power/ground net track length below class width is 13.5 % under the bridge against 14.6 %
 for the human boards (median 0 for both; 29 vs 34 boards above 5 %). The arm ran on the two smoke boards only.
+
+## Addendum 2026-11-13: did the ladder and repair-cap arms change Freerouting? (before any arm effect is read)
+The bridge telemetry the plan relies on (#40) postdates these methods, and `adapter.log` keeps only restart lines, so an
+interim check could not tell a null from a no-op. The per-attempt Freerouting summary is kept, though: each run's
+`restarts.json` `attempt_log[].fr` has `first.fallback` (the fork's fallback attempts: strategy, stop reason, unrouted)
+and `repair[].loops[].unrouted` (one entry per Freerouting pass in each repair call). On the 13 boards stored so far
+(all attempts, not the `--final` pass):
+- **Repair caps act.** Passes per repair call: cap 1, 147 of 147 calls with 1 pass; cap 3, every call 1-3 passes (87 at 3);
+  control 1-6+ passes (78 of 128 calls at 6 or more; twin alike).
+- **The ladder has not fired.** Fallback ran on 3 boards in the ladder arm (3 in control, 3 in twin), and every fallback
+  attempt in every arm is `default` then the automatic `continue`: no `no-neck` or `continue-fine-neck` attempt.
+  In fork 2e1125a (`RoutingFallback.applicable`), `no-neck` needs a neck width above 0 and `continue-fine-neck` one above
+  100 um; with neck-down off and boards that set no neck width, both are dropped. So far the ladder arm is a de-facto
+  A/A pair with control.
+**Analysis rule added:** the ladder arm is analysed only on boards where at least one of its attempts logs a `no-neck` or
+`continue-fine-neck` strategy; elsewhere it is reported as an A/A pair. If no board qualifies, the ladder result is
+"not exercised on this set", not a negative. The repair-cap arms are analysed as planned, with the per-arm pass counts
+above reported as the manipulation check. Both counts are recomputed on all 40 boards at the analysis
+(`restarts.json`), and the `--final` pass, which runs default settings in every arm, is named as a dilution.
