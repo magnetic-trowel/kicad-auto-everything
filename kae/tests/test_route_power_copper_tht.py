@@ -335,20 +335,31 @@ def test_branch_currents_bus_through_pads():
     assert out["J1.1"] == pytest.approx(0.6, rel=1e-6) and out["J2.1"] == pytest.approx(0.4, rel=1e-6)
 
 
-def test_loss_budget_necks_the_cheapest_pads_first(monkeypatch):
-    """A net's budget goes to its pads cheapest first: idle and light pins neck, the busiest keeps its copper."""
+def test_loss_budget_caps_then_necks_cheapest_first(monkeypatch):
+    """A net's budget first caps loaded pads at their land width (no overhang), then necks them fully, cheapest
+    first; what it cannot buy keeps its copper."""
     from types import SimpleNamespace as N
     o = pc.PowerCopper.__new__(pc.PowerCopper)
     o.o = dict(pc.DEFAULTS)
     monkeypatch.setattr(pc.PowerCopper, "_routed_w", lambda self, p: 0.25)
-    a, b, c = (N(net="V", owner=(f"J{i}", "1")) for i in range(3))
+    land = box(-0.85, -0.85, 0.85, 0.85)                       # a 1.7 mm land
+    a, b, c, d = (N(net="V", owner=(f"J{i}", "1"), geom=land) for i in range(4))
     L = o.o["neck_len"] + o.o["max_width"] / 2
-    cost_b = 0.1 ** 2 * L * (1 / 0.25 - 1 / o.o["max_width"])
-    o.tht_flow_stats = {"V": {"loss_sq": 1.5 * cost_b / o.o["tht_loss_frac"], "entries": {}}}
-    keep = [(None, a, "J0", "1"), (None, b, "J1", "1"), (None, c, "J2", "1")]
-    fl = o._loss_floor(keep, {"J0.1": 1.0, "J1.1": 0.1, "J2.1": 0.0})
-    assert id(c) not in fl and id(b) not in fl              # idle and light: necked
-    assert fl[id(a)] == math.inf                            # the busy feed: kept wide
+    wf = o.o["max_width"]
+
+    def cap(i):
+        return i * i * L * (1 / 1.7 - 1 / wf)
+
+    def neck(i):
+        return i * i * L * (1 / 0.25 - 1 / wf)
+    # budget: cap J0 (1 A) and J1 (0.1 A), and neck J1 fully; J3 (5 A) cannot even be capped
+    budget = cap(1.0) + neck(0.1) + 1e-9
+    o.tht_flow_stats = {"V": {"loss_sq": budget / o.o["tht_loss_frac"], "entries": {}}}
+    keep = [(None, a, "J0", "1"), (None, b, "J1", "1"), (None, c, "J2", "1"), (None, d, "J3", "1")]
+    fl = o._loss_floor(keep, {"J0.1": 1.0, "J1.1": 0.1, "J2.1": 0.0, "J3.1": 5.0})
+    assert id(c) not in fl and id(b) not in fl                # idle, and light enough to neck fully
+    assert fl[id(a)] == pytest.approx(1.7)                     # busy: capped at its land, no overhang
+    assert fl[id(d)] == math.inf                               # the feed: kept wide
 
 
 def test_heat_path_pads_keep_their_copper(tmp_path, plan):

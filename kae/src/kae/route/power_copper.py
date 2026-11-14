@@ -1563,7 +1563,7 @@ class PowerCopper:
                 continue
             if flows is not None:
                 fl = floor.get(id(p), 0.0)
-                if fl >= THT_RELIEF_FRAC * _short_side(p.geom) and not (ref in narrow or f"{ref}.{num}" in narrow):
+                if fl == math.inf and not (ref in narrow or f"{ref}.{num}" in narrow):
                     # a neck narrow enough to act as a relief would cost more copper loss than the budget: the
                     # pad keeps its copper and the commanding LLM decides (tht_pad_kept_wide, KAE_THT_NARROW)
                     skipped["loss"] = skipped.get("loss", 0) + 1
@@ -1701,14 +1701,16 @@ class PowerCopper:
         tht_loss_frac of the net's routed copper loss under the DC plan. A neck of width w where grown copper
         would be w_f wide adds I^2 R_sq L (1/w - 1/w_f) per track entering the pad, L = neck_len + w_f / 2 (the
         neck and the taper the round-capped wider copper needs to keep its edge neck_len off the pad). Within a
-        net the pads neck cheapest first while the budget lasts; the rest get an infinite floor (kept wide)."""
+        net the budget first caps pads at their land's width (no overhang), then necks capped pads fully, cheapest
+        first; a pad it cannot cap gets an infinite floor (kept wide)."""
         frac = float(self.o["tht_loss_frac"])
         wf = self.o["max_width"]
         L = self.o["neck_len"] + wf / 2
         stats = getattr(self, "tht_flow_stats", {}) or {}
-        # each pad's cost to neck: I^2 n L (1/w - 1/w_f), w its neck (the routed track or the current's width);
-        # within a net the cheapest pads neck first until the budget is spent (the most necks for the loss),
-        # so idle pins neck and the busiest keep their copper
+        # each pad's cost: I^2 n L (1/w - 1/w_f) for a neck at w (the routed track or the short neck's width), and
+        # for a cap at the land's own width (no copper past the land: no overhang, about 1.7x a relief's webs).
+        # Within a net the budget first buys caps, cheapest first (they remove the overhang at little loss), then
+        # upgrades capped pads to full necks, cheapest first; what the budget cannot buy keeps its copper
         cost = {}
         for _f, p, ref, num in keep:
             tok = f"{ref}.{num}"
@@ -1716,17 +1718,27 @@ class PowerCopper:
             if i <= 0:
                 continue
             n = max(1, ((stats.get(p.net) or {}).get("entries") or {}).get(tok, 1))
-            w = max(self._routed_w(p), self._tht_need(i), 1e-3)
-            cost.setdefault(p.net, []).append((i * i * n * L * max(0.0, 1.0 / w - 1.0 / wf), id(p)))
+            k = i * i * n * L
+            w_neck = max(self._routed_w(p), self._tht_need(i), 1e-3)
+            w_cap = max(_short_side(p.geom), w_neck)
+            cost.setdefault(p.net, []).append((k * max(0.0, 1.0 / w_cap - 1.0 / wf),
+                                               k * max(0.0, 1.0 / w_neck - 1.0 / wf), w_cap, id(p)))
         out = {}
         for net, cs in cost.items():
             budget = frac * (stats.get(net) or {}).get("loss_sq", 0.0)
             spent = 0.0
-            for c, k in sorted(cs):
-                if spent + c <= budget:
-                    spent += c
+            capped = []
+            for c_cap, c_neck, w_cap, k in sorted(cs):
+                if spent + c_cap <= budget:
+                    spent += c_cap
+                    capped.append((c_neck - c_cap, k, w_cap))
+                    out[k] = w_cap
                 else:
                     out[k] = math.inf
+            for dc_, k, _w in sorted(capped):
+                if spent + dc_ <= budget:
+                    spent += dc_
+                    out.pop(k)
         return out
 
     def _zone_joined(self, p):
