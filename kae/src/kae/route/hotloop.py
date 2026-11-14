@@ -103,11 +103,18 @@ def _intent(board_path, opts):
 
 def _session(board_path, info, st, opts, log):
     from .critical import Session, intent_opts
+    from kae.board import pinfacts as PF
+    from kae.board.kicad_file import load
     intent = _intent(board_path, opts)
+    board = load(Path(board_path))
+    # the schematic's pin facts the intent was compiled with (operating facts `pins`), applied as
+    # kae.excite.evaluate does: without them an imported board's regulator pins carry no names and the
+    # brief finds no cell (govish, powerboost)
+    PF.apply(board, (intent or {}).get("pins"))
     copts = dict(kinds=("cell",), rails="none", complete_mm=0.0, island_mm=0.0, thermal_spokes=False,
                  place_allocs=False, guards=(), cell_price="W", cell_via_array=bool(st["vias"]),
                  intent=intent, **intent_opts(intent))
-    return Session(board_path, info=info, opts=copts, log=log)
+    return Session(board_path, info=info, opts=copts, log=log, board=board)
 
 
 def _plan_cells(s):
