@@ -397,3 +397,18 @@ def test_copper_totals_lines_and_arcs():
            vias=[1, 2])
     length, vias = copper_totals(b)
     assert vias == 2 and length == pytest.approx(5 + math.pi + 1.5 * math.pi + 0.5 * math.pi, rel=1e-6)
+
+
+def test_window_budget_factor_raises_the_wall_ceiling_in_work_mode(monkeypatch):
+    from kae import budget
+    import kae.joint.loop as L
+    t = [0.0]
+    monkeypatch.setattr(L, "clock_now", lambda: t[0])
+    monkeypatch.setattr(budget, "work_mode", lambda: True)
+    seen = []
+    monkeypatch.setattr(budget, "set_ceiling", lambda s: seen.append(s))
+    st = FakeStages(broken=("R1",))
+    route = st.route
+    st.route = lambda *a, **k: (t.__setitem__(0, t[0] + 50), route(*a, **k))[1]
+    JointLoop(st, opts=dict(max_iters=0, window_budget_factor=2.0, finish=False)).run("o", time_s=100.0)
+    assert seen == [pytest.approx(50 + 200 + 25)]          # the whole extended budget, not --time alone
