@@ -35,6 +35,14 @@ import numpy as np
 # kae.route.drc ignore them)
 ENV_DEPENDENT = ("lib_footprint_issues", "lib_footprint_mismatch")
 
+# DRC types no part move or local re-route changes: footprint definitions (pads, courtyards,
+# text, padstacks, drills), the board outline, zones and text variables. Every kae placement
+# of a board has the same count of each (0 of 194 board x evaluator pairs varied), and windows
+# opened only for them were never kept (0 of 75; J3, branch loop-j3-unfixable-drc). Silk and
+# solder-mask types do vary with placement and stay. window_evidence skips them.
+NO_MOVE_FIXES = ("footprint_type_mismatch", "unresolved_variable", "annular_width", "zones_intersect",
+                 "invalid_outline", "malformed_courtyard", "text_on_edge_cuts", "padstack", "drill_out_of_range")
+
 _NET = re.compile(r"\[([^\]]*)\]")
 _REF = re.compile(r"\bof (\S+?)(?:\s+on\s|\s*$)")
 _SHORT = re.compile(r"(?:clearance|min[^;]*?) ([\d.]+) mm; actual (-?[\d.]+) mm")
@@ -422,3 +430,107 @@ def plan_windows(spots, parts, bounds, margin=2.0, max_parts=10, merge_factor=1.
                 break
     wins.sort(key=lambda w: (-w.priority, w.rect, w.parts))
     return wins
+
+
+# ----------------------------------------------------------------------------- evidence
+def _bbox_dist(b, p):
+    dx = max(b[0] - p[0], 0.0, p[0] - b[2])
+    dy = max(b[1] - p[1], 0.0, p[1] - b[3])
+    return math.hypot(dx, dy)
+
+
+def _seg_points(path, step=1.0):
+    """Points every `step` mm along a polyline."""
+    out = []
+    for a, b in zip(path, path[1:]):
+        n = max(1, int(math.ceil(math.dist(a, b) / step)))
+        out += [(a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n) for k in range(n)]
+    return out + [tuple(path[-1])] if path else out
+
+
+# KiCad's escapes in board net names, as its DRC report writes them (kae.route.lastmile._ESCAPES)
+_ESCAPES = {"{slash}": "/", "{backslash}": "\\", "{lt}": "<", "{gt}": ">", "{colon}": ":", "{dblquote}": '"',
+            "{quote}": "'", "{space}": " ", "{tab}": "\t", "{return}": "\n", "{brace}": "{", "{comma}": ","}
+
+
+def _shown(name):
+    for k, v in _ESCAPES.items():
+        name = name.replace(k, v)
+    return name
+
+
+def _match(spot, by_net):
+    """The diagnosis record of an unrouted spot: one of its nets', preferring one whose pads
+    belong to the spot's parts."""
+    recs = [r for n in spot.nets for r in by_net.get(n, ())]
+    for r in recs:
+        if {p.split(".")[0] for p in r.get("pads") or ()} & set(spot.refs):
+            return r
+    return recs[0] if recs else None
+
+
+def apply_evidence(spots, diag, parts, max_blame=3, reach=0.5):
+    """Unrouted spots read against kae.route.blocked's diagnosis of the same board (`diag`;
+    records with net, pads, cause and the parts to blame). Returns (spots, notes):
+    - a connection no part move frees is dropped: a rule's binding gap against its own
+      footprint's pad (against_own), a pad walled in by its own footprint (walled_own);
+    - congestion (a route exists without our other copper): the route's corridor joins the
+      spot's points, and the movable parts beside it (within `reach` mm, at most `max_blame`,
+      nearest the corridor's middle first) join its parts, so the window rips up and re-routes
+      what crowds the corridor and may move what sits in it;
+    - a rule's binding gap against another movable part's pad, or a wall of other parts'
+      pads: those parts join the spot's parts;
+    - fixed copper, other rules (board edge, keepouts) and undiagnosed spots stay as they are.
+    `notes`: counts by cause, dropped, blamed parts. Other spots pass unchanged."""
+    import collections
+    import dataclasses
+    by_net = {}
+    for r in list((diag or {}).get("blocked") or []) + list((diag or {}).get("congestion") or []):
+        n = r.get("net") or ""
+        by_net.setdefault(n, []).append(r)
+        shown = _shown(n)
+        if shown != n:
+            by_net.setdefault(shown, []).append(r)
+    by_ref = {}
+    for g in parts.values():
+        by_ref.setdefault(g.ref, g)
+    notes = collections.Counter()
+    out = []
+    for s in spots:
+        if s.kind != "unrouted":
+            out.append(s)
+            continue
+        r = _match(s, by_net)
+        if r is None:
+            notes["undiagnosed"] += 1
+            out.append(s)
+            continue
+        cause = r.get("cause") or "?"
+        notes[cause] += 1
+        blame, pts = [], list(s.points)
+        if cause in ("rule", "kae default"):
+            if r.get("against_own"):
+                notes["dropped"] += 1
+                continue
+            a = r.get("against_ref") or ""
+            if a and a in by_ref and not by_ref[a].locked:
+                blame = [a]
+        elif cause == "geometry":
+            if r.get("walled_own"):
+                notes["dropped"] += 1
+                continue
+            blame = [w for w in r.get("walled_refs") or () if w in by_ref and not by_ref[w].locked]
+        elif cause == "congestion" and len(r.get("path") or ()) >= 2:
+            path = [tuple(q) for q in r["path"]]
+            along = _seg_points(path)
+            mid = path[len(path) // 2]
+            near = [g for g in parts.values() if not g.locked and g.ref not in s.refs
+                    and min(_bbox_dist(g.bbox, q) for q in along) <= reach]
+            near.sort(key=lambda g: (math.dist(g.center, mid), g.uuid))
+            blame = list(dict.fromkeys(g.ref for g in near))
+            pts += path
+        blame = [b for b in blame if b not in s.refs][:max_blame]
+        notes["blamed"] += len(blame)
+        why = f"{s.why} [{cause}" + (f"; blame {', '.join(blame)}]" if blame else "]")
+        out.append(dataclasses.replace(s, refs=tuple(s.refs) + tuple(blame), points=tuple(pts), why=why))
+    return out, dict(notes)

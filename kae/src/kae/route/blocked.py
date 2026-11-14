@@ -31,6 +31,13 @@ for rules the binding gap: constraint (clearance, track_width, solder_mask, hole
 edge_clearance, keepout, thermal_corridor, pad_shape), required and available (mm), layer, at
 [x, y], against (the item), source ("board" or "kae"), where, override, and the next gaps on
 the same path (others).
+Each record also names the parts to blame, for a caller that moves parts (kae.joint's
+window_evidence): `against_ref` (the part whose pad is the binding gap; `against_own`: a
+pad of the footprint whose pad it blocks), `walled_refs` (the other parts whose pads wall a
+"geometry" connection in; `walled_own`: only its own footprint's pads do) and, for
+congestion, `path` (points of a route that exists without our other copper: the corridor to
+clear). `against_own` and `walled_own` mean no part move frees the connection. `nets` limits the
+diagnosis to those nets, in that order.
 It is deterministic (no seeds) and bounded by `deadline`. Lengths are mm.
 """
 from __future__ import annotations
@@ -362,7 +369,7 @@ def _line(net, pads, cause, b):
 
 # ----------------------------------------------------------------------------- the board
 def diagnose(board, info, plan, fills, report, sev=None, input_ids=(), deadline=None, log=print, max_conns=60,
-             opts=None):
+             opts=None, nets=None):
     """Diagnose the open connections of `board` (see the module docstring). `board`: the
     final board with its project files beside it (drc.stage_board), `fills` its refilled
     zones (pcbnew_io.zone_fills()["zones"]), `report` its KiCad DRC report, `input_ids` the
@@ -383,7 +390,10 @@ def diagnose(board, info, plan, fills, report, sev=None, input_ids=(), deadline=
     input_ids = set(input_ids)
     known = sorted({it.net for it in sp.pads if it.net and it.kind == "pad"})
     by_shown = {LM.unescape(n): n for n in known}
-    nets = [n if n in known else by_shown.get(n, n) for n in LM.open_nets(report)]
+    is_open = LM.open_nets(report)
+    if nets is not None:          # these first, in this order (only the open ones)
+        is_open = [n for n in dict.fromkeys(nets) if n in set(is_open)]
+    nets = [n if n in known else by_shown.get(n, n) for n in is_open]
     out = dict(blocked=[], congestion=[], summary=[], undiagnosed=0)
     n = 0
     for net in nets:
@@ -401,7 +411,9 @@ def diagnose(board, info, plan, fills, report, sev=None, input_ids=(), deadline=
             rec = dict(net=net, pads=pads, kinds=sorted({x.kind for x in small}))
             if not src:
                 continue
-            rec["cause"], b_ = _one(sp, gr, rgr, relax, net, src, others, widths, wmin, input_ids)
+            extra = {}
+            rec["cause"], b_ = _one(sp, gr, rgr, relax, net, src, others, widths, wmin, input_ids, extra)
+            rec.update(extra)
             if rec["cause"] in ("rule", "kae default"):
                 rec["binding"] = b_
             elif rec["cause"] == "fixed copper":
@@ -429,8 +441,10 @@ def diagnose(board, info, plan, fills, report, sev=None, input_ids=(), deadline=
     return out
 
 
-def _enclosing(sp, net, src, w):
-    """What touches the part's copper (within a track width): the items that wall it in."""
+def _enclosing(sp, net, src, w, blame=None):
+    """What touches the part's copper (within a track width): the items that wall it in.
+    `blame`: a dict that gets refs (the other parts whose pads they are) and own (True while
+    every wall is a pad of the walled pad's own footprint: no move frees it)."""
     out = []
     for a in src:
         for l in a.layers:
@@ -438,7 +452,40 @@ def _enclosing(sp, net, src, w):
                 if it.kind in ("pad", "track", "via", "shape", "hole", "keepout") and it.net != net and \
                         it.geom.distance(a.geom) - it.r < w and not any(o.startswith(_desc(it)) for o in out):
                     out.append(f"{_desc(it)} on {l}" + (f" (touches {_anchor_desc(sp, a)})" if a.kind == "pad" else ""))
+                    if blame is not None and len(out) <= 6:
+                        mine = _anchor_desc(sp, a).split(".")[0] if a.kind == "pad" else None
+                        r = _ref(it)
+                        own = bool(r) and r == mine
+                        blame["own"] = blame.get("own", True) and own
+                        if r and not own and r not in blame.setdefault("refs", []):
+                            blame["refs"].append(r)
     return out[:6]
+
+
+def _ref(it):
+    """The part a pad item belongs to, else ""."""
+    return str(it.owner[0]) if it != "edge" and getattr(it, "kind", "") in ("pad", "pad_nopin") else ""
+
+
+def _nearest_pad_ref(sp, net, at, src, others, w):
+    """The part of this connection's pad nearest to point `at` (the binding gap): when the
+    gap's other side is a pad of that same footprint, the pad cannot escape under the rules
+    wherever the part goes."""
+    from shapely.geometry import Point
+    pt = Point(at)
+    ancs = [a for a in list(src) + [x for p in others for x in LM._anchors(p, w / 2 + 0.02)] if a.kind == "pad"]
+    if not ancs:
+        return ""
+    a = min(ancs, key=lambda q: q.geom.distance(pt))
+    return _anchor_desc(sp, a).split(".")[0]
+
+
+def _path_points(rt, n=8):
+    """Up to n points along a route (segment ends and vias), evenly picked, in mm."""
+    pts = [p for _, a, b in rt.segs for p in (a, b)] + list(rt.vias)
+    if len(pts) > n:
+        pts = [pts[round(k * (len(pts) - 1) / (n - 1))] for k in range(n)]
+    return [[round(float(x), 3), round(float(y), 3)] for x, y in pts]
 
 
 def _anchor_desc(sp, a):
@@ -513,14 +560,18 @@ def _route(gr, sp, net, src, others, widths):
     return None
 
 
-def _one(sp, gr, rgr, relax, net, src, others, widths, wmin, input_ids):
-    """(cause, detail) for one missing connection."""
+def _one(sp, gr, rgr, relax, net, src, others, widths, wmin, input_ids, extra=None):
+    """(cause, detail) for one missing connection. `extra` (a dict) gets the parts to blame
+    (module docstring)."""
+    extra = {} if extra is None else extra
     foreign = [it for it in sp.existing if it.kind in ("track", "via") and it.net != net]
     ours = [it for it in foreign if it.uuid not in input_ids]
     theirs = [it for it in foreign if it.uuid in input_ids]
     sp.remove(ours)
     try:
-        if _route(gr, sp, net, src, others, widths) is not None:
+        rt0 = _route(gr, sp, net, src, others, widths)
+        if rt0 is not None:
+            extra["path"] = _path_points(rt0)
             return "congestion", None
         if theirs:
             sp.remove(theirs)
@@ -540,12 +591,23 @@ def _one(sp, gr, rgr, relax, net, src, others, widths, wmin, input_ids):
             if rt is None:
                 win = LM._window(src, others, WINDOWS[-1])
                 ends = [a for p in others for a in LM._anchors(p, wmin / 2 + 0.02, clip=win) if a.kind == "pad"]
-                return "geometry", _enclosing(sp, net, src, wmin) or _enclosing(sp, net, ends, wmin)
+                bl = {}
+                why = _enclosing(sp, net, src, wmin, bl)
+                if not why:
+                    bl = {}
+                    why = _enclosing(sp, net, ends, wmin, bl)
+                extra["walled_refs"] = bl.get("refs", [])
+                extra["walled_own"] = bool(why) and bl.get("own", False)
+                return "geometry", why
             gaps = _gaps(sp, net, rt, wmin)
             if not gaps:
                 # the relaxed path is legal as it stands (the real search missed it on its grid)
+                extra["path"] = _path_points(rt)
                 return "congestion", None
             g = gaps[0]
+            extra["against_ref"] = _ref(g["worst"][0])
+            extra["against_own"] = bool(extra["against_ref"]) and \
+                extra["against_ref"] == _nearest_pad_ref(sp, net, _at(g), src, others, wmin)
             fit = None
             if g["kind"] == "track" and (g["worst"][0] == "edge" or g["worst"][0].kind not in ("keepout", "corridor")):
                 fit = _width_fit(sp, net, src, others, wmin, rt, getattr(sp, "fab_floor_w", None))

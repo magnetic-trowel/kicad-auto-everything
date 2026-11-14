@@ -397,3 +397,21 @@ def test_copper_totals_lines_and_arcs():
            vias=[1, 2])
     length, vias = copper_totals(b)
     assert vias == 2 and length == pytest.approx(5 + math.pi + 1.5 * math.pi + 0.5 * math.pi, rel=1e-6)
+
+
+def test_window_evidence_skips_connections_no_move_frees():
+    class Diag(FakeStages):
+        def diagnose(self, lay, drc, it, time_s, nets=None, log=None):
+            self.calls.append(("diagnose", it, tuple(nets or ())))
+            return {"blocked": [dict(net="NR2", pads=["R2.1"], cause="rule", against_ref="R2", against_own=True)],
+                    "congestion": [dict(net="NR1", pads=["R1.1"], cause="congestion")]}
+    st = Diag(broken=("R1", "R2"))
+    rep = _run(st, window_evidence=True, finish=False)
+    repaired = {r for c in st.calls if c[0] == "repair" for r in c[3]}
+    assert "R2" not in repaired and "R1" in repaired              # R2's open connection opens no window
+    assert rep["final"]["unconnected"] == 1 and rep["stop"] == "no window left to try"
+    ev = rep["evidence"]
+    assert ev[0]["iter"] == 0 and ev[0]["dropped"] == 1 and ev[0]["congestion"] == 1
+    assert [c for c in st.calls if c[0] == "diagnose"][0][2] == ("NR1", "NR2")      # in window order
+    # one diagnosis per incumbent (iteration 0 and the kept window), then the final board's
+    assert len([c for c in st.calls if c[0] == "diagnose" and c[2]]) == len(ev) == 1 + rep["accepted"]

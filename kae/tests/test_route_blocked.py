@@ -25,6 +25,12 @@ def _diagnose(p, rep, input_ids=(), opts=None):
     return B.diagnose(p, info, plan, [], rep, input_ids=input_ids, log=lambda *a: None, opts=opts)
 
 
+def _diagnose_nets(p, rep, nets):
+    info = F.synth_info(load(p))
+    out = B.diagnose(p, info, CN.plan(info, p, {}), [], rep, log=lambda *a: None, nets=nets)
+    return dict(blocked=len(out["blocked"]), congestion=len(out["congestion"]))
+
+
 def _boxed(gap, dup=False):
     """SIG's pad S1.1 inside a box of +3V3 pads 0.35 mm away, open by `gap` mm at the bottom
     (no room for a via inside), and its other pad T1.1 5 mm below; `dup`: T1 has a no-net pad
@@ -52,6 +58,11 @@ def test_congestion_is_not_blamed_on_a_rule(tmp_path):
     out = _diagnose(p, rep)
     # three pads apart: two missing connections, C4.1's behind the wall
     assert not out["blocked"] and [r["cause"] for r in out["congestion"]] == ["congestion"] * 2
+    # the corridor to clear: points of the route that exists without our copper, across the wall
+    path = out["congestion"][0]["path"]
+    assert 2 <= len(path) <= 8 and min(q[0] for q in path) < x < max(q[0] for q in path)
+    # only the nets asked for are diagnosed
+    assert _diagnose_nets(p, rep, ["GND"]) == dict(blocked=0, congestion=0)
     out = _diagnose(p, rep, input_ids={w[5] for w in wall})
     assert [r["cause"] for r in out["blocked"]] == ["fixed copper"] and out["blocked"][0]["fixed_nets"] == ["+3V3"]
     assert out["blocked"][0]["pads"] == ["C4.1"] and len(out["congestion"]) == 1
@@ -104,6 +115,7 @@ def test_a_gap_no_track_fits_blames_the_net_class_clearance(tmp_path):
     assert out["blocked"][0]["cause"] == "rule"
     assert b["constraint"] == "clearance" and b["required"] == 0.2 and b["available"] < 0.2
     assert "net class 'Default'" in b["where"] and b["against"].startswith("pad S1.")
+    assert out["blocked"][0]["against_ref"] == "S1" and out["blocked"][0]["against_own"]   # no move frees it
 
 
 def test_a_pad_under_another_pad_is_geometry(tmp_path):
@@ -113,6 +125,7 @@ def test_a_pad_under_another_pad_is_geometry(tmp_path):
     out = _diagnose(p, _report("SIG", ("S1", 1), ("T1", 1)))
     r = out["blocked"][0]
     assert r["cause"] == "geometry" and any("pad T1.2" in w for w in r["walled_by"])
+    assert r["walled_own"] and r["walled_refs"] == []       # its own footprint walls it in
 
 
 def test_rule_sources():

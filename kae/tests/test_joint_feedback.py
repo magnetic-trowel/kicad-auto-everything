@@ -187,3 +187,33 @@ def test_stage_stop_reasons():
     clean = route_stops(dict(router=dict(autorouter_stop="COMPLETED"), repair=dict(rounds=[{}], final=dict(errors=0,
                                                                                                          unconnected=0))))
     assert clean["repair"] == "clean" and clean["autorouter"] == "COMPLETED"
+
+
+def test_evidence_drops_what_no_move_frees_and_adds_the_parts_to_blame():
+    from kae.joint.feedback import apply_evidence
+    g = lambda u, ref, bb, locked=False: PartGeom(uuid=u, ref=ref, bbox=bb, locked=locked)   # noqa: E731
+    parts = {"c3": g("c3", "C3", (9, 9, 11, 11)), "r4": g("r4", "R4", (19, 9, 21, 11)),
+             "u1": g("u1", "U1", (14, 9.6, 16, 11)), "u9": g("u9", "U9", (40, 40, 42, 42)),
+             "j1": g("j1", "J1", (5, 7, 7, 9)), "h1": g("h1", "H1", (14, 12, 16, 14), locked=True)}
+    spots = unrouted_spots(DRC) + error_spots(DRC)
+    # congestion: the corridor 10..20 at y 10.5 passes U1 (beside it) and H1 (locked, never blamed)
+    diag = {"congestion": [dict(net="Net-(C3-Pad1)", pads=["C3.1"], cause="congestion",
+                                path=[[10.0, 10.5], [15.0, 11.5], [20.0, 10.5]])],
+            "blocked": [dict(net="GND", pads=["J1.2"], cause="rule", against_ref="J1", against_own=True)]}
+    out, notes = apply_evidence(spots, diag, parts)
+    un = [s for s in out if s.kind == "unrouted"]
+    assert len(un) == 1 and un[0].refs == ("C3", "R4", "U1") and len(un[0].points) == 2 + 3
+    assert [s for s in out if s.kind != "unrouted"] == [s for s in spots if s.kind != "unrouted"]
+    assert notes == dict(congestion=1, rule=1, dropped=1, blamed=1)
+    # the window now holds the blamed part
+    ws = plan_windows(out, parts, (0, 0, 50, 50), margin=0.5, max_parts=6)
+    assert any("u1" in w.parts for w in ws)
+    # a rule against another part's pad blames that part; a wall of its own footprint drops it
+    diag2 = {"blocked": [dict(net="Net-(C3-Pad1)", pads=["C3.1"], cause="rule", against_ref="U9", against_own=False),
+                         dict(net="GND", pads=["J1.2"], cause="geometry", walled_refs=[], walled_own=True)]}
+    out2, notes2 = apply_evidence(spots, diag2, parts)
+    assert [s.refs for s in out2 if s.kind == "unrouted"] == [("C3", "R4", "U9")]
+    assert notes2["dropped"] == 1
+    # nothing diagnosed: unchanged
+    out3, notes3 = apply_evidence(spots, {}, parts)
+    assert out3 == spots and notes3 == dict(undiagnosed=2)
