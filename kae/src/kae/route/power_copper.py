@@ -83,6 +83,9 @@ DEFAULTS = dict(
     tht_loss_frac=0.002,      # the necks at THT pads of a net together add at most this share of the net's routed
                               # copper loss under the DC plan (the evaluator's noise floor is ~0.6 %); a pad whose
                               # neck would need to be wider than a relief's webs keeps its copper (tht_pad_kept_wide)
+    tht_neck_dK=10.0,         # K: the most a THT neck may rise at current_margin x its current, as a short conductor
+                              # between the pad and the wider copper (short_neck_width; IPC-2221's 10 K, which the
+                              # long-trace widths use, applied to the neck's own heating)
     tht_heat_dK=20.0,         # K: THT pads where a hot part holds the board this far above ambient (fin model) are on
                               # its heat path and keep their copper (tht_pad_kept_wide)
     tht_heat_fill=0.5,        # copper fill per layer of that fin model
@@ -214,7 +217,24 @@ THT_RELIEF_FRAC = 0.6
 THT_NECK_MIN = 1e-3     # mm: a THT neck with no current to carry; the routed track (never narrowed) is the floor
 
 
-def neck_rule(land_w, process, series_current_a=0.0, margin=DEFAULTS["current_margin"], tht=False):
+def short_neck_width(current_a, length_mm, margin=DEFAULTS["current_margin"], dk=10.0, t_mm=MAT.CU_1OZ_MM):
+    """Narrowest width (mm) a short copper neck of `length_mm` between two heat sinks (the THT pad's barrel
+    and the wider grown copper) may have so that margin x current_a raises its middle at most `dk` K.
+    One-dimensional conduction with uniform Joule heating and both ends held at the sinks' temperature:
+    dT_max = q L^2 / (8 k), q = I^2 rho / (w t)^2, so w = I L sqrt(rho / (8 k dT)) / t (Incropera & DeWitt,
+    Fundamentals of Heat and Mass Transfer, sec. 3.5: plane wall with generation). Conduction into the
+    laminate and convection are left out, which only overstates the rise. IPC-2221's chart is for long
+    traces, where no such axial path exists; a 0.5-2 mm neck carries several times the current of a long
+    trace of its width. 0 without a current."""
+    if not current_a:
+        return 0.0
+    i = margin * current_a
+    rho = MAT.RHO_CU_OHM_MM * 1e-3            # ohm m
+    return i * (length_mm * 1e-3) * math.sqrt(rho / (8.0 * MAT.K_CU * dk)) / (t_mm * 1e-3) * 1e3
+
+
+def neck_rule(land_w, process, series_current_a=0.0, margin=DEFAULTS["current_margin"], tht=False, tht_len=None,
+              tht_dk=10.0):
     """Width (mm) grown copper may have within neck_len of a two-terminal part's land, or None (no
     limit). The neck is the land class's NECK_TABLE width for the process, never below what the
     part's own series current needs (IPC-2221 at margin x I): a fuse, ferrite or shunt in a rail
@@ -222,15 +242,18 @@ def neck_rule(land_w, process, series_current_a=0.0, margin=DEFAULTS["current_ma
     not neck (1206 and up in reflow, every class in wave) is capped at its land width.
 
     tht: a plated through-hole pad (land_w: its short side, the diameter of a round pad), whose
-    current is series_current_a. The neck is the width that current needs and nothing more: grown
-    copper stays at the routed track's width (power copper never narrows a track) or the current's
-    width, whichever is wider. None when the current needs more than a relief's webs give
-    (THT_RELIEF_FRAC x land_w): the copper keeps its width (tht_pad_heatsunk)."""
-    need = current_need(series_current_a, margin)
+    current is series_current_a. The neck is the width that current needs as a short neck of
+    `tht_len` mm (short_neck_width, rise at most tht_dk) and nothing more: grown copper stays at the
+    routed track's width (power copper never narrows a track) or that width, whichever is wider. None
+    when even the short neck needs more than a relief's webs give (THT_RELIEF_FRAC x land_w): the copper
+    keeps its width (tht_pad_heatsunk)."""
     if tht:
+        need = short_neck_width(series_current_a, tht_len if tht_len is not None else DEFAULTS["neck_len"],
+                                margin, tht_dk)
         if need > THT_RELIEF_FRAC * land_w:
             return None
         return max(need, THT_NECK_MIN)
+    need = current_need(series_current_a, margin)
     w = NECK_TABLE.get(process, NECK_TABLE["reflow"]).get(pkg_class(land_w))
     if need >= land_w:
         return None           # the current needs more than the land: no neck (land_enlarged_by_track)
@@ -247,7 +270,8 @@ def current_need(current_a, margin=DEFAULTS["current_margin"]):
     return ipc_width(margin * current_a) if current_a else 0.0
 
 
-def land_necks(lands, power, ground, current, process, margin=DEFAULTS["current_margin"], tht_current=None):
+def land_necks(lands, power, ground, current, process, margin=DEFAULTS["current_margin"], tht_current=None,
+               tht_len=None, tht_dk=10.0):
     """The neck rule over a board's parts: ({key: neck width}, {key: series current A}) for the
     lands of two-terminal SMD parts. `lands`: {part: [(key, smd, net, land width)]}, one entry per
     copper pad; `current`: {net: A} (net_currents). A part with no ground pad and a power pad is in
@@ -265,7 +289,7 @@ def land_necks(lands, power, ground, current, process, margin=DEFAULTS["current_
         if land_w is None:
             continue
         series_a[key] = amps
-        w = neck_rule(land_w, process, amps, margin, tht=True)
+        w = neck_rule(land_w, process, amps, margin, tht=True, tht_len=tht_len, tht_dk=tht_dk)
         if w is not None:
             necks[key] = w
     for _part, cu in lands.items():
@@ -1422,6 +1446,7 @@ class PowerCopper:
         self.caps = {}
         tht_cur = self._tht_pads(lands)
         necks, series = land_necks(lands, self.power, self.ground, self.current, self.process, self.o["current_margin"],
+                                   tht_len=self._tht_len(), tht_dk=self.o["tht_neck_dK"],
                                    tht_current=tht_cur)
         if self.o.get("land_cap", True):
             # every other SMD land (IC pins, parts with alternate pads) gets no grown copper wider than
@@ -1653,6 +1678,15 @@ class PowerCopper:
                         break
         return out
 
+    def _tht_len(self):
+        """mm of narrow copper a THT neck is: neck_len plus the taper round-capped wider copper needs to keep its
+        edge neck_len off the pad (half the widest grown copper)."""
+        return self.o["neck_len"] + self.o["max_width"] / 2
+
+    def _tht_need(self, amps):
+        """The width a THT neck needs for `amps` (short_neck_width over _tht_len at tht_neck_dK)."""
+        return short_neck_width(amps, self._tht_len(), self.o["current_margin"], self.o["tht_neck_dK"])
+
     def _routed_w(self, p):
         """Widest routed track of p's net that ends in or runs through pad Item p (0 without one)."""
         w = 0.0
@@ -1682,7 +1716,7 @@ class PowerCopper:
             if i <= 0:
                 continue
             n = max(1, ((stats.get(p.net) or {}).get("entries") or {}).get(tok, 1))
-            w = max(self._routed_w(p), current_need(i, self.o["current_margin"]), 1e-3)
+            w = max(self._routed_w(p), self._tht_need(i), 1e-3)
             cost.setdefault(p.net, []).append((i * i * n * L * max(0.0, 1.0 / w - 1.0 / wf), id(p)))
         out = {}
         for net, cs in cost.items():
@@ -1714,7 +1748,7 @@ class PowerCopper:
             amps = self.tht_amps.get(id(p), 0.0)
             by_ref.setdefault(ref or "?", []).append(dict(
                 pad=f"{ref}.{num}", net=p.net, would_w_mm=round(rec["would"], 3), got_w_mm=round(rec["got"], 3),
-                current_a=round(amps, 4), need_w_mm=round(current_need(amps, self.o["current_margin"]), 3),
+                current_a=round(amps, 4), need_w_mm=round(self._tht_need(amps), 3),
                 land_w_mm=round(_short_side(p.geom), 3)))
         order = sorted(by_ref.items(), key=lambda kv: -sum(x["would_w_mm"] - x["got_w_mm"] for x in kv[1]))
         nl = self.o["neck_len"]
@@ -1795,15 +1829,17 @@ class PowerCopper:
                 widest = max(widest, max(_short_side(z[2]) for z in zoned))
             if widest:
                 ref, num = p.owner if isinstance(p.owner, tuple) else (None, None)
-                need = current_need(amps, self.o["current_margin"])
+                need = self._tht_need(amps)
                 out.append(H.make(
                     "tht_pad_heatsunk", "warn", "assembly",
-                    f"{ref}.{num} ({p.net}): its {amps:.2f} A needs {need:.2f} mm of copper, more than a thermal "
-                    f"relief's {relief:.2f} mm; the {widest:.2f} mm copper stays and drains soldering heat.",
+                    f"{ref}.{num} ({p.net}): its {amps:.2f} A needs {need:.2f} mm even as a short neck, more than a "
+                    f"thermal relief's {relief:.2f} mm; the {widest:.2f} mm copper stays and drains soldering heat.",
                     objects=[f"{ref}.{num}", ref, p.net],
                     evidence=dict(track_w_mm=round(widest, 3), need_w_mm=round(need, 3), relief_w_mm=round(relief, 3),
                                   land_w_mm=round(land_w, 3), current_a=round(amps, 4),
-                                  source="IPC-2221 width at current_margin x the pad's current; relief webs IPC-2222 9.1.2"),
+                                  neck_len_mm=round(self._tht_len(), 3), neck_dK=self.o["tht_neck_dK"],
+                                  source="short-neck conduction (power_copper.short_neck_width) at current_margin x the "
+                                         "pad's current; relief webs IPC-2222 9.1.2"),
                     fix="Preheat or a selective/iron profile for this joint, a larger pad or more pins in parallel; or "
                         "accept it if the joint is checked after soldering."))
         return out

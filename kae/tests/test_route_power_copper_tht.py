@@ -21,14 +21,35 @@ J1_1 = (104.0, 111.0)     # J1 pad 1 (VIN), a 1.4 mm through-hole pad, 0.8 mm dr
 def test_neck_rule_tht():
     # no current: the floor; the routed track (never narrowed) is the real width
     assert pc.neck_rule(1.7, "reflow", 0.0, tht=True) == pytest.approx(pc.THT_NECK_MIN)
-    # a current: the width it needs, in any process
-    need = pc.current_need(0.3)
+    # a current: the width it needs as a short neck, in any process
+    need = pc.short_neck_width(0.3, pc.DEFAULTS["neck_len"])
     for proc in ("reflow", "wave", "hand"):
-        assert pc.neck_rule(1.7, proc, 0.3, tht=True) == pytest.approx(need)
-    # the current needs more than a relief's webs (60 % of the land): no neck
-    assert pc.current_need(3.0) > 0.6 * 1.7
-    assert pc.neck_rule(1.7, "reflow", 3.0, tht=True) is None
+        assert pc.neck_rule(1.7, proc, 0.3, tht=True) == pytest.approx(max(need, pc.THT_NECK_MIN))
+    # even as a short neck the current needs more than a relief's webs (60 % of the land): no neck
+    assert pc.neck_rule(1.7, "reflow", 40.0, tht=True, tht_len=2.0) is None
     assert pc.neck_rule(1.7, "reflow", 0.0) == pytest.approx(1.7)        # the SMD rule is unchanged
+
+
+def test_short_neck_ipc_rejects_conduction_accepts():
+    """zx2-backplane J4.31: 2.1 A into a 1.7 mm connector land. IPC-2221 (long trace, 3x margin) asks 3.8 mm,
+    more than the land; as a 2 mm neck between the barrel and the wide rail it rises 10 K at 0.27 mm."""
+    I, L = 2.1, 2.0
+    assert pc.current_need(I) > 1.7 > 0.6 * 1.7
+    w = pc.short_neck_width(I, L)
+    assert 0.2 < w < 0.6 * 1.7
+    # the conduction solution it rests on: dT = I^2 rho L^2 / (8 k w^2 t^2) at the margin current
+    i = 3 * I
+    rho = 1.72e-8
+    dT = i * i * rho * (L * 1e-3) ** 2 / (8 * 390 * (w * 1e-3) ** 2 * (0.035e-3) ** 2)
+    assert dT == pytest.approx(10.0, rel=1e-3)
+    assert pc.neck_rule(1.7, "reflow", I, tht=True, tht_len=L) == pytest.approx(w)
+
+
+def test_short_neck_overloaded():
+    """20 A through a 2 mm neck needs 2.5 mm even with its axial heat path: more than the 1.02 mm a relief's
+    webs give a 1.7 mm land, so the copper stays wide (tht_pad_heatsunk)."""
+    assert pc.short_neck_width(20.0, 2.0) > 0.6 * 1.7
+    assert pc.neck_rule(1.7, "reflow", 20.0, tht=True, tht_len=2.0) is None
 
 
 def test_land_necks_tht_shares_the_smd_rule():
@@ -37,10 +58,10 @@ def test_land_necks_tht_shares_the_smd_rule():
     necks0, series0 = pc.land_necks(lands, {"VIN"}, {"GND"}, {"VIN": 0.3}, "reflow")
     assert set(necks0) == {"c1", "c2"}                           # without tht_current: the SMD rule alone
     necks, series = pc.land_necks(lands, {"VIN"}, {"GND"}, {"VIN": 0.3}, "reflow",
-                                  tht_current={"j1": 0.3, "j2": 3.0})
+                                  tht_current={"j1": 0.3, "j2": 40.0}, tht_len=2.0)
     assert necks["c1"] == necks0["c1"] and necks["c2"] == necks0["c2"]
-    assert necks["j1"] == pytest.approx(pc.current_need(0.3))
-    assert "j2" not in necks and series["j2"] == 3.0             # needs more than a relief: no neck
+    assert necks["j1"] == pytest.approx(pc.short_neck_width(0.3, 2.0))
+    assert "j2" not in necks and series["j2"] == 40.0            # needs more than a relief: no neck
 
 
 def test_exemptions_and_settings(monkeypatch):
@@ -176,14 +197,17 @@ def test_tht_current_widens_the_neck_or_keeps_the_width_with_a_hazard(tmp_path, 
     assert _width_near(kept, J1_1, 0.7 + kept.o["neck_len"] - 0.05) > pc.current_need(0.6) + 1e-6
     hz = [h for h in kept.tht_hazards() if h["code"] == "tht_pad_kept_wide"]
     assert hz and "copper loss" in hz[0]["message"] and hz[0]["evidence"]["current_a"] == [pytest.approx(0.6, rel=1e-3)]
-    # with no loss budget to keep, the neck is the width the current needs
+    # with no loss budget to keep, the neck is the width the current needs as a short neck (IPC-2221 would
+    # ask 5.2 mm for 3 A at the margin, more than the land)
+    plan({"J1.1": 3.0, "U1.3": -3.0})
     small = _pc(tmp_path / "a", tht_loss_frac=1e9)
-    assert small.tht_amps and max(small.tht_amps.values()) == pytest.approx(0.6, rel=1e-3)
-    need = pc.current_need(0.6)
-    assert need > 0.25
+    assert small.tht_amps and max(small.tht_amps.values()) == pytest.approx(3.0, rel=1e-3)
+    need = small._tht_need(3.0)
+    assert 0.25 < need < 0.6 * 1.4 < pc.current_need(3.0)
     w = _width_near(small, J1_1, 0.7 + small.o["neck_len"] - 0.05)
     assert 0.25 < w <= need + 1e-6
-    plan({"J1.1": 3.0, "U1.3": -3.0})
+    assert not [h for h in small.tht_hazards() if h["code"] == "tht_pad_heatsunk"]
+    plan({"J1.1": 12.0, "U1.3": -12.0})
     big = _pc(tmp_path / "b", tht_loss_frac=1e9)
     assert big.tht_stats()["unnecked_for_current"] >= 1
     hz = [h for h in big.tht_hazards() if h["code"] == "tht_pad_heatsunk"]
