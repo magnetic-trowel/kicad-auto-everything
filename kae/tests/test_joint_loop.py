@@ -463,3 +463,16 @@ def test_window_evidence_skips_connections_no_move_frees():
     assert [c for c in st.calls if c[0] == "diagnose"][0][2] == ("NR1", "NR2")      # in window order
     # one diagnosis per incumbent (iteration 0 and the kept window), then the final board's
     assert len([c for c in st.calls if c[0] == "diagnose" and c[2]]) == len(ev) == 1 + rep["accepted"]
+def test_window_budget_factor_raises_the_wall_ceiling_in_work_mode(monkeypatch):
+    from kae import budget
+    import kae.joint.loop as L
+    t = [0.0]
+    monkeypatch.setattr(L, "clock_now", lambda: t[0])
+    monkeypatch.setattr(budget, "work_mode", lambda: True)
+    seen = []
+    monkeypatch.setattr(budget, "set_ceiling", lambda s: seen.append(s))
+    st = FakeStages(broken=("R1",))
+    route = st.route
+    st.route = lambda *a, **k: (t.__setitem__(0, t[0] + 50), route(*a, **k))[1]
+    JointLoop(st, opts=dict(max_iters=0, window_budget_factor=2.0, finish=False)).run("o", time_s=100.0)
+    assert seen == [pytest.approx(50 + 200 + 25)]          # the whole extended budget, not --time alone

@@ -300,6 +300,10 @@ class JointLoop:
             # a real window budget, measured: iteration 0 kept its usual shares of time_s
             deadline = max(deadline, clock_now() + float(o["window_budget_factor"]) * time_s + fin_res + reserve)
             rep["window_deadline_s"] = round(deadline - t0, 1)
+            # the wall ceiling (work mode) follows the whole budget, as for any run of that length
+            from kae import budget
+            if budget.work_mode():
+                budget.set_ceiling(deadline - t0)
         tries = {}
         failed, kept_wins = {}, []        # tabu: failed part sets, kept windows (iteration, rect, parts)
         rep["tabu_skips"] = 0
