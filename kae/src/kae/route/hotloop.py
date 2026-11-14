@@ -258,7 +258,9 @@ def escape_round(input_path, output_path, wd, plan, info, opts, hl, final_rep, d
         dropped = sorted({e["cell"] for e in ko["plan"] for x in e["escapes"] if x["pad"] in still})
         log(f"hotloop: {len(still)} cell pin(s) still open; keep-out lifted for {', '.join(dropped)}")
         zones = zones_for(ko["board"], [e for e in ko["plan"] if e["cell"] not in dropped], pads)
-        W.edit(output_path, tmp, drop_guards=True)
+        # the cell stage's copper becomes ordinary routing the last mile may rip and re-lay there
+        cell = set(ko.get("cell_uuids") or ())
+        W.edit(output_path, tmp, drop_guards=True, unlock=sorted(cell) or None)
         W.append_items(tmp, output_path, zones=zones)
         opts["crit_zones"] = [z for z in pcbnew_io.zone_fills(output_path)["zones"] if hard_zone(z.get("name"))]
         p2 = constraints.plan(info, input_path, opts)
@@ -267,13 +269,13 @@ def escape_round(input_path, output_path, wd, plan, info, opts, hl, final_rep, d
                 setattr(p2, k, getattr(plan, k))
         best = drc.summary(rep)
         rep = repair._last_mile(input_path, output_path, wd, p2, info, opts, deadline, rounds, best, rep,
-                                set(opts.get("fixed_uuids") or ()), log, base=base) or rep
+                                set(opts.get("fixed_uuids") or ()) - cell, log, base=base) or rep
         from kae import hazards as H
         hl.setdefault("hazards", []).append(H.make(
             "hotloop_keepout_lifted", "info", "electrical",
             f"The return-plane keep-out of {', '.join(dropped)} walled in pins of the cell's own parts "
-            f"({', '.join(sorted(still))}) even with escape corridors; it was lifted for the last mile, so other "
-            f"copper may cross the return plane under that loop.",
+            f"({', '.join(sorted(still))}) even with escape corridors; it was lifted, and the cell's copper unlocked, "
+            f"for the last mile, so other copper may cross the return plane under that loop.",
             objects=dropped + sorted(still), evidence=dict(pins=sorted(still), cells=dropped),
             fix="Room for those pins to fan out on the cell's side (move a neighbour, or the input capacitor), "
                 "so the keep-out can stay."))
@@ -487,6 +489,8 @@ def stage(input_path, info, workdir, opts=None, log=_log, time_s=None):
             zones += pours
         tracks, vias = s.copper()
         rep.update(tracks=len(tracks), vias=len(vias), zones=len(zones))
+        if rep.get("_ko") is not None:
+            rep["_ko"]["cell_uuids"] = sorted({t.uuid for t in tracks} | {v.uuid for v in vias})
         if tracks or vias or zones:
             dst = wd / "hotloop.kicad_pcb"
             s.write(dst, guards=zones)
