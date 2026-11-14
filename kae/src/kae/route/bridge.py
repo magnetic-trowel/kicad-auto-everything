@@ -144,7 +144,9 @@ DEFAULT_OPTS = dict(
     pairs_stage="before_escapes",  # "after_escapes": pairs first run after the plane escapes
     pairs_own_budget=False,  # the pair router's time is not taken from the rest of the budget
     pairs_s=180.0,           # with pairs: seconds for the pair router at most (a quarter of the budget at most)
-    pairs_post_reserve_s=240.0,  # with pairs="post": kept from the repair rounds for the pass, its last mile and DRC
+    pairs_post_s=240.0,      # with pairs="post": the pass's own seconds (pass, its last mile, DRC), on top of the
+                             # routing budget, after the repair rounds have had all of theirs (the harness timeout
+                             # must allow time + pairs_post_s)
     pad_shapes="kicad",      # pin shapes in the DSN: "kicad" (KiCad's export: rounded corners and arcs as
                              # chords inside the outline, up to 4 um at r 0.25 mm, 10 um on custom pads) or
                              # "outside" (polygons that contain the pad's copper, translate.circumscribe_pins)
@@ -343,11 +345,10 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             log(f"thermal vias: {type(e).__name__}: {e}")
             hot = []
         tv_s = min(float(opts.get("thermal_via_s") or 0.0), 0.1 * time_s) if hot else 0.0
-        post_s = min(float(opts.get("pairs_post_reserve_s", 240.0)), 0.3 * time_s) if opts.get("pairs") == "post" else 0.0
         if opts.get("repair") and left() > 30:
             from . import repair
             report["repair"] = repair.loop(input_path, output_path, wd, p, info, opts,
-                                           deadline=t0 + time_s - 10 - diag_s - tv_s - post_s, log=log)
+                                           deadline=t0 + time_s - 10 - diag_s - tv_s, log=log)
             final_rep = report["repair"].pop("_report", None)
             report.setdefault("hazards", []).extend(report["repair"].pop("hazards", None) or [])
             if hot and left() > 20:
@@ -373,9 +374,16 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             rep = drc.run(staged, wd / "drc" / "drc.json", timeout=max(10, left() - 5))
             report["drc"] = drc.summary(rep)
         stepcache.save_fork(fork, "repaired", {"board": output_path}, clock_now() - t0)
-        if opts.get("pairs") == "post" and left() > 30:
-            # couple the pairs the routed board already has, in place; kept only when KiCad finds it no worse
-            report["pairs"] = _pairs_post(output_path, input_path, wd, opts, report, left, log, seed, final_rep)
+        if opts.get("pairs") == "post":
+            # couple the pairs the routed board already has, in place; kept only when KiCad finds it no worse than
+            # the board as repaired. Its time is its own (pairs_post_s, added to the budget here): taken from the
+            # repair rounds it shipped boards those rounds had not finished (diffpair-ab3: starved_thermal 45 ->
+            # 1,008) and judged itself against them
+            extra = float(opts.get("pairs_post_s", 240.0))
+            t0 += extra
+            report["pairs_post_budget_s"] = round(left(), 1)
+            if left() > 30:
+                report["pairs"] = _pairs_post(output_path, input_path, wd, opts, report, left, log, seed, final_rep)
         parts = finish_parts(opts, p)
         if parts and left() > float(opts.get("finish_min_s") or 60.0):
             report["finish"] = finish_hook(output_path, input_path, wd / "finish", parts, time_s=left() - 10,
@@ -451,7 +459,7 @@ def _pairs_post(output_path, input_path, wd, opts, report, left, log, seed, base
         if not c.get("routed"):
             return got
         out = pd / "post_lm.kicad_pcb"
-        last_mile_only(input_path, pd / "post.kicad_pcb", out, time_s=min(120.0, left() - 10.0), seed=seed, workdir=pd / "lm",
+        last_mile_only(input_path, pd / "post.kicad_pcb", out, time_s=min(120.0, 0.5 * left()), seed=seed, workdir=pd / "lm",
                        opts=dict(keep=True), log=log)
         staged = drc.stage_board(out, input_path, pd / "drc")
         new = drc.summary(drc.run(staged, pd / "drc" / "drc.json", timeout=max(10.0, left() - 5.0)))
