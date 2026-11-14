@@ -331,7 +331,7 @@ def tht_exempt(ref, number, kind, attrs, hot, zone_joined, wide):
     return None
 
 
-def branch_currents(net, tracks, vias, pads, fills, inj, link=1e6, stats=None, grown_w=None, series=()):
+def branch_currents(net, tracks, vias, pads, fills, inj, link=1e6, stats=None, grown_w=None):
     """{pad token: A}: the largest current in a track that enters (or runs through) each pad of `net`, from a resistive solve
     of the net's routed copper under the injections `inj` ({"REF.NUM": A}, kae.excite.dc.planned_injections).
     Tracks are conductances w/L; pads, vias and fill pieces (`fills`: {layer: [polygons]}) join what touches
@@ -348,9 +348,7 @@ def branch_currents(net, tracks, vias, pads, fills, inj, link=1e6, stats=None, g
         return nodes.setdefault(k, len(nodes))
     pads = list(pads)
     ptree = STRtree([g for _t, g, _l in pads]) if pads else None
-    nets = {net} if isinstance(net, str) else set(net)
-    multi = not isinstance(net, str)
-    mine = [t for t in tracks if t.net in nets]
+    mine = [t for t in tracks if t.net == net]
     lines = [LineString([t.start, t.end]) for t in mine]
     ltree = STRtree(lines) if lines else None
     # T-junctions: a track ending on another's run (not at its ends) joins it there
@@ -406,7 +404,7 @@ def branch_currents(net, tracks, vias, pads, fills, inj, link=1e6, stats=None, g
         attach(g.buffer(1e-3), set(layers or ()), k, tok)
     via_nodes = []
     for v in vias:
-        if v.net not in nets:
+        if v.net != net:
             continue
         k = node(("v", v.uuid or (v.x, v.y)))
         g = Point(v.x, v.y).buffer(v.size / 2)
@@ -422,13 +420,6 @@ def branch_currents(net, tracks, vias, pads, fills, inj, link=1e6, stats=None, g
             for g, vk in via_nodes:
                 if fg.intersects(g):
                     edges.append((k, vk, link, None))
-    # parts that conduct at DC between pads of these nets (a fuse, ferrite or diode feeding a rail): conductance in
-    # the copper's units (1 / squares at the 1 oz sheet resistance)
-    rs = MAT.RHO_CU_OHM_MM / MAT.CU_1OZ_MM
-    for pa, pb, ohm in series or ():
-        ka, kb = nodes.get(("p", pa)), nodes.get(("p", pb))
-        if ka is not None and kb is not None and ka != kb:
-            edges.append((ka, kb, min(link, rs / ohm) if ohm > 0 else link, None))
     n = len(nodes)
     I = np.array([e[0] for e in edges]); J = np.array([e[1] for e in edges]); G = np.array([e[2] for e in edges])
     L = SP.coo_matrix((np.r_[-G, -G, G, G], (np.r_[I, J, I, J], np.r_[J, I, I, J])), shape=(n, n)).tocsc()
@@ -449,24 +440,14 @@ def branch_currents(net, tracks, vias, pads, fills, inj, link=1e6, stats=None, g
     for e, (a, k, g, tag) in enumerate(edges):
         if tag == "track":
             i = abs(g * (V[a] - V[k]))
-            w = mine[of_track[e]].width
-            if multi:
-                st_n = stats.setdefault(mine[of_track[e]].net, {}) if stats is not None else {}
-                st_n["loss_sq"] = st_n.get("loss_sq", 0.0) + g * (V[a] - V[k]) ** 2
-                st_n["loss_grown_sq"] = st_n.get("loss_grown_sq", 0.0) + i * i * (w / g) / max(w, grown_w or 0.0)
             loss += g * (V[a] - V[k]) ** 2
+            w = mine[of_track[e]].width
             loss_g += i * i * (w / g) / max(w, grown_w or 0.0)       # the same current in copper grown to grown_w
             t_i[of_track[e]] = max(t_i.get(of_track[e], 0.0), i)
             for tok in at.get(a, set()) | at.get(k, set()):
                 out[tok] = max(out.get(tok, 0.0), i)
                 n_in[tok] = n_in.get(tok, 0) + 1
-    if stats is not None and multi:
-        # per net: loss_sq / loss_grown_sq (above), entries, track_i
-        for ti, i in t_i.items():
-            if i > 0:
-                stats.setdefault(mine[ti].net, {}).setdefault("track_i", []).append((lines[ti], i))
-        stats.setdefault("_entries", {}).update(n_in)
-    elif stats is not None:
+    if stats is not None:
         # loss_sq: the tracks' I^2 R in units of the sheet resistance (squares); entries: tracks into each pad
         stats["loss_sq"] = stats.get("loss_sq", 0.0) + float(loss)
         stats["loss_grown_sq"] = stats.get("loss_grown_sq", 0.0) + float(loss_g)
@@ -1614,33 +1595,24 @@ class PowerCopper:
         from kae.excite import dc as DC
         from shapely.strtree import STRtree
         self.tht_heat = {}
-        branches = []
         try:
-            inj = DC.planned_injections(load(self.path), self.op, heat=self.tht_heat, branches=branches)
+            inj = DC.planned_injections(load(self.path), self.op, heat=self.tht_heat)
         except Exception as e:      # noqa: BLE001 - no plan: the caller's fallback, never a failed pass
             self.log(f"[power-copper] THT neck: no DC plan ({type(e).__name__}: {e})")
             return None
         if not inj:
             return None
-        # one solve over every rail and ground with the parts that conduct at DC between them, as the evaluator's DC
-        # copper: current fed through a fuse, ferrite or diode into a rail is seen on both sides
-        solve_nets = set(nets) | self.power | self.ground
         pads = {}
         for fps in self.sp.pads_by_fp.values():
             for p in fps:
-                if p.kind == "pad" and p.net in solve_nets and isinstance(p.owner, tuple):
+                if p.kind == "pad" and p.net in nets and isinstance(p.owner, tuple):
                     pads.setdefault(p.net, []).append((f"{p.owner[0]}.{p.owner[1]}", p.geom, p.layers))
-        fills = {}
-        for n_ in solve_nets:
-            for l, gs in (self.fills.get(n_) or {}).items():
-                fills.setdefault(l, []).extend(gs)
+        out = {}
         self.tht_flow_stats = {}
-        out = branch_currents(solve_nets, self.board.tracks, getattr(self.board, "vias", []) or [],
-                              [x for v in pads.values() for x in v], fills, inj, stats=self.tht_flow_stats,
-                              grown_w=self.o["max_width"], series=branches)
-        ent = self.tht_flow_stats.pop("_entries", {})
-        for n_ in solve_nets:
-            self.tht_flow_stats.setdefault(n_, {})["entries"] = ent
+        for net in nets:
+            st = self.tht_flow_stats.setdefault(net, {})
+            out.update(branch_currents(net, self.board.tracks, getattr(self.board, "vias", []) or [], pads.get(net, []),
+                                       self.fills.get(net) or {}, inj, stats=st, grown_w=self.o["max_width"]))
         self.tht_plan = len(inj)
         # a pad within reach of a loaded track's grown copper (max_width / 2 + neck_len) is part of that path once
         # the copper grows (wide rails merge into neighbouring pads of their net): it counts that current too

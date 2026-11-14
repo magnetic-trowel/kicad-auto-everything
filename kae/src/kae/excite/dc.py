@@ -515,7 +515,7 @@ def injections(pl, cv):
     return inj
 
 
-def planned_injections(board, intent, brief=None, heat=None, branches=None):
+def planned_injections(board, intent, brief=None, heat=None):
     """{"REF.NUM": A} of the DC power flow at the typical point of every parameter, from the plan the
     physics evaluator scores (kae.excite.evaluate: rails, feeds, regulators, loads and their currents
     under the operating facts `intent`), positive into the copper; {} when the plan has no rail with a
@@ -531,16 +531,6 @@ def planned_injections(board, intent, brief=None, heat=None, branches=None):
     srcs = S.add_all(bd, brief)
     P, _ = ledger_for(bd, brief, srcs, intent)
     pl = plan(board, brief, bd, P, srcs, intent)
-    if branches is not None:
-        # branches: [(pad, pad, ohm)] the parts that conduct at DC (DC_KINDS: resistors, inductors, ferrites, diodes
-        # on, shorts), as the evaluator lumps them into its DC copper
-        for e in bd.circuit.elems:
-            if e.kind in DC_KINDS and e.pa and e.pb:
-                try:
-                    r = abs(complex(e.z(1e-3)).real)
-                except Exception:      # noqa: BLE001 - an element without a DC value is left out
-                    continue
-                branches.append((e.pa, e.pb, r))
     cv = {(p.subject, p.name): p.typ for p in pl.params}
     for s_ in srcs:
         if s_.kind == "cell":
