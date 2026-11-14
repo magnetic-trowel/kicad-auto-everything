@@ -18,6 +18,10 @@ routed-physics recheck). Every later iteration:
    the board changed (annealed coupling). When every window is exhausted, a new cycle samples
    them again under new seeds, until `patience_cycles` cycles in a row accept nothing
    (stop "no improvement (cycle k)").
+   With `tabu`, a window whose part set already failed is skipped (its next, larger attempt
+   is tried instead) unless a window kept since then shares a part with it or lies within
+   `margin` of it: the same parts in the same context failed before (41-53 % of windows
+   repeated a part set, and repeats were kept a third as often as new windows).
 3. **Repair.** stages.repair: re-place the window's parts, rip up the nets touching it, redo
    its modules, re-route with everything else locked.
 4. **Judge.** scorecard.accept against the incumbent: legality, completion and DRC must not
@@ -66,6 +70,9 @@ DEFAULTS = dict(
                            # board's open nets still get lastmile.close for at least this long
     diagnose_s=30.0,       # the final board's "blocked" diagnosis: at most this (and 5 % of the budget)
     recycle=True,          # when every window is exhausted and time is left, sample them all again
+    tabu=False,            # a part set whose window failed is not tried again until a window kept since
+                           # touched it (shared parts, or rectangles within `margin`); the next larger
+                           # attempt of the same window is tried instead (A/B arm)
     min_cycle_s=5.0,       # ... unless the last cycle took less than this (nothing could be routed)
     patience_cycles=2,     # stop after this many full cycles over the windows in a row accept nothing
 )
@@ -89,6 +96,26 @@ def escalate(win, attempt, parts, bounds, o):
     ws = plan_windows(win.spots, parts, bounds, margin=o["margin"] * (1.5 ** k),
                       max_parts=cap, max_pins=None, merge_factor=1.0)
     return ws[0] if ws else win
+
+
+def _near(a, b, m):
+    """Rectangles a and b overlap once a is grown by m."""
+    return a[0] - m < b[2] and b[0] < a[2] + m and a[1] - m < b[3] and b[1] < a[3] + m
+
+
+def tabu_reason(win, failed, kept, margin):
+    """Why window `win` should not run again, or None. `failed`: {key: (iteration, rect, parts)}
+    of windows that failed; `kept`: [(iteration, rect, parts)] of windows kept, in order. A
+    failed part set stays tabu until a window kept after its failure shares a part with it or
+    lies within `margin` of its rectangle (the board changed there)."""
+    f = failed.get(win.key)
+    if f is None:
+        return None
+    it_f, rect_f, parts_f = f
+    for it_k, rect_k, parts_k in kept:
+        if it_k > it_f and (set(parts_k) & set(parts_f) or _near(rect_k, rect_f, margin)):
+            return None
+    return f"tabu: the same parts failed at iteration {it_f}, nothing kept near them since"
 
 
 def derive_seed(seed, it, k=0):
@@ -236,6 +263,8 @@ class JointLoop:
             deadline = max(deadline, clock_now() + float(o["window_budget_factor"]) * time_s + fin_res + reserve)
             rep["window_deadline_s"] = round(deadline - t0, 1)
         tries = {}
+        failed, kept_wins = {}, []        # tabu: failed part sets, kept windows (iteration, rect, parts)
+        rep["tabu_skips"] = 0
         max_att = int(o["max_attempts"]) if o["max_attempts"] is not None else 2 + int(time_s // 1800)
         rep["max_attempts"] = max_att
         cycles, cycle_t0, cycle_kept, idle = 0, clock_now(), 0, 0
@@ -283,6 +312,16 @@ class JointLoop:
             base0 = min(base, key=lambda w: tries.get(w.key, 0))
             attempt = tries.get(base0.key, 0)
             win = escalate(base0, attempt, parts, bounds, o_win)
+            if o["tabu"]:
+                why_t = tabu_reason(win, failed, kept_wins, o["margin"])
+                while why_t and attempt + 1 < max_att:      # the next, larger attempt instead
+                    attempt += 1
+                    win = escalate(base0, attempt, parts, bounds, o_win)
+                    why_t = tabu_reason(win, failed, kept_wins, o["margin"])
+                if why_t:
+                    tries[base0.key] = max_att
+                    rep["tabu_skips"] += 1
+                    continue
             it += 1
             t = clock_now()
             bump = sorted({r for s in win.spots if s.kind == "unrouted" for r in s.refs})
@@ -300,6 +339,7 @@ class JointLoop:
                 self.log(f"repair failed: {type(e).__name__}: {e}\n{traceback.format_exc(limit=6)}")
                 cand, rrep = None, dict(outcome=f"error: {type(e).__name__}: {e}")
             tries[base0.key] = attempt + 1
+            failed[win.key] = (it, win.rect, win.parts)     # until kept below
             if cand is None:
                 rows.append(dict(iter=it, window=win.to_dict(), accepted=False, why=rrep.get("outcome"),
                                  seconds=round(clock_now() - t, 1), repair=rrep))
@@ -323,6 +363,8 @@ class JointLoop:
                      f"{dt:.0f}s)")
             if keep:
                 best, best_card, best_fb, best_it = cand, card, fb, it
+                failed.pop(win.key, None)
+                kept_wins.append((it, win.rect, win.parts))
                 self._save(st, best, output, rep)
                 self._geom = st.geometry(best)
                 tries = {}               # the board changed: earlier failures may now succeed
