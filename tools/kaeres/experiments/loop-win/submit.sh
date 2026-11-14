@@ -5,7 +5,7 @@
 # loop-win batch 1 (PLAN.md), after the smoke has been read: all six arms on seed 0 (loop-win), then R, W0 and Wall
 # on seed 1 (loop-win-k2, attempt 1 of the same methods). The smoke's two boards stay (their seed-0 runs are reused).
 # Seed 1 is submitted once seed 0's jobs have finished (an attempts-2 experiment would otherwise queue attempt 0 again).
-#   S7=48ffd89 tools/kaeres/experiments/loop-win/submit.sh seed0|seed1
+#   S7=ed3f815 tools/kaeres/experiments/loop-win/submit.sh seed0|seed1
 set -euo pipefail
 cd "$(dirname "$0")/../../../.."
 export PATH=$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin
