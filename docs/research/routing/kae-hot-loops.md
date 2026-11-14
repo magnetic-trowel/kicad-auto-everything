@@ -8,10 +8,11 @@ Keys: hot loop, commutation cell, loss.loop, loss.loop_ac, loss.swnode, R_loop, 
 **Status:** design (no code). **First published:** 2026-11-14, branch `hotloop-research` (off `power-copper-tht` 4392518).
 
 **Results**
-1. The default router (bridge + finish) never routes hot loops as hot loops: the critical cell module is not in it, the switch node is excluded from widening and ground vias land only at cap and IC ground pads. The measured gap (loss.loop_ac ≈ 1.8×, loss.loop 1.1–1.3× human) is resistance and length of class-width tracks, not mesh bias [C].
+1. The default router (bridge + finish) has no hot-loop stage. The gap (loss.loop_ac ≈ 1.8×, loss.loop 1.1–1.3× human) comes from class-width tracks, return detours, layer changes, open hops and foreign tracks on the return layer, not from mesh bias [C].
 2. The gap is understated: cells whose copper is open have no value and drop out of the ratio; of the 38 cells with a value on the human layouts of 24 converter boards, 13 have none in arm A and 15 none in arm C; 4 and 7 of them on boards where the arm's other cells have values (open hops, as on nekoink) [C].
-3. The critical cell module already reached cells 0.85–0.89× human in crit-v6 ([kae-critical-copper](kae-critical-copper.md#results)) but prices L only and narrows copper by `trim_tol`, raising R. Run it for cells only, ahead of the bridge, priced in watts (L and R), with via arrays, a reference keep-out and pours.
-4. The evaluator ranks layouts faithfully enough (raster PEEC with solved plane currents; mesh bias moves kae/human ratios by ≤ 0.1 on 7 of 8 boards) but drops open cells and cannot see cap orientation (lumped bodies). Fix both before the A/B.
+3. On bq25306, removing foreign tracks from the return layer under the loop, one cap ground via and a 0.5 mm VIN hop bring arm A from 5.04 nH / 13.1 mΩ to 1.57 nH / 3.65 mΩ (human 1.55 / 3.1) [C].
+4. The critical cell module already reached cells 0.85–0.89× human in crit-v6 ([kae-critical-copper](kae-critical-copper.md#results)) but prices L only and narrows copper by `trim_tol`, raising R. Run it for cells only, ahead of the bridge, priced in watts (L and R), with via arrays, a reference keep-out and pours.
+5. The evaluator ranks layouts faithfully enough (raster PEEC with solved plane currents; mesh bias moves kae/human ratios by ≤ 0.1 on 7 of 8 boards) but drops open cells and cannot see cap orientation (lumped bodies). Fix both before the A/B.
 
 ## What experts do, and why (quantified)
 
@@ -30,7 +31,7 @@ Keys: hot loop, commutation cell, loss.loop, loss.loop_ac, loss.swnode, R_loop, 
 Why, in one line each [I, from the cited physics]:
 - With a plane within ~0.2 mm, L ≈ Σ μ0·h·l/w per conductor: length, width and h decide, gap barely matters ([pdn § 1](../../topics/physics/pdn-and-commutation.md#1-commutation-loop-geometry)). Experts shorten (X1), widen (X5) and lower h (X2–X4).
 - R_loop at f_sw (≤ 3 MHz) is near DC: R ≈ ρl/(wt) + vias; the return gathers under the trace above f_c ≈ 0.6 MHz (h = 0.1 mm), so the hot-loop trace width sets most of R ([power-copper § 5](../../topics/physics/power-copper.md#5-ac-effects)).
-- Loss sensitivity: EPC measures > 4 % efficiency for 0.4 → 2.9 nH (12 → 1.2 V, 1 MHz); at an assumed 20 A that is ~0.4 W/nH against ½·L·I²·f's 0.2 W/nH, the rest being slower commutation and overshoot [P, I]. Common-source inductance dominates switching loss for packaged discrete FETs, not the layout loop ([EPC WP009](https://epc-co.com/epc/Portals/0/epc/documents/papers/Impact%20of%20Parasitcs%20on%20Performance.pdf) [P]; [powerelectronictips](https://www.powerelectronictips.com/how-do-parasitic-inductances-affect-switching-performance/) [S]).
+- Loss sensitivity: EPC measures > 4 % efficiency for 0.4 → 2.9 nH (12 → 1.2 V, 1 MHz); at an assumed 20 A that is ~0.4 W/nH against ½·L·I²·f's 0.2 W/nH, the rest being slower commutation and overshoot [P, I]. For packaged discrete FETs common-source inductance dominates switching loss (EPC WP009 [P]).
 - The stakes on corpus boards are overshoot and EMI, not watts: human loss.loop is 0.008–14 mW on 20 of 21 boards with a value, 117 mW on one (diagnosis run) [C].
 
 ## Prior art in automated power-stage layout
@@ -38,7 +39,6 @@ Why, in one line each [I, from the cited physics]:
 | Work | What it optimizes | Model | Relevance |
 |---|---|---|---|
 | PowerSynth 2 (Sanjabiasasi et al., IEEE OJPEL 2025, [PDF](https://par.nsf.gov/servlets/purl/10595462)) [P] | Manhattan constraint-graph floorplans (HCG/VCG), NSGA-II/MOPSO; modules: loop L + T; converters: efficiency + T | PEEC/FastHenry (modules), loss model (converters, 200 kHz, EMI ignored) | 100 layouts in 100 s generate + 380 s evaluate; open source. Converter loop L not optimized |
-| Its refs [6], [7], [9] [S] | GA layout + pouring; GA Pareto of loop L vs branch mismatch; GA + Dijkstra routing, devices fixed | discrete extractor | [9] is kae's routing problem |
 | CURENT 2024 conference paper, simulated-annealing switching-loop layout [S, snippet only] | simulated annealing of switches + decaps | rules | same move set as kae's joint modules |
 | [Quilter](https://quilter.ai/blog/5-ways-ai-simplifies-power-supply-pcb-layout) [V] | ranks loops by di/dt, minimises area | not published | no data |
 
@@ -76,6 +76,20 @@ Mechanisms, each seen on a named board:
 - **M4 open hot-loop hops.** nekoink A and C leave the IPSOUT hop of the buck cells open; the evaluator then reports nothing for those cells.
 - Where kae matches human (martinberlin boost, 0.25 vs 0.4 mm tracks, same path), the estimator's L is within 3 %.
 
+**What-if on bq25306 (arm A's board, evaluator at 0.25 mm, one cell)** [C]: the diagnosis run edited A's copper and re-evaluated.
+
+| Edit | L_loop (nH) | R_loop (mΩ) |
+|---|---|---|
+| A as routed | 5.04 | 13.1 |
+| E1: foreign tracks removed from B.Cu (the return layer) under the loop | 2.19 | 5.3 |
+| E2: one ground via at the CIN ground pad | 4.66 | 12.9 |
+| E4: VIN hop widened 0.2 → 0.5 mm | 4.95 | 11.7 |
+| E1 + E2 | 1.67 | 5.0 |
+| E1 + E2 + E4 | 1.57 | 3.65 |
+| C (route-finish default) / human | 4.06 / 1.55 | 7.5 / 3.1 |
+
+The cut return plane (X9) is the largest single cause on this board; the three edits together reach human. Each edit is one of R5, R4, R2 below.
+
 ### What the router's own objective does wrong
 1. `quote` prices loop L only; `_return_vias` adds a via only for ≥ 2 % L gain, ≤ 4 vias. DC resistance and ampacity never enter.
 2. `trim_widths` narrows each hop to the narrowest width within 5 % of the wide loop's L. Over a close plane L′ falls slower than 1/w, R as 1/w: the lambdakb example 1.41 → 0.98 mm costs +4.5 % L and +44 % R [C, from [topic](../../topics/routing/critical-net-routing.md#keeping-critical-copper-out-of-the-routers-way)].
@@ -88,15 +102,13 @@ Mechanisms, each seen on a named board:
 |---|---|---|
 | 3-D return currents? | Modelled: every copper layer is a raster of x/y bars with `nsub` filaments, vias are barrels, partial inductances by FFT; plane currents are solved, not imaged ([mesh.py](../../../kae/src/kae/em/mesh.py)) | refinement to 0.0625 mm converges (E7) [C]; no lab measurement |
 | 0.25 mm mesh bias | Hot loops +5 to +12 % high, from above; narrow (< 3 p = 0.75 mm) tracks under-resolved, so track loops read higher than pour loops ([field-solver-accuracy § 3](../physics/field-solver-accuracy.md#3-mesh-bias-at-025-mm-e7)) | pitch sweep 0.0625–0.25 mm on 8 boards: kae/human loss.loop ratio moves ≤ 0.1 on 7 (bq25306 3.25 → 3.20, powerboost 1.49 → 1.54, max98357 1.64 → 1.52); flips on circuitmonkey (1.24 → 0.91); loop_ac ratios stable [C] |
-| Skin effect | nsub = 2 within 1–2 % for loop_ac at f_sw | E5 [C] |
 | Frequency | L at the edge band capped at 10 MHz: return gathered under the trace (f_c = R_s/(2π·μ0·h) ≈ 0.6 MHz at h = 0.1 mm, 35 µm) | [power-copper § 5](../../topics/physics/power-copper.md#5-ac-effects) |
 | loop_ac harmonics | fundamental only, I²·D(1−D)·R: a lower bound, same direction for both arms [I] | evaluate.py |
 | Cap bodies | lumped branches, no mutual inductance: cap orientation and alternating pairs (X8, 15–40 %) are invisible | mesh.py docstring |
-| Terminals | each pad contracted to one node: an exposed pad gives free lateral current; same for both arms | mesh.py |
 | Open cells | an open loop gives no value, so it leaves the ratio | evaluate.py "copper open … not computed" |
 | loss.loop in W | ½·L·I²·f underrates EPC's measured sensitivity ~2×; a per-cell constant, so ratios hold | above |
 
-Verdict [I]: optimizing the evaluator's L and R gives real improvement for length, width, vias and plane continuity, the levers kae lacks. Fix three things before using it as the A/B judge:
+Verdict [I]: the evaluator's L and R respond to length, width, vias and plane continuity, the levers kae lacks, so optimizing them is real improvement. Before it judges the A/B:
 - **E1 open cells count.** Report cells evaluated per arm; an arm's open cell is a loss in the paired table (rank-based test: worst rank), never a dropped row. Separate commit; it makes no score easier.
 - **E2 local refinement.** Re-solve each cell's window (hull + 3 mm) at 0.0625 mm (16× cells of a ~10 × 10 mm window, seconds) and report `L_loop`, `R_loop` from it beside the 0.25 mm board solve.
 - **E3 cap bodies as bars.** Replace the lumped L of 2-pad caps on cell and decap loops by a bar at body height between the pads (as the router's `Loop.body` in `critical_physics`), so orientation and alternation count. Validate on the [pdn § 3](../../topics/physics/pdn-and-commutation.md#3-decoupling-capacitors-mounting-orientation-spreading) cases.
@@ -111,9 +123,8 @@ Gain is against the default arm N, per cell, on the converter boards; [I] unless
 | R1 | **Cells first**: run the critical cell module (cells and power paths only, no decaps, rails, chains) before the bridge, soft-locked (`soft_critical`), guards on | L to ~0.85–0.9× human (crit-v6 cells 0.888) [C]; no open hot loops | small: code exists; 0.4–60 s/board | completion: locked copper walled routing in crit-v3; cells are 1–4 per board, so far fewer walls than decaps/rails |
 | R2 | **Price watts**: quote = loss.loop + loss.loop_ac with the intent's I, D, f_sw (fallback E5 priors); `trim_tol` judged on watts; via additions on watts | loop_ac 1.8× → ≤ 1.2× human; L unchanged or better | small (quote change, R from `critical_physics.r_track`, `R_via`) | priors wrong for some cells; widening crowds neighbours (guard by escape check, exists) |
 | R3 | **Hot-loop pours**: VIN and PGND hops written as zones (score v10 allows added zones) spanning the terminal width (cap pad length to pin group), solid connection; SW stays a track at IPC width | R_loop −30 to −60 % where tracks were 0.25–0.5 mm [I from R ∝ 1/w]; L −10 to −30 % (width term) | medium: zone writer exists (`vector_out="zones"`) | zone priority deadlocks (prepare rule 6), thermal-relief starvation (`starved_thermal`), DRC refill time |
-| R4 | **Return-via arrays**: vias at CIN ground and IC PGND/EP spread over the pad span (cluster outer size), count = max(ceil(I), L-optimal), on watts; outside the CIN–IC strip (SLYT614) | L −10 to −30 % where only one via exists (pdn § 2: 4 spread vias ≈ 0.51× one) [C]; arm E (ground vias before routing) gave loss.loop 0.71× A, median over 17 terms [C] | small (via_candidates exists) | E arm lost 2 clean boards: place vias inside the critical stage, legality-checked, not as a separate pass |
-| R5 | **Reference keep-out**: rule area on the cell's reference layer, hull + 1 mm, forbidding foreign tracks (not vias) for the bridge; dropped from output like guards | restores X2/X9: −6 dB class effect on boards where the bridge cut L2 | small | routability on 2-layer boards: apply only where that layer is a plane |
-| R6 | **Vertical loop** where the stack allows (L1–L2 ≤ 0.2 mm, plane on L2): already chosen by the KKT split between surface ground hop and via return | covered by R4 [I] | none | — |
+| R4 | **Return-via arrays**: vias at CIN ground and IC PGND/EP spread over the pad span (cluster outer size), count = max(ceil(I), L-optimal), on watts; outside the CIN–IC strip (SLYT614); the KKT split already picks vertical vs surface return (X3) | L −10 to −30 % where only one via exists (pdn § 2: 4 spread vias ≈ 0.51× one) [C]; arm E (ground vias before routing) gave loss.loop 0.71× A, median over 17 terms [C] | small (via_candidates exists) | E arm lost 2 clean boards: place vias inside the critical stage, legality-checked, not as a separate pass |
+| R5 | **Reference keep-out**: rule area on the cell's return layer (the ground fill under it, also B.Cu of a 2-layer board), hull + 1 mm, forbidding foreign tracks (not vias) for the bridge; dropped from output like guards | bq25306: L 5.04 → 2.19 nH, R 13.1 → 5.3 mΩ alone [C]; SNVA638's 6 dB class | small | routability: foreign nets lose a few mm² of the return layer per cell; measure completion |
 | T1 | **Tighten** (`critical_taut`) on cell copper, guarded by watts | length −2 to −5 % [I from taut −2.7 % copper] | none (exists, off) | small; keep off unless R1–R4 pass |
 | J1 | **Joint modules** in joint/place tasks: `optimize_modules` on cells with the watts quote, plus HF-cap choice (which owned cap sits nearest) | median −4 %, up to −26 % on L (12 human placements) [C] | small | joint tasks only: route tasks fix placement |
 | P1 | **Placement hand-off** (placement session) | largest lever: L scales with cap-to-pin length; human L 0.3–2 nH on integrated cells | their cost | see below |
@@ -123,13 +134,13 @@ Gain is against the default arm N, per cell, on the converter boards; [I] unless
 1. CIN_HF = the smallest-package owned cap (brief role `cin_hf`); place it on the IC's side with its pads facing the VIN and PGND pins, terminal axis parallel to the pin pair, gap = clearance; target hop length ≤ 1 mm, never > 2 mm (X1).
 2. Reserve return-via sites: a keep-free strip ≥ via diameter + clearance beside the CIN ground pad and the IC PGND/EP, on the side away from the CIN–IC path (X6).
 3. Two VIN/PGND pin pairs (or a Silent-Switcher-style pinout): split CIN symmetrically, one HF cap per side (X7).
-4. Inductor next to SW, outside the CIN–IC strip; nothing else in that strip.
+4. Inductor next to SW, outside the CIN–IC strip.
 5. Paralleled HF caps alternate orientation (X8), once E3 lets the evaluator see it.
 6. Price all of this with the existing commutation term in `place_terms`, not a mm rule.
 
 ## Recommended plan and A/B (hotloop-ab)
 
-Order: E1 + E2 first → R1 + R2 + R4 + R5 as one arm → R3 as its own arm → T1, J1, P1 later.
+Rank by expected gain per cost: R5 > R1 + R2 > R4 > R3 > J1 > T1. Order: E1 + E2 first → R5 alone as the cheapest arm → R1 + R2 + R4 + R5 → R3 → T1, J1, P1 later.
 
 **Boards.** The 24 boards of the physics set with a commutation cell and compiled intents 42 cells (38 valued on the human layout); plus a twin of N on all 24 for noise. Route tasks (human placement), KiCad 10.0.7, intents `compiled-9867d0b`, score v12, same restart portfolio and budgets as confirm-default-ab.
 
@@ -137,6 +148,7 @@ Order: E1 + E2 first → R1 + R2 + R4 + R5 as one arm → R3 as its own arm → 
 |---|---|
 | N | default (`--final`, `--finish`), power-copper-tht |
 | N2 | twin of N (noise) |
+| K | N + reference keep-out only (R5) |
 | H | N + cells-first (R1) with watts quote (R2), via arrays (R4), reference keep-out (R5) |
 | HP | H + hot-loop pours (R3) |
 
@@ -144,14 +156,13 @@ Order: E1 + E2 first → R1 + R2 + R4 + R5 as one arm → R3 as its own arm → 
 1. Primary, physics: per-cell R_loop median H/N ≤ 0.75 and L_loop median H/N ≤ 0.90, each with signal-better ≥ 2× signal-worse beyond N2–N noise. Open cells: H not more than N.
 2. Primary, routing: completion H − N CI lower bound > −0.005; cp1 and clean_strict not worse (McNemar); no new DRC error type with > 5 occurrences; no invalid output.
 3. Secondary: against human, per-cell L_loop median ≤ 1.0 and R_loop median ≤ 1.2; `overshoot.peak`, `supply.peak`, `pickup.peak`, `loss.swnode` not worse beyond floors.
-4. HP adopted over H only if R_loop falls further ≥ 15 % with criteria 2 and 3 holding, `starved_thermal` not up.
+4. K is judged by criteria 1–3 against N on its own (it may be adopted alone). HP adopted over H only if R_loop falls further ≥ 15 % with criteria 2 and 3 holding, `starved_thermal` not up.
 5. Before concluding, read per-type DRC errors and the cell renders of every board where H loses.
 
-**Cost.** 4 arms × 24 boards × one portfolio attempt (900 s × √(footprints/40)) ≈ 30–50 core-hours plus physics (~70 evaluations); through kaeq at priority ≤ 5, owner `hotloop-r`.
+**Cost.** 5 arms × 24 boards × one portfolio attempt (900 s × √(footprints/40)) ≈ 30–50 core-hours plus physics (~70 evaluations); through kaeq at priority ≤ 5, owner `hotloop-r`.
 
 ## Open questions
 - Absolute loss scale: ½·L·I²·f vs EPC's ~2× measured sensitivity; needs a switching model per cell class (integrated vs discrete).
-- Hubing's > 100 W isolated-return exception ([hot-loops § Open questions](../../topics/rules/power/hot-loops.md#open-questions)): none of the 24 boards is that large.
 - Does the router quote (fastloop, image plane) rank cells as the evaluator does? Measure Spearman ρ on the A/B's cells before trusting R2's quote.
 
 ## Sources
