@@ -317,16 +317,24 @@ def _ties(board, split, adj, i):
 
 
 def _probe(place_fn, board, split, r, seed, time_s, kw):
-    """Uuids of the movable parts the placer's seed and legalizer (no annealing) leave illegal in region r."""
+    """Uuids of the movable parts the placer's seed and legalizer (no annealing) leave illegal in region r:
+    those its greedy legalizer found no spot for when there are any (no room, the clearest evidence),
+    else every part still in a violation."""
     sub = sub_board(board, split, r)
     if not _movable(sub):
         return set()
     res = place_fn(sub, seed=seed, time_s=time_s, brief=None, verify=None, log=None, **dict(kw, anneal=False))
     rep = res.report
-    bad = set((rep.get("legalize_final") or rep.get("legalize") or {}).get("violations") or {})
-    for e in rep.get("exact") or []:
-        bad |= set(e.get("refs") or ())
-    if rep.get("legal_grid") is False and not bad:
+    last = rep.get("legalize_final") or rep.get("legalize") or rep.get("legalize_seed") or {}
+    illegal = bool(rep.get("exact")) or rep.get("legal_grid") is False
+    if not illegal:
+        return set()
+    bad = set((last.get("greedy") or {}).get("unplaced") or ())
+    if not bad:
+        bad = set(last.get("violations") or {})
+        for e in rep.get("exact") or []:
+            bad |= set(e.get("refs") or ())
+    if not bad:
         bad = {"*"}
     return {fp.uuid for fp in sub.footprints if not fp.locked and not fp.edge_cuts and fp.pads
             and (fp.ref in bad or "*" in bad)}
@@ -337,7 +345,7 @@ def fit_split(place_fn, board, split, seed=0, time_s=60.0, log=None, rounds=PROB
     see it (courtyard area alone does not: a panel region full of fixed jacks and pots holds an area of
     parts but no spot for a DIP). A movable part a region cannot legalize goes to the region it is most
     tied to by nets among those it has not failed in; the regions changed are probed again, up to
-    `rounds` times, while the probes are inside `time_s`. Returns (split, or None when a region still
+    `rounds` times: one repair round always, more while the probes are inside `time_s`. Returns (split, or None when a region still
     cannot hold its parts; report)."""
     log = log or (lambda *a, **k: None)
     t0 = clock_now()
@@ -349,14 +357,14 @@ def fit_split(place_fn, board, split, seed=0, time_s=60.0, log=None, rounds=PROB
     failed = defaultdict(set)          # uuid -> regions it could not be legalized in
     todo = list(range(len(split.regions)))
     rep = dict(rounds=0, probes=0, moved=0, unfit=0)
-    n_probe = len(todo) * (rounds + 1)
     bad = {}
     for rnd in range(rounds + 1):
         bad = {}
-        for r in todo:
+        for n, r in enumerate(todo):
             left = time_s - (clock_now() - t0)
             tp = clock_now()
-            b = _probe(place_fn, board, split, r, seed, max(PROBE_MIN_S, left / max(1, n_probe - rep["probes"])), kw)
+            # this round's regions share what is left, half of it kept for a repair round
+            b = _probe(place_fn, board, split, r, seed, max(PROBE_MIN_S, 0.5 * left / (len(todo) - n)), kw)
             rep["probes"] += 1
             rep.setdefault("probe_s", []).append(round(clock_now() - tp, 2))
             if b:
@@ -366,7 +374,9 @@ def fit_split(place_fn, board, split, seed=0, time_s=60.0, log=None, rounds=PROB
             break
         if rnd == rounds:
             break
-        if clock_now() - t0 >= time_s:      # probes overran their share: the split is not known to fit
+        # one repair round always runs (a region that cannot hold its parts is slow to probe, and the first
+        # round alone can overrun); later rounds only inside the probes' share
+        if rnd >= 1 and clock_now() - t0 >= time_s:
             rep["out_of_time"] = True
             break
         todo = set()

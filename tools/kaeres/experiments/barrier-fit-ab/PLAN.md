@@ -75,13 +75,24 @@ Pass needs all of:
 
 Look 1 (stage 1, 120 boards): adopt if 1-4 pass with alpha = 0.01; reject if `legal` falls more than 3 pp with
 McNemar p < 0.05, or the ratio CI's lower end is above 0.95 (no 5 % gain is possible); otherwise run the extension
-(`barrier-fit-ab-ext`, the other 91 boards) and decide on all 211 with alpha = 0.04. At look 2 a failed guard
+(`barrier-fit2-ab-ext`, the other 91 boards) and decide on all 211 with alpha = 0.04. At look 2 a failed guard
 rejects.
 If adopted, `barrier_split=2` becomes the default in `kae.route.constraints.DEFAULTS` in its own PR; if not, it
 stays off with its numbers in the research page.
 
 ## Smoke (before any full run)
-`barrier-fit-smoke`: len42-synth-audiout (moved parts, fit repair), niektb-sluisbrinkie andes-10hp (three regions,
+`barrier-fit2-smoke`: len42-synth-audiout (moved parts, fit repair), niektb-sluisbrinkie andes-10hp (three regions,
 no moves), gregification-beems-mini-orion-tem (HV keepout wall). All three are ab2 boards, not in this test.
 One board per arm profiled (py-spy on the python process, JFR on Freerouting), results in SMOKE.md; job
 `--cpus`/`--mem` from the smoke's peaks.
+
+## Amendment before any run (2026-11-14)
+Placement-only checks of the first `fit_split` (e810834) on the ab2 boards (not this test's boards) found two faults,
+fixed before anything was submitted: a region that cannot hold its parts is slow to probe, so on a 100 s placement the
+first round alone used the probes' share and no repair ran (the split was skipped on all four len42/fihdi boards it was
+meant to fix); and probes of a few seconds flagged parts that only lacked time, so fit moved parts that needed no move
+(niektb: 8 parts moved, 0 -> 13 nets across regions). Now one repair round always runs, a round's regions share half
+of what is left, and a probe names the parts its greedy legalizer found no spot for when there are any (all illegal
+parts otherwise). The methods and experiments registered at e810834 (`barrier-fit-smoke`, `barrier-fit-ab`) were never
+submitted; the test runs as `barrier-fit2-smoke`, `barrier-fit2-ab` (and `barrier-fit2-ab-ext`) at the commit
+`setup.sh` was run with.
