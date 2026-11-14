@@ -11,12 +11,17 @@ test in tools/research/physics/hl_cell_convergence.py; docs/topics/physics/pdn-a
 The window is the bounding box of the parts that carry at least SHARE of the cell's peak pad current in the
 copper-free circuit solve (input caps, switches, the pads of the overshoot observer), grown by
 max(MARGIN_MM, MARGIN_H x h), h the outer layers' depth to their next layer, so the return current spreading in the
-planes is held (a loop at height h over its plane returns 1 - (2/pi) atan(x/h) of its current beyond x; on the
-test board, 2 layers 1.5 mm apart, L_loop in the window reads +3 % at 3 mm, -0.3 % at 10 mm against the whole
-board at the same pitch). It
+planes is mostly held (a loop at height h over its plane returns 1 - (2/pi) atan(x/h) of its current beyond x; on
+2-layer boards the raw window reads up to +36 % at 3 mm: the truncation correction below removes it). It
 depends only on the placement and the circuit, never on the copper: every layout of one placement is judged in the
 same window at the same pitch. When the copper closes the loop only outside the window, the margin doubles until it
 closes (reported); a loop open on the whole board is an open cell (kae.excite.evaluate.open_cell_observations).
+
+The window's truncation (copper beyond it that the return or a bulk cap still uses: up to +12 % on a 2-layer board
+24 mm across) is measured at the board's pitch and removed: the cell's value is the fine window solve plus (board
+solve minus the same window at the board's pitch), the two-grid correction (truncation and pitch errors add to first
+order). Both terms are reported (window.L_raw_nH, window.trunc_L_nH; R likewise at f_sw, whose truncation term is
+applied to the harmonics too).
 
 Per frequency the quantities are those of the board solve, on the window's copper: the layout's share
 z = J_k^T v - J_k^T v_ideal of the overshoot observer k for the cell's own pattern; L_loop = Im z / w at the edge
@@ -35,12 +40,12 @@ import numpy as np
 from . import harm as HA
 from . import observe as O
 
-CELL_PITCH = 0.0625          # mm: see the module docstring and the convergence test
+CELL_PITCH = 0.0625          # mm: L_loop within 0.5 %, R_loop within 3 % of 0.03125 mm on 3 boards (0.125: up to 11 %)
 SHARE = 0.05                 # a pad carrying this share of the cell's peak pad current sets the window
 MARGIN_MM = 3.0              # mm around the pads
-MARGIN_H = 6.0               # x the outer layers' depth to their next layer, if larger (the return spreads over a few h)
+MARGIN_H = 3.0               # x the outer layers' depth to their next layer, if larger (the return spreads over a few h)
 HARMONICS = (1, 3, 5)        # R_loop at these multiples of f_sw
-MAX_CELLS = 6e6              # raster budget of one window (cells x copper layers): the pitch doubles past it
+MAX_CELLS = 1.2e6            # raster budget of one window (cells x copper layers): the pitch doubles past it (5 min)
 MAX_GROW = 4                 # margin doublings when the loop closes only outside the window
 
 
@@ -192,9 +197,19 @@ def cell_rows(path, b, bd, bm, srcs, obs, cps, bands, board_window, n_cu, nsub=2
                              f"window grown {grown} times to {margin:g} mm"))
             continue
         w_e = 2 * math.pi * f_edge
-        Le = z[f_edge].imag / w_e
-        Zf = z[f_fund]
-        R = [dict(n=n, f_MHz=round(f / 1e6, 4), R_mohm=round(max(z[f].real, 0.0) * 1e3, 4)) for n, f in zip(HARMONICS, fh)]
+        # the window's truncation, measured at the board's pitch: the board solve minus the same window at that pitch
+        # (no skin correction in either, as the board solve has none). Added to the fine solve, it leaves the fine
+        # pitch's correction of the board solve (two-grid: truncation and pitch errors add to first order)
+        dLe, dZf = 0.0, 0j
+        if global_pitch:
+            zc, _, _ = _solve_window(path, b, bd, s, o, win, global_pitch, nsub, bm.fills, [f_fund, f_edge], False, log)
+            if zc is not None:
+                dLe = g[0] - zc[f_edge].imag / w_e
+                dZf = g[1] - zc[f_fund]
+        Le = z[f_edge].imag / w_e + dLe
+        Zf = z[f_fund] + dZf
+        R = [dict(n=n, f_MHz=round(f / 1e6, 4), R_mohm=round(max((z[f] + dZf).real, 0.0) * 1e3, 4))
+             for n, f in zip(HARMONICS, fh)]
         peaks = []
         for c in range(len(cps[s.name])):
             val = {k[1]: v for k, v in cps[s.name][c].items()}
@@ -205,6 +220,9 @@ def cell_rows(path, b, bd, bm, srcs, obs, cps, bands, board_window, n_cu, nsub=2
                          di_dt_A_per_ns=round(val0["I_A"] / val0["t_i_s"] * 1e-9, 4),
                          f_edge_MHz=round(f_edge / 1e6, 4),
                          window=dict(box=[round(x, 3) for x in win], pitch=pc, margin_mm=margin, grown=grown,
+                                     L_raw_nH=round(z[f_edge].imag / w_e * 1e9, 4), trunc_L_nH=round(dLe * 1e9, 4),
+                                     R_raw_mohm=round(max(z[f_fund].real, 0.0) * 1e3, 4),
+                                     trunc_R_mohm=round(dZf.real * 1e3, 4),
                                      cells=int(m.nx * m.ny * len(m.layers)), dropped_injection=round(info["dropped"], 5),
                                      skin=bool(skin), seconds=round(time.time() - t0, 1))))
         log(f"cell {s.name}: window {win[2] - win[0]:.1f} x {win[3] - win[1]:.1f} mm at {pc:g} mm: L_loop "
