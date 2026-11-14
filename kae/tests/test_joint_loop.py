@@ -397,3 +397,33 @@ def test_copper_totals_lines_and_arcs():
            vias=[1, 2])
     length, vias = copper_totals(b)
     assert vias == 2 and length == pytest.approx(5 + math.pi + 1.5 * math.pi + 0.5 * math.pi, rel=1e-6)
+
+
+def test_tabu_never_repeats_a_failed_part_set_without_a_kept_window_near_it():
+    import time as _t
+
+    from kae.joint.feedback import Window
+    from kae.joint.loop import tabu_reason
+
+    class Slow(FakeStages):
+        def repair(self, *a, **k):
+            _t.sleep(0.02)
+            return super().repair(*a, **k)
+    common = dict(min_iter_s=0.0, reserve=0.0, max_parts=2, margin=1.0, finish=False, max_attempts=2,
+                  min_cycle_s=0.01, patience_cycles=10, max_iters=12)
+    st = Slow(broken=("R2",), bad=("R2",))
+    JointLoop(st, opts=common).run("o", time_s=1e6, seed=5)
+    plain = [c[3] for c in st.calls if c[0] == "repair"]
+    assert len(plain) == 12 and len(set(plain)) < len(plain)          # the same parts again and again
+    st2 = Slow(broken=("R2",), bad=("R2",))
+    rep = JointLoop(st2, opts=dict(common, tabu=True)).run("o", time_s=1e6, seed=5)
+    tabu = [c[3] for c in st2.calls if c[0] == "repair"]
+    assert len(tabu) == len(set(tabu)) and len(tabu) < 12 and rep["tabu_skips"] > 0
+    # a window kept since the failure, sharing a part or near it, lifts the tabu
+    w = Window(rect=(0, 0, 2, 2), parts=("a", "b"))
+    failed = {w.key: (3, w.rect, w.parts)}
+    assert tabu_reason(w, failed, [], 1.0).startswith("tabu")
+    assert tabu_reason(w, failed, [(2, (0, 0, 2, 2), ("a",))], 1.0)          # kept before the failure
+    assert tabu_reason(w, failed, [(4, (10, 10, 12, 12), ("b",))], 1.0) is None
+    assert tabu_reason(w, failed, [(4, (2.5, 0, 4, 2), ("z",))], 1.0) is None
+    assert tabu_reason(w, failed, [(4, (5, 5, 6, 6), ("z",))], 1.0)
