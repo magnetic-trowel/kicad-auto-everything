@@ -221,18 +221,26 @@ def test_ground_hop_through_the_plane_is_no_unrouted_hazard():
     assert [h["code"] for h in hotloop.cell_hazards([m])] == ["hotloop_cell_unrouted"]
 
 
-def test_keepout_leaves_every_cell_pin_a_way_out(tmp_path):
+def test_cell_pin_corridors_open_only_for_open_pins(tmp_path):
     from shapely.ops import unary_union
-    _, rep = _stage(tmp_path, hotloop_keepout=1)
-    guard = unary_union([Polygon(g["ring"]) for g in rep["guards"]])
-    region_rows = rep["keepout"]["cells"][0]
-    assert region_rows["escapes"] >= 4          # U1's VIN, EN, FB, SW, BST and C1's VIN
-    b = load(tmp_path / "in" / "board.kicad_pcb")
-    from kae.board import transform
+    p = F.write_board(tmp_path / "in")
+    b = load(p)
+    s = hotloop._session(p, F.synth_info(b), hotloop.settings(None, {"hotloop_keepout": 1}), {}, lambda *a: None)
+    plan, rows, _ = hotloop.keepout_plan(s, hotloop._plan_cells(s), 1.0)
+    esc = {x["pad"]: x for x in plan[0]["escapes"]}
+    assert {"U1.1", "U1.2", "U1.3", "U1.5", "U1.6", "C1.1"} <= set(esc) and "U1.4" not in esc   # GND: the plane
+    region = plan[0]["region"]
+    for x in esc.values():                      # each corridor leaves the keep-out
+        assert not region.buffer(-1e-3).contains(x["geom"])
+    shut = unary_union([Polygon(z[2][0]) for z in hotloop.zones_for(s.board, plan)])
+    opened = unary_union([Polygon(z[2][0]) for z in hotloop.zones_for(s.board, plan, {"U1.5"})])
+    assert shut.area > opened.area > 0
     u1 = next(f for f in b.footprints if f.ref == "U1")
-    for p in u1.pads:
-        if p.net != "GND":
-            x, y = transform.pad_xy(u1, p)
-            assert not guard.contains(Point(x, y)), p.number      # its window
-    # escapes prefer exits that do not run between the loop terminals
-    assert region_rows["escape_cut_mm"] <= 0.5 * region_rows["escapes"]
+    from kae.board import transform
+    sw = Point(transform.pad_xy(u1, next(q for q in u1.pads if q.number == "5")))
+    assert shut.buffer(1e-6).contains(sw) and not opened.contains(sw)
+    # exits are short and cheap: no corridor runs mostly under the loop
+    assert all(x["cut_mm"] < x["length_mm"] for x in esc.values())
+    rep = dict(unconnected_items=[dict(items=[dict(description="Pad 6 [Net-(U1-BST)] of U1 on F.Cu"),
+                                              dict(description="Pad 1 [x] of R7 on F.Cu")])])
+    assert hotloop.open_cell_pads(rep, plan) == {"U1.6"}

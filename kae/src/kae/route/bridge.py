@@ -200,7 +200,7 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
         from . import hotloop
         hl = hotloop.stage(input_path, info, wd / "hotloop", opts, log=log, time_s=time_s)
         if hl is not None:
-            report["hotloop"] = {k: v for k, v in hl.items() if k not in ("hazards", "guards")}
+            report["hotloop"] = {k: v for k, v in hl.items() if k not in ("hazards", "guards", "_ko")}
             report.setdefault("hazards", []).extend(hl.get("hazards") or [])
             if hl.get("board"):
                 input_path = Path(hl["board"]).resolve()
@@ -329,6 +329,19 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
                                            deadline=t0 + time_s - 10 - diag_s - tv_s, log=log)
             final_rep = report["repair"].pop("_report", None)
             report.setdefault("hazards", []).extend(report["repair"].pop("hazards", None) or [])
+            if hl is not None and hl.get("_ko") and final_rep and left() > 40 \
+                    and (report["repair"].get("final") or {}).get("unconnected"):
+                # a cell's own pin walled in by its keep-out: open that pin's corridor, last mile again
+                try:
+                    got = hotloop.escape_round(input_path, output_path, wd / "hotloop-escape", p, info, opts, hl,
+                                               final_rep, deadline=t0 + time_s - 10 - diag_s - tv_s, log=log)
+                except Exception as e:  # noqa: BLE001 - the routed board stands
+                    log(f"hotloop escape round: {type(e).__name__}: {e}")
+                    got = None
+                if got is not None:
+                    final_rep, summ, p, opened = got
+                    report["repair"]["final"] = summ
+                    report["hotloop"]["escapes_opened"] = opened
             if hot and left() > 20:
                 # after the repair and last-mile rounds, which judge connections only: the hot parts'
                 # thermal vias and solid heat pads, judged by KiCad's DRC like a round (kae.route.thermal_vias)
@@ -491,19 +504,21 @@ def last_mile_only(input_path, board_path, output_path, time_s=120.0, seed=0, wo
         fixed = {r["uuid"] for r in routing(input_path) if r.get("locked")}   # the input's pre-routes
         from . import hotloop
         if hotloop.active(hotloop.settings(input_path, opts)):
-            # the hot-loop stage's cell copper (locked on the routed board) and its hard zones: the last
-            # mile keeps them as the bridge did
+            # the hot-loop stage's cell copper (locked on the routed board): the last mile keeps it
             fixed |= {r["uuid"] for r in routing(board_path) if r.get("locked")}
-            cz = hotloop.last_mile_crit_zones(input_path, board_path, info, wd / "hotloop", opts, log=log)
+        opts["fixed_uuids"] = sorted(fixed)
+        staged = drc.stage_board(output_path, input_path, wd / "start")
+        rep = drc.run(staged, wd / "start" / "drc.json", timeout=max(10, deadline - clock_now()))
+        if hotloop.active(hotloop.settings(input_path, opts)):
+            # the keep-outs, with the corridors of the cell pins this board leaves open
+            cz = hotloop.last_mile_crit_zones(input_path, board_path, info, wd / "hotloop", opts, log=log,
+                                              drc_report=rep)
             if cz:
                 opts["crit_zones"] = cz
                 p = constraints.plan(info, input_path, opts)
                 p.plane_policy = plane_policy(opts)
                 p.plane_cost = opts.get("plane_cost")
                 p.pad_shapes = opts.get("pad_shapes") or "kicad"
-        opts["fixed_uuids"] = sorted(fixed)
-        staged = drc.stage_board(output_path, input_path, wd / "start")
-        rep = drc.run(staged, wd / "start" / "drc.json", timeout=max(10, deadline - clock_now()))
         best = drc.summary(rep)
         report["start"] = best
         log(f"last mile only: {best['errors']} errors {best['by_type']}, {best['unconnected']} unconnected")

@@ -32,11 +32,13 @@ where most of its return flows, is covered by the hull itself. On a 1.6 mm 2-lay
 holds only about 40 % of an edge conductor's spread; the hull is still the part that matters
 there (the bq25306 what-if removed tracks inside it). The keep-out is a zone of the plane's net,
 so that net (ground) is never blocked. Every pin of the cell's own parts (IC and capacitors) on
-another net keeps a way out on every layer count (`escapes`): a straight corridor, wide enough for a via
-beside the pad, about the pad's width out of the keep-out, along the exit that costs least,
-its length plus ESCAPE_CUT_COST times its length under the loop (between the loop terminals, where
-the return flows), so exits that cut the return are taken only when nothing else leaves. Walling in
-the cell's own pins is a flaw, not a trade-off (bq25306: U1's /STB and /PMID stayed open).
+another net has an escape corridor ready (`escapes`): a straight strip about the pad's width, room
+for a via beside the pad, out of the keep-out along the exit that costs least, its length plus
+ESCAPE_CUT_COST times its length under the loop (between the loop terminals, where the return
+flows). A corridor is a hole any net could use, so it is opened only for a pin the repair rounds
+leave open (`escape_round`: the corridors cut out, the last mile again): walling in the cell's own
+part is a flaw, not a trade-off (bq25306: U1's /STB and /PMID stayed open), while opening every
+corridor up front let U1's signal nets back under the loop (bq25306 K: 1.37 -> 3.22 nH).
 
 Cells first (R1 + R2, R4). critical.Session with kinds ("cell",), no rails, no joins, priced in
 watts (opts cell_price "W": loss.loop + loss.loop_ac at the cell's I, f_sw, D, so trim_tol, the
@@ -145,14 +147,12 @@ def _region(s, m, margin):
     return unary_union(geoms).convex_hull.buffer(margin)
 
 
-def keepout_zones(s, mods, margin, log=_log):
-    """The keep-outs: (zones [(net, layer, rings, name, priority)], per-cell rows, hazards)."""
+def keepout_plan(s, mods, margin, log=_log):
+    """Per cell with a return plane: {cell, net, layer, h, region, escapes} (`escapes`: the corridor of
+    every pin of the cell's parts, opened only when that pin is left open: zones_for), rows, hazards."""
     from kae import hazards as H
-    from .critical_recheck import guard_zones, merge_guards
-    from shapely.geometry import Polygon
     from shapely.ops import unary_union
-    out, rows, hz = [], [], []
-    sp = s.space
+    plan, rows, hz = [], [], []
     for m in mods:
         if not m.spec.get("_T"):         # loop terminals not found: nothing to place a keep-out by
             continue
@@ -173,19 +173,84 @@ def keepout_zones(s, mods, margin, log=_log):
                     "close vertically (TI SNVA803: 2 mm2 < 0.5 nH)."))
             rows.append(dict(cell=m.id, layer=None, area_mm2=0.0))
             continue
-        # every pin of the cell's own parts (IC, capacitors) keeps a way out: a straight corridor, room for a
-        # via beside the pad, out of the keep-out along the exit that cuts the loop's return least
         loop = unary_union([t.geom for t in T]).convex_hull
         esc = escapes(s, m, region, loop, pn)
-        cut = region.difference(unary_union([e["geom"] for e in esc])) if esc else region
         m.spec["_escapes"] = esc
-        zs = guard_zones(s.board, cut, pn, pl, f"{GUARD_PREFIX}hotloop:{m.id}")
-        area = sum(Polygon(z[2][0]).area for z in zs)
-        rows.append(dict(cell=m.id, layer=pl, net=pn, h_mm=round(h, 3), area_mm2=round(area, 2),
-                         region_mm2=round(region.area, 2), escapes=len(esc),
-                         escape_cut_mm=round(sum(e["cut_mm"] for e in esc), 2)))
-        out += zs
-    return merge_guards(out), rows, hz
+        plan.append(dict(cell=m.id, net=pn, layer=pl, h=h, region=region, escapes=esc))
+        rows.append(dict(cell=m.id, layer=pl, net=pn, h_mm=round(h, 3), region_mm2=round(region.area, 2),
+                         pins=len(esc)))
+    return plan, rows, hz
+
+
+def zones_for(board, plan, open_pads=()):
+    """The keep-out zones of `plan` with the escape corridors of the pads named in `open_pads`
+    ("REF.NUMBER") cut out: [(net, layer, rings, name, priority)], merged."""
+    from shapely.ops import unary_union
+    from .critical_recheck import guard_zones, merge_guards
+    out = []
+    want = set(open_pads or ())
+    for e in plan:
+        cor = [x["geom"] for x in e["escapes"] if x["pad"] in want]
+        cut = e["region"].difference(unary_union(cor)) if cor else e["region"]
+        out += guard_zones(board, cut, e["net"], e["layer"], f"{GUARD_PREFIX}hotloop:{e['cell']}")
+    return merge_guards(out)
+
+
+_PAD_OF = re.compile(r"Pad (\S+) \[[^\]]*\] of (\S+)")
+
+
+def open_cell_pads(drc_report, plan):
+    """The pads of the cells' parts ("REF.NUMBER") named by an open connection of a DRC report: the pins
+    the keep-out walls in, whose corridors the escape round opens."""
+    have = {x["pad"] for e in plan for x in e["escapes"]}
+    out = set()
+    for v in (drc_report or {}).get("unconnected_items") or []:
+        for it in v.get("items") or []:
+            mm = _PAD_OF.search(it.get("description") or "")
+            if mm and f"{mm.group(2)}.{mm.group(1)}" in have:
+                out.add(f"{mm.group(2)}.{mm.group(1)}")
+    return out
+
+
+def keepout_zones(s, mods, margin, log=_log):
+    """The keep-outs as first routed (no corridor open): (zones, rows, hazards); the plan is kept on
+    the session (s.hotloop_plan) for the escape round."""
+    plan, rows, hz = keepout_plan(s, mods, margin, log=log)
+    s.hotloop_plan = plan
+    zones = zones_for(s.board, plan)
+    return zones, rows, hz
+
+
+def escape_round(input_path, output_path, wd, plan, info, opts, hl, final_rep, deadline, log=_log):
+    """After the repair rounds: when an open connection names a pin of a cell's parts, the keep-out walled
+    in the cell's own part, which is a flaw, not a trade-off. Those pins' corridors are cut out of the
+    keep-outs on the routed board and in the plan, and the last mile runs again. Returns
+    (DRC report, summary, plan, opened pads) or None when no cell pin is open."""
+    from . import constraints, critical_write as W, drc, repair
+    from kae.board import pcbnew_io
+    ko = hl.get("_ko") or {}
+    pads = open_cell_pads(final_rep, ko.get("plan") or [])
+    if not pads:
+        return None
+    wd = Path(wd)
+    wd.mkdir(parents=True, exist_ok=True)
+    zones = zones_for(ko["board"], ko["plan"], pads)
+    tmp = wd / "noguard.kicad_pcb"
+    W.edit(output_path, tmp, drop_guards=True)
+    W.append_items(tmp, output_path, zones=zones)
+    opts["crit_zones"] = [z for z in pcbnew_io.zone_fills(output_path)["zones"] if hard_zone(z.get("name"))]
+    p2 = constraints.plan(info, input_path, opts)
+    for k in ("plane_policy", "plane_cost", "strict_planes", "outer_surcharge", "pad_shapes"):
+        if hasattr(plan, k):
+            setattr(p2, k, getattr(plan, k))
+    best = drc.summary(final_rep)
+    base = repair.input_errors(input_path, wd, deadline) if best["errors"] else {}
+    rounds = []
+    log(f"hotloop: escape round for {len(pads)} cell pin(s): {', '.join(sorted(pads))}")
+    rep = repair._last_mile(input_path, output_path, wd, p2, info, opts, deadline, rounds, best, final_rep,
+                            set(opts.get("fixed_uuids") or ()), log, base=base)
+    hl["guards"] = [dict(net=g[0], layer=g[1], ring=g[2][0], name=g[3]) for g in zones]
+    return rep, drc.summary(rep) if rep else best, p2, sorted(pads)
 
 
 ESCAPE_DIRS = 16          # exit directions tried per pad
@@ -375,6 +440,7 @@ def stage(input_path, info, workdir, opts=None, log=_log, time_s=None):
         zones = []
         if st["keepout"]:
             guards, rows, hz = keepout_zones(s, mods, st["keepout_mm"], log=log)
+            rep["_ko"] = dict(plan=s.hotloop_plan, board=s.board)
             rep["keepout"] = dict(margin_mm=st["keepout_mm"], margin_basis=MARGIN_WHY, cells=rows,
                                   zones=len(guards))
             rep["hazards"] += hz
@@ -463,7 +529,7 @@ def blocked_by_keepout(drc_report, guards, gnd=(), max_n=8):
     return out
 
 
-def last_mile_crit_zones(input_path, board_path, info, workdir, opts=None, log=_log):
+def last_mile_crit_zones(input_path, board_path, info, workdir, opts=None, log=_log, drc_report=None):
     """The hard zones a last mile on `board_path` (routed from `input_path`) must respect: the
     board's own kae-hl: pours (fills) and, with hotloop_keepout, the keep-outs recomputed from the
     cells' terminals and the board's locked copper. [] when the stage is off."""
@@ -479,7 +545,8 @@ def last_mile_crit_zones(input_path, board_path, info, workdir, opts=None, log=_
         filled = board_path
         if st["keepout"]:
             s = _session(input_path, info, dict(st, vias=False), opts, log)
-            guards, _rows, _hz = keepout_zones(s, _plan_cells(s), st["keepout_mm"], log=log)
+            plan, _rows, _hz = keepout_plan(s, _plan_cells(s), st["keepout_mm"], log=log)
+            guards = zones_for(s.board, plan, open_cell_pads(drc_report, plan))
             if guards:
                 filled = wd / "keepout.kicad_pcb"
                 W.append_items(board_path, filled, zones=guards)
