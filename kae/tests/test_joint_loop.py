@@ -184,6 +184,19 @@ def test_loop_respects_the_time_budget():
     assert rep["stop"].startswith("time") and not [c for c in st.calls if c[0] == "repair"]
 
 
+def test_window_budget_factor_extends_only_the_window_phase(monkeypatch):
+    import kae.joint.loop as L
+    t = [1000.0]
+    monkeypatch.setattr(L, "clock_now", lambda: t[0])
+    st = FakeStages(broken=("R1",))
+    place, route = st.place, st.route
+    st.place = lambda seed, time_s: (t.__setitem__(0, t[0] + 10), place(seed, time_s))[1]
+    st.route = lambda *a, **k: (t.__setitem__(0, t[0] + 50), route(*a, **k))[1]
+    rep = JointLoop(st, opts=dict(max_iters=0, window_budget_factor=2.0, finish=False)).run("o", time_s=100.0)
+    # deadline = end of iteration 0 (t0 + 60) + 2 budgets + reserve (25)
+    assert rep["window_deadline_s"] == pytest.approx(60 + 200 + 25, abs=1e-6)
+
+
 def test_staged_baseline_has_no_iterations_and_no_modules():
     st = FakeStages()
     rep = _run(st, max_iters=0, modules=False, finish=False)
