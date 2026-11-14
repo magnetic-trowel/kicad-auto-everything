@@ -314,3 +314,13 @@ def test_completion_first_restarts_again_when_the_first_board_is_open(tmp_path):
     assert r.returncode == 0, r.stdout + r.stderr
     assert s["second"] == "restart" and s["kept"] == 2 and "second" in out.read_text()
     assert [p["seed"] for p in s["phases"]] == [0, 1]
+
+
+def test_completion_first_open_alt_works_on_the_first_board_when_it_is_open(tmp_path):
+    """Phase 1 leaves opens: with --open-alt the second run works on phase 1's board (@BEST@), not a fresh restart;
+    kept when no worse."""
+    r, out, s = _run(tmp_path, "echo '(kicad_pcb OPEN=3 first)' > @OUT@", None, time_s=200,
+                     extra=("--policy", "completion-first", "--alt", "echo '(kicad_pcb OPEN=0 alt)' > @OUT@",
+                            "--open-alt", "grep -q first @BEST@ && echo '(kicad_pcb OPEN=1 polished)' > @OUT@"))
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert s["second"] == "open-alt" and s["kept"] == 2 and "polished" in out.read_text()

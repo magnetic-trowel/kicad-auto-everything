@@ -732,6 +732,9 @@ def main():
                          "(e.g. the module stage) when the first run's board is clean, else another run of COMMAND "
                          "with the next --seed; the better board by the harness's ranking is kept (--alt's when no "
                          "worse). Off by default")
+    ap.add_argument("--open-alt", default="",
+                    help="completion-first: the command of the second run when phase 1's board is not clean, on that "
+                         "board (@BEST@), instead of COMMAND again; kept when it ranks no worse")
     ap.add_argument("--alt", default="", help="completion-first: the command of the second run on a clean board")
     ap.add_argument("command", nargs=argparse.REMAINDER)
     a = ap.parse_args()
@@ -992,7 +995,7 @@ def main():
 
 def _phase_argv(ap, a, time_s, seed, output, command):
     """This wrapper's own argv for one phase of a policy: every option as given, but the policy's own."""
-    skip = {"policy", "alt", "time", "seed", "output", "command", "help"}
+    skip = {"policy", "alt", "open_alt", "time", "seed", "output", "command", "help"}
     argv = []
     for act in ap._actions:
         if act.dest in skip or not act.option_strings:
@@ -1037,16 +1040,49 @@ def run_policy(ap, a):
         log(f"policy phase {k}: rc {r.returncode}, rank {rank}")
         return dict(k=k, seed=seed, out=o, dir=d, rank=rank, work=work or {}, command=command[:200])
 
+    def open_phase(k, seed, time_s, command, prev):
+        """--open-alt on phase 1's board: one command, @IN@ the input, @BEST@ phase 1's board (with the task's
+        rules), @OUT@, @SEED@, @TIME@ (its nominal seconds in work mode); killed at 4x (work) or its time + grace."""
+        d = wd / f"policy{k}"
+        d.mkdir(exist_ok=True)
+        src, o = d / "best_in.kicad_pcb", d / "out.kicad_pcb"
+        shutil.copy2(prev["out"], src)
+        for ext in (".kicad_pro", ".kicad_dru"):    # the task's rules
+            if inp.with_suffix(ext).exists():
+                shutil.copy2(inp.with_suffix(ext), src.with_suffix(ext))
+                shutil.copy2(inp.with_suffix(ext), o.with_suffix(ext))
+        c = command.replace("@IN@", shlex.quote(str(inp))).replace("@OUT@", shlex.quote(str(o)))
+        c = c.replace("@BEST@", shlex.quote(str(src))).replace("@SEED@", str(seed)).replace("@TIME@", str(int(time_s)))
+        log(f"policy phase {k} (open-alt): seed {seed}, {time_s:.0f}s: {command[:80]}")
+        w0 = time.monotonic()
+        with open(d / "log", "w") as f:
+            try:
+                r = subprocess.run(["sh", "-c", c], cwd=d, stdout=f, stderr=subprocess.STDOUT,
+                                   timeout=(WORK_CEILING * time_s if WORK else time_s + GRACE_S), start_new_session=True)
+                rc = r.returncode
+            except subprocess.TimeoutExpired:
+                rc = "timeout"
+        rank = judge(o, inp, base, a.time, placement=a.check_placement, base_pairs=base_pairs) if o.exists() else None
+        log(f"policy phase {k}: rc {rc}, rank {rank}")
+        return dict(k=k, seed=seed, out=o, dir=d, rank=rank, command=command[:200],
+                    work=dict(attempts=1, wall_s=round(time.monotonic() - w0, 1)))
+
     p1 = phase(1, a.seed, 0.5 * a.time, cmd)
     clean1 = p1["rank"] is not None and p1["rank"][1] == 0
     alt = bool(clean1 and a.alt)
     left = 0.5 * a.time if WORK else a.time - (time.monotonic() - t0)   # work mode: nominal halves
-    p2 = phase(2, a.seed + 1, max(30.0, left), a.alt if alt else cmd)
-    if p2["rank"] is not None and (p1["rank"] is None or (p2["rank"] <= p1["rank"] if alt else p2["rank"] < p1["rank"])):
+    open_alt = bool(not clean1 and a.open_alt and p1["rank"] is not None and p1["out"].exists())
+    if open_alt:
+        # one process where a restart phase runs --parallel lanes: the same work in counted seconds is lanes x its time
+        p2 = open_phase(2, a.seed + 1, max(30.0, left) * max(1, a.parallel), a.open_alt, p1)
+    else:
+        p2 = phase(2, a.seed + 1, max(30.0, left), a.alt if alt else cmd)
+    if p2["rank"] is not None and (p1["rank"] is None or (p2["rank"] <= p1["rank"] if (alt or open_alt)
+                                                          else p2["rank"] < p1["rank"])):
         best = p2
     else:
         best = p1
-    work = dict(policy="completion-first", second="alt" if alt else "restart", kept=best["k"],
+    work = dict(policy="completion-first", second="alt" if alt else "open-alt" if open_alt else "restart", kept=best["k"],
                 phases=[dict(k=p["k"], seed=p["seed"], rank=p["rank"], command=p["command"],
                              **{x: p["work"].get(x) for x in ("attempts", "cpu_s", "method_cpu_s", "wall_s")})
                         for p in (p1, p2)],
