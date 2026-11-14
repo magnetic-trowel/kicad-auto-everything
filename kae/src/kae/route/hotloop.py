@@ -145,7 +145,7 @@ def keepout_zones(s, mods, margin, log=_log):
     sp = s.space
     multi = len(sp.cu) > 2
     for m in mods:
-        if m.status not in ("routed", "partial", "planned"):
+        if not m.spec.get("_T"):         # loop terminals not found: nothing to place a keep-out by
             continue
         region = _region(s, m, margin)
         if region is None or region.is_empty:
@@ -275,14 +275,16 @@ def cell_hazards(mods):
     from kae import hazards as H
     out = []
     for m in mods:
-        if m.kind != "cell" or m.status in ("routed", "planned"):
+        # a ground hop left to the plane on purpose (route_cell: "returns through the plane") is no gap
+        left = [f for f in m.flags if f.get("flag") == "ipc_floor_unroutable"]
+        if m.kind != "cell" or not (left or m.status in ("failed", "error", "skipped")):
             continue
         out.append(H.make(
             "hotloop_cell_unrouted", "warn", "electrical",
-            f"{m.id}: the hot-loop stage laid {'part of ' if m.status == 'partial' else 'none of '}its loop "
-            f"({m.status}); the general router joins the rest at the class width, so this loop's L and R stay "
-            f"as Freerouting leaves them.",
-            objects=[m.id], evidence=dict(status=m.status, notes="; ".join(m.notes[:3])[:200]),
+            f"{m.id}: the hot-loop stage could not lay {len(left) or 'any'} of its loop hops ({m.status}); the "
+            f"general router joins them at the class width, so this loop's L and R stay as Freerouting leaves them.",
+            objects=[m.id] + sorted({f.get("net") for f in left if f.get("net")}),
+            evidence=dict(status=m.status, hops=[f.get("hop") for f in left], notes="; ".join(m.notes[:3])[:200]),
             fix="Room beside the loop terminals (move the input capacitor next to VIN/PGND, clear neighbours), "
                 "or accept the routed loop."))
     return out

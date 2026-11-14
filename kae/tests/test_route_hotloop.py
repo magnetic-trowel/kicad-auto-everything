@@ -194,3 +194,24 @@ def test_pours_never_on_the_switch_node_and_clear_other_pads(tmp_path):
     import re
     prios = [int(x) for x in re.findall(r'\(name "kae-hl:[^"]*"\)\n\t\t\(hatch edge 0\.5\)\n\t\t\(priority (\d+)\)', text)]
     assert prios and len(set(prios)) == len(prios) and min(prios) >= 1
+
+
+def test_intent_current_sizes_the_cell_copper(tmp_path):
+    """The intent's I_A (upper end) sizes the hops, not the brief's rating-based estimate."""
+    lo = F.session(tmp_path / "lo", kinds=("cell",), rails="none", place_allocs=False,
+                   intent={"cells": {"cell:buck:U1": {"I_A": [0.1, 0.2]}}})
+    hi = F.session(tmp_path / "hi", kinds=("cell",), rails="none", place_allocs=False, trim_tol=0.0,
+                   intent={"cells": {"cell:buck:U1": {"I_A": [2.0, 3.0]}}})
+    assert CM._intent_current(lo.ctx, CM.Module(id="cell:buck:U1", kind="cell", spec={}, parts=[])) == 0.2
+    hi.route()
+    m = next(x for x in hi.modules if x.kind == "cell")
+    floors = m.spec.get("_floor") or {}
+    assert max(floors.values()) >= P.ipc2221_width(3.0) - 1e-6
+
+
+def test_ground_hop_through_the_plane_is_no_unrouted_hazard():
+    m = CM.Module(id="cell:x", kind="cell", spec={}, parts=[], status="partial")
+    m.notes.append("hop 2 (GND): returns through the plane")
+    assert hotloop.cell_hazards([m]) == []
+    m.flags.append(dict(flag="ipc_floor_unroutable", hop=0, net="VIN"))
+    assert [h["code"] for h in hotloop.cell_hazards([m])] == ["hotloop_cell_unrouted"]

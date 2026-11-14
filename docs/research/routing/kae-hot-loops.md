@@ -5,7 +5,7 @@
 Scope: hot-loop (commutation-cell) copper: expert practice, kae's shortfall, evaluator fidelity, design options, a pre-registered A/B. Not here: hot-loop rules and membership → [hot-loops](../../topics/rules/power/hot-loops.md); loop physics tables → [pdn-and-commutation § 1](../../topics/physics/pdn-and-commutation.md#1-commutation-loop-geometry); critical router mechanism → [critical-net routing](../../topics/routing/critical-net-routing.md).
 Keys: hot loop, commutation cell, loss.loop, loss.loop_ac, loss.swnode, R_loop, L_loop, open cell, cells-first, hot-loop pour, return-via array, reference keep-out, trim_tol, mesh bias, lumped cap body, PowerSynth, hotloop-ab
 
-**Status:** design (no code). **First published:** 2026-11-14, branch `hotloop-research` (off `power-copper-tht` 4392518).
+**Status:** design; R1–R5 built behind settings `hotloop_*` (off) in [`kae.route.hotloop`](../../../kae/src/kae/route/hotloop.py), branch `hotloop-route`, A/B pending. **First published:** 2026-11-14, branch `hotloop-research` (off `power-copper-tht` 4392518).
 
 **Results**
 1. The default router (bridge + finish) has no hot-loop stage. The gap (loss.loop_ac ≈ 1.8×, loss.loop 1.1–1.3× human) comes from class-width tracks, return detours, layer changes, open hops and foreign tracks on the return layer, not from mesh bias [C].

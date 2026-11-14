@@ -561,6 +561,29 @@ def _excite_current(s):
     return float(ex.get("I") or 1.0)
 
 
+def _intent_cell(ctx, m):
+    """The intent's cells.<id> entry (opts intent: a kae.intent/1 document or its facts), or {}."""
+    intent = ctx.opts.get("intent") or None
+    if not isinstance(intent, dict):
+        return {}
+    facts = intent.get("facts") if intent.get("schema") == "kae.intent/1" else intent
+    cs = (facts or {}).get("cells") or {}
+    return cs.get(m.id) or cs.get(f"cell:{m.id}") or {}
+
+
+def _intent_current(ctx, m):
+    """The current a cell's copper is sized for when the intent states it: the upper end of its
+    I_A (the brief's own estimate, 0.6 x an inductor rating, can be several times what the board
+    carries: bq25306's 4.7 A against the intent's 0.3-1 A). None without one."""
+    v = _intent_cell(ctx, m).get("I_A")
+    try:
+        if isinstance(v, (list, tuple)) and v:
+            return float(v[-1])
+        return float(v) if v is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
 def route_cell(ctx, m):
     s = m.spec
     loop = s.get("loop") or []
@@ -570,7 +593,9 @@ def route_cell(ctx, m):
         m.notes.append("loop terminals not found")
         return m
     n = len(T)
-    I = _excite_current(s)
+    I = _intent_current(ctx, m)
+    if I is None:
+        I = _excite_current(s)
     sw = s.get("sw")
     m.spec["_T"] = T
     side = ctx.side_layer(T[0].fp)
@@ -684,7 +709,7 @@ def _return_vias(ctx, m, T, side, max_pairs=None):
     h, pl, pn = ctx.plane(layer, cx, cy, gnd=True)
     if pl is None or pn != net:
         return
-    I = float((m.spec.get("excite") or {}).get("I") or 1.0)
+    I = _intent_current(ctx, m) or float((m.spec.get("excite") or {}).get("I") or 1.0)
     n_max = max_pairs or int(min(4, max(2, math.ceil(I))))
     ca = via_candidates(ctx, ta, layer, net, pl, toward=(tb.x, tb.y), in_pad=_is_thermal_pad(ta))
     cb = via_candidates(ctx, tb, layer, net, pl, toward=(ta.x, ta.y), in_pad=_is_thermal_pad(tb))
@@ -766,7 +791,9 @@ def _via_array(ctx, m, T, side):
     h, pl, pn = ctx.plane(layer, cx, cy, gnd=True)
     if pl is None or pn != net:
         return 0
-    I, _f, _D, _b = cell_operating(ctx, m)
+    I = _intent_current(ctx, m)
+    if I is None:
+        I = _excite_current(m.spec)
     D, drill = ctx.sp.via_size(net)
     plating = float(_opt(ctx, "via_plating_mm") or 0.0) or T_PLATE
     per_via = float(_opt(ctx, "via_A") or 0.0) or None
@@ -965,12 +992,7 @@ def cell_operating(ctx, m):
         return got
     s = m.spec
     ex = s.get("excite") or {}
-    intent = ctx.opts.get("intent") or None
-    cells = {}
-    if isinstance(intent, dict):
-        facts = intent.get("facts") if intent.get("schema") == "kae.intent/1" else intent
-        cs = (facts or {}).get("cells") or {}
-        cells = cs.get(m.id) or cs.get(f"cell:{m.id}") or {}
+    cells = _intent_cell(ctx, m)
 
     def iv(key):
         # typical value as kae.excite.beliefs.intent_value takes it: an interval's geometric mean
