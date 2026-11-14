@@ -738,8 +738,18 @@ def main():
                     help="rung-0 budget (0: first-s; kae staged at half of it overran its budget: placing alone "
                          "takes 60-100 s)")
     ap.add_argument("--eta", type=int, default=2)
+    ap.add_argument("--policy", default="", choices=("", "completion-first"),
+                    help="completion-first: two runs of this wrapper in --time (half each). The second is --alt "
+                         "(e.g. the module stage) when the first run's board is clean, else another run of COMMAND "
+                         "with the next --seed; the better board by the harness's ranking is kept (--alt's when no "
+                         "worse). Off by default")
+    ap.add_argument("--alt", default="", help="completion-first: the command of the second run on a clean board")
     ap.add_argument("command", nargs=argparse.REMAINDER)
     a = ap.parse_args()
+    if a.alt and not a.policy:
+        a.policy = "completion-first"     # --alt makes completion-first the policy (completion-first verdict, 2026-11)
+    if a.policy:
+        return run_policy(ap, a)
     cmd = " ".join(a.command[1:] if a.command[:1] == ["--"] else a.command)
     inp, out = Path(a.input).resolve(), Path(a.output).resolve()
     wd = Path.cwd() / "restarts"
@@ -990,6 +1000,84 @@ def main():
     log(f"kept #{best['k']} (seed {best['seed']}): {best['rank']}")
     carry_report(carry or best["out"].parent, wd)
     origin_report(best, done, wd)
+    return 0
+
+
+def _phase_argv(ap, a, time_s, seed, output, command):
+    """This wrapper's own argv for one phase of a policy: every option as given, but the policy's own."""
+    skip = {"policy", "alt", "time", "seed", "output", "command", "help"}
+    argv = []
+    for act in ap._actions:
+        if act.dest in skip or not act.option_strings:
+            continue
+        v = getattr(a, act.dest)
+        if isinstance(act, argparse._StoreTrueAction):
+            if v:
+                argv.append(act.option_strings[0])
+        elif v != act.default:
+            argv += [act.option_strings[0], str(v)]
+    return [sys.executable, str(Path(__file__).resolve()), *argv, "--time", str(time_s), "--seed", str(seed),
+            "--output", str(output), "--", command]
+
+
+def run_policy(ap, a):
+    """--policy completion-first (see --help): phase 1 runs COMMAND with half of --time; phase 2 runs --alt when phase
+    1's board is clean, else COMMAND again with seed + 1, in what is left. Each phase is this wrapper (its own waves,
+    resumes, --final and --finish) in restarts/policy<k>; the kept board's reports are copied to restarts/."""
+    cmd = " ".join(a.command[1:] if a.command[:1] == ["--"] else a.command)
+    inp, out = Path(a.input).resolve(), Path(a.output).resolve()
+    wd = Path.cwd() / "restarts"
+    wd.mkdir(exist_ok=True)
+    t0 = time.monotonic()
+    base_dir = wd / "input"
+    base_dir.mkdir(exist_ok=True)
+    shutil.copy2(inp, base_dir / "board.kicad_pcb")
+    b0 = drc(base_dir / "board.kicad_pcb", inp, a.time if WORK else 0.2 * a.time)
+    base, base_pairs = (b0 or {}).get("types", {}), (b0 or {}).get("overlaps", ())
+
+    def phase(k, seed, time_s, command):
+        d = wd / f"policy{k}"
+        d.mkdir(exist_ok=True)
+        o = d / "out.kicad_pcb"
+        log(f"policy phase {k}: seed {seed}, {time_s:.0f}s: {command[:80]}")
+        with open(d / "log", "w") as f:
+            r = subprocess.run(_phase_argv(ap, a, time_s, seed, o, command), cwd=d, stdout=f, stderr=subprocess.STDOUT)
+        work = None
+        for line in (d / "log").read_text(errors="replace").splitlines():
+            if line.startswith("KAE_WORK "):
+                work = json.loads(line[9:])
+        rank = judge(o, inp, base, a.time, placement=a.check_placement, base_pairs=base_pairs) if o.exists() else None
+        log(f"policy phase {k}: rc {r.returncode}, rank {rank}")
+        return dict(k=k, seed=seed, out=o, dir=d, rank=rank, work=work or {}, command=command[:200])
+
+    p1 = phase(1, a.seed, 0.5 * a.time, cmd)
+    clean1 = p1["rank"] is not None and p1["rank"][1] == 0
+    alt = bool(clean1 and a.alt)
+    left = 0.5 * a.time if WORK else a.time - (time.monotonic() - t0)   # work mode: nominal halves
+    p2 = phase(2, a.seed + 1, max(30.0, left), a.alt if alt else cmd)
+    if p2["rank"] is not None and (p1["rank"] is None or (p2["rank"] <= p1["rank"] if alt else p2["rank"] < p1["rank"])):
+        best = p2
+    else:
+        best = p1
+    work = dict(policy="completion-first", second="alt" if alt else "restart", kept=best["k"],
+                phases=[dict(k=p["k"], seed=p["seed"], rank=p["rank"], command=p["command"],
+                             **{x: p["work"].get(x) for x in ("attempts", "cpu_s", "method_cpu_s", "wall_s")})
+                        for p in (p1, p2)],
+                attempts=sum(p["work"].get("attempts") or 0 for p in (p1, p2)),
+                cpu_s=round(sum(p["work"].get("cpu_s") or 0 for p in (p1, p2)), 1),
+                method_cpu_s=round(sum(p["work"].get("method_cpu_s") or 0 for p in (p1, p2)), 1),
+                wall_s=round(time.monotonic() - t0, 1), best_rank=best["rank"], budget_s=a.time)
+    for n in ("report.json", "report-origin.json"):
+        if (best["dir"] / "restarts" / n).exists():
+            shutil.copy2(best["dir"] / "restarts" / n, wd / n)
+    (wd / "summary.json").write_text(json.dumps(work, indent=1, default=str))
+    print("KAE_WORK " + json.dumps(work, default=str), flush=True)
+    if best["rank"] is None or not best["out"].exists():
+        log("no phase produced a board")
+        return 1
+    out.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(best["out"], out)
+    log(f"policy kept phase {best['k']} ({work['second']} second run): {best['rank']}")
     return 0
 
 
