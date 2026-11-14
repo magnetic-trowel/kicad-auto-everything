@@ -74,6 +74,10 @@ DEFAULTS = dict(
     max_rip=40,                     # with rip: tracks and vias ripped for one pair at most
     rip_margin=2.0,                 # with rip: mm around the pair's pads whose foreign unlocked copper may be ripped
     rip_cost=20.0,                  # with rip: per envelope cell of foreign copper crossed (lastmile.RIP_COST)
+    lock="all",                     # "spine": only the coupled legs are locked; the fan-ins between the legs and the
+                                    # pads (and their vias) are written unlocked, so the bridge's wire_type (with
+                                    # wire_scope pairs: shove_fixed) lets Freerouting rip them where they shut a
+                                    # pin field's escapes
 )
 
 
@@ -455,6 +459,8 @@ class PairResult:
     stitch: int = 0
     spines: int = 0
     rules: dict = field(default_factory=dict)    # layer -> [width, gap, gap min, gap max] the pair was laid with
+    fan: dict = field(default_factory=dict)      # fan-in items: id(track record) -> record (held, so no id is
+                                                 # reused), via uuid -> uuid
     tracks: list = field(default_factory=list)
     via_rec: list = field(default_factory=list)
     items: list = field(default_factory=list)   # Space items committed (rollback)
@@ -876,8 +882,9 @@ class Router:
     def _add_track(self, res, net, layer, w, a, b):
         uid = str(_uuid.uuid4())
         it = self.sp.add_track(net, layer, w, a, b, owner="pair", uuid=uid)
-        res.tracks.append((net, layer, w, a, b))
-        return ("t", it, (net, layer, w, a, b), uid)
+        rec = (net, layer, w, a, b)
+        res.tracks.append(rec)           # the same object as the record returned: fan-in tags and the tuner use identity
+        return ("t", it, rec, uid)
 
     def _add_via(self, res, net, x, y, D, d):
         uid = str(_uuid.uuid4())
@@ -928,12 +935,14 @@ class Router:
             if self._viol(net, l, w, a, b):
                 return False
             added.append(self._add_track(res, net, l, w, a, b))
+            res.fan[id(added[-1][2])] = added[-1][2]
         if rt.vias:
             D, d = sp.via_size(net)
             for (x, y) in rt.vias:
                 if sp.via_violations(net, x, y, size=D, drill=d, first=True):
                     return False
                 added.append(self._add_via(res, net, x, y, D, d))
+                res.fan[added[-1][3]] = added[-1][3]
         return True
 
     # ------------------------------------------------------------------ skew
@@ -970,9 +979,12 @@ class Router:
                     if not vio:
                         added.remove(e)
                         res.tracks.remove(rec)
+                        was_fan = id(rec) in res.fan
                         for u, v in zip(pts[:-1], pts[1:]):
                             if math.dist(u, v) > 1e-6:
                                 added.append(self._add_track(res, net, layer, wd, u, v))
+                                if was_fan:
+                                    res.fan[id(added[-1][2])] = added[-1][2]
                         ok = True
                         break
                     self.sp.add_track(net, layer, wd, a, b, owner="pair", uuid=uid)
@@ -1229,13 +1241,15 @@ def route_pairs(board_path, out_path, time_s=120.0, opts=None, log=_log, board=N
             res = PairResult(pr.p, pr.n, pr.tier, pr.interface, status="failed", reason=f"{type(e).__name__}: {e}"[:200])
         rep["pairs"].append(dict(p=res.p, n=res.n, tier=res.tier, interface=res.interface, status=res.status, reason=res.reason,
                                  skew=res.skew, length=res.length, width=res.width, gap=res.gap, vias=res.vias, stitch=res.stitch,
-                                 spines=res.spines))
+                                 spines=res.spines, rules=res.rules))
         if res.status == "routed":
             lock = not o.get("unlocked")   # pairs_unlocked: laid as ordinary copper (see bridge wire_type)
-            for (net, layer, w, a, b) in res.tracks:
-                tracks.append((net, layer, w, a, b, W.new_uuid(), lock, None))
+            spine_only = o.get("lock") == "spine"
+            for rec in res.tracks:
+                net, layer, w, a, b = rec
+                tracks.append((net, layer, w, a, b, W.new_uuid(), lock and not (spine_only and id(rec) in res.fan), None))
             for (net, x, y, D, d, uid) in res.via_rec:
-                vias.append((net, x, y, D, d, uid, lock))
+                vias.append((net, x, y, D, d, uid, lock and not (spine_only and uid in res.fan)))
     W.append_items(board_path, out_path, tracks=tracks, vias=vias)
     for ext in (".kicad_pro", ".kicad_dru", ".kicad_prl"):
         s = board_path.with_suffix(ext)
