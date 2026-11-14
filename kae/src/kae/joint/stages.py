@@ -73,7 +73,7 @@ STAGE_KEYS = frozenset({
     "writer", "edge_mate", "angle_step", "module_time", "window_module_time", "drop_modules_attempt",
     # window re-placement and rip-up
     "replace_time", "replace_margin", "cong_mult", "history_scale", "bump_mm", "legal_mm", "net_mult",
-    "phys_mult", "big_pads", "max_cross",
+    "phys_mult", "big_pads", "max_cross", "legal_exact",
     # routing
     "window_router", "window_route_s", "window_route_max_s", "window_passes", "window_rounds",
     "window_restart_open", "window_last_mile", "min_route_s", "finish_rounds", "finish_last_mile",
@@ -710,7 +710,8 @@ class KaeStages:
                              net_weights={n: float(o.get("net_mult", 2.0)) for sp in window.spots
                                           if sp.kind == "unrouted" for n in sp.nets},
                              phys_mult=float(o.get("phys_mult", 2.0)) ** min(attempt, 2),
-                             physics=not o.get("no_physics"), log=lambda m: self.log(f"replace: {m}"))
+                             physics=not o.get("no_physics"), legal_exact=bool(int(o.get("legal_exact", 0))),
+                             log=lambda m: self.log(f"replace: {m}"))
         rep["replace"] = {k: v for k, v in res.report.items() if k not in ("window",)}
         if not res.poses and (window.parts or res.report.get("rejected")):
             rep["outcome"] = res.report.get("rejected") or res.report.get("skipped") or "no part moved"
