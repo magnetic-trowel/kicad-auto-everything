@@ -367,22 +367,21 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             staged = drc.stage_board(output_path, input_path, wd / "drc")
             rep = drc.run(staged, wd / "drc" / "drc.json", timeout=max(10, left() - 5))
             report["drc"] = drc.summary(rep)
-        dropped = False
         if hl is not None and hl.get("guards") and output_path.exists():
             # the keep-outs guided the routing only; the output never carries them (the pours stay)
             from . import critical_write as W
             W.edit(output_path, output_path, drop_guards=True)
-            dropped = True
             if final_rep and (report.get("repair") or {}).get("final", {}).get("unconnected"):
                 report.setdefault("hazards", []).extend(hotloop.blocked_by_keepout(
                     final_rep, hl["guards"], gnd={g["net"] for g in hl["guards"]}))
         stepcache.save_fork(fork, "repaired", {"board": output_path}, clock_now() - t0)
         parts = finish_parts(opts, p)
         if parts and left() > float(opts.get("finish_min_s") or 60.0):
-            # without the keep-outs the board's DRC differs from the repair loop's: finish runs its own
+            # the keep-outs dropped above are ground copper over the ground plane, which refills there: the
+            # repair loop's DRC stands for the board (a DRC more cost aifryz K finish's power part, skipped for
+            # time, and with it the ground vias round the cell: 1.49 -> 2.24 nH)
             report["finish"] = finish_hook(output_path, input_path, wd / "finish", parts, time_s=left() - 10,
-                                           base_report=final_rep if opts.get("repair") and not dropped else None,
-                                           log=log)
+                                           base_report=final_rep if opts.get("repair") else None, log=log)
             report.setdefault("hazards", []).extend(report["finish"].pop("hazards", None) or [])
         elif parts:
             from kae import hazards as H

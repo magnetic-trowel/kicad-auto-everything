@@ -809,6 +809,12 @@ def _via_array(ctx, m, T, side):
     cur = quote(ctx, m, store=False)
     added = 0
 
+    # the fan-out lanes of multi-pin parts' other-net pins stay free: an array via keeps one escape track
+    # (and its clearances) from each of them (bq25306: 6 array vias round the QFN left Freerouting 11 opens)
+    lanes = [(it, _escape_gap(ctx, net, 0.0, it, layer)) for it in ctx.sp.pads
+             if it.kind == "pad" and it.net and it.net != net and layer in it.layers
+             and len(ctx.sp.pads_by_fp.get(it.fp, [])) > 3 and it.geom.distance(strip) < 3.0]
+
     def sites(t):
         th = _is_thermal_pad(t)
         out = []
@@ -817,6 +823,8 @@ def _via_array(ctx, m, T, side):
             p = _Pt(v[0], v[1])
             in_pad = v[2] <= 0
             if not in_pad and strip.contains(p):
+                continue
+            if not in_pad and any(pd.geom.distance(p) < D / 2 + gap for pd, gap in lanes):
                 continue
             mine = [q for key in keys.values() for q in m.vias.get(key, [])]
             if any(math.dist(v[:2], q[:2]) < pitch for q in mine):
