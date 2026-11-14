@@ -979,6 +979,9 @@ def fix_session(ses_tree, plan):
         if len(net) > 1 and not isinstance(net[1], Q):
             net[1] = Q(net[1])
             out["nets_quoted"] += 1
+    rw = restore_widths(net_out, plan, scale)
+    if rw:
+        out["widths_restored"] = rw
     snaps = getattr(plan, "wire_snaps", None) or {}
     if snaps:
         out["points_restored"] = _unsnap(net_out, snaps, scale)
@@ -986,6 +989,35 @@ def fix_session(ses_tree, plan):
     if zl:
         out["zero_length_points"] = zl
     return out
+
+
+def restore_widths(net_out, plan, scale):
+    """Give wires the plan's width back where Freerouting widened them by one session unit. Freerouting keeps a
+    trace's half width as a whole number of units, so a class width of an odd number of units (0.1521 mm at
+    0.1 um) comes back one unit wider (0.1522 mm), past a rule whose max equals its min (ewoudvv ducktop2's
+    controlled-impedance classes: 92 track_width errors on one board). Only wires within one unit above
+    their class's width on that layer change. Returns the wires changed."""
+    n = 0
+    classes, net_class = getattr(plan, "classes", None) or {}, getattr(plan, "net_class", None) or {}
+    for net in findall(net_out or [], "net"):
+        if len(net) < 2:
+            continue
+        cls = classes.get(net_class.get(str(net[1])))
+        if cls is None:
+            continue
+        for w in findall(net, "wire"):
+            for p in findall(w, "path"):
+                if len(p) < 3:
+                    continue
+                target = cls.widths.get(str(p[1]))
+                try:
+                    have = float(p[2])
+                except (TypeError, ValueError):
+                    continue
+                if target and 0 < have - target * scale <= 1.0 + 1e-6:
+                    p[2] = fmt(target * scale)
+                    n += 1
+    return n
 
 
 def drop_repeated_points(net_out):
