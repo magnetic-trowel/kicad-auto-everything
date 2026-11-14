@@ -402,3 +402,21 @@ def test_pad_beside_a_loaded_track_counts_its_current(tmp_path, plan):
     j11 = next(p for p in obj.sp.pads if p.owner == ("J1", "1") and id(p) in obj.tht_amps)
     j12 = next(p for p in obj.sp.pads if p.owner == ("J1", "2") and id(p) in obj.tht_amps)
     assert obj.tht_amps[id(j11)] == pytest.approx(0.5, rel=1e-3) and obj.tht_amps[id(j12)] == 0.0   # other net
+
+
+def test_branch_currents_through_a_series_part():
+    """Current fed into VIN at J1 reaches the 5V loads through a fuse F1 (VIN -> 5V): with the fuse as a DC branch,
+    the pad J1.1 carries it; without, VIN has no load and J1.1 reads 0 A."""
+    from shapely.geometry import box as B_
+    from types import SimpleNamespace as N
+
+    def t(net, a, b):
+        return N(net=net, layer="F.Cu", width=0.5, start=a, end=b)
+    pads = [("J1.1", B_(-0.5, -0.5, 0.5, 0.5), ["F.Cu"]), ("F1.1", B_(9.5, -0.5, 10.5, 0.5), ["F.Cu"]),
+            ("F1.2", B_(11.5, -0.5, 12.5, 0.5), ["F.Cu"]), ("U1.1", B_(19.5, -0.5, 20.5, 0.5), ["F.Cu"])]
+    tracks = [t("VIN", (0, 0), (10, 0)), t("5V", (12, 0), (20, 0))]
+    inj = {"J1.1": 0.8, "U1.1": -0.8}
+    with_fuse = pc.branch_currents({"VIN", "5V"}, tracks, [], pads, {}, inj, series=[("F1.1", "F1.2", 0.05)])
+    assert with_fuse["J1.1"] == pytest.approx(0.8, rel=1e-6) and with_fuse["U1.1"] == pytest.approx(0.8, rel=1e-6)
+    alone = pc.branch_currents({"VIN", "5V"}, tracks, [], pads, {}, inj)
+    assert alone["J1.1"] == pytest.approx(0.0, abs=1e-9)
