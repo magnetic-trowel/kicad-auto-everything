@@ -342,6 +342,9 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
                     final_rep, summ, p, opened = got
                     report["repair"]["final"] = summ
                     report["hotloop"]["escapes_opened"] = opened
+                    report["hotloop"]["keepout_lifted"] = hl.get("keepout_lifted") or []
+                    report.setdefault("hazards", []).extend(
+                        h for h in hl.get("hazards") or [] if h.get("code") == "hotloop_keepout_lifted")
             if hot and left() > 20:
                 # after the repair and last-mile rounds, which judge connections only: the hot parts'
                 # thermal vias and solid heat pads, judged by KiCad's DRC like a round (kae.route.thermal_vias)

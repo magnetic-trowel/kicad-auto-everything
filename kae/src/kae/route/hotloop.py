@@ -249,8 +249,37 @@ def escape_round(input_path, output_path, wd, plan, info, opts, hl, final_rep, d
     log(f"hotloop: escape round for {len(pads)} cell pin(s): {', '.join(sorted(pads))}")
     rep = repair._last_mile(input_path, output_path, wd, p2, info, opts, deadline, rounds, best, final_rep,
                             set(opts.get("fixed_uuids") or ()), log, base=base)
+    rep = rep or final_rep
+    still = open_cell_pads(rep, ko["plan"])
+    dropped = []
+    if still and deadline - clock_now() > 30:
+        # the corridor was not enough (the cell's own locked copper or vias in the way): the keep-out of
+        # those cells is lifted for one more last mile, so the cell's part is never left walled in
+        dropped = sorted({e["cell"] for e in ko["plan"] for x in e["escapes"] if x["pad"] in still})
+        log(f"hotloop: {len(still)} cell pin(s) still open; keep-out lifted for {', '.join(dropped)}")
+        zones = zones_for(ko["board"], [e for e in ko["plan"] if e["cell"] not in dropped], pads)
+        W.edit(output_path, tmp, drop_guards=True)
+        W.append_items(tmp, output_path, zones=zones)
+        opts["crit_zones"] = [z for z in pcbnew_io.zone_fills(output_path)["zones"] if hard_zone(z.get("name"))]
+        p2 = constraints.plan(info, input_path, opts)
+        for k in ("plane_policy", "plane_cost", "strict_planes", "outer_surcharge", "pad_shapes"):
+            if hasattr(plan, k):
+                setattr(p2, k, getattr(plan, k))
+        best = drc.summary(rep)
+        rep = repair._last_mile(input_path, output_path, wd, p2, info, opts, deadline, rounds, best, rep,
+                                set(opts.get("fixed_uuids") or ()), log, base=base) or rep
+        from kae import hazards as H
+        hl.setdefault("hazards", []).append(H.make(
+            "hotloop_keepout_lifted", "info", "electrical",
+            f"The return-plane keep-out of {', '.join(dropped)} walled in pins of the cell's own parts "
+            f"({', '.join(sorted(still))}) even with escape corridors; it was lifted for the last mile, so other "
+            f"copper may cross the return plane under that loop.",
+            objects=dropped + sorted(still), evidence=dict(pins=sorted(still), cells=dropped),
+            fix="Room for those pins to fan out on the cell's side (move a neighbour, or the input capacitor), "
+                "so the keep-out can stay."))
     hl["guards"] = [dict(net=g[0], layer=g[1], ring=g[2][0], name=g[3]) for g in zones]
-    return rep, drc.summary(rep) if rep else best, p2, sorted(pads)
+    hl["keepout_lifted"] = dropped
+    return rep, drc.summary(rep), p2, sorted(pads)
 
 
 ESCAPE_DIRS = 16          # exit directions tried per pad
@@ -283,6 +312,8 @@ def escapes(s, m, region, loop, plane_net):
             pw = min(it.geom.bounds[2] - it.geom.bounds[0], it.geom.bounds[3] - it.geom.bounds[1])
             half = max(pw / 2.0, opt / 2.0 + clr, D / 2.0 + clr)     # a track, or a via, fits in it
             x, y = it.pos
+            fp = s.ctx.fp.get(u)
+            many = len(sp.pads_by_fp.get(u, [])) > 3
             best = None
             for k in range(ESCAPE_DIRS):
                 th = 2 * math.pi * k / ESCAPE_DIRS
@@ -295,6 +326,8 @@ def escapes(s, m, region, loop, plane_net):
                 seg = LineString([(x, y), (x + d * math.cos(th), y + d * math.sin(th))])
                 inside = seg.intersection(loop).length
                 cost = d + ESCAPE_CUT_COST * inside
+                if many and fp is not None and (x - fp.x) * math.cos(th) + (y - fp.y) * math.sin(th) < 0:
+                    cost += 2.0 * d      # an IC pin fans out away from its body, not under it
                 if best is None or cost < best[0]:
                     best = (cost, seg, d, inside)
             if best is None:
