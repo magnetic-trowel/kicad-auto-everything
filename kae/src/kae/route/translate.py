@@ -46,6 +46,9 @@ footprints and fails on renamed references), bare net names are quoted (`ADD|SUB
 the whole import), via shapes get their real diameters back, and wiring points the DSN
 snap moved (Freerouting returns the unfixed ones it keeps) get their KiCad coordinates back.
 Fixed wiring is never returned: KiCad's import keeps locked copper byte for byte.
+
+Unlocked pre-routes (plane escapes, dog-bones, soft joins, `first-soft` pairs) default to `(type route)`,
+walls for Freerouting; set_wire_types makes them rippable.
 """
 import math
 import random
@@ -952,6 +955,33 @@ def _shuffle(tree, rnd):
 
 
 # ----------------------------------------------------------------------------- session
+WIRE_TYPES = ("route", "shove_fixed", "normal")
+
+
+def set_wire_types(tree, wire_type, nets=None):
+    """Give the DSN's unlocked wiring another Specctra `type`. KiCad exports unlocked tracks and vias as
+    `(type route)`, which Freerouting reads as user-fixed (Wiring.calcFixed): never ripped or shoved, and
+    written back as `(type protect)`, which KiCad's import locks. `shove_fixed` is rippable but not shoved
+    or pull-tightened, `normal` ordinary routing; both come back unlocked. `nets`: only those nets; None: all.
+    Returns {wires, vias} changed."""
+    if wire_type not in WIRE_TYPES:
+        raise ValueError(f"unknown wire type {wire_type!r}: {WIRE_TYPES}")
+    out = dict(wires=0, vias=0)
+    wiring = find(tree, "wiring")
+    if wiring is None or wire_type == "route":
+        return out
+    for kind, count in (("wire", "wires"), ("via", "vias")):
+        for item in findall(wiring, kind):
+            t, n = find(item, "type"), find(item, "net")
+            if t is None or len(t) < 2 or str(t[1]) != "route":
+                continue
+            if nets is not None and (n is None or str(n[1]) not in nets):
+                continue
+            t[1] = wire_type
+            out[count] += 1
+    return out
+
+
 def fix_session(ses_tree, plan):
     """Prepare Freerouting's session for KiCad: drop the placement, quote net names, restore
     real via diameters. Returns a summary."""
