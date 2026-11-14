@@ -31,9 +31,12 @@ L2) to 86 % (h = 0.2 mm) of the edge conductors' return off any cut, and the loo
 where most of its return flows, is covered by the hull itself. On a 1.6 mm 2-layer board 1 mm
 holds only about 40 % of an edge conductor's spread; the hull is still the part that matters
 there (the bq25306 what-if removed tracks inside it). The keep-out is a zone of the plane's net,
-so that net (ground) is never blocked. The cell's own other nets keep their pads: on boards with
-more than two copper layers each of their terminal pads gets a window (pad + one via + clearance)
-so a via can drop beside it to an inner layer; their hops run on the signal side.
+so that net (ground) is never blocked. Every pin of the cell's own parts (IC and capacitors) on
+another net keeps a way out on every layer count (`escapes`): a straight corridor, wide enough for a via
+beside the pad, about the pad's width out of the keep-out, along the exit that costs least,
+its length plus ESCAPE_CUT_COST times its length under the loop (between the loop terminals, where
+the return flows), so exits that cut the return are taken only when nothing else leaves. Walling in
+the cell's own pins is a flaw, not a trade-off (bq25306: U1's /STB and /PMID stayed open).
 
 Cells first (R1 + R2, R4). critical.Session with kinds ("cell",), no rails, no joins, priced in
 watts (opts cell_price "W": loss.loop + loss.loop_ac at the cell's I, f_sw, D, so trim_tol, the
@@ -150,7 +153,6 @@ def keepout_zones(s, mods, margin, log=_log):
     from shapely.ops import unary_union
     out, rows, hz = [], [], []
     sp = s.space
-    multi = len(sp.cu) > 2
     for m in mods:
         if not m.spec.get("_T"):         # loop terminals not found: nothing to place a keep-out by
             continue
@@ -171,24 +173,71 @@ def keepout_zones(s, mods, margin, log=_log):
                     "close vertically (TI SNVA803: 2 mm2 < 0.5 nH)."))
             rows.append(dict(cell=m.id, layer=None, area_mm2=0.0))
             continue
-        cut = region
-        if multi:
-            # the cell's own other nets keep a via site beside each of their terminal pads
-            gnd = set(s.ctx.gnd)
-            wins = []
-            for t in T:
-                if t.net in gnd:
-                    continue
-                D, _d = sp.via_size(t.net)
-                wins.append(t.geom.buffer(D + 0.25))
-            if wins:
-                cut = region.difference(unary_union(wins))
+        # every pin of the cell's own parts (IC, capacitors) keeps a way out: a straight corridor, room for a
+        # via beside the pad, out of the keep-out along the exit that cuts the loop's return least
+        loop = unary_union([t.geom for t in T]).convex_hull
+        esc = escapes(s, m, region, loop, pn)
+        cut = region.difference(unary_union([e["geom"] for e in esc])) if esc else region
+        m.spec["_escapes"] = esc
         zs = guard_zones(s.board, cut, pn, pl, f"{GUARD_PREFIX}hotloop:{m.id}")
         area = sum(Polygon(z[2][0]).area for z in zs)
         rows.append(dict(cell=m.id, layer=pl, net=pn, h_mm=round(h, 3), area_mm2=round(area, 2),
-                         region_mm2=round(region.area, 2)))
+                         region_mm2=round(region.area, 2), escapes=len(esc),
+                         escape_cut_mm=round(sum(e["cut_mm"] for e in esc), 2)))
         out += zs
     return merge_guards(out), rows, hz
+
+
+ESCAPE_DIRS = 16          # exit directions tried per pad
+ESCAPE_CUT_COST = 10.0    # a corridor mm under the loop (between its terminals, where the return flows) costs
+                          # this many mm outside it: a slot there lengthens the return around it, a slot beside
+                          # the loop only narrows the plane (bq25306 E1: tracks under the loop were 82 % of the gap)
+
+
+def escapes(s, m, region, loop, plane_net):
+    """Escape corridors for every pad of the cell's parts on a net other than the plane's: the pad
+    grown by the clearance and a straight corridor about the pad's width (at least a track, or a via,
+    with its clearance on both sides, so a via can drop in it beside the pad) from the pad to
+    just outside the keep-out `region`, in the direction of least cost: its length, plus
+    ESCAPE_CUT_COST x its length inside `loop` (the hull of the loop terminals). [{pad, net, geom,
+    length_mm, cut_mm}]"""
+    from shapely.geometry import LineString, Point
+    sp = s.space
+    out = []
+    reach = math.sqrt(region.area) * 2 + 2.0
+    bnd = region.boundary
+    for u in m.parts:
+        for it in sp.pads_by_fp.get(u, []):
+            if it.kind != "pad" or not it.net or it.net == plane_net or it.pos is None:
+                continue
+            if not it.geom.intersects(region):
+                continue
+            D, _d = sp.via_size(it.net)
+            mn, opt, _mx = sp.width_limits(it.net, sp.cu[-1])
+            clr = sp.max_need
+            pw = min(it.geom.bounds[2] - it.geom.bounds[0], it.geom.bounds[3] - it.geom.bounds[1])
+            half = max(pw / 2.0, opt / 2.0 + clr, D / 2.0 + clr)     # a track, or a via, fits in it
+            x, y = it.pos
+            best = None
+            for k in range(ESCAPE_DIRS):
+                th = 2 * math.pi * k / ESCAPE_DIRS
+                ray = LineString([(x, y), (x + reach * math.cos(th), y + reach * math.sin(th))])
+                hit = ray.intersection(bnd)
+                if hit.is_empty:
+                    continue
+                pts = [hit] if hit.geom_type == "Point" else list(getattr(hit, "geoms", []))
+                d = max(Point(x, y).distance(q) for q in pts if q.geom_type == "Point") + 0.2
+                seg = LineString([(x, y), (x + d * math.cos(th), y + d * math.sin(th))])
+                inside = seg.intersection(loop).length
+                cost = d + ESCAPE_CUT_COST * inside
+                if best is None or cost < best[0]:
+                    best = (cost, seg, d, inside)
+            if best is None:
+                continue
+            geom = it.geom.buffer(clr).union(best[1].buffer(half, cap_style=2))
+            out.append(dict(pad=f"{it.owner[0]}.{it.owner[1]}", net=it.net, geom=geom,
+                            length_mm=round(best[2], 2), cut_mm=round(best[3], 2)))
+    return out
 
 
 def _escape_clear(s, net, layer, pad):

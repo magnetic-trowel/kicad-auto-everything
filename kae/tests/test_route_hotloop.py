@@ -136,9 +136,13 @@ def test_keepout_covers_the_cell_on_the_return_plane(tmp_path):
     assert g["net"] == "GND" and g["layer"] == "B.Cu" and g["name"].startswith(hotloop.GUARD_PREFIX)
     poly = Polygon(g["ring"])
     b = load(tmp_path / "in" / "board.kicad_pcb")
-    for ref in ("C1", "U1"):            # the hot loop's input cap and IC sit over it
-        fp = next(f for f in b.footprints if f.ref == ref)
-        assert poly.contains(Point(fp.x, fp.y))
+    from shapely.geometry import MultiPoint
+    # the hot loop's footprint (its terminals: C1's pads, U1's VIN and GND pins) is mostly guarded; the
+    # cell's own pins keep their escape corridors
+    c1, u1 = (next(f for f in b.footprints if f.ref == r) for r in ("C1", "U1"))
+    loop = MultiPoint([(c1.x, c1.y - 0.95), (c1.x, c1.y + 0.95), (u1.x - 1.31, u1.y + 0.95),
+                       (u1.x + 1.31, u1.y + 0.95)]).convex_hull
+    assert poly.intersection(loop).area >= 0.3 * loop.area
     assert "kae-crit:hotloop" in (tmp_path / "w" / "hotloop.kicad_pcb").read_text()
 
 
@@ -215,3 +219,20 @@ def test_ground_hop_through_the_plane_is_no_unrouted_hazard():
     assert hotloop.cell_hazards([m]) == []
     m.flags.append(dict(flag="ipc_floor_unroutable", hop=0, net="VIN"))
     assert [h["code"] for h in hotloop.cell_hazards([m])] == ["hotloop_cell_unrouted"]
+
+
+def test_keepout_leaves_every_cell_pin_a_way_out(tmp_path):
+    from shapely.ops import unary_union
+    _, rep = _stage(tmp_path, hotloop_keepout=1)
+    guard = unary_union([Polygon(g["ring"]) for g in rep["guards"]])
+    region_rows = rep["keepout"]["cells"][0]
+    assert region_rows["escapes"] >= 4          # U1's VIN, EN, FB, SW, BST and C1's VIN
+    b = load(tmp_path / "in" / "board.kicad_pcb")
+    from kae.board import transform
+    u1 = next(f for f in b.footprints if f.ref == "U1")
+    for p in u1.pads:
+        if p.net != "GND":
+            x, y = transform.pad_xy(u1, p)
+            assert not guard.contains(Point(x, y)), p.number      # its window
+    # escapes prefer exits that do not run between the loop terminals
+    assert region_rows["escape_cut_mm"] <= 0.5 * region_rows["escapes"]
