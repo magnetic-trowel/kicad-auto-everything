@@ -476,3 +476,15 @@ def test_window_budget_factor_raises_the_wall_ceiling_in_work_mode(monkeypatch):
     st.route = lambda *a, **k: (t.__setitem__(0, t[0] + 50), route(*a, **k))[1]
     JointLoop(st, opts=dict(max_iters=0, window_budget_factor=2.0, finish=False)).run("o", time_s=100.0)
     assert seen == [pytest.approx(50 + 200 + 25)]          # the whole extended budget, not --time alone
+
+
+def test_window_budget_factor_gives_no_windows_past_the_wall_ceiling(monkeypatch):
+    import kae.joint.loop as L
+    t = [0.0]
+    monkeypatch.setattr(L, "clock_now", lambda: t[0])
+    st = FakeStages(broken=("R1",))
+    route = st.route
+    st.route = lambda *a, **k: (t.__setitem__(0, float("inf")), route(*a, **k))[1]     # the ceiling hit in iteration 0
+    rep = JointLoop(st, opts=dict(window_budget_factor=2.0, finish=False, min_iter_s=0.0)).run("o", time_s=100.0)
+    assert "window_deadline_s" not in rep and not [c for c in st.calls if c[0] == "repair"]
+    assert rep["stop"].startswith("time")

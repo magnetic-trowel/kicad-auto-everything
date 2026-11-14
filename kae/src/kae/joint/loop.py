@@ -40,6 +40,7 @@ same result whenever no time budget binds (a time-bound stage stops at the clock
 from __future__ import annotations
 
 from kae.budget import now as clock_now
+import math
 import time
 
 from .feedback import (ENV_DEPENDENT, NO_MOVE_FIXES, CongestionHistory, apply_evidence, error_spots, physics_spots,
@@ -296,9 +297,11 @@ class JointLoop:
         self._history(hist, lay, fb)
         best, best_card, best_fb, best_it = lay, card, fb, 0
         self._save(st, best, output, rep)
-        if float(o["window_budget_factor"]) > 0:
-            # a real window budget, measured: iteration 0 kept its usual shares of time_s
-            deadline = max(deadline, clock_now() + float(o["window_budget_factor"]) * time_s + fin_res + reserve)
+        now0 = clock_now()
+        if float(o["window_budget_factor"]) > 0 and math.isfinite(now0):
+            # a real window budget, measured: iteration 0 kept its usual shares of time_s (past the
+            # work-mode wall ceiling now() is infinite: the run has failed and gets no windows)
+            deadline = max(deadline, now0 + float(o["window_budget_factor"]) * time_s + fin_res + reserve)
             rep["window_deadline_s"] = round(deadline - t0, 1)
             # the wall ceiling (work mode) follows the whole budget, as for any run of that length
             from kae import budget
