@@ -335,6 +335,50 @@ def cmd_class(a):
     print(f"set class {a.qos} on {n} queued job(s)")
 
 
+def _new_value(v, cur, parse):
+    """`v` for a job whose current value is `cur`: "2x" (or "x2") scales it, anything else is parsed as given."""
+    t = str(v).strip().lower()
+    if t.endswith("x") or t.startswith("x"):
+        try:
+            f = float(t.strip("x"))
+        except ValueError:
+            sys.exit(f"bad factor {v!r} (use e.g. 2x)")
+        return cur * f
+    try:
+        return parse(t)
+    except ValueError as e:
+        sys.exit(str(e))
+
+
+def cmd_set(a):
+    """Change --timeout, --mem or --cpus of queued jobs by id, --owner or --tag (a value or a factor like 2x).
+    With --running, also raise or lower the --timeout of running jobs (their memory lease and CPUs were set at
+    start, so --mem and --cpus apply to queued jobs only)."""
+    if not (a.ids or a.owner or a.tag):
+        sys.exit("give job ids, --owner or --tag")
+    if not (a.timeout or a.mem or a.cpus):
+        sys.exit("give --timeout, --mem and/or --cpus")
+    c = db()
+    nq = nr = 0
+    for j in sel_jobs(c, a, ("queued", "running") if a.running else ("queued",)):
+        t = int(_new_value(a.timeout, j["timeout_s"], parse_dur)) if a.timeout else j["timeout_s"]
+        if t <= 0:
+            sys.exit(f"#{j['id']}: --timeout must be positive")
+        if j["state"] == "running":
+            nr += c.execute("UPDATE jobs SET timeout_s=?,deadline=started+? WHERE id=? AND state='running'",
+                            (t, t, j["id"])).rowcount
+            continue
+        m = int(_new_value(a.mem, j["mem_mb"] * (1 << 20), parse_size) / (1 << 20)) if a.mem else j["mem_mb"]
+        cp = float(_new_value(a.cpus, j["cpus"], float)) if a.cpus else j["cpus"]
+        if m <= 0 or cp <= 0:
+            sys.exit(f"#{j['id']}: --mem and --cpus must be positive")
+        nq += c.execute("UPDATE jobs SET timeout_s=?,mem_mb=?,cpus=? WHERE id=? AND state='queued'",
+                        (t, m, cp, j["id"])).rowcount
+    c.commit()
+    what = ", ".join(f"--{k} {getattr(a, k)}" for k in ("timeout", "mem", "cpus") if getattr(a, k))
+    print(f"set {what} on {nq} queued job(s)" + (f"; --timeout on {nr} running job(s)" if a.running else ""))
+
+
 def cmd_config(a):
     cfg = {}
     try:
@@ -475,6 +519,13 @@ def main(argv=None):
     s = sub.add_parser("class", help="set the class (timed|batch) of queued jobs by id, --owner or --tag")
     s.add_argument("qos", choices=("timed", "batch")), s.add_argument("ids", nargs="*"), owner_opt(s), s.add_argument("--tag")
     s.set_defaults(f=cmd_class)
+
+    s = sub.add_parser("set", help="change --timeout/--mem/--cpus of queued jobs by id, --owner or --tag "
+                                   "(a value, or a factor: --timeout 2x); --running: running jobs' --timeout too")
+    s.add_argument("ids", nargs="*"), owner_opt(s), s.add_argument("--tag")
+    s.add_argument("--timeout"), s.add_argument("--mem"), s.add_argument("--cpus")
+    s.add_argument("--running", action="store_true", help="also change the --timeout of running jobs")
+    s.set_defaults(f=cmd_set)
 
     s = sub.add_parser("usage", help="per owner: time active, frozen waiting for memory, CPU used, lost to requeues")
     owner_opt(s), s.add_argument("--tag"), s.add_argument("--since", default="24h", help="jobs running or finished within this (default 24h)")

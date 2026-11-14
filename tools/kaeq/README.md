@@ -65,6 +65,7 @@ To stop permission prompts, allow one rule in each session's settings:
 Tune with `kaeq config --set reserve_frac=0.25 --set scratch_gb=150` (read every tick).
 Per-job resources in bulk: `kaeq submit --jobs FILE` (JSONL: `cmd`, `name`, `cpus`, `mem`, `disk`, `timeout`, `prio`).
 Change the priority of queued jobs: `kaeq prio N [ids] [--owner O] [--tag T]` (higher runs first).
+Change the limits of queued jobs: `kaeq set [ids] [--owner O] [--tag T] [--timeout 6h|2x] [--mem 24G|1.5x] [--cpus 8|2x]` (a value, or a factor of each job's own); `--running` also changes running jobs' `--timeout` (their memory and CPUs were set at start). Finished jobs take new limits with `kaeq retry`.
 Time accounting: every attempt records its active time, time frozen and how often, and CPU seconds (from its scope's `cpu.stat`); an attempt thrown away (preempted, requeued for memory or disk, retried) adds its active and CPU time to the job's `lost_run_s`/`lost_cpu_s`. `kaeq usage [--owner O] [--tag T] [--since 24h]` sums these per owner (CPU also as a share of the CPUs declared); `kaeq status`, `kaeq result` and failure digests show them per job.
 Watch the queue live: `kaeqtop` (text only, fine over SSH): machine CPU/RAM as the scheduler sees them, what the next job waits for, and per owner priority, running jobs, CPU, RAM, memory set aside, progress, rate and ETA.
 Jobs get `KAEQ_CPUS`, `OMP_NUM_THREADS`, `MKL_NUM_THREADS`, `GOMAXPROCS` = `--cpus`, and the
