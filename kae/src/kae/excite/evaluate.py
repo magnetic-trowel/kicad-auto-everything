@@ -142,7 +142,7 @@ def coarsen_pitch(window, pitch, n_layers, max_cells):
 
 
 def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=None, log=print, lumped=True,
-             intent=None, n_corners=16, seed=0, dc=True, max_cells=None):
+             intent=None, n_corners=16, seed=0, dc=True, max_cells=None, cells=True, cell_pitch=None, cell_skin=True):
     """Every harm of a laid-out board, across the parameters' intervals.
 
     Each aggressor's pattern is solved in two bands: its switching fundamental (current split by the
@@ -150,7 +150,8 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
     layout share is |Z| at the fundamental and L at the edge (the solve minus the same parts with
     ideal copper). Harm sizes (kae.excite.harm) are evaluated at the typical point and at seeded
     corners of the intervals (kae.excite.beliefs). lumped: two-pad parts are branches of the copper
-    model and only the other parts' pads are injected."""
+    model and only the other parts' pads are injected. cells: each switching cell's hot loop solved again in a
+    window at cell_pitch (default kae.excite.hotloop.CELL_PITCH), its primaries in the result's `cells`."""
     from kae.board.kicad_file import load
     from kae.circuit import brief as B
     from kae.em import solve as ES
@@ -438,6 +439,16 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
     harms.sort(key=lambda h: -(h["u_hi"] or 0))
     hazards += bias_hazards(harms, pitch)
     hazards += stack_hz
+    # each cell's hot loop at a finer pitch in a window around it: its primaries (kae.excite.hotloop)
+    cell_rows = []
+    if cells and any(s.kind == "cell" for s in srcs):
+        from . import hotloop as HL
+        t_c = time.time()
+        gp = {pr["s"].name: (pr["Le"], pr["Zf"]) for pr in pairs if pr["o"].kind == "overshoot"}
+        cell_rows = HL.cell_rows(path, b, bd, bm, srcs, obs, cps, bands, window, n_cu, nsub=nsub,
+                                 pitch=cell_pitch or HL.CELL_PITCH, global_pairs=gp, global_pitch=pitch,
+                                 open_cells=open_cells, uncomputed=uncomputed, skin=cell_skin, log=log)
+        log(f"cells: {len(cell_rows)} hot loops in {time.time() - t_c:.1f}s")
     # each cell's parasitic ring: its copper loop with the switch node's capacitance
     rings = []
     for pr in pairs:
@@ -458,7 +469,7 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
                 ledger=ledger.rows(), questions=[dict(subject=p.subject, name=p.name, lo=p.lo, hi=p.hi, unit=p.unit,
                                                       basis=p.basis) for p in ledger.flagged()],
                 bands={k: v for k, v in bands.items()}, rings=rings,
-                open_cells=[dict(source=k, why=v) for k, v in sorted(open_cells.items())],
+                open_cells=[dict(source=k, why=v) for k, v in sorted(open_cells.items())], cells=cell_rows,
                 observers=[dict(name=o.name, kind=o.kind, bound=o.bound, basis=o.basis) for o in obs],
                 harms=harms, observations=observations, hazards=hazards, mesh=mesh_rep,
                 part_power_W={k: round(v, 6) for k, v in sorted(part_power.items())},
@@ -808,18 +819,27 @@ def main(argv=None):
     ap.add_argument("--no-lumped", action="store_true", help="copper only, with the circuit's ideal-copper split")
     ap.add_argument("--intent", help="intent file (JSON): operating conditions, part facts, requirements")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--cell-pitch", type=float, default=None,
+                    help="pitch (mm) of each switching cell's window solve (default kae.excite.hotloop.CELL_PITCH)")
+    ap.add_argument("--no-cells", action="store_true", help="skip the cells' window solves")
+    ap.add_argument("--no-cell-skin", action="store_true", help="the window solves without the skin correction")
     ap.add_argument("--max-cells", type=float, default=None,
                     help="raster budget (cells x copper layers): the pitch doubles until the board's window fits it")
     a = ap.parse_args(argv)
     from .beliefs import load_intent
     r = evaluate(a.board, a.pitch, tuple(a.window) if a.window else None, nsub=a.nsub, log=lambda m: print(m, file=sys.stderr),
                  lumped=not a.no_lumped, intent=load_intent(a.intent), seed=a.seed,
-                 max_cells=int(a.max_cells) if a.max_cells else None)
+                 max_cells=int(a.max_cells) if a.max_cells else None, cells=not a.no_cells, cell_pitch=a.cell_pitch,
+                 cell_skin=not a.no_cell_skin)
     print_total(r["total"])
     print("assumptions:")
     for p in r["ledger"]:
         print(f"  {p['subject'][:28]:28s} {p['name']:9s} {p['typ']:10.4g} [{p['lo']:.4g} .. {p['hi']:.4g}] {p['unit']:2s} "
               f"{p['source']:10s} {p['basis'][:90]}")
+    if r.get("cells"):
+        from .hotloop import summary
+        for line in summary(r["cells"]):
+            print("cell:", line)
     for oc in r.get("open_cells") or []:
         print(f"OPEN hot loop: {oc['source']}: {oc['why']} (priced at its caps)")
     for rg in r["rings"]:

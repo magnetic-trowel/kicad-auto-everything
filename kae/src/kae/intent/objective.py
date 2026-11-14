@@ -439,6 +439,11 @@ def evaluate(ev, intent=None, brief=None):
     status["open_cells"] = [dict(source=c["source"], why=c["why"],
                                  priced=sorted({r["id"] for r in rows if c["source"] in (r.get("open_cells") or [])}))
                             for c in ev.get("open_cells") or []]
+    # each switching cell's hot-loop primaries (kae.excite.hotloop): L_loop, R_loop at f_sw and its harmonics, the
+    # overshoot peak, or its state (open, not computed); reported for cell-by-cell comparison, not priced here
+    status["cells"] = [{k: c.get(k) for k in ("cell", "source", "state", "why", "L_loop_nH", "R_loop_mohm",
+                                               "R_harmonics", "overshoot_V", "global") if k in c}
+                       for c in ev.get("cells") or []]
     status["questions"] = _questions(ev, intent, obs, rows)
     return status
 

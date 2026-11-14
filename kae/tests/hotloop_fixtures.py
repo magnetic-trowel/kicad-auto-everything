@@ -32,8 +32,9 @@ def _via(x, y, net, k):
             f'\t\t(uuid "00000000-0000-4000-9000-{k:012d}")\n\t)\n')
 
 
-def write_hotloop_board(d, variant="closed"):
-    """variant: closed (short VIN track), long (VIN track around a 3 mm detour), open (no ground via at U1)."""
+def write_hotloop_board(d, variant="closed", reverse=False):
+    """variant: closed (short VIN track), long (VIN track around a 3 mm detour), open (no ground via at U1).
+    reverse: the same copper with its tracks and vias listed in the reverse order."""
     d = Path(d)
     p = write_board(d)
     vin = VIN_LONG if variant == "long" else VIN
@@ -45,6 +46,8 @@ def write_hotloop_board(d, variant="closed"):
     items += [_seg(a, b, w, "+3V3", k=30 + k) for k, (a, b, w) in enumerate(OUT)]
     items += [_seg(a, b, w, "GND", k=40 + k) for k, (a, b, w) in enumerate(OUT_GND)]
     items += [_via(x, y, "GND", k) for k, (x, y) in enumerate(vias + [(132.0, 108.0)])]
+    if reverse:
+        items = items[::-1]
     text = board_text()
     tail = "\t(embedded_fonts no)\n)\n"
     assert text.endswith(tail)

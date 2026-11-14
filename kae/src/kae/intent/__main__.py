@@ -75,6 +75,10 @@ def text(st, detailed=False):
             ref = f" (reference {u['reference']}, x{u['ratio']:g})" if u.get("reference") else ""
             out.append(f"    {u['obs']:16s} {u['worst']:>12s}{ref}  {u['label']}"
                        + (f"  IMPLAUSIBLE: {u['implausible']}" if u.get("implausible") else ""))
+    if st.get("cells"):
+        from kae.excite.hotloop import summary
+        for line in summary(st["cells"]):
+            out.append(f"  cell {line}")
     for oc in st.get("open_cells") or []:
         out.append(f"  OPEN hot loop {oc['source']}: priced at its caps in {', '.join(oc['priced']) or '(no term)'}: "
                    f"{oc['why']}")
