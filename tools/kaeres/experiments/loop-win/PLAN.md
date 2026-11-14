@@ -71,3 +71,8 @@ All six arms of a board and seed run side by side in one kaeq job (timed class).
 - From `loop-compute-matched`: about 1.3-1.45 measured CPU-h per board and arm.
 - Batch 1 is 69 × (6 + 3) runs, about 900 CPU-h with judging and physics.
 - An extension batch is 60 × 6 runs, about 500 CPU-h.
+
+## Addendum before any run (2026-11-14): wall ceiling
+A direct plumbing check (Wall's flags, 41-part board, `--time 150`) ran end to end, and the evidence kept a window with a blamed part. It also showed a fault: the W arms' work-mode wall ceiling was 4 × `--time` (4 B). Their windows run to about 3.15 B of nominal work, so the slack was 1.3 ×, against 4 × for R. On that board, Freerouting's first route ran 176 s of wall time for about 40 s charged, and the run hit the ceiling.
+
+The fix: `window_budget_factor` now raises the ceiling to 4 × the extended budget (`loop-win-base`). The methods move to the commit with this fix. The smoke and profile jobs queued at 48ffd89 were cancelled before they ran. Arms and rules are unchanged.
