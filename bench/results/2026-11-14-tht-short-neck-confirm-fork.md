@@ -16,7 +16,7 @@
 | THT overhang, mm² | 1.4 | 559.4 | 520.5 | 520.5 |
 | SMD overhang, mm² | 14.7 | 4.9 | 8.5 | 8.5 |
 
-- **f1 against f0.** loss.copper median 1.000, worse on magtag +2.0 % and aquarium sensor +0.4 %; drop.rail worse on magtag +5.8 % and servo bonnet +5.1 %; Tj and heat.track unchanged.
+- **f1 against f0.** loss.copper median 1.000, worse on servo bonnet +3.2 %, magtag +2.0 % and aquarium sensor +0.4 %; drop.rail worse on magtag +5.8 %, servo bonnet +5.1 % and aquarium +0.2 %; Tj and heat.track unchanged.
 - **DRC.** No error type differs except cm4-carrier, where solder_mask_bridge falls from 30 to 24.
 - **f1 against A.** loss median 0.71, drop median 0.78.
 - **f1 against N.** Medians 1.000. The boards that differ (ostr, cm4, pi-wedge) differ in routing, not finish: f0 shows the same.
