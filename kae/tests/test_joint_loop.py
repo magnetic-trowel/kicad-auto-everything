@@ -352,6 +352,26 @@ def test_window_router_budget_grows_after_timeouts_and_shrinks_back():
     assert st.window_route_s == 225.0
 
 
+def test_window_router_budget_follows_counted_work_not_wall_seconds(monkeypatch):
+    from kae import budget
+    from kae.joint.stages import KaeStages
+    monkeypatch.setattr(budget, "work_mode", lambda: True)
+    st = KaeStages.__new__(KaeStages)
+    st.opts, st.log = dict(budget_s=9000.0), (lambda m: None)
+    s3 = {"autorouter.max_passes": "3"}
+    # the pass cap stopped it short of its 3 passes: the budget bound (wall seconds do not count)
+    st._adapt_window_s(dict(router=dict(autorouter_stop="MAX_PASSES", seconds=1.0, passes_done=1, passes_cap=1,
+                                        settings=s3), steps=dict(router=59.0)))
+    assert st.window_route_s == 120.0
+    # its own 3 passes done in a quarter of the budget's work: halved, whatever the wall clock said
+    st._adapt_window_s(dict(router=dict(autorouter_stop="MAX_PASSES", seconds=500.0, passes_done=3, passes_cap=9,
+                                        settings=s3), steps=dict(router=20.0)))
+    assert st.window_route_s == 60.0
+    st._adapt_window_s(dict(router=dict(autorouter_stop="MAX_PASSES", seconds=1.0, passes_done=3, passes_cap=9,
+                                        settings=s3), steps=dict(router=40.0)))
+    assert st.window_route_s == 60.0
+
+
 def test_no_window_restarts_after_a_timeout_or_with_many_open(tmp_path, monkeypatch):
     import kae.route.incremental as I
     from kae.joint.stages import KaeStages

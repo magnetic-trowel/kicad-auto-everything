@@ -24,6 +24,7 @@ Stage by stage:
 """
 from __future__ import annotations
 
+from kae import budget
 from kae.budget import now as clock_now
 import json
 import math
@@ -379,9 +380,19 @@ class KaeStages:
         base = float(self.opts.get("window_route_s", 60.0))
         cap = float(self.opts.get("window_route_max_s", max(base, 0.05 * float(self.opts.get("budget_s") or 0))))
         cur = self.window_route_s
-        if r.get("autorouter_stop") == "TIMED_OUT" or r.get("timed_out"):
+        timed_out, sec = r.get("autorouter_stop") == "TIMED_OUT" or r.get("timed_out"), r.get("seconds")
+        if budget.work_mode():
+            # counted budgets: Freerouting's budget is a pass cap, and its wall seconds depend on the
+            # host's load. The budget bound when the cap stopped it short of its own pass limit; its
+            # time is the work charged for it (incremental's "router" step)
+            asked = int(((r.get("settings") or {}).get("autorouter.max_passes")) or 0)
+            done, pcap = r.get("passes_done"), r.get("passes_cap")
+            timed_out = bool(r.get("timed_out")) or (pcap is not None and done is not None and done >= pcap
+                                                     and (not asked or pcap < asked))
+            sec = (rep.get("steps") or {}).get("router")
+        if timed_out:
             new = min(cap, 2 * cur)
-        elif r.get("seconds") is not None and r["seconds"] < 0.25 * cur:
+        elif sec is not None and sec < 0.25 * cur:
             new = max(base, cur / 2)
         else:
             new = cur
