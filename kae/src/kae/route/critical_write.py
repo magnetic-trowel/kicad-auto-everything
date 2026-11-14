@@ -147,7 +147,7 @@ def _insert(text, chunks):
 def append_items(src, dst, tracks=(), vias=(), zones=()):
     """dst = src plus tracks [(net, layer, width, a, b, uuid[, locked[, mid]])] (an arc when
     mid is given), vias [(net, x, y, size, drill, uuid[, locked])] (locked unless the 7th field
-    says otherwise) and zones [(net, layer, rings, name[, priority])]."""
+    says otherwise) and zones [(net, layer, rings, name[, priority[, min_thickness]])]."""
     text = Path(src).read_text(encoding="utf-8")
     require_kicad10(text, src)
     chunks = []
@@ -159,7 +159,8 @@ def append_items(src, dst, tracks=(), vias=(), zones=()):
         else:
             chunks.append(track_sexpr(*t[:6], locked=lk))
     chunks += [via_sexpr(*v[:5], uid=v[5], locked=v[6] if len(v) > 6 else True) for v in vias]
-    chunks += [zone_sexpr(z[0], z[1], z[2], z[3], priority=z[4] if len(z) > 4 else 0) for z in zones]
+    chunks += [zone_sexpr(z[0], z[1], z[2], z[3], priority=z[4] if len(z) > 4 else 0,
+                          **({"min_thickness": z[5]} if len(z) > 5 and z[5] else {})) for z in zones]
     Path(dst).write_text(_insert(text, chunks), encoding="utf-8")
 
 

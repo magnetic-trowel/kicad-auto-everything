@@ -57,6 +57,11 @@ DEFAULTS = dict(
     chain_tail=False,      # also route (and lock) a chain's hops after the protector (no surge physics)
     rail_light=False,      # also route rail branches that only need the class width (no drop physics)
     trim_tol=0.05,         # loop hops narrowed to the narrowest width within this of the wide loop (0: off)
+    cell_price="L",        # what a commutation cell's copper is priced by: "L" (loop nH) or "W" (loss.loop +
+                           # loss.loop_ac at the cell's I, f_sw, D: critical_modules.cell_operating; trim_tol,
+                           # return vias and pad entries then judge watts, so R counts; kae-hot-loops R2)
+    cell_via_array=False,  # return-via arrays at the cell's ground terminals (critical_modules._via_array, R4)
+    via_array_max=8,       # with cell_via_array: vias per ground terminal at most
     complete_mm=8.0,       # join a critical net's pads within this distance of its critical copper (benchmark
                            # run crit-v3: A+B cp1 0.636 with joins vs 0.515 without; oasis 9 -> 1 unconnected)
     island_mm=20.0,        # and its islands of critical copper to each other within this distance

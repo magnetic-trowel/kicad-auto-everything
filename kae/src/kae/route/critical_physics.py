@@ -187,6 +187,17 @@ def r_via(height, drill, plating=T_PLATE):
     return RHO_CU * height / (math.pi * (drill + plating) * plating)
 
 
+def r_strip(length, width, h, t_mm=0.035, t_plane_mm=0.035):
+    """Resistance (ohm) of a strip and, at height h over a plane, of its return in the plane: the
+    return of a line current at h spreads as J(x) = I h / (pi (x^2 + h^2)) (the image law), whose
+    dissipation equals a uniform strip 2 pi h wide (integral of J^2 = I^2 / (2 pi h)), so a strip of
+    width w returns through about w + 2 pi h of plane [I]."""
+    r = r_track(length, width, t_mm)
+    if h not in (None, INF) and h > 0:
+        r += r_track(length, width + 2 * math.pi * h, t_plane_mm)
+    return r
+
+
 def drop_width(current_a, length_mm, dv_v, t_mm=0.035):
     """Width (mm) that keeps the drop of `current_a` over `length_mm` within dv_v."""
     if current_a <= 0 or length_mm <= 0 or dv_v <= 0:
@@ -211,30 +222,40 @@ class Loop:
     def __init__(self):
         self.el = {"A": ([], [])}
         self.cons = []
+        self.res = {}       # element -> DC resistance (ohm) of its board copper (r_strip, r_via)
+
+    def _r(self, el, r):
+        self.res[el] = self.res.get(el, 0.0) + float(r)
 
     def _e(self, el):
         return self.el.setdefault(el, ([], []))
 
-    def strip(self, a, b, w, h, el="A"):
+    def strip(self, a, b, w, h, el="A", t_mm=0.035, copper=True):
+        """A strip of board copper (copper=False: a part's internal path, no board resistance)."""
         if math.dist(a, b) > 1e-6:
             self._e(el)[0].append((float(a[0]), float(a[1]), float(b[0]), float(b[1]), float(w), float(h)))
+            if copper:
+                self._r(el, r_strip(math.dist(a, b), w, h, t_mm))
 
-    def path(self, pts, w, h, el="A"):
+    def path(self, pts, w, h, el="A", t_mm=0.035):
         for a, b in zip(pts[:-1], pts[1:]):
-            self.strip(a, b, w, h, el)
+            self.strip(a, b, w, h, el, t_mm=t_mm)
 
-    def vert(self, x, y, z0, z1, r, el="A"):
+    def vert(self, x, y, z0, z1, r, el="A", drill=None):
+        """A vertical piece; with `drill`, a plated via barrel (its resistance counts)."""
         if abs(z1 - z0) > 1e-9 and z0 != INF and z1 != INF:
             self._e(el)[1].append((float(x), float(y), float(z0), float(z1), float(r)))
+            if drill:
+                self._r(el, r_via(abs(z1 - z0), drill))
 
     def body(self, a, b, h, zb, w, el="A"):
         """A part's internal path from terminal a to b: tie up, strip at h + zb, tie down."""
         r = gmd_rect(max(w, 0.1))
         if h == INF:
-            self.strip(a, b, max(w, 0.1), INF, el)
+            self.strip(a, b, max(w, 0.1), INF, el, copper=False)
             return
         self.vert(a[0], a[1], h, h + zb, r, el)
-        self.strip(a, b, max(w, 0.1), h + zb, el)
+        self.strip(a, b, max(w, 0.1), h + zb, el, copper=False)
         self.vert(b[0], b[1], h + zb, h, r, el)
 
     def kcl(self, coeffs, rhs=1.0):
@@ -253,6 +274,23 @@ class Loop:
             return self.el
         hf = max(3.2, 2.0 * max(fin))
         return {k: ([h if h[5] != INF else h[:5] + (hf,) for h in H], V) for k, (H, V) in self.el.items()}
+
+    def value_r(self):
+        """(loop inductance nH, loop resistance ohm): the resistance of the board copper (strips,
+        their plane return, via barrels; part bodies excluded) carrying the inductive current split
+        that `value` finds, sum x_e^2 R_e. At the switching frequency (0.1-3 MHz) the return already
+        follows the inductive path (power-copper.md section 5: f_c ~ 0.6 MHz at h = 0.1 mm), so the
+        split that minimizes L is the one that carries the AC current; DC values, no skin effect
+        (as the evaluator's raster)."""
+        got = self.value(shares=True)
+        if isinstance(got, tuple) and len(got) == 2 and isinstance(got[1], dict):
+            L, x = got
+        else:
+            L, x = got, {}
+        R = 0.0
+        for el, r in self.res.items():
+            R += float(x.get(el, 1.0)) ** 2 * r
+        return L, R
 
     def value(self, shares=False):
         """Loop inductance (nH); with shares=True also {element: current share}."""

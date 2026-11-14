@@ -260,6 +260,19 @@ DEFAULTS = dict(
     zone_keepout=1.0,              # placement: weight of pads whose mask opening would bridge another net's
                                    # fixed outer-layer zone or sit in a board-level mask aperture with another
                                    # net (each 0.1 x this; gecko5: all staged DRC errors, 14 -> 0); 0: off
+    # the bridge's hot-loop stage (kae.route.hotloop; docs/research/routing/kae-hot-loops.md), each off
+    # until the hotloop A/B; env KAE_HOTLOOP_* where neither the project nor opts set them
+    hotloop_keepout=0,             # R5: 1 keeps other nets' tracks and vias off the return-plane layer under each
+                                   # commutation cell (its hull + hotloop_keepout_mm) in Freerouting, the repair
+                                   # rounds and the last mile (a kae-crit: guard; never in the output)
+    hotloop_keepout_mm=1.0,        # mm around the cell's hull the keep-out reaches (kae.route.hotloop.MARGIN_WHY)
+    hotloop_cells=0,               # R1+R2: 1 routes the commutation cells (critical_modules, cells only, priced in
+                                   # watts: loss.loop + loss.loop_ac) before Freerouting and locks their copper
+    hotloop_vias=0,                # R4: 1 adds return-via arrays at the cells' ground terminals inside that stage
+                                   # (turns the cell stage on)
+    hotloop_pours=0,               # R3: 1 writes the cells' VIN and PGND hops as zones of their nets (kae-hl:,
+                                   # kept in the output; turns the cell stage on)
+    hotloop_budget_s=120.0,        # s: the cell stage stops starting cells after this (and after 15 % of the budget)
 )
 
 

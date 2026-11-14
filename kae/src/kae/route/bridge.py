@@ -195,9 +195,19 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
         sev = severities(input_path)
         opts["severities"] = sev
         opts["seed"] = seed
-        if any((z.get("name") or "").startswith(CRIT_PREFIX) for z in info.get("zones") or []):
+        # the hot-loop stage (kae.route.hotloop; off by default): cells laid and locked, return-plane
+        # keep-outs and hot-loop pours, written into a work board that is routed in the input's place
+        from . import hotloop
+        hl = hotloop.stage(input_path, info, wd / "hotloop", opts, log=log, time_s=time_s)
+        if hl is not None:
+            report["hotloop"] = {k: v for k, v in hl.items() if k not in ("hazards", "guards")}
+            report.setdefault("hazards", []).extend(hl.get("hazards") or [])
+            if hl.get("board"):
+                input_path = Path(hl["board"]).resolve()
+                info = pcbnew_io.export_dsn(input_path, kdsn)
+        if any(hotloop.hard_zone(z.get("name")) for z in info.get("zones") or []):
             opts["crit_zones"] = [z for z in pcbnew_io.zone_fills(input_path)["zones"]
-                                  if (z.get("name") or "").startswith(CRIT_PREFIX)]
+                                  if hotloop.hard_zone(z.get("name"))]
         p = constraints.plan(info, input_path, opts)
         zoned = any(z.get("net") for z in info.get("zones") or [])
         share = strict_share(opts, seed, input_path)
@@ -341,11 +351,22 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             staged = drc.stage_board(output_path, input_path, wd / "drc")
             rep = drc.run(staged, wd / "drc" / "drc.json", timeout=max(10, left() - 5))
             report["drc"] = drc.summary(rep)
+        dropped = False
+        if hl is not None and hl.get("guards") and output_path.exists():
+            # the keep-outs guided the routing only; the output never carries them (the pours stay)
+            from . import critical_write as W
+            W.edit(output_path, output_path, drop_guards=True)
+            dropped = True
+            if final_rep and (report.get("repair") or {}).get("final", {}).get("unconnected"):
+                report.setdefault("hazards", []).extend(hotloop.blocked_by_keepout(
+                    final_rep, hl["guards"], gnd={g["net"] for g in hl["guards"]}))
         stepcache.save_fork(fork, "repaired", {"board": output_path}, clock_now() - t0)
         parts = finish_parts(opts, p)
         if parts and left() > float(opts.get("finish_min_s") or 60.0):
+            # without the keep-outs the board's DRC differs from the repair loop's: finish runs its own
             report["finish"] = finish_hook(output_path, input_path, wd / "finish", parts, time_s=left() - 10,
-                                           base_report=final_rep if opts.get("repair") else None, log=log)
+                                           base_report=final_rep if opts.get("repair") and not dropped else None,
+                                           log=log)
             report.setdefault("hazards", []).extend(report["finish"].pop("hazards", None) or [])
         elif parts:
             from kae import hazards as H
@@ -373,7 +394,8 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
         return report
     finally:
         report["opts"] = {k: v for k, v in opts.items()
-                          if k not in ("crit_zones", "fixed_uuids", "severities", "soft_fixed", "physics_guard")}
+                          if k not in ("crit_zones", "fixed_uuids", "severities", "soft_fixed", "physics_guard",
+                                       "intent")}
         report["seconds"] = round(clock_now() - t0, 2)
         if own_wd and not opts.get("keep"):
             shutil.rmtree(wd, ignore_errors=True)
@@ -467,6 +489,18 @@ def last_mile_only(input_path, board_path, output_path, time_s=120.0, seed=0, wo
         p.pad_shapes = opts.get("pad_shapes") or "kicad"
         from .critical_write import routing
         fixed = {r["uuid"] for r in routing(input_path) if r.get("locked")}   # the input's pre-routes
+        from . import hotloop
+        if hotloop.active(hotloop.settings(input_path, opts)):
+            # the hot-loop stage's cell copper (locked on the routed board) and its hard zones: the last
+            # mile keeps them as the bridge did
+            fixed |= {r["uuid"] for r in routing(board_path) if r.get("locked")}
+            cz = hotloop.last_mile_crit_zones(input_path, board_path, info, wd / "hotloop", opts, log=log)
+            if cz:
+                opts["crit_zones"] = cz
+                p = constraints.plan(info, input_path, opts)
+                p.plane_policy = plane_policy(opts)
+                p.plane_cost = opts.get("plane_cost")
+                p.pad_shapes = opts.get("pad_shapes") or "kicad"
         opts["fixed_uuids"] = sorted(fixed)
         staged = drc.stage_board(output_path, input_path, wd / "start")
         rep = drc.run(staged, wd / "start" / "drc.json", timeout=max(10, deadline - clock_now()))
