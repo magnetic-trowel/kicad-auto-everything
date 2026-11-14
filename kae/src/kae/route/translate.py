@@ -825,8 +825,12 @@ def apply(tree, plan, info):
         # missed a layer; the fallback held 5 one-net classes), so the fallback is never priced
         diag = {l: plan.matrix.get((n, n, l)) or d0 or (0.2, 0.2, 0.2) for l in cu}
         nets = [Q(x) for x in rc.nets if x in known]
-        network.append(["class", n, *nets, ["circuit", ["use_via", Q(vias[n])]],
-                        *_class_rule_nodes(rc.widths, diag, cu, lname)])
+        circuit = ["circuit", ["use_via", Q(vias[n])]]
+        if getattr(rc, "layers", None):
+            # a custom rule keeps the class's tracks off some layers: Freerouting's use_layer (inactive layers get
+            # no trace width, so it never routes there)
+            circuit.append(["use_layer", *[lname(l) for l in rc.layers]])
+        network.append(["class", n, *nets, circuit, *_class_rule_nodes(rc.widths, diag, cu, lname)])
     for oname, oc in sorted(plan.obstacle_classes.items()):
         vals = [max(v) for v in oc.values.values()]
         network.append(["class", oname, ["rule", ["clearance", _um(max(vals) if vals else 0.0)]]])
