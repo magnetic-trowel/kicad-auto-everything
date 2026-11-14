@@ -331,7 +331,7 @@ def tht_exempt(ref, number, kind, attrs, hot, zone_joined, wide):
     return None
 
 
-def branch_currents(net, tracks, vias, pads, fills, inj, link=1e6, stats=None):
+def branch_currents(net, tracks, vias, pads, fills, inj, link=1e6, stats=None, grown_w=None):
     """{pad token: A}: the largest current in a track that enters (or runs through) each pad of `net`, from a resistive solve
     of the net's routed copper under the injections `inj` ({"REF.NUM": A}, kae.excite.dc.planned_injections).
     Tracks are conductances w/L; pads, vias and fill pieces (`fills`: {layer: [polygons]}) join what touches
@@ -435,12 +435,14 @@ def branch_currents(net, tracks, vias, pads, fills, inj, link=1e6, stats=None):
     for a, k, g, tag in edges:
         if tag not in (None, "track"):
             at.setdefault(k, set()).add(tag)
-    out, n_in, loss = {}, {}, 0.0
+    out, n_in, loss, loss_g = {}, {}, 0.0, 0.0
     t_i = {}
     for e, (a, k, g, tag) in enumerate(edges):
         if tag == "track":
             i = abs(g * (V[a] - V[k]))
             loss += g * (V[a] - V[k]) ** 2
+            w = mine[of_track[e]].width
+            loss_g += i * i * (w / g) / max(w, grown_w or 0.0)       # the same current in copper grown to grown_w
             t_i[of_track[e]] = max(t_i.get(of_track[e], 0.0), i)
             for tok in at.get(a, set()) | at.get(k, set()):
                 out[tok] = max(out.get(tok, 0.0), i)
@@ -448,6 +450,7 @@ def branch_currents(net, tracks, vias, pads, fills, inj, link=1e6, stats=None):
     if stats is not None:
         # loss_sq: the tracks' I^2 R in units of the sheet resistance (squares); entries: tracks into each pad
         stats["loss_sq"] = stats.get("loss_sq", 0.0) + float(loss)
+        stats["loss_grown_sq"] = stats.get("loss_grown_sq", 0.0) + float(loss_g)
         stats.setdefault("entries", {}).update(n_in)
         # each track's current (for the pads that grown copper of a loaded track would reach)
         stats["track_i"] = stats.get("track_i", []) + [(lines[ti], i) for ti, i in t_i.items() if i > 0]
@@ -1609,7 +1612,7 @@ class PowerCopper:
         for net in nets:
             st = self.tht_flow_stats.setdefault(net, {})
             out.update(branch_currents(net, self.board.tracks, getattr(self.board, "vias", []) or [], pads.get(net, []),
-                                       self.fills.get(net) or {}, inj, stats=st))
+                                       self.fills.get(net) or {}, inj, stats=st, grown_w=self.o["max_width"]))
         self.tht_plan = len(inj)
         # a pad within reach of a loaded track's grown copper (max_width / 2 + neck_len) is part of that path once
         # the copper grows (wide rails merge into neighbouring pads of their net): it counts that current too
@@ -1698,7 +1701,7 @@ class PowerCopper:
 
     def _loss_floor(self, keep, flows):
         """{id(pad): width} the neck may not go below so that the necks of a net together add at most
-        tht_loss_frac of the net's routed copper loss under the DC plan. A neck of width w where grown copper
+        tht_loss_frac of the net's copper loss under the DC plan once grown (routed currents at max_width). A neck of width w where grown copper
         would be w_f wide adds I^2 R_sq L (1/w - 1/w_f) per track entering the pad, L = neck_len + w_f / 2 (the
         neck and the taper the round-capped wider copper needs to keep its edge neck_len off the pad). Within a
         net the budget first caps pads at their land's width (no overhang), then necks capped pads fully, cheapest
@@ -1725,7 +1728,11 @@ class PowerCopper:
                                                k * max(0.0, 1.0 / w_neck - 1.0 / wf), w_cap, id(p)))
         out = {}
         for net, cs in cost.items():
-            budget = frac * (stats.get(net) or {}).get("loss_sq", 0.0)
+            # the budget is a share of the loss the net will have once grown (its routed currents in copper at
+            # max_width: a floor of the grown loss, so the budget errs small); the routed copper's own loss is
+            # several times larger and would let necks cost several % of the finished board's loss
+            st = stats.get(net) or {}
+            budget = frac * st.get("loss_grown_sq", st.get("loss_sq", 0.0))
             spent = 0.0
             capped = []
             for c_cap, c_neck, w_cap, k in sorted(cs):
