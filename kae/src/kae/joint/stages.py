@@ -549,7 +549,7 @@ class KaeStages:
                                  blocked=rep.get("blocked"))
         return new
 
-    def diagnose(self, lay, drc_report, it, time_s):
+    def diagnose(self, lay, drc_report, it, time_s, nets=None, log=None):
         """kae.route.blocked on a board (as the bridge runs it on its final board): per open
         connection the board rule (or kae default), fixed copper or congestion that keeps it
         open, with the admissible relaxations. `drc_report`: the board's KiCad DRC report
@@ -567,7 +567,7 @@ class KaeStages:
         except Exception as e:  # noqa: BLE001 - a diagnosis never costs the board
             return dict(error=f"{type(e).__name__}: {e}")
         return BR.diagnose(lay.board, self.input, self.input, info, plan, drc_report, sev, d, deadline=deadline,
-                           log=self.log)
+                           log=log or self.log, nets=nets)
 
     # ------------------------------------------------------------------ evaluate
     def evaluate(self, lay, it):

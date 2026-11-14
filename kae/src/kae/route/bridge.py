@@ -405,7 +405,8 @@ def finish_hook(output_path, project_board, workdir, parts, time_s, base_report=
     return rep
 
 
-def diagnose(output_path, input_path, original_input, info, plan, drc_report, sev, wd, deadline, log=_log, opts=None):
+def diagnose(output_path, input_path, original_input, info, plan, drc_report, sev, wd, deadline, log=_log, opts=None,
+             nets=None):
     """kae.route.blocked on the final board: what makes each open connection impossible."""
     from kae.board.kicad_file import load
     from . import blocked
@@ -415,7 +416,7 @@ def diagnose(output_path, input_path, original_input, info, plan, drc_report, se
         inb = load(original_input)
         ids = {t.uuid for t in inb.tracks} | {v.uuid for v in inb.vias}
         out = blocked.diagnose(staged, info, plan, fills, drc_report, sev=sev, input_ids=ids, deadline=deadline,
-                               log=log, opts=opts)
+                               log=log, opts=opts, nets=nets)
         log(f"blocked: {len(out['blocked'])} connections the rules block, {len(out['congestion'])} congestion, "
             f"{out['undiagnosed']} not diagnosed ({out['seconds']} s)")
         return out

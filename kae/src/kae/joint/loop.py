@@ -22,6 +22,9 @@ routed-physics recheck). Every later iteration:
    is tried instead) unless a window kept since then shares a part with it or lies within
    `margin` of it: the same parts in the same context failed before (41-53 % of windows
    repeated a part set, and repeats were kept a third as often as new windows).
+   With `window_evidence`, each incumbent's open connections are first diagnosed
+   (kae.route.blocked, in window order, within `evidence_s`): a connection no part move can
+   free opens no window, and the parts and corridors the diagnosis blames join the window.
 3. **Repair.** stages.repair: re-place the window's parts, rip up the nets touching it, redo
    its modules, re-route with everything else locked.
 4. **Judge.** scorecard.accept against the incumbent: legality, completion and DRC must not
@@ -39,7 +42,8 @@ from __future__ import annotations
 from kae.budget import now as clock_now
 import time
 
-from .feedback import CongestionHistory, error_spots, physics_spots, plan_windows, unrouted_spots
+from .feedback import (ENV_DEPENDENT, NO_MOVE_FIXES, CongestionHistory, apply_evidence, error_spots, physics_spots,
+                       plan_windows, unrouted_spots)
 from .scorecard import accept
 
 DEFAULTS = dict(
@@ -73,6 +77,10 @@ DEFAULTS = dict(
     tabu=False,            # a part set whose window failed is not tried again until a window kept since
                            # touched it (shared parts, or rectangles within `margin`); the next larger
                            # attempt of the same window is tried instead (A/B arm)
+    window_evidence=False, # windows from kae.route.blocked's diagnosis of the incumbent (feedback.apply_evidence):
+                           # drop what no move frees, add the parts and corridors to blame; DRC types no move
+                           # changes (feedback.NO_MOVE_FIXES) open no window (A/B arm)
+    evidence_s=30.0,       # ... one diagnosis per incumbent: at most this (and 5 % of the budget)
     min_cycle_s=5.0,       # ... unless the last cycle took less than this (nothing could be routed)
     patience_cycles=2,     # stop after this many full cycles over the windows in a row accept nothing
 )
@@ -147,12 +155,42 @@ class JointLoop:
 
     # ------------------------------------------------------------------ helpers
     def _spots(self, fb, lay):
-        sp = unrouted_spots(fb.get("drc") or {}) + error_spots(fb.get("drc") or {})
+        ignore = ENV_DEPENDENT + NO_MOVE_FIXES if self.opts["window_evidence"] else ENV_DEPENDENT
+        sp = unrouted_spots(fb.get("drc") or {}) + error_spots(fb.get("drc") or {}, ignore=ignore)
         if self.opts["physics_spots"]:
             _, _, centres, refs = self._geom
             mp = getattr(self.stages, "module_parts", {}) or {}
             sp += physics_spots(fb.get("recheck") or {}, mp, centres, refs)
         return sp
+
+    def _evidence(self, st, lay, fb, spots, it, time_s):
+        """kae.route.blocked on the incumbent's open connections, nets in window order, within
+        evidence_s (and 5 % of the budget). The diagnosis set-up (DSN export, zone refill) is
+        charged as one DRC of the board. Returns (diagnosis or {}, report row)."""
+        from pathlib import Path
+
+        from kae import budget
+        o = self.opts
+        parts, bounds, _, _ = self._geom
+        order = [n for w in plan_windows([s for s in spots if s.kind == "unrouted"], parts, bounds,
+                                         margin=o["margin"], max_parts=o["max_parts"], merge_factor=1.0)
+                 for s in w.spots for n in s.nets]
+        t0 = clock_now()
+        row = dict(nets=len(set(order)))
+        if not order or not hasattr(st, "diagnose"):
+            return {}, dict(row, note="nothing to diagnose")
+        try:
+            budget.charge("drc_mb", Path(lay.board).stat().st_size / 1e6)
+        except (OSError, AttributeError, TypeError):
+            pass                  # no board file (test stages)
+        t = min(float(o["evidence_s"]), 0.05 * time_s)
+        try:
+            d = st.diagnose(lay, fb.get("drc") or {}, it, t, nets=list(dict.fromkeys(order)), log=lambda m: None)
+        except Exception as e:  # noqa: BLE001 - windows then come from the spots alone
+            d = dict(error=f"{type(e).__name__}: {e}")
+        row.update(seconds=round(clock_now() - t0, 1), undiagnosed=(d or {}).get("undiagnosed"),
+                   error=(d or {}).get("error"))
+        return (d if isinstance(d, dict) and not d.get("error") else {}), row
 
     def _history(self, hist, lay, fb):
         """Failed connections into the congestion history, then the placer's RUDY overflow
@@ -265,6 +303,8 @@ class JointLoop:
         tries = {}
         failed, kept_wins = {}, []        # tabu: failed part sets, kept windows (iteration, rect, parts)
         rep["tabu_skips"] = 0
+        diag, diag_it = {}, None          # window_evidence: the incumbent's diagnosis
+        rep["evidence"] = []
         max_att = int(o["max_attempts"]) if o["max_attempts"] is not None else 2 + int(time_s // 1800)
         rep["max_attempts"] = max_att
         cycles, cycle_t0, cycle_kept, idle = 0, clock_now(), 0, 0
@@ -287,6 +327,16 @@ class JointLoop:
                 break
             spots = self._spots(best_fb, best)
             parts, bounds, _, _ = self._geom
+            if o["window_evidence"]:
+                if diag_it != best_it:
+                    diag, row = self._evidence(st, best, best_fb, spots, it, time_s)
+                    diag_it = best_it
+                    _, notes = apply_evidence(spots, diag, parts)
+                    rep["evidence"].append(dict(row, iter=best_it, **notes))
+                    self.log(f"evidence on iteration {best_it}: {notes} ({row.get('seconds')}s)")
+                    if left_win() < est:
+                        continue          # the time check above ends the loop
+                spots, _ = apply_evidence(spots, diag, parts)
             cap = min(o["max_parts"], share_cap(parts, o))
             o_win = dict(o, max_parts=cap)
             base = [w for w in plan_windows(spots, parts, bounds, margin=o["margin"], max_parts=cap,

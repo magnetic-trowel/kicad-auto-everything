@@ -447,3 +447,19 @@ def test_tabu_never_repeats_a_failed_part_set_without_a_kept_window_near_it():
     assert tabu_reason(w, failed, [(4, (10, 10, 12, 12), ("b",))], 1.0) is None
     assert tabu_reason(w, failed, [(4, (2.5, 0, 4, 2), ("z",))], 1.0) is None
     assert tabu_reason(w, failed, [(4, (5, 5, 6, 6), ("z",))], 1.0)
+def test_window_evidence_skips_connections_no_move_frees():
+    class Diag(FakeStages):
+        def diagnose(self, lay, drc, it, time_s, nets=None, log=None):
+            self.calls.append(("diagnose", it, tuple(nets or ())))
+            return {"blocked": [dict(net="NR2", pads=["R2.1"], cause="rule", against_ref="R2", against_own=True)],
+                    "congestion": [dict(net="NR1", pads=["R1.1"], cause="congestion")]}
+    st = Diag(broken=("R1", "R2"))
+    rep = _run(st, window_evidence=True, finish=False)
+    repaired = {r for c in st.calls if c[0] == "repair" for r in c[3]}
+    assert "R2" not in repaired and "R1" in repaired              # R2's open connection opens no window
+    assert rep["final"]["unconnected"] == 1 and rep["stop"] == "no window left to try"
+    ev = rep["evidence"]
+    assert ev[0]["iter"] == 0 and ev[0]["dropped"] == 1 and ev[0]["congestion"] == 1
+    assert [c for c in st.calls if c[0] == "diagnose"][0][2] == ("NR1", "NR2")      # in window order
+    # one diagnosis per incumbent (iteration 0 and the kept window), then the final board's
+    assert len([c for c in st.calls if c[0] == "diagnose" and c[2]]) == len(ev) == 1 + rep["accepted"]
