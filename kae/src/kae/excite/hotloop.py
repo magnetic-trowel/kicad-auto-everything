@@ -8,7 +8,7 @@ three cells are under-resolved (docs/research/physics/field-solver-accuracy.md, 
 closes within a few millimetres of its parts, so its window is solved at CELL_PITCH (chosen by the convergence
 test in tools/research/physics/hl_cell_convergence.py; docs/topics/physics/pdn-and-commutation.md section 7).
 
-The window is the bounding box of the pads that carry at least SHARE of the cell's peak pad current in the
+The window is the bounding box of the parts that carry at least SHARE of the cell's peak pad current in the
 copper-free circuit solve (input caps, switches, the pads of the overshoot observer), grown by
 max(MARGIN_MM, MARGIN_H x h), h the outer layers' depth to their next layer, so the return current spreading in the
 planes is held (a loop at height h over its plane returns 1 - (2/pi) atan(x/h) of its current beyond x; on the
@@ -55,14 +55,20 @@ def _pad_box(bm, tokens):
 
 
 def window_pads(bd, s, o, freqs):
-    """The pads that set a cell's window: SHARE of the peak pad current of the cell's own pattern or of its
-    overshoot observer's, at any of `freqs`, in the copper-free circuit (the same for every layout)."""
+    """The pads that set a cell's window: every pad of a part through which SHARE of the peak pad current of the
+    cell's own pattern or of its overshoot observer's passes (half its pads' summed |J|: a connector or module
+    takes its share over many pins), at any of `freqs`, in the copper-free circuit (the same for every layout)."""
     out = set()
     for f in freqs:
         sol = bd.circuit.solve(f, [s])[s.name]
         for J in (sol["J"], O.pattern(bd, o, f)):
             big = max((abs(j) for j in J.values()), default=0.0)
-            out |= {p for p, j in J.items() if big and abs(j) >= SHARE * big}
+            part = {}
+            for p, j in J.items():
+                part.setdefault(p.rsplit(".", 1)[0], []).append((p, abs(j)))
+            for pads in part.values():
+                if big and sum(j for _, j in pads) / 2 >= SHARE * big:
+                    out |= {p for p, j in pads if j > 0}
     return out
 
 
@@ -107,9 +113,10 @@ def _solve_window(path, b, bd, s, o, win, pitch, nsub, fills, freqs, skin, log):
     lump_into(bd.circuit, tpad, lambda a, c, zf, nm: bm.m.part(a, c, name=nm, zf=zf))
     net = ES.Network(bm.m)
     op = ES.Operator(net)
+    from .evaluate import _band_start
     R0 = net.R
-    out, dropped = {}, 0.0
-    for f in freqs:
+    out, dropped, prev = {}, 0.0, None
+    for f in freqs:                      # ascending: each starts from the last one's solution (_band_start)
         Ja = sols[f]["Ja"]
         inj = {p: j for p, j in Ja.items() if p in bm.m.terminals and abs(j) > 1e-12}
         tot = sum(abs(j) for j in Ja.values()) or 1.0
@@ -118,11 +125,14 @@ def _solve_window(path, b, bd, s, o, win, pitch, nsub, fills, freqs, skin, log):
             net.R = _skin_R(net, f, nsub)
         try:
             # a pad the window left out carries less than SHARE of the peak (window_pads): its current may leak
-            (v, info), = ES.potentials_many(bm.m, [inj], f, net=net, op=op, light=True, leak=SHARE)
+            (v, info), = ES.potentials_many(bm.m, [inj], f, net=net, op=op, light=True, leak=SHARE,
+                                            x0=[_band_start(prev, inj, f, net.n_br)])
         finally:
             net.R = R0
         if info["unbalanced"]:
             return None, info, bm.m
+        prev = (f, inj, info.pop("x"))
+        info.pop("I", None)
         Jk = pats[f]
         vid = O.ideal(bd, sols[f])
         out[f] = O.bilinear(Jk, v) - O.bilinear(Jk, vid)
