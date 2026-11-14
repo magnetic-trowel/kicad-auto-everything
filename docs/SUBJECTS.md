@@ -1282,7 +1282,7 @@ Use: `grep -i '<term>' docs/SUBJECTS.md`. The first link is the likeliest main d
 - differential measurement: [physics/lens-in](topics/physics/lens-in.md)
 - differential pair: [rules/diff-pairs](topics/rules/diff-pairs.md); [routing/diff-pair-routing#tool-support](topics/routing/diff-pair-routing.md#tool-support)
 - differential pair coupling: [physics/fields-si-emi](topics/physics/fields-si-emi.md)
-- diffpair-ab: [research/routing/kae-pair-routing](research/routing/kae-pair-routing.md)
+- diffpair-ab: [research/routing/kae-pair-routing#ab-result-diffpair-ab3-2026-11-14](research/routing/kae-pair-routing.md#ab-result-diffpair-ab3-2026-11-14)
 - diffusion: [research/joint/untested-ideas#catalog-ideas-without-a-test-from-the-42-idea-catalog](research/joint/untested-ideas.md#catalog-ideas-without-a-test-from-the-42-idea-catalog)
 - diffusion length √(αt): [physics/thermal-physics](topics/physics/thermal-physics.md)
 - diffusion placement: [placement/generative-placement](topics/placement/generative-placement.md)

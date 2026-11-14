@@ -5,7 +5,7 @@
 Scope: kae's pair router and where it runs in the pipeline. Not here: which nets are a pair, how a pair is measured, hazards -> [kae-diff-pair-report](kae-diff-pair-report.md); pair physics and rules -> [diff-pairs](../../topics/rules/diff-pairs.md); router survey -> [diff-pair-routing](../../topics/routing/diff-pair-routing.md).
 Keys: kae.route.pair_route, pairs first, pair envelope, spine, fan-in, skew bump, stitching vias, pseudo-net, post-pass, diffpair-ab
 
-**Status:** built; A/B `diffpair-ab3` (first and post against the bridge, 120 boards, pre-registered) queued 2026-11-09, no result yet. **First published:** 2026-11-09, branch `diffpair-route`.
+**Status:** failed its A/B (`diffpair-ab3`, 2026-11-14): not merged; kept on branch `diffpair-route`. **First published:** 2026-11-09, branch `diffpair-route`.
 
 ## What a pair needs, and when it can be built
 
@@ -47,3 +47,28 @@ Pairs first gives the coupling and skew a reviewer wants; it cost opens on dense
 Width and gap are the board's: `diff_pair_gap` custom rules, then the net class's `diff_pair_width`/`diff_pair_gap`, clamped by KiCad's own clearance for the pair. Everything is locked; pairs that do not close are left to the bridge and listed in the report.
 
 Runs: `kae.route.cli route --pairs first` or `--pairs post` (`opts["pairs"]`, off by default). A pair the spine or the fan-ins cannot close stays with the general router.
+
+## A/B result (diffpair-ab3, 2026-11-14)
+
+Pre-registered (`tools/kaeres/experiments/diffpair-ab/PLAN.md`, amended 2026-11-11 to the bus scorecard). 120 boards with real pairs, one per repo family; control, first and post at 486f2f1, 900 s, k = 1, run side by side; pairs from bus scorecards (evaluator `0ff1f9452b8d`), tier from the human board. Intervals: 95 % bootstrap over boards.
+
+| | control | first | post |
+|---|---|---|---|
+| pairs measured (boards) | | 413 (75) | 473 (72) |
+| coupled_3w median | 0.147 / 0.125 | 0.738 | 0.25 |
+| coupled change, median paired | | +0.40 [0.30, 0.51] | 0.00 [0, 0] |
+| skew median, mm | 1.91 / 2.04 | 0.63 | 2.01 |
+| skew ratio, median paired | | 0.36 [0.29, 0.48] | 1.00 |
+| vias per pair change, mean | | -1.47 [-1.83, -1.14] | +0.03 |
+| opens (total 12,367) | | +15.6 % [8.2, 28] | +11.1 % [6.7, 18] |
+| DRC errors (total 8,633) | | +5.0 % [0.1, 17.5] | +13.8 % [8.5, 21] |
+| clean boards (cp1) | 6 (0.05) | 3 (0.025) | 6 (0.05) |
+| completion, mean | 0.844 | 0.821 | 0.819 |
+| CPU s, mean | 938 | 891 | 802 |
+| physics Σu ratio, both complete | | 0.999 (n 17) | 1.000 (n 23) |
+
+New error types: first `track_width` 0 to 199 and `diff_pair_gap_out_of_range` 0 to 173 (defects of the pair router: fan-in necks below a rule's minimum, legs outside a gap rule's maximum), `starved_thermal` 45 to 82; post `starved_thermal` 45 to 1,008 (its 240 s reserve came out of the repair rounds), `track_width` 78.
+
+**Verdict: fail for both arms.** First makes the pairs a reviewer wants (coupled 0.15 to 0.74, skew a third, 1.5 fewer vias per pair; the gain holds across planes and layer changes: pairs crossing a plane change in control, coupled 0.06 to 0.76, plane changes per pair 2.9 to 1.1), but the coupled interval's lower end (0.296) touches the +0.30 threshold, and both guardrails fail: 16 % more opens (73 boards worse, 24 better) and new rule errors. Post fails its primaries: it re-laid almost nothing (median change 0), and cost opens and errors through the time it took from repair. No extension: the opens interval lies wholly above +5 %.
+
+What would change it: first without its rule defects (necks only to the rule's own minimum, legs held inside `diff_pair_gap` max) and with the locked pairs no longer closing corridors (pairs routed first but unlocked, or opens-guarded per pair), re-tested as a new pre-registered A/B.
