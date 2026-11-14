@@ -75,6 +75,25 @@ MH=$RESUME_H add "kae staged (restarts)" joint-fixed 900 "$(rs 300 1.15 --resume
   "$CP if [ \"\$KAE_RESUME\" = 1 ]; then $E -m kae.route.cli route @BEST@ @OUT@ --seed @SEED@ --time @TIME@; else $E -m kae.joint.cli run @IN@ @OUT@ --seed @SEED@ --time @TIME@ --max-iters 0 --no-modules; fi"
 MH=$RESUME_H add "kae joint loop (restarts)" joint-fixed 900 "$(rs 300 1.15 --resume 0.5)" "kae.joint.cli (module stage, windows with last mile, finishing bridge), last mile on errors beyond the input; half of each later wave routes the best board's placement with kae bridge (restart --resume)" \
   "$CP if [ \"\$KAE_RESUME\" = 1 ]; then $E -m kae.route.cli route @BEST@ @OUT@ --seed @SEED@ --time @TIME@; else $E -m kae.joint.cli run @IN@ @OUT@ --seed @SEED@ --time @TIME@; fi"
+# The default kae place-and-route recipe (2026-11-14): completion-first (restart.py, #75) with the module stage
+# keeping its clock as --alt (#74). Phase 1 restarts the staged pipeline for half of two staged allowances; a board
+# clean after it gets the module stage (physics), else another restart run. completion-first against the best of
+# two restart runs (160 boards): opens 515 vs 573, clean 115 vs 114, physics 0.833. Counted-work budgets and
+# Freerouting d137fd1 as tested; --time is the two allowances (nominal work), the harness timeout its 4x ceiling.
+CF_SHA=5e00888450995103bf03d81b116c451ff26da439
+CF_FORK="\$HOME/.cache/kaebench/kae-freerouting-fork-d137fd1/bin/freerouting"
+CF_CP="cp -r $KH/numba-default-${CF_SHA:0:7} numba 2>/dev/null;"
+CF_W="env KAE_BUDGET=work PYTHONHASHSEED=0 KAE_WORKERS=1"
+CF_E="$CF_W NUMBA_CACHE_DIR=\$PWD/numba OMP_NUM_THREADS=1 KAE_BRIDGE_FREEROUTING=$CF_FORK {py:kae}"
+CF_FIN="$CF_CP $CF_E -m kae.route.cli lastmile @IN@ @BEST@ @OUT@ --seed @SEED@ --time @TIME@"
+CF_RES="if [ \"\$KAE_RESUME\" = 1 ]; then $CF_E -m kae.route.cli route @BEST@ @OUT@ --seed @SEED@ --time @TIME@; else"
+CF_R="$CF_CP $CF_RES $CF_E -m kae.joint.cli run @IN@ @OUT@ --seed @SEED@ --time @TIME@ --max-iters 0 --no-modules; fi"
+CF_M="$CF_CP $CF_RES $CF_E -m kae.joint.cli run @IN@ @OUT@ --seed @SEED@ --time @TIME@ --max-iters 0; fi"
+$K method add "kae place-and-route (completion-first)" --kind joint-fixed \
+  --description "the default kae place-and-route: restart.py completion-first, staged restarts then the module stage with its clock (--alt) on a clean board, else another restart run; counted work, Freerouting d137fd1; main at ${CF_SHA:0:7}" \
+  --command "$CF_W KAE_BRIDGE_FREEROUTING=$CF_FORK {py:kae} {code:harness}/tools/kaeres/restart.py --input {input} --output {output} --time \$(( {timeout} * 9 / 40 )) --seed {attempt} --parallel 4 --first-s 300 --scale-first --slack 1.15 --resume 0.5 --final '$CF_FIN' --check-placement --alt '$CF_M' -- '$CF_R'" \
+  --param timeout_s=8000 --param timeout_scale=sqrt-fp40 --param timeout_cap_s=200000 --param parallel=4 \
+  --code kae=.@$CF_SHA --harness $CF_SHA
 # superseded (runs still on disk): 2026-10-29 the kae-speed 1650f8e versions; 2026-10-30 the kae-complete
 # 78d3de7 "lm-base" versions (the same code except the board's rule severities, and restart.py without
 # the judging reserve: seniordesign hdmi2rgb ran past its time and kept nothing)
