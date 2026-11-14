@@ -438,9 +438,10 @@ class Constraint:
     rule: str = ""
     implicit: bool = True
     severity: str | None = None
+    items: tuple = ()            # disallow: the item types it names (track, via, pad, ...)
 
     def copy(self):
-        return Constraint(self.type, self.min, self.opt, self.max, self.rule, self.implicit, self.severity)
+        return Constraint(self.type, self.min, self.opt, self.max, self.rule, self.implicit, self.severity, self.items)
 
 
 @dataclass
@@ -482,6 +483,8 @@ def read_dru(path):
         for c in sexpr.kids(r, "constraint"):
             ctype = c[1] if len(c) > 1 and isinstance(c[1], str) else ""
             d = Constraint(ctype, implicit=False)
+            if ctype == "disallow":
+                d.items = tuple(x.lower() for x in c[2:] if isinstance(x, str))
             for k in ("min", "opt", "max"):
                 v = sexpr.value(c, k)
                 if v is not None:
@@ -689,6 +692,21 @@ def _cond(board, rule, ctype, a, b, layer, geometric):
     except KeyError as e:
         board.unsupported.add(str(e))
         return geometric  # unknown function: assume it matches only on the strict pass
+    return False
+
+
+def disallowed(board, item, layer, kind=None):
+    """True when a custom (constraint disallow ...) rule matching `item` on `layer` names its type (`kind`,
+    default the item's type in lower case): KiCad's items_not_allowed. Geometric conditions are read as not
+    matching (an area-limited disallow is the rule areas' business)."""
+    kind = (kind or str(item.get("type", ""))).lower()
+    for rule in board.rules:
+        if rule.source != "custom" or not _matches_layer(rule, layer):
+            continue
+        for c in rule.constraints:
+            if c.type == "disallow" and kind in c.items and (rule.condition is None or
+                                                           _cond(board, rule, "disallow", item, None, layer, False)):
+                return True
     return False
 
 

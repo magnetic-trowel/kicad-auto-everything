@@ -239,11 +239,13 @@ def _runs(rt):
 
 def _clear_ends(sp, net, other, runs, w, step=0.25, tries=12):
     """Shorten each run's outer end until the end piece clears the partner net's pads (the fan-in starts there).
-    Only the first and last run have a free end; inner run ends are via sites and stay."""
+    Only the first and last run have a free end; inner run ends are via sites and stay. `w`: a width or
+    a function of the layer."""
     runs = [list(r) for r in runs]
+    wf = w if callable(w) else (lambda layer: w)
 
     def bad(a, b, layer):
-        v = sp.track_violations(net, layer, w, a, b, first=False)
+        v = sp.track_violations(net, layer, wf(layer), a, b, first=False)
         return any(getattr(x[0], "kind", "") == "pad" and getattr(x[0], "net", "") == other for x in v)
 
     for idx, is_end in ((0, False), (len(runs) - 1, True)):
@@ -264,8 +266,9 @@ def _clear_ends(sp, net, other, runs, w, step=0.25, tries=12):
 
 
 def _widths(sp, net, layer, w):
-    """Track widths to try: the pair's, then the board minimum (a neck into a fine-pitch pad)."""
-    mn = sp.width_limits(net, layer)[0]
+    """Track widths to try: the pair's, then the narrowest the rules allow on the layer (a neck into a fine-pitch
+    pad; a custom track_width rule's min, not only the board minimum)."""
+    mn = _width_bounds(sp, net, layer)[0]
     return [w] + ([mn] if mn and mn < w - 1e-6 else [])
 
 
@@ -290,12 +293,14 @@ def _with_empty_ends(runs, vias, la, lb):
     return runs
 
 
-def _bump(a, b, h, side):
-    """Replace straight piece a-b by a 45-degree bump of height h on `side` (+1 left), centred, base 2h+t."""
+def _bump(a, b, h, side, flat=False):
+    """Replace straight piece a-b by a 45-degree bump of height h on `side` (+1 left), centred: a triangle (base 2h),
+    or with `flat` a trapezoid (base up to 4h, flat top). Both add bump_gain(h). The triangle has no piece parallel
+    to the partner leg, so KiCad sees no coupled stretch at gap g + h (a diff_pair_gap rule with a max)."""
     u = _unit(a, b)
     L = math.dist(a, b)
     n = _left(u)
-    base = min(L - 2e-3, 4.0 * h)
+    base = min(L - 2e-3, 4.0 * h) if flat else min(L - 2e-3, 2.0 * h)
     t = max(0.0, base - 2.0 * h)
     s = (L - (2.0 * h + t)) / 2.0
     p = [a]
@@ -315,36 +320,123 @@ def bump_gain(h):
     return 2.0 * h * (math.sqrt(2.0) - 1.0)
 
 
+GAP_EPS = 0.0005   # mm: a coupled gap this far inside its rule's edge counts as at it (nm rounding of offsets)
+
+
+def coupled_gaps(segs_p, segs_n):
+    """KiCad 10's diff-pair coupling (pcbnew/drc/drc_test_provider_diff_pair_coupling.cpp): each track of one leg is
+    coupled with the nearest track of the other leg on its layer that is parallel to it (SEG::ApproxParallel, 1 nm) and
+    shares a stretch of parallel projection. Segments are (layer, width, a, b). Yields (i, j, gap, overlap) per coupled
+    track of `segs_p`, gap = centre distance less the half widths. Obstacles between the two, which make KiCad drop a
+    coupling, are not modelled: this is the stricter reading."""
+    for i, (lp, wp, a, b) in enumerate(segs_p):
+        L = math.dist(a, b)
+        if L < 1e-6:
+            continue
+        ux, uy = (b[0] - a[0]) / L, (b[1] - a[1]) / L
+        best = None
+        for j, (ln, wn, c, d) in enumerate(segs_n):
+            if ln != lp or math.dist(c, d) < 1e-6:
+                continue
+            dc = (c[0] - a[0]) * -uy + (c[1] - a[1]) * ux
+            dd = (d[0] - a[0]) * -uy + (d[1] - a[1]) * ux
+            if abs(dc - dd) > 1e-6:
+                continue
+            tc = (c[0] - a[0]) * ux + (c[1] - a[1]) * uy
+            td = (d[0] - a[0]) * ux + (d[1] - a[1]) * uy
+            ov = min(L, max(tc, td)) - max(0.0, min(tc, td))
+            if ov <= 1e-6:
+                continue
+            gap = abs(dc) - (wp + wn) / 2.0
+            if best is None or gap < best[2]:
+                best = (i, j, gap, ov)
+        if best is not None:
+            yield best
+
+
+def gap_violations(segs_p, segs_n, limits):
+    """Coupled tracks of the pair (both legs' view) whose gap lies outside limits(layer) = (min, max), either None:
+    what KiCad reports as diff_pair_gap_out_of_range. [(layer, gap, min, max)]."""
+    out = []
+    for sp_, sn_ in ((segs_p, segs_n), (segs_n, segs_p)):
+        for i, j, gap, ov in coupled_gaps(sp_, sn_):
+            layer = sp_[i][0]
+            mn, mx = limits(layer)
+            if (mn is not None and gap < mn - GAP_EPS) or (mx is not None and gap > mx + GAP_EPS):
+                out.append((layer, round(gap, 4), mn, mx))
+    return out
+
+
+def _ceil_um(x):
+    """x rounded up to whole micrometres (a float of exactly n um stays n um)."""
+    return math.ceil(x * 1000.0 - 1e-6) / 1000.0
+
+
+def _width_bounds(sp, net, layer):
+    """(min, max) track width KiCad accepts for `net` on `layer` (board, net class and custom rules; max may be
+    None)."""
+    mn, _, mx = sp.width_limits(net, layer)
+    try:
+        tw = R.strictest(sp.rb, "track_width", CN.net_item(sp.info, net, "track", layer), None, layer)
+    except Exception:  # noqa: BLE001
+        tw = None
+    lo = max(mn or 0.0, (tw.min if tw is not None and tw.min else 0.0))
+    his = [x for x in (mx, tw.max if tw is not None else None) if x is not None]
+    return lo, (min(his) if his else None)
+
+
 def _rule_width_gap(sp, net_p, net_n, layer):
-    """(width, gap) of a pair on `layer` by the board's rules: a custom diff_pair_gap or the net class's
-    diff_pair_width/diff_pair_gap, clamped into what KiCad requires; floor the pair's own clearance."""
+    """(width, gap) of a pair on `layer` by the board's rules (KiCad's own resolution, kae.route.rules): the width a
+    custom track_width rule or the net class's diff_pair_width asks for on this layer, inside its [min, max]; the gap
+    a diff_pair_gap rule (custom, else the net class's) asks for, at least KiCad's clearance between the two legs,
+    inside the rule's [min, max]. Neither is rounded past a rule's edge (a 0.1521 mm rule is 0.1521, not 0.153)."""
     nets = sp.board.nets if isinstance(sp.board.nets, dict) else {n.name: n for n in sp.board.nets}
     nc = (getattr(sp.board.rules, "netclasses", {}) or {}).get(getattr(nets.get(net_p), "netclass", ""))
     mn, opt, mx = sp.width_limits(net_p, layer)
-    w = getattr(nc, "diff_pair_width", None) or opt
-    w = sp.clamp_width(net_p, layer, w)
+    ta = CN.net_item(sp.info, net_p, "track", layer)
+    try:
+        tw = R.strictest(sp.rb, "track_width", ta, None, layer)
+    except Exception:  # noqa: BLE001
+        tw = None
+    w = (tw.opt if tw is not None and tw.opt else None) or getattr(nc, "diff_pair_width", None) or opt
+    lo = max(mn or 0.0, (tw.min if tw is not None and tw.min else 0.0))
+    hi = min(x for x in (mx, tw.max if tw is not None else None, 1e9) if x is not None)
+    w = round(min(max(w, lo), hi), 6)
     ta, tb = CN.net_item(sp.info, net_p, "track", layer, width=w), CN.net_item(sp.info, net_n, "track", layer, width=w)
-    rule = None
     try:
         rule = R.strictest(sp.rb, "diff_pair_gap", ta, tb, layer)
     except Exception:  # noqa: BLE001
         rule = None
-    g = None
-    if rule is not None:
-        g = getattr(rule, "opt", None) or getattr(rule, "min", None)
-    if not g:
-        g = getattr(nc, "diff_pair_gap", None)
-    floor = 0.0
+    g = (getattr(rule, "opt", None) or getattr(rule, "min", None)) if rule is not None else None
+    g = g or getattr(nc, "diff_pair_gap", None)
     try:
-        floor = sp.eff.clearance(net_p, net_n, layer).track_track
+        floor = R.strictest(sp.rb, "clearance", ta, tb, layer).min or 0.0
     except Exception:  # noqa: BLE001
         floor = sp._generic_need(net_p, "track", layer)
-    if not g:
-        g = floor
-    g = max(g, floor) + 2.5 * TOL
-    if rule is not None and getattr(rule, "max", None):
+    g = _ceil_um(max(g or 0.0, floor + 2.5 * TOL))
+    if rule is not None and rule.max is not None:
         g = min(g, rule.max)
-    return w, math.ceil(g * 1000.0) / 1000.0
+    if rule is not None and rule.min is not None:
+        g = max(g, rule.min)
+    return w, round(g, 6)
+
+
+def _gap_limits(sp, net_p, net_n, layer, w):
+    """(min, max) of the diff_pair_gap KiCad checks between the two legs on `layer` (either None)."""
+    ta, tb = CN.net_item(sp.info, net_p, "track", layer, width=w), CN.net_item(sp.info, net_n, "track", layer, width=w)
+    try:
+        rule = R.strictest(sp.rb, "diff_pair_gap", ta, tb, layer)
+    except Exception:  # noqa: BLE001
+        return (None, None)
+    return (rule.min, rule.max)
+
+
+def _track_allowed(sp, net, layer):
+    """False where a custom rule disallows this net's tracks on `layer` (KiCad's items_not_allowed)."""
+    try:
+        return not R.disallowed(sp.rb, CN.net_item(sp.info, net, "track", layer), layer, "track")
+    except Exception:  # noqa: BLE001
+        return True
 
 
 @dataclass
@@ -362,6 +454,7 @@ class PairResult:
     vias: int = 0
     stitch: int = 0
     spines: int = 0
+    rules: dict = field(default_factory=dict)    # layer -> [width, gap, gap min, gap max] the pair was laid with
     tracks: list = field(default_factory=list)
     via_rec: list = field(default_factory=list)
     items: list = field(default_factory=list)   # Space items committed (rollback)
@@ -376,6 +469,61 @@ class Router:
         from .lastmile import _SoftRouter
         self.fan = _SoftRouter(self.sp, res=self.o["fan_res"], via_cost=3.0, pad_entry="centre")
         self.soft = []                  # [(item, cost per cell)]: foreign copper a search may cross (post_pass rip)
+        self.wg, self.gap_lim, self.layers, self.other = {}, {}, list(self.sp.cu), {}
+
+    # ------------------------------------------------------------------ the pair's rules
+    def _w(self, layer):
+        """The pair's track width on `layer`."""
+        v = self.wg.get(layer)
+        return v[0] if v else max((x[0] for x in self.wg.values()), default=0.2)
+
+    def _offs(self, layer):
+        """Centreline to leg centre on `layer`: (w + g) / 2."""
+        v = self.wg.get(layer) or (max(x[0] for x in self.wg.values()), max(x[1] for x in self.wg.values()))
+        return (v[0] + v[1]) / 2.0
+
+    def _viol(self, net, layer, w, a, b):
+        """Space.track_violations of a leg piece, where the partner leg's tracks and vias count at KiCad's
+        clearance between the two nets: the pair's gap is the diff_pair_gap rule's, checked by _gap_bad (Space
+        holds coupled nets to the gap itself, which a gap rule with max = min leaves no room for)."""
+        other = self.other.get(net)
+        v = self.sp.track_violations(net, layer, w, a, b, first=False)
+        if not v or not other:
+            return v
+        keep = []
+        for x in v:
+            it = x[0]
+            if getattr(it, "kind", "") in ("track", "via") and getattr(it, "net", "") == other:
+                if x[1] >= self._partner_clearance(net, other, layer) + TOL:
+                    continue
+            keep.append(x)
+        return keep
+
+    def _partner_clearance(self, net, other, layer):
+        key = (net, other, layer)
+        c = self._pc.get(key) if hasattr(self, "_pc") else None
+        if c is None:
+            self._pc = getattr(self, "_pc", {})
+            sp = self.sp
+            try:
+                c = R.strictest(sp.rb, "clearance", CN.net_item(sp.info, net, "track", layer, width=self._w(layer)),
+                                CN.net_item(sp.info, other, "track", layer, width=self._w(layer)), layer).min or 0.0
+            except Exception:  # noqa: BLE001
+                c = sp._generic_need(net, "track", layer)
+            self._pc[key] = c
+        return c
+
+    def _gap_bad(self, res, pr, tracks=None):
+        """The pair's coupled pieces whose gap breaks its diff_pair_gap rule (gap_violations), on `tracks`
+        (default the pair's tracks so far)."""
+        tr = res.tracks if tracks is None else tracks
+        P = [(l, w, a, b) for n, l, w, a, b in tr if n == pr.p]
+        N = [(l, w, a, b) for n, l, w, a, b in tr if n == pr.n]
+        return gap_violations(P, N, lambda l: self.gap_lim.get(l, (None, None)))
+
+    def _width_ok(self, net, layer, w):
+        lo, hi = _width_bounds(self.sp, net, layer)
+        return w >= lo - 1e-9 and (hi is None or w <= hi + 1e-9)
 
     # ------------------------------------------------------------------ pairs and ends
     def _pads_of(self, net):
@@ -447,12 +595,21 @@ class Router:
         if len(ends) < 2:
             res.status, res.reason = "skipped", f"{len(ends)} pad ends found"
             return res
-        layers0 = sp.cu[0]
-        w, g = _rule_width_gap(sp, pr.p, pr.n, layers0)
-        for l in sp.cu:
-            wl, gl = _rule_width_gap(sp, pr.p, pr.n, l)
-            w, g = max(w, wl), max(g, gl)
-        res.width, res.gap = w, g
+        planes = self.plane_layers()
+        # the layers the pair may run on: no plane layer, none a custom rule disallows its tracks on
+        layers = [l for l in sp.cu if l not in planes and _track_allowed(sp, pr.p, l) and _track_allowed(sp, pr.n, l)]
+        if not layers:
+            res.status, res.reason = "skipped", "no layer allows the pair's tracks"
+            return res
+        # width and gap per layer, by the board's rules; the envelope is as wide as the widest layer's pair
+        self.wg = {l: _rule_width_gap(sp, pr.p, pr.n, l) for l in layers}
+        self.gap_lim = {l: _gap_limits(sp, pr.p, pr.n, l, self.wg[l][0]) for l in layers}
+        self.layers = layers
+        self.other = {pr.p: pr.n, pr.n: pr.p}
+        w = max(v[0] for v in self.wg.values())
+        g = max(v[1] for v in self.wg.values())
+        res.width, res.gap = self.wg[layers[0]]
+        res.rules = {l: [v[0], v[1], *self.gap_lim[l]] for l, v in self.wg.items()}
         D, d = sp.via_size(pr.p)
         try:
             pitch_vv = D + sp.eff.clearance(pr.p, pr.n, sp.cu[0]).via_via
@@ -465,8 +622,6 @@ class Router:
         if self.soft:
             env.soft = self.soft
         self.fan.soft = self.soft
-        planes = self.plane_layers()
-        layers = [l for l in sp.cu if l not in planes]
         # join ends nearest-first (Prim)
         rem = list(range(1, len(ends)))
         done = [0]
@@ -530,9 +685,12 @@ class Router:
                 src, tgt = (Anchor(a.geom, tuple(sorted(a.layers)), a.pos, kind="pad"),
                             Anchor(b.geom, tuple(sorted(b.layers)), b.pos, kind="pad"))
                 win = self.fan.window([src, tgt], margin=1.5)
-                ls = [l for l in sp.cu if l in a.layers or l in b.layers]
+                ls0 = [l for l in sp.cu if (l in a.layers or l in b.layers) and l in self.layers]
                 rt = None
-                for fw in _widths(sp, net, ls[0], w):
+                for fw in (_widths(sp, net, ls0[0], self._w(ls0[0])) if ls0 else []):
+                    ls = [l for l in ls0 if self._width_ok(net, l, fw)]
+                    if not ls:
+                        continue
                     rt = self.fan.connect(net, [src], [tgt], fw, ls, via=len(ls) > 1, window=win, count=False)
                     if rt is not None:
                         break
@@ -540,7 +698,7 @@ class Router:
                     ok = False
                     break
                 for l, u, v in rt.segs:
-                    if sp.track_violations(net, l, fw, u, v, first=True):
+                    if self._viol(net, l, fw, u, v):
                         ok = False
                         break
                     added.append(self._add_track(res, net, l, fw, u, v))
@@ -549,6 +707,8 @@ class Router:
                     added.append(self._add_via(res, net, x, y, D, d))
                 if not ok:
                     break
+            if ok and self._gap_bad(res, pr):
+                ok = False
             if ok:
                 res.items += added
                 return True
@@ -585,17 +745,22 @@ class Router:
         # narrowly is left to the fan-in
         other = {pr.p: pr.n, pr.n: pr.p}
         for net in (pr.p, pr.n):
-            legs[net] = _clear_ends(sp, net, other[net], legs[net], w)
+            legs[net] = _clear_ends(sp, net, other[net], legs[net], self._w)
         if any(not pts for net in (pr.p, pr.n) for layer, pts in legs[net]):
             return "legs do not verify"
         for net in (pr.p, pr.n):
             for (layer, pts) in legs[net]:
+                wl = self._w(layer)
                 for a, b in zip(pts[:-1], pts[1:]):
-                    v = sp.track_violations(net, layer, w, a, b, first=True)
+                    v = self._viol(net, layer, wl, a, b)
                     if v:
                         self._undo_keep(res, added)
                         return "legs break a rule: " + _why(v[0], net, layer)
-                    added.append(self._add_track(res, net, layer, w, a, b))
+                    added.append(self._add_track(res, net, layer, wl, a, b))
+        bad = self._gap_bad(res, pr)
+        if bad:
+            self._undo_keep(res, added)
+            return f"legs break the gap rule: {bad[0]}"
         for net in (pr.p, pr.n):
             for (x, y) in via_sites[net]:
                 v = sp.via_violations(net, x, y, size=D, drill=d, first=True)
@@ -611,6 +776,8 @@ class Router:
             for attempt in (order, order[::-1]):
                 n0 = len(added)
                 good = all(self._fan_in(res, added, net, pad[net], pts[net][0], pts[net][1], w) for net in attempt)
+                if good and self._gap_bad(res, pr):
+                    good = False          # the two fan-ins run parallel at a gap the pair's rule does not allow
                 if good:
                     done = True
                     break
@@ -660,7 +827,6 @@ class Router:
         n_runs = len(runs)
         if len(vias) != n_runs - 1:
             return None
-        flare = max(0.0, pitch_vv / 2.0 - offs)
         # via sites (axis perpendicular to the bisector of the directions in and out)
         sites, axes = [], []
         for i, v in enumerate(vias):
@@ -684,6 +850,8 @@ class Router:
         for net in (pr.p, pr.n):
             s = side[net]
             for k, (layer, pts) in enumerate(runs):
+                offs = self._offs(layer) if self.wg else offs
+                flare = max(0.0, pitch_vv / 2.0 - offs)
                 c = _dedup(pts)
                 if k > 0 and len(c) >= 2:
                     c = _cut(c, flare + 0.1, end=False)
@@ -735,9 +903,12 @@ class Router:
         # the pad on this leg's layer first; through another layer (a twist) when the plane is blocked; at the
         # pair's width, then at the board's minimum width (fine-pitch pads narrower than the pair's width)
         rt = None
-        for fw in _widths(sp, net, layer, w):
+        for fw in _widths(sp, net, layer, self._w(layer) if self.wg else w):
             for vias in (False, True):
                 ls = [layer] if not vias else [l for l in sp.cu if l == layer or any(l in x.layers for x in pads) or l in (sp.cu[0], sp.cu[-1])]
+                ls = [l for l in ls if (l == layer or l in self.layers) and self._width_ok(net, l, fw)]
+                if layer not in ls:
+                    continue
                 rt = self.fan.connect(net, [src], tgt, fw, ls, via=vias and len(ls) > 1, window=win, count=False)
                 if rt is not None and rt.segs:
                     w = fw
@@ -754,7 +925,7 @@ class Router:
             pieces.append((layer, end_pt, s0))
         pieces += segs
         for l, a, b in pieces:
-            if sp.track_violations(net, l, w, a, b, first=True):
+            if self._viol(net, l, w, a, b):
                 return False
             added.append(self._add_track(res, net, l, w, a, b))
         if rt.vias:
@@ -778,7 +949,9 @@ class Router:
             short = pr.n if skew > 0 else pr.p
             need = abs(skew)
             # a serpentine: as many bumps as it takes, each at most `bump_max` tall (a tall one hides in no gap)
-            h = o["bump_mm"] or min(max(need / (2.0 * (math.sqrt(2.0) - 1.0)), 3.0 * w), max(o["bump_max"], 3.0 * w))
+            # the bump that adds what is missing and no more (a taller one overshoots and the other leg is then
+            # bumped too, and two bumped legs run parallel at gaps no rule allows), at most bump_max
+            h = o["bump_mm"] or min(need / (2.0 * (math.sqrt(2.0) - 1.0)), o["bump_max"])
             ok = False
             # the straight pieces of the shorter leg, longest last so a bump goes near the ends first
             segs = [e for e in added if e[0] == "t" and e[2][0] == short and math.dist(e[2][3], e[2][4]) > 2.5 * h]
@@ -788,8 +961,12 @@ class Router:
                 net, layer, wd, a, b = rec
                 for s in (1.0, -1.0):
                     pts = _bump(a, b, h, s)
+                    trial = [t for t in res.tracks if t is not rec] + [(net, layer, wd, u, v) for u, v in zip(pts[:-1], pts[1:])
+                                                                       if math.dist(u, v) > 1e-6]
+                    if self.wg and self._gap_bad(res, pr, trial):
+                        continue
                     self.sp.remove([it])
-                    vio = any(sp.track_violations(net, layer, wd, u, v, first=True) for u, v in zip(pts[:-1], pts[1:]))
+                    vio = any(self._viol(net, layer, wd, u, v) for u, v in zip(pts[:-1], pts[1:]))
                     if not vio:
                         added.remove(e)
                         res.tracks.remove(rec)

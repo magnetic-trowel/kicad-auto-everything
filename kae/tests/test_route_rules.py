@@ -275,3 +275,13 @@ def test_the_coupled_diff_pair_gap_holds_between_tracks_not_pads():
     assert R.evaluate(b, "clearance", track("D_P"), track("D_N"), "F.Cu").min == 0.15     # the gap, at the board minimum
     assert R.evaluate(b, "clearance", track("D_P"), pad("D_N"), "F.Cu").min == 0.2
     assert R.evaluate(b, "clearance", pad("D_P"), track("D_N"), "F.Cu").min == 0.2
+
+
+def test_disallow_track_by_layer_condition(tmp_path):
+    # ducktop2 right_io: controlled-impedance classes may run only on F.Cu, B.Cu and In2.Cu
+    b = board('(version 1)\n(rule "ci layers"\n (condition "A.hasNetclass(\'HS\') && A.Layer != \'F.Cu\' && A.Layer != \'B.Cu\' '
+              '&& A.Layer != \'In2.Cu\'")\n (constraint disallow track))\n', tmp_path)
+    assert R.disallowed(b, track("D_P", "HS,Default", "In1.Cu"), "In1.Cu")
+    assert not R.disallowed(b, track("D_P", "HS,Default", "In2.Cu"), "In2.Cu")
+    assert not R.disallowed(b, track("A", "Default", "In1.Cu"), "In1.Cu")
+    assert not R.disallowed(b, via("D_P", "HS,Default"), "In1.Cu")       # tracks only

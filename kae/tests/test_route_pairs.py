@@ -109,3 +109,31 @@ def test_bump_adds_the_length_asked():
     L = sum(math.dist(a, b) for a, b in zip(pts[:-1], pts[1:]))
     assert abs((L - 10.0) - bump_gain(0.5)) < 1e-9
     assert max(p[1] for p in pts) == 0.5 and min(p[1] for p in pts) == 0.0
+
+
+def test_gap_violations_see_parallel_pieces_only():
+    from kae.route.pair_route import gap_violations
+    lim = lambda layer: (0.254, 0.254)                       # noqa: E731 - a rule with min = max
+    w, g = 0.1521, 0.254
+    P = [("F.Cu", w, (0.0, 0.0), (10.0, 0.0))]
+    N = [("F.Cu", w, (0.0, w + g), (10.0, w + g))]
+    assert gap_violations(P, N, lim) == []
+    wide = [("F.Cu", w, (0.0, w + 0.259), (10.0, w + 0.259))]                  # 0.153 width rounding: 5 um over
+    assert gap_violations(P, wide, lim)
+    flare = [("F.Cu", w, (0.0, w + g), (4.0, w + g)), ("F.Cu", w, (4.0, w + g), (5.0, 1.5)), ("F.Cu", w, (5.0, 1.5), (6.0, 1.5))]
+    bad = gap_violations(P, flare, lim)                       # the piece parallel at 1.5 mm is coupled, out of range
+    assert bad and all(abs(v[1] - (1.5 - w)) < 1e-6 for v in bad)
+    assert gap_violations(P, [("In2.Cu", w, (0.0, 1.0), (10.0, 1.0))], lim) == []   # another layer
+
+
+def test_triangle_bump_has_no_piece_parallel_to_the_partner():
+    import math
+    from kae.route.pair_route import _bump, bump_gain, gap_violations
+    pts = _bump((0.0, 0.0), (10.0, 0.0), 0.5, side=-1.0)
+    P = [("F.Cu", 0.15, a, b) for a, b in zip(pts[:-1], pts[1:])]
+    assert abs(sum(math.dist(a, b) for _, _, a, b in P) - 10.0 - bump_gain(0.5)) < 1e-9
+    N = [("F.Cu", 0.15, (0.0, 0.4), (10.0, 0.4))]
+    assert gap_violations(P, N, lambda layer: (0.25, 0.25)) == []
+    flat = _bump((0.0, 0.0), (10.0, 0.0), 0.5, side=-1.0, flat=True)
+    P2 = [("F.Cu", 0.15, a, b) for a, b in zip(flat[:-1], flat[1:])]
+    assert gap_violations(P2, N, lambda layer: (0.25, 0.25))
