@@ -114,3 +114,36 @@ def test_full_region_gives_up_its_loosest_part():
     s = B.true_split(board([box(0, 0, 10, 10), box(100, 0, 150, 50)], fps))
     assert not s.over_capacity and s.how["moved_for_room"] == 1
     assert s.region_of["A"] == s.region_of["J2"] and s.region_of["B"] == s.region_of["J1"]
+
+
+def test_fit_split_moves_parts_a_region_cannot_legalize_and_gives_up_when_none_can():
+    # two panels; R1 and R2 are tied to J1 (left), but the fake placer finds no spot for R2 on the left
+    fps = [fp("J1", 10, 10, [pad(10, 10, "a")], locked=True), fp("R1", 200, 200, [pad(200, 200, "a"), pad(200, 201, "b")]),
+           fp("R2", 201, 201, [pad(201, 201, "b"), pad(201, 202, "d")]), fp("R3", 300, 300, [pad(300, 300, "c")]),
+           fp("J2", 110, 10, [pad(110, 10, "c")], locked=True)]
+    @dataclasses.dataclass
+    class Board:
+        outline: list
+        footprints: list
+        keepouts: list
+        layers: dict
+
+    bd = Board(**vars(board([box(0, 0, 50, 50), box(100, 0, 150, 50)], fps)))
+    s = B.true_split(bd)
+    left = s.region_of["J1"]
+    assert s.region_of["R2"] == left
+
+    def placer(no_room):
+        def place_fn(sub, **kw):
+            assert kw["anneal"] is False
+            refs = {f.ref for f in sub.footprints}
+            bad = sorted(no_room.get(sub.outline[0].bounds[0] < 60, set()) & refs)
+            return NS(report=dict(legal_grid=not bad, exact=[], legalize_final=dict(violations={r: [] for r in bad})))
+        return place_fn
+
+    fitted, rep = B.fit_split(placer({True: {"R2"}}), bd, s, time_s=10)
+    assert fitted is not None and fitted.region_of["R2"] != left and fitted.region_of["R1"] == left
+    assert rep["moved"] == 1 and fitted.how["moved_to_fit"] == 1 and fitted.cross_nets == ["b"]
+    assert s.region_of["R2"] == left    # the caller's split is not changed
+    none, rep = B.fit_split(placer({True: {"R2"}, False: {"R2"}}), bd, s, time_s=10)
+    assert none is None and rep["unfit"] == 1

@@ -40,6 +40,9 @@ CAPACITY = 0.85              # courtyards a region is assumed able to hold on ea
 SPLIT_MIN_S = 20.0           # the least time a region gets
 SPLIT_VERIFY_FRAC = 0.1      # share of the budget kept for the caller's check of the merged board
 MST_MAX_PINS = 60            # nets with more pins are planes in all but name: their MST says nothing
+PROBE_FRAC = 0.4             # most of the placement budget fit_split's probes may take (a region that cannot hold its parts legalizes slowly)
+PROBE_ROUNDS = 3             # repair rounds of fit_split before a split is given up
+PROBE_MIN_S = 3.0            # the least time one region's probe gets
 
 
 @dataclass
@@ -252,6 +255,11 @@ def true_split(board):
     if len(regs) < 2:
         return None
     region_of, how, over = assign(board, regs)
+    return Split(regions=regs, region_of=region_of, cross_nets=cross_nets(board, region_of), over_capacity=over, how=how)
+
+
+def cross_nets(board, region_of):
+    """Signal nets with pins in several regions."""
     nets = defaultdict(set)
     for fp in board.footprints:
         r = region_of.get(fp.uuid, -1)
@@ -259,8 +267,7 @@ def true_split(board):
             if p.net and r >= 0:
                 nets[p.net].add(r)
     kinds = _net_kinds(board)
-    cross = sorted(n for n, rs in nets.items() if len(rs) > 1 and kinds.get(n) == "signal")
-    return Split(regions=regs, region_of=region_of, cross_nets=cross, over_capacity=over, how=how)
+    return sorted(n for n, rs in nets.items() if len(rs) > 1 and kinds.get(n) == "signal")
 
 
 def sub_board(board, split, r):
@@ -294,6 +301,96 @@ def merge_reports(reps):
     sc = [r.get("scorecard") or {} for r in reps]
     out["scorecard"] = {k: round(sum(float(c.get(k) or 0.0) for c in sc), 4) for k in ("total", "total_linear", "structures", "over_budget")}
     return out
+
+
+def _ties(board, split, adj, i):
+    """{region: net weight of part i to the parts of each region}."""
+    fps = board.footprints
+    w = defaultdict(float)
+    for j, x in adj.get(i, {}).items():
+        r = split.region_of.get(fps[j].uuid, -1)
+        if r >= 0:
+            w[r] += x
+    return w
+
+
+def _probe(place_fn, board, split, r, seed, time_s, kw):
+    """Uuids of the movable parts the placer's seed and legalizer (no annealing) leave illegal in region r."""
+    sub = sub_board(board, split, r)
+    if not _movable(sub):
+        return set()
+    res = place_fn(sub, seed=seed, time_s=time_s, brief=None, verify=None, log=None, **dict(kw, anneal=False))
+    rep = res.report
+    bad = set((rep.get("legalize_final") or rep.get("legalize") or {}).get("violations") or {})
+    for e in rep.get("exact") or []:
+        bad |= set(e.get("refs") or ())
+    if rep.get("legal_grid") is False and not bad:
+        bad = {"*"}
+    return {fp.uuid for fp in sub.footprints if not fp.locked and not fp.edge_cuts and fp.pads
+            and (fp.ref in bad or "*" in bad)}
+
+
+def fit_split(place_fn, board, split, seed=0, time_s=60.0, log=None, rounds=PROBE_ROUNDS, **kw):
+    """Check that every region of the split can hold its parts as the placer's own seed and legalizer
+    see it (courtyard area alone does not: a panel region full of fixed jacks and pots holds an area of
+    parts but no spot for a DIP). A movable part a region cannot legalize goes to the region it is most
+    tied to by nets among those it has not failed in; the regions changed are probed again, up to
+    `rounds` times, while the probes are inside `time_s`. Returns (split, or None when a region still
+    cannot hold its parts; report)."""
+    log = log or (lambda *a, **k: None)
+    t0 = time.monotonic()
+    fps = board.footprints
+    idx = {fp.uuid: i for i, fp in enumerate(fps)}
+    adj = _adjacency(board, lambda k: True)
+    region_of = dict(split.region_of)
+    split = dataclasses.replace(split, region_of=region_of, how=dict(split.how))
+    failed = defaultdict(set)          # uuid -> regions it could not be legalized in
+    todo = list(range(len(split.regions)))
+    rep = dict(rounds=0, probes=0, moved=0, unfit=0)
+    n_probe = len(todo) * (rounds + 1)
+    bad = {}
+    for rnd in range(rounds + 1):
+        bad = {}
+        for r in todo:
+            left = time_s - (time.monotonic() - t0)
+            tp = time.monotonic()
+            b = _probe(place_fn, board, split, r, seed, max(PROBE_MIN_S, left / max(1, n_probe - rep["probes"])), kw)
+            rep["probes"] += 1
+            rep.setdefault("probe_s", []).append(round(time.monotonic() - tp, 2))
+            if b:
+                bad[r] = b
+        rep["rounds"] = rnd + 1
+        if not bad:
+            break
+        if rnd == rounds:
+            break
+        if time.monotonic() - t0 >= time_s:      # probes overran their share: the split is not known to fit
+            rep["out_of_time"] = True
+            break
+        todo = set()
+        for r, us in sorted(bad.items()):
+            for u in sorted(us):
+                failed[u].add(r)
+                dest = [k for k in range(len(split.regions)) if k not in failed[u]]
+                if not dest:
+                    continue
+                w = _ties(board, split, adj, idx[u])
+                k = max(dest, key=lambda k: (w.get(k, 0.0), split.regions[k].area))
+                region_of[u] = k
+                rep["moved"] += 1
+                todo |= {r, k}
+        if not todo:
+            break
+        todo = sorted(todo)
+    rep["seconds"] = round(time.monotonic() - t0, 2)
+    if not bad:
+        split.how["moved_to_fit"] = rep["moved"]
+        split.cross_nets = cross_nets(board, region_of)
+        log(f"barrier split fits after {rep['rounds']} probe round(s), {rep['moved']} parts moved to fit")
+        return split, rep
+    rep["unfit"] = sum(len(v) for v in bad.values())
+    log(f"barrier split skipped: {rep['unfit']} parts fit no region after {rep['rounds']} probe round(s)")
+    return None, rep
 
 
 def place_split(place_fn, board, split, seed=0, time_s=300.0, log=None, verify=None, **kw):

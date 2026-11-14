@@ -392,21 +392,37 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
     kw = dict(seed=seed, physics=physics, workers=workers, log=log, anneal=anneal, edge_mate=edge_mate,
               anneal_args=anneal_args, angle_step=angle_step, fixed=fixed, board_path=board_path, opts=opts)
     from kae.route.constraints import setting
-    if int(setting("barrier_split", board_path, opts)) >= 1:
-        # a board split by voids or all-layer keepouts: each region placed on its own (kae.place.barriers)
+    split_mode = int(setting("barrier_split", board_path, opts))
+    if split_mode >= 1:
+        # a board split by voids or all-layer keepouts: each region placed on its own (kae.place.barriers);
+        # 2 also probes that each region can legalize its parts first, moving those it cannot (fit_split)
         from . import barriers
+        t_split = time.monotonic()
         split = barriers.true_split(board)
-        if split is not None and not split.over_capacity:
-            kw2 = {k: v for k, v in kw.items() if k not in ("seed", "log")}
-            return barriers.place_split(place, board, split, seed=seed, time_s=time_s, log=log, verify=verify, **kw2)
-        if split is not None:
+        skipped, fit = None, None
+        kw2 = {k: v for k, v in kw.items() if k not in ("seed", "log")}
+        if split is not None and split.over_capacity:
             log(f"barrier split skipped: regions {split.over_capacity} cannot hold their parts")
+            skipped = dict(skipped="over_capacity", regions=len(split.regions), over_capacity=split.over_capacity)
+        elif split is not None and split_mode >= 2:
+            fitted, fit = barriers.fit_split(place, board, split, seed=seed, time_s=barriers.PROBE_FRAC * float(time_s),
+                                             log=log, **kw2)
+            if fitted is None:
+                skipped = dict(skipped="unfit", regions=len(split.regions), fit=fit)
+            split = fitted
+        # mode 1 keeps its whole budget as before; mode 2 gives the regions what the probes left
+        left = time_s if fit is None else max(float(time_s) - (time.monotonic() - t_split), 0.5 * float(time_s))
+        if split is not None and skipped is None:
+            res = barriers.place_split(place, board, split, seed=seed, time_s=left, log=log, verify=verify, **kw2)
+            if fit is not None:
+                res.report["barrier_split"]["fit"] = fit
+            return res
+        if skipped is not None:
             opts = dict(opts or {}, barrier_split=0)
-            res = place(board, seed=seed, time_s=time_s, physics=physics, brief=brief, workers=workers, log=log,
+            res = place(board, seed=seed, time_s=left, physics=physics, brief=brief, workers=workers, log=log,
                         anneal=anneal, edge_mate=edge_mate, anneal_args=anneal_args, angle_step=angle_step,
                         fixed=fixed, board_path=board_path, opts=opts, verify=verify)
-            res.report["barrier_split"] = dict(skipped="over_capacity", regions=len(split.regions),
-                                               over_capacity=split.over_capacity)
+            res.report["barrier_split"] = skipped
             return res
     mode = resolve_severity(board, board_path, opts)
     if mode != LADDER:
