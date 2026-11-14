@@ -24,6 +24,7 @@ Stage by stage:
 """
 from __future__ import annotations
 
+from kae.budget import now as clock_now
 import json
 import math
 import os
@@ -139,7 +140,7 @@ class KaeStages:
     # ------------------------------------------------------------------ place
     def place(self, seed, time_s):
         from kae.place.pipeline import place
-        t0 = time.monotonic()
+        t0 = clock_now()
         board = self._load(self.input)
         self.locked = {fp.uuid for fp in board.footprints if fp.locked}
         self.edge_parts = {fp.uuid for fp in board.footprints if fp.edge_cuts}
@@ -155,9 +156,11 @@ class KaeStages:
         rep = res.report
         # connectors the placer pinned to the edge stay there: the windows must not pull them in
         self.locked |= set((rep.get("edge_pinned") or {}).get("uuids") or ())
+        # big parts fixed before the seed (place.pipeline._anchor_tight_parts) stay there too
+        self.locked |= set((rep.get("anchored") or {}).get("uuids") or ())
         legal = bool(rep.get("legal_grid") and not rep.get("exact") and not rep.get("outline_incomplete"))
         b = self._load(out)
-        info = dict(place=dict(seconds=round(time.monotonic() - t0, 1), legal=legal, hpwl=rep.get("hpwl"),
+        info = dict(place=dict(seconds=round(clock_now() - t0, 1), legal=legal, hpwl=rep.get("hpwl"),
                                scorecard=(rep.get("scorecard") or {}).get("total"), budget_s=rep.get("budget_s"),
                                stops=place_stops(rep)))
         return Layout(board=str(out), poses=self._all_poses(b), info=info)
@@ -197,7 +200,7 @@ class KaeStages:
         `window_parts` locked). Returns a new Layout (routing as before plus new copper)."""
         from kae.route.critical import Session, write_joint
         from kae.route.critical_joint import optimize_modules
-        t0 = time.monotonic()
+        t0 = clock_now()
         board = self._load(lay.board)
         brief = self._ensure_brief(board)
         out = self._path(it, "modules")
@@ -252,7 +255,7 @@ class KaeStages:
             new.guards.pop(m.id, None)
         new.guards.update(guards)
         new.stage = self._stage_values(out, it)
-        dt_mod = time.monotonic() - t0
+        dt_mod = clock_now() - t0
         new.info["modules"] = dict(seconds=round(dt_mod, 1), budget_s=round(t_mod, 1),
                                    stop="clock" if float(rep.get("seconds") or 0.0) >= 0.95 * t_mod else "done",
                                    moved=sorted(rep.get("moved") or {}),
@@ -317,13 +320,13 @@ class KaeStages:
         """kae.route.lastmile.close on a routed window's `nets` (those that are still split
         are joined by the grid router, ripping other nets' unlocked tracks in the way);
         `board` is replaced in place when anything was joined; the new copper is left
-        unlocked (ordinary wiring for later windows). `deadline` (time.monotonic()): no join
+        unlocked (ordinary wiring for later windows). `deadline` (clock_now()): no join
         starts after it. Returns its report (None: nothing)."""
         from kae.board import pcbnew_io
         from kae.route import bridge as BR
         from kae.route import constraints, lastmile
         from kae.route import critical_write as W
-        t0 = time.monotonic()
+        t0 = clock_now()
         d = self.wd / f"it{it:02d}" / "lastmile"
         d.mkdir(parents=True, exist_ok=True)
         try:
@@ -335,18 +338,18 @@ class KaeStages:
             r = lastmile.close(board, info, plan, fills, cand, nets=sorted(nets), sev=sev, fixed=set(crit),
                                log=lambda m: None, deadline=deadline)
         except Exception as e:  # noqa: BLE001 - the routed window stands
-            return dict(error=f"{type(e).__name__}: {e}", seconds=round(time.monotonic() - t0, 1))
+            return dict(error=f"{type(e).__name__}: {e}", seconds=round(clock_now() - t0, 1))
         if r.get("joined"):
             W.edit(cand, board, unlock=[u for u in r.get("added") or [] if u not in crit])
             _project(self.input, board)
         return dict(joined=r.get("joined"), failed=r.get("failed"), ripped=len(r.get("ripped") or []),
-                    seconds=round(time.monotonic() - t0, 1))
+                    seconds=round(clock_now() - t0, 1))
 
     def close_open(self, lay, it, nets, time_s):
         """The kept board's last mile when no finishing stage could run: lastmile.close on
         `nets` (its open connections' nets) over the whole board, critical copper fixed, for
         about `time_s`. Returns a new Layout (the board unchanged when nothing was joined)."""
-        t0 = time.monotonic()
+        t0 = clock_now()
         out = self._path(it, "routed")
         shutil.copy2(lay.board, out)
         _project(self.input, out)
@@ -354,7 +357,7 @@ class KaeStages:
         self.log(f"last mile on the kept board, {len(nets)} nets: {last_mile_line(lm)}")
         new = Layout(board=str(out), poses=dict(lay.poses), crit=set(lay.crit), owners=dict(lay.owners),
                      guards=dict(lay.guards), status=dict(lay.status), stage=dict(lay.stage), info=dict(lay.info))
-        new.info["route"] = dict(seconds=round(time.monotonic() - t0, 1), status="last mile", finish="last mile",
+        new.info["route"] = dict(seconds=round(clock_now() - t0, 1), status="last mile", finish="last mile",
                                  last_mile=lm, budget_s=round(float(time_s), 1))
         return new
 
@@ -400,9 +403,9 @@ class KaeStages:
         def one(k, out, budget):
             return route_open(locked, out, seed=seed + 7919 * k, time_s=budget, workdir=wd / f"r{k}" if k else wd,
                               opts=ropts, log=lambda m: self.log(f"incremental{'' if not k else ' #' + str(k)}: {m}"))
-        t0 = time.monotonic()
+        t0 = clock_now()
         rep = one(0, raw, time_s)
-        left = time_s - (time.monotonic() - t0)
+        left = time_s - (clock_now() - t0)
         open0 = (rep.get("router") or {}).get("incomplete")
         # restarts help a window left with a few open connections; one that ran out of time
         # (many open) would only run out of time again
@@ -461,7 +464,7 @@ class KaeStages:
         brep = rep.get("best_report") or {}
         new = Layout(board=str(out), poses=dict(lay.poses), crit=set(), owners={}, guards={},
                      status=dict(lay.status), stage=dict(lay.stage), info=dict(lay.info))
-        new.info["route"] = dict(seconds=round(time.monotonic() - t0, 1), status="routed", finish=True,
+        new.info["route"] = dict(seconds=round(clock_now() - t0, 1), status="routed", finish=True,
                                  stops=dict(portfolio=rep.get("stop")), router=best.get("router"),
                                  attempts=len(rep.get("attempts") or []), rank=best.get("rank"),
                                  blocked=brep.get("blocked"))
@@ -475,7 +478,7 @@ class KaeStages:
         from kae.route import bridge as BR
         from kae.route import critical_write as W
         from kae.route.critical_recheck import merge_guards
-        t0 = time.monotonic()
+        t0 = clock_now()
         locked = self._path(it, "route_in")
         W.edit(lay.board, locked, lock=sorted(lay.crit) if finish else "all", drop_guards=True)
         guards = merge_guards([g for _, gs in sorted(lay.guards.items()) for g in gs])
@@ -528,7 +531,7 @@ class KaeStages:
         new = Layout(board=str(out), poses=dict(lay.poses), crit=set(lay.crit), owners=dict(lay.owners),
                      guards=dict(lay.guards), status=dict(lay.status), stage=dict(lay.stage), info=dict(lay.info))
         fin = ((rep.get("repair") or {}).get("final") or rep.get("drc") or {})
-        new.info["route"] = dict(seconds=round(time.monotonic() - t0, 1), status=rep.get("status"), guards=len(guards),
+        new.info["route"] = dict(seconds=round(clock_now() - t0, 1), status=rep.get("status"), guards=len(guards),
                                  finish=finish, stops=route_stops(rep), last_mile=lm,
                                  router_s=(rep.get("router") or {}).get("seconds"),
                                  errors=fin.get("errors"), unconnected=fin.get("unconnected"),
@@ -545,7 +548,7 @@ class KaeStages:
         from kae.route import constraints
         d = self.wd / f"it{it:02d}" / "diagnose"
         d.mkdir(parents=True, exist_ok=True)
-        deadline = time.monotonic() + max(1.0, float(time_s))
+        deadline = clock_now() + max(1.0, float(time_s))
         try:
             info = pcbnew_io.export_dsn(lay.board, d / "kicad.dsn")
             sev = BR.severities(lay.board)
@@ -560,7 +563,7 @@ class KaeStages:
         """(Scorecard, feedback dict(drc=report, recheck=result))."""
         from kae.route import drc as D
         from kae.route.critical_recheck import recheck
-        t0 = time.monotonic()
+        t0 = clock_now()
         d = self.wd / f"it{it:02d}" / "drc"
         staged = D.stage_board(lay.board, self.input, d)
         try:
@@ -624,7 +627,7 @@ class KaeStages:
             except Exception as e:
                 self.log(f"place terms total failed: {type(e).__name__}: {e}")
         card.note = "; ".join(notes)
-        lay.info["evaluate_s"] = round(time.monotonic() - t0, 1)
+        lay.info["evaluate_s"] = round(clock_now() - t0, 1)
         return card, dict(drc=rep, recheck=rc)
 
     # ------------------------------------------------------------------ RUDY
@@ -682,7 +685,7 @@ class KaeStages:
 
         from .replace import replace_window
         from .ripup import plan_ripup
-        t0 = time.monotonic()
+        t0 = clock_now()
         o = self.opts
         board = self._load(lay.board)
         self._ensure_brief(board)
@@ -728,7 +731,7 @@ class KaeStages:
                      guards={m: g for m, g in lay.guards.items() if m not in set(plan.redo)},
                      status=dict(lay.status), stage=dict(lay.stage), info={})
         mid.poses.update({u: tuple(p) for u, p in res.poses.items()})
-        left = time_s - (time.monotonic() - t0)
+        left = time_s - (clock_now() - t0)
         # the last attempt at a window leaves its modules' nets to the bridge: their critical
         # copper and guards may be what blocks the corridor (acceptance prices the physics)
         # odd attempts drop them, even attempts redo them (long budgets alternate)
@@ -738,7 +741,7 @@ class KaeStages:
         mod = self.modules(mid, it, only=redo, window_parts=window.parts,
                            time_s=min(float(o.get("window_module_time", 20.0)), max(5.0, 0.15 * left)))
         rep["modules"] = mod.info.get("modules")
-        left = time_s - (time.monotonic() - t0)
+        left = time_s - (clock_now() - t0)
         min_route = 20.0 if o.get("window_router", "incremental") == "incremental" else 75.0
         if left < float(o.get("min_route_s", min_route)):
             # Freerouting killed before it writes a session leaves the window unrouted
@@ -747,7 +750,7 @@ class KaeStages:
         routed = self.route(mod, it, seed=seed, time_s=left,
                             nets=set(plan.nets) | {n for sp in window.spots for n in sp.nets})
         rep["route"] = routed.info.get("route")
-        rep["seconds"] = round(time.monotonic() - t0, 1)
+        rep["seconds"] = round(clock_now() - t0, 1)
         return routed, rep
 
     # ------------------------------------------------------------------ output

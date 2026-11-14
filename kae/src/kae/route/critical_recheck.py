@@ -31,6 +31,7 @@ round judged by KiCad's DRC and kept only if it is no worse.
 """
 from __future__ import annotations
 
+from kae.budget import now as clock_now
 import math
 import time
 from pathlib import Path
@@ -898,10 +899,10 @@ def retweak_loop(sess, routed, input_path, output_path, wd, rounds=3, seed=0, de
     brief = sess.brief
     w0 = wd / "crit.kicad_pcb"
     hist = []
-    t0 = time.monotonic()
+    t0 = clock_now()
 
     def left():
-        return (deadline - time.monotonic()) if deadline else 1e9
+        return (deadline - clock_now()) if deadline else 1e9
 
     def score(board):
         st = D.stage_board(board, input_path, wd / f"drc_{Path(board).stem}")
@@ -979,4 +980,4 @@ def retweak_loop(sess, routed, input_path, output_path, wd, rounds=3, seed=0, de
         else:
             break
     return dict(rounds=hist, final=dict(errors=cur_s["errors"], unconnected=cur_s["unconnected"]),
-                seconds=round(time.monotonic() - t0, 1))
+                seconds=round(clock_now() - t0, 1))

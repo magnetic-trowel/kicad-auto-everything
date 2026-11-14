@@ -37,6 +37,8 @@ code and options, unless a part was skipped or the gate stopped for time.
 """
 from __future__ import annotations
 
+from kae.budget import start_run as _start_run
+from kae.budget import now as clock_now
 import argparse
 import json
 import shutil
@@ -162,14 +164,14 @@ def run(input_path, output_path, project=None, opts=None, workdir=None, time_s=N
 def _run(inp, out, project, o, workdir, time_s, base_report, drc_s, log):
     from kae import hazards as H
     from . import drc
-    t0 = time.monotonic()
+    t0 = clock_now()
     deadline = None if time_s is None else t0 + float(time_s)
     own = workdir is None
     wd = Path(workdir).resolve() if workdir else Path(tempfile.mkdtemp(prefix="kae-finish-", dir=out.parent))
     wd.mkdir(parents=True, exist_ok=True)
 
     def left():
-        return float("inf") if deadline is None else deadline - time.monotonic()
+        return float("inf") if deadline is None else deadline - clock_now()
 
     rep = dict(input=str(inp), project=str(project), parts=dict(ran=[], skipped={}, failed={}), stages={},
                seconds={}, hazards=[])
@@ -196,7 +198,7 @@ def _run(inp, out, project, o, workdir, time_s, base_report, drc_s, log):
                 cacheable = False
                 log(f"[finish] {part}: skipped ({rep['parts']['skipped'][part]})")
                 continue
-            t1 = time.monotonic()
+            t1 = clock_now()
             dst = drc.stage_board(cur, project, wd / part / "out")
             try:
                 r = _pass(part, cur, dst, o, wd / part / "work",
@@ -205,7 +207,7 @@ def _run(inp, out, project, o, workdir, time_s, base_report, drc_s, log):
                 import traceback
                 traceback.print_exc()
                 rep["parts"]["failed"][part] = f"{type(e).__name__}: {e}"[:300]
-                rep["seconds"][part] = round(time.monotonic() - t1, 1)
+                rep["seconds"][part] = round(clock_now() - t1, 1)
                 continue
             entries = r.pop("_entries", [])
             n0 = len(jr.entries)
@@ -214,13 +216,13 @@ def _run(inp, out, project, o, workdir, time_s, base_report, drc_s, log):
             rep["hazards"] += [h for h in r.get("hazards") or [] if isinstance(h, dict)]
             rep["stages"][part] = dict(_summary(part, r), entries=len(entries))
             rep["parts"]["ran"].append(part)
-            rep["seconds"][part] = round(time.monotonic() - t1, 1)
+            rep["seconds"][part] = round(clock_now() - t1, 1)
             cur = dst
             log(f"[finish] {part}: {len(entries)} entries in {rep['seconds'][part]:.1f} s")
-        t1 = time.monotonic()
+        t1 = clock_now()
         g = J.gate(staged, project, jr, wd / "gate", base_report=base_report, budget=int(o["drc_budget"]),
                    deadline=deadline, log=log, recover=int(o["recover"]))
-        rep["seconds"]["gate"] = round(time.monotonic() - t1, 1)
+        rep["seconds"]["gate"] = round(clock_now() - t1, 1)
         J.write(g["text"], out, project)
         kept = g["kept"]
         for part in rep["stages"]:
@@ -242,7 +244,7 @@ def _run(inp, out, project, o, workdir, time_s, base_report, drc_s, log):
         later = ran[ran.index(rev_st[0]) + 1:] if rev_st else []
         if o.get("replan", True) and later and g.get("report") is not None \
                 and left() > sum(est.get(p, 10.0) for p in later) + est["gate"]:
-            t1 = time.monotonic()
+            t1 = clock_now()
             cur2 = J.write(g["text"], wd / "r2" / "in" / "board.kicad_pcb", project)
             jr2 = J.Journal(g["text"], margin=jr.margin)
             r2 = dict(parts=[], entries={})
@@ -278,7 +280,7 @@ def _run(inp, out, project, o, workdir, time_s, base_report, drc_s, log):
                 if g2.get("time_limited"):
                     cacheable = False
             rep["replan"] = r2
-            rep["seconds"]["replan"] = round(time.monotonic() - t1, 1)
+            rep["seconds"]["replan"] = round(clock_now() - t1, 1)
         # (e) hazards
         for part, why in rep["parts"]["skipped"].items():
             rep["hazards"].append(H.make(
@@ -311,7 +313,7 @@ def _run(inp, out, project, o, workdir, time_s, base_report, drc_s, log):
                 objects=sorted({e.net for e in rev})[:12], evidence=dict(by_stage=by, worse=g.get("worse_full")),
                 fix="None needed; the reverted copper is the router's."))
     finally:
-        rep["seconds"]["total"] = round(time.monotonic() - t0, 1)
+        rep["seconds"]["total"] = round(clock_now() - t0, 1)
         if own:
             shutil.rmtree(wd, ignore_errors=True)
         else:
@@ -337,6 +339,8 @@ def main(argv=None):
     ap.add_argument("--workdir")
     ap.add_argument("--report")
     a = ap.parse_args(argv)
+    if getattr(a, "time", None):
+        _start_run(float(a.time))
     rep = run(a.input, a.output, project=a.project, time_s=a.time, base_report=a.input_drc or None,
               drc_s=a.drc_s, workdir=a.workdir,
               opts=dict(parts=tuple(p for p in a.parts.split(",") if p), drc_budget=a.drc_budget,

@@ -36,6 +36,7 @@ dropped once and the board judged again; otherwise the board stays as it was.
 """
 from __future__ import annotations
 
+from kae.budget import now as clock_now
 import math
 import re
 import shutil
@@ -504,7 +505,7 @@ def run(input_path, output_path, wd, plan, info, opts, deadline, best=None, log=
     from . import drc, repair
     from .critical_space import Space
     from kae.place import heat
-    t0 = time.monotonic()
+    t0 = clock_now()
     tg, rows = planned(input_path, opts)
     rep = dict(parts=rows, thermal=[])
     if not tg:
@@ -516,7 +517,7 @@ def run(input_path, output_path, wd, plan, info, opts, deadline, best=None, log=
     base = None
 
     def left():
-        return deadline - time.monotonic()
+        return deadline - clock_now()
 
     def ok(s, ref):
         nonlocal base
@@ -613,7 +614,7 @@ def run(input_path, output_path, wd, plan, info, opts, deadline, best=None, log=
         log(f"thermal vias: {rep['error']}")
         return rep
     finally:
-        rep["seconds"] = round(time.monotonic() - t0, 1)
+        rep["seconds"] = round(clock_now() - t0, 1)
 
 
 def _fill_dict(zones):

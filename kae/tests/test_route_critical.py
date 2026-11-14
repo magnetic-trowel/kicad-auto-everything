@@ -1381,3 +1381,26 @@ def test_copper_hotter_than_nearby_parts_is_a_warning_and_past_the_laminate_a_bl
     assert warm["severity"] == "warn" and warm["evidence"]["T_parts_warn_C"] == 105.0
     assert "105" in warm["message"]
     assert cool["severity"] == "info"
+
+
+def test_work_mode_charges_the_module_stage(tmp_path):
+    """The critical grid router's searches are counted work: in work mode the module stage (optimize_modules)
+    advances the clock by its searches and expansions, so its deadline binds there and its time comes out of the
+    attempt's budget. Before they were charged it advanced only by deadline polls, i.e. it was free."""
+    from kae import budget
+    from kae.board.kicad_file import load
+    from kae.route.critical import Session
+    from kae.route.critical_joint import optimize_modules
+    p = F.write_board(tmp_path)
+    b = load(p)
+    s = Session(p, info=F.synth_info(b), board=b, log=lambda *a: None)
+    c = budget.set_mode("work")
+    try:
+        t = c.now()
+        optimize_modules(b, s.brief, terms=None, locked=set(), session=s, time_s=600)
+        rep = c.report()
+        assert rep["units"]["crit_search"] >= 1 and rep["units"]["crit_expansion"] > 0
+        assert rep["charged_by_kind"]["crit_search"] == pytest.approx(rep["units"]["crit_search"] * budget.RATES["crit_search"])
+        assert c.now() - t >= rep["charged_by_kind"]["crit_search"] + rep["charged_by_kind"]["crit_expansion"] > 0
+    finally:
+        budget.set_mode("time")

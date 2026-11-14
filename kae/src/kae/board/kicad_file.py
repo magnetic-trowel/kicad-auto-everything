@@ -23,6 +23,8 @@ board's bounding box, so those load with on_board=False. Board.outline adds the 
 graphics of on-board footprints (as pcbnew does); off-board footprints keep theirs in
 `Footprint.edge_cuts`.
 """
+from kae.budget import work_mode
+import functools
 import json
 import math
 import re
@@ -872,17 +874,28 @@ _NC_REQUIRED = ("clearance", "track_width", "via_diameter", "via_drill", "microv
                 "microvia_drill", "diff_pair_width", "diff_pair_gap", "wire_width", "bus_width")
 
 
+@functools.lru_cache(maxsize=4096)
+def _nc_patterns(pat):
+    """(anchored regex or None when pat is no valid regex, wildcard regex) of a netclass pattern,
+    compiled once: a board with many patterns overflowed re's own cache (512), and every board
+    load recompiled them for every net."""
+    rx = ("" if pat.startswith("^") else "^") + pat + ("" if pat.endswith("$") else "$")
+    try:
+        anchored = re.compile(rx)
+    except re.error:
+        anchored = None
+    return anchored, re.compile(_wildcard_re(pat))
+
+
+@functools.lru_cache(maxsize=1 << 17)
 def _nc_match(pat, net):
     """KiCad's netclass pattern match: an anchored regex (EDA_PATTERN_MATCH_REGEX_ANCHORED
     adds '^' and '$' by plain concatenation, so '/SW*|/RST' matches any '/S...'), or an
-    anchored wildcard."""
-    rx = ("" if pat.startswith("^") else "^") + pat + ("" if pat.endswith("$") else "$")
-    try:
-        if re.search(rx, net) is not None:
-            return True
-    except re.error:
-        pass
-    return re.fullmatch(_wildcard_re(pat), net) is not None
+    anchored wildcard. Kept per (pattern, net): a route loads the same board several times."""
+    anchored, wild = _nc_patterns(pat)
+    if anchored is not None and anchored.search(net) is not None:
+        return True
+    return wild.fullmatch(net) is not None
 
 
 def netclass_of(rules, net):
@@ -1099,6 +1112,11 @@ def load(path, *, arc_tol=geom.ARC_TOL, rules=True):
             rd.zone(node)
     tracks = [rd.track(n, False) for n in kids(tree, "segment")] + [rd.track(n, True) for n in kids(tree, "arc")]
     vias = [rd.via(n) for n in kids(tree, "via")]
+    if work_mode():
+        # KiCad writes tracks in UUID order, and a routed board's UUIDs are new on every import: the
+        # file's order differs from run to run, and with it everything that iterates over the copper
+        tracks.sort(key=lambda t: (t.layer, t.net, t.start, t.end, t.mid or (), t.width))
+        vias.sort(key=lambda v: (v.x, v.y, v.net, v.size, v.drill))
 
     # outline: board-level Edge.Cuts decide what is on the board; on-board footprints'
     # Edge.Cuts (cut-outs, card edges) join the outline as pcbnew does

@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# Set up a kaebench host (Ubuntu 22.04/24.04 x86_64): KiCad 10, Freerouting 2.5.0, venv.
+# Set up a kaebench host (Ubuntu 22.04/24.04 x86_64): KiCad 10, Freerouting 2.5.0 (explicit use only), venv.
 # Works without sudo: KiCad then runs from the official kicad/kicad image via
 # Apptainer/Singularity (installed rootless into KAE_HOME if absent; needs unprivileged
 # user namespaces), and the venv comes from uv if python3-venv is missing.
@@ -91,7 +91,12 @@ install_kicad_container() {
       "$tool" build --sandbox "$dir" "docker://kicad/kicad:$KICAD_IMAGE_TAG"
     [ -n "${APPTAINER_CACHEDIR:-}" ] || rm -rf "$KAE_HOME/apptainer-cache"   # keep a user-set cache
   fi
-  ENV_LINES+=("export KAE_KICAD_WRAP=\"$tool exec $dir\"")
+  # kicad-exec sizes KiCad's thread pool to the job's CPUs (see the script); cpus/N is what it shows KiCad
+  install -m 755 "$BENCH_DIR/scripts/kicad-exec" "$KAE_HOME/kicad-exec"
+  mkdir -p "$KAE_HOME/cpus"
+  local n
+  for n in $(seq 1 "$(getconf _NPROCESSORS_ONLN)"); do printf '0-%d\n' $((n - 1)) > "$KAE_HOME/cpus/$n"; done
+  ENV_LINES+=("export KAE_KICAD_WRAP=\"$KAE_HOME/kicad-exec $tool $dir\"")
 }
 
 case "$KICAD_MODE" in
@@ -145,6 +150,11 @@ if [ "$DO_FR" = 1 ]; then
     python3 -c "import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])" "$ZIP" "$KAE_HOME"
     chmod +x "$DEST/bin/freerouting" "$DEST/lib/runtime/bin/"* "$DEST/lib/runtime/lib/jspawnhelper" 2>/dev/null || true
     rm -f "$ZIP"
+  fi
+  # upstream 2.5.0 is for explicit use only (KAE_FREEROUTING). kaebench and the bridge run the build
+  # pinned in $KAE_HOME/kae-freerouting.pin, the magnetic-trowel fork (the control):
+  if [ ! -s "$KAE_HOME/kae-freerouting.pin" ]; then
+    echo "No Freerouting pinned yet: run tools/research/routing/install_freerouting_fork.sh <ref> --pin"
   fi
 fi
 

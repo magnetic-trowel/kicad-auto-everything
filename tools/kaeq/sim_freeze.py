@@ -1,41 +1,25 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: 2026 kicad-auto-everything contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Trace replay of kaeq's batch-job FREEZING under memory pressure: the current lease policy vs "protect".
+"""Trace replay of kaeq's memory policy under pressure, with batch-job FREEZING modelled, running kaeq's own code.
 
-Extends sim.py's engine (same 2-s tick, trace loader, growth buffer, eviction) with batch jobs that can be
-frozen (cgroup.freeze: no progress, no CPU, memory kept) and compressed into zram while frozen (frees
-`gain` x their use, up to `zram_gb` of pages over all frozen jobs).
+Extends sim.py's engine (same 2-s tick, trace loader, growth buffer) with batch jobs that can be frozen
+(cgroup.freeze: no progress, no CPU, memory kept) and compressed into zram while frozen (frees `gain` x their use,
+up to `zram_gb` of pages over all frozen jobs). The policy is not a copy: each tick KaeqPolicy builds the lease
+records the daemon builds (kaeqlib.leases.keep_flags) and runs the daemon's lease_plan, then applies its grants,
+freezes, thaws (with the run window), victims and evictions.
 
     python3 tools/kaeq/sim_freeze.py --traces /var/tmp/$USER/kaeq/traces -j 8
-    python3 tools/kaeq/sim_freeze.py --traces DIR --ram-gb 150 --policies current,protect,protect:-3,protect:T=4
+    python3 tools/kaeq/sim_freeze.py --traces DIR --ram-gb 150 --policies kaeq,kaeq:thaw_min_run_s=0,kaeq:keep_gb=16
 
-Policies (FreezePolicy):
-  current   kaeq.lease_plan as of 2026-11-04 for batch jobs: grants step by max(1 GB, 25% of grant, need) in order
-            (frozen-and-compressed first, timed, priority, oldest); a batch job gets a whole step or, at its grant,
-            is frozen; free = real free - buffer - held (young jobs' unused grant in full, 10% of other batch jobs',
-            timed jobs' pooled forecast growth); admission only while no job waits frozen; real free < buffer
-            freezes the batch jobs that grew this tick (lowest priority, newest first; the oldest of the highest
-            priority spared above half the buffer); below half the buffer the cheapest job per MB is requeued; a
-            job frozen lease_stall_s requeues the newest other batch job (or one past 1.5x its --mem).
-  protect   current plus five parts (drop one with protect:-K, e.g. protect:-3; K in 1..5):
-            1 expensive batch jobs (expected peak >= T GB or invested >= 1 core-h) set aside their forecast growth
-              (expected peak - use) in full, so neither grants nor admission use that room;
-            2 grants go in order of value = memory held / expected remaining time (highest first), freezes to the
-              lowest value first (remaining time: owner's median duration scaled by --mem, or value=oracle);
-            3 a protected job that needs a step none can give makes room: freeze + compress low-value unprotected
-              batch jobs, then requeue unprotected jobs with the least invested work per MB, instead of freezing;
-            4 a thawed job is not frozen again for max(win, 25% of its last freeze), unless free < buffer / 2;
-            5 a big job (expected peak >= T) starts only when its expected peak fits beside the protected jobs'
-              set-aside and no job waits frozen; small jobs may backfill while jobs wait frozen, into room beyond
-              what those need to thaw (and beyond the protected set-aside).
-  Options: T=GB (8), win=s (300), invest=core-h (1), value=est|oracle, requeue=all|young|none (part 3's
-  requeues: any unprotected job, only jobs active < 10 min, or none: freeze only), sa=share (1: of the forecast
-  growth part 1 sets aside).
+Policies: kaeq[:setting=value,...], any of kaeq's settings (DEFAULTS) overridden; --policies ablate runs a set of
+variants (no protection, no run window, set-asides, thresholds).
 
 Not modelled: compression and thaw are instant (the real ones take seconds and cost CPU); a thawed job's zram pages
-come back at once; batch jobs at SCHED_IDLE (all jobs share the CPU equally here); the cpu.pressure freezer; other
-users' memory varies (here a constant reserve); jobs' curves recorded under the live queue's contention.
+come back at once; batch jobs at SCHED_IDLE (all jobs share the CPU equally here); the cpu.pressure freezer and
+squeezing; the emergency requeue (at kaeq's floor, inside the reserve, which the replay counts as overflow);
+admission is by memory (the plan's free room) and sim.py's CPU model, not kaeq's run-queue gate; other users'
+memory varies (here a constant reserve); jobs' curves recorded under the live queue's contention.
 """
 import argparse
 import json
@@ -51,16 +35,6 @@ import sim  # noqa: E402
 GB = 1024.0
 BIN_EDGES = ((2 * GB, "<2"), (8 * GB, "2-8"), (16 * GB, "8-16"), (float("inf"), ">16"))
 BIN_NAMES = [b for _, b in BIN_EDGES]
-STEP_MB, STEP_FRAC, MARGIN_MB, MARGIN_FRAC = 1024.0, 0.25, 512.0, 0.15     # kaeq lease_step_*, lease_margin_*
-FREEZE_MB = 256.0                       # lease_freeze_mb
-RELEASE_MB, RELEASE_FRAC, RELEASE_AFTER = 2048.0, 0.25, 120.0
-HOLD = 0.1                              # lease_hold_frac
-STALL_S = 900.0                         # lease_stall_s
-OVERRUN = 1.5                           # mem_overrun
-EVICT_EVERY = 10.0                      # evict_every_s
-TIMED_PREEMPT = 30.0                    # timed_preempt_s
-TIMED_Z = 2.0
-YOUNG_S = 600.0                         # protect requeue=young: jobs active less than this may be requeued for room
 
 
 def size_bin(mb):
@@ -283,293 +257,103 @@ class FreezeSim(sim.Sim):
 
 # ---------------------------------------------------------------- policy
 
-class FreezePolicy(sim.MemPolicy):
-    """kaeq's lease plan for batch jobs (`current`), with any of the five parts of `protect` (see module doc)."""
-    H = None                             # the learner forecasts growth over the rest of a job (timed held)
+class KaeqPolicy(sim.MemPolicy):
+    """kaeq's own memory policy, not a copy: each tick builds the lease records the daemon builds (keep_flags)
+    and runs the daemon's lease_plan (kaeqlib.leases), then applies what it decides: grants, freezes (compressed),
+    thaws (with the run window), the long-stall victim, the timed victim and evictions. Admission: the plan's free
+    memory, nothing while a job waits frozen at its grant or a kept job is short. Settings are kaeq's DEFAULTS,
+    overridden by the spec: kaeq:thaw_min_run_s=0,keep_gb=16,..."""
+    H = None
 
-    def __init__(self, parts=(), T_gb=8.0, win=300.0, invest_ch=1.0, value="est", requeue="all", sa=1.0, name=None):
-        self.parts = frozenset(parts)
-        self.T, self.win, self.invest_cs, self.value_mode = T_gb * GB, win, invest_ch * 3600, value
-        self.requeue = requeue          # part 3 may requeue: "all" unprotected jobs, "young" (< YOUNG_S active), "none"
-        self.short = False
-        self.sa_frac = sa               # share of a protected job's forecast growth part 1 sets aside
-        self.name = name or ("current" if not self.parts else "protect")
-        self.room, self.blocked, self.thaw_need, self.setaside = 0.0, False, 0.0, 0.0
-        self.sa = {}
-
-    # ---- what a job is expected to need and to be worth
-    def expect(self, sim_, job, peak=0.0):
-        return max(sim_.need(job), peak)
-
-    def protected(self, sim_, r):
-        return (not r.timed) and (self.expect(sim_, r.job, r.peak) >= self.T or r.invest >= self.invest_cs)
-
-    def remaining(self, sim_, r):
-        tpl = r.job.tpl
-        if self.value_mode == "oracle":
-            return max(10.0, (tpl.duration - r.p) * r.noise)
-        od = sim_.owner_dur(tpl.owner)
-        if od is None:
-            est = 1800.0
-        else:
-            est = od[0] * min(2.0, max(0.5, tpl.mem_mb / max(1.0, od[1])))
-        return max(60.0, est - r.p, 0.25 * r.p)
-
-    def value(self, sim_, r):
-        return r.logical / self.remaining(sim_, r)
-
-    def step_of(self, g, u, free=0.0):
-        margin = max(MARGIN_MB, MARGIN_FRAC * g)
-        s = max(STEP_MB, STEP_FRAC * g, u + margin - g)
-        if free > 4 * s:
-            s = max(s, 0.5 * g)
-        return s
-
-    def can_freeze(self, sim_, r, real):
-        return 4 not in self.parts or sim_.t >= r.guard_until or real < sim_.buffer / 2
-
-    def window(self):
-        return self.win if 4 in self.parts else 0.0
-
-    # ---- held: memory counted as taken beyond real use
-    def held(self, sim_):
-        h, mu, var, setaside = 0.0, 0.0, 0.0, 0.0
-        self.sa = sa = {}                # protected run -> its forecast growth beyond 10% of its unused grant
-        for r in sim_.running:
-            unused = max(0.0, r.grant - r.logical)
-            if r.wall < sim.WARM_S:
-                h += unused
-            elif r.timed:
-                g = sim_.learner.growth(r.job.tpl.owner, r.p, r.use, r.peak, r.job.tpl.mem_mb)
-                if g is None:
-                    mu += max(0.0, self.expect(sim_, r.job, r.peak) - r.use)
-                else:
-                    mu += g[0]
-                    var += g[1]
-            elif self.protected(sim_, r):
-                grow = max(0.0, self.expect(sim_, r.job, r.peak) - r.logical)
-                sa[id(r)] = max(0.0, self.sa_frac * grow - HOLD * unused)
-                setaside += sa[id(r)]
-                h += HOLD * unused
-            else:
-                h += HOLD * unused
-        self.setaside = setaside
-        h += mu + TIMED_Z * math.sqrt(var)
-        if 1 in self.parts:
-            h += setaside
-        return h
-
-    # ---- admission (two-phase, see sim.MemPolicy)
-    def prepare(self, sim_):
-        self.left = self.room
+    def __init__(self, overrides=None, name="kaeq"):
+        from kaeqlib.store import DEFAULTS
+        self.cfg = dict(DEFAULTS)
+        for k, v in (overrides or {}).items():
+            if k not in self.cfg:
+                raise ValueError(f"kaeq: no setting {k}")
+            self.cfg[k] = type(self.cfg[k])(v) if not isinstance(self.cfg[k], (str, bool)) else (
+                v if isinstance(self.cfg[k], str) else str(v).lower() in ("1", "true", "yes"))
+        self.name = name
+        self.st = {}                    # id(run) -> lease bookkeeping lease_plan carries between ticks
+        self.room, self.block, self.evict_ts, self.tvict_ts = 0.0, False, -1e9, -1e9
 
     def admit(self, sim_, job):
-        need = sim_.need(job)
-        if 5 not in self.parts:
-            return not self.blocked and need <= self.left
-        room = self.left - (0.0 if 1 in self.parts else self.setaside)
-        if self.expect(sim_, job) >= self.T:
-            return not self.blocked and self.expect(sim_, job) <= room
-        return not self.short and need <= room - (self.thaw_need if self.blocked else 0.0)
+        return not self.block and sim_.need(job) <= self.room
 
     def commit(self, sim_, job):
-        self.left -= sim_.need(job)
+        self.room -= sim_.need(job)
 
     def start(self, sim_, run):
         run.grant = sim_.need(run.job)
 
-    # ---- the lease plan, once per tick
-    def on_tick(self, sim_):
-        t, run = sim_.t, sim_.running
-        real = sim_.cap - sim_.used
-        buf = sim_.buffer
-        for r in run:                                   # trim grants far above use
-            g, u = r.grant, r.logical
-            if g - u > max(RELEASE_MB, RELEASE_FRAC * u) and r.wall >= sim.WARMUP_S and not r.frozen:
-                r.slack_since = r.slack_since or t
-                if t - r.slack_since >= RELEASE_AFTER:
-                    r.grant = min(g, max(u * 1.25, u + 1024.0))
-                    r.slack_since = 0.0
-            else:
-                r.slack_since = 0.0
-        held = self.held(sim_)
-        free = real - buf - held
-        val = {id(r): self.value(sim_, r) for r in run} if 2 in self.parts else None
-        stalled = {}                                    # id -> run, to be frozen (or stay frozen)
-        kills = []
-        # the fleet grew into the buffer: freeze who grew
-        if real < buf:
-            grew = [r for r in run if r.grew > 0 and not r.timed and not r.frozen and self.can_freeze(sim_, r, real)]
-            if val is None:
-                grew.sort(key=lambda r: (r.job.prio, -r.start))
-            else:
-                grew.sort(key=lambda r: (r.job.prio, val[id(r)]))
-            if grew and real > buf / 2:
-                grew.pop()
-            for r in grew:
-                r.grant = min(r.grant, r.logical)
-                stalled[id(r)] = r
-        # below half the buffer: requeue the cheapest job per MB freed (one per EVICT_EVERY)
-        if real < buf / 2 and t - sim_.evict_ts >= EVICT_EVERY:
-            v = sim_.cheapest_victim()
-            if v is not None:
-                kills.append((v, "evict"))
-                sim_.evict_ts = t
-        dead = {id(v) for v, _ in kills}
-        short = []
-        if val is None:
-            order = sorted(run, key=lambda r: (not r.frozen, not r.timed, -r.job.prio, r.start, r.job.jid))
-        else:
-            order = sorted(run, key=lambda r: (not r.timed, -r.job.prio, -val[id(r)], r.job.jid))
-        for r in order:
-            if id(r) in stalled or id(r) in dead:
-                continue
-            g, u = r.grant, r.logical
-            margin = max(MARGIN_MB, MARGIN_FRAC * g)
-            if u < g - margin:
-                continue
-            step = self.step_of(g, u, free)
-            at_grant = u >= g - max(FREEZE_MB, 2 * sim_.tick * r.rate)
-            if r.timed:
-                if free >= min(step, 256.0):
-                    take = min(step, free)
-                    r.grant, free = g + take, free - take
-                elif at_grant:
-                    short.append(r)
-                continue
-            own = self.sa.get(id(r), 0.0) if 1 in self.parts else 0.0    # its step comes out of its own set-aside
-            if free + own >= step:
-                r.grant, free = g + step, free - max(0.0, step - own)
-                continue
-            if not (r.frozen or at_grant):
-                continue                                # wants more, still has room of its own: runs on
-            if 3 in self.parts and self.protected(sim_, r):
-                got = self.make_room(sim_, r, step - free - own, real, val, stalled, dead, kills)
-                if got is not None:
-                    free += got - max(0.0, step - own)
-                    r.grant = g + step
-                    continue
-            if r.frozen or self.can_freeze(sim_, r, real):
-                stalled[id(r)] = r
-            # else: inside its minimum run window, it runs on past its grant (the buffer covers it)
-        # a job frozen lease_stall_s with nothing freeing: requeue a peer (furthest past --mem, else the newest)
-        waited = [(r.wait_acc + (t - r.frozen_since if r.frozen else 0.0), r) for r in stalled.values()]
-        waited = [(w, r) for w, r in waited if w >= STALL_S]
-        if waited:
-            _, s = max(waited, key=lambda x: (x[0], -x[1].job.jid))
-            peers = [r for r in run if r.job.prio <= s.job.prio and not r.timed and id(r) not in dead]
-            over = [r for r in peers if r.logical > r.job.tpl.mem_mb * OVERRUN]
-            if over:
-                v = max(over, key=lambda r: (r.logical - r.job.tpl.mem_mb, r.job.jid))
-            else:
-                others = [r for r in peers if r is not s]
-                v = max(others, key=lambda r: (r.start, r.job.jid)) if others else None
-            if v is not None:
-                s.wait_acc = -(t - s.frozen_since) if s.frozen else 0.0     # its wait starts again
-                kills.append((v, "victim"))
-                dead.add(id(v))
-                stalled.pop(id(v), None)
-        # a timed job short of memory: requeue the newest batch job, a frozen one first
-        if short and real <= buf and t - sim_.tpre_ts >= TIMED_PREEMPT:
-            batch = [r for r in run if not r.timed and id(r) not in dead]
-            if batch:
-                v = max(batch, key=lambda r: (r.frozen, r.start, r.job.jid))
-                kills.append((v, "timed_victim"))
-                dead.add(id(v))
-                stalled.pop(id(v), None)
-                sim_.tpre_ts = t
-        for v, why in kills:
-            if v in sim_.running:
-                sim_.kill(v, why)
-        for r in list(sim_.running):
-            if id(r) in stalled:
-                sim_.freeze(r)
+    def on_tick(self, s):
+        from kaeqlib.leases import expected_size, keep_flags, lease_plan, pooled_headroom
+        # kaeq's times are epoch seconds and treat 0 as "not started": shift the replay's clock (from 0) for it
+        OFF = 1e6
+        cfg, now = self.cfg, s.t + OFF
+        recs, by = [], {}
+        for r in s.running:
+            st = self.st.setdefault(id(r), {"slack": 0.0, "stall": 0.0})
+            frozen_s = r.wait_acc + (s.t - r.frozen_since if r.frozen else 0.0)
+            rec = dict(id=id(r), prio=r.job.prio, started=r.start + OFF, grant=float(r.grant or s.need(r.job)), use=r.use,
+                       declared=r.job.tpl.mem_mb, slack_since=st["slack"], stall_since=st["stall"], rate=r.rate,
+                       frozen=r.frozen, grew=r.grew, timed=r.timed, waited_frozen=frozen_s - st.get("base", 0.0),
+                       protected=r.job.preempts >= cfg["evict_protect_after"], invest=r.invest,
+                       compressed=r.frozen and r.zfree > 0, mpress=0.0, swapped=r.zfree if r.frozen else 0.0,
+                       owner=r.job.tpl.owner, held_out=0.0,
+                       expect=expected_size(r.job.tpl.mem_mb, getattr(s.learner.owners.get(r.job.tpl.owner), "ratio", None),
+                                            r.peak, r.active, cfg))
+            keep_flags(rec, cfg, now, r.guard_until + OFF if r.guard_until else 0.0)
+            recs.append(rec)
+            by[id(r)] = r
+        for k in set(self.st) - set(by):
+            del self.st[k]
+        warm = cfg["lease_warm_s"]
+        timed_held = pooled_headroom([(x["owner"], x["expect"], x["use"], None) for x in recs
+                                      if x["timed"] and now - x["started"] >= warm], cfg["timed_z"], cfg["mem_pool_rho"])[0]
+        real = s.cap - s.used
+        plan = lease_plan(recs, real, cfg, now, s.buffer, timed_held, 0.0, real)
+        for x in recs:
+            r, st = by[x["id"]], self.st[x["id"]]
+            r.grant = plan["grants"][x["id"]]
+            st["slack"], st["stall"] = plan["slack_since"][x["id"]], plan["stall_since"][x["id"]]
+            if x["id"] in plan["stalled"]:
+                s.freeze(r)
             elif r.frozen:
-                sim_.thaw(r, self.window())
-        frozen = [r for r in sim_.running if r.frozen]
-        self.blocked, self.short = bool(frozen or short), bool(short)
-        self.thaw_need = sum(r.zfree + self.step_of(r.grant, r.logical) for r in frozen)
-        self.room = free
-        return [v for v, _ in kills]
+                s.thaw(r, cfg["thaw_min_run_s"])
+        out = []
+        if plan["victim"] is not None:
+            w = by.get(plan["waiter"])
+            if w is not None:
+                self.st[id(w)]["base"] = w.wait_acc + (s.t - w.frozen_since if w.frozen else 0.0)
+            out.append((by[plan["victim"]], "victim"))
+        if plan["timed_victim"] is not None and now - self.tvict_ts >= cfg["timed_preempt_s"]:
+            self.tvict_ts = now
+            out.append((by[plan["timed_victim"]], "timed_victim"))
+        if plan["evict"] is not None and now - self.evict_ts >= cfg["evict_every_s"]:
+            self.evict_ts = now
+            out.append((by[plan["evict"]], "evict"))
+        killed = []
+        for r, why in out:
+            if r in s.running:
+                s.kill(r, why)
+                killed.append(r)
+        self.room = plan["free"]
+        self.block = bool(plan["stalled"] or plan["short"]
+                          or any(x["compressed"] for x in recs if x["id"] not in plan["stalled"]))
+        return killed
 
-    def make_room(self, sim_, p, need, real, val, stalled, dead, kills):
-        """Free `need` MB for protected job p: freeze + compress low-value unprotected batch jobs, then requeue
-        unprotected jobs with the least invested work per MB. Returns MB freed (>= need), or None (nothing done)."""
-        zroom = max(0.0, sim_.zram_cap - sim_.zram_used)
-        cand = [r for r in sim_.running if r is not p and not r.timed and not r.frozen and id(r) not in stalled
-                and id(r) not in dead and not self.protected(sim_, r) and self.can_freeze(sim_, r, real)]
-        if val is not None:
-            cand.sort(key=lambda r: (r.job.prio, val[id(r)], r.job.jid))
-        else:
-            cand.sort(key=lambda r: (r.job.prio, -r.start, r.job.jid))
-        plan_f, plan_k, got = {}, [], 0.0           # id -> (run, MB its freeze frees)
-        for r in cand:
-            if got >= need:
-                break
-            pages = min(r.use, zroom)
-            gain = pages * sim_.gain + HOLD * max(0.0, r.grant - r.logical)
-            if gain <= 0:
-                continue
-            zroom -= pages
-            plan_f[id(r)] = (r, gain)
-            got += gain
-        if got < need and self.requeue != "none":   # requeue (a planned freeze may become a requeue instead)
-            kc = [r for r in sim_.running if r is not p and not r.timed and id(r) not in dead
-                  and not self.protected(sim_, r) and r.job.preempts < sim.PROTECT_AFTER and r.use > 256
-                  and (self.requeue == "all" or r.active < YOUNG_S)]
-            kc.sort(key=lambda r: (r.invest / r.use, r.job.jid))
-            for r in kc:
-                if got >= need:
-                    break
-                unused = max(0.0, r.grant - r.logical)
-                got += r.use + (unused if r.wall < sim.WARM_S else HOLD * unused)
-                if id(r) in plan_f:
-                    got -= plan_f.pop(id(r))[1]
-                plan_k.append(r)
-        if got < need:
-            return None
-        for r, _ in plan_f.values():
-            r.grant = min(r.grant, r.logical)
-            stalled[id(r)] = r
-            sim_.freeze(r)                # compressed now, so its memory is free for p this tick
-        for r in plan_k:
-            kills.append((r, "room"))
-            dead.add(id(r))
-            stalled.pop(id(r), None)
-        return got
+    def knob(self):
+        return ""
 
 
 def parse_policy(spec):
-    """current | protect[:-K,...,T=GB,win=s,invest=core-h,value=est|oracle] | protect:parts=135"""
+    """kaeq[:setting=value,...]: kaeq's own lease plan, with any of its settings overridden."""
     name, _, arg = spec.partition(":")
-    if name not in ("current", "protect"):
-        raise ValueError(f"unknown policy {spec}")
-    parts = set() if name == "current" else {1, 2, 3, 4, 5}
-    kw = {}
-    for a in filter(None, arg.split(",")):
-        if a.startswith("-") and a[1:].isdigit():
-            parts.discard(int(a[1:]))
-        elif a.startswith("+") and a[1:].isdigit():
-            parts.add(int(a[1:]))
-        else:
-            k, _, v = a.partition("=")
-            if k == "parts":
-                parts = {int(c) for c in v}
-            elif k == "T":
-                kw["T_gb"] = float(v)
-            elif k == "win":
-                kw["win"] = float(v)
-            elif k == "invest":
-                kw["invest_ch"] = float(v)
-            elif k == "value":
-                kw["value"] = v
-            elif k == "sa":
-                kw["sa"] = float(v)
-            elif k == "requeue":
-                kw["requeue"] = v
-            else:
-                raise ValueError(f"{name}: unknown option {k}")
-    return lambda: FreezePolicy(parts, name=spec, **kw)
+    if name != "kaeq":
+        raise ValueError(f"unknown policy {spec} (kaeq[:setting=value,...])")
+    kv = dict(a.split("=", 1) for a in filter(None, arg.split(",")))
+    return lambda: KaeqPolicy(kv, name=spec)
 
 
 def simulate(templates, policy, history=(), ram_gb=221.0, reserve_gb=30.0, cpus=118, timed="exp-,rescore-",
@@ -631,9 +415,9 @@ def table(rows):
                      for c in out)
 
 
-ABLATE = ["current", "protect", "protect:-1", "protect:-2", "protect:-3", "protect:-4", "protect:-5",
-          "protect:T=4", "protect:T=16", "protect:win=0", "protect:win=120", "protect:win=600",
-          "protect:value=oracle"]
+ABLATE = ["kaeq", "kaeq:keep_gb=1e9,keep_core_h=1e9", "kaeq:thaw_min_run_s=0,thaw_min_frac=0",
+          "kaeq:keep_reserve_frac=1", "kaeq:keep_reserve_frac=0.5", "kaeq:keep_gb=4", "kaeq:keep_gb=16",
+          "kaeq:thaw_min_run_s=300", "kaeq:lease_hold_frac=0.25", "kaeq:lease_hold_frac=0"]
 
 
 def main(argv=None):

@@ -270,7 +270,7 @@ def test_last_mile_line_reads_counts():
     assert last_mile_line(None) == "nothing"
 
 
-def test_cli_first_route_skips_the_last_mile_only_when_the_loop_finishes(tmp_path, monkeypatch):
+def test_cli_first_route_keeps_the_last_mile_unless_set_off(tmp_path, monkeypatch):
     import kae.joint.cli as cli
     import kae.joint.loop as L
     import kae.joint.stages as S
@@ -291,11 +291,11 @@ def test_cli_first_route_skips_the_last_mile_only_when_the_loop_finishes(tmp_pat
     monkeypatch.setattr(L, "JointLoop", Loop)
     base = ["run", str(tmp_path / "in.kicad_pcb"), str(tmp_path / "out.kicad_pcb"), "--time", "10"]
     cli.main(base)
-    assert seen["sopts"]["first_last_mile"] is False
+    assert "first_last_mile" not in seen["sopts"]          # the bridge's default (last mile on), loop or not
     cli.main(base + ["--max-iters", "0"])
-    assert "first_last_mile" not in seen["sopts"]          # staged: the bridge's default
-    cli.main(base + ["--set", "first_last_mile=1"])
-    assert seen["sopts"]["first_last_mile"] == 1
+    assert "first_last_mile" not in seen["sopts"]
+    cli.main(base + ["--set", "first_last_mile=0"])
+    assert seen["sopts"]["first_last_mile"] == 0
 
 
 def test_a_restart_portfolio_finish_has_no_release_try():

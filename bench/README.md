@@ -11,7 +11,8 @@ the saved board with `kicad-cli` under the board's own rules. Design rationale:
 ```bash
 git clone https://github.com/magnetic-trowel/kicad-auto-everything
 cd kicad-auto-everything
-bench/scripts/setup.sh          # KiCad 10 (PPA, no recommends), Freerouting 2.5.0, bench/.venv
+bench/scripts/setup.sh          # KiCad 10 (PPA, no recommends), bench/.venv (and upstream Freerouting 2.5.0, explicit use only)
+tools/research/routing/install_freerouting_fork.sh <ref> --pin   # the Freerouting fork, pinned: the control
 source bench/.venv/bin/activate
 kaebench doctor
 ```
@@ -25,7 +26,7 @@ kaebench doctor
 - `source bench/.venv/bin/activate` picks up the KiCad wrapper. Force this route with `--kicad container`.
 - The container sees `$HOME`, `/tmp` and the current directory. For a `--workdir` elsewhere, export `APPTAINER_BIND=/that/path`.
 
-Other OSes or setups: point `KAE_KICAD_CLI` / `KAE_KICAD_PYTHON` at KiCad 10. Both accept a command with a wrapper, e.g. `flatpak run --command=kicad-cli org.kicad.KiCad`, or use `KAE_KICAD_WRAP` as a prefix for both. The Python must be able to `import pcbnew`. Set `KAE_FREEROUTING` to a Freerouting binary or JAR; the JAR needs Java 25. Run `pytest bench/tests` to check the install.
+Other OSes or setups: point `KAE_KICAD_CLI` / `KAE_KICAD_PYTHON` at KiCad 10. Both accept a command with a wrapper, e.g. `flatpak run --command=kicad-cli org.kicad.KiCad`, or use `KAE_KICAD_WRAP` as a prefix for both. The container set-up points `KAE_KICAD_WRAP` at `kicad-exec`, which shows KiCad only the CPUs a job may use (`KAE_KICAD_THREADS`, else the queue's `KAEQ_CPUS`, else `nproc`; `KAE_KICAD_THREADS=0` turns the cap off): KiCad otherwise starts one thread per CPU on the machine. The Python must be able to `import pcbnew`. Freerouting is the build named by `KAE_FREEROUTING` (a binary or JAR; the JAR needs Java 25), else the one pinned in `$KAE_HOME/kae-freerouting.pin` (the magnetic-trowel fork, the same pin the bridge uses); with neither, runs stop with an error. Nothing picks the newest install. Run `pytest bench/tests` to check the install.
 
 ## Usage
 
@@ -34,8 +35,8 @@ M=bench/manifests/candidates.jsonl
 kaebench fetch   -m $M -j 8                 # download boards at pinned commits (verifies sha256)
 kaebench prepare -m $M -j 8                 # convert to KiCad 10, qualify, build route/place tasks
 kaebench run --adapter reference --kinds route,place --probe freerouting -j 8 --name human
-kaebench run --adapter freerouting -k 5 --timeout 900 -j 8 --name fr-2.5.0
-kaebench report kae-work/results/human kae-work/results/fr-2.5.0
+kaebench run --adapter freerouting -k 1 --timeout 900 -j 8 --name fr-fork      # the pinned fork; deterministic: one attempt
+kaebench report kae-work/results/human kae-work/results/fr-fork
 ```
 
 Everything lives under `--workdir` (default `./kae-work`): `cache/` (fetched files),
@@ -64,7 +65,7 @@ bash tools/quickstart/prepare_pcbench.sh --workers 16
 # back in this repo
 kaebench --workdir kae-d3 prepare-dir --dir $PCBWORLD_DATA_ROOT/pcbench/exacad_sorted \
   --board-glob processed_v9_guide_v3.kicad_pcb --only @bench/suites/pcbworld-d3a-test.txt --kinds route -j 16
-kaebench --workdir kae-d3 run --adapter freerouting --passes 10 -k 5 -j 16 --name fr-2.5.0-mp10
+KAE_FREEROUTING=<a Freerouting release> kaebench --workdir kae-d3 run --adapter freerouting --passes 10 -k 5 -j 16 --name fr-release-mp10
 ```
 
 PCBWorld published Freerouting 2.1.0 `-mp 10` at 0.80 (D3-A) and 0.78 (D3-B) clean-pass @5. Our scoring re-saves boards with KiCad 10 and uses each board's own severities. Expect close but not identical numbers; report both.
@@ -75,8 +76,8 @@ PCBWorld published Freerouting 2.1.0 `-mp 10` at 0.80 (D3-A) and 0.78 (D3-B) cle
 |---|---|
 | `reference` | The human layout: original copper (route) or original placement (place) |
 | `noop` | Returns the task input unchanged (lower bound) |
-| `freerouting` | Specctra DSN → Freerouting (`-mt 1`, analytics off, per-attempt pass schedule, neck-down off, board edge/hole clearances passed, DSN widths clamped to the board minimum) → SES with placement block stripped → import |
-| `freerouting-stock` | Same round trip with Freerouting's default settings |
+| `freerouting` | Specctra DSN → the pinned Freerouting (the fork, our control; `-mt 1`, analytics off, per-attempt pass schedule, neck-down off, board edge/hole clearances passed, DSN widths clamped to the board minimum) → SES with placement block stripped → import |
+| `freerouting-stock` | Same round trip with Freerouting's default settings; for explicit, deliberate use only (stock 2.5.0 is no longer a control) |
 | any name + `--command` | External tool; template placeholders `{input} {output} {workdir} {kind} {attempt} {timeout}` |
 
 Example external router: `kaebench run --adapter myrouter --command "python my_router.py {input} {output}"`.

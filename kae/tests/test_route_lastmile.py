@@ -126,3 +126,25 @@ def test_close_finds_a_net_named_with_an_escaped_slash(tmp_path):
     r = LM.close(p, info, sp.plan, [], out, nets=LM.open_nets(rep), log=lambda *a: None)
     assert r["joined"] == 1 and list(r["nets"]) == [net]
     assert len(LM.parts(_space(out, info), {}, net)) == 1
+
+
+def test_a_fills_shrunk_anchor_is_kept_and_equal():
+    """_anchors shrank the same fill on every last-mile try; the kept one is the same shape."""
+    from shapely.geometry import Polygon
+    fill = Polygon([(0, 0), (10, 0), (10, 4), (6, 4), (6, 8), (0, 8)], holes=[[(2, 2), (3, 2), (3, 3), (2, 3)]])
+    a = LM._shrunk(fill, 0.15)
+    assert a.equals(fill.buffer(-0.15)) and a.wkb == fill.buffer(-0.15).wkb
+    assert LM._shrunk(fill, 0.15) is a
+    assert LM._shrunk(fill, 0.2).equals(fill.buffer(-0.2))
+
+
+def test_prepared_anchor_cells_are_the_unprepared_ones():
+    """GridRouter._cells prepares big anchors before contains_xy; prepared predicates answer the same."""
+    import numpy as np
+    import shapely
+    from shapely.geometry import Polygon
+    g = Polygon([(0.03, 0.01), (5.07, 0.0), (5.0, 3.33), (2.5, 1.2), (0.0, 3.0)])
+    xs, ys = np.meshgrid(np.arange(-0.05, 5.2, 0.05), np.arange(-0.05, 3.5, 0.05))
+    before = shapely.contains_xy(g, xs, ys)
+    shapely.prepare(g)
+    assert (shapely.contains_xy(g, xs, ys) == before).all()

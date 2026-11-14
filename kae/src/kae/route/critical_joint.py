@@ -29,6 +29,7 @@ All poses are (x, y, rot, side) in KiCad board coordinates; sides never change h
 """
 from __future__ import annotations
 
+from kae.budget import now as clock_now
 import math
 import re
 import time
@@ -287,7 +288,7 @@ def optimize_modules(board, brief, terms=None, locked=(), info=None, poses=None,
     screens candidates and prices every module; a move is kept when the module's
     utilization u (value / place-terms allocation) falls by more than 1 %."""
     from .critical import Session
-    t0 = time.monotonic()
+    t0 = clock_now()
     log = log or (lambda *a: None)
     window = _window(window)
     sess = session or Session(board.path, brief=brief, info=info, opts=dict(opts or {}, rails="none"), log=log,
@@ -338,7 +339,7 @@ def optimize_modules(board, brief, terms=None, locked=(), info=None, poses=None,
         mrep["movable"] = [ctx.fp[u].ref for u in movable]
         best = v0
         for _ in range(passes):
-            if v0 is None or not movable or time.monotonic() - t0 > time_s:
+            if v0 is None or not movable or clock_now() - t0 > time_s:
                 break
             improved = False
             for u in movable:
@@ -399,6 +400,6 @@ def optimize_modules(board, brief, terms=None, locked=(), info=None, poses=None,
         except Exception as e:  # noqa: BLE001 - the grid copper stays
             rep["tighten"] = dict(error=f"{type(e).__name__}: {e}")
     tracks, vias = sess.copper()
-    rep["seconds"] = round(time.monotonic() - t0, 2)
+    rep["seconds"] = round(clock_now() - t0, 2)
     rep["moved"] = {ctx.fp[u].ref: p for u, p in moved.items()}
     return moved, tracks + vias, rep

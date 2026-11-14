@@ -150,7 +150,17 @@ def env_sh():
     return out
 
 
+_KICAD_VERSION = []
+
+
 def kicad_version():
+    """KiCad's version string (kicad-cli version), asked once per process."""
+    if not _KICAD_VERSION:
+        _KICAD_VERSION.append(_kicad_version())
+    return _KICAD_VERSION[0]
+
+
+def _kicad_version():
     wrap = (os.environ.get("KAE_KICAD_WRAP") or env_sh().get("KAE_KICAD_WRAP", "")).split()
     try:
         return sh([*wrap, "kicad-cli", "version"]).splitlines()[-1].strip()
@@ -546,11 +556,13 @@ def heap_gb(size_mb):
 
 def method_timeout(m, row):
     """Seconds per attempt. With timeout_scale=sqrt-fp40, bigger boards get more: the base times
-    sqrt(footprints / 40) when that is above 1, at most 4 h."""
+    sqrt(footprints / 40) when that is above 1, at most timeout_cap_s (default 4 h; a method whose
+    own ceiling is longer, e.g. two counted-work phases at 4x their nominal budget, sets it)."""
     p = m["recipe"]["params"]
     t = int(p.get("timeout_s", 900))
     if p.get("timeout_scale") == "sqrt-fp40":
-        t = int(min(4 * 3600, t * max(1.0, (row.get("footprints") or 0) / 40) ** 0.5))
+        cap = float(p.get("timeout_cap_s", 4 * 3600))
+        t = int(min(cap, t * max(1.0, (row.get("footprints") or 0) / 40) ** 0.5))
     return t
 
 
@@ -934,19 +946,84 @@ def _venv(hc):
     return d, venv
 
 
+DETERMINISTIC_SPEC = 10   # prepare gives byte-identical task files from this task spec on (Task aliases)
+TASK_CACHE_GB = 20.0
+
+
+def task_cache_dir(bid, phc, inputs, src):
+    """Where a job keeps or finds the preparation of board bid by harness phc for these inputs:
+    $KAERES_TASK_CACHE (default /var/tmp/$USER/kaeres-task-cache; "off" turns it off), one folder
+    per board files' content (src: the job's board folder), harness, inputs and KiCad. None when
+    off or when phc prepares with a task spec before DETERMINISTIC_SPEC (a copy would then not
+    be what the job prepares itself)."""
+    root = os.environ.get("KAERES_TASK_CACHE", str(Path("/var/tmp") / (os.environ.get("USER") or str(os.getuid()))
+                                                    / "kaeres-task-cache"))
+    spec = harness_task_spec(phc)
+    if root in ("", "0", "off") or spec is None or spec < DETERMINISTIC_SPEC:
+        return None
+    h = hashlib.sha256(json.dumps([phc, sorted(inputs), kicad_version()]).encode())
+    for f in sorted(Path(src).iterdir()):
+        h.update(f"{f.name}\0{sha256_file(f)}\0".encode())
+    return Path(root) / f"{bid}.{h.hexdigest()[:20]}"
+
+
+def _cache_put(task, cache):
+    """Copy a prepared task into the cache atomically, then trim the cache to $KAERES_TASK_CACHE_GB
+    (default TASK_CACHE_GB), least recently used first. A failure only costs a later prepare."""
+    tmp = cache.with_name(f".{cache.name}.{os.getpid()}")
+    try:
+        shutil.copytree(task, tmp, ignore=shutil.ignore_patterns("roundtrip"))
+        os.replace(tmp, cache)
+    except OSError:
+        shutil.rmtree(tmp, ignore_errors=True)
+        return
+    try:
+        cap = float(os.environ.get("KAERES_TASK_CACHE_GB") or TASK_CACHE_GB) * 2 ** 30
+        entries = []
+        for d in cache.parent.iterdir():
+            if d.is_dir() and not d.name.startswith("."):
+                entries.append((d.stat().st_atime, sum(f.stat().st_size for f in d.rglob("*") if f.is_file()), d))
+        total = sum(s for _, s, _ in entries)
+        for _, s, d in sorted(entries):
+            if total <= cap:
+                break
+            if d != cache:
+                shutil.rmtree(d, ignore_errors=True)
+                total -= s
+    except OSError:
+        pass
+
+
 def _prepare(bid, phc, inputs, ws, env, log, steps, step="prepare"):
-    """kaebench prepare-dir of the board with harness phc (once per job): (task directory or None, rc, timed out)."""
+    """kaebench prepare-dir of the board with harness phc (once per job): (task directory or None, rc, timed out).
+    A preparation another job made of the same board files, harness, inputs and KiCad is copied from the
+    task cache instead (task_cache_dir); the step then records `cached`."""
     _, venv = _venv(phc)
     work = ws / f"w-{phc[:8]}"
     task = work / "tasks" / bid
     have = (read_json(task / "task.json") or {}).get("tasks") or {}
     rc, to = 0, False
     if not all(k in have for k in inputs):
+        cache = None if have else task_cache_dir(bid, phc, inputs, ws / "src" / bid)
+        if cache is not None and (cache / "task.json").exists():
+            try:
+                with Step(step, steps):
+                    shutil.rmtree(task, ignore_errors=True)
+                    shutil.copytree(cache, task)
+                    os.utime(cache)   # recently used
+                steps[step]["cached"] = str(cache)
+                print(f"{bid}: task prepared by {phc[:7]} copied from {cache}", flush=True)
+                return task, 0, False
+            except (OSError, shutil.Error):   # evicted by another job meanwhile: prepare it here
+                shutil.rmtree(task, ignore_errors=True)
         with Step(step, steps):
             rc, to = run_logged([venv / "bin" / "kaebench", "--workdir", work, "prepare-dir", "--dir", ws / "src",
                         "--board-glob", "board.kicad_pcb", "--only", bid, "--kinds", ",".join(inputs), "-j", "1",
                         *(["--force"] if have else [])],
                        log, dict(env, PATH=f"{venv / 'bin'}:{env.get('PATH', '')}"), timeout=3 * 3600)
+        if cache is not None and rc == 0 and not to and (task / "task.json").exists():
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            _cache_put(task, cache)
     return (task if (task / "task.json").exists() else None), rc, to
 
 
@@ -1073,17 +1150,15 @@ def _job_group(bid, row, hc, kae, items, human, ws, env, log, kicad, a, size, ph
                                       "-k", str(k), "--timeout", str(method_timeout(m, row)), "--all", "--only", bid,
                                       "--name", f"cmd-{m['id']}", "-j", "1"], log, cenv,
                                 timeout=k * (method_timeout(m, row) + 1800) + 3600)
-    human_run = find_run(bid, human["id"], 0, task_id) if human else (None, None)
     adirs = {}
     for m, att in todo:
         rn = f"base-{hc[:8]}" if m["recipe"]["runner"]["type"] != "command" else f"cmd-{m['id']}"
         adirs[(m["id"], att)] = work / "results" / rn / f"m{m['id']}" / m["recipe"]["kind"] / bid / f"attempt-{att}"
     human_adir = adirs.get((human["id"], 0)) if human else None
-    human_types = {}
-    if human_adir and (human_adir / "attempt.json").exists():
-        human_types = (read_json(human_adir / "attempt.json").get("score") or {}).get("errors_by_type") or {}
-    elif human_run[0]:
-        human_types = ((read_json(human_run[0] / "evals" / f"{evs['drc']}.json") or {}).get("score") or {}).get("errors_by_type") or {}
+    fresh = (read_json(human_adir / "attempt.json") or {}) if human_adir else {}
+    fresh_types = (fresh.get("score") or {}).get("errors_by_type")
+    human_base = (dict(types=fresh_types, source="exact", evaluator=evs["drc"]) if fresh_types is not None
+                  else human_drc_baseline(bid, human, task_id, evs["drc"]))
 
     # routed physics of every new run's scored board (and the human board), one brief from the task input
     boards = {}
@@ -1119,7 +1194,7 @@ def _job_group(bid, row, hc, kae, items, human, ws, env, log, kicad, a, size, ph
             bugs.add("harness", "attempt_missing", f"kaebench wrote no attempt.json for {m['name']}", log_tail=tail(log, 60))
             continue
         if m["recipe"]["runner"]["type"] != "reference":
-            _run_bugs(rb, m, aj, adir, human_types)
+            _run_bugs(rb, m, aj, adir, human_base)
         if aj.get("status") == "score_error":
             rb.add("harness", "score_error", aj.get("error"), signature=f"harness:score_error:{_normalize(aj.get('error'))}",
                    evidence=["score_error.log"])
@@ -1155,6 +1230,19 @@ def _board_json(bid, row):
         write_json(p, row)
 
 
+RESTART_FILES = {"summary.json": "restarts.json", "report.json": "restart-report.json",
+                 "report-origin.json": "restart-report-origin.json", "fr-telemetry.tar": "fr-telemetry.tar"}
+
+
+def _keep_restart_files(art, tmp):
+    """restart.py's per-attempt log and the kept attempt's report (kaebench keeps them as artifacts):
+    a joint loop's iterations, windows and stop reason are in restart-report.json, or, when the kept
+    board was resumed or had a final pass, in restart-report-origin.json."""
+    for src, dst in RESTART_FILES.items():
+        if (art / src).is_file():
+            shutil.copy2(art / src, tmp / dst)
+
+
 def _write_run(bid, m, att, task_id, hc, aj, adir, ph, evs, bugs, steps, a, phc=None):
     """Archive one run (output, logs, evaluations, bugs) atomically under the board."""
     suffix = f".repro-{datetime.now().strftime('%Y%m%dT%H%M%S')}" if a.repro else ""
@@ -1180,7 +1268,7 @@ def _write_run(bid, m, att, task_id, hc, aj, adir, ph, evs, bugs, steps, a, phc=
     if any(b["category"] not in ("drc",) for b in bugs) and art.exists():  # the router's exact input, to reproduce
         (tmp / "artifacts").mkdir()
         for p in art.iterdir():
-            if p.is_file() and p.name not in ("result.json", "board.ses"):
+            if p.is_file() and p.name not in ("result.json", "board.ses", *RESTART_FILES):
                 gz(p, tmp / "artifacts" / (p.name + ".gz"))
     if (adir / "score_error.log").exists():
         shutil.copy2(adir / "score_error.log", tmp / "score_error.log")
@@ -1191,9 +1279,11 @@ def _write_run(bid, m, att, task_id, hc, aj, adir, ph, evs, bugs, steps, a, phc=
                method_usage=aj.get("method_usage"), adapter_meta=aj.get("adapter_meta"), load_avg=[aj.get("load_avg_start"), aj.get("load_avg_end")],
                job_steps=steps, work=_work(adir), **({"repro_of": run_name(m, att)} if suffix else {}))
     write_json(tmp / "run.json", run)
-    for sj in adir.rglob("restarts/summary.json"):  # restart.py's per-attempt log
-        shutil.copy2(sj, tmp / "restarts.json")
-        break
+    _keep_restart_files(art, tmp)
+    if not (tmp / "restarts.json").exists():
+        for sj in adir.rglob("restarts/summary.json"):  # a place method's probe: restart.py's per-attempt log
+            shutil.copy2(sj, tmp / "restarts.json")
+            break
     if aj.get("score") is not None:
         ev = dict(schema=SCHEMA, evaluator=evs["drc"], run=dest.name, at=now(), score=aj["score"], probe=aj.get("probe"),
                   scoring_s=aj.get("scoring_s"), scoring_usage=aj.get("scoring_usage"))
@@ -1242,7 +1332,47 @@ def _java_exceptions(log):
     return out
 
 
-def _run_bugs(bugs, m, row, adir, human_types):
+def human_drc_baseline(bid, human, task_id, evaluator):
+    """What the human layout's DRC errors are, for comparing a method on this board. source "exact": the
+    human run on task_id scored by evaluator. "fallback": the human's newest evaluation otherwise (another
+    evaluator, or a run on another task of the board; a task spec bump leaves many boards with only that).
+    "none": no scored human run, so types is None: not the same thing as a human layout with no errors."""
+    d, _ = find_run(bid, human["id"], 0, task_id) if human else (None, None)
+    on_task = d is not None
+    if human and d is None:
+        d, _ = find_run(bid, human["id"], 0)
+    scored = {k: v for k, v in evals_of(d).items() if ((v or {}).get("score") or {}).get("errors_by_type") is not None} if d else {}
+    if not scored:
+        return dict(types=None, source="none", evaluator=None)
+    key = evaluator if evaluator in scored else max(scored, key=lambda k: scored[k].get("at") or "")
+    return dict(types=scored[key]["score"]["errors_by_type"], source="exact" if on_task and key == evaluator else "fallback",
+                evaluator=key, on_task=on_task)
+
+
+def _drc_bugs(bugs, who, errors_by_type, base):
+    """DRC bug records of one run: per type, the errors beyond what the human layout has on the same board.
+    Comparisons not against the experiment's own human score get their own signature, to stay apart."""
+    ev = ["evals/", "output.kicad_pcb.gz"]
+    meta = dict(source=base["source"], evaluator=base["evaluator"])
+    for typ, n in sorted((errors_by_type or {}).items()):
+        if base["source"] == "none":
+            bugs.add(who, "drc", f"{n} {typ} error(s); no human baseline", signature=f"{who}:drc:{typ}:no-human-baseline",
+                     drc_type=typ, count=n, evidence=ev, human_baseline=meta)
+            continue
+        h = base["types"].get(typ, 0)
+        if n - h <= 0:
+            continue
+        if base["source"] == "exact":
+            bugs.add(who, "drc", f"{n - h} {typ} error(s) beyond the human layout's {h}", signature=f"{who}:drc:{typ}",
+                     drc_type=typ, count=n - h, evidence=ev, human_baseline=meta)
+        else:
+            where = "" if base.get("on_task") else ", on another task of this board"
+            bugs.add(who, "drc", f"{n - h} {typ} error(s) beyond the human layout's {h} "
+                     f"(fallback: human scored by evaluator {base['evaluator']}{where}, not the experiment's)",
+                     signature=f"{who}:drc:{typ}:human-fallback", drc_type=typ, count=n - h, evidence=ev, human_baseline=meta)
+
+
+def _run_bugs(bugs, m, row, adir, human_base):
     """Bug records for one method's attempt. Signatures start with the method name."""
     who = m["name"]
     st = row.get("status")
@@ -1282,15 +1412,36 @@ def _run_bugs(bugs, m, row, adir, human_types):
         bad = [k for k, v in (s.get("integrity") or {}).items() if not v]
         bugs.add(who, "integrity", f"invalid output: {bad} foreign={(s.get('foreign') or {}).get('by_kind')}",
                  signature=f"{who}:integrity:{','.join(sorted(bad))}", evidence=ev + ["evals/"])
-    # DRC errors the method created: per type, beyond what the human layout has on the same board
-    for typ, n in sorted((s.get("errors_by_type") or {}).items()):
-        extra = n - human_types.get(typ, 0)
-        if extra > 0:
-            bugs.add(who, "drc", f"{extra} {typ} error(s) beyond the human layout's {human_types.get(typ, 0)}",
-                     signature=f"{who}:drc:{typ}", drc_type=typ, count=extra, evidence=["evals/", "output.kicad_pcb.gz"])
+    # DRC errors the method created
+    _drc_bugs(bugs, who, s.get("errors_by_type"), human_base)
 
 
 # ------------------------------------------------------------------ reading results back
+PHYSICS_U_CAP = 5.0   # kae.joint.scorecard.U_CAP (a test keeps them equal): the cap of physics_total
+
+
+def physics_valued(ph):
+    """(valued-only total, number of modules with a value) of a physics evaluation: physics_total without the flat 3
+    counted for modules that have no value. A board where nothing could be measured has no valued total (None)."""
+    us = [v.get("u") for v in (ph.get("modules") or {}).values() if v.get("u") is not None]
+    if not us:
+        return None, 0
+    return round(sum(min(PHYSICS_U_CAP, max(0.0, float(u))) for u in us), 4), len(us)
+
+
+MFG_COLUMNS = ("ca_short_per_m_pours", "width_at_class_min", "copper_pair_diff_pp", "copper_flag", "vip_small_signal",
+               "fab_class_jlcpcb", "phantom_share", "exp_breakout_40um", "acute_per_m")
+
+
+def mfg_of(ed):
+    """The manufacturability columns of a run from its evaluations (the newest `mfg` evaluation; refilled ones first), or {}."""
+    evs = [(k, v) for k, v in ed.items() if (v or {}).get("mfg") is not None]
+    if not evs:
+        return {}
+    k, v = max(evs, key=lambda kv: (bool((kv[1]["mfg"] or {}).get("refilled")), kv[1].get("at") or "", kv[0]))
+    return dict(v["mfg"], evaluator=k)
+
+
 def run_view(bid, d, r, evs, human_phys=None):
     """One flat row: a run with the given evaluators' results."""
     ed = evals_of(d)
@@ -1302,6 +1453,7 @@ def run_view(bid, d, r, evs, human_phys=None):
         s = dict(pr, valid=bool(s.get("valid") and pr.get("valid")), legal=s.get("legal"),
                  clean=bool(pr.get("clean") and s.get("legal")))
     ph = ((ed.get(evs.get("physics")) or {}).get("physics")) or {}
+    mfg = mfg_of(ed)
     meta = r.get("adapter_meta") or {}
     rep = meta.get("router_report") or {}
     mu = r.get("method_usage") or {}
@@ -1318,7 +1470,11 @@ def run_view(bid, d, r, evs, human_phys=None):
                router_introduced_violations=((rep.get("board_statistics") or {}).get("clearance_violations") or {}).get("router_introduced_count"),
                physics_total=ph.get("physics_total"), physics_modules=ph.get("n_modules"), physics_missing=ph.get("n_missing"),
                physics_open=ph.get("n_open"), worst_rail_mohm=ph.get("worst_rail_mohm"), physics_error=ph.get("error"),
-               physics_vs_human=None, module_ratio_median=None, scored=bool(s), physics_scored=bool(ph))
+               physics_vs_human=None, module_ratio_median=None, scored=bool(s), physics_scored=bool(ph),
+               physics_valued_total=None, physics_observations=None, physics_valued_vs_human=None,
+               mfg_refilled=mfg.get("refilled"), **{f"mfg_{c}": mfg.get(c) for c in MFG_COLUMNS})
+    if ph and not ph.get("error"):
+        row["physics_valued_total"], row["physics_observations"] = physics_valued(ph)
     if human_phys and ph and not ph.get("error") and not human_phys.get("error"):
         if human_phys.get("physics_total"):
             row["physics_vs_human"] = round(ph["physics_total"] / human_phys["physics_total"], 4)
@@ -1326,6 +1482,9 @@ def run_view(bid, d, r, evs, human_phys=None):
                   if x.get("value") and not x.get("open_hops")
                   and (hm := (human_phys.get("modules") or {}).get(k) or {}).get("value") and not hm.get("open_hops")]
         row["module_ratio_median"] = round(statistics.median(ratios), 4) if ratios else None
+        hv = physics_valued(human_phys)[0]
+        if hv and row["physics_valued_total"] is not None:
+            row["physics_valued_vs_human"] = round(row["physics_valued_total"] / hv, 4)
     return row
 
 
@@ -1406,6 +1565,48 @@ def cmd_rerun(a):
 
 
 # ------------------------------------------------------------------ experiment reports
+def clean_net_of_input(row, input_drc):
+    """xc, "clean net of the input": valid, nothing unconnected, and no DRC error type above its count in
+    the route task's input (input_drc: the human placement with its copper stripped). The same test
+    restart.py stops on. Report-only; `clean` is unchanged. None when the input's DRC is not known.
+    Fair for route-only methods: a method that moves parts no longer has the input's errors to inherit,
+    so for placing methods (`kind` not route) reports mark it instead of comparing it."""
+    if input_drc is None or input_drc.get("errors_by_type") is None:
+        return None
+    if not row.get("valid") or row.get("unconnected") != 0:
+        return False
+    base = input_drc["errors_by_type"]
+    return all(n <= base.get(t, 0) for t, n in json.loads(row.get("errors_by_type") or "{}").items())
+
+
+# bench/src/kaebench/score.py PLACEMENT_ERROR_TYPES (a test keeps them equal): the DRC types that make a placement illegal
+PLACEMENT_ERROR_TYPES = ("courtyards_overlap", "copper_edge_clearance", "clearance", "hole_clearance",
+                         "hole_to_hole", "holes_co_located", "items_not_allowed", "malformed_courtyard",
+                         "npth_inside_courtyard", "pth_inside_courtyard", "shorting_items")
+
+
+def fixed_input_placement_errors(e, bid):
+    """Placement-type DRC errors of a board's fixed input ({type: count}; `record.tasks["place-fixed"].input_drc` of the
+    experiment's joint-fixed task, else its place-fixed task): the placed parts a task can never move. Non-empty means
+    the board cannot be `clean` (clean requires legal) for any method. Empty means winnable as far as this check
+    knows, and None that the experiment's task spec has no such task for this board. Report-only."""
+    for kind in ("joint-fixed", "place-fixed"):
+        tid = exp_task_id(e, bid, kind)
+        t = task_meta(bid, tid) if tid else None
+        drc = (((t or {}).get("record") or {}).get("tasks") or {}).get("place-fixed", {}).get("input_drc")
+        if drc is not None and drc.get("errors_by_type") is not None:
+            return {k: n for k, n in drc["errors_by_type"].items() if k in PLACEMENT_ERROR_TYPES}
+    return None
+
+
+def route_input_drc(e, bid, r=None):
+    """The route task's input DRC a run's xc is measured against: the experiment's route task of the board, else
+    (given run r, when the experiment's task is not in the store) the run's own task if it is a route task.
+    Unknown, None, otherwise, rather than guessed."""
+    t = task_meta(bid, exp_task_id(e, bid, "route") or "") or (task_meta(bid, r["task_id"]) if r and _run_kind(r) == "route" else None)
+    return ((((t or {}).get("record") or {}).get("tasks") or {}).get("route") or {}).get("input_drc")
+
+
 def exp_rows(e):
     """(rows, bugs, prepare failures) of an experiment: each method's runs (every attempt) on each board's task of the
     experiment (exp_task_id; a run on another task is not comparable and is left out), viewed through
@@ -1424,6 +1625,9 @@ def exp_rows(e):
         for p in (bd / "prepare-failures").glob(f"{e['harness']['commit'][:12]}.json"):
             fails.append(read_json(p))
         task_meta = None
+        route_drc = route_input_drc(e, bid)
+        fixed_errors = fixed_input_placement_errors(e, bid)
+        human_base = human_drc_baseline(bid, human, exp_task_id(e, bid, "route"), evs["drc"]) if human else dict(types=None, source="none", evaluator=None)
         for m, att in ((m, att) for m in want for att in range(1 if m is want[0] and human else e.get("attempts") or 1)):
             d, r = find_run(bid, m["id"], att, exp_task_id(e, bid, _run_kind(dict(method_id=m["id"]))))
             if d is None:
@@ -1440,12 +1644,21 @@ def exp_rows(e):
             v = run_view(bid, d, r, use, human_physics(bid, r["task_id"], use))
             v["evaluator_drc"], v["evaluator_physics"] = use["drc"], use["physics"]
             v["foreign_evaluator"] = use["drc"] is not None and use["drc"] != evs["drc"]  # scored, but by another scorer
+            v["kind"] = _run_kind(r)
+            v["xc"] = clean_net_of_input(v, route_drc if route_drc is not None else route_input_drc(e, bid, r))
+            v["winnable"] = None if fixed_errors is None else not fixed_errors
             b = read_json(bd / "board.json") or {}
             v.update(repo=task_meta.get("repo"), split=task_meta.get("split"), pads=(task_meta.get("reference") or {}).get("stats", {}).get("pads"),
                      human_clean=task_meta.get("human_clean"), qualified=task_meta.get("qualified"),
                      layers=b.get("layers"), footprints=b.get("footprints"), collection=b.get("collection"), license_tier=b.get("license_tier"))
             rows.append(v)
-            bugs += read_json(d / "bugs.json", [])
+            # a run's bugs.json keeps what its job knew; its DRC records are re-based on today's human baseline
+            recs = read_json(d / "bugs.json", [])
+            if use["drc"] is not None and (human is None or m["id"] != human["id"]):
+                rb = Bugs(bid)
+                _drc_bugs(rb, m["name"], (ed[use["drc"]].get("score") or {}).get("errors_by_type"), human_base)
+                recs = [x for x in recs if x.get("category") != "drc"] + rb.items
+            bugs += recs
             if human is None or m["id"] != human["id"]:
                 made.append(r.get("finished"))
         ts = [datetime.fromisoformat(t) for t in made if t]
@@ -1556,6 +1769,14 @@ def paired_table(rows, base, names, repos):
     return out + [""]
 
 
+def _xc_cell(rs):
+    """xc share of a method's attempt-0 rows (not counted where the input's DRC is unknown), † for a placing method."""
+    known = [r.get("xc") for r in rs if r.get("xc") is not None]
+    if not known:
+        return "—"
+    return _f(_mean([1.0 if x else 0.0 for x in known])) + ("" if all(r.get("kind", "route") == "route" for r in rs) else "†")
+
+
 def method_table(rows, names, title):
     """Per-method table. DRC errors and physics are averaged over the ok runs that have a value, which
     differ by method (a board with no output drops out instead of counting as worst, which favours
@@ -1564,11 +1785,11 @@ def method_table(rows, names, title):
     every = rows
     rows = [r for r in rows if r["attempt"] == 0]
     ce, cp = _common(rows, names, "errors"), _common(rows, names, "physics_total")
-    out = [f"### {title}", "", "| method | boards | ok | cp1 (clean) | k | cpk (any clean) | completion | not closed | DRC errors / board (boards) | "
+    out = [f"### {title}", "", "| method | boards | ok | cp1 (clean) | xc (clean net of input; † placing method, not comparable) | k | cpk (any clean) | completion | not closed | DRC errors / board (boards) | "
            f"DRC errors / board, {len(ce)} common boards | "
            "timeouts | no output | errors | CPU s median / p90 / total h | restarts median / p90 | wall s median | "
            f"physics Σu (boards) | physics Σu, {len(cp)} common boards | Σu vs human (median) | module ratio (median) |",
-           "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+           "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for n in names:
         rs = [r for r in rows if r["method"] == n]
         if not rs:
@@ -1579,7 +1800,7 @@ def method_table(rows, names, title):
         errs = [r["errors"] for r in ok if r["errors"] is not None]
         phys = [r["physics_total"] for r in rs if r["physics_total"] is not None]
         out.append("| " + " | ".join([
-            n, str(len(rs)), str(len(ok)), _f(_mean([1.0 if r["clean"] else 0.0 for r in rs])), str(k), _f(cpk),
+            n, str(len(rs)), str(len(ok)), _f(_mean([1.0 if r["clean"] else 0.0 for r in rs])), _xc_cell(rs), str(k), _f(cpk),
             _f(_mean([r["completion"] if r["completion"] is not None else 0.0 for r in rs])),
             str(sum(1 for r in ok if (r["unconnected"] or 0) > 0)), f"{_f(_mean(errs), 2)} ({len(errs)})",
             _f(_mean([r["errors"] for r in ok if r["board"] in ce]), 2),
@@ -1592,6 +1813,139 @@ def method_table(rows, names, title):
             _f(_mean([r["physics_total"] for r in ok if r["board"] in cp]), 3),
             _f(_med([r["physics_vs_human"] for r in rs]), 3),
             _f(_med([r["module_ratio_median"] for r in rs]), 3)]) + " |")
+    return out + [""]
+
+
+def _bus_section(rows, name):
+    """Report-only bus scorecard tables when the experiment's runs have them (tools/kaeres/busreport.py)."""
+    try:
+        import busreport
+        return busreport.section_for_experiment(rows, name)
+    except ImportError:
+        return []
+
+
+def winnable_table(rows, names, spec=None):
+    """cp1 on all boards and on the winnable boards (no placement-type DRC error in the fixed input), side by side, with
+    the size of each set. Empty list when no board's fixed input is known. `spec` is only named in the text."""
+    rows = [r for r in rows if r["attempt"] == 0]
+    flag = {}
+    for r in rows:
+        flag.setdefault(r["board"], r.get("winnable"))
+    if not any(v is not None for v in flag.values()):
+        return []
+    win, lost, unk = [sorted(b for b, v in flag.items() if v is w) for w in (True, False, None)]
+    out = ["### Winnable boards", "",
+           f"Winnable: {len(win)} of {len(flag)} boards. {len(lost)} have a placement-type DRC error in the fixed input of their "
+           f"task (`place-fixed.input_drc`), so no method can be `clean` on them (`clean` needs a legal placement); "
+           f"{len(unk)} have no such task at this experiment's task spec{f' ({spec})' if spec else ''}, so are left out of the winnable set. "
+           "The set depends on the task spec (95 boards at spec 8, 100 at specs 9-10, of the 213 merit boards). "
+           "Report-only, not a score or a task change.", "",
+           "| method | boards | cp1 (all) | winnable boards | cp1 (winnable) | clean on non-winnable |", "|---|---|---|---|---|---|"]
+    for n in names:
+        rs = [r for r in rows if r["method"] == n]
+        if not rs:
+            continue
+        ws = [r for r in rs if r.get("winnable") is True]
+        ls = [r for r in rs if r.get("winnable") is False]
+        out.append(f"| {n} | {len(rs)} | {_f(_mean([1.0 if r['clean'] else 0.0 for r in rs]))} | {len(ws)} | "
+                   f"{_f(_mean([1.0 if r['clean'] else 0.0 for r in ws])) if ws else '—'} | {sum(1 for r in ls if r['clean'])} of {len(ls)} |")
+    return out + [""]
+
+
+def physics_table(rows, names):
+    """physics_total beside the valued-only total and how many boards measured anything: a module with no value counts a
+    flat 3 in physics_total, and a board with no observation counts only that (E6, E28), so per-board means here use only
+    the boards with at least one observation."""
+    rows = [r for r in rows if r["attempt"] == 0]
+    out = ["### Physics: valued only, and where anything was measured", "",
+           "Σu = `physics_total` (modules without a value count 3, 36-56 % of the sum on these boards). Σu valued = the same "
+           "sum over the modules that have a value. Boards with no measured module (`observations` 0) are left out of both means; "
+           "no module kind in this evaluator is layout-independent, so Σu valued is also the layout-dependent total here "
+           "(see Intent physics for intent evaluations). Report-only.", "",
+           "| method | boards with physics | observations 0 (left out) | observations / board | Σu mean | Σu valued mean | Σu vs human (median) | Σu valued vs human (median) |",
+           "|---|---|---|---|---|---|---|---|"]
+    for n in names:
+        rs = [r for r in rows if r["method"] == n and r.get("physics_total") is not None]
+        if not rs:
+            continue
+        seen = [r for r in rs if r.get("physics_observations")]
+        out.append(f"| {n} | {len(rs)} | {len(rs) - len(seen)} | {_f(_mean([r['physics_observations'] for r in seen]), 1)} | "
+                   f"{_f(_mean([r['physics_total'] for r in seen]), 3)} | {_f(_mean([r['physics_valued_total'] for r in seen]), 3)} | "
+                   f"{_f(_med([r.get('physics_vs_human') for r in seen]), 3)} | {_f(_med([r.get('physics_valued_vs_human') for r in seen]), 3)} |")
+    return out + [""]
+
+
+LAYOUT_INDEPENDENT_OBS = ("loss.part",)   # intent observations whose value a layout cannot change (E25: ratio 1.00, sd 0)
+
+
+def intent_totals(status, ev):
+    """(cost total, layout-dependent cost, observations) of one kae.excite intent evaluation (its status and ev json).
+    The cost total is `tiers.cost` (mW_eq); the layout-dependent total leaves out terms of LAYOUT_INDEPENDENT_OBS. None
+    where the status has no cost."""
+    cost = (status.get("tiers") or {}).get("cost")
+    n_obs = len(ev.get("observations") or [])
+    if cost is None:
+        return None, None, n_obs
+    excl = sum(t.get("contribution") or 0.0 for t in status.get("terms") or []
+               if t.get("tier") == "cost" and t.get("obs") in LAYOUT_INDEPENDENT_OBS)
+    return float(cost), round(float(cost) - excl, 3), n_obs
+
+
+def intent_table(rows, names, root):
+    """Costs of external intent evaluations (`root/<board>/<run or method id or human>.{status,ev}.json`, from
+    tools/research/physics/eval_intent.sh), with and without layout-independent terms, per board means only where
+    something was measured. Read only with --intent: kaeres does not store these."""
+    root = Path(root)
+    rows = [r for r in rows if r["attempt"] == 0]
+    got = defaultdict(dict)
+    for r in rows:
+        keys = [r["run"], r["method_id"], r["method_id"][:8]] + (["human"] if r.get("method") == "human" else [])
+        d = root / r["board"]
+        key = next((k for k in keys if (d / f"{k}.status.json").exists()), None)
+        if key:
+            got[r["method"]][r["board"]] = intent_totals(read_json(d / f"{key}.status.json") or {}, read_json(d / f"{key}.ev.json") or {})
+    out = ["### Intent physics (external evaluations)", "",
+           f"From `{root}`. Cost = `tiers.cost` (mW_eq). Layout cost leaves out `{'`, `'.join(LAYOUT_INDEPENDENT_OBS)}`, which a layout cannot "
+           "change. Boards with no observation (nothing measured) are left out of the means. Report-only.", "",
+           "| method | boards | no observations (left out) | cost mean | layout cost mean | layout cost / human (median, boards measured in both) |",
+           "|---|---|---|---|---|---|"]
+    hum = got.get("human", {})
+    for n in names:
+        d = got.get(n)
+        if not d:
+            continue
+        seen = {b: v for b, v in d.items() if v[2] and v[0] is not None}
+        ratios = [v[1] / hum[b][1] for b, v in seen.items() if v[1] and b in hum and hum[b][2] and hum[b][1]]
+        out.append(f"| {n} | {len(d)} | {len(d) - len(seen)} | {_f(_mean([v[0] for v in seen.values()]), 1)} | "
+                   f"{_f(_mean([v[1] for v in seen.values()]), 1)} | {_f(_med(ratios), 3)} |")
+    return out + [""]
+
+
+def mfg_table(rows, names):
+    """Manufacturability columns of the runs measured so far (`kaeres mfg submit`; nothing is computed here). Empty when
+    no run has them: pour-dependent columns need a zone refill, so this stays out of the normal report."""
+    rows = [r for r in rows if r["attempt"] == 0]
+    if not any(r.get("mfg_fab_class_jlcpcb") is not None or r.get("mfg_acute_per_m") is not None for r in rows):
+        return []
+    out = ["### Manufacturability (report-only, not targets)", "",
+           "Medians over the measured runs (lower is usually easier to build; copper flags and fab classes are counts). Definitions, "
+           "thresholds and limits: `tools/kaeres/README.md`, Manufacturability columns. These are not scoring targets: optimizing "
+           "any of them alone makes boards worse. Pour-dependent columns need a refilled measurement (`kaeres mfg submit --refill`), "
+           "and all-board medians are confounded by unrouted copper.", "",
+           "| method | boards | CA short / m (pours, mm²/m) | width at class min | copper Δ between mirror layers (pp) | copper flags (≥ 20 pp) | "
+           "vias in small signal pads (total) | JLCPCB class std / adv / hdi / none | phantom-layer length share (mean over boards measured) | "
+           "E[via breakouts, 40 µm] | acute junctions / m |", "|---|---|---|---|---|---|---|---|---|---|---|"]
+    for n in names:
+        rs = [r for r in rows if r["method"] == n and (r.get("mfg_fab_class_jlcpcb") is not None or r.get("mfg_acute_per_m") is not None)]
+        if not rs:
+            continue
+        fc = Counter(r.get("mfg_fab_class_jlcpcb") or "none" for r in rs)
+        col = lambda c: [r.get(f"mfg_{c}") for r in rs]
+        out.append(f"| {n} | {len(rs)} | {_f(_med(col('ca_short_per_m_pours')), 3)} | {_f(_med(col('width_at_class_min')), 3)} | "
+                   f"{_f(_med(col('copper_pair_diff_pp')), 1)} | {sum(1 for x in col('copper_flag') if x)} | {sum(x or 0 for x in col('vip_small_signal'))} | "
+                   f"{fc['standard']} / {fc['advanced']} / {fc['hdi']} / {fc['none']} | {_f(_mean(col('phantom_share')), 3)} | "
+                   f"{_f(_mean(col('exp_breakout_40um')), 4)} | {_f(_med(col('acute_per_m')), 2)} |")
     return out + [""]
 
 
@@ -1652,7 +2006,11 @@ def cmd_exp_report(a):
                 "(runs reused from other experiments). Host load moves results by ~14 % on this host (zone-keepout-ab2), "
                 "so differences on those boards are not reliable; register replicates and run the arms side by side."]
     rep += ["", "Columns: cp1 = share of boards routed clean (valid, 0 unconnected, 0 DRC errors) on attempt 0; k = the most "
-            "attempts a board has; cpk = share of boards with any clean attempt among k (equal to cp1 when k = 1). A method "
+            "attempts a board has; cpk = share of boards with any clean attempt among k (equal to cp1 when k = 1). "
+            "xc (clean net of the input) = valid, 0 unconnected, and no DRC error type above its count in the route task's "
+            "input DRC (the human placement, copper stripped): the same test restart.py stops on, report-only, `clean` "
+            "unchanged. It is meant for route-only methods; a placing method (marked †) moves parts, so the input's errors are "
+            "not its to inherit and its xc is not comparable. A method "
             "named *restarts* is wrapped by restart.py, so one of its runs is already the best of its internal restarts "
             "(restarts column): its cp1 is a best-of-N over seeds within one wall budget; completion = "
             "share of initially unconnected items routed (0 for no output); not closed = boards with unconnected items left; "
@@ -1661,6 +2019,7 @@ def cmd_exp_report(a):
             "human = per-board ratio to the human board's; module ratio = per-board median of method / human module value "
             "over modules routed in both (lower is better). The human method is the original copper scored the same way.", ""]
     rep += method_table(rows, names, "All boards")
+    rep += winnable_table(rows, names, harness_task_spec(e["harness"]["commit"]))
     nonhuman = [n for n in names if not human or n != human["name"]]
     base = getattr(a, "baseline", None) or (nonhuman[0] if nonhuman else None)
     if base in names and len(nonhuman) > 1:
@@ -1672,6 +2031,10 @@ def cmd_exp_report(a):
                             f"Split {sp} ({'≤ 31' if sp == 'A' else '≤ 100' if sp == 'B' else '> 100'} pads)")
     for lab, test in (("2 layers", lambda n: n == 2), ("4 layers", lambda n: n == 4), ("6+ layers", lambda n: (n or 0) >= 6)):
         rep += method_table([r for r in rows if test(r["layers"])], names, lab)
+    rep += physics_table(rows, names)
+    if getattr(a, "intent", None):
+        rep += intent_table(rows, names, a.intent)
+    rep += mfg_table(rows, names)
     rep += ["### DRC error types (errors on ok attempts)", "", "| type | " + " | ".join(names) + " |", "|---|" + "---|" * len(names)]
     per = {n: Counter() for n in names}
     for r in rows:
@@ -1679,6 +2042,7 @@ def cmd_exp_report(a):
             per[r["method"]].update(json.loads(r["errors_by_type"]))
     for typ in sorted(set().union(*per.values()), key=lambda t: -sum(per[n][t] for n in names))[:25]:
         rep.append(f"| {typ} | " + " | ".join(str(per[n][typ]) for n in names) + " |")
+    rep += _bus_section(rows, a.name)
     rep += ["", "### Router final states", "", "| method | COMPLETED | TIMED_OUT | other | none |", "|---|---|---|---|---|"]
     for m in ms.values():
         fs = Counter((r["final_state"] or "none") for r in rows if r["method_id"] == m["id"] and r["attempt"] == 0)
@@ -1853,6 +2217,7 @@ def cmd_rephysics_job(a):
     kv = code_dir(a.kae).with_name(code_dir(a.kae).name + ".venv-kae")
     pt = board_dir(bid) / "pintypes.json"
     written = 0
+    rebuild_errors = []
     groups = defaultdict(list)
     for d, r in todo:
         groups[r["harness_commit"]].append((d, r))
@@ -1880,6 +2245,8 @@ def cmd_rephysics_job(a):
             got = man["runs"].get(r["run"]) or {}
             if got.get("board"):
                 boards[r["run"]] = got["board"]
+            elif got.get("error"):
+                rebuild_errors.append(f"{r['run']}: {got['error']}")
         if not boards:
             continue
         pout = ws / f"physics-{hc[:8]}.json"
@@ -1898,8 +2265,117 @@ def cmd_rephysics_job(a):
                 **({"traceback": ph["traceback"]} if ph.get("traceback") else {})))
             written += 1
     print(f"{bid}: {written} physics evaluation(s) by {pid}", flush=True)
+    for x in rebuild_errors:
+        print(f"{bid}: rebuild failed: {x}", flush=True)
     shutil.rmtree(ws / "w", ignore_errors=True)
+    if not written and rebuild_errors:     # exit 0 here reads as "done" to the queue, with nothing measured
+        print(f"{bid}: no run could be rebuilt; no physics evaluation written", flush=True)
+        return 1
     return 0
+
+
+# ------------------------------------------------------------------ manufacturability measurements (report-only)
+def mfg_evaluator(commit, kicad, refill):
+    """The evaluator id of tools/kaeres/mfg_board.py at commit (its code, what it reads and the refill, registered)."""
+    recipe = dict(type="kaeres-mfg", kicad=kicad, refill=bool(refill),
+                  code=tree_ids(commit, ["tools/kaeres/mfg_board.py", "kae/src/kae/board", "kae/src/kae/route/fab.py"]))
+    eid = "mfg-" + ident(recipe)
+    p = STORE / "evaluators" / f"{eid}.json"
+    if not p.exists():
+        write_json(p, dict(schema=SCHEMA, id=eid, name="mfg", recipe=recipe, created=now(),
+                           commits=dict(harness=dict(commit=commit, link=github_link("https://github.com/magnetic-trowel/kicad-auto-everything", commit)))))
+    return eid
+
+
+def _mfg_todo(bid, method_ids, eid):
+    """Attempt-0 runs of these methods on a board with an output and no evaluation by evaluator eid (the human layout included)."""
+    return [(d, r) for d, r in board_runs(bid) if r["method_id"] in method_ids and r["attempt"] == 0 and r.get("status") == "ok"
+            and (d / "output.kicad_pcb.gz").exists() and not (d / "evals" / f"{eid}.json").exists()]
+
+
+def cmd_mfg_submit(a):
+    """Queue manufacturability measurement of an experiment's runs (attempt 0). --refill first fills zones with pcbnew,
+    which the pour-dependent columns need; it is optional and kept out of `exp report` because it is the expensive step."""
+    e = load_exp(a.name)
+    repo = main_repo()
+    harness = git(repo, "rev-parse", a.harness)
+    if not on_remote(repo, harness):
+        raise SystemExit(f"{harness[:7]} is on no remote branch: push it first")
+    cd, kv = ensure_harness(harness, kae=True)
+    eid = mfg_evaluator(harness, e["kicad"], a.refill)
+    human = next((m for m in methods().values() if m["recipe"]["runner"]["type"] == "reference"), None)
+    mids = {m["id"] for m in e["methods"]} | ({human["id"]} if human else set())
+    rows = corpus_rows()
+    boards = (exp_dir(a.name) / "boards.txt").read_text().split()
+    if a.only:
+        only = set(Path(a.only[1:]).read_text().split() if a.only.startswith("@") else a.only.split(","))
+        boards = [b for b in boards if b in only]
+    pending = _kaeq_active(f"mfg-{a.name}")
+    jobs = []
+    for bid in boards:
+        if f"mfg-{a.name}:{bid}" in pending or bid not in rows or not _mfg_todo(bid, mids, eid):
+            continue
+        sz = board_size_mb(rows[bid])
+        jobs.append(dict(cmd=f"{kv / 'bin' / 'python'} {cd / 'tools' / 'kaeres' / 'kaeres.py'} mfg-job --board {bid} --harness {harness} "
+                             f"--methods {','.join(sorted(mids))}" + (" --refill" if a.refill else ""),
+                         name=f"mfg-{a.name}:{bid}", cpus=2, mem=f"{3 + 0.3 * sz:.1f}G", disk=f"{int(300 + 8 * sz)}M",
+                         timeout=f"{int(min(4 * 3600, 1800 + 300 * sz))}s", prio=a.prio))
+        if a.limit and len(jobs) >= a.limit:
+            break
+    f = exp_dir(a.name) / f"mfg-{datetime.now().strftime('%Y%m%dT%H%M%S')}.jsonl"
+    f.write_text("".join(json.dumps(j) + "\n" for j in jobs))
+    print(f"mfg evaluator {eid} (harness {harness[:7]}, refill {a.refill}): {len(jobs)} board jobs -> {f}")
+    if jobs and not a.dry_run:
+        subprocess.run(["kaeq", "submit", "--jobs", str(f), "--owner", f"mfg-{a.name}", "--tag", f"mfg-{a.name}",
+                        "--live", "--class", "batch", "--cwd", str(cd), "--retries", "1"], check=True)
+
+
+def cmd_mfg_job(a):
+    """Measure one board's runs and store each as a `mfg` evaluation (a new file beside the run's others; nothing else changes)."""
+    bid = a.board
+    row = corpus_rows()[bid]
+    eid = mfg_evaluator(a.harness, kicad_version(), a.refill)
+    todo = _mfg_todo(bid, set(a.methods.split(",")), eid)
+    if not todo:
+        print(f"{bid}: nothing to measure")
+        return 0
+    human = next((m for m in methods().values() if m["recipe"]["runner"]["type"] == "reference"), None)
+    hd = find_run(bid, human["id"], 0)[0] if human else None
+    ws = Path(os.environ.get("KAEQ_SCRATCH") or tempfile.mkdtemp(prefix="kaeres-", dir="/var/tmp"))
+    env = dict(os.environ)
+    env.update({k: v for k, v in env_sh().items() if k not in env})
+    binds = [b for b in env.get("APPTAINER_BIND", "").split(",") if b]
+    env["APPTAINER_BIND"] = ",".join(dict.fromkeys(binds + [str(ws), str(CORPUS.resolve())]))
+    env["KICAD_CONFIG_HOME"] = str(STORE / "kicad-config" / "threads-2")
+    cd, kv = code_dir(a.harness), code_dir(a.harness).with_name(code_dir(a.harness).name + ".venv-kae")
+    corpus = CORPUS / row["path"]
+    written, failed = 0, []
+    for d, r in todo:
+        w = ws / "m" / r["run"]
+        w.mkdir(parents=True)
+        with gzip.open(d / "output.kicad_pcb.gz", "rb") as fi, open(w / "board.kicad_pcb", "wb") as fo:
+            shutil.copyfileobj(fi, fo)
+        for ext in ("kicad_pro", "kicad_dru"):
+            if (corpus / f"board.{ext}").exists():
+                shutil.copy2(corpus / f"board.{ext}", w / f"board.{ext}")
+        out = w / "mfg.json"
+        cmd = [kv / "bin" / "python", cd / "tools" / "kaeres" / "mfg_board.py", "--board", w / "board.kicad_pcb", "--out", out]
+        if hd is not None and d != hd and (hd / "output.kicad_pcb.gz").exists():
+            cmd += ["--human", hd / "output.kicad_pcb.gz"]
+        if a.refill:
+            cmd.append("--refill")
+        rc, to = run_logged(cmd, ws / "job.log", env, timeout=int(1800 + 300 * board_size_mb(row)))
+        res = read_json(out)
+        if rc != 0 or not res:
+            failed.append(f"{r['run']}: rc {rc}, timed out {to}")
+            continue
+        write_json(d / "evals" / f"{eid}.json", dict(schema=SCHEMA, evaluator=eid, run=r["run"], at=now(), mfg=res))
+        written += 1
+    shutil.rmtree(ws / "m", ignore_errors=True)
+    print(f"{bid}: {written} mfg evaluation(s) by {eid}; {len(failed)} failed", flush=True)
+    for x in failed:
+        print(f"{bid}: {x}\n{tail(ws / 'job.log', 20)}", flush=True)
+    return 1 if failed and not written else 0
 
 
 # ------------------------------------------------------------------ index
@@ -2002,6 +2478,7 @@ def main():
         s.add_argument("name")
         if n == "report":
             s.add_argument("--baseline", help="method name the others are paired against (default: the experiment's first)")
+            s.add_argument("--intent", metavar="DIR", help="also report external intent evaluations from DIR/<board>/<run>.status.json (tools/research/physics/eval_intent.sh)")
         s.set_defaults(f=f)
     s = sub.add_parser("job", help="one board (what each queued job runs)")
     s.add_argument("--experiment"), s.add_argument("--board", required=True)
@@ -2012,6 +2489,9 @@ def main():
     s.add_argument("--content-only", action="store_true",
                    help="only prepare the tasks and record their content and that of the methods' older tasks")
     s.set_defaults(f=cmd_job)
+    s = sub.add_parser("bus", help="report-only bus scorecard over stored runs: bus submit | report (tools/kaeres/busreport.py)")
+    s.set_defaults(f=lambda a: subprocess.call([sys.executable, str(HERE / "busreport.py"), *a.rest]))
+    s.add_argument("rest", nargs=argparse.REMAINDER)
     s = sub.add_parser("board", help="every run and score of one board")
     s.add_argument("id")
     s.set_defaults(f=cmd_board)
@@ -2035,6 +2515,17 @@ def main():
     s.add_argument("--board", required=True), s.add_argument("--harness", required=True), s.add_argument("--kae", required=True)
     s.add_argument("--methods", required=True)
     s.set_defaults(f=cmd_rephysics_job)
+    mp = sub.add_parser("mfg", help="manufacturability measurements of an experiment's runs (report-only)").add_subparsers(dest="sub", required=True)
+    s = mp.add_parser("submit", help="queue them, one kaeq job per board with runs still unmeasured")
+    s.add_argument("name"), s.add_argument("--harness", default="HEAD", help="commit of mfg_board.py (default: this checkout's HEAD)")
+    s.add_argument("--refill", action="store_true", help="fill zones first (pcbnew); needed by the pour-dependent columns")
+    s.add_argument("--only", help="comma-separated board ids or @file"), s.add_argument("--limit", type=int), s.add_argument("--prio", type=int, default=0)
+    s.add_argument("--dry-run", action="store_true")
+    s.set_defaults(f=cmd_mfg_submit)
+    s = sub.add_parser("mfg-job", help="one board's manufacturability measurements (what each queued job runs)")
+    s.add_argument("--board", required=True), s.add_argument("--harness", required=True), s.add_argument("--methods", required=True)
+    s.add_argument("--refill", action="store_true")
+    s.set_defaults(f=cmd_mfg_job)
     s = sub.add_parser("index", help="rebuild index.sqlite")
     s.set_defaults(f=cmd_index)
     a = ap.parse_args()

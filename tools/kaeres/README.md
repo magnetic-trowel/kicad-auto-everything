@@ -41,12 +41,16 @@ Consequences:
       run.json                        method, task, harness commit, timing, CPU, router outcome
       output.kicad_pcb.gz             the method's output board
       adapter.log.gz, router-report.json, board.ses.gz, artifacts/ (router input, kept when a bug was seen)
+      restarts.json                   restart.py's per-attempt log; each route attempt's `fr` holds its Freerouting telemetry: `loops[i].unrouted` per pass, whole `fallback` attempts, `start_necked`, `pour_connected`, `pour_cut_off` (one entry per logged line), for the first routing and each repair round; top-level `fr_raw` says what fr-telemetry.tar holds and how much was dropped
+      fr-telemetry.tar                every Freerouting run's whole log and result file, `<attempt>/<name>.gz`; attempts' telemetry together stay within 20 MB as stored per run on a board (restart.py, FR_RAW_LIMIT): past that the bulkiest raw parts go first, and `manifest.json` in the tar lists each one kept or dropped
+      restart-report.json             the kept attempt's own report (a joint loop: iterations, windows, stop reason)
+      restart-report-origin.json      when that board was resumed or had a final pass: the report of the fresh attempt it descends from
       evals/<eval-id>.json            score (DRC) or physics, per evaluator; <eval-id>.drc.json.gz
       bugs.json                       bug records of this run
   experiments/<name>/
     experiment.json, boards.txt       methods, harness and kae commits, evaluators
-    REPORT.md, results.csv            per method: cp1, k, cpk, completion, not closed, DRC errors, timeouts, CPU, physics;
-                                      paired tests against a baseline (below)
+    REPORT.md, results.csv            per method: cp1, xc, k, cpk, completion, not closed, DRC errors, timeouts, CPU, physics;
+                                      paired tests against a baseline (below); column definitions in "Report columns"
     bugs/BY-SIGNATURE.md, index.jsonl bugs grouped by signature: the work list for a fixing agent
   index.sqlite                        rebuildable cache over everything (kaeres index)
 ```
@@ -97,6 +101,12 @@ Lessons from experiments that ran and measured nothing (2026-11):
   (status, scores, bug records) before submitting the full one.
 - **`results.csv` holds attempt 0 only** (cp1's attempt). A multi-seed comparison reads every attempt from
   the run folders (`boards/<id>/runs/<slug>.<method8>.a<k>/`).
+- **Counted-work budgets.** With `KAE_BUDGET=work` and `PYTHONHASHSEED=0` in a method's environment,
+  its `--time` is nominal seconds of counted work (`kae.budget`): the same budget does the same work on any
+  host, `restart.py` runs its attempts in batches judged in order, and wall time is only a ceiling (4× an
+  attempt's budget; a run that hits it reports `ceiling_hit` and has failed). Keep `KAE_WORKERS=1`. Freerouting
+  gets a pass cap and its job timeout stops mattering. See
+  [counted budgets](../../docs/research/benchmark-drift-2611.md#fix-budgets-in-counted-work-not-seconds).
 - **Timed jobs.** Runs budget on wall time, so their kaeq jobs must be class `timed` (never frozen).
   Before kaeq had classes, jobs frozen for memory ran shorter and worse, unevenly between arms;
   `kaeq`'s jobs table records `freezes` and `frozen_s` per job.
@@ -128,10 +138,47 @@ Lessons from the decide-ab campaign (2026-11, 17 experiments; plan and analysis 
 - **kaeq's CPU column counts the job's own process.** A restart-wrapped job can show hours of wall
   time and seconds of CPU while its children work; check `ps` of the children before calling it hung.
 
+## Profiling a smoke
+
+Profile one smoke board per arm before a full run: the queue is shared, and an hour saved per job is
+worth more than any tuning after the fact. Profile the method the way the job runs it (same template,
+budget and environment), on one small and one medium board.
+
+- **Python (kae, restart.py, physics):** wrap the python process itself, not `sh`, `env` or `apptainer`:
+  `py-spy record --nonblocking --idle -r 25 -f raw -o prof-$$.txt -- python -m kae.route.cli ...`.
+  `--idle` keeps samples where the process waits on a child (Freerouting, kicad-cli, pcbnew), so the
+  profile adds up to wall time. A restart-wrapped method: put py-spy in the inner command, one file per
+  attempt. py-spy around a shell under kaeq has killed the method silently.
+- **Freerouting:** point `KAE_BRIDGE_FREEROUTING` at a wrapper that runs the same jar on a full JDK with
+  Java Flight Recorder: `java -XX:FlightRecorderOptions=repository=DIR,maxchunksize=4m
+  -XX:StartFlightRecording=filename=fr.jfr,dumponexit=true,settings=profile -jar freerouting.jar "$@"`.
+  The bridge kills Freerouting at its hard limit, which leaves `fr.jfr` empty; the repository keeps the
+  finished chunks (`jfr print --events jdk.ExecutionSample DIR/*.jfr`). Never install such a wrapper
+  under the bridge's default build prefix.
+- **Job steps:** `run.json` → `job_steps` has wall and CPU of prepare, run (method plus scoring) and
+  physics; `work` has a restart wrapper's attempts, judge time and CPU; the kaeq job has peak memory,
+  CPU and `cpu_peak` (threads).
+
+Report, per arm: wall and CPU per stage (placement, module stage, escape planning, Freerouting, last
+mile/repair, KiCad DRC and pcbnew calls, physics, imports and numba compiles, file I/O), the job's
+measured peak memory and CPU threads, and the largest self-time functions of the biggest stage.
+`prof_stages.py prof-*.txt` sums py-spy raw files into these stages.
+
+A speedup must change nothing. Run the unfixed and the fixed code on the profiled boards with counted
+budgets (`KAE_BUDGET=work PYTHONHASHSEED=0 KAE_WORKERS=1`) and compare the output board, the scorer's
+`drc.json` and the physics JSON (dates, paths and timing fields aside). Give the harness the wall
+ceiling: `kaebench run --timeout` kills on wall time, so pass the method `--time $(( {timeout} / 4 ))`, as
+the work-mode methods do, or a loaded host cuts runs at different points. New copper gets random
+uuids, so compare boards item by item without uuids and order. Run the unfixed code twice too: a step
+that differs between two unfixed runs has to be named, not blamed on the fix. Examples: a solver with
+a wall-clock limit, or the bridge keeping or dropping a dangling stub. A change that alters any
+output beyond that A/A spread is a method change and needs its own A/B. Never change code under
+methods that are queued. Size the job's `--cpus` and `--mem` from the smoke's measured peak.
+
 ## Per board job
 
 1. **Preflight.** KiCad's Python must import pcbnew. If it can't, the job exits 75 and kaeq retries it; this is an infrastructure failure, not a board result.
-2. **Prepare.** `kaebench prepare-dir` builds the route task once per harness commit. Its task id is the hash of the board file sha256, task spec and KiCad version. The job records the task's content hash, and that of the older tasks the methods' runs were made on (see [Task aliases](#task-aliases)).
+2. **Prepare.** `kaebench prepare-dir` builds the route task once per harness commit. Its task id is the hash of the board file sha256, task spec and KiCad version. The job records the task's content hash, and that of the older tasks the methods' runs were made on (see [Task aliases](#task-aliases)). From task spec 10 (deterministic preparation) a job copies the task folder another job prepared from the same board files, harness, inputs and KiCad, from a local cache (`$KAERES_TASK_CACHE`, default `/var/tmp/$USER/kaeres-task-cache`, 20 GB or `$KAERES_TASK_CACHE_GB`, least recently used first; `off` turns it off). The prepare step then records `cached`.
 3. **Run.** Every missing method runs in one `kaebench run` (built-in adapters, interleaved) or one run per `--command` method. The human layout (the `reference` method) is scored once per board. The kaebench score becomes the run's DRC evaluation.
 4. **Physics.** `physics_board.py` runs kae's routed module physics on each new run's scored board. The brief is built from the task input, so module ids pair with the human run.
 5. **Archive.** Run folders are written atomically, with bug records. If another experiment's job wrote the same run meanwhile, the first one is kept.
@@ -172,6 +219,38 @@ Before task spec 10, prepare drew random uuids for objects that a board file sto
 - **Old tasks.** Their content is computed lazily. The first job on a board at a newer spec re-prepares the board with each older harness commit whose runs it could reuse (`fill_old_contents`, one prepare per commit), if that harness's code is in `code/`. `kaeres job --content-only --harness H --board B --method M ...` does only this, so the queue can do it ahead of an experiment.
 - **Older-spec methods.** From spec 10 on, a method pinned to a harness of an older task spec runs, with its own harness, on tasks prepared by the experiment's harness (`prep_harness`), and `exp create` accepts it. Its stored runs on unchanged boards are reused; on changed boards it runs again, on a deterministic task. Runs keep the DRC evaluation of the harness that scored them, as before.
 
+## Report columns
+
+`exp report` writes `REPORT.md` and `results.csv`. The columns below are report-only: they never change a score, a task or a stored evaluation, and they are not targets.
+
+- **`xc`** (clean net of the input; beside `cp1`): valid, 0 unconnected, and no DRC error type above its count in the route task's `record.tasks.route.input_drc` (the human placement with the copper stripped). It is the test `restart.py` stops on. `cp1` needs zero errors of any type, including ones the task hands the method (a courtyard overlap of the human's). On route-only methods `xc` reads as "the method added nothing". A placing method moves parts, so the input's errors are not its to inherit, and `xc` of a placing method (kind not `route`) is printed with a dagger and is not comparable. `results.csv` has `xc`, and `kind` so the route-only rows can be picked.
+- **Winnable boards** (`### Winnable boards`; `winnable` in `results.csv`): `cp1` on the boards that can still be clean, beside `cp1` on all. A board is left out when the fixed input of its task (`tasks.place-fixed.input_drc` of the experiment's `joint-fixed` task, else its `place-fixed` task) has a placement-type DRC error (`score.py` `PLACEMENT_ERROR_TYPES`): `clean` needs a legal placement, so no method can be clean on it. The section gives the set's size. The set depends on the task spec: of the 213 merit boards, 95 at spec 8 and 100 at specs 9-10 are not winnable. "Can never be clean" is empirical: no method in any report so far is clean on such a board (the `clean on non-winnable` column would show it). Boards without such a task at the experiment's spec are `unknown` and left out, so route-only experiments on boards never prepared as joint tasks show no such set.
+- **Physics, valued only** (`### Physics: valued only...`; `physics_valued_total`, `physics_observations`, `physics_valued_vs_human` in `results.csv`): `physics_total` beside the same sum over only the modules that have a value (`physics_total` adds a flat 3 for each module without one, about 36-56 % of the sum). `observations` counts the modules with a value; a board with none measured nothing and is left out of the per-board means. No module kind of this evaluator is layout-independent (on `baseline-2611b` none of 954 modules valued by three or more methods has identical values), so the valued total is also its layout-dependent total.
+- **Intent physics** (`### Intent physics`, only with `exp report NAME --intent DIR`): kaeres does not store intent evaluations (`tools/research/physics/eval_intent.sh`, `kae.excite.evaluate`); `--intent` reads them from `DIR/<board>/<run, method id or human>.{status,ev}.json`. Per method: mean cost (`tiers.cost`, mW_eq), the same without terms whose observation a layout cannot change (`LAYOUT_INDEPENDENT_OBS`: `loss.part`, a part's own dissipation; ratio 1.00 and sd 0 across layouts), the layout cost's median ratio to the human, and the number of boards with no observation, which are left out of the means.
+- **Manufacturability** (`### Manufacturability`; `mfg_*` columns in `results.csv`): see below. Computed only by `kaeres mfg submit`, never by `exp report`.
+
+## Manufacturability columns
+
+Report-only and not targets (E72): no score uses them, and optimizing any one of them alone makes boards worse. `tools/kaeres/mfg_board.py` computes them per run and stores `evals/mfg-<id>.json` beside the run's other evaluations (attempt 0 only; the evaluator id hashes the script, `kae/src/kae/board`, `fab.py` and whether a refill was done). `exp report` only reads what is stored and prints nothing when no run has them.
+
+```bash
+$K mfg submit NAME [--refill] [--only ids|@file] [--limit N] [--prio P] [--dry-run]   # one kaeq job per board with unmeasured runs
+```
+
+**The refill.** Router outputs store no zone fills, so pour-dependent columns need one (`--refill`: pcbnew fills each output's zones, in a scratch copy next to the board's `.kicad_pro`/`.kicad_dru`). It costs most of the job (minutes on the largest boards; 2 CPUs per job), so it stays out of `exp report`, and a measurement made without it reports those columns as null (`pours_available` false, or `refilled` false for a board whose zones are unfilled). The Stage-1 pass measured 1,887 runs in 1.9 CPU-h with a refill (`stage1/geometry/REPORT.md`).
+
+| column | definition | threshold, source | limits |
+|---|---|---|---|
+| `ca_short_per_m_pours` | Critical area for shorts per metre of track, pours included: sum over 0.25 mm track samples, both sides, of L x0²/s with x0 = 25 µm, s the gap to other-net copper up to 2 mm, floored at 0.02 mm | relative only; 1.2x the human flag (`tm_mfg_physics` section J, `dfm-fab-limits.md`) | needs a refill; gaps are measured every 0.25 mm, so minima are upper bounds; all-board medians are confounded by unrouted copper |
+| `width_at_class_min` | Share of track length within 2 % of the smallest track width any net class asks for | informational | needs the board's own net classes (a `.kicad_pro` or legacy `net_class`; null otherwise, not KiCad's default) |
+| `copper_pair_diff_pp`, `copper_flag` | Worst absolute difference in copper area share between mirrored layer pairs, percentage points, pours included; flag at >= 20 pp | about 20 % (DFM-27, read as points; source ambiguous) | needs a refill; pours dominate it |
+| `vip_small_signal` | Vias inside a same-net SMD pad under 2 mm² on a signal net (name heuristic) | hazard candidate (R99) | net class by name only |
+| `fab_class_jlcpcb` | Cheapest JLCPCB class (`kae.route.fab`) that builds the smallest track, track gap, pad gap, via and via-in-pad use, or none | JLCPCB capabilities page | one fab; track and pad gaps are sampled minima |
+| `phantom_share` | Share of track length on copper layers the human layout does not use (track or zone) | E4/R90 | needs the human run; a used layer is any layer with human copper |
+| `exp_breakout_40um` | Sum over vias of Q(ring/40 µm), the expected via-pad breakouts at a 40 µm drill position error | `tm_mfg_physics` section I (sigma 25-40 µm) | vias only; through-hole pads not counted |
+| `acute_per_m` | Same-net track junctions with interior angle under 90°, per metre of track | acid-trap proxy, no vendor line | endpoint matches only, straight segments only |
+
+
 ## Bug records
 
 Each record has `board`, `method` (a method name, `harness` or `physics`), `category`,
@@ -187,7 +266,7 @@ Each record has `board`, `method` (a method name, `harness` or `physics`), `cate
 | `java_exception`, `java_oom` | exceptions in the router log (`exception`, `frame`, `count`), even when output was written |
 | `unconnected_mismatch` | KiCad finds more unconnected items than the router reported incomplete: connections lost in translation |
 | `integrity` | the output changed something a route result may not |
-| `drc` | DRC errors of one type (`drc_type`, `count`) beyond the human layout's on the same board |
+| `drc` | DRC errors of one type (`drc_type`, `count`) beyond the human layout's on the same board. `human_baseline` says what they were compared with: the experiment's own human score (signature `...:drc:<type>`), else the human's newest evaluation (`...:human-fallback`), else none (`...:no-human-baseline`, `count` is all of the run's errors). `exp report` recomputes these from the run's scores, without changing `bugs.json` |
 | `over_time` | the attempt overran its timeout by more than 5 % |
 | `physics_error` | kae's physics failed on a board or module |
 
