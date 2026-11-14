@@ -43,6 +43,10 @@ Three: (1) median-point / centerline routing (one virtual wire between P/N merge
 - Route and lock pairs before bulk routing (Situs/DeepPCB practice).
 - Relation API: `pair(netP, netN, gap, max_uncoupled)`, `return_vias(pair|class)`, layer preference, via limits → [LLM routing evidence](llm-routing-evidence.md).
 
+## kae's pair router
+
+Built as a locked pre-route before the bridge: [pair routing](../../research/routing/kae-pair-routing.md) (2026-11), with the detection and report-only hazard in [kae-diff-pair-report](../../research/routing/kae-diff-pair-report.md).
+
 ## Open questions
 
 - No gridless DP router with published coupled-gap guarantees during area routing (as opposed to escape) found.

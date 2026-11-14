@@ -122,7 +122,7 @@ Splits A+B (33 boards), k=1, 600 s per board, one shared 4-core host, two boards
 
 ## Open questions
 
-- Rules Freerouting cannot route by: diff pairs routed as two nets (gap minimum holds; gap maximum and uncoupled length do not); length, skew, via-count rules only reported.
+- Rules Freerouting cannot route by: diff pairs routed as two nets (gap minimum holds; gap maximum and uncoupled length do not; `kae.route.pair_route` routes them first as locked copper, `--pairs first`, see [pair routing](../../research/routing/kae-pair-routing.md)); length, skew, via-count rules only reported.
 - Same-net hole-to-hole: Freerouting has no same-net clearance; caught only by repair.
 - Unjoined planes: Freerouting sees a plane as one area, so zone islands stay open for it; the last mile joins them.
 - Unreproduced clearance error: a Freerouting track 0.19 mm from a 0.3 mm HV custom-polygon pad on bms-c1 with correct DSN shape and pin class → [last mile and restarts](last-mile-and-restarts.md#open-questions).
