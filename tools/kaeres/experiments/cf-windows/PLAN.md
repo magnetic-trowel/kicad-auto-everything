@@ -47,3 +47,10 @@ Written 2026-11-14, before any run of this experiment.
 
 ## Smoke
 2 boards × 2 arms, of which at least one is open after phase 1. Plumbing only.
+
+## Smoke (2 boards, 828d8f9): plumbing only
+Both boards were open after phase 1, and phase 1 was identical in both arms.
+- **dxem:** both arms went from 4 to 2 opens. CF got there with R', CF-W with `open-alt`, which was kept.
+- **gos2022:** CF's R' was worse and phase 1 was kept. CF-W's windows tied phase 1 and were kept.
+
+Every run was scored. No rule changes.
