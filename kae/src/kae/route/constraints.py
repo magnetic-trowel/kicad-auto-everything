@@ -107,6 +107,8 @@ class RoutingClass:
     via: tuple              # (diameter, drill) mm, the real via
     rep: str = ""           # representative net
     rep2: str = ""          # a second net of the class (for same-class pairs), or ""
+    layers: list | None = None  # the layers its tracks may use, when a custom (constraint disallow track) rule
+                                # keeps them off some (Freerouting's use_layer); None: every copper layer
 
 
 @dataclass
@@ -420,9 +422,13 @@ def plan(info, board_path, opts=None):
                                 if r.condition is not None else True)
                 except KeyError:
                     rsig.append(None)
-        sig = (nc_name, dp, tuple(widths[l] for l in cu), (D, d), tuple(rsig))
+        # layers a custom rule disallows this net's tracks on (KiCad's items_not_allowed): the class keeps off them
+        off = tuple(l for l in cu if R.disallowed(rb, net_item(info, net, "track", l, widths[l]), l, "track"))
+        if len(off) == len(cu):
+            off = ()        # disallowed everywhere: no layer to restrict to; KiCad reports it whatever we do
+        sig = (nc_name, dp, tuple(widths[l] for l in cu), (D, d), tuple(rsig), off)
         sig_of[net] = sig
-        per_net[net] = dict(widths=widths, wmin=wmin, via=(D, d), ring=ring)
+        per_net[net] = dict(widths=widths, wmin=wmin, via=(D, d), ring=ring, off=off)
     groups = {}
     for net in nets:
         groups.setdefault(sig_of[net], []).append(net)
@@ -434,8 +440,10 @@ def plan(info, board_path, opts=None):
         used.add(name)
         members = sorted(members)
         w = per_net[members[0]]["widths"]
+        off = per_net[members[0]]["off"]
         rc = RoutingClass(name=name, nets=members, netclass=sig[0], widths=dict(w), via=per_net[members[0]]["via"],
-                          rep=members[0], rep2=members[1] if len(members) > 1 else "")
+                          rep=members[0], rep2=members[1] if len(members) > 1 else "",
+                          layers=[l for l in cu if l not in off] if off else None)
         p.classes[name] = rc
         for n in members:
             p.net_class[n] = name
