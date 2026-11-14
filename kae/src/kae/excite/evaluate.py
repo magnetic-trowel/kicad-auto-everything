@@ -16,6 +16,8 @@ from types import SimpleNamespace
 
 import numpy as np
 
+from kae.physics import criteria as CR
+
 from . import dc as DC
 from . import harm as HA
 from . import models as M
@@ -271,6 +273,7 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
     if n_pins:
         notes.append(f"pins: {n_pins} pads took their pin type and name from the operating facts (the schematic's)")
     uncomputed = []
+    open_cells = {}          # a cell whose hot loop is open: {source: where}, priced at its caps below
     # an aggressor whose pattern drives current into a pad outside the copper model loses that current
     # from its solve: its harms are not computed (a dropped contribution is not a zero one)
     miss = set(missing)
@@ -287,9 +290,13 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
         for band, f in bands[s.name].items():
             v, info = solved[(s.name, band)]
             if info["unbalanced"]:
-                notes.append(f"{s.name}: copper open: {open_note(info, bd.net_of)} (unrouted or outside the window): "
-                             f"its harms are not computed")
+                where = open_note(info, bd.net_of)
+                notes.append(f"{s.name}: copper open: {where} (unrouted or outside the window): "
+                             f"its harms are not computed" + ("; its hot loop is priced open, at its caps"
+                                                               if s.kind == "cell" else ""))
                 uncomputed.append(s.name)
+                if s.kind == "cell":
+                    open_cells[s.name] = where
                 res = None
                 break
             res[band] = (f, v)
@@ -344,13 +351,16 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
         harms.append(dict(observer=o.name, source=s.name, kind=o.kind, u=us[0], u_lo=min(us), u_hi=max(us),
                           L_nH=round(pr["Le"] * 1e9, 4), Zf_mohm=round(abs(pr["Zf"]) * 1e3, 3),
                           basis=o.basis, src_class=o.src_class, **(parts_ or {})))
-        if o.kind == "overshoot" and pr["Le"] > 0:
+        if o.kind == "overshoot":
             # the hot loop's efficiency cost: its copper inductance's energy, dumped into the switch at
-            # every turn-off (1/2 L I^2 per cycle), at each corner's operating current and frequency
+            # every turn-off (1/2 L I^2 per cycle), at each corner's operating current and frequency. A copper
+            # share at or below zero (the copper's mutual coupling cancelling some of the parts' own inductance)
+            # costs nothing, but the cell keeps its observation: a cell left out would leave the comparison
+            Lp = max(pr["Le"], 0.0)
             lv = []
             for c in range(ncp):
                 val = {k[1]: v for k, v in cps[s.name][c].items()}
-                lv.append(0.5 * pr["Le"] * val.get("I_A", 0.0) ** 2 * val.get("f_sw_Hz", 0.0))
+                lv.append(0.5 * Lp * val.get("I_A", 0.0) ** 2 * val.get("f_sw_Hz", 0.0))
             ob = O.observation(bd, o, s, lv, [0.0] * ncp)
             ob.update(id="loss.loop", unit="W", reference=dict(value=None, basis="none: a loss is priced, not bounded"),
                       label=f"hot-loop loss of {s.name}: 1/2 L_loop I^2 f_sw, L_loop {pr['Le'] * 1e9:.3g} nH (copper)")
@@ -373,10 +383,18 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
             ob["scope"]["kind"] = "loop_ac_loss"
             ob["scope"]["R_loop_ohm"] = R
             observations.append(ob)
+    for name, where in open_cells.items():
+        s = next(x for x in srcs if x.name == name)
+        o = next((x for x in obs if x.kind == "overshoot" and x.meta.get("source") == name), None)
+        if o is not None:
+            observations += open_cell_observations(bd, o, s, [{k[1]: v for k, v in cps[name][c].items()}
+                                                              for c in range(ncp)], where)
     # each switch node's capacitance in the layout (its copper to every other net and the world, in the
     # board's own stackup: kae.excite.capacitive), charged and discharged through the switch every cycle:
     # 1/2 C V^2 f_sw lost at each hard turn-on
+    # (an open cell too: its switch node's capacitance is electrostatic and needs no closed loop)
     cells = {pr["s"].name: pr["s"] for pr in pairs if pr["o"].kind == "overshoot" and pr["s"].meta.get("sw")}
+    cells.update({s.name: s for s in srcs if s.name in open_cells and s.meta.get("sw")})
     if cells:
         from . import capacitive as CAP
         try:
@@ -394,7 +412,7 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
             for c in range(ncp):
                 val = {k[1]: v for k, v in cps[name][c].items()}
                 sv.append(0.5 * C * val.get("V_V", 0.0) ** 2 * val.get("f_sw_Hz", 0.0))
-            o = next(pr["o"] for pr in pairs if pr["s"].name == name and pr["o"].kind == "overshoot")
+            o = next(x for x in obs if x.kind == "overshoot" and x.meta.get("source") == name)
             ob = O.observation(bd, o, s, sv, [0.0] * ncp)
             ob.update(id="loss.swnode", unit="W", reference=dict(value=None, basis="none: a loss is priced, not bounded"),
                       label=f"switch-node capacitance loss of {name}: 1/2 C_sw V^2 f_sw, C_sw {C * 1e12:.3g} pF (copper)")
@@ -440,6 +458,7 @@ def evaluate(path, pitch=0.25, window=None, nsub=2, b=None, brief=None, fills=No
                 ledger=ledger.rows(), questions=[dict(subject=p.subject, name=p.name, lo=p.lo, hi=p.hi, unit=p.unit,
                                                       basis=p.basis) for p in ledger.flagged()],
                 bands={k: v for k, v in bands.items()}, rings=rings,
+                open_cells=[dict(source=k, why=v) for k, v in sorted(open_cells.items())],
                 observers=[dict(name=o.name, kind=o.kind, bound=o.bound, basis=o.basis) for o in obs],
                 harms=harms, observations=observations, hazards=hazards, mesh=mesh_rep,
                 part_power_W={k: round(v, 6) for k, v in sorted(part_power.items())},
@@ -632,6 +651,37 @@ def _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes,
 THIN_SHARE = 0.25         # a priced net with this share of its copper in features under 3 cells is reported
 
 
+# what an open cell is priced in, each at its cap (kae.intent counts them; its other harms stay not computed)
+OPEN_KINDS = ("overshoot.peak", "loss.loop", "loss.loop_ac")
+
+
+def open_cell_observations(bd, o, s, vals, where):
+    """An open hot loop's observations at their caps, per corner (vals[c]: {param: value}): the commutated
+    current has no path but the switch itself, so the switch node rings until the switch's absolute maximum
+    (overshoot V_abs - V, kae.physics.criteria.overshoot_limits), and each of the loop's two losses is the
+    cell's whole throughput V I (a converter whose hot loop is open converts nothing; a closed loop's layout
+    loss is far below it: 1/2 L I^2 f_sw = V I needs L = 2 V / (I f_sw), microhenries). Each layout with the cell
+    open prices alike, at most what any closed loop could; kae.intent prices them and lists them as open."""
+    why = f"hot loop open: {where}"
+    V = [v.get("V_V", s.meta.get("V", 0.0)) for v in vals]
+    ov = [CR.overshoot_limits(Vc, v.get("V_max_V"))[1] for Vc, v in zip(V, vals)]
+    us = [x / max(HA.overshoot_bound(v, o.bound), 1e-9) for x, v in zip(ov, vals)]
+    out = [O.observation(bd, o, s, ov, us)]
+    out[0]["label"] = f"{o.name} <- {s.name}: OPEN, at the switch's absolute maximum"
+    P_ = [Vc * v.get("I_A", 0.0) for Vc, v in zip(V, vals)]
+    for id_, kind in (("loss.loop", "loop_loss"), ("loss.loop_ac", "loop_ac_loss")):
+        ob = O.observation(bd, o, s, list(P_), [0.0] * len(vals))
+        ob.update(id=id_, unit="W", reference=dict(value=None, basis="none: a loss is priced, not bounded"),
+                  label=f"{'hot-loop loss' if id_ == 'loss.loop' else 'hot-loop AC conduction loss'} of {s.name}: "
+                        f"OPEN, at the cell's throughput V I")
+        ob["scope"]["kind"] = kind
+        out.append(ob)
+    for ob in out:
+        ob["open"] = why
+        ob["capped_at"] = max(ob["values"], default=0.0)
+    return out
+
+
 def mesh_report(m, priced, nsub):
     """(report dict, notes) on how well the raster resolves the board: Mesh.check's per-layer warnings, the priced
     nets (the aggressors' and observers' patterns) whose copper is mostly narrower than 3 cells, and the known
@@ -770,6 +820,8 @@ def main(argv=None):
     for p in r["ledger"]:
         print(f"  {p['subject'][:28]:28s} {p['name']:9s} {p['typ']:10.4g} [{p['lo']:.4g} .. {p['hi']:.4g}] {p['unit']:2s} "
               f"{p['source']:10s} {p['basis'][:90]}")
+    for oc in r.get("open_cells") or []:
+        print(f"OPEN hot loop: {oc['source']}: {oc['why']} (priced at its caps)")
     for rg in r["rings"]:
         print(f"ring: {rg['cell']}: copper loop {rg['L_copper_nH']} nH, f_ring {rg['f_ring_MHz']} MHz (C_sw hi/typ/lo)")
     print("harms (u at typical, [lowest .. highest over the corners]):")
