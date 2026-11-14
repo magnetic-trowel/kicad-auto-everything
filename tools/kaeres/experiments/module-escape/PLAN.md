@@ -168,3 +168,9 @@ Another session found that in work mode Freerouting's optimizer phase (on boards
 - **Also reported:** Σu on both-routed boards against the J21 floor, rails skipped, and stage times.
 - **Caveat:** Freerouting's optimizer is uncharged in work mode; the fix is pending (note above). Both arms share it.
 - **module-rails smoke (whippet, gecko5; dd358a6):** plumbing only, every run was scored. M-clock-rails split its 91 s as 65 s modules and 26 s rails on both boards; M-clock skipped the rails on gecko5. No rule changes.
+
+**module-rails result (2026-11-14, 50 boards, `analyze_rails.py`): the rail share does not work.**
+- **Primary, `worst_rail_mohm` on both-routed boards:** n 12, median ratio M-clock-rails/M-clock 0.906, 6 better / 6 worse, p 0.24. Not decided. On any routing: n 43, median 0.876, p 0.98.
+- **Guard, opens:** 666 vs 576 (+15.6 %), 5 boards fewer and 18 more, p 0.014. **The guard fails.**
+- Σu: n 12, median 0.993 (floor 1.12). CPU 107.1 vs 101.7 h. Clean 17 vs 18.
+- **Reading:** rails laid as locked copper cost completion, even inside the clock. The rail-drop question needs another mechanism, such as rails as Freerouting net classes with widths (case study, proposal 2), not a share of module-stage time. M-clock stays without rails when its clock runs out.
