@@ -35,6 +35,8 @@ from dataclasses import dataclass, field
 import shapely
 from shapely.geometry import LineString, Point, Polygon
 
+from kae.budget import now as clock_now
+
 MIN_REGION_SHARE = 0.02      # a piece of the outline under this share of the board is no region
 CAPACITY = 0.85              # courtyards a region is assumed able to hold on each side, as a share of its area
 SPLIT_MIN_S = 20.0           # the least time a region gets
@@ -338,7 +340,7 @@ def fit_split(place_fn, board, split, seed=0, time_s=60.0, log=None, rounds=PROB
     `rounds` times, while the probes are inside `time_s`. Returns (split, or None when a region still
     cannot hold its parts; report)."""
     log = log or (lambda *a, **k: None)
-    t0 = time.monotonic()
+    t0 = clock_now()
     fps = board.footprints
     idx = {fp.uuid: i for i, fp in enumerate(fps)}
     adj = _adjacency(board, lambda k: True)
@@ -352,11 +354,11 @@ def fit_split(place_fn, board, split, seed=0, time_s=60.0, log=None, rounds=PROB
     for rnd in range(rounds + 1):
         bad = {}
         for r in todo:
-            left = time_s - (time.monotonic() - t0)
-            tp = time.monotonic()
+            left = time_s - (clock_now() - t0)
+            tp = clock_now()
             b = _probe(place_fn, board, split, r, seed, max(PROBE_MIN_S, left / max(1, n_probe - rep["probes"])), kw)
             rep["probes"] += 1
-            rep.setdefault("probe_s", []).append(round(time.monotonic() - tp, 2))
+            rep.setdefault("probe_s", []).append(round(clock_now() - tp, 2))
             if b:
                 bad[r] = b
         rep["rounds"] = rnd + 1
@@ -364,7 +366,7 @@ def fit_split(place_fn, board, split, seed=0, time_s=60.0, log=None, rounds=PROB
             break
         if rnd == rounds:
             break
-        if time.monotonic() - t0 >= time_s:      # probes overran their share: the split is not known to fit
+        if clock_now() - t0 >= time_s:      # probes overran their share: the split is not known to fit
             rep["out_of_time"] = True
             break
         todo = set()
@@ -382,7 +384,7 @@ def fit_split(place_fn, board, split, seed=0, time_s=60.0, log=None, rounds=PROB
         if not todo:
             break
         todo = sorted(todo)
-    rep["seconds"] = round(time.monotonic() - t0, 2)
+    rep["seconds"] = round(clock_now() - t0, 2)
     if not bad:
         split.how["moved_to_fit"] = rep["moved"]
         split.cross_nets = cross_nets(board, region_of)

@@ -403,7 +403,7 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
         # a board split by voids or all-layer keepouts: each region placed on its own (kae.place.barriers);
         # 2 also probes that each region can legalize its parts first, moving those it cannot (fit_split)
         from . import barriers
-        t_split = time.monotonic()
+        t_split = clock_now()
         split = barriers.true_split(board)
         skipped, fit = None, None
         kw2 = {k: v for k, v in kw.items() if k not in ("seed", "log")}
@@ -417,7 +417,7 @@ def place(board, seed=0, time_s=300.0, physics=True, brief=None, workers=None, l
                 skipped = dict(skipped="unfit", regions=len(split.regions), fit=fit)
             split = fitted
         # mode 1 keeps its whole budget as before; mode 2 gives the regions what the probes left
-        left = time_s if fit is None else max(float(time_s) - (time.monotonic() - t_split), 0.5 * float(time_s))
+        left = time_s if fit is None else max(float(time_s) - (clock_now() - t_split), 0.5 * float(time_s))
         if split is not None and skipped is None:
             res = barriers.place_split(place, board, split, seed=seed, time_s=left, log=log, verify=verify, **kw2)
             if fit is not None:
