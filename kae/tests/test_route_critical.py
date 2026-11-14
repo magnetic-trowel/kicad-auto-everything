@@ -1404,3 +1404,42 @@ def test_work_mode_charges_the_module_stage(tmp_path):
         assert c.now() - t >= rep["charged_by_kind"]["crit_search"] + rep["charged_by_kind"]["crit_expansion"] > 0
     finally:
         budget.set_mode("time")
+
+
+def test_module_clock_keeps_the_whole_stage_in_its_time(tmp_path):
+    """clock=True: a stage whose time is already spent routes no module, no rails and no joins (the old clock
+    covered only the move passes, so routing ran past it); with time, decaps and crystals go first."""
+    from kae.board.kicad_file import load
+    from kae.budget import now as clock_now
+    from kae.route.critical import Session
+    from kae.route.critical_joint import MODULE_CLOCK_RANK, optimize_modules
+    p = F.write_board(tmp_path)
+    b = load(p)
+    s = Session(p, info=F.synth_info(b), board=b, log=lambda *a: None)
+    poses, copper, rep = optimize_modules(b, s.brief, terms=None, locked=set(), session=s, time_s=5,
+                                          clock=True, t_start=clock_now() - 10)
+    assert rep["modules"] == [] and not poses and not copper
+    assert "joins" not in rep["clock"]["skipped"]       # the corner joins always run (connectivity)
+    assert len([x for x in rep["clock"]["skipped"] if x not in ("rails", "joins", "tighten")]) >= 1
+    s = Session(p, info=F.synth_info(b), board=b, log=lambda *a: None)
+    poses, copper, rep = optimize_modules(b, s.brief, terms=None, locked=set(), session=s, time_s=600, clock=True)
+    assert rep["clock"]["skipped"] == [] and copper
+    ranks = [MODULE_CLOCK_RANK.get(m["kind"], 1) for m in rep["modules"]]
+    assert ranks == sorted(ranks)
+
+
+def test_rails_start_nothing_past_their_deadline(tmp_path):
+    """route_rails(deadline=...) (the clocked module stage): a rail is not started past the deadline; none is
+    the old behaviour."""
+    from kae.budget import now as clock_now
+    from kae.route.critical_rails import route_rails
+    s = F.session(tmp_path, rails="none")
+    s.route()
+    late = route_rails(s.ctx, mode="all", deadline=clock_now() - 1.0)
+    assert late and all(r.get("clock") == "skipped" and not r.get("items") for r in late)
+    assert getattr(s.ctx, "rail_deadline", None) is None
+    s2 = F.session(tmp_path / "b", rails="none")
+    s2.route()
+    on_time = route_rails(s2.ctx, mode="all", deadline=None)
+    assert [r["net"] for r in on_time] == [r["net"] for r in late] and not any(r.get("clock") for r in on_time)
+    assert any(r.get("design_A") for r in on_time)       # these were planned and sized, not skipped
