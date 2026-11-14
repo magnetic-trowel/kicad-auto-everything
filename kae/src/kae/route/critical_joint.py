@@ -274,8 +274,15 @@ def _window(window):
     return box(*window)
 
 
+# module order under the stage clock (optimize_modules clock=True): value per cost. Decap and crystal copper
+# carries the module stage's physics gain (module-casestudy: Σu 0.75 unmoved) on short local copper; chains
+# (protection along a connector) gain little and route long
+MODULE_CLOCK_RANK = {"decap": 0, "rgroup": 0, "crystal": 0, "cell": 1, "path": 1, "chain": 2}
+
+
 def optimize_modules(board, brief, terms=None, locked=(), info=None, poses=None, opts=None, log=None,
-                     time_s=120.0, top_k=6, passes=2, rails=True, session=None, window=None, modules=None):
+                     time_s=120.0, top_k=6, passes=2, rails=True, session=None, window=None, modules=None,
+                     clock=False, t_start=None):
     """Co-optimize each module's movable parts and its critical copper (see the module
     docstring). Returns (poses, copper, report): poses {uuid: (x, y, rot, side)} of the parts
     that moved, copper (tracks, vias) as kae.board.model objects (locked but for soft
@@ -286,10 +293,22 @@ def optimize_modules(board, brief, terms=None, locked=(), info=None, poses=None,
     parts whose origin lies in it; the rails are routed only for the whole board (window
     and modules None). terms: kae.physics.place_terms.Terms of the board (built when None)
     screens candidates and prices every module; a move is kept when the module's
-    utilization u (value / place-terms allocation) falls by more than 1 %."""
+    utilization u (value / place-terms allocation) falls by more than 1 %.
+
+    clock: keep `time_s` for the whole stage (from `t_start`, the caller's start, e.g. before its
+    Session was built), not only for the part moves: the deadline is checked before every module,
+    every candidate trial, each rail, branch, rail completion join and ground return, and the
+    tightening (the corner joins always run: they connect what was laid). The modules go decaps,
+    rail groups and crystals first, chains last (MODULE_CLOCK_RANK), each routed at its pose before
+    any module's move passes start. Without it the clock covers
+    the move passes only and routing every module, the rails and the joins ran past it, up to 8x
+    (module-casestudy: the overrun starved the first route)."""
     from .critical import Session
-    t0 = clock_now()
+    t0 = clock_now() if t_start is None or not clock else t_start
     log = log or (lambda *a: None)
+
+    def over():
+        return clock and clock_now() - t0 > time_s
     window = _window(window)
     sess = session or Session(board.path, brief=brief, info=info, opts=dict(opts or {}, rails="none"), log=log,
                               board=board, terms=terms)
@@ -315,17 +334,21 @@ def optimize_modules(board, brief, terms=None, locked=(), info=None, poses=None,
         mods = [m for m in mods if m.id in set(modules)]
     if window is not None:
         mods = [m for m in mods if any(inside(u) for u in m.parts)]
+    if clock:
+        mods = sorted(mods, key=lambda m: MODULE_CLOCK_RANK.get(m.kind, 1))     # stable: brief order within a rank
     moved = {}
     rep = dict(modules=[], window=list(window.bounds) if window is not None else None)
+    if clock:
+        rep["clock"] = dict(time_s=round(float(time_s), 1), skipped=[])
 
     def score(mm):
         # the shared currency: utilization against the place terms' allocation (a decap's
         # worst cluster can change with a move); the value when no allocation is known
         u_ = mm.physics.get("u")
         return u_ if u_ is not None else mm.physics.get("value")
-    for m in mods:
+    def first(m):
+        """Route module m at its current pose; its report row and movable parts."""
         route_module(ctx, m)
-        v0 = score(m)
         mrep = dict(id=m.id, kind=m.kind, value0=m.physics.get("value"), u0=m.physics.get("u"), moves=[])
         movable = []
         for u in _active_parts(m):
@@ -337,6 +360,10 @@ def optimize_modules(board, brief, terms=None, locked=(), info=None, poses=None,
                 continue
             movable.append(u)
         mrep["movable"] = [ctx.fp[u].ref for u in movable]
+        return mrep, movable, score(m)
+
+    def improve(m, mrep, movable, v0):
+        """The move passes of module m (its copper re-routed for every trial), then its report row."""
         best = v0
         for _ in range(passes):
             if v0 is None or not movable or clock_now() - t0 > time_s:
@@ -358,6 +385,8 @@ def optimize_modules(board, brief, terms=None, locked=(), info=None, poses=None,
                     except Exception:  # noqa: BLE001 - screening is optional
                         pass
                 for c in legal[:top_k]:
+                    if over():
+                        break
                     leg.commit(u, c)
                     route_module(ctx, m)
                     v = score(m)
@@ -374,20 +403,48 @@ def optimize_modules(board, brief, terms=None, locked=(), info=None, poses=None,
                     leg.commit(u, cur_poses[u])
                 # leave the module routed at the kept pose
                 route_module(ctx, m)
+                if over():
+                    break
             if not improved:
                 break
         mrep.update(value=m.physics.get("value"), u=m.physics.get("u"), status=m.status)
         rep["modules"].append(mrep)
         log(f"{m.id}: {mrep['value0']} -> {mrep['value']} {m.physics.get('unit', '')} "
             f"({len(mrep['moves'])} moves of {mrep['movable']})")
-    sess.modules = mods
+
+    if clock:
+        # every module routed at its pose first (value order), then the move passes with what is left: one
+        # module's moves must not spend the time the next module's copper needs (gecko5: the crystal's 36 trials
+        # took the whole stage and no decap was routed)
+        firsts = []
+        for m in mods:
+            if over():
+                rep["clock"]["skipped"].append(m.id)
+                continue
+            firsts.append((m, *first(m)))
+        for m, mrep, movable, v0 in firsts:
+            improve(m, mrep, movable, v0)
+    else:
+        for m in mods:
+            improve(m, *first(m))
+    sess.modules = [m for m in mods if m.id not in set(rep["clock"]["skipped"])] if clock else mods
+    t_mods = clock_now()
     if rails and window is None and modules is None and sess.opts.get("rails_joint", "auto") != "none":
-        from .critical_rails import route_rails
-        sess.rails = route_rails(ctx, mode=sess.opts.get("rails_joint", "auto"))
-        rep["rails"] = sess.rails
+        if over():
+            rep["clock"]["skipped"].append("rails")
+        else:
+            from .critical_rails import route_rails
+            sess.rails = route_rails(ctx, mode=sess.opts.get("rails_joint", "auto"),
+                                     deadline=t0 + time_s if clock else None)
+            rep["rails"] = sess.rails
+    t_rails = clock_now()
     if sess.opts.get("corner_joins", True):
+        # not clocked: necks to pad centres so Freerouting sees the laid copper connected (cheap; skipping it
+        # would leave opens for copper already laid)
         rep["joins"] = sess.join_at_corners()
-    if sess.opts.get("tighten"):
+    if sess.opts.get("tighten") and over():
+        rep["clock"]["skipped"].append("tighten")
+    elif sess.opts.get("tighten"):
         # the kept copper is tightened under the same quotes (critical_taut), so what is shipped
         # is never worse than what was judged; candidates are judged on grid copper (a taut run
         # per candidate would cost more than the search itself; routing-stages.md P7)
@@ -401,5 +458,7 @@ def optimize_modules(board, brief, terms=None, locked=(), info=None, poses=None,
             rep["tighten"] = dict(error=f"{type(e).__name__}: {e}")
     tracks, vias = sess.copper()
     rep["seconds"] = round(clock_now() - t0, 2)
+    rep["phase_s"] = dict(modules=round(t_mods - t0, 1), rails=round(t_rails - t_mods, 1),
+                          joins_tighten=round(clock_now() - t_rails, 1))
     rep["moved"] = {ctx.fp[u].ref: p for u, p in moved.items()}
     return moved, tracks + vias, rep

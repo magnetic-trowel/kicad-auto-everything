@@ -66,6 +66,7 @@ def _project(src_board, dst_board):
 # Every `opts` key the stages read (kae.joint.cli rejects a --set key that neither these, the
 # loop's DEFAULTS, the placer's limits (kae.route.constraints.DEFAULTS) nor bridge.KEY name).
 STAGE_KEYS = frozenset({
+    "module_clock",       # the module stage keeps its clock (kae.route.critical_joint.optimize_modules clock=True)
     # set by kae.joint.cli from its flags
     "keep", "no_physics", "no_modules", "budget_s", "route_parallel", "first_last_mile", "first_blocked",
     # placer and module stage
@@ -222,7 +223,8 @@ class KaeStages:
                            terms=self.terms)
             moved, copper, rep = optimize_modules(board, brief, terms=self.terms, locked=sorted(locked),
                                                   log=lambda m: self.log(f"modules: {m}"), time_s=t_mod, session=sess,
-                                                  rails=only is None, modules=None if only is None else list(only))
+                                                  rails=only is None, modules=None if only is None else list(only),
+                                                  clock=bool(self.opts.get("module_clock", True)), t_start=t0)
         except Exception as e:
             import traceback
             traceback.print_exc(file=sys.stderr)
@@ -259,7 +261,8 @@ class KaeStages:
         new.info["modules"] = dict(seconds=round(dt_mod, 1), budget_s=round(t_mod, 1),
                                    stop="clock" if float(rep.get("seconds") or 0.0) >= 0.95 * t_mod else "done",
                                    moved=sorted(rep.get("moved") or {}),
-                                   copper=len(copper), modules=[dict(id=m["id"], u0=m.get("u0"), u=m.get("u"),
+                                   copper=len(copper), clock=rep.get("clock"), opt_phase_s=rep.get("phase_s"),
+                                   modules=[dict(id=m["id"], u0=m.get("u0"), u=m.get("u"),
                                                                      status=m.get("status"))
                                                                 for m in rep.get("modules") or []])
         return new
