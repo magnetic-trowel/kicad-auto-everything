@@ -90,17 +90,21 @@ def via_sexpr(net, x, y, size, drill, layers=("F.Cu", "B.Cu"), uid=None, locked=
             f"\t\t(layers {ls})\n{lk}\t\t(net {q(net)})\n\t\t(uuid {q(uid or new_uuid())})\n\t)\n")
 
 
-def zone_sexpr(net, layer, rings, name, uid=None, clearance=0.0, min_thickness=0.1, priority=0):
-    """A copper zone (solid pad connection, no thermals) of `net` on `layer` over the
-    polygon `rings` ([outer, holes...]); KiCad fills it on the next refill."""
+def zone_sexpr(net, layer, rings, name, uid=None, clearance=0.0, min_thickness=0.1, priority=0, connect="solid",
+               thermal_gap=0.5, spoke_width=0.5):
+    """A copper zone of `net` on `layer` over the polygon `rings` ([outer, holes...]); KiCad fills it on
+    the next refill. `connect`: the pad connection, "solid" (default), "thermal", "thru_hole_only" or
+    "none" (a keep-out guard copies the plane it guards, so starved thermals still show in its DRC)."""
     def pts(r):
         return " ".join(f"(xy {fmt(x)} {fmt(y)})" for x, y in r)
     outer = rings[0]
+    head = {"solid": "(connect_pads yes", "thermal": "(connect_pads", "none": "(connect_pads no",
+            "thru_hole_only": "(connect_pads thru_hole_only"}.get(connect, "(connect_pads yes")
     return (f"\t(zone\n\t\t(net {q(net)})\n\t\t(layer {q(layer)})\n\t\t(uuid {q(uid or new_uuid())})\n"
             f"\t\t(name {q(name)})\n\t\t(hatch edge 0.5)\n\t\t(priority {int(priority)})\n"
-            f"\t\t(connect_pads yes\n\t\t\t(clearance {fmt(clearance)})\n\t\t)\n"
+            f"\t\t{head}\n\t\t\t(clearance {fmt(clearance)})\n\t\t)\n"
             f"\t\t(min_thickness {fmt(min_thickness)})\n\t\t(filled_areas_thickness no)\n"
-            f"\t\t(fill\n\t\t\t(thermal_gap 0.5)\n\t\t\t(thermal_bridge_width 0.5)\n\t\t)\n"
+            f"\t\t(fill\n\t\t\t(thermal_gap {fmt(thermal_gap)})\n\t\t\t(thermal_bridge_width {fmt(spoke_width)})\n\t\t)\n"
             f"\t\t(polygon\n\t\t\t(pts {pts(outer)})\n\t\t)\n\t)\n")
 
 
@@ -147,7 +151,7 @@ def _insert(text, chunks):
 def append_items(src, dst, tracks=(), vias=(), zones=()):
     """dst = src plus tracks [(net, layer, width, a, b, uuid[, locked[, mid]])] (an arc when
     mid is given), vias [(net, x, y, size, drill, uuid[, locked])] (locked unless the 7th field
-    says otherwise) and zones [(net, layer, rings, name[, priority])]."""
+    says otherwise) and zones [(net, layer, rings, name[, priority[, min_thickness[, {connect, thermal_gap, spoke_width}]]])]."""
     text = Path(src).read_text(encoding="utf-8")
     require_kicad10(text, src)
     chunks = []
@@ -159,7 +163,9 @@ def append_items(src, dst, tracks=(), vias=(), zones=()):
         else:
             chunks.append(track_sexpr(*t[:6], locked=lk))
     chunks += [via_sexpr(*v[:5], uid=v[5], locked=v[6] if len(v) > 6 else True) for v in vias]
-    chunks += [zone_sexpr(z[0], z[1], z[2], z[3], priority=z[4] if len(z) > 4 else 0) for z in zones]
+    chunks += [zone_sexpr(z[0], z[1], z[2], z[3], priority=z[4] if len(z) > 4 else 0,
+                          **({"min_thickness": z[5]} if len(z) > 5 and z[5] else {}),
+                          **(z[6] if len(z) > 6 and z[6] else {})) for z in zones]
     Path(dst).write_text(_insert(text, chunks), encoding="utf-8")
 
 

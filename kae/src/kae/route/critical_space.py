@@ -303,9 +303,17 @@ class Space:
             except Exception as e:   # noqa: BLE001 - not fatal, but reported (Session.report)
                 self.notes.append(f"thermal corridors unavailable: {type(e).__name__}: {e}")
                 cors = []
-            for geo, layer, pad in cors:
+            # pour links (opts pour_links, the hot-loop cells stage): solidly connected pads keep a
+            # strip to their zone's fill free of other nets too (thermal_corridors solid)
+            if self.opts.get("pour_links"):
+                try:
+                    cors = list(cors) + [(g, l, q, "pour link") for g, l, q in
+                                         CN.thermal_corridors(self.info, plan, None, self.sev, solid=True)]
+                except Exception as e:   # noqa: BLE001 - as above
+                    self.notes.append(f"pour links unavailable: {type(e).__name__}: {e}")
+            for geo, layer, pad, *why in cors:
                 it = Item("corridor", pad.get("net") or "", [layer], geo, 0.0, None,
-                          owner=f"spokes {pad.get('ref')}.{pad.get('number')}")
+                          owner=f"{why[0] if why else 'spokes'} {pad.get('ref')}.{pad.get('number')}")
                 fp = self.fp_by_index.get(pad.get("fp_index"))
                 it.fp = fp.uuid if fp is not None else None
                 if it.fp is not None:

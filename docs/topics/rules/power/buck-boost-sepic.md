@@ -11,6 +11,7 @@ Keys: inverting buck-boost, 4-switch buck-boost, SEPIC, Ćuk, Cuk, coupling cap,
 | SEPIC / Ćuk | Switch → coupling cap → rectifier → COUT → GND → switch | L1, L2, CIN | Coupling cap inside the tight loop; soft `loop_area` flagged "unverified topology inference" until a datasheet confirms | [I], unconfirmed |
 
 - AN-139 (Kueck, buck-boost example; [mirror](https://theengineer.markallengroup.com/production/content/uploads/2015/01/an139f.pdf)) [P]: input-cap hot loop RF energy >20 dB above the INTVCC decoupling loop; INTVCC/driver loop is second priority with a solid next-layer plane.
+- Currents per loop, and which 4-switch leg commutates in each region (buck: the input leg; boost: the output leg; the other holds its high side on and commutates nothing): [converter-currents](../../physics/converter-currents.md#1-equations-ccm-steady-state). kae splits a 4-switch converter into a buck cell (input half-bridge, CIN) and a boost cell (output half-bridge, COUT) (`kae.circuit.structures._buck_boost`); the sstv badge's TPS63001 at 3.7 → 3.3 V is in its buck region, so its boost cell is static [C].
 - Classifier hints (RPA §20) [I]: L from SW to GND with negative output → inverting buck-boost; two SW nodes with one L between → 4-switch buck-boost.
 
 ## Open questions

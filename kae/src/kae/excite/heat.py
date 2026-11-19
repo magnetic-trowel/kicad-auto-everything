@@ -23,6 +23,7 @@ from __future__ import annotations
 import numpy as np
 
 from kae import materials as MAT
+from kae.physics import converter as CV
 
 from .beliefs import Param, corners, intent_value
 
@@ -116,6 +117,7 @@ def params(bd, dcp, P, intent=None):
             out.append(Param(f"heat:sink{k}", "h_W_m2K", *_rng(hs["h_W_m2K"]), "W/m^2/K", "intent",
                              f"extra surface cooling over a region of the {hs.get('side', 'top')} face ({why})"))
     hot = {ld["ref"] for ld in dcp.loads if bd.part_kind.get(ld["ref"], ("",))[0] != "connector"}
+    hot |= {sl["ref"] for sl in getattr(dcp, "self_loads", [])}
     for f in dcp.feeds.values():
         hot |= {f["cell"]["ctrl"], f["cell"]["rect"]} if f["kind"] == "cell" else ({f["ref"]} if f["kind"] in ("linear", "switching") else set())
     for ref in sorted(r for r in hot if r):
@@ -158,20 +160,23 @@ def part_heat(bd, dcp, cv, val, inj, ac_parts=None, losses=None):
     for ld, x in zip(dcp.loads, xs):
         pk = bd.part_kind.get(ld["ref"], ("", None))
         if pk[0] != "connector" and (pk[1] if len(pk) > 1 else None) not in PASS_ON:
-            add(ld["ref"], x * (dcp.volts.get(ld["rail"]) or 0.0), loss=False)
+            # a rail of unknown voltage at the DC band's 3.3 V (kae.excite.dc.observe): at 0 V its loads made no heat
+            add(ld["ref"], x * (dcp.volts.get(ld["rail"]) or 3.3), loss=False)
+    for sl in getattr(dcp, "self_loads", []):
+        # a part powered from off the board (its own USB): its own draw at its rail's voltage, all heat
+        add(sl["ref"], cv.get(sl["key"], 0.0) * (dcp.volts.get(sl["rail"]) or 3.3), loss=False)
     for r, f in dcp.feeds.items():
         if f["kind"] == "cell":
             c = f["cell"]
             v = cv.get(c["src"]) or {}
             IL, D, V = v.get("I_A", 1.0), min(max(v.get("D", 0.5), 0.02), 0.98), v.get("V_V", dcp.volts.get(r) or 5.0)
-            I_out = IL * (1 - D) if c["cls"] == "boost" else IL
             ron = val.get((f"heat:{c['ctrl']}", "R_on_ohm"), R_ON[1])
             # the switch conducts I_L for D; with no rectifier part the synchronous one inside the
             # controller conducts it for the rest (1 - D), as the DC flow injects it (kae.excite.dc)
             cond = IL ** 2 * ron * (D if c["rect"] else 1.0)
             add(c["ctrl"], cond + V * IL * (v.get("t_i_s", 3e-9) + v.get("t_v_s", 1e-9)) * v.get("f_sw_Hz", 1e6))
             if c["rect"]:
-                add(c["rect"], val.get((f"heat:{c['rect']}", "V_f_V"), V_F[1]) * (I_out if c["cls"] == "boost" else IL * (1 - D)))
+                add(c["rect"], val.get((f"heat:{c['rect']}", "V_f_V"), V_F[1]) * CV.rectifier_current(c.get("top") or c["cls"], IL, D))
             continue
         I_out = sum(inj.get(q, 0.0) for q in f.get("out") or [])
         if I_out <= 0:
@@ -353,7 +358,7 @@ def evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, tot, 
                     continue
                 if demand > 0:
                     D = min(max(cv[s.name].get("D", 0.5), 0.02), 0.98)
-                    il = demand / (1 - D) if cell["cls"] == "boost" else demand
+                    il = CV.inductor_from_output(cell.get("top") or cell["cls"], demand, D)
                 else:
                     pi = next((p for p in (P.get(s.name) or {}).values() if getattr(p, "name", "") == "I_A"), None)
                     il = pi.lo if pi is not None else il0
@@ -367,9 +372,13 @@ def evaluate(bm, b, bd, dcp, P, net_dc, op_dc, cps, srcs, n_corners, seed, tot, 
     injs = [{q: a for q, a in DC.injections(dcp, cv).items() if q in m.terminals} for cv in cvs]
     from .evaluate import _solver_line, _solver_row
     t_band = time.time()
-    res = ES.potentials_many(m, injs, 0.0, net=net_dc, op=op_dc, light=True,
-                             system=system.pop("sys", None) if isinstance(system, dict) else system)
-    log("solver: " + _solver_line(_solver_row(0.0, res, time.time() - t_band, band="heat")))
+    if any(injs):
+        res = ES.potentials_many(m, injs, 0.0, net=net_dc, op=op_dc, light=True,
+                                 system=system.pop("sys", None) if isinstance(system, dict) else system)
+        log("solver: " + _solver_line(_solver_row(0.0, res, time.time() - t_band, band="heat")))
+    else:
+        # no DC flow in the copper (only self-powered parts dissipate): no copper heat, nothing to factor
+        res = [({}, dict(net=net_dc, x=np.zeros(net_dc.n_br)))] * len(injs)
     if any(V is None for V, _ in res):
         notes.append("thermal: the DC flow does not close in the copper; temperatures not computed")
         return []

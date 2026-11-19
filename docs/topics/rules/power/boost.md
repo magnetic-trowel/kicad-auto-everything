@@ -21,6 +21,7 @@ Keys: boost, COUT_HF, output cap hot loop, rectifier, sync FET, SLVA773, SNVA731
 - Topology: inductor between input rail and SW + diode or sync FET from SW to output → boost. COUT_HF = smallest-package cap on VOUT/PGND.
 - Hot-loop polygon {SW pin / LS FET, rectifier, COUT_HF, PGND}: COUT_HF on the IC layer hard (integrated converters); vias/plane scored by the loop-inductance estimate ([hot-loops.md](hot-loops.md)); soft area score.
 - Boost LED drivers use the SW–D–COUT loop ([led-drivers.md](led-drivers.md)).
+- Evaluator and router: the cell's switch sits SW→PGND and its rectifier SW→VOUT (`kae.circuit.structures`, `kae.excite.sources._cell`), so the solve closes the loop through COUT; the loop carries the input current I_out·V_out/(V_in·η) at D = 1 − V_in·η/V_out, not I_out → [converter-currents](../../physics/converter-currents.md#1-equations-ccm-steady-state).
 
 ## Open questions
 - SEPIC/Ćuk loop membership is inference only ([buck-boost-sepic.md](buck-boost-sepic.md)).

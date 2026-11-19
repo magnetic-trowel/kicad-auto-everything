@@ -19,8 +19,11 @@ from . import sections as SE
 
 def _brief(ev):
     from kae.board.kicad_file import load
+    from kae.board import pinfacts as PF
     from kae.circuit import brief as B
-    return B.build(load(ev["board"]))
+    b = load(ev["board"])
+    PF.apply(b, ev.get("pins"))         # the pin facts the evaluator used (operating facts `pins`)
+    return B.build(b)
 
 
 def catalog(ev, brief):
@@ -72,6 +75,13 @@ def text(st, detailed=False):
             ref = f" (reference {u['reference']}, x{u['ratio']:g})" if u.get("reference") else ""
             out.append(f"    {u['obs']:16s} {u['worst']:>12s}{ref}  {u['label']}"
                        + (f"  IMPLAUSIBLE: {u['implausible']}" if u.get("implausible") else ""))
+    if st.get("cells"):
+        from kae.excite.hotloop import summary
+        for line in summary(st["cells"]):
+            out.append(f"  cell {line}")
+    for oc in st.get("open_cells") or []:
+        out.append(f"  OPEN hot loop {oc['source']}: priced at its caps in {', '.join(oc['priced']) or '(no term)'}: "
+                   f"{oc['why']}")
     for im in st.get("implausible") or []:
         out.append(f"  priced at its cap ({im['capped_at']:.3g} V): {im['label']}: {im['why']}")
     for q in st["questions"][: (99 if detailed else 4)]:

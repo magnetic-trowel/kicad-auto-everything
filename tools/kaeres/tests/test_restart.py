@@ -206,7 +206,8 @@ def test_judge_reports_unconnected_items_a_project_ignores(tmp_path):
 
 def test_final_pass_runs_last_mile_then_finish(tmp_path):
     """--final then --finish: the last mile's board is judged (its drc.json is the finish's @DRC@),
-    the finish runs on the board kept and replaces it when no worse; both times are reserved."""
+    the finish runs on the board kept and replaces it when no worse; only the last mile's time is
+    reserved, the finish runs in what is left."""
     finish = ("test -s @DRC@ && grep -q OPEN=0 @BEST@ && test @DRC_S@ && "
               "sed 's/OPEN=0/OPEN=0 finished/' @BEST@ > @OUT@ && "
               "echo '{\"parts\": {\"ran\": [\"tails\", \"taut\"], \"skipped\": {\"power\": \"time\"}}, \"drc_runs\": 1}'")
@@ -220,9 +221,66 @@ def test_final_pass_runs_last_mile_then_finish(tmp_path):
     assert fin["kept"] and fz["kept"] and fz["resumed_from"] == "final"
     assert "finished" in out.read_text()
     assert summary["finish"]["parts"]["skipped"] == {"power": "time"} and summary["finish"]["drc_runs"] == 1
-    # reserved from the start: the last mile's 20 s and the finish's 20 s, each with a judgement and 10 s
-    assert summary["attempt_log"][0]["budget"] <= 300 - 2 * (20 + 10) - 30
+    # reserved from the start: the last mile's 20 s with a judgement and 10 s; nothing for the finish
+    b0 = summary["attempt_log"][0]["budget"]
+    assert 300 - 75 - (20 + 10) - 15 <= b0 <= 300 - 75 - (20 + 10)
     assert fin["budget"] >= 20 and fz["budget"] >= 20
+
+
+def test_attempts_defer_their_own_finish_to_the_wrapper(tmp_path):
+    """With --finish, attempts get KAE_FINISH_KEPT=1 (kae.route.cli route then skips its own finish)."""
+    r, out, summary = _run(tmp_path, "echo \"(kicad_pcb OPEN=0 K=$KAE_FINISH_KEPT)\" > @OUT@", "",
+                           extra=["--finish", "exit 3"])
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "K=1" in out.read_text()
+    (tmp_path / "nofinish").mkdir()
+    r2, out2, _ = _run(tmp_path / "nofinish", "echo \"(kicad_pcb OPEN=0 K=$KAE_FINISH_KEPT)\" > @OUT@", "")
+    assert "K=)" in out2.read_text()
+
+
+def test_clear_runs_once_on_the_kept_board_with_its_own_allowance(tmp_path):
+    """With --clear, attempts and the final pass get KAE_CLEAR_KEPT=1, and the clear pass runs once on the kept
+    board after --final, with --clear-s as its @TIME@ (not the time routing left); its board is kept when no worse,
+    and its wall time is recorded on its own."""
+    r, out, summary = _run(tmp_path, "echo \"(kicad_pcb OPEN=2 C=$KAE_CLEAR_KEPT)\" > @OUT@",
+                           "echo \"(kicad_pcb OPEN=1 C=$KAE_CLEAR_KEPT)\" > @OUT@",
+                           extra=["--clear", "echo \"(kicad_pcb OPEN=1 cleared time=@TIME@ C=$KAE_CLEAR_KEPT)\" > @OUT@",
+                                  "--clear-s", "77"])
+    assert r.returncode == 0, r.stdout + r.stderr
+    text = out.read_text()
+    assert "cleared time=77 C=)" in text, text
+    kinds = [d["k"] for d in summary["attempt_log"]]
+    assert kinds[-2:] == ["final", "clear"], kinds
+    assert summary["clear_kept"] is True and summary["clear_wall_s"] is not None
+    attempt0 = (tmp_path / "work" / "restarts")
+    assert any("C=1" in p.read_text() for p in attempt0.glob("*/board.kicad_pcb")), "attempts must defer clearing"
+
+
+def test_finish_skipped_when_routing_left_too_little_time(tmp_path):
+    """No reserve: a finish that would get less than FINISH_RUN_MIN_S is skipped, with a hazard."""
+    import time as _t
+    import types
+    a = types.SimpleNamespace(finish="true", finish_s=20.0, time=100.0)
+    best = dict(k="final", rank=(0, 0, 3, 0, 0))
+    fz = restart.finish_pass(a, best, tmp_path / "in.kicad_pcb", {}, tmp_path, _t.monotonic() + 25.0, 5.0,
+                             None, None, None)
+    assert fz["skipped"].startswith("time:") and not fz["kept"] and fz["estimate_s"] == 20
+    hz = restart.finish_hazards(fz)
+    assert [h["code"] for h in hz] == ["finish_part_skipped"]
+    rep = tmp_path / "report.json"
+    rep.write_text(json.dumps(dict(hazards=[], hazard_summary=dict(info=0, total=0, shown=0))))
+    restart.add_hazards(rep, hz)
+    got = json.loads(rep.read_text())
+    assert got["hazards"][0]["code"] == "finish_part_skipped" and got["hazard_summary"]["info"] == 1
+
+
+def test_finish_killed_or_failed_is_a_hazard():
+    hz = restart.finish_hazards(dict(k="finish", killed=True, rc=-9, budget=100, wall_s=105, kept=False,
+                                     hazards=[dict(code="finish_part_skipped", severity="info"),
+                                              dict(code="drc_clearance", severity="warn")]))
+    assert [h["code"] for h in hz] == ["finish_failed", "finish_part_skipped"]
+    kept = restart.finish_hazards(dict(k="finish", rc=0, kept=True, hazards=[dict(code="drc_clearance")]))
+    assert [h["code"] for h in kept] == ["drc_clearance"]
 
 
 def test_finish_runs_on_a_clean_board_and_is_not_kept_when_worse(tmp_path):
@@ -322,6 +380,51 @@ def test_a_kept_fresh_attempt_has_no_origin_report(tmp_path):
     assert not (wd / "report-origin.json").exists()
 
 
+# ------------------------------------------------------------------ choose-better portfolio (--alt-env)
+# each arm writes its board with a marker of its setting; the tie-break scores it (arm B's loop is the better)
+ARM_ATTEMPT = "echo \"(kicad_pcb OPEN=${OPENS:-0} arm=${HL:-A})\" > @OUT@"
+TIEBREAK = ("python3 -c \"import json,sys; b=open(sys.argv[1]).read(); "
+            "json.dump(dict(score=1.0 if 'arm=B' in b else 2.0), open(sys.argv[2], 'w'))\" @BOARD@ @OUT@")
+
+
+def test_choose_better_keeps_the_arm_with_the_better_quote_among_equal_ranks(tmp_path):
+    r, out, summary = _run(tmp_path, ARM_ATTEMPT, "", extra=[
+        "--parallel", "2", "--max-attempts", "2", "--alt-env", "HL=B", "--tiebreak", TIEBREAK])
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "arm=B" in out.read_text()
+    cb = summary["choose_better"]
+    assert cb["kept_arm"] == "B" and cb["alt_env"] == {"HL": "B"}
+    assert [d["arm"] for d in summary["attempt_log"]] == ["A", "B"]
+    (t,) = cb["ties"]
+    assert t["rank"] == [0, 0, 0, 0, 0] and t["switched"] == (t["kept_arm"] == "A")
+
+
+def test_choose_better_never_trades_rank_for_the_quote(tmp_path):
+    """Arm B's quote is better but its board leaves a connection open: KiCad's rank decides."""
+    r, out, summary = _run(tmp_path, ARM_ATTEMPT, "", extra=[
+        "--parallel", "2", "--max-attempts", "2", "--alt-env", "HL=B OPENS=1", "--tiebreak", TIEBREAK])
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "arm=A" in out.read_text() and summary["choose_better"]["kept_arm"] == "A"
+    assert summary["choose_better"]["ties"] == []
+
+
+def test_the_final_pass_runs_with_the_kept_boards_arm(tmp_path):
+    """Arm A leaves 3 connections open, arm B 1: B is kept and its final pass runs with B's setting."""
+    r, out, summary = _run(tmp_path, "echo \"(kicad_pcb OPEN=${OPENS:-3} arm=${HL:-A})\" > @OUT@",
+                           "echo \"(kicad_pcb OPEN=0 final=${HL:-A})\" > @OUT@", extra=[
+                               "--parallel", "2", "--max-attempts", "2", "--alt-env", "HL=B OPENS=1"])
+    assert r.returncode == 0, r.stdout + r.stderr
+    fin = summary["attempt_log"][-1]
+    assert fin["k"] == "final" and fin["arm"] == "B" and "final=B" in out.read_text()
+
+
+def test_choose_better_keeps_arm_a_when_the_tiebreak_cannot_decide(tmp_path):
+    """Arm B's board cannot be scored (the command writes no score): arm A, the method as given, is kept."""
+    none = "python3 -c \"import json,sys; json.dump(dict(score=None), open(sys.argv[1], 'w'))\" @OUT@"
+    r, out, summary = _run(tmp_path, ARM_ATTEMPT, "", extra=[
+        "--parallel", "2", "--max-attempts", "2", "--alt-env", "HL=B", "--tiebreak", none])
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "arm=A" in out.read_text() and summary["choose_better"]["kept_arm"] == "A"
 def test_work_mode_gives_the_finish_its_finish_s(tmp_path, monkeypatch):
     """KAE_BUDGET=work: the passes get --final-s / --finish-s of nominal work when given (a 70/30 split of
     restarts and finish), else their fixed shares of --time; the attempts' plan is what is left."""

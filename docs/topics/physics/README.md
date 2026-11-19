@@ -95,6 +95,8 @@ Thesis in one line: a circuit is Maxwell at zeroth order; layout adds correction
 | [physics-critics](physics-critics.md) | what DRC cannot see, suite architecture, scorecard, mutation benchmark, prototype | scorecard, BPM, pc_refplane |
 | [physics-critics-catalog](physics-critics-catalog.md) | 41 critic definitions | RET-COV, HOTLOOP-L, CM-V … |
 | [physics-critics-validation](physics-critics-validation.md) | calibration, planted faults, gaming guards per critic | equivalent mutant, Ott slot fit |
+| [hot-loop-evaluation](hot-loop-evaluation.md) | how the evaluator measures a switching cell's hot loop: open cells at their caps, the per-cell window solve (L_loop, R_loop, overshoot), cap bodies left out | open cell, L_loop, R_loop, CELL_PITCH |
+| [converter-currents](converter-currents.md) | a converter's switch, inductor, input and ripple currents and duty by topology (buck, boost, inverting, 4-switch by region, SEPIC), with sources; where kae uses each | I_sw, I_in, D, ΔI, kae.physics.converter |
 | [functional-evaluation](functional-evaluation.md) | whether a board works: ideal vs routed testbenches (`kae.sim`) | capability, verdicts, rail_dc |
 | [verification-and-limits](verification-and-limits.md) | claims checked by independent methods, scopes, steelman of rules, falsification | PEECN filaments, steelman |
 | [validation-program](validation-program.md) | VOI-ranked measurement plan, VAL-1, floor census, kill criteria | VAL-1, EVPI, kill criteria |

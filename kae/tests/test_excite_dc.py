@@ -196,6 +196,33 @@ def test_copper_loss_budget_and_drop_share_the_unknown_rail_fallback():
     assert HA.phi(-0.5) == 0.0 and HA.phi(0.5) == 0.5
 
 
+def test_a_ground_shift_is_no_negative_drop():
+    """A load whose ground sits below its source's (here: another rail's return current lifts the LDO's ground pin)
+    sees more than the source's voltage. Its drop.rail is 0, never negative, and the signed rail plus ground
+    difference stays readable in drops_signed. A real drop is unchanged."""
+    from types import SimpleNamespace
+
+    import numpy as np
+    pl = _plan()
+    pl.loss_share, pl.drop_share, pl.dT_max = DC.LOSS_SHARE, DC.DROP_SHARE, DC.DT_MAX
+    cv = {("dc:U2", "I_A"): 0.2, "cell:c": {"I_A": 1.0, "D": 0.6}}
+    info = dict(net=SimpleNamespace(off={"l": 0}, n_br=0), x=np.zeros(0), sys=SimpleNamespace(zdiag=np.zeros(0)))
+    # 3V3: 1 mV lost along the rail, the LDO's ground 4 mV above the load's: signed -3 mV
+    V = {t: 0.0 for t in DC.injections(pl, cv)}
+    V.update({"U1.2": 3.300, "U2.1": 3.299, "U1.3": 0.004, "U2.2": 0.0})
+    ob = DC.observe(pl, cv, V, info)
+    d = {(r, rl): (u, dv) for r, rl, u, dv, _ in ob["drops"]}
+    sd = {(r, rl): dv for r, rl, dv in ob["drops_signed"]}
+    assert d[("U2", "3V3")] == (0.0, 0.0)
+    assert sd[("U2", "3V3")] == pytest.approx(-0.003)
+    # the same rail with the load's ground 2 mV above the LDO's: a 3 mV drop, as before
+    V.update({"U1.3": 0.0, "U2.2": 0.002})
+    ob = DC.observe(pl, cv, V, info)
+    (u, dv), = [(u, dv) for r, rl, u, dv, _ in ob["drops"] if r == "U2"]
+    assert dv == pytest.approx(0.003) and u == pytest.approx(0.003 / (DC.DROP_SHARE * 3.3))
+    assert [x for x in ob["drops_signed"] if x[0] == "U2"][0][2] == pytest.approx(0.003)
+
+
 def test_dc_currents_left_out_of_the_copper_void_the_score():
     """Load and source currents at pads outside the copper model were dropped with a note while the
     total stayed 'complete'; that note now voids the DC band (evaluate/wideband mark it uncomputed)."""

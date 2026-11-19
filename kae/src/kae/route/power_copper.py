@@ -80,6 +80,15 @@ DEFAULTS = dict(
     neck=True,                # necks at the pads of small two-terminal parts (tombstoning; see neck_rule):
                               # within neck_len of such a pad, grown copper is at most the neck width
     neck_len=0.5,             # mm from the pad edge
+    tht_loss_frac=0.002,      # the necks at THT pads of a net together add at most this share of the net's routed
+                              # copper loss under the DC plan (the evaluator's noise floor is ~0.6 %); a pad whose
+                              # neck would need to be wider than a relief's webs keeps its copper (tht_pad_kept_wide)
+    tht_heat_dK=20.0,         # K: THT pads where a hot part holds the board this far above ambient (fin model) are on
+                              # its heat path and keep their copper (tht_pad_kept_wide)
+    tht_heat_fill=0.5,        # copper fill per layer of that fin model
+    tht_gap=0.25,             # mm: grown copper of a track that passes a necked THT pad of its net (does not end in
+                              # it) keeps this gap from the pad, a relief's gap (IPC-2222 9.1.2 air gap); the run
+                              # is not necked
     neck_via="own",           # ground via at a necked land: "own" (its own pad-to-via track, no wider than the
                               # neck, via edge >= neck_via_gap from the land: IPC-7351's "narrow conductor between
                               # the land area and the via") or "track" (on the land's routed track, neck_len away,
@@ -194,14 +203,35 @@ def process_of(assembly):
     return "reflow"
 
 
-def neck_rule(land_w, process, series_current_a=0.0, margin=DEFAULTS["current_margin"]):
+# Plated through-hole pads (tht=True in neck_rule): wide copper into a THT pad drains the heat a wave,
+# a selective nozzle or an iron must bring to fill the barrel; that is what thermal reliefs are for
+# (hv-and-manufacturing-physics: "reliefs remain physics for hand and wave soldering of THT pins";
+# derivation-audit D7: a relief cuts the joint's drain 1.8-4.2x). IPC-2222 9.1.2 sizes a relief's webs
+# together at 60 % of the land diameter: the widest copper a relieved THT land is joined by. The rule
+# holds whatever the board's declared process: THT parts on a reflow board are still wave, selective or
+# hand soldered unless they are pin-in-paste.
+THT_RELIEF_FRAC = 0.6
+THT_NECK_MIN = 1e-3     # mm: a THT neck with no current to carry; the routed track (never narrowed) is the floor
+
+
+def neck_rule(land_w, process, series_current_a=0.0, margin=DEFAULTS["current_margin"], tht=False):
     """Width (mm) grown copper may have within neck_len of a two-terminal part's land, or None (no
     limit). The neck is the land class's NECK_TABLE width for the process, never below what the
     part's own series current needs (IPC-2221 at margin x I): a fuse, ferrite or shunt in a rail
     keeps its width. A part to ground (a decap) carries no DC and is necked. A class the process does
-    not neck (1206 and up in reflow, every class in wave) is capped at its land width."""
-    w = NECK_TABLE.get(process, NECK_TABLE["reflow"]).get(pkg_class(land_w))
+    not neck (1206 and up in reflow, every class in wave) is capped at its land width.
+
+    tht: a plated through-hole pad (land_w: its short side, the diameter of a round pad), whose
+    current is series_current_a. The neck is the width that current needs and nothing more: grown
+    copper stays at the routed track's width (power copper never narrows a track) or the current's
+    width, whichever is wider. None when the current needs more than a relief's webs give
+    (THT_RELIEF_FRAC x land_w): the copper keeps its width (tht_pad_heatsunk)."""
     need = current_need(series_current_a, margin)
+    if tht:
+        if need > THT_RELIEF_FRAC * land_w:
+            return None
+        return max(need, THT_NECK_MIN)
+    w = NECK_TABLE.get(process, NECK_TABLE["reflow"]).get(pkg_class(land_w))
     if need >= land_w:
         return None           # the current needs more than the land: no neck (land_enlarged_by_track)
     if w is None:
@@ -217,13 +247,27 @@ def current_need(current_a, margin=DEFAULTS["current_margin"]):
     return ipc_width(margin * current_a) if current_a else 0.0
 
 
-def land_necks(lands, power, ground, current, process, margin=DEFAULTS["current_margin"]):
+def land_necks(lands, power, ground, current, process, margin=DEFAULTS["current_margin"], tht_current=None):
     """The neck rule over a board's parts: ({key: neck width}, {key: series current A}) for the
     lands of two-terminal SMD parts. `lands`: {part: [(key, smd, net, land width)]}, one entry per
     copper pad; `current`: {net: A} (net_currents). A part with no ground pad and a power pad is in
     series with a rail (fuse, ferrite, shunt, jumper) and carries the rail's current; a land whose
-    neck_rule is None (a series current that needs more than the land) gets no neck. The one implementation PowerCopper._necks and constraints.plan both use."""
+    neck_rule is None (a series current that needs more than the land) gets no neck. The one implementation PowerCopper._necks and constraints.plan both use.
+
+    tht_current: {key: A} for the plated through-hole pads to neck (neck_rule tht=True; the caller
+    leaves out the pads the rule does not apply to: unsoldered, hot or heat-sunk parts, pads joined to
+    a zone, pads kept wide by the tht_wide setting). Their current goes into the second dict too, so a
+    key there with no neck is a pad whose current needs more than a relief (tht_pad_heatsunk)."""
     necks, series_a = {}, {}
+    tht_w = {k: w for cu in lands.values() for k, smd, _n, w in cu if not smd} if tht_current else {}
+    for key, amps in (tht_current or {}).items():
+        land_w = tht_w.get(key)
+        if land_w is None:
+            continue
+        series_a[key] = amps
+        w = neck_rule(land_w, process, amps, margin, tht=True)
+        if w is not None:
+            necks[key] = w
     for _part, cu in lands.items():
         if len(cu) != 2 or not all(smd for _k, smd, _n, _w in cu):
             continue
@@ -237,6 +281,172 @@ def land_necks(lands, power, ground, current, process, margin=DEFAULTS["current_
             if w is not None:
                 necks[key] = w
     return necks, series_a
+
+
+UNSOLDERED_KINDS = ("mounting_hole", "heatsink", "mechanical", "fiducial")
+
+
+def tht_wide_set(v):
+    """The tht_wide setting as a set of refs and ref.pad names: a list, or a string split at commas,
+    semicolons or spaces ("J1, J3.2")."""
+    items = v if isinstance(v, (list, tuple, set)) else re.split(r"[,;\s]+", str(v or ""))
+    return {str(x).strip() for x in items if str(x).strip()}
+
+
+def tht_exempt(ref, number, kind, attrs, hot, zone_joined, wide):
+    """Why the THT neck leaves a plated pad alone, or None when it applies (PowerCopper._tht_pads has
+    each reason's case): "tht_wide", "unsoldered", "hot" or "zone"."""
+    if ref and (ref in wide or f"{ref}.{number}" in wide):
+        return "tht_wide"
+    if kind in UNSOLDERED_KINDS or "board_only" in set(attrs or ()):
+        return "unsoldered"
+    if ref in hot:
+        return "hot"
+    if zone_joined:
+        return "zone"
+    return None
+
+
+def branch_currents(net, tracks, vias, pads, fills, inj, link=1e6, stats=None):
+    """{pad token: A}: the largest current in a track that enters (or runs through) each pad of `net`, from a resistive solve
+    of the net's routed copper under the injections `inj` ({"REF.NUM": A}, kae.excite.dc.planned_injections).
+    Tracks are conductances w/L; pads, vias and fill pieces (`fills`: {layer: [polygons]}) join what touches
+    them at `link`. Each connected piece is balanced (a piece whose loads' source is off it, or unrouted,
+    shares the imbalance over its injected pads). `pads`: [(token, geometry, layers)]. A pad a current
+    flows through (a chain of headers or LEDs) carries the current of what is beyond it, not its own."""
+    import scipy.sparse as SP
+    import scipy.sparse.linalg as SPL
+    from scipy.sparse.csgraph import connected_components
+    from shapely.strtree import STRtree
+    nodes, edges, ends = {}, [], []
+
+    def node(k):
+        return nodes.setdefault(k, len(nodes))
+    pads = list(pads)
+    ptree = STRtree([g for _t, g, _l in pads]) if pads else None
+    mine = [t for t in tracks if t.net == net]
+    lines = [LineString([t.start, t.end]) for t in mine]
+    ltree = STRtree(lines) if lines else None
+    # T-junctions: a track ending on another's run (not at its ends) joins it there
+    tees, of_track = {}, {}
+    for t in mine:
+        for xy in (t.start, t.end):
+            q = Point(xy)
+            for j in ltree.query(q.buffer(max(t.width, 1e-3) / 2), predicate="intersects"):
+                u = mine[j]
+                if u is t or u.layer != t.layer or math.dist(xy, u.start) < 1e-3 or math.dist(xy, u.end) < 1e-3:
+                    continue
+                if lines[j].distance(q) <= u.width / 2 + 1e-6:
+                    tees.setdefault(j, []).append((lines[j].project(q), ("e", t.layer, round(xy[0], 3), round(xy[1], 3))))
+    for ti, t in enumerate(mine):
+        a = node(("e", t.layer, round(t.start[0], 3), round(t.start[1], 3)))
+        b = node(("e", t.layer, round(t.end[0], 3), round(t.end[1], 3)))
+        ends += [(t.layer, t.start, a), (t.layer, t.end, b)]
+        L = math.dist(t.start, t.end)
+        # pads the track runs through without ending in them (a bus through a row of pins): a node there
+        cuts = []
+        if ptree is not None and L > 1e-6:
+            line = LineString([t.start, t.end])
+            for j in ptree.query(line, predicate="intersects"):
+                tok, g, lys = pads[j]
+                if lys and t.layer not in set(lys):
+                    continue
+                gb = g.buffer(1e-3)
+                if gb.contains(Point(t.start)) or gb.contains(Point(t.end)):
+                    continue
+                cuts.append((line.project(g.centroid), tok))
+        seq = sorted([(x, node(("c", tok, id(t)))) for x, tok in cuts] + [(x, node(k)) for x, k in tees.get(ti, ())])
+        seq = [(0.0, a)] + seq + [(L, b)]
+        for (x0, n0), (x1, n1) in zip(seq, seq[1:]):
+            if n0 != n1:
+                of_track[len(edges)] = ti
+                edges.append((n0, n1, t.width / max(x1 - x0, 1e-3), "track"))
+        for x, tok in cuts:
+            edges.append((node(("p", tok)), node(("c", tok, id(t))), link, tok))
+    if not ends:
+        return {}
+    tree = STRtree(shapely.points([e[1] for e in ends]))
+
+    def attach(geom, layers, k, tag=None):
+        done = set()
+        for i in tree.query(geom, predicate="intersects"):
+            if (layers is None or ends[i][0] in layers) and ends[i][2] not in done:
+                done.add(ends[i][2])
+                edges.append((k, ends[i][2], link, tag))
+    pad_nodes = []
+    for tok, g, layers in pads:
+        k = node(("p", tok))
+        pad_nodes.append((tok, g, set(layers or ()), k))
+        attach(g.buffer(1e-3), set(layers or ()), k, tok)
+    via_nodes = []
+    for v in vias:
+        if v.net != net:
+            continue
+        k = node(("v", v.uuid or (v.x, v.y)))
+        g = Point(v.x, v.y).buffer(v.size / 2)
+        via_nodes.append((g, k))
+        attach(g, None if (v.type or "through") == "through" else set(v.layers or ()), k)
+    for layer, geoms in (fills or {}).items():
+        for i, fg in enumerate(geoms or ()):
+            k = node(("f", layer, i))
+            attach(fg, {layer}, k)
+            for _tok, g, lys, pk in pad_nodes:
+                if layer in lys and fg.intersects(g):
+                    edges.append((k, pk, link, None))
+            for g, vk in via_nodes:
+                if fg.intersects(g):
+                    edges.append((k, vk, link, None))
+    n = len(nodes)
+    I = np.array([e[0] for e in edges]); J = np.array([e[1] for e in edges]); G = np.array([e[2] for e in edges])
+    L = SP.coo_matrix((np.r_[-G, -G, G, G], (np.r_[I, J, I, J], np.r_[J, I, I, J])), shape=(n, n)).tocsc()
+    b = np.zeros(n)
+    for tok, _g, _l, k in pad_nodes:
+        b[k] = inj.get(tok, 0.0)
+    _nc, comp = connected_components(L, directed=False)
+    for c in set(comp[b != 0]):
+        m = (comp == c) & (b != 0)
+        b[m] -= b[comp == c].sum() / m.sum()
+    V = SPL.spsolve(L + SP.identity(n, format="csc") * 1e-9, b)
+    at = {}                     # track end node -> the pads it lies in
+    for a, k, g, tag in edges:
+        if tag not in (None, "track"):
+            at.setdefault(k, set()).add(tag)
+    out, n_in, loss = {}, {}, 0.0
+    t_i = {}
+    for e, (a, k, g, tag) in enumerate(edges):
+        if tag == "track":
+            i = abs(g * (V[a] - V[k]))
+            loss += g * (V[a] - V[k]) ** 2
+            t_i[of_track[e]] = max(t_i.get(of_track[e], 0.0), i)
+            for tok in at.get(a, set()) | at.get(k, set()):
+                out[tok] = max(out.get(tok, 0.0), i)
+                n_in[tok] = n_in.get(tok, 0) + 1
+    if stats is not None:
+        # loss_sq: the tracks' I^2 R in units of the sheet resistance (squares); entries: tracks into each pad
+        stats["loss_sq"] = stats.get("loss_sq", 0.0) + float(loss)
+        stats.setdefault("entries", {}).update(n_in)
+        # each track's current (for the pads that grown copper of a loaded track would reach)
+        stats["track_i"] = stats.get("track_i", []) + [(lines[ti], i) for ti, i in t_i.items() if i > 0]
+    return out
+
+
+def _tht_narrow_fix(ref):
+    """The fix text of tht_pad_kept_wide: which setting necks the pins anyway."""
+    who = f"'{ref}'" if ref else "the connectors"
+    return (f"If {who} carries little current (a signal header, a programming port) and is wave or hand soldered, add it "
+            f"to the project text variable KAE_THT_NARROW (comma-separated refs or ref.pad), or opts tht_narrow, to neck "
+            f"its pins; or give the operating facts the rail's loads.")
+
+
+def _tht_fix(ref, pad):
+    """The fix text of tht_pad_necked: which setting keeps the copper wide."""
+    if ref:
+        what = f"'{ref}' (all its pads)" + (f" or '{pad}' (this pad)" if pad else "")
+        return (f"If this copper must stay wide (a heat path, selective soldering, preheat): add {what} to the "
+                f"project text variable KAE_THT_WIDE (comma-separated refs or ref.pad), or opts tht_wide; "
+                f"KAE_THT_NECK=off (project, opts tht_neck or env) turns the THT neck off board-wide.")
+    return ("Name parts or pads to keep wide in the project text variable KAE_THT_WIDE (comma-separated refs or "
+            "ref.pad), or opts tht_wide; KAE_THT_NECK=off (project, opts tht_neck or env) turns it off board-wide.")
 
 
 def pad_currents(operating, pads, power, ground):
@@ -560,7 +770,18 @@ class PowerCopper:
         asm = ((op or {}).get("requirements") or {}).get("assembly") or {}
         self.hand_solder = bool(asm.get("hand_solder_ok")) or asm.get("process") == "hand"
         self.process = process_of(asm)
+        self.op = op
         self.caps = {}
+        self.tht_necks = {}       # {id(pad Item): width} for plated THT pads (neck_rule tht=True)
+        self.tht_necked = {}      # {id(pad Item): planned widths} where the THT neck bound (tht_pad_necked)
+        self.tht_skipped = {}     # {reason: n} THT power/ground pads the rule leaves alone
+        self.tht_amps, self._tht_geom = {}, {}
+        self.tht_unknown = []     # THT pads left wide: no DC plan (connectors) or a neck over the loss budget
+        self.tht_unknown_why = {} # {id(pad): (A, width the loss budget asks)} for the latter
+        self.tht_unknown_heat = {}  # {id(pad): (hot part, W, radius mm)} for pads on a hot part's heat path
+        self.tht_heat = {}        # {ref: W} linear regulators' dissipation from the DC plan
+        self.tht_plan = 0         # injections in the DC plan the THT currents came from (0: none)
+        self._entering = None     # ids of the THT pads the track being widened enters (None: not widening a track)
         self.necks = self._necks() if self.o.get("neck", True) else {}
         za = self.o.get("zone_above_a")
         self.zone_nets = ({n for n in self.power | self.ground if self.current.get(n, 0.0) > float(za)}
@@ -606,9 +827,17 @@ class PowerCopper:
                 if id(it) in seen or it in ignore:
                     continue
                 seen.add(id(it))
-                if l == layer and it.kind == "pad" and it.net == net and (id(it) in self.necks or id(it) in self.caps):
+                if l == layer and it.kind == "pad" and it.net == net and id(it) in self.tht_necks \
+                        and self._entering is not None and self._tht_geom[id(it.geom)] not in self._entering:
+                    # a THT pad this track only passes (it ends elsewhere): no neck along the run; the grown
+                    # copper keeps a relief-like gap from the pad, so the pad's only joint stays its own entries
+                    out.append((it.geom, 0.0, self.o["tht_gap"], 1.0))
+                    continue
+                if l == layer and it.kind == "pad" and it.net == net and (
+                        id(it) in self.necks or id(it) in self.caps or id(it) in self.tht_necks):
                     # necked land: f < 0 carries the neck width (see _allowed_half, _legal)
-                    out.append((it.geom, 0.0, self.o["neck_len"], -self.necks.get(id(it), self.caps.get(id(it)))))
+                    w = self.necks.get(id(it), self.tht_necks.get(id(it), self.caps.get(id(it))))
+                    out.append((it.geom, 0.0, self.o["neck_len"], -w))
                     continue
                 ex = self._extra(it, l, layer)
                 if l == layer:
@@ -704,9 +933,11 @@ class PowerCopper:
             ux, uy = (t.end[0] - t.start[0]) / L, (t.end[1] - t.start[1]) / L
             pts = np.c_[t.start[0] + ux * xs, t.start[1] + uy * xs]
             seg = LineString([t.start, t.end])
+            self._entering = self._entered(t)
             cons = self._constraints(t.net, t.layer, seg, steps[0] / 2 + self.o["victim_gap_max"] + self.o["antenna_gap"]
                                      + sp.max_need, {it})
             half = self._allowed_half(pts, cons, t.net, t.layer, t.width / 2)
+            self._note_tht(pts, cons, half, t, steps)
             ws = [next((w for w in steps if w / 2 <= h), t.width) for h in half]
             rs = runs(ws, xs, t.width, self.o["min_run"])
             if all(w <= t.width + 1e-9 for _, _, w in rs):
@@ -739,7 +970,51 @@ class PowerCopper:
             self.stats["widened"] += 1
             self.stats["widened_mm"] += sum(math.dist(a, b) for a, b, w in merged if w > t.width + 1e-9)
         self.stats["widened_mm"] = round(self.stats["widened_mm"], 2)
+        self._entering = None
         return self.stats["widened"]
+
+    def _entered(self, t):
+        """The THT pads (main pad Items) track t ends in or runs through: the necks that apply to it."""
+        if not self._tht_geom:
+            return set()
+        line = LineString(A.track_coords(t)) if t.mid is not None else LineString([t.start, t.end])
+        out = set()
+        for it in self.sp.query(t.layer, line.bounds, 0.01):
+            if it.kind == "pad" and id(it.geom) in self._tht_geom and it.geom.distance(line) < 1e-3:
+                out.add(self._tht_geom[id(it.geom)])
+        return out
+
+    def _note_tht(self, pts, cons, half, t, steps):
+        """Record, per THT pad whose neck bounds this track's planned width, the width the track
+        would have been planned at without the neck and the width it is planned at (tht_pad_necked)."""
+        if not self.tht_necks or not cons:
+            return
+        th = [c for c in cons if c[3] < 0 and id(c[0]) in self._tht_geom]
+        if not th:
+            return
+        free = self._allowed_half(pts, [c for c in cons if not (c[3] < 0 and id(c[0]) in self._tht_geom)],
+                                  t.net, t.layer, t.width / 2)
+        P = shapely.points(pts)
+
+        def w_of(h):
+            return next((w for w in steps if w / 2 <= h), t.width)
+
+        for g, _r, req, f in th:
+            # the samples within neck_len of the pad, where the neck holds the copper below what it had room for
+            d = shapely.distance(g, P)
+            nh = neck_half(d - TOL, -f, req)
+            bind = (d <= req) & (nh < free - 1e-9) & (half < free - 1e-9)
+            if not bind.any():
+                continue
+            would = max(w_of(h) for h in free[bind])
+            got = max(w_of(h) for h in half[bind])
+            if would <= got + 1e-9:
+                continue
+            p = self._tht_geom[id(g)]
+            rec = self.tht_necked.setdefault(id(p), dict(pad=p, would=0.0, got=0.0, layers=set()))
+            rec["would"] = max(rec["would"], would)
+            rec["got"] = max(rec["got"], got)
+            rec["layers"].add(t.layer)
 
     def _widen_arc(self, t, it, ladder):
         """widen() for an arc track: the same sampling, runs and ladder along its arc length; each
@@ -764,9 +1039,11 @@ class PowerCopper:
         ang = a0 + sw * xs / L
         pts = np.c_[c[0] + rad * np.cos(ang), c[1] + rad * np.sin(ang)]
         geom = LineString(A.track_coords(t))
+        self._entering = self._entered(t)
         cons = self._constraints(t.net, t.layer, geom, steps[0] / 2 + self.o["victim_gap_max"] + self.o["antenna_gap"]
                                  + sp.max_need, {it})
         half = self._allowed_half(pts, cons, t.net, t.layer, t.width / 2)
+        self._note_tht(pts, cons, half, t, steps)
         ws = [next((w for w in steps if w / 2 <= h), t.width) for h in half]
         rs = runs(ws, xs, t.width, self.o["min_run"])
         if all(w <= t.width + 1e-9 for _, _, w in rs):
@@ -812,6 +1089,16 @@ class PowerCopper:
         self.stats["widened"] += 1
         self.stats["widened_arcs"] = self.stats.get("widened_arcs", 0) + 1
         self.stats["widened_mm"] += sum(abs(rad * sw * (x1 - x0) / L) for x0, x1, w in merged if w > t.width + 1e-9)
+
+    def _pour_keepouts(self, layer):
+        """The rule areas on `layer` that forbid copper pours (kae.board.model.Keepout.copperpour), grown by VTOL,
+        as one shape; None when there are none. A rule area on "*.Cu" or "F&B.Cu" covers its layers."""
+        def on(k):
+            ls = k.layers or []
+            return layer in ls or "*.Cu" in ls or ("F&B.Cu" in ls and layer in ("F.Cu", "B.Cu"))
+        shapes = [k.outline for k in getattr(self.board, "keepouts", []) or []
+                  if k.copperpour and on(k) and k.outline is not None and not k.outline.is_empty]
+        return unary_union(shapes).buffer(VTOL) if shapes else None
 
     # ---------------------------------------------------------------- 1b. vector growth
     def grow_vector(self, nets=None, out=None):
@@ -864,10 +1151,18 @@ class PowerCopper:
             if not cand:
                 continue
             claims = self._share_room(cand, layer)
+            no_pour = self._pour_keepouts(layer) if (out or self.o["vector_out"]) == "zones" else None
             for net, c in cand.items():
                 claim = claims.get(net)
                 if claim is None or claim.is_empty:
                     continue
+                if no_pour is not None and claim.intersects(no_pour):
+                    # a zone may not lie in a rule area that forbids copper pours (the router's keep-outs hold
+                    # only the areas that forbid tracks or vias): the piece is clipped to stay out of it. Only a
+                    # piece that meets one is touched, so a board without such an area writes the same copper
+                    claim = claim.difference(no_pour)
+                    if claim.is_empty:
+                        continue
                 w = sp.clamp_width(net, layer, self.o["vector_strip"])
                 seeds, own_fill = c["seeds"], c["fill"]
                 for piece in getattr(claim, "geoms", [claim]):
@@ -1143,7 +1438,9 @@ class PowerCopper:
         lands = {fp: [(id(p), p.smd, p.net, _short_side(p.geom)) for p in pads if p.kind == "pad"]
                  for fp, pads in self.sp.pads_by_fp.items()}
         self.caps = {}
-        necks, series = land_necks(lands, self.power, self.ground, self.current, self.process, self.o["current_margin"])
+        tht_cur = self._tht_pads(lands)
+        necks, series = land_necks(lands, self.power, self.ground, self.current, self.process, self.o["current_margin"],
+                                   tht_current=tht_cur)
         if self.o.get("land_cap", True):
             # every other SMD land (IC pins, parts with alternate pads) gets no grown copper wider than
             # itself within neck_len: a 2.5 mm ground track into a 0.6 mm SOIC pin is a bridge and
@@ -1158,13 +1455,384 @@ class PowerCopper:
             for p in pads:
                 if p.kind == "pad" and id(p) in series and id(p) not in necks:
                     self.unnecked.append((fp, p, series[id(p)]))
+        # plated THT pads: their necks go to tht_necks (ground vias and stitching only see SMD necks); the
+        # barrel copy of a pad on a layer where it has no ring (critical_space) gets its pad's neck
+        self.tht_necks, self.tht_amps = {}, {}
+        self._tht_geom = {}
+        for fp, pads in self.sp.pads_by_fp.items():
+            for p in pads:
+                if id(p) in tht_cur:
+                    self.tht_amps[id(p)] = tht_cur[id(p)]
+                    if id(p) in necks:
+                        self.tht_necks[id(p)] = max(necks.pop(id(p)), getattr(self, "tht_floor", {}).get(id(p), 0.0))
+                        self._tht_geom[id(p.geom)] = p
+        for fp, hbs in getattr(self.sp, "barrels_by_fp", {}).items():
+            for hb in hbs:
+                main = next((p for p in self.sp.pads_by_fp.get(fp, ()) if p.idx == hb.idx and p is not hb), None)
+                if main is not None and id(main) in self.tht_necks:
+                    self.tht_necks[id(hb)] = self.tht_necks[id(main)]
+                    self._tht_geom[id(hb.geom)] = main
         return necks
+
+    def tht_stats(self):
+        """THT pads necked (planned), pads where the neck bound grown copper, pads left alone by reason."""
+        return dict(necked_pads=len({id(p) for p in self._tht_geom.values()}), bound_pads=len(self.tht_necked),
+                    unnecked_for_current=sum(1 for _f, p, _a in getattr(self, "unnecked", []) if not p.smd),
+                    skipped=dict(self.tht_skipped), dc_plan_pads=self.tht_plan)
+
+    def _tht_pads(self, lands):
+        """{id(pad Item): A} for the plated through-hole pads of power and ground nets the THT neck
+        applies to, and self.tht_skipped counts the others by reason. Left alone, each for its reason:
+        - "off": the tht_neck setting is off (board-wide);
+        - "tht_wide": the pad or its part is in the tht_wide setting (the commanding LLM knows it is a
+          heat path or selectively soldered);
+        - "unsoldered": mounting holes, heat sinks, mechanical parts and fiducials (kae.circuit.brief's
+          part kinds), board-only footprints: no joint whose heat the copper could drain;
+        - "hot": parts the operating facts give at least heat_min_W (P_sustained_W), a heat sink on the
+          part, or a thermal resistance (theta_jb / jc / ja): copper spreading their heat is wanted (thermal_vias' and pcb-cooling's rule: no relief
+          on heat-carrying pins);
+        - "zone": pads joined to a fill of their own net: the zone's own pad connection (thermal relief
+          or solid, the zone's setting) already sets the joint's drain, and the plane dominates any track.
+        A pad's current: the largest current in a track entering it (branch_currents) under the physics
+        evaluator's DC plan (_tht_flows): a feed pin carries its rail's loads, a pad in a chain what lies
+        beyond it. Without a plan: a connector's pins keep their copper ("no_current", tht_pad_kept_wide,
+        unless named in tht_narrow); other parts' pads take their part's own current (pad_currents)."""
+        from . import constraints as CN
+        from kae.place import heat
+        on = str(CN.setting_env("tht_neck", self.path, self.o)).strip().lower() not in ("0", "0.0", "off", "no", "false")
+        wide = tht_wide_set(CN.setting_env("tht_wide", self.path, self.o))
+        nets = self.power | self.ground
+        cand = []
+        for fp, pads in self.sp.pads_by_fp.items():
+            for p in pads:
+                if p.kind != "pad" or p.smd or p.hole is None or p.net not in nets:
+                    continue
+                pd = (self.sp.info.get("pads") or [])[p.idx] if p.idx is not None else {}
+                if pd.get("attr") != "pth":
+                    continue
+                cand.append((fp, p))
+        skipped = {}
+        if not cand:
+            self.tht_skipped = skipped
+            return {}
+        if not on:
+            self.tht_skipped = {"off": len(cand)}
+            return {}
+        kinds = {u: (d or {}).get("kind") for u, d in ((self.brief or {}).get("parts") or {}).items()}
+        attrs = {f.uuid: set(f.attrs or ()) for f in self.board.footprints}
+        op = self.op or {}
+        w_min = float(CN.setting("heat_min_W", self.path, self.o))
+        # hot: dissipating heat_min_W or more, a heat sink on the part, or a thermal path the facts give (theta_jb /
+        # theta_jc / theta_ja: the compiler gives them for parts whose heat matters, e.g. an LM7805's TO-220 pins)
+        hot = ({r for r, w in heat.watts(op).items() if w >= w_min} | {h.get("part") for h in heat.sinks(op) if h.get("part")}
+               | {r for r, f in (op.get("parts") or {}).items() if isinstance(f, dict)
+                  and any(f.get(k) is not None for k in ("theta_jb_C_W", "theta_jc_C_W", "theta_ja_C_W"))})
+        keep = []
+        for fp, p in cand:
+            ref, num = p.owner if isinstance(p.owner, tuple) else (None, None)
+            why = tht_exempt(ref, num, kinds.get(fp), attrs.get(fp, ()), hot, self._zone_joined(p), wide)
+            if why:
+                skipped[why] = skipped.get(why, 0) + 1
+                continue
+            keep.append((fp, p, ref, num))
+        narrow = tht_wide_set(CN.setting_env("tht_narrow", self.path, self.o))
+        flows = self._tht_flows({p.net for _f, p, _r, _n in keep}) if keep else None
+        own = {}
+        if flows is None and keep:
+            all_pads = [(p.owner[0] if isinstance(p.owner, tuple) else None, p.net)
+                        for pads in self.sp.pads_by_fp.values() for p in pads if p.kind == "pad"]
+            own = pad_currents(op, all_pads, self.power, self.ground) if op else {}
+        heat_near = self._heat_paths(hot, op, w_min) if keep else set()
+        out = {}
+        floor = self._loss_floor(keep, flows) if flows is not None else {}
+        self.tht_floor = {}
+        for fp, p, ref, num in keep:
+            if id(p) in heat_near and not (ref in narrow or f"{ref}.{num}" in narrow):
+                # within a hot part's spreading radius: its copper carries that part's heat (any net); the
+                # pad keeps it and the commanding LLM decides (tht_pad_kept_wide, KAE_THT_NARROW)
+                skipped["heat_path"] = skipped.get("heat_path", 0) + 1
+                self.tht_unknown.append(p)
+                self.tht_unknown_heat[id(p)] = heat_near[id(p)]
+                continue
+            if flows is not None:
+                fl = floor.get(id(p), 0.0)
+                if fl >= THT_RELIEF_FRAC * _short_side(p.geom) and not (ref in narrow or f"{ref}.{num}" in narrow):
+                    # a neck narrow enough to act as a relief would cost more copper loss than the budget: the
+                    # pad keeps its copper and the commanding LLM decides (tht_pad_kept_wide, KAE_THT_NARROW)
+                    skipped["loss"] = skipped.get("loss", 0) + 1
+                    self.tht_unknown.append(p)
+                    self.tht_unknown_why[id(p)] = (flows.get(f"{ref}.{num}", 0.0), fl)
+                    continue
+                if fl and not (ref in narrow or f"{ref}.{num}" in narrow):
+                    self.tht_floor[id(p)] = fl
+                out[id(p)] = flows.get(f"{ref}.{num}", 0.0)
+                continue
+            if kinds.get(fp) == "connector" and not (ref in narrow or f"{ref}.{num}" in narrow):
+                # no DC plan: a connector pin on a rail may feed the board with any current; it keeps its copper
+                # and the commanding LLM decides (tht_pad_kept_wide, KAE_THT_NARROW)
+                skipped["no_current"] = skipped.get("no_current", 0) + 1
+                self.tht_unknown.append(p)
+                continue
+            out[id(p)] = own.get((ref, p.net), 0.0)
+        self.tht_skipped = skipped
+        return out
+
+    def _tht_flows(self, nets):
+        """{pad token: A} through the tracks into the pads of `nets` (branch_currents) under the physics
+        evaluator's DC plan (kae.excite.dc.planned_injections) of this board and its operating facts; None
+        when there is no plan (no rail with a source and a load), so callers do not read 0 A into it."""
+        from kae.board.kicad_file import load
+        from kae.excite import dc as DC
+        from shapely.strtree import STRtree
+        self.tht_heat = {}
+        try:
+            inj = DC.planned_injections(load(self.path), self.op, heat=self.tht_heat)
+        except Exception as e:      # noqa: BLE001 - no plan: the caller's fallback, never a failed pass
+            self.log(f"[power-copper] THT neck: no DC plan ({type(e).__name__}: {e})")
+            return None
+        if not inj:
+            return None
+        pads = {}
+        for fps in self.sp.pads_by_fp.values():
+            for p in fps:
+                if p.kind == "pad" and p.net in nets and isinstance(p.owner, tuple):
+                    pads.setdefault(p.net, []).append((f"{p.owner[0]}.{p.owner[1]}", p.geom, p.layers))
+        out = {}
+        self.tht_flow_stats = {}
+        for net in nets:
+            st = self.tht_flow_stats.setdefault(net, {})
+            out.update(branch_currents(net, self.board.tracks, getattr(self.board, "vias", []) or [], pads.get(net, []),
+                                       self.fills.get(net) or {}, inj, stats=st))
+        self.tht_plan = len(inj)
+        # a pad within reach of a loaded track's grown copper (max_width / 2 + neck_len) is part of that path once
+        # the copper grows (wide rails merge into neighbouring pads of their net): it counts that current too
+        reach = self.o["max_width"] / 2 + self.o["neck_len"]
+        for net, plist in pads.items():
+            tr = (self.tht_flow_stats.get(net) or {}).get("track_i") or []
+            if not tr:
+                continue
+            tree = STRtree([ln for ln, _i in tr])
+            for tok, g, _l in plist:
+                for j in tree.query(g.buffer(reach)):
+                    ln, i = tr[j]
+                    if i > out.get(tok, 0.0) and ln.distance(g) <= reach:
+                        out[tok] = i
+        return out
+
+    def _heat_paths(self, hot, op, w_min):
+        """{id(pad): (ref, W, radius)} for the THT pads within a hot part's heat-spreading radius. A part is hot
+        as in _tht_pads (the "hot" exemption covers its own pads) or by the DC plan's linear-regulator drop of
+        at least heat_min_W. Radius: where the part's dissipation P holds an infinite board fin (kernels.fin_point:
+        the board's copper layers at tht_heat_fill, k_Cu 390, FR-4 0.8, h 10 W/m^2K a face) tht_heat_dK above
+        ambient; a hot part without a known P (theta or a heat sink only) has no heat path beyond its own pads.
+        Copper there carries that part's heat (pcb-cooling: the pour within ~1.5-2 lambda is what cools it)."""
+        from kae.physics import kernels as KN
+        from scipy.special import k0
+        watts = {}
+        for r, f in (op.get("parts") or {}).items():
+            w = (f or {}).get("P_sustained_W") if isinstance(f, dict) else None
+            if isinstance(w, (int, float)) and w > 0:
+                watts[r] = float(w)
+        for r, w in (getattr(self, "tht_heat", {}) or {}).items():
+            watts[r] = max(watts.get(r, 0.0), w)
+        refs = set(hot) | {r for r, w in watts.items() if w >= w_min}
+        if not refs:
+            return {}
+        n = len(self.sp.cu)
+        gs, lam = KN.fin_params([MAT.CU_1OZ_MM] * n, [self.o["tht_heat_fill"]] * n, self.sp.thickness)
+        dk = float(self.o["tht_heat_dK"])
+        radius = {}
+        for r in refs:
+            P = watts.get(r)
+            if not P:
+                continue          # no dissipation known (theta or a heat sink only): its own pads only ("hot")
+            # P K0(x) / (2 pi gs) = dK, K0 decreasing: bisect x = r / lambda
+            lo, hi = 1e-4, 20.0
+            if P * k0(lo) / (2 * math.pi * gs) < dk:
+                continue
+            for _ in range(60):
+                mid = 0.5 * (lo + hi)
+                lo, hi = (mid, hi) if P * k0(mid) / (2 * math.pi * gs) > dk else (lo, mid)
+            radius[r] = lo * lam
+        pads_of = {}
+        for fps in self.sp.pads_by_fp.values():
+            for p in fps:
+                if p.kind == "pad" and isinstance(p.owner, tuple) and p.owner[0] in radius:
+                    pads_of.setdefault(p.owner[0], []).append(p.geom)
+        src = {r: unary_union(g) for r, g in pads_of.items()}
+        out = {}
+        for fps in self.sp.pads_by_fp.values():
+            for p in fps:
+                if p.kind != "pad" or p.smd or p.hole is None:
+                    continue
+                for r, g in src.items():
+                    if (not isinstance(p.owner, tuple) or p.owner[0] != r) and g.distance(p.geom) <= radius[r]:
+                        out[id(p)] = (r, round(watts.get(r, 0.0), 3), round(radius[r], 1))
+                        break
+        return out
+
+    def _routed_w(self, p):
+        """Widest routed track of p's net that ends in or runs through pad Item p (0 without one)."""
+        w = 0.0
+        for t in self.board.tracks:
+            if t.net == p.net and t.layer in p.layers and t.mid is None \
+                    and LineString([t.start, t.end]).distance(p.geom) < 1e-3:
+                w = max(w, t.width)
+        return w
+
+    def _loss_floor(self, keep, flows):
+        """{id(pad): width} the neck may not go below so that the necks of a net together add at most
+        tht_loss_frac of the net's routed copper loss under the DC plan. A neck of width w where grown copper
+        would be w_f wide adds I^2 R_sq L (1/w - 1/w_f) per track entering the pad, L = neck_len + w_f / 2 (the
+        neck and the taper the round-capped wider copper needs to keep its edge neck_len off the pad). Within a
+        net the pads neck cheapest first while the budget lasts; the rest get an infinite floor (kept wide)."""
+        frac = float(self.o["tht_loss_frac"])
+        wf = self.o["max_width"]
+        L = self.o["neck_len"] + wf / 2
+        stats = getattr(self, "tht_flow_stats", {}) or {}
+        # each pad's cost to neck: I^2 n L (1/w - 1/w_f), w its neck (the routed track or the current's width);
+        # within a net the cheapest pads neck first until the budget is spent (the most necks for the loss),
+        # so idle pins neck and the busiest keep their copper
+        cost = {}
+        for _f, p, ref, num in keep:
+            tok = f"{ref}.{num}"
+            i = flows.get(tok, 0.0)
+            if i <= 0:
+                continue
+            n = max(1, ((stats.get(p.net) or {}).get("entries") or {}).get(tok, 1))
+            w = max(self._routed_w(p), current_need(i, self.o["current_margin"]), 1e-3)
+            cost.setdefault(p.net, []).append((i * i * n * L * max(0.0, 1.0 / w - 1.0 / wf), id(p)))
+        out = {}
+        for net, cs in cost.items():
+            budget = frac * (stats.get(net) or {}).get("loss_sq", 0.0)
+            spent = 0.0
+            for c, k in sorted(cs):
+                if spent + c <= budget:
+                    spent += c
+                else:
+                    out[k] = math.inf
+        return out
+
+    def _zone_joined(self, p):
+        """Whether pad Item p touches a fill of its own net on one of its layers."""
+        byl = self.fills.get(p.net) or {}
+        return any(g.intersects(p.geom) for l in p.layers for g in byl.get(l) or [])
+
+    def tht_hazards(self):
+        """tht_pad_necked (info): per part, the THT pads whose neck kept planned copper narrower than
+        it would have been, with the setting that keeps them wide; at most MAX_PER_CODE entries (the
+        parts with the most width taken first, the rest in one entry). tht_pad_heatsunk (warn): a THT
+        pad whose current needs more than a relief's webs, entered by grown copper wider than them."""
+        from kae import hazards as H
+        out = []
+        by_ref = {}
+        for rec in self.tht_necked.values():
+            p = rec["pad"]
+            ref, num = p.owner if isinstance(p.owner, tuple) else (None, None)
+            amps = self.tht_amps.get(id(p), 0.0)
+            by_ref.setdefault(ref or "?", []).append(dict(
+                pad=f"{ref}.{num}", net=p.net, would_w_mm=round(rec["would"], 3), got_w_mm=round(rec["got"], 3),
+                current_a=round(amps, 4), need_w_mm=round(current_need(amps, self.o["current_margin"]), 3),
+                land_w_mm=round(_short_side(p.geom), 3)))
+        order = sorted(by_ref.items(), key=lambda kv: -sum(x["would_w_mm"] - x["got_w_mm"] for x in kv[1]))
+        nl = self.o["neck_len"]
+        limit = H.MAX_PER_CODE
+        head = order if len(order) <= limit else order[:limit - 1]
+        for ref, pads in head:
+            pads.sort(key=lambda x: x["pad"])
+            nets = sorted({x["net"] for x in pads})
+            w0, w1 = max(x["would_w_mm"] for x in pads), max(x["got_w_mm"] for x in pads)
+            one = pads[0]["pad"] if len(pads) == 1 else None
+            out.append(H.make(
+                "tht_pad_necked", "info", "assembly",
+                f"{ref}: power copper kept {len(pads)} through-hole pad(s) on {', '.join(nets)} at {w1:.2f} mm within "
+                f"{nl} mm instead of {w0:.2f} mm, so wave, selective or iron soldering is not starved of heat.",
+                objects=[ref] + [x["pad"] for x in pads], fix=_tht_fix(ref, one),
+                evidence=dict(pads=pads[:12], n_pads=len(pads), neck_len_mm=nl,
+                              source="thermal relief: IPC-2222 9.1.2 (webs 60% of the land); power_copper.neck_rule tht")))
+        rest = order[len(head):]
+        if rest:
+            refs = [r for r, _ in rest]
+            out.append(H.make(
+                "tht_pad_necked", "info", "assembly",
+                f"Power copper also necked the through-hole pads of {len(refs)} more parts "
+                f"({sum(len(p) for _, p in rest)} pads), same rule.",
+                objects=refs, fix=_tht_fix(None, None),
+                evidence=dict(parts=len(refs), pads=sum(len(p) for _, p in rest))))
+        # no DC plan: connector pins on rails keep their copper; the LLM may neck them
+        unk = {}
+        for p in self.tht_unknown:
+            ref, num = p.owner if isinstance(p.owner, tuple) else ("?", "?")
+            unk.setdefault(ref, []).append((f"{ref}.{num}", p.net))
+        refs = sorted(unk)
+        for i, ref in enumerate(refs):
+            if i == H.MAX_PER_CODE - 1 and len(refs) > H.MAX_PER_CODE:
+                rest = refs[i:]
+                out.append(H.make("tht_pad_kept_wide", "info", "assembly",
+                                  f"{len(rest)} more connectors' power pins keep wide copper for want of a DC plan.",
+                                  objects=rest, fix=_tht_narrow_fix(None)))
+                break
+            pads = unk[ref]
+            why = [self.tht_unknown_why.get(id(p)) for p in self.tht_unknown
+                   if isinstance(p.owner, tuple) and p.owner[0] == ref]
+            loss = any(w is not None for w in why)
+            hp = [self.tht_unknown_heat.get(id(p)) for p in self.tht_unknown
+                  if isinstance(p.owner, tuple) and p.owner[0] == ref and id(p) in self.tht_unknown_heat]
+            out.append(H.make(
+                "tht_pad_kept_wide", "info", "assembly",
+                f"{ref}: {len(pads)} through-hole power pin(s) on {', '.join(sorted({n for _, n in pads}))} keep wide "
+                + (f"copper: they are on {hp[0][0]}'s heat path ({hp[0][1]} W, within {hp[0][2]} mm)." if hp else
+                   "copper: a neck narrow enough to relieve the joint would add more copper loss than the budget."
+                   if loss else "copper: no DC plan says what current they carry, and a neck could starve a feed."),
+                objects=[ref] + [x for x, _ in pads], fix=_tht_narrow_fix(ref),
+                evidence=dict(pads=[dict(pad=x, net=n) for x, n in pads][:12], n_pads=len(pads),
+                              current_a=[round(w[0], 3) for w in why if w][:12] or None,
+                              loss_width_mm=[round(w[1], 3) for w in why if w][:12] or None,
+                              heat_path=[dict(part=h[0], W=h[1], radius_mm=h[2]) for h in hp][:4] or None,
+                              reason=("on a hot part's heat path (tht_heat_dK)" if hp else
+                                      "neck over tht_loss_frac of the net's copper loss (DC plan)" if loss else
+                                      "no rail with a source and a load in the operating facts (kae.excite.dc plan)"))))
+        # current needs more than a relief: the copper stays wide, and the joint pays for it
+        net_of = {t.uuid: t.net for t in self.board.tracks}
+        for fp, p, amps in getattr(self, "unnecked", []):
+            if p.smd:
+                continue
+            land_w = _short_side(p.geom)
+            relief = THT_RELIEF_FRAC * land_w
+            widest = 0.0
+            for u, pieces in self.edits.items():
+                if net_of.get(u) != p.net:
+                    continue
+                for pc_ in pieces:
+                    a, b, w = pc_[:3]
+                    if w > relief + 1e-9 and LineString([a, b]).buffer(w / 2).distance(p.geom) < self.o["neck_len"]:
+                        widest = max(widest, w)
+            # vector copper written as zones (rails above zone_above_a) joins the pad solid unless hand soldered
+            zoned = [z for z in self.zones if z[0] == p.net and z[1] in p.layers and z[2].distance(p.geom) < 1e-6]
+            if zoned and not self.hand_solder:
+                widest = max(widest, max(_short_side(z[2]) for z in zoned))
+            if widest:
+                ref, num = p.owner if isinstance(p.owner, tuple) else (None, None)
+                need = current_need(amps, self.o["current_margin"])
+                out.append(H.make(
+                    "tht_pad_heatsunk", "warn", "assembly",
+                    f"{ref}.{num} ({p.net}): its {amps:.2f} A needs {need:.2f} mm of copper, more than a thermal "
+                    f"relief's {relief:.2f} mm; the {widest:.2f} mm copper stays and drains soldering heat.",
+                    objects=[f"{ref}.{num}", ref, p.net],
+                    evidence=dict(track_w_mm=round(widest, 3), need_w_mm=round(need, 3), relief_w_mm=round(relief, 3),
+                                  land_w_mm=round(land_w, 3), current_a=round(amps, 4),
+                                  source="IPC-2221 width at current_margin x the pad's current; relief webs IPC-2222 9.1.2"),
+                    fix="Preheat or a selective/iron profile for this joint, a larger pad or more pins in parallel; or "
+                        "accept it if the joint is checked after soldering."))
+        return out
 
     def land_hazards(self):
         """land_enlarged_by_track for each unnecked two-terminal land a widened track enters wider than it."""
         from . import pad_entry as PE
         out = []
         for fp, p, amps in getattr(self, "unnecked", []):
+            if not p.smd:
+                continue          # a THT pad: tht_hazards (tht_pad_heatsunk)
             land_w = _short_side(p.geom)
             widest = 0.0
             for pieces in self.edits.values():
@@ -1358,7 +2026,7 @@ def run(input_path, output_path, opts=None, workdir=None, timeout=1800, log=prin
         for u in set(groups.values()):
             kind_of[u] = dict(kind=pc.group_kind(u) or ("zone" if any(z[3] == u for z in pc.zones) else "vector"))
         return dict(board=str(inp), planned=pc.stats, kept=dict(pc.stats), kinds=kinds, reverted=0, gate=False,
-                    hazards=pc.land_hazards(),
+                    hazards=pc.land_hazards() + pc.tht_hazards(), tht=pc.tht_stats(),
                     nets=dict(power=sorted(pc.power), ground=sorted(pc.ground), switch=sorted(pc.switch),
                               victims=sorted(pc.victims), zones=sorted(pc.zone_nets)),
                     plan_s=round(t_plan, 2), total_s=round(clock_now() - t0, 2),
@@ -1450,7 +2118,7 @@ def run(input_path, output_path, opts=None, workdir=None, timeout=1800, log=prin
                 stitch_vias=sum(1 for v in pc.vias if v[6] == "stitch" and v[5] not in skip) if "stitch" in kinds else 0,
                 vector_strips=sum(1 for x in pc.vector for k in x[2] if k[3] not in skip) if "vector" in kinds else 0,
                 vector_zones=sum(1 for z in pc.zones if z[3] not in skip) if "vector" in kinds else 0)
-    return dict(board=str(inp), planned=pc.stats, kept=kept, kinds=kinds, reverted=len(skip), hazards=pc.land_hazards(),
+    return dict(board=str(inp), planned=pc.stats, kept=kept, kinds=kinds, reverted=len(skip), hazards=pc.land_hazards() + pc.tht_hazards(), tht=pc.tht_stats(),
                 drc_in=base, drc_out=final or base, rounds=rounds,
                 nets=dict(power=sorted(pc.power), ground=sorted(pc.ground), switch=sorted(pc.switch),
                           victims=sorted(pc.victims)),

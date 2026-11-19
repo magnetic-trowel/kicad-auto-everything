@@ -21,6 +21,7 @@ so a run that is killed still leaves its best board. Returns a JSON-able report.
 """
 from kae.budget import now as clock_now
 import json
+import os
 import shutil
 import tempfile
 import time
@@ -139,8 +140,10 @@ DEFAULT_OPTS = dict(
     import_tails=False,      # arm D: in each repair round, rule D tails (exact check only) on the tracks the
                              # session import added; a tail the round's DRC names goes back to its raw shape
     finish=False,            # at the end, when time is left: kae.route.finish (stage 7: rule D tails, taut arcs,
-                             # power copper, one journaled DRC gate; never worse). Off by default: the restart
-                             # portfolio runs it once on the kept board (restart.py --finish), not per attempt
+                             # power copper, one journaled DRC gate; never worse). Off for library callers (the
+                             # joint loop's stages, placement probes); on by default in `kae.route.cli route`
+                             # unless KAE_FINISH_KEPT=1, which a restart portfolio sets for its attempts: it
+                             # runs finish once on the kept board (restart.py --finish, kae.route.portfolio)
     finish_parts=None,       # with finish: its parts (default finish.PARTS: tails, taut, power)
     finish_min_s=60.0,       # with finish: run it only with this much time left
     power_copper=False,      # power copper alone, through finish (parts ["power"]): widen rails and grounds,
@@ -190,9 +193,19 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
         sev = severities(input_path)
         opts["severities"] = sev
         opts["seed"] = seed
-        if any((z.get("name") or "").startswith(CRIT_PREFIX) for z in info.get("zones") or []):
+        # the hot-loop stage (kae.route.hotloop; off by default): cells laid and locked, return-plane
+        # keep-outs and hot-loop pours, written into a work board that is routed in the input's place
+        from . import hotloop
+        hl = hotloop.stage(input_path, info, wd / "hotloop", opts, log=log, time_s=time_s)
+        if hl is not None:
+            report["hotloop"] = {k: v for k, v in hl.items() if k not in ("hazards", "guards", "_ko")}
+            report.setdefault("hazards", []).extend(hl.get("hazards") or [])
+            if hl.get("board"):
+                input_path = Path(hl["board"]).resolve()
+                info = pcbnew_io.export_dsn(input_path, kdsn)
+        if any(hotloop.hard_zone(z.get("name")) for z in info.get("zones") or []):
             opts["crit_zones"] = [z for z in pcbnew_io.zone_fills(input_path)["zones"]
-                                  if (z.get("name") or "").startswith(CRIT_PREFIX)]
+                                  if hotloop.hard_zone(z.get("name"))]
         p = constraints.plan(info, input_path, opts)
         zoned = any(z.get("net") for z in info.get("zones") or [])
         share = strict_share(opts, seed, input_path)
@@ -306,12 +319,35 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             log(f"thermal vias: {type(e).__name__}: {e}")
             hot = []
         tv_s = min(float(opts.get("thermal_via_s") or 0.0), 0.1 * time_s) if hot else 0.0
+        # the hot-loop escape round's time is kept from the repair rounds (hdmi2rgb H: the rounds used it all,
+        # so no keep-out was lifted for the 12 connections it held open)
+        esc_s = 0.0
+        if hl is not None and hl.get("_ko"):
+            # with the cell stage the round may end in Freerouting repair rounds (hotloop.escape_round)
+            cells = (hl.get("settings") or {}).get("cells")
+            esc_s = min(max(120.0, 0.15 * time_s), 0.25 * time_s) if cells else min(max(60.0, 0.08 * time_s), 0.2 * time_s)
         if opts.get("repair") and left() > 30:
             from . import repair
             report["repair"] = repair.loop(input_path, output_path, wd, p, info, opts,
-                                           deadline=t0 + time_s - 10 - diag_s - tv_s, log=log)
+                                           deadline=t0 + time_s - 10 - diag_s - tv_s - esc_s, log=log)
             final_rep = report["repair"].pop("_report", None)
             report.setdefault("hazards", []).extend(report["repair"].pop("hazards", None) or [])
+            if hl is not None and hl.get("_ko") and final_rep and left() > 30 \
+                    and (report["repair"].get("final") or {}).get("unconnected"):
+                # a cell's own pin walled in by its keep-out: open that pin's corridor, last mile again
+                try:
+                    got = hotloop.escape_round(input_path, output_path, wd / "hotloop-escape", p, info, opts, hl,
+                                               final_rep, deadline=t0 + time_s - 10 - diag_s - tv_s, log=log)
+                except Exception as e:  # noqa: BLE001 - the routed board stands
+                    log(f"hotloop escape round: {type(e).__name__}: {e}")
+                    got = None
+                if got is not None:
+                    final_rep, summ, p, opened = got
+                    report["repair"]["final"] = summ
+                    report["hotloop"]["escapes_opened"] = opened
+                    report["hotloop"]["keepout_lifted"] = hl.get("keepout_lifted") or []
+                    report.setdefault("hazards", []).extend(
+                        h for h in hl.get("hazards") or [] if h.get("code") == "hotloop_keepout_lifted")
             if hot and left() > 20:
                 # after the repair and last-mile rounds, which judge connections only: the hot parts'
                 # thermal vias and solid heat pads, judged by KiCad's DRC like a round (kae.route.thermal_vias)
@@ -334,14 +370,40 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             staged = drc.stage_board(output_path, input_path, wd / "drc")
             rep = drc.run(staged, wd / "drc" / "drc.json", timeout=max(10, left() - 5))
             report["drc"] = drc.summary(rep)
+        if hl is not None and hl.get("guards") and output_path.exists():
+            # the keep-outs guided the routing only; the output never carries them (the pours stay)
+            from . import critical_write as W
+            W.edit(output_path, output_path, drop_guards=True)
+            if final_rep and (report.get("repair") or {}).get("final", {}).get("unconnected"):
+                report.setdefault("hazards", []).extend(hotloop.blocked_by_keepout(
+                    final_rep, hl["guards"], gnd={g["net"] for g in hl["guards"]}))
+        hc = clear_hook(output_path, input_path, wd / "hotloop-clear", opts,
+                        deadline=t0 + time_s - 10 - (float(opts.get("finish_min_s") or 60.0)
+                                                     if finish_parts(opts, p) else 0.0), log=log, report=report)
+        if hc is not None:
+            report["hotloop_clear"] = hc
         stepcache.save_fork(fork, "repaired", {"board": output_path}, clock_now() - t0)
         parts = finish_parts(opts, p)
         if parts and left() > float(opts.get("finish_min_s") or 60.0):
+            # the keep-outs dropped above are ground copper over the ground plane, which refills there: the
+            # repair loop's DRC stands for the board (a DRC more cost aifryz K finish's power part, skipped for
+            # time, and with it the ground vias round the cell: 1.49 -> 2.24 nH)
             report["finish"] = finish_hook(output_path, input_path, wd / "finish", parts, time_s=left() - 10,
                                            base_report=final_rep if opts.get("repair") else None, log=log)
             report.setdefault("hazards", []).extend(report["finish"].pop("hazards", None) or [])
         elif parts:
-            report["finish"] = dict(skipped=f"time: {left():.0f} s left", parts=parts)
+            from kae import hazards as H
+            why = f"time: {left():.0f} s left, {float(opts.get('finish_min_s') or 60.0):.0f} s needed"
+            report["finish"] = dict(skipped=why, parts=parts)
+            report.setdefault("hazards", []).append(H.make(
+                "finish_part_skipped", "info", "data",
+                f"The finish stage ({', '.join(parts)}) did not run: routing used the time ({why}); the board "
+                f"has the router's copper shapes and widths.",
+                objects=list(parts), evidence=dict(reason=why, parts=list(parts)),
+                fix="Run python -m kae.route.cli finish on the board, or route with more --time."))
+        elif opts.get("finish_deferred"):
+            # a portfolio attempt (KAE_FINISH_KEPT=1): the wrapper finishes the board it keeps (P6)
+            report["finish"] = dict(skipped="deferred: the restart portfolio finishes the kept board")
         if report.get("blocked_packages"):
             # packages no routing can escape under the board's rules (escape.certificate), in front
             # of the per-connection diagnosis
@@ -355,12 +417,30 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
         return report
     finally:
         report["opts"] = {k: v for k, v in opts.items()
-                          if k not in ("crit_zones", "fixed_uuids", "severities", "soft_fixed", "physics_guard")}
+                          if k not in ("crit_zones", "fixed_uuids", "severities", "soft_fixed", "physics_guard",
+                                       "intent")}
         report["seconds"] = round(clock_now() - t0, 2)
         if own_wd and not opts.get("keep"):
             shutil.rmtree(wd, ignore_errors=True)
         else:
             report["workdir"] = str(wd)
+
+
+def clear_hook(board, input_path, workdir, opts, deadline, log=_log, report=None):
+    """kae.route.hotloop.clear on a routed board when the hotloop_clear setting is on (design D: the cells'
+    returns cleared of foreign copper after routing, kept per cell only when better); None when off. Its
+    hazards go to `report`."""
+    from . import hotloop
+    if not hotloop.settings(input_path, opts).get("clear") or not Path(board).exists():
+        return None
+    if os.environ.get("KAE_CLEAR_KEPT") == "1":
+        # a restart portfolio's attempt or final pass (tools/kaeres/restart.py --clear): the wrapper clears the board
+        # it keeps once, with an allowance of its own, so clearing never depends on the time an attempt has left
+        return dict(cells=[], skipped="deferred: the restart portfolio clears the kept board")
+    rep = hotloop.clear(input_path, board, workdir, opts=opts, deadline=deadline, log=log)
+    if report is not None:
+        report.setdefault("hazards", []).extend(rep.pop("hazards", None) or [])
+    return rep
 
 
 def finish_parts(opts, plan=None):
@@ -449,9 +529,23 @@ def last_mile_only(input_path, board_path, output_path, time_s=120.0, seed=0, wo
         p.pad_shapes = opts.get("pad_shapes") or "kicad"
         from .critical_write import routing
         fixed = {r["uuid"] for r in routing(input_path) if r.get("locked")}   # the input's pre-routes
+        from . import hotloop
+        if hotloop.active(hotloop.settings(input_path, opts)):
+            # the hot-loop stage's cell copper (locked on the routed board): the last mile keeps it
+            fixed |= {r["uuid"] for r in routing(board_path) if r.get("locked")}
         opts["fixed_uuids"] = sorted(fixed)
         staged = drc.stage_board(output_path, input_path, wd / "start")
         rep = drc.run(staged, wd / "start" / "drc.json", timeout=max(10, deadline - clock_now()))
+        if hotloop.active(hotloop.settings(input_path, opts)):
+            # the keep-outs, with the corridors of the cell pins this board leaves open
+            cz = hotloop.last_mile_crit_zones(input_path, board_path, info, wd / "hotloop", opts, log=log,
+                                              drc_report=rep)
+            if cz:
+                opts["crit_zones"] = cz
+                p = constraints.plan(info, input_path, opts)
+                p.plane_policy = plane_policy(opts)
+                p.plane_cost = opts.get("plane_cost")
+                p.pad_shapes = opts.get("pad_shapes") or "kicad"
         best = drc.summary(rep)
         report["start"] = best
         log(f"last mile only: {best['errors']} errors {best['by_type']}, {best['unconnected']} unconnected")
@@ -462,6 +556,11 @@ def last_mile_only(input_path, board_path, output_path, time_s=120.0, seed=0, wo
                               base=base)
         final = next((r for r in reversed(rounds) if r.get("final")), {}).get("final") or best
         report.update(rounds=rounds, final=final, status="repaired")
+        # the portfolio's final pass: the cells' returns cleared after the last mile, before finish
+        hc = clear_hook(output_path, input_path, wd / "hotloop-clear", opts, deadline=deadline, log=log,
+                        report=report)
+        if hc is not None:
+            report["hotloop_clear"] = hc
         return report
     finally:
         report["seconds"] = round(clock_now() - t0, 2)

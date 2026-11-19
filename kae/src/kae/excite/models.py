@@ -77,6 +77,7 @@ RADIAL = ((5.0, 10e-9, 0.3), (6.3, 10e-9, 0.13), (8.0, 20e-9, 0.15), (12.5, 20e-
           (999.0, 34e-9, 0.04))                                                         # (<= D mm, ESL, ESR)
 AXIAL = (20e-9, 0.3)
 PKG_L = 1.0e-9                  # IC pin: bond wire plus lead
+FUSE_R = 0.1                    # ohm, a fuse's or resettable PTC's cold resistance (class prior)
 PKG_R = 5e-3
 DIE_C = {"logic": 1e-9, "memory": 5e-9, "mcu": 5e-9, "fpga": 50e-9, "opamp": 20e-12, "regulator_linear": 1e-9,
          "regulator_switching": 1e-9, "adc_dac": 1e-9, "reference": 50e-12, "motor_driver": 2e-9, "": 1e-9}
@@ -118,7 +119,10 @@ class Board:
     part_kind: dict               # ref -> (kind, subtype, role)
     assumptions: list = field(default_factory=list)
     ic_nodes: dict = field(default_factory=dict)   # ref -> {"g": node, rail: node}
+    module_nodes: dict = field(default_factory=dict)  # ref -> {"g": node, rail: node}: a clocked module's inside
+    radios: dict = field(default_factory=dict)     # ref -> kind: radios the operating facts name (kae.excite.observe)
     pin_type: dict = field(default_factory=dict)   # pad -> the schematic's pin type ('' when absent)
+    pin_fn: dict = field(default_factory=dict)     # pad -> the schematic's pin name ('' when absent)
     pad_xy: dict = field(default_factory=dict)     # pad -> (x, y) mm on the board
     port: dict = field(default_factory=dict)       # ref -> "connector" | "module": where the copper meets
     #                                                circuitry off this board's model
@@ -168,6 +172,7 @@ def build(board, brief=None):
             tok = f"{ref}.{p.number}"
             bd.net_of[tok] = p.net
             bd.pin_type[tok] = p.ptype
+            bd.pin_fn[tok] = p.fn or ""
             bd.pads_of.setdefault(p.net, []).append(tok)
         in_cell = uuid_of.get(ref) in cell_parts
         pk = port_kind(kind, part, len(pins))
@@ -351,6 +356,12 @@ def _part(bd, ref, part, pins, kind, sub, role, rec, in_cell):
             bd.assumptions.append(f"{ref}: value '{part.value}' unread; 1 kOhm assumed")
         a, b = tw
         c.z(ref, a.net, b.net, _rl(max(R, 1e-4), 0.5e-9), tok(a), tok(b), "R")
+    elif kind == "fuse" and len(tw) == 2:
+        # a fuse or resettable PTC conducts: its cold resistance (class prior: tens of mOhm for a cartridge, 0.1-1 Ohm
+        # for a small polyfuse); left out, it opened every rail fed through it
+        a, b = tw
+        c.z(ref, a.net, b.net, _rl(FUSE_R, 2e-9), tok(a), tok(b), "R")
+        bd.assumptions.append(f"{ref}: fuse at {FUSE_R * 1e3:g} mOhm cold resistance (class prior)")
     elif kind == "inductor" and len(tw) == 2:
         L = V.inductance(part.value) or 10e-6
         a, b = tw
@@ -382,7 +393,8 @@ def _part(bd, ref, part, pins, kind, sub, role, rec, in_cell):
         for i in range(len(tw)):
             for j in range(i + 1, len(tw)):
                 c.z(f"{ref}:{i}{j}", tw[i].net, tw[j].net, _rlc(1.0, 1e-9, 10e-12), tok(tw[i]), tok(tw[j]), kind)
-    elif kind in ("jumper", "switch") and len(tw) == 2 or (kind == "resistor" and len(tw) != 2):
+    elif kind in ("jumper", "switch", "net_tie") and len(tw) == 2 or (kind == "resistor" and len(tw) != 2):
+        # a net tie is copper that joins two nets by design (an analog ground to the power ground at one point)
         if len(tw) == 2:
             c.z(ref, tw[0].net, tw[1].net, _rl(0.01, 1e-9), tok(tw[0]), tok(tw[1]), "short")
     elif kind == "battery" and len(tw) == 2:

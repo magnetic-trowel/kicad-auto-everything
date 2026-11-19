@@ -372,12 +372,14 @@ THERMAL = dict(k_cu=MAT.K_CU, k_fr4=MAT.K_FR4_IN, h_top=MAT.H_AIR, h_bot=MAT.H_A
 def converter_loss_split(p_total, v_in=None, v_out=None, i_out=None, boost=False, has_diode=False,
                          external_switches=False):
     """Split a converter's total loss (W) between its parts (E5): a Schottky rectifier
-    conducts I_out for the off fraction, P_D = V_F I_out (1 - D) with V_F = 0.5 V and
-    D = V_out / V_in (boost: 1 - V_in / V_out; 0.3 when unknown); the inductor (DCR + core)
-    takes 15 %; the switches the rest (at least 20 %), split 60/40 high/low when they are
-    discrete. Returns {'ic' | 'diode' | 'inductor' | 'high' | 'low': W}."""
+    conducts the inductor current i_out (the cell's excitation current, its commutated current) for the off
+    fraction, P_D = V_F i_out (1 - D) with V_F = 0.5 V (a boost's: its output current) and
+    D = V_out / V_in (boost: 1 - V_in eta / V_out, kae.physics.converter.duty; 0.3 when unknown); the
+    inductor (DCR + core) takes 15 %; the switches the rest (at least 20 %), split 60/40 high/low when they
+    are discrete. Returns {'ic' | 'diode' | 'inductor' | 'high' | 'low': W}."""
     if v_in and v_out and v_in > 0 and v_out > 0:
-        d = (1.0 - v_in / v_out) if boost else (v_out / v_in)
+        from kae.physics.converter import duty
+        d = duty("boost" if boost else "buck", v_in, v_out)
         d = min(max(d, 0.05), 0.95)
     else:
         d = 0.3

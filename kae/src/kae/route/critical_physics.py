@@ -187,6 +187,62 @@ def r_via(height, drill, plating=T_PLATE):
     return RHO_CU * height / (math.pi * (drill + plating) * plating)
 
 
+# R_ac / R_dc of a 35 um trace over its plane, solved cross-sections (docs/topics/physics/power-copper.md
+# section 5, pw_xsec.py [C]): (Hz, ratio) at h = 0.1 mm and at h = 1.5 mm; skin and proximity together
+_RAC = {0.1: ((1e4, 1.0), (1e5, 1.31), (1e6, 1.59), (1e7, 2.27), (1e8, 7.0)),
+        1.5: ((1e4, 1.0), (1e5, 1.08), (1e6, 1.27), (1e7, 1.67), (1e8, 4.0))}
+
+
+def rac_ratio(f_hz, h_mm=0.1):
+    """R_ac / R_dc of board copper over its plane at f_hz: the solved table, log-log in f, linear in log h
+    between its two heights (clamped); 1 below 10 kHz."""
+    def at(tab):
+        if f_hz <= tab[0][0]:
+            return tab[0][1]
+        for (f0, r0), (f1, r1) in zip(tab[:-1], tab[1:]):
+            if f_hz <= f1:
+                a = math.log(f_hz / f0) / math.log(f1 / f0)
+                return math.exp(math.log(r0) + a * (math.log(r1) - math.log(r0)))
+        f0, r0 = tab[-2]
+        f1, r1 = tab[-1]
+        return r1 * (f_hz / f1) ** (math.log(r1 / r0) / math.log(f1 / f0))
+    lo, hi = at(_RAC[0.1]), at(_RAC[1.5])
+    h = min(max(h_mm if h_mm not in (None, INF) else 1.5, 0.1), 1.5)
+    a = math.log(h / 0.1) / math.log(1.5 / 0.1)
+    return lo + a * (hi - lo)
+
+
+def ac_loss(I, D, f, R, h_mm=0.1, t_r=2e-9, n_max=400):
+    """Copper loss (W) of a pulsed current I at duty D and f (a trapezoid with edge t_r) in a loop of DC
+    resistance R: the sum over harmonics n of (I_n^2 / 2) R rac_ratio(n f), I_n = (2 I / (n pi))
+    |sin(n pi D)| sinc(n f t_r). With rac_ratio = 1 it is I^2 D (1 - D) R, the evaluator's loss.loop_ac
+    (fundamental-free: the DC share I D carries no switching loss), so the quote is the evaluator's term
+    plus skin and proximity at f_sw and its harmonics."""
+    if I <= 0 or R <= 0 or f <= 0:
+        return 0.0
+    out = 0.0
+    for n in range(1, n_max + 1):
+        x = math.pi * n * f * t_r
+        sinc = 1.0 if x < 1e-9 else abs(math.sin(x) / x)
+        env = 2.0 * I / (n * math.pi) * sinc
+        if env < 1e-3 * I and n > 20:            # the envelope, not a zero of sin(n pi D)
+            break
+        In = env * abs(math.sin(n * math.pi * D))
+        out += 0.5 * In * In * R * rac_ratio(n * f, h_mm)
+    return out
+
+
+def r_strip(length, width, h, t_mm=0.035, t_plane_mm=0.035):
+    """Resistance (ohm) of a strip and, at height h over a plane, of its return in the plane: the
+    return of a line current at h spreads as J(x) = I h / (pi (x^2 + h^2)) (the image law), whose
+    dissipation equals a uniform strip 2 pi h wide (integral of J^2 = I^2 / (2 pi h)), so a strip of
+    width w returns through about w + 2 pi h of plane [I]."""
+    r = r_track(length, width, t_mm)
+    if h not in (None, INF) and h > 0:
+        r += r_track(length, width + 2 * math.pi * h, t_plane_mm)
+    return r
+
+
 def drop_width(current_a, length_mm, dv_v, t_mm=0.035):
     """Width (mm) that keeps the drop of `current_a` over `length_mm` within dv_v."""
     if current_a <= 0 or length_mm <= 0 or dv_v <= 0:
@@ -211,30 +267,40 @@ class Loop:
     def __init__(self):
         self.el = {"A": ([], [])}
         self.cons = []
+        self.res = {}       # element -> DC resistance (ohm) of its board copper (r_strip, r_via)
+
+    def _r(self, el, r):
+        self.res[el] = self.res.get(el, 0.0) + float(r)
 
     def _e(self, el):
         return self.el.setdefault(el, ([], []))
 
-    def strip(self, a, b, w, h, el="A"):
+    def strip(self, a, b, w, h, el="A", t_mm=0.035, copper=True):
+        """A strip of board copper (copper=False: a part's internal path, no board resistance)."""
         if math.dist(a, b) > 1e-6:
             self._e(el)[0].append((float(a[0]), float(a[1]), float(b[0]), float(b[1]), float(w), float(h)))
+            if copper:
+                self._r(el, r_strip(math.dist(a, b), w, h, t_mm))
 
-    def path(self, pts, w, h, el="A"):
+    def path(self, pts, w, h, el="A", t_mm=0.035):
         for a, b in zip(pts[:-1], pts[1:]):
-            self.strip(a, b, w, h, el)
+            self.strip(a, b, w, h, el, t_mm=t_mm)
 
-    def vert(self, x, y, z0, z1, r, el="A"):
+    def vert(self, x, y, z0, z1, r, el="A", drill=None):
+        """A vertical piece; with `drill`, a plated via barrel (its resistance counts)."""
         if abs(z1 - z0) > 1e-9 and z0 != INF and z1 != INF:
             self._e(el)[1].append((float(x), float(y), float(z0), float(z1), float(r)))
+            if drill:
+                self._r(el, r_via(abs(z1 - z0), drill))
 
     def body(self, a, b, h, zb, w, el="A"):
         """A part's internal path from terminal a to b: tie up, strip at h + zb, tie down."""
         r = gmd_rect(max(w, 0.1))
         if h == INF:
-            self.strip(a, b, max(w, 0.1), INF, el)
+            self.strip(a, b, max(w, 0.1), INF, el, copper=False)
             return
         self.vert(a[0], a[1], h, h + zb, r, el)
-        self.strip(a, b, max(w, 0.1), h + zb, el)
+        self.strip(a, b, max(w, 0.1), h + zb, el, copper=False)
         self.vert(b[0], b[1], h + zb, h, r, el)
 
     def kcl(self, coeffs, rhs=1.0):
@@ -253,6 +319,23 @@ class Loop:
             return self.el
         hf = max(3.2, 2.0 * max(fin))
         return {k: ([h if h[5] != INF else h[:5] + (hf,) for h in H], V) for k, (H, V) in self.el.items()}
+
+    def value_r(self):
+        """(loop inductance nH, loop resistance ohm): the resistance of the board copper (strips,
+        their plane return, via barrels; part bodies excluded) carrying the inductive current split
+        that `value` finds, sum x_e^2 R_e. At the switching frequency (0.1-3 MHz) the return already
+        follows the inductive path (power-copper.md section 5: f_c ~ 0.6 MHz at h = 0.1 mm), so the
+        split that minimizes L is the one that carries the AC current; DC values, no skin effect
+        (as the evaluator's raster)."""
+        got = self.value(shares=True)
+        if isinstance(got, tuple) and len(got) == 2 and isinstance(got[1], dict):
+            L, x = got
+        else:
+            L, x = got, {}
+        R = 0.0
+        for el, r in self.res.items():
+            R += float(x.get(el, 1.0)) ** 2 * r
+        return L, R
 
     def value(self, shares=False):
         """Loop inductance (nH); with shares=True also {element: current share}."""

@@ -11,6 +11,35 @@
    "source": "Aerosemi MT3608 datasheet (Rev 1.0 / Rev 3.0): 1.2 MHz fixed frequency, integrated 80 mOhm power MOSFET, SW swings to 28 V (Rev 3.0 abs max 30 V)"
   },
   {
+   "match": "(?i)^AAT1217(ICA|IGU)?-3\\.3",
+   "data": {
+    "f_sw_Hz": [
+     900000.0,
+     1500000.0
+    ],
+    "r_on_ohm": 0.6,
+    "v_sw_max_V": 6
+   },
+   "from_library": "aat1217-3-3.pdf",
+   "source": "Advanced Analogic Technologies (AnalogicTech, now Skyworks Solutions) AAT1217ICA-3.3 datasheet https://basicaodaeletronica.com.br/smd/pdfs/aat1217_analogic.pdf (f_sw_Hz p.4; R_on_high_ohm p.4; V_sw_max_V p.3)"
+  },
+  {
+   "match": "(?i)^ADP2384",
+   "data": {
+    "f_sw_Hz": [
+     200000,
+     1400000
+    ],
+    "r_on_ohm": [
+     0.044,
+     0.07
+    ],
+    "v_sw_max_V": 22
+   },
+   "from_library": "adp2384.pdf",
+   "source": "Analog Devices ADP2384 datasheet https://atta.szlcsc.com/upload/public/pdf/source/20180424/C208277_E3FB7E20F1B92FC337461D835F81F912.pdf (f_sw_Hz p.3; R_on_high_ohm p.3; V_sw_max_V p.5)"
+  },
+  {
    "match": "(?i)^AO3401A?\\b",
    "data": {
     "r_on_ohm": [
@@ -49,6 +78,26 @@
    "source": "Diodes Incorporated AP22653W6-7 datasheet https://www.diodes.com/assets/Datasheets/AP22652_53.pdf (R_on_high_ohm p.5)"
   },
   {
+   "match": "(?i)^AP3012",
+   "data": {
+    "f_sw_Hz": [
+     1100000.0,
+     1900000.0
+    ],
+    "v_sw_max_V": 38
+   },
+   "from_library": "ap3012.pdf",
+   "source": "Diodes Incorporated AP3012 datasheet https://www.diodes.com/assets/Datasheets/AP3012.pdf (f_sw_Hz p.4; V_sw_max_V p.3)"
+  },
+  {
+   "match": "(?i)^AP3015(?!A)",
+   "data": {
+    "v_sw_max_V": 38
+   },
+   "from_library": "ap3015.pdf",
+   "source": "Diodes Incorporated (BCD Semiconductor) AP3015 datasheet https://www.diodes.com/assets/Datasheets/AP3015_A.pdf (V_sw_max_V p.4)"
+  },
+  {
    "match": "(?i)^AP3032",
    "data": {
     "f_sw_Hz": [
@@ -70,6 +119,22 @@
    "source": "Diodes Incorporated AP3402 datasheet https://www.diodes.com/assets/Datasheets/AP3402.pdf (f_sw_Hz p.4; R_on_high_ohm p.4)"
   },
   {
+   "match": "(?i)^AP5726",
+   "data": {
+    "f_sw_Hz": [
+     1000000.0,
+     1400000.0
+    ],
+    "r_on_ohm": [
+     0.95,
+     1.2
+    ],
+    "v_sw_max_V": 34
+   },
+   "from_library": "ap5726.pdf",
+   "source": "Diodes Incorporated AP5726 datasheet https://www.diodes.com/assets/Datasheets/AP5726.pdf (f_sw_Hz p.4; R_on_high_ohm p.4; V_sw_max_V p.3)"
+  },
+  {
    "match": "(?i)^AP62301",
    "data": {
     "f_sw_Hz": 750000,
@@ -88,6 +153,24 @@
    "source": "Diodes Incorporated AP62301WU-7 datasheet https://www.diodes.com/assets/Datasheets/AP62300_AP62301_AP62300T.pdf (f_sw_Hz p.5; R_on_high_ohm p.5)"
   },
   {
+   "match": "(?i)^AP63203WU-7",
+   "data": {
+    "f_sw_Hz": 1100000.0,
+    "r_on_ohm": 0.125
+   },
+   "from_library": "ap63203wu-7.pdf",
+   "source": "Diodes Incorporated AP63203WU-7 datasheet https://www.diodes.com/assets/Datasheets/AP63200-AP63201-AP63203-AP63205.pdf (f_sw_Hz p.5; R_on_high_ohm p.5)"
+  },
+  {
+   "match": "(?i)^AP63203WU",
+   "data": {
+    "f_sw_Hz": 1100000.0,
+    "r_on_ohm": 0.125
+   },
+   "from_library": "ap63203wu.pdf",
+   "source": "Diodes Incorporated AP63203WU datasheet https://www.diodes.com/assets/Datasheets/AP63200-AP63201-AP63203-AP63205.pdf (f_sw_Hz p.5; R_on_high_ohm p.5)"
+  },
+  {
    "match": "(?i)^AP63205",
    "data": {
     "f_sw_Hz": 1100000.0,
@@ -97,12 +180,64 @@
    "source": "Diodes Incorporated AP63205 datasheet https://www.diodes.com/assets/Datasheets/AP63200-AP63201-AP63203-AP63205.pdf (f_sw_Hz p.5; R_on_high_ohm p.5)"
   },
   {
+   "match": "(?i)^AP64060WU",
+   "data": {
+    "f_sw_Hz": 2000000.0,
+    "r_on_ohm": 0.6
+   },
+   "from_library": "ap64060wu-7.pdf",
+   "source": "Diodes Incorporated AP64060WU-7 datasheet https://datasheet.lcsc.com/datasheet/pdf/5bd14579caf9725a17ae9bed47e368e5.pdf (f_sw_Hz p.5; R_on_high_ohm p.5)"
+  },
+  {
+   "match": "(?i)^AP64501SP",
+   "data": {
+    "f_sw_Hz": [
+     510000.0,
+     630000.0
+    ],
+    "r_on_ohm": 0.045
+   },
+   "from_library": "ap64501sp-13.pdf",
+   "source": "Diodes Incorporated AP64501SP-13 datasheet https://www.diodes.com/assets/Datasheets/AP64501.pdf (f_sw_Hz p.6; R_on_high_ohm p.6)"
+  },
+  {
    "match": "(?i)^AXP209",
    "data": {
     "f_sw_Hz": 1500000
    },
    "from_library": "axp209.pdf",
    "source": "X-Powers AXP209 datasheet https://store.comet.bg/download-file.php?id=6622 (f_sw_Hz p.8)"
+  },
+  {
+   "match": "(?i)^BD90610U?EFJ",
+   "data": {
+    "f_sw_Hz": [
+     450000.0,
+     550000.0
+    ],
+    "r_on_ohm": [
+     0.16,
+     0.32
+    ]
+   },
+   "from_library": "bd90610efj-ce2.pdf",
+   "source": "ROHM Semiconductor BD90610EFJ-C datasheet https://fscdn.rohm.com/en/products/databook/datasheet/ic/power/switching_regulator/bd906xxefj-c-e.pdf (f_sw_Hz p.6; R_on_high_ohm p.6)"
+  },
+  {
+   "match": "(?i)^BQ24193",
+   "data": {
+    "f_sw_Hz": [
+     1300000.0,
+     1700000.0
+    ],
+    "r_on_ohm": [
+     0.027,
+     0.035
+    ],
+    "v_sw_max_V": 20
+   },
+   "from_library": "bq24193.pdf",
+   "source": "Texas Instruments BQ24193 datasheet https://www.ti.com/lit/ds/symlink/bq24193.pdf (f_sw_Hz p.8; R_on_high_ohm p.7; V_sw_max_V p.5)"
   },
   {
    "match": "(?i)^BSS138L?T[13]G?",
@@ -202,6 +337,16 @@
    "source": "ETA Semiconductor (ETA Solutions) ETA3410D2I-T datasheet https://atta.szlcsc.com/upload/public/pdf/source/20250320/DD65C5A769E8932264B9FDB8123B501F.pdf (f_sw_Hz p.2; R_on_high_ohm p.2; V_sw_max_V p.2)"
   },
   {
+   "match": "(?i)^FAN4860",
+   "data": {
+    "f_sw_Hz": 3000000.0,
+    "r_on_ohm": 0.4,
+    "v_sw_max_V": 5.5
+   },
+   "from_library": "fan4860.pdf",
+   "source": "onsemi FAN4860UMP5X datasheet https://www.onsemi.com/download/data-sheet/pdf/fan4860-d.pdf (f_sw_Hz p.13; R_on_high_ohm p.5; V_sw_max_V p.3)"
+  },
+  {
    "match": "(?i)^FPF2286",
    "data": {
     "r_on_ohm": [
@@ -211,6 +356,14 @@
    },
    "from_library": "fpf2286ucx.pdf",
    "source": "onsemi FPF2286UCX datasheet https://cdn.eicom.ru/media/PDF/1482096.pdf (R_on_high_ohm p.4)"
+  },
+  {
+   "match": "(?i)^HT7733A",
+   "data": {
+    "f_sw_Hz": 200000.0
+   },
+   "from_library": "ht7733a.pdf",
+   "source": "Holtek Semiconductor HT7733A datasheet https://atta.szlcsc.com/upload/public/pdf/source/20170919/C131130_1505787255198976996.pdf (f_sw_Hz p.3)"
   },
   {
    "match": "(?i)^LM2576",
@@ -224,12 +377,65 @@
    "source": "onsemi LM2576TV-5G (LM2576 5.0 V fixed, TO-220 5-lead) datasheet https://www.ti.com/lit/ds/symlink/lm2576.pdf (f_sw_Hz p.6)"
   },
   {
+   "match": "(?i)^LM2623(?!A)",
+   "data": {
+    "f_sw_Hz": [
+     300000.0,
+     2000000.0
+    ],
+    "v_sw_max_V": 14.5
+   },
+   "from_library": "lm2623.pdf",
+   "source": "Texas Instruments LM2623 datasheet https://www.ti.com/lit/ds/symlink/lm2623.pdf (f_sw_Hz p.1; V_sw_max_V p.4)"
+  },
+  {
+   "match": "(?i)^LM27313",
+   "data": {
+    "f_sw_Hz": [
+     1150000.0,
+     1900000.0
+    ],
+    "v_sw_max_V": 30
+   },
+   "from_library": "lm27313.pdf",
+   "source": "Texas Instruments LM27313 datasheet https://www.ti.com/lit/ds/symlink/lm27313.pdf (f_sw_Hz p.5; V_sw_max_V p.3)"
+  },
+  {
    "match": "(?i)^LM5109B?",
    "data": {
     "v_sw_max_V": 90
    },
    "from_library": "lm5109b.pdf",
    "source": "Texas Instruments LM5109B datasheet https://www.ti.com/lit/ds/symlink/lm5109b.pdf (V_sw_max_V p.4)"
+  },
+  {
+   "match": "(?i)^LMR12010X",
+   "data": {
+    "f_sw_Hz": [
+     1200000.0,
+     1900000.0
+    ],
+    "r_on_ohm": [
+     0.3,
+     0.6
+    ],
+    "v_sw_max_V": 24
+   },
+   "from_library": "lmr12010xmke.pdf",
+   "source": "Texas Instruments LMR12010XMK datasheet https://www.ti.com/lit/ds/symlink/lmr12010.pdf (f_sw_Hz p.5; R_on_high_ohm p.5; V_sw_max_V p.4)"
+  },
+  {
+   "match": "(?i)^LMR14010A",
+   "data": {
+    "f_sw_Hz": [
+     550000.0,
+     850000.0
+    ],
+    "r_on_ohm": 0.5,
+    "v_sw_max_V": 45
+   },
+   "from_library": "lmr14010a.pdf",
+   "source": "Texas Instruments LMR14010A datasheet https://www.ti.com/lit/ds/symlink/lmr14010a.pdf (f_sw_Hz p.5; R_on_high_ohm p.5; V_sw_max_V p.4)"
   },
   {
    "match": "(?i)^LMR16006",
@@ -245,6 +451,21 @@
    "source": "Texas Instruments LMR16006 datasheet https://www.ti.com/lit/ds/symlink/lmr16006.pdf (f_sw_Hz p.5; R_on_high_ohm p.5; V_sw_max_V p.4)"
   },
   {
+   "match": "(?i)^LMR33630ADDA",
+   "data": {
+    "f_sw_Hz": [
+     340000.0,
+     460000.0
+    ],
+    "r_on_ohm": [
+     0.095,
+     0.16
+    ]
+   },
+   "from_library": "lmr33630adda.pdf",
+   "source": "Texas Instruments LMR33630ADDA datasheet https://www.ti.com/lit/ds/symlink/lmr33630.pdf (f_sw_Hz p.8; R_on_high_ohm p.8)"
+  },
+  {
    "match": "(?i)^LMR51430",
    "data": {
     "f_sw_Hz": [
@@ -256,6 +477,18 @@
    },
    "from_library": "lmr51430yf.pdf",
    "source": "Texas Instruments LMR51430YFDDCR datasheet https://www.ti.com/lit/ds/symlink/lmr51430.pdf (f_sw_Hz p.5; R_on_high_ohm p.5; V_sw_max_V p.4)"
+  },
+  {
+   "match": "(?i)^LMR54406DBV",
+   "data": {
+    "f_sw_Hz": [
+     935000.0,
+     1265000.0
+    ],
+    "r_on_ohm": 0.45
+   },
+   "from_library": "lmr54406dbvr.pdf",
+   "source": "Texas Instruments LMR54406DBVR datasheet https://www.ti.com/lit/ds/symlink/lmr54406.pdf (f_sw_Hz p.5; R_on_high_ohm p.5)"
   },
   {
    "match": "(?i)^LMR62014",
@@ -270,6 +503,58 @@
    "source": "Texas Instruments LMR62014XMF/NOPB datasheet https://www.ti.com/lit/ds/symlink/lmr62014.pdf (f_sw_Hz p.4; V_sw_max_V p.3)"
   },
   {
+   "match": "(?i)^LT1944(EMS|#|$)",
+   "data": {
+    "v_sw_max_V": 36
+   },
+   "from_library": "lt1944ems-pbf.pdf",
+   "source": "Linear Technology (Analog Devices) LT1944EMS datasheet https://nonprod.docs.rs-online.com/0cbb/0900766b810ed99e.pdf (V_sw_max_V p.2)"
+  },
+  {
+   "match": "(?i)^LT3754",
+   "data": {
+    "f_sw_Hz": [
+     100000,
+     1000000
+    ]
+   },
+   "from_library": "lt3754.pdf",
+   "source": "Linear Technology (Analog Devices) LT3754 datasheet https://static.chipdip.ru/lib/224/DOC043224457.pdf (f_sw_Hz p.3)"
+  },
+  {
+   "match": "(?i)^LTC3440",
+   "data": {
+    "f_sw_Hz": [
+     300000,
+     2000000
+    ],
+    "r_on_ohm": 0.22,
+    "v_sw_max_V": 6
+   },
+   "from_library": "ltc3440ems.pdf",
+   "source": "Linear Technology (Analog Devices) LTC3440EMS datasheet https://store.comet.bg/download-file.php?id=14446 (f_sw_Hz p.3; R_on_high_ohm p.3; V_sw_max_V p.2)"
+  },
+  {
+   "match": "(?i)^LTC3525(E?SC6)?-5",
+   "data": {
+    "r_on_ohm": 0.7,
+    "v_sw_max_V": 6
+   },
+   "from_library": "ltc3525-5.pdf",
+   "source": "Linear Technology (Analog Devices) LTC3525-5 datasheet https://static.datasheets.com/doc/4693366-analog-devices-ltc3525esc6-5-ds.pdf (R_on_high_ohm p.3; V_sw_max_V p.2)"
+  },
+  {
+   "match": "(?i)^LTC3783",
+   "data": {
+    "f_sw_Hz": [
+     20000,
+     1000000
+    ]
+   },
+   "from_library": "ltc3783.pdf",
+   "source": "Linear Technology (Analog Devices) LTC3783 datasheet https://docs.rs-online.com/0f65/0900766b812c32cf.pdf (f_sw_Hz p.3)"
+  },
+  {
    "match": "(?i)^MAX17135",
    "data": {
     "f_sw_Hz": [
@@ -282,6 +567,34 @@
    "source": "Maxim Integrated (Analog Devices) MAX17135 datasheet https://static.chipdip.ru/lib/301/DOC043301173.pdf (f_sw_Hz p.3; V_sw_max_V p.2)"
   },
   {
+   "match": "(?i)^MAX1771C",
+   "data": {
+    "f_sw_Hz": 300000
+   },
+   "from_library": "max1771csat.pdf",
+   "source": "Maxim Integrated (Analog Devices) MAX1771CSA datasheet https://www.futurlec.com/Datasheet/Maxim/MAX1771.pdf (f_sw_Hz p.11)"
+  },
+  {
+   "match": "(?i)^MAX1771E",
+   "data": {
+    "f_sw_Hz": 300000
+   },
+   "from_library": "max1771esa-t.pdf",
+   "source": "Maxim Integrated (Analog Devices) MAX1771ESA datasheet https://www.futurlec.com/Datasheet/Maxim/MAX1771.pdf (f_sw_Hz p.11)"
+  },
+  {
+   "match": "(?i)^MC34063AP",
+   "data": {
+    "f_sw_Hz": [
+     24000.0,
+     42000.0
+    ],
+    "v_sw_max_V": 40
+   },
+   "from_library": "mc34063ap.pdf",
+   "source": "Texas Instruments MC34063AP datasheet https://www.ti.com/lit/ds/symlink/mc34063a.pdf (f_sw_Hz p.4; V_sw_max_V p.4)"
+  },
+  {
    "match": "(?i)^MC3[24]PF1510",
    "data": {
     "f_sw_Hz": 2000000,
@@ -289,6 +602,99 @@
    },
    "from_library": "mc34pf1510a6ep.pdf",
    "source": "NXP Semiconductors MC34PF1510A6EP datasheet https://www.farnell.com/datasheets/2645826.pdf (f_sw_Hz p.13; V_sw_max_V p.9)"
+  },
+  {
+   "match": "(?i)^MCP1603T?-330",
+   "data": {
+    "f_sw_Hz": [
+     1500000.0,
+     2800000.0
+    ],
+    "r_on_ohm": 0.5
+   },
+   "from_library": "mcp1603t-330i-os.pdf",
+   "source": "Microchip Technology MCP1603T-330I/OS datasheet https://ww1.microchip.com/downloads/en/DeviceDoc/22042b.pdf (f_sw_Hz p.6; R_on_high_ohm p.6)"
+  },
+  {
+   "match": "(?i)^MCP16251",
+   "data": {
+    "f_sw_Hz": [
+     425000.0,
+     575000.0
+    ],
+    "r_on_ohm": 0.9,
+    "v_sw_max_V": 6.5
+   },
+   "from_library": "mcp16251.pdf",
+   "source": "Microchip Technology MCP16251 datasheet https://ww1.microchip.com/downloads/en/DeviceDoc/20005173B.pdf (f_sw_Hz p.4; R_on_high_ohm p.4; V_sw_max_V p.3)"
+  },
+  {
+   "match": "(?i)^MCP16301(?![0-9H])",
+   "data": {
+    "f_sw_Hz": [
+     425000.0,
+     550000.0
+    ],
+    "r_on_ohm": 0.46,
+    "v_sw_max_V": 40
+   },
+   "from_library": "mcp16301.pdf",
+   "source": "Microchip Technology MCP16301 datasheet https://ww1.microchip.com/downloads/en/DeviceDoc/20005004D.pdf (f_sw_Hz p.3; R_on_high_ohm p.3; V_sw_max_V p.3)"
+  },
+  {
+   "match": "(?i)^MCP16321T?-330",
+   "data": {
+    "f_sw_Hz": [
+     900000.0,
+     1100000.0
+    ],
+    "r_on_ohm": 0.18,
+    "v_sw_max_V": 26.4
+   },
+   "from_library": "mcp16321t-330e-ng.pdf",
+   "source": "Microchip Technology MCP16321T-330E/NG datasheet https://ww1.microchip.com/downloads/en/DeviceDoc/20002285B.pdf (f_sw_Hz p.4; R_on_high_ohm p.4; V_sw_max_V p.3)"
+  },
+  {
+   "match": "(?i)^MCP1640[BCD]?(?![0-9])",
+   "data": {
+    "f_sw_Hz": [
+     425000.0,
+     575000.0
+    ],
+    "r_on_ohm": 0.9,
+    "v_sw_max_V": 6.5
+   },
+   "from_library": "mcp1640.pdf",
+   "source": "Microchip Technology MCP1640 datasheet https://ww1.microchip.com/downloads/en/DeviceDoc/20002234D.pdf (f_sw_Hz p.4; R_on_high_ohm p.4; V_sw_max_V p.3)"
+  },
+  {
+   "match": "(?i)^ME2188",
+   "data": {
+    "f_sw_Hz": 320000.0,
+    "v_sw_max_V": 6
+   },
+   "from_library": "me2188.pdf",
+   "source": "Nanjing Micro One Electronics (Microne) ME2188 (ME2188A..PG, SOT89-3) datasheet https://datasheet.lcsc.com/datasheet/pdf/33870c76934836e2f096c29b8558affb.pdf?productCode=C236774 (f_sw_Hz p.4; V_sw_max_V p.4)"
+  },
+  {
+   "match": "(?i)^MIC2250-2",
+   "data": {
+    "v_sw_max_V": 34
+   },
+   "from_library": "mic2250-2.pdf",
+   "source": "Micrel (Microchip Technology) MIC2250-2YD5 datasheet https://ww1.microchip.com/downloads/en/DeviceDoc/mic2250.pdf (V_sw_max_V p.3)"
+  },
+  {
+   "match": "(?i)^MIC2288",
+   "data": {
+    "f_sw_Hz": [
+     1050000.0,
+     1350000.0
+    ],
+    "v_sw_max_V": 34
+   },
+   "from_library": "mic2288.pdf",
+   "source": "Microchip Technology MIC2288 datasheet https://www.farnell.com/datasheets/3999478.pdf (f_sw_Hz p.7; V_sw_max_V p.6)"
   },
   {
    "match": "(?i)^MP1584",
@@ -301,6 +707,31 @@
    },
    "from_library": "mp1584en.pdf",
    "source": "Monolithic Power Systems MP1584EN datasheet https://docs.rs-online.com/b924/A700000013716646.pdf (f_sw_Hz p.3; R_on_high_ohm p.3)"
+  },
+  {
+   "match": "(?i)^MP2359",
+   "data": {
+    "f_sw_Hz": [
+     1200000.0,
+     1700000.0
+    ],
+    "r_on_ohm": 0.35,
+    "v_sw_max_V": 27
+   },
+   "from_library": "mp2359dj-lf-z.pdf",
+   "source": "Monolithic Power Systems MP2359DJ-LF-Z datasheet https://docs.rs-online.com/48a6/A700000013717454.pdf (f_sw_Hz p.3; R_on_high_ohm p.3; V_sw_max_V p.2)"
+  },
+  {
+   "match": "(?i)^MP2459",
+   "data": {
+    "f_sw_Hz": [
+     380000.0,
+     580000.0
+    ],
+    "r_on_ohm": 1.0
+   },
+   "from_library": "mp2459gj-z-ms.pdf",
+   "source": "Monolithic Power Systems MP2459GJ-Z datasheet https://hobbielektronika.hu/forum/getfile.php?id=380960 (f_sw_Hz p.3; R_on_high_ohm p.3)"
   },
   {
    "match": "(?i)^MP5424",
@@ -337,6 +768,25 @@
    "source": "Aerosemi Technology MT3608 datasheet https://www.olimex.com/Products/Breadboarding/BB-PWR-3608/resources/MT3608.pdf (f_sw_Hz p.3; V_sw_max_V p.2)"
   },
   {
+   "match": "(?i)^NCP12700",
+   "data": {
+    "f_sw_Hz": [
+     100000.0,
+     1000000.0
+    ]
+   },
+   "from_library": "ncp12700.pdf",
+   "source": "onsemi NCP12700 (MSOP-10, DN suffix) datasheet https://www.onsemi.com/download/data-sheet/pdf/ncp12700-d.pdf (f_sw_Hz p.7)"
+  },
+  {
+   "match": "(?i)^NCP1402",
+   "data": {
+    "v_sw_max_V": 6.0
+   },
+   "from_library": "ncp1402.pdf",
+   "source": "onsemi NCP1402 datasheet https://www.onsemi.com/download/data-sheet/pdf/ncp1402-d.pdf (V_sw_max_V p.4)"
+  },
+  {
    "match": "(?i)^NCP1529",
    "data": {
     "f_sw_Hz": [
@@ -358,6 +808,21 @@
    },
    "from_library": "nx5p3090.pdf",
    "source": "NXP Semiconductors NX5P3090UK(Z) datasheet https://datasheet.chipsmall.com/NX5P3090UKZ/113519.pdf (R_ds_on_ohm p.14)"
+  },
+  {
+   "match": "(?i)^PAM2301CAAB330",
+   "data": {
+    "f_sw_Hz": [
+     1200000.0,
+     1800000.0
+    ],
+    "r_on_ohm": [
+     0.3,
+     0.45
+    ]
+   },
+   "from_library": "pam2301caab330.pdf",
+   "source": "Diodes Incorporated PAM2301CAAB330 datasheet https://www.diodes.com/assets/Datasheets/PAM2301.pdf (f_sw_Hz p.3; R_on_high_ohm p.3)"
   },
   {
    "match": "(?i)K7805M-1000R3",
@@ -456,6 +921,24 @@
    "source": "Texas Instruments TPSM5D1806RDBR datasheet https://www.ti.com/lit/gpn/TPSM5D1806 (f_sw_Hz p.7; V_sw_max_V p.5)"
   },
   {
+   "match": "(?i)^TLV62568(?![0-9P])",
+   "data": {
+    "f_sw_Hz": 1500000,
+    "r_on_ohm": 0.15
+   },
+   "from_library": "tlv62568dbvr.pdf",
+   "source": "Texas Instruments TLV62568 datasheet https://www.ti.com/lit/ds/symlink/tlv62568.pdf (f_sw_Hz p.5; R_on_high_ohm p.5)"
+  },
+  {
+   "match": "(?i)^TLV62569(?![0-9P])",
+   "data": {
+    "f_sw_Hz": 1500000,
+    "r_on_ohm": 0.1
+   },
+   "from_library": "tlv62569dbvr.pdf",
+   "source": "Texas Instruments TLV62569 datasheet https://www.ti.com/lit/ds/symlink/tlv62569.pdf (f_sw_Hz p.5; R_on_high_ohm p.5)"
+  },
+  {
    "match": "(?i)^TMC6300",
    "data": {
     "r_on_ohm": [
@@ -466,6 +949,18 @@
    },
    "from_library": "tmc6300.pdf",
    "source": "Trinamic (Analog Devices) TMC6300-LA datasheet https://shop.mev-elektronik.com/wp-content/uploads/TMC6300_datasheet.pdf (R_on_high_ohm p.13; V_sw_max_V p.12)"
+  },
+  {
+   "match": "(?i)^TP5410",
+   "data": {
+    "f_sw_Hz": [
+     300000.0,
+     500000.0
+    ],
+    "v_sw_max_V": 10
+   },
+   "from_library": "tp5410.pdf",
+   "source": "Nanjing Top Power ASIC Corp. (TOPPOWER) TP5410 datasheet https://datasheet.lcsc.com/datasheet/pdf/5340625b6d374528acef751a07e940c4.pdf?productCode=C79927 (f_sw_Hz p.6; V_sw_max_V p.2)"
   },
   {
    "match": "(?i)^TPS2066",
@@ -490,6 +985,58 @@
    "source": "Texas Instruments TPS22919DCKT datasheet https://www.ti.com/lit/ds/symlink/tps22919.pdf (R_ds_on_ohm p.5)"
   },
   {
+   "match": "(?i)^TPS51386(?!\\d)",
+   "data": {
+    "f_sw_Hz": 600000,
+    "r_on_ohm": 0.022,
+    "v_sw_max_V": 28
+   },
+   "from_library": "tps51386.pdf",
+   "source": "Texas Instruments TPS51386 datasheet https://www.ti.com/lit/ds/symlink/tps51386.pdf (f_sw_Hz p.5; R_on_high_ohm p.5; V_sw_max_V p.4)"
+  },
+  {
+   "match": "(?i)^TPS54228(?!\\d)",
+   "data": {
+    "f_sw_Hz": 700000,
+    "r_on_ohm": 0.155,
+    "v_sw_max_V": 20
+   },
+   "from_library": "tps54228.pdf",
+   "source": "Texas Instruments TPS54228 datasheet https://www.ti.com/lit/ds/symlink/tps54228.pdf (f_sw_Hz p.1; R_on_high_ohm p.5; V_sw_max_V p.4)"
+  },
+  {
+   "match": "(?i)^TPS5430(?!\\d)",
+   "data": {
+    "f_sw_Hz": [
+     400000,
+     600000
+    ],
+    "r_on_ohm": [
+     0.1,
+     0.23
+    ],
+    "v_sw_max_V": 40
+   },
+   "from_library": "tps5430dda.pdf",
+   "source": "Texas Instruments TPS5430 datasheet https://www.ti.com/lit/ds/symlink/tps5430.pdf (f_sw_Hz p.5; R_on_high_ohm p.5; V_sw_max_V p.4)"
+  },
+  {
+   "match": "(?i)^TPS54331(?!\\d)",
+   "data": {
+    "f_sw_Hz": [
+     456000,
+     684000
+    ],
+    "r_on_ohm": [
+     0.08,
+     0.15
+    ],
+    "v_sw_max_V": 30
+   },
+   "from_library": "tps54331dr.pdf",
+   "source": "Texas Instruments TPS54331 datasheet https://www.ti.com/lit/ds/symlink/tps54331.pdf (f_sw_Hz p.6; R_on_high_ohm p.5; V_sw_max_V p.4)"
+  },
+  {
    "match": "(?i)^TPS563300",
    "data": {
     "f_sw_Hz": [
@@ -503,6 +1050,39 @@
    "source": "Texas Instruments TPS563300DRLR datasheet https://www.ti.com/lit/ds/symlink/tps563300.pdf (f_sw_Hz p.5; R_on_high_ohm p.5; V_sw_max_V p.4)"
   },
   {
+   "match": "(?i)^TPS56339(?!\\d)",
+   "data": {
+    "f_sw_Hz": [
+     420000,
+     600000
+    ],
+    "r_on_ohm": 0.07,
+    "v_sw_max_V": 26
+   },
+   "from_library": "tps56339.pdf",
+   "source": "Texas Instruments TPS56339 datasheet https://www.ti.com/lit/ds/symlink/tps56339.pdf (f_sw_Hz p.5; R_on_high_ohm p.5; V_sw_max_V p.4)"
+  },
+  {
+   "match": "(?i)^TPS565208(?!\\d)",
+   "data": {
+    "f_sw_Hz": 500000,
+    "r_on_ohm": 0.031,
+    "v_sw_max_V": 19
+   },
+   "from_library": "tps565208ddc.pdf",
+   "source": "Texas Instruments TPS565208 datasheet https://www.ti.com/lit/ds/symlink/tps565208.pdf (f_sw_Hz p.5; R_on_high_ohm p.5; V_sw_max_V p.4)"
+  },
+  {
+   "match": "(?i)^TPS56C230(?!\\d)",
+   "data": {
+    "f_sw_Hz": 500000,
+    "r_on_ohm": 0.017,
+    "v_sw_max_V": 20
+   },
+   "from_library": "tps56c230rjer.pdf",
+   "source": "Texas Instruments TPS56C230 datasheet https://www.ti.com/lit/ds/symlink/tps56c230.pdf (f_sw_Hz p.5; R_on_high_ohm p.5; V_sw_max_V p.4)"
+  },
+  {
    "match": "(?i)^TPS61090",
    "data": {
     "f_sw_Hz": [
@@ -514,6 +1094,41 @@
    },
    "from_library": "tps61090.pdf",
    "source": "Texas Instruments TPS61090RSAR datasheet https://www.ti.com/lit/ds/symlink/tps61090.pdf (f_sw_Hz p.4; R_on_high_ohm p.4; V_sw_max_V p.4)"
+  },
+  {
+   "match": "(?i)^TPS61158",
+   "data": {
+    "f_sw_Hz": [
+     600000.0,
+     900000.0
+    ],
+    "v_sw_max_V": 30
+   },
+   "from_library": "tps61158drvr.pdf",
+   "source": "Texas Instruments TPS61158DRVR datasheet https://www.ti.com/lit/ds/symlink/tps61158.pdf (f_sw_Hz p.5; V_sw_max_V p.4)"
+  },
+  {
+   "match": "(?i)^TPS61232",
+   "data": {
+    "f_sw_Hz": 2000000.0,
+    "r_on_ohm": [
+     0.05,
+     0.075
+    ],
+    "v_sw_max_V": 7
+   },
+   "from_library": "tps61232drct.pdf",
+   "source": "Texas Instruments TPS61232DRCT datasheet https://www.ti.com/lit/ds/symlink/tps61232.pdf (f_sw_Hz p.1; R_on_high_ohm p.5; V_sw_max_V p.4)"
+  },
+  {
+   "match": "(?i)^TPS61252",
+   "data": {
+    "f_sw_Hz": 3250000.0,
+    "r_on_ohm": 0.2,
+    "v_sw_max_V": 7
+   },
+   "from_library": "tps61252dsg.pdf",
+   "source": "Texas Instruments TPS61252DSG datasheet https://www.ti.com/lit/ds/symlink/tps61252.pdf (f_sw_Hz p.5; R_on_high_ohm p.5; V_sw_max_V p.4)"
   },
   {
    "match": "(?i)^TPS62130",
@@ -541,6 +1156,30 @@
    "source": "Texas Instruments TPS621361 datasheet https://www.ti.com/lit/ds/symlink/tps62136.pdf (f_sw_Hz p.6; R_on_high_ohm p.6; V_sw_max_V p.4)"
   },
   {
+   "match": "(?i)^TPS62160(?!\\d)",
+   "data": {
+    "f_sw_Hz": 2250000,
+    "r_on_ohm": [
+     0.3,
+     0.6
+    ]
+   },
+   "from_library": "tps62160.pdf",
+   "source": "Texas Instruments TPS62160 datasheet https://www.ti.com/lit/ds/symlink/tps62160.pdf (f_sw_Hz p.8; R_on_high_ohm p.6)"
+  },
+  {
+   "match": "(?i)^TPS62163(?!\\d)",
+   "data": {
+    "f_sw_Hz": 2250000,
+    "r_on_ohm": [
+     0.3,
+     0.6
+    ]
+   },
+   "from_library": "tps62160.pdf",
+   "source": "Texas Instruments TPS62163 datasheet https://www.ti.com/lit/ds/symlink/tps62160.pdf (f_sw_Hz p.8; R_on_high_ohm p.6)"
+  },
+  {
    "match": "(?i)^TPS62172",
    "data": {
     "f_sw_Hz": 2250000,
@@ -564,6 +1203,33 @@
    },
    "from_library": "tps62175dqc.pdf",
    "source": "Texas Instruments TPS62175DQC datasheet https://www.ti.com/lit/ds/symlink/tps62175.pdf (f_sw_Hz p.8; R_on_high_ohm p.5)"
+  },
+  {
+   "match": "(?i)^TPS62177(?!\\d)",
+   "data": {
+    "f_sw_Hz": 1000000,
+    "r_on_ohm": [
+     0.85,
+     1.43
+    ]
+   },
+   "from_library": "tps62177dqc.pdf",
+   "source": "Texas Instruments TPS62177 datasheet https://www.ti.com/lit/ds/symlink/tps62177.pdf (f_sw_Hz p.1; R_on_high_ohm p.5)"
+  },
+  {
+   "match": "(?i)^TPS62203(?!\\d)",
+   "data": {
+    "f_sw_Hz": [
+     650000,
+     1500000
+    ],
+    "r_on_ohm": [
+     0.53,
+     0.69
+    ]
+   },
+   "from_library": "tps62203dbv.pdf",
+   "source": "Texas Instruments TPS62203 datasheet https://www.ti.com/lit/ds/symlink/tps62203.pdf (f_sw_Hz p.5; R_on_high_ohm p.5)"
   },
   {
    "match": "(?i)^TPS62260",
@@ -598,6 +1264,19 @@
    "source": "Texas Instruments TPS62913 datasheet https://www.ti.com/lit/ds/symlink/tps62913.pdf (f_sw_Hz p.6; R_on_high_ohm p.6; V_sw_max_V p.4)"
   },
   {
+   "match": "(?i)^TPS62933(?![0-9FOP])",
+   "data": {
+    "f_sw_Hz": [
+     450000,
+     550000
+    ],
+    "r_on_ohm": 0.076,
+    "v_sw_max_V": 32
+   },
+   "from_library": "tps62933.pdf",
+   "source": "Texas Instruments TPS62933 datasheet https://www.ti.com/lit/ds/symlink/tps62933.pdf (f_sw_Hz p.7; R_on_high_ohm p.6; V_sw_max_V p.5)"
+  },
+  {
    "match": "(?i)^TPS63001",
    "data": {
     "f_sw_Hz": [
@@ -609,6 +1288,94 @@
    },
    "from_library": "tps63001drcr.pdf",
    "source": "Texas Instruments TPS63001DRCR datasheet https://www.ti.com/lit/ds/symlink/tps63001.pdf (f_sw_Hz p.5; R_on_high_ohm p.5; V_sw_max_V p.4)"
+  },
+  {
+   "match": "(?i)^TPS63020",
+   "data": {
+    "f_sw_Hz": [
+     2200000.0,
+     2600000.0
+    ],
+    "r_on_ohm": 0.05,
+    "v_sw_max_V": 7
+   },
+   "from_library": "tps63020.pdf",
+   "source": "Texas Instruments TPS63020 datasheet https://www.ti.com/lit/ds/symlink/tps63020.pdf (f_sw_Hz p.6; R_on_high_ohm p.6; V_sw_max_V p.5)"
+  },
+  {
+   "match": "(?i)^TPS63060",
+   "data": {
+    "f_sw_Hz": [
+     2200000.0,
+     2600000.0
+    ],
+    "r_on_ohm": 0.09,
+    "v_sw_max_V": 17
+   },
+   "from_library": "tps63060.pdf",
+   "source": "Texas Instruments TPS63060 datasheet https://www.ti.com/lit/ds/symlink/tps63060.pdf (f_sw_Hz p.6; R_on_high_ohm p.6; V_sw_max_V p.5)"
+  },
+  {
+   "match": "(?i)^TPS630701",
+   "data": {
+    "f_sw_Hz": [
+     2100000.0,
+     2700000.0
+    ],
+    "r_on_ohm": [
+     0.05,
+     0.08
+    ]
+   },
+   "from_library": "tps630701rnmr.pdf",
+   "source": "Texas Instruments TPS630701 datasheet https://www.ti.com/lit/ds/symlink/tps63070.pdf (f_sw_Hz p.7; R_on_high_ohm p.7)"
+  },
+  {
+   "match": "(?i)^TPS63070(?![12])",
+   "data": {
+    "f_sw_Hz": [
+     2100000.0,
+     2700000.0
+    ],
+    "r_on_ohm": [
+     0.05,
+     0.08
+    ]
+   },
+   "from_library": "tps63070rnmr.pdf",
+   "source": "Texas Instruments TPS63070 datasheet https://www.ti.com/lit/ds/symlink/tps63070.pdf (f_sw_Hz p.7; R_on_high_ohm p.7)"
+  },
+  {
+   "match": "(?i)^TPS631000",
+   "data": {
+    "f_sw_Hz": [
+     1800000.0,
+     2200000.0
+    ],
+    "r_on_ohm": 0.045,
+    "v_sw_max_V": 6
+   },
+   "from_library": "tps631000drlr.pdf",
+   "source": "Texas Instruments TPS631000 datasheet https://www.ti.com/lit/ds/symlink/tps631000.pdf (f_sw_Hz p.5; R_on_high_ohm p.5; V_sw_max_V p.4)"
+  },
+  {
+   "match": "(?i)^TPS63802",
+   "data": {
+    "f_sw_Hz": 1400000.0,
+    "r_on_ohm": 0.047,
+    "v_sw_max_V": 6
+   },
+   "from_library": "tps63802dlar.pdf",
+   "source": "Texas Instruments TPS63802 datasheet https://www.ti.com/lit/ds/symlink/tps63802.pdf (f_sw_Hz p.7; R_on_high_ohm p.6; V_sw_max_V p.5)"
+  },
+  {
+   "match": "(?i)^TPS63900",
+   "data": {
+    "r_on_ohm": 0.155,
+    "v_sw_max_V": 5.9
+   },
+   "from_library": "tps63900.pdf",
+   "source": "Texas Instruments TPS63900 datasheet https://www.ti.com/lit/ds/symlink/tps63900.pdf (R_on_high_ohm p.5; V_sw_max_V p.4)"
   },
   {
    "match": "(?i)^TPS650861",
@@ -634,6 +1401,68 @@
    },
    "from_library": "tpsm33606s5qrdnrq1.pdf",
    "source": "Texas Instruments TPSM33606S5QRDNRQ1 datasheet https://www.ti.com/lit/ds/symlink/tpsm33606-q1.pdf (f_sw_Hz p.8; R_on_high_ohm p.8; V_sw_max_V p.6)"
+  },
+  {
+   "match": "(?i)^TX4138",
+   "data": {
+    "f_sw_Hz": [
+     160000.0,
+     240000.0
+    ],
+    "r_on_ohm": 0.032
+   },
+   "from_library": "tx4138-esoic-8-.pdf",
+   "source": "XDS Semiconductor (xdssemi.com) TX4138 datasheet https://datasheet.lcsc.com/datasheet/pdf/d024c4d04581d564b9ef26614fc64acf.pdf?productCode=C329267 (f_sw_Hz p.3; R_on_high_ohm p.3)"
+  },
+  {
+   "match": "(?i)^XC9141",
+   "data": {
+    "f_sw_Hz": [
+     1020000.0,
+     1380000.0
+    ],
+    "r_on_ohm": 0.3,
+    "v_sw_max_V": 7.0
+   },
+   "from_library": "xc9141.pdf",
+   "source": "Torex Semiconductor XC9141 series datasheet https://www.farnell.com/datasheets/3118423.pdf (f_sw_Hz p.7; R_on_high_ohm p.7; V_sw_max_V p.6)"
+  },
+  {
+   "match": "(?i)^XL1509-3\\.3",
+   "data": {
+    "f_sw_Hz": [
+     127000.0,
+     173000.0
+    ]
+   },
+   "from_library": "xl1509-3-3.pdf",
+   "source": "XLSEMI (Shanghai XinLong Semiconductor) XL1509-3.3 datasheet http://www.xlsemi.com/datasheet/XL1509-EN.pdf (f_sw_Hz p.6)"
+  },
+  {
+   "match": "(?i)^XL4005",
+   "data": {
+    "f_sw_Hz": [
+     240000.0,
+     360000.0
+    ]
+   },
+   "from_library": "xl4005.pdf",
+   "source": "XLSEMI (Shanghai XinLong Semiconductor) XL4005 datasheet http://www.xlsemi.com/datasheet/XL4005-EN.pdf (f_sw_Hz p.5)"
+  },
+  {
+   "match": "(?i)^XL4015",
+   "data": {
+    "f_sw_Hz": [
+     144000.0,
+     216000.0
+    ],
+    "r_on_ohm": [
+     0.06,
+     0.08
+    ]
+   },
+   "from_library": "xl4015.pdf",
+   "source": "XLSEMI (Shanghai XinLong Semiconductor) XL4015 datasheet http://www.xlsemi.com/datasheet/XL4015-EN.pdf (f_sw_Hz p.5; R_on_high_ohm p.5)"
   }
  ]
 }

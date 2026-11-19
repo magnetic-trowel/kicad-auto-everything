@@ -2,14 +2,19 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """A board's two structured inputs from its spec (numbers a model or a designer states about the board):
 
-  OPERATING  kae.excite.evaluate --intent: what the board does electrically. cells.<cell id>.{V_V,
-             f_sw_Hz, I_A, t_i_s}, parts.<ref>.{I_A, I_sustained_A} (loads and output connectors; the sustained draw sets temperatures), nets.<rail>.source,
+  OPERATING  kae.excite.evaluate --intent: what the board does electrically. radios.<ref> = kind, cells.<cell id>.{V_V,
+             f_sw_Hz, I_out_A, V_in_V, V_out_V, eta, I_switch_A (stated only: an override), t_i_s; I_A for
+             cells that are no DC-DC converter}, parts.<ref>.{I_A, I_sustained_A} (loads and output connectors; the sustained draw sets temperatures), nets.<rail>.source,
              requirements.thermal.{T_amb_C, airflow_h_W_m2K, heatsinks}, requirements.assembly.{process,
-             hand_solder_ok, reflow_only_parts}. Each replaces one of the evaluator's priors.
+             hand_solder_ok, reflow_only_parts}. Each replaces one of the evaluator's priors. With --pintypes,
+             pins.<ref>.<pad> = [type, name]: the schematic's pin facts the summary was built with, which the
+             evaluator applies too (kae.board.pinfacts), so both see the same rails, regulators and cells.
   INTENT     kae.intent: what matters. Standing priorities on every board (copper loss = power loss and
              efficiency; ripple), the spec's limits (rail tolerance -> drop.rail, rail and IC ripple ->
              supply.peak, sensitive pins -> pickup.peak, switch ratings -> overshoot.peak hard, track heat),
-             and EMI terms on boards with a radio or GNSS receiver (its supply and pins, declared cables).
+             and EMI terms on boards with a radio or GNSS receiver: the spec's radios and every part
+             kae.circuit.roles.radio_kind names, noise into its supply and RF pins (to_part: the victim side
+             only), and cable emission (declared cables; else 1 m on each cable-type connector).
 
     python intent_from_spec.py SPEC.json SUMMARY.json --intent INTENT.json --operating OPERATING.json
 
@@ -76,6 +81,8 @@ def verified(f, name):
     return typ, mx, f"{f.get('part') or f.get('query')} datasheet p.{v.get('page')}"
 
 
+CABLE_ROLES = ("connector_power", "connector_usb", "connector_audio", "connector_wire_to_board", "connector_ethernet",
+               "connector_can", "connector_hdmi", "connector_rf")
 AMPS_PER_PAD = 3.0      # A a connector pin carries at most, generously (0.1" headers ~3 A)
 AMPS_BY_KIND = ((r"screw|terminal|\bTB\d|barrel|jack|DCJ|XT\d\d|anderson|mini.?fit|micro.?fit|power", 15.0),
                 (r"JST.?(SH|GH|ZH)|SM\d\dB.?SR|picoblade", 1.0))
@@ -145,6 +152,50 @@ def basis(item):
 
 def why(item, what):
     return f"{what} ({basis(item)}: {item.get('why') or 'no reason given'})"
+
+
+def field_bases(item):
+    """A converter's per-field provenance (fields.<key>.basis: board, datasheet, typical or guess), as a suffix."""
+    fb = item.get("fields") or {}
+    parts = [f"{k} {v.get('basis')}" for k, v in fb.items() if isinstance(v, dict) and v.get("basis")]
+    return f" [fields: {', '.join(parts)}]" if parts else ""
+
+
+def cell_topology(S, cid, vout=None):
+    """(topology, leg) of a cell section (kae.physics.converter.topology_of): its class from the id; a buck and a
+    boost cell of one controller sharing an inductor are the two legs of a 4-switch buck-boost."""
+    from kae.physics import converter as CV
+    bits = str(cid).split(":")
+    cls, ctrl = (bits[1], bits[2]) if len(bits) >= 3 else (None, None)
+    st = {}
+    if cls in ("buck", "boost"):
+        other = S.sections.get(f"cell:{'boost' if cls == 'buck' else 'buck'}:{ctrl}")
+        mine = S.sections.get(cid) or {}
+        ind = lambda x: {p for p in x.get("parts") or [] if str(p).startswith("L")}
+        if other and ind(mine) & ind(other):
+            st = {"topology": "buck_boost_4switch"}
+    return CV.topology_of(cls, st, vout)
+
+
+def bus_volts(top, leg, vin, vout):
+    """A cell's bus (its switch node's swing): a buck's input, a boost's output, an inverting stage's both."""
+    vo = abs(vout) if vout else None
+    if top in ("boost", "boost_led") or (top == "buck_boost_4switch" and leg == "boost"):
+        return vo or vin
+    if top in ("buck",) or (top == "buck_boost_4switch" and leg == "buck"):
+        return vin or vo
+    if top in ("inverting_buck_boost", "sepic", "cuk") and vin and vo:
+        return vin + vo
+    return max(v for v in (vin, vo) if v)
+
+
+def rail_eta(op, cid):
+    """The stated efficiency [lo, hi] of the rail this cell's controller sources (op nets.<rail>.eta), or None."""
+    ctrl = str(cid).split(":")[2] if str(cid).count(":") >= 2 else None
+    for n, fact in (op.get("nets") or {}).items():
+        if ctrl and fact.get("source") == ctrl and fact.get("eta"):
+            return list(fact["eta"])
+    return None
 
 
 def compile_spec(spec, summary):
@@ -241,20 +292,45 @@ def compile_spec(spec, summary):
             S.rejected.append(f"{w}: cell {cid!r} is not one of the board's cell sections")
             continue
         vin, vout = S.num(c, "V_in_V", "V", w), S.num(c, "V_out_V", "V", w)
-        f, I, t = S.num(c, "f_sw_Hz", "Hz", w), S.num(c, "I_out_A", "A", w), S.num(c, "t_edge_s", "s", w)
+        f, t = S.num(c, "f_sw_Hz", "Hz", w), S.num(c, "t_edge_s", "s", w)
+        Iout, Isw = S.num(c, "I_out_A", "A", w), S.num(c, "I_switch_A", "A", w)
+        top, leg = cell_topology(S, cid, vout)
         cell = {}
         if vin or vout:
-            vb = max(v for v in (vin, vout) if v)
+            vb = bus_volts(top, leg, vin, vout)
             cell["V_V"] = [round(0.9 * vb, 6), round(1.1 * vb, 6)]
         if f:
             cell["f_sw_Hz"] = [round(0.8 * f, 3), round(1.2 * f, 3)]
-        if I:
-            cell["I_A"] = [round(0.3 * I, 6), round(I, 6)]
+        extra = ""
+        if top is None:
+            # no DC-DC converter (a half bridge, a motor or class-D driver): its output current is what it switches
+            if Isw or Iout:
+                cell["I_A"] = [round(0.3 * (Isw or Iout), 6), round(Isw or Iout, 6)]
+        else:
+            # the operating facts; the evaluator converts I_out_A to the commutated current by the cell's topology
+            # (kae.physics.converter: a boost's switch carries its input current); I_switch_A, stated, overrides
+            if Iout:
+                cell["I_out_A"] = [round(0.3 * Iout, 6), round(Iout, 6)]
+            if vin:
+                cell["V_in_V"] = vin
+            if vout:
+                cell["V_out_V"] = vout
+            eta = rail_eta(op, cid)
+            if eta:
+                cell["eta"] = eta
+            if Isw:
+                cell["I_switch_A"] = [round(0.3 * Isw, 6), round(Isw, 6)]
+                extra = f"; I_switch_A {Isw:g} A stated by the spec (override)"
+            if Iout and vin and vout:
+                from kae.physics import converter as CV
+                cc = CV.from_intent(dict(cell, I_switch_A=None), top, leg)
+                extra += (f"; derived (kae.physics.converter) I_switch {cc.I[1]:.4g}-{cc.I[2]:.4g} A: {cc.basis}"
+                          if cc else "")
         if t:
             cell["t_i_s"] = [t / 2, t * 2]
         if cell:
             op["cells"][cid] = cell
-            opwhy[f"cells.{cid}"] = why(c, "converter operating point")
+            opwhy[f"cells.{cid}"] = why(c, "converter operating point") + field_bases(c) + extra
         vmax = S.num(c, "switch_V_max_V", "V", w)
         if vmax:
             terms.append(dict(id=f"O{i}", tier="hard", obs="overshoot.peak", where={"observer": f"overshoot:{cid}"},
@@ -269,9 +345,16 @@ def compile_spec(spec, summary):
         if obs_id and str(obs_id).startswith("victim:"):
             where = {"observer": obs_id}
         elif part and S.ref(part, w):
-            where = {"part": part}
+            where = {"to_part": part}           # noise into the part's pins, not the part's own noise elsewhere
         else:
             S.rejected.append(f"{w}: needs a victim:... section id or a part ref")
+            continue
+        # two limits on one scope tie in kae.intent (equal specificity): the strictest stands for both
+        dup = next((t for t in terms if t["obs"] == "pickup.peak" and t.get("where") == where and t["tier"] == "limit"), None)
+        if dup is not None:
+            if mx < float(dup["max"].split()[0]):
+                dup.update(max=f"{mx:g} mV", source=f"{v.get('what') or 'sensitive pin'}: {mx:g} mV")
+            dup["why"] += f"; also {why(v, v.get('what') or 'sensitive pin')}"
             continue
         terms.append(dict(id=f"V{i}", tier="limit", obs="pickup.peak", where=where, max=f"{mx:g} mV", rate="10 mW_eq/mV",
                           source=f"{v.get('what') or 'sensitive pin'}: {mx:g} mV", why=why(v, v.get("what") or "sensitive pin")))
@@ -279,8 +362,16 @@ def compile_spec(spec, summary):
     radios = []
     for i, r in enumerate(spec.get("radio") or []):
         ref = S.ref(r.get("ref"), f"radio[{i}]")
-        if ref:
+        if ref and ref not in {x["ref"] for x in radios}:
             radios.append(dict(r, ref=ref))
+    # the board's own radios and GNSS receivers by part number (kae.circuit.roles.radio_kind), whether the spec
+    # listed them or not: EMI is a standing priority on every board with one
+    from kae.circuit.roles import radio_kind
+    for p in summary.get("parts") or []:
+        k = radio_kind(f"{p.get('value') or ''} {p.get('lib_id') or ''}", p.get("kind"), None)
+        if k and p["ref"] not in {x["ref"] for x in radios}:
+            radios.append(dict(ref=p["ref"], kind=k, basis="typical", why=f"{p.get('value')}: a {k} part by its part number"))
+            opwhy[f"radio.{p['ref']}"] = f"{p.get('value')} is a {k} part by its part number (kae.circuit.roles.radio_kind)"
     cables = []
     for i, c in enumerate(spec.get("connectors") or []):
         w = f"connectors[{i}]"
@@ -303,12 +394,23 @@ def compile_spec(spec, summary):
         if L:
             cables.append(dict(connector=ref, length_m=L, why=why(c, c.get("function") or "cable")))
     if radios:
+        op["radios"] = {r["ref"]: str(r.get("kind") or "rf") for r in radios}     # the evaluator's radios (kae.excite.observe)
+        opwhy["radios"] = "the spec's radios and every part kae.circuit.roles.radio_kind names"
+    if radios and not cables:
+        # a radio board whose spec declares no cable lengths: every connector that takes a cable (power, USB, audio,
+        # wire-to-board, Ethernet, CAN, HDMI, RF) gets CISPR 32's reference 1 m, so its cable emission is judged
+        for p in summary.get("parts") or []:
+            if p.get("kind") == "connector" and p.get("role") in CABLE_ROLES and \
+                    any(n in (summary.get("ground_nets") or []) for n in (p.get("nets") or {})):
+                cables.append(dict(connector=p["ref"], length_m=1.0, why=f"guess: {p.get('role')} with no stated cable; "
+                                                                        f"CISPR 32's reference length (1 m)"))
+    if radios:
         refs = sorted({r["ref"] for r in radios})
         kinds = ", ".join(sorted({str(r.get("kind")) for r in radios}))
         rip = min([x for x in (S.num(r, "supply_ripple_max_mV", "mV", "radio") for r in radios) if x] or [10.0])
-        terms += [dict(id="E1", tier="limit", obs="supply.peak", where={"part": refs}, max=f"{rip:g} mV", rate="20 mW_eq/mV",
+        terms += [dict(id="E1", tier="limit", obs="supply.peak", where={"to_part": refs}, max=f"{rip:g} mV", rate="20 mW_eq/mV",
                        source=f"{kinds} supply ripple {rip:g} mV", why=f"EMI: switching noise on the {kinds} supply desenses it. {STANDING}"),
-                  dict(id="E2", tier="cost", obs="pickup.peak", where={"part": refs}, rate="20 mW_eq/mV", agg="cvar20",
+                  dict(id="E2", tier="cost", obs="pickup.peak", where={"to_part": refs}, rate="20 mW_eq/mV", agg="cvar20",
                        why=f"EMI: noise coupled into the {kinds} pins. {STANDING}")]
         if cables:
             terms.append(dict(id="E3", tier="limit", obs="emission.cable_E", max="30 dBuV/m", rate="20 mW_eq/dB",
@@ -477,15 +579,25 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("spec"), ap.add_argument("summary")
     ap.add_argument("--intent", required=True), ap.add_argument("--operating", required=True)
+    ap.add_argument("--pintypes", help="kaeres.pintypes/1 file the summary was built with (board_summary.py --pintypes): "
+                                       "carried into the operating facts as `pins`, so the evaluator sees the same circuit")
     a = ap.parse_args(argv)
+    import os
+    from kae.board import pinfacts as PF
     from kae.intent import objective as OBJ
     it, op = compile_spec(json.load(open(a.spec)), json.load(open(a.summary)))
+    if a.pintypes and os.path.exists(a.pintypes):
+        pins = PF.from_pintypes(json.load(open(a.pintypes)))
+        if pins:
+            op["pins"] = pins
+            op["provenance"]["why"]["pins"] = ("pin types and names from the board's schematic (kaeres.pintypes/1), as "
+                                               "the summary the spec was written from saw them")
     OBJ.load(dict(it))
     for path, obj in ((a.intent, it), (a.operating, op)):
         with open(path, "w") as f:
             json.dump(obj, f, indent=1)
             f.write("\n")
-    print(f"terms {len(it['terms'])}, cells {len(op['cells'])}, loads {len(op['parts'])}, rejected {len(op['provenance']['rejected'])}")
+    print(f"terms {len(it['terms'])}, pins {len(op.get('pins') or {})}, cells {len(op['cells'])}, loads {len(op['parts'])}, rejected {len(op['provenance']['rejected'])}")
 
 
 if __name__ == "__main__":

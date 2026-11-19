@@ -24,12 +24,40 @@ Its board replaces the kept one only when KiCad's DRC ranks it better. For a rou
 last mile alone (kae.route.cli lastmile): an attempt that ended late is not punished for it.
 
 With --finish COMMAND, the board kept after that (clean or not) gets the finish stage (for kae,
-`python -m kae.route.finish @BEST@ @OUT@ --project @IN@ --time @TIME@ --input-drc @DRC@ --drc-s @DRC_S@`,
+`python -m kae.route.cli finish @IN@ @BEST@ @OUT@ --time @TIME@ --input-drc @DRC@ --drc-s @DRC_S@`,
 docs/topics/routing/routing-stages.md stage 7): @DRC@ is the judge's DRC report of @BEST@, so the
-finish's gate need not run the input again. Its time is reserved from the start too
-(finish_estimate: --finish-s, or an estimate from the input's pad count plus two DRCs), and its
-board replaces the kept one when KiCad ranks it no worse. summary.json's "finish" says which parts
-ran and which were skipped for time.
+finish's gate need not run the input again. Routing gets its time first: no time is reserved for
+finish (a reserved wall second costs `parallel` attempt seconds on a board that is not complete).
+Finish runs when a clean attempt ends the run early, in the time left, or after the final pass, in
+whatever remains (at least FINISH_RUN_MIN_S plus one judgement, else it is skipped); the finish
+command's own estimates decide which of its parts fit. Its board replaces the kept one when KiCad
+ranks it no worse. Attempts get KAE_FINISH_KEPT=1 (kae.route.cli route then defers its own finish).
+
+With --clear COMMAND (for kae `python -m kae.route.cli clear @IN@ @BEST@ @OUT@ --time @TIME@`: the hot
+loops' returns cleared of foreign copper, design D of kae.route.hotloop), the board kept after --final is
+cleared once, before --finish, with an allowance of its own (--clear-s, on top of --time: never taken from
+routing; in work mode nominal seconds of counted work). Attempts and the final pass get KAE_CLEAR_KEPT=1, so
+they do not clear themselves. Its board replaces the kept one when KiCad ranks it no worse; its time is
+recorded on its own (summary.json "clear", work "clear_wall_s"), and the time left for --finish is not cut by it.
+summary.json's "finish" says which parts ran and which were skipped; a finish skipped, killed or
+failed, and the finish's own hazards, are added to restarts/report.json's hazards.
+
+With --history, every judged attempt adds the nets KiCad found open on its board to a failure
+history (restarts/history.json, {net: attempts that left it open}; record_open), and every attempt
+gets its path in KAE_ROUTE_HISTORY: a router may route those nets first (kae.route.bridge does).
+Each attempt's record in summary.json lists the nets it left open.
+
+With --alt-env "K=V ...", two settings of the method run side by side and the better board is kept (the
+choose-better portfolio): fresh attempts alternate between the method as given (arm A, even k) and the
+method with those variables (arm B, odd k); a resumed attempt continues from the best board of its own
+arm (A for even k, B for odd), so both arms keep their lineages, and the final and finish passes run with the
+kept board's arm. The kept board is ranked by KiCad first, as always; among clean attempts of different arms,
+--tiebreak COMMAND (@BOARD@, @OUT@: a JSON file with "score", lower better; for kae `python -m
+kae.excite.cellquote @BOARD@ --score-out @OUT@`, the hot loops' quote) decides, when the scores differ by
+more than --tiebreak-margin; otherwise (closer, or a board it cannot score) arm A, the method as given, is kept.
+A clean board does not end the run at once: attempts already running finish
+(no new ones start), so the other arm can offer a clean board of its own to compare. The summary lists the
+arm of every attempt and each tie-break.
 
 Work is measured, since a sandboxed method's processes are invisible to the harness: every
 attempt's processes (its process tree and session, so a router started in a session of its own
@@ -75,6 +103,12 @@ WORK_CEILING = 4.0
 OPEN_REST_MIN_S = 60.0   # --open-rest: no third run with less than this per lane
 WORK_FINAL_SHARE, WORK_FINISH_SHARE = 0.15, 0.10     # of --time, for --final and --finish (unless --final-s / --finish-s)
 FINAL_MIN_S = 60.0  # the final pass at least, beyond one DRC of the board (a last mile's joins and refill)
+FINISH_RUN_MIN_S = 30.0   # the finish pass runs only with this much (beyond one judgement) left
+# the final pass leaves this many judgements' time for its own judgement: a routed board's DRC varies
+# (dilemma-3: attempts 123-140 s, the last mile's board over 171 s), and a board the judge cannot
+# finish is not kept (route-finish-default smoke: 140 -> 112 open lost, the finish reserve had
+# hidden that slack)
+FINAL_JUDGE_SLACK = 1.5
 
 
 def _stepcache():
@@ -504,15 +538,13 @@ def work_finish_s(a):
 
 
 def final_reserve(a, judge_est, inp=None):
-    """Seconds kept free from the start for the final passes: the last mile (--final; --final-s,
-    else FINAL_MIN_S plus one DRC of the board, as long as the slowest judgement so far) and the
-    finish (--finish: finish_estimate), each with the judgement of its board. 0 without either."""
-    r = 0.0
+    """Seconds kept free from the start for the final pass: the last mile (--final; --final-s,
+    else FINAL_MIN_S plus one DRC of the board, as long as the slowest judgement so far) with the
+    judgement of its board. 0 without it. The finish (--finish) has no reserve: it runs in the time
+    a clean attempt or the final pass leaves (routing-stages.md, "Finish runs in the time left")."""
     if a.final:
-        r += (a.final_s or FINAL_MIN_S + judge_est) + judge_est + 10.0
-    if a.finish:
-        r += finish_estimate(a, inp, judge_est) + judge_est + 10.0
-    return r
+        return (a.final_s or FINAL_MIN_S + judge_est) + judge_est + 10.0
+    return 0.0
 
 
 def _last_json(path):
@@ -640,7 +672,10 @@ def _one_pass(a, kind, command, best, inp, base, wd, end, b, judge_est, meter, s
     if SC:
         info["charge"] = str(d / "charge.jsonl")
     p = subprocess.Popen(["sh", "-c", c], cwd=d, stdout=open(d / "log", "w"), stderr=subprocess.STDOUT,
-                         start_new_session=True, env=dict(os.environ, KAE_RESUME="1", **charge_env(info), **fr_raw_env(d)))
+                         start_new_session=True, env=dict(os.environ, KAE_RESUME="1", **charge_env(info), **fr_raw_env(d),
+                                                          **({"KAE_CLEAR_KEPT": "1"} if a.clear and kind != "clear" else {}),
+                                                          **(best.get("env") or {})))
+    info["arm"], info["env"] = best.get("arm"), best.get("env")
     while reap(p, info) is None:
         if time.monotonic() + saved(info) > min(t + (WORK_CEILING if WORK else 1.0) * b + GRACE_S, end - judge_est - 5):
             stop(p, info)
@@ -663,29 +698,54 @@ def _one_pass(a, kind, command, best, inp, base, wd, end, b, judge_est, meter, s
 
 def final_pass(a, best, inp, base, wd, end, judge_est, meter, stop, cpu_s, base_pairs=()):
     """One more pass of --final on the board kept, whenever its attempt ended: the time left up to
-    the end (at least what final_reserve kept free) less one judgement and the finish's reserve.
-    Returns its record (kept: whether KiCad's DRC ranks its board better than the kept one), None
-    when there is nothing to do (no board, or a clean one)."""
+    the end (at least what final_reserve kept free) less FINAL_JUDGE_SLACK judgements; routing comes first, so the
+    finish gets what the last mile leaves. Returns its record (kept: whether KiCad's DRC ranks its
+    board better than the kept one), None when there is nothing to do (no board, or a clean one)."""
     if best is None or best.get("rank") is None or best["rank"][:2] == (0, 0):
         return None
-    fin_res = (finish_estimate(a, inp, judge_est) + judge_est + 10.0) if a.finish else 0.0
-    b = work_final_s(a) if WORK else max(20.0, end - time.monotonic() - judge_est - 10.0 - fin_res)
+    b = work_final_s(a) if WORK else max(20.0, end - time.monotonic() - FINAL_JUDGE_SLACK * judge_est - 10.0)
     return _one_pass(a, "final", a.final, best, inp, base, wd, end, b, judge_est, meter, stop, cpu_s, base_pairs,
                      keep_equal=False)
+
+
+def clear_pass(a, best, inp, base, wd, judge_est, meter, stop, cpu_s, base_pairs=()):
+    """--clear on the board kept after --final, clean or not, with --clear-s of its own (never taken from
+    routing). Its board replaces the kept one when KiCad ranks it no worse. The record carries the clear
+    command's own report (cells cleared, kept or skipped, seconds). None without a board."""
+    if best is None or best.get("rank") is None:
+        return None
+    b = a.clear_s
+    # the pass's own end: its allowance (and, in work mode, its wall ceiling) plus one judgement, after now
+    end_c = time.monotonic() + (WORK_CEILING if WORK else 1.0) * b + GRACE_S + 2 * judge_est + 20.0
+    info = _one_pass(a, "clear", a.clear, best, inp, base, wd, end_c, b, judge_est, meter, stop, cpu_s, base_pairs,
+                     keep_equal=True)
+    rep = _last_json(wd / "clear" / "log")
+    if rep:
+        info["hazards"] = [h for h in rep.get("hazards") or [] if isinstance(h, dict)]
+        info["clear"] = dict(cells=rep.get("cells"), seconds=rep.get("seconds"),
+                             estimate_s_per_cell=rep.get("estimate_s_per_cell"), status=rep.get("status"))
+    return info
 
 
 def finish_pass(a, best, inp, base, wd, end, judge_est, meter, stop, cpu_s, base_pairs=()):
     """--finish on the board kept (after --final), clean or not: the time left less one judgement.
     Its board replaces the kept one when KiCad ranks it no worse (finishing shapes copper; it does
     not aim to change the rank). The record carries the finish's own report summary (which parts
-    ran, were skipped or failed; its DRC runs). None without a board."""
+    ran, were skipped or failed; its DRC runs). None without a board; a record with `skipped` when
+    less than FINISH_RUN_MIN_S is left (the finish never runs past the end)."""
     if best is None or best.get("rank") is None:
         return None
-    b = work_finish_s(a) if WORK else max(20.0, end - time.monotonic() - judge_est - 10.0)
+    b = work_finish_s(a) if WORK else end - time.monotonic() - judge_est - 10.0
+    if b < FINISH_RUN_MIN_S:
+        log(f"finish pass skipped: {b:.0f}s left after the routing")
+        return dict(k="finish", skipped=f"time: {max(0.0, b):.0f} s left after routing, "
+                                        f"{FINISH_RUN_MIN_S:.0f} s needed", budget=round(max(0.0, b)),
+                    estimate_s=round(finish_estimate(a, inp, judge_est)), resumed_from=best["k"], kept=False)
     info = _one_pass(a, "finish", a.finish, best, inp, base, wd, end, b, judge_est, meter, stop, cpu_s, base_pairs,
                      keep_equal=True)
     rep = _last_json(wd / "finish" / "log")
     if rep:
+        info["hazards"] = [h for h in rep.get("hazards") or [] if isinstance(h, dict)]
         info["finish"] = dict(parts=rep.get("parts"), drc_runs=rep.get("drc_runs"),
                               drc_in_reused=rep.get("drc_in_reused"), entries=rep.get("entries"),
                               kept_entries=rep.get("kept"), noise=rep.get("noise"), seconds=rep.get("seconds"),
@@ -769,6 +829,60 @@ class Halving:
                                 for c in self.cands])
 
 
+def parse_env(text):
+    """{K: V} of "K=V K2=V2"."""
+    out = {}
+    for tok in shlex.split(text or ""):
+        k, _, v = tok.partition("=")
+        if k:
+            out[k] = v
+    return out
+
+
+def tiebreak_score(a, info, cache):
+    """The --tiebreak score of an attempt's board (cached by its path), None when the command gives none."""
+    key = str(info["out"])
+    if key in cache:
+        return cache[key]
+    o = Path(info["out"]).with_name("tiebreak.json")
+    c = a.tiebreak.replace("@BOARD@", shlex.quote(key)).replace("@OUT@", shlex.quote(str(o)))
+    t = time.monotonic()
+    try:
+        subprocess.run(["sh", "-c", c], cwd=Path(info["out"]).parent, stdout=open(Path(info["out"]).with_name("tiebreak.log"), "w"),
+                       stderr=subprocess.STDOUT, timeout=a.tiebreak_s, env=dict(os.environ, **(info.get("env") or {})))
+        score = json.loads(o.read_text()).get("score")
+    except (subprocess.TimeoutExpired, OSError, ValueError):
+        score = None
+    cache[key] = score
+    log(f"tie-break score of #{info['k']} (arm {info.get('arm')}): {score} ({time.monotonic() - t:.0f}s)")
+    return score
+
+
+def better(a, new, best, cache, ties):
+    """Whether attempt `new` replaces `best`: a better KiCad rank; with --alt-env and --tiebreak, both clean, of
+    different arms, and a tie-break score lower by more than --tiebreak-margin, or, when the scores do not decide
+    (closer than the margin, or one missing), `new` being arm A (each comparison goes to `ties`)."""
+    if new.get("rank") is None:
+        return False
+    if best is None or best.get("rank") is None:
+        return True
+    if tuple(new["rank"]) != tuple(best["rank"]) or not (a.alt_env and a.tiebreak) or tuple(new["rank"][:2]) != (0, 0):
+        # only clean boards are compared by the tie-break: an open board's lineage and final pass still change
+        # its copper, and a quote of a big board can take minutes (the loop waits for it)
+        return tuple(new["rank"]) < tuple(best["rank"])
+    if new.get("arm") == best.get("arm"):
+        return False
+    sb, sn = tiebreak_score(a, best, cache), tiebreak_score(a, new, cache)
+    if sb is not None and sn is not None and abs(sn - sb) > a.tiebreak_margin:
+        win = sn < sb
+    else:
+        # no clear difference, or a board the tie-break could not score: the method as given (arm A) is kept
+        win = new.get("arm") == "A"
+    ties.append(dict(rank=list(new["rank"]), kept=best["k"], kept_arm=best.get("arm"), kept_score=sb,
+                     other=new["k"], other_arm=new.get("arm"), other_score=sn, switched=win))
+    return win
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", required=True)
@@ -799,9 +913,20 @@ def main():
     ap.add_argument("--finish", default="",
                     help="command for the finish stage on the kept board after --final (@IN@, @BEST@, @OUT@, @SEED@, "
                          "@TIME@, @DRC@: the judge's DRC report of @BEST@, @DRC_S@: one judgement's seconds), "
-                         "its time reserved from the start; kept when KiCad ranks it no worse, clean boards too")
+                         "in the time routing leaves (nothing reserved); kept when KiCad ranks it no worse, clean "
+                         "boards too. Attempts get KAE_FINISH_KEPT=1")
+    ap.add_argument("--clear", default="",
+                    help="command clearing the hot loops' returns on the kept board after --final, before --finish (@IN@, "
+                         "@BEST@, @OUT@, @TIME@), with --clear-s of its own; kept when KiCad ranks it no worse. Attempts "
+                         "and the final pass get KAE_CLEAR_KEPT=1")
+    ap.add_argument("--clear-s", type=float, default=300.0,
+                    help="seconds for the --clear pass, on top of --time (work mode: nominal seconds of counted work)")
     ap.add_argument("--finish-s", type=float, default=0.0,
-                    help="seconds for the finish pass; 0 = an estimate from the input's pad count plus two DRCs")
+                    help="seconds for the finish pass in work mode (0: WORK_FINISH_SHARE of --time); in time mode "
+                         "the pass's estimate, reported when it is skipped (0: from the input's pad count plus two DRCs)")
+    ap.add_argument("--history", action="store_true",
+                    help="keep a history of the nets judged attempts left open (restarts/history.json) and pass "
+                         "its path to every attempt in KAE_ROUTE_HISTORY")
     ap.add_argument("--screen", action="store_true",
                     help="methods that place: successive halving over placements instead of the fixed waves "
                          "(fresh attempts at --screen-s, the best of each rung resumed with eta x the budget)")
@@ -809,6 +934,15 @@ def main():
                     help="rung-0 budget (0: first-s; kae staged at half of it overran its budget: placing alone "
                          "takes 60-100 s)")
     ap.add_argument("--eta", type=int, default=2)
+    ap.add_argument("--alt-env", default="",
+                    help='choose-better portfolio: "K=V ..." for arm B (odd attempts; resumed attempts continue '
+                         "their own arm's best board); the final and finish passes run with the kept board's arm")
+    ap.add_argument("--tiebreak", default="",
+                    help="command scoring a board (@BOARD@, @OUT@: JSON with 'score', lower better) to choose "
+                         "between the arms' boards of equal KiCad rank")
+    ap.add_argument("--tiebreak-margin", type=float, default=0.1,
+                    help="a score must be lower by more than this to win a tie-break")
+    ap.add_argument("--tiebreak-s", type=float, default=600.0, help="time limit of one tie-break command")
     ap.add_argument("--policy", default="", choices=("", "completion-first"),
                     help="completion-first: two runs of this wrapper in --time (half each). The second is --alt "
                          "(e.g. the module stage) when the first run's board is clean, else another run of COMMAND "
@@ -865,6 +999,8 @@ def main():
     log(f"input DRC errors by type: {base}")
     running, done, k = {}, [], 0
     best = None
+    alt = parse_env(a.alt_env)
+    arm_best, tb_cache, ties, no_new = {}, {}, [], [False]   # per-arm best; tie-break scores; comparisons
     meter, judge_cpu, judge_wall = Meter(), 0.0, 0.0
     fast_fails = 0  # attempts in a row that died within seconds without a board: a broken command
 
@@ -878,10 +1014,13 @@ def main():
             frm = next(x for x in done if x["k"] == src_k) if src_k is not None else None
         else:
             b = min(a.first_s * a.growth ** (k // a.parallel), left())
-            frm = best if (a.resume > 0 and k >= a.parallel and best is not None and best["rank"] is not None
-                           and k % a.parallel < round(a.resume * a.parallel)) else None
-        if b < 20 or (a.max_attempts and k >= a.max_attempts):
+            src_best = (arm_best.get("B" if k % 2 else "A") or best) if alt else best
+            frm = src_best if (a.resume > 0 and k >= a.parallel and src_best is not None and src_best["rank"] is not None
+                               and k % a.parallel < round(a.resume * a.parallel)) else None
+        if b < 20 or (a.max_attempts and k >= a.max_attempts) or no_new[0]:
             return False
+        arm = (frm.get("arm") if frm is not None else ("B" if k % 2 else "A")) if alt else None
+        env_k = alt if arm == "B" else {}
         d = wd / f"a{k}"
         d.mkdir(exist_ok=True)
         o = d / "board.kicad_pcb"
@@ -897,12 +1036,16 @@ def main():
         ch = dict(charge=str(d / "charge.jsonl")) if SC else {}
         p = subprocess.Popen(["sh", "-c", c], cwd=d, stdout=open(d / "log", "w"), stderr=subprocess.STDOUT,
                              start_new_session=True, env=dict(os.environ, KAE_RESUME="1" if resume else "0",
-                                                              **charge_env(ch), **fr_raw_env(d)))
+                                                              **({"KAE_FINISH_KEPT": "1"} if a.finish else {}),
+                                                              **({"KAE_CLEAR_KEPT": "1"} if a.clear else {}),
+                                                              **charge_env(ch), **fr_raw_env(d), **env_k))
         running[p] = dict(k=k, seed=s, budget=round(b), out=o, t=time.monotonic(),
                           resumed_from=frm["k"] if resume else None, **ch)
+        if alt:
+            running[p].update(arm=arm, env=env_k)
         if sh is not None:
             running[p].update(cand=sh.started(cand, k, s), rung=rung)
-        log(f"start #{k} seed {s} budget {b:.0f}s" + (f" from #{frm['k']}'s board" if resume else "")
+        log(f"start #{k} seed {s} budget {b:.0f}s" + (f" arm {arm}" if alt else "") + (f" from #{frm['k']}'s board" if resume else "")
             + (f" (candidate {running[p]['cand']['id']}, rung {rung})" if sh is not None else ""))
         k += 1
         return True
@@ -991,11 +1134,21 @@ def main():
             fast_fails = fast_fails + 1 if rank is None and info["wall_s"] < 10 else 0
             done.append(info)
             log(f"end #{info['k']} rc {p.returncode} (illegal, not clean, unconnected, new errors, outside) {rank}")
-            if rank is not None and (best is None or rank < best["rank"]):
+            if alt and rank is not None:
+                ab = arm_best.get(info["arm"])
+                if ab is None or rank < ab["rank"]:
+                    arm_best[info["arm"]] = info
+            if rank is not None and better(a, info, best, tb_cache, ties):
                 best = info
                 out.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(best["out"], out)  # at once: a kill at the deadline keeps the best so far
-        if best and best["rank"][:2] == (0, 0):
+        if alt and a.tiebreak and best and best["rank"][:2] == (0, 0) and \
+                any("hold" in i or alive(p.pid) for p, i in running.items() if i.get("arm") != best.get("arm")):
+            if not no_new[0]:
+                log(f"#{best['k']} (arm {best.get('arm')}) is clean: no new attempts; the other arm's running "
+                    f"attempts finish for the tie-break")
+            no_new[0] = True
+        elif best and best["rank"][:2] == (0, 0):
             log(f"#{best['k']} is clean: stopping the rest")
             meter.sample([p.pid for p in running])
             for p, info in list(running.items()):
@@ -1027,12 +1180,29 @@ def main():
             best = fin
             out.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(best["out"], out)
+    cz, cz_hazards = None, []
+    if a.clear:
+        tc = time.monotonic()
+        cz = clear_pass(a, best, inp, base, wd, judge_est, meter, stop, cpu_s, (b0 or {}).get("overlaps", ()))
+        end += time.monotonic() - tc      # clearing has its own allowance: the time left for --finish is not cut
+        if cz is not None:
+            judge_cpu += cz.pop("judge_cpu_s", 0.0)
+            judge_wall += cz.pop("judge_wall_s", 0.0)
+            own = cz.pop("hazards", None) or []
+            cz_hazards = own if cz.get("kept") else [h for h in own if str(h.get("code", "")).startswith("hotloop_clear")]
+            done.append(cz)
+            if cz.get("kept"):
+                best = cz
+                out.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(best["out"], out)
     fz = finish_pass(a, best, inp, base, wd, end, judge_est, meter, stop, cpu_s,
                      (b0 or {}).get("overlaps", ())) if a.finish else None
     carry = best["out"].parent if best else None   # the routed board's own report (blocked, hazards)
+    fz_hazards = finish_hazards(fz) if fz is not None else []
     if fz is not None:
         judge_cpu += fz.pop("judge_cpu_s", 0.0)
         judge_wall += fz.pop("judge_wall_s", 0.0)
+        fz.pop("hazards", None)
         done.append(fz)
         if fz.get("kept"):
             best = fz
@@ -1045,7 +1215,10 @@ def main():
                 judge_wall_s=round(judge_wall, 1), wall_s=round(time.monotonic() - t0, 1), budget_s=a.time,
                 parallel=a.parallel, peak_rss_mb=max([d.get("peak_rss_mb", 0) for d in done] + [0]),
                 wall_to_best_s=best and round(best["t"] + best["wall_s"] - t0, 1),
-                finish=(fz or {}).get("finish") if a.finish else None)
+                finish=(((fz or {}).get("finish") or ({"skipped": fz["skipped"]} if fz and fz.get("skipped") else None))
+                        if a.finish else None))
+    if a.clear:
+        work.update(clear=(cz or {}).get("clear"), clear_wall_s=(cz or {}).get("wall_s"), clear_kept=bool((cz or {}).get("kept")))
     if SC:   # wall_s and the attempts' times above are charged time; real_wall_s is what passed
         tot = dict(hits=SC.STATS["hits"], misses=SC.STATS["misses"], uncacheable=SC.STATS["uncacheable"],
                    charged_s=SC.STATS["charged_s"], saved_s=SC.STATS["saved_s"])
@@ -1059,6 +1232,9 @@ def main():
                                       for d in done])
     if sh is not None:
         summary["halving"] = sh.summary()
+    if alt:
+        summary["choose_better"] = dict(alt_env=alt, kept_arm=best and best.get("arm"), ties=ties,
+                                        arm_best={k_: dict(k=v["k"], rank=list(v["rank"])) for k_, v in arm_best.items()})
     if (fr_raw := keep_fr_raw(wd, summary)):
         summary["fr_raw"] = fr_raw
     (wd / "summary.json").write_text(json.dumps(summary, indent=1))
@@ -1070,6 +1246,7 @@ def main():
     shutil.copy2(best["out"], out)
     log(f"kept #{best['k']} (seed {best['seed']}): {best['rank']}")
     carry_report(carry or best["out"].parent, wd)
+    add_hazards(wd / "report.json", cz_hazards + fz_hazards)
     origin_report(best, done, wd)
     return 0
 
@@ -1232,6 +1409,60 @@ def carry_report(attempt_dir, wd):
                 for s in b.get("summary") or []:
                     log(f"blocked: {s}")
             return
+
+
+def _hazard(code, severity, message, evidence, fix):
+    """One entry of kae.hazards' schema (this file is stdlib only)."""
+    return dict(code=code, severity=severity, category="data", message=message, objects=["finish"],
+                evidence=evidence, fix=fix)
+
+
+def finish_hazards(fz):
+    """Hazards of the finish pass for the kept board's report: skipped for time, killed or failed
+    (finish_part_skipped / finish_failed), and the finish command's own (when its board was kept,
+    all of them; otherwise only its finish_* ones, which say what did not run)."""
+    out = []
+    if fz.get("skipped"):
+        out.append(_hazard("finish_part_skipped", "info",
+                           f"The finish stage did not run: {fz['skipped']}; the board keeps the router's copper "
+                           f"shapes and widths (no rule D tails, taut arcs or power copper).",
+                           dict(reason=fz["skipped"], estimate_s=fz.get("estimate_s")),
+                           "Give the run more time, or run kae.route.cli finish on the board."))
+        return out
+    if fz.get("killed") or fz.get("rc"):
+        why = "killed at its deadline" if fz.get("killed") else f"exit status {fz.get('rc')}"
+        out.append(_hazard("finish_failed", "warn",
+                           f"The finish stage did not complete ({why}); the board is the routed one.",
+                           dict(rc=fz.get("rc"), killed=bool(fz.get("killed")), budget_s=fz.get("budget"),
+                                wall_s=fz.get("wall_s")),
+                           "Report the board; the routed copper is intact."))
+    own = fz.get("hazards") or []
+    out += own if fz.get("kept") else [h for h in own if str(h.get("code", "")).startswith("finish_")]
+    return out
+
+
+def add_hazards(path, hazards):
+    """Append `hazards` to the report at `path` (restarts/report.json) and its hazard_summary counts."""
+    if not hazards:
+        return
+    try:
+        rep = json.loads(path.read_text())
+    except (OSError, ValueError):
+        rep = {}
+    if not isinstance(rep, dict):
+        return
+    have = {(h.get("code"), h.get("message")) for h in rep.get("hazards") or [] if isinstance(h, dict)}
+    new = [h for h in hazards if (h.get("code"), h.get("message")) not in have]
+    rep["hazards"] = list(rep.get("hazards") or []) + new
+    sm = rep.get("hazard_summary")
+    if isinstance(sm, dict):
+        for h in new:
+            sev = h.get("severity", "warn")
+            sm[sev] = sm.get(sev, 0) + 1
+            sm["total"] = sm.get("total", 0) + 1
+            if "shown" in sm:
+                sm["shown"] += 1
+    path.write_text(json.dumps(rep, indent=1))
 
 
 def origin_report(best, done, wd):

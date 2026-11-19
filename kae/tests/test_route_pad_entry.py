@@ -568,3 +568,17 @@ def test_reroute_necks_a_track_wider_than_the_land(tmp_path):
     ws = {s["w"] for s in PT._segments(out)}
     assert 1.0 in ws and any(w <= 0.6 for w in ws)
     assert PT.stats(out, info)["overhanging"] < 2
+
+
+def test_a_rerouted_tail_may_not_fold_back():
+    from kae.route.pad_reroute import _folds_back, _key
+    s = dict(uuid="s", net="N", layer="F.Cu", a=(0, 0), b=(2, 0), w=0.2)
+    keep = dict(uuid="k", net="N", layer="F.Cu", a=(2, 0), b=(5, 0), w=0.2)
+    by = {("N", "F.Cu", _key((2, 0))): [s, keep]}
+    pieces = [(s, (0, 0), (2, 0))]
+    # the tail leaving the release point along the copper it joins
+    assert _folds_back([(2, 0), (4, 0), (4, 1)], (2, 0), s, by, pieces, "node", 1e-3)
+    # within itself
+    assert _folds_back([(2, 0), (2, 2), (2, 1)], (2, 0), s, by, pieces, "node", 1e-3)
+    # a square departure is fine
+    assert not _folds_back([(2, 0), (2, 2), (0, 2)], (2, 0), s, by, pieces, "node", 1e-3)

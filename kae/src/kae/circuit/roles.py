@@ -175,7 +175,8 @@ TEXT_RULES = [
                                    r'\bMOC\d{4}|\bGAQY|\bEL817|\bPS2501|\bVTL5C|\bLTV-?\d|\bSFH\d{3}|\bACPL|\bHCPL|\bVO\d{3,4}')),
     ('module', None, 3.0, rx(r'\bmodule\b|\bWROOM|\bWROVER|\bESP32-[A-Z0-9]+-MINI|\bMINI-1|\bESP-\d{2}|\bXIAO|\bRPi_Pico|^Pico\w*$|\bArduino|'
                               r'\bWeMos|\bDevKit|breakout|\bXBEE|\bXB24|\bNORA-|\bBL54L|\bRFM9\d|\bSIM\d{3,4}|\bProMicro|\bRP2040-Zero|'
-                              r'\bDFPlayer|\bMini360|\bSC14CVMDECT|\bmikoto|\bSAMD21_breakout|SUPERMINI|\bHC-0\d|\bnRF52\d{2}-\w*module')),
+                              r'\bDFPlayer|\bMini360|\bSC14CVMDECT|\bmikoto|\bSAMD21_breakout|SUPERMINI|\bHC-0\d|\bnRF52\d{2}-\w*module|'
+                              r'\bTeensy|\bDaisy.?Seed')),
     ('graphic', None, 2.5, rx(r'\blogo\b|\bOSHW\b|\bWEEE\b|\bROHS\b|\bkibuzzard|\bQRCode|\bgraphic|\bSign_|\bLONGTHING|\bart\b|\bCreative_Commons')),
     ('mechanical', None, 1.5, rx(r'\bMECHANICAL\b|\bPCM_kikit:Board|\bpanel|\bmouse.?bite|\bcutout')),
 ]
@@ -221,7 +222,7 @@ LIB_RULES = [
     ('potentiometer', 3.0, rx(0, r'Potentiometer|TRIM_|Trimmer|RV2X4')),
     ('optocoupler', 2.5, rx(0, r'OptoDevice|Opto')),
     ('module', 3.5, rx(0, r'(^|:)Module|RF_Module|ESP32-|WROOM|XIAO|RPi_Pico|Arduino|WeMos|DevKit|Breakout|XBEE|NORA-|RFM9\d|BL54L|SC14CVMDECT|'
-                       r'ProMicro|RP2040.Zero|DFPlayer|Mini360|SUPERMINI|wemos|nice_nano|nano_|_nano|xiao')),
+                       r'ProMicro|RP2040.Zero|DFPlayer|Mini360|SUPERMINI|wemos|nice_nano|nano_|_nano|xiao|Teensy|Daisy.?Seed')),
     ('graphic', 3.0, rx(0, r'Logo|LOGO|logo|(^|:)Symbol|kibuzzard|Graphic|GRAPHIC|OSHW|oshw|QRCode|Sign_|Panelization|w_logo|Aesthetic|LONGTHING|bongo|Bongo')),
     ('mechanical', 2.0, rx(0, r'(^|:)Board$|kikit|MECHANICAL|Mechanical|mikoto|Cutout|PanelHole|Mech_')),
 ]
@@ -551,6 +552,35 @@ class Roles:
 
 
 # =============================================================================== helpers
+# radios and GNSS receivers by part number, value, library or footprint name (a part that transmits or receives
+# over the air: the board's EMI priority, intent-driven-objectives.md "standing priorities"); first match wins
+RADIO_RULES = [
+    ('gnss', rx(r'\bNEO-?[5-9M]\w*|\bMAX-?M\d|\bMAX-[678]|\bZOE-?M\d|\b[SC]AM-?M\d|\bu-?blox.?(M8|M9|M10|NEO|MAX)|\bL(26|76|80|86|89)\b|'
+                r'\bLC76|\bLC86|\bMT333\d|\bATGM33\d|\bORG14\d\d|\bSIM(28|33|68)\w*|\bA2235|\bFGPMMOPA|\bPA6[CH]|\bVenus6\d\d|'
+                r'\bTESEO|\bSL869|\bGNSS|\bGPS(?!IO|DO)')),
+    ('cellular', rx(r'\bSIM(800|808|868|900|7\d{3}|5\d{3})\w*|\bQuectel|\bBG9[56]|\bEG9[15]|\bEC2[015]\b|\bM95\b|\bUC20|\bSARA-|'
+                    r'\bLARA-|\bTOBY-|\bnRF91|\bLTE.?(M|CAT)')),
+    ('subghz', rx(r'\bSX12\d\d|\bSX127\d|\bSX126\d|\bLR11\d\d|\bRFM[69]\d|\bCC1101|\bCC11\d\d|\bCC12\d\d|\bSi44\d\d|\bLoRa|'
+                  r'\bRAK\d{4}|\bE(22|32)-|\bRN2[49]03|\bnRF24|\bAT86RF|\bXBEE|\bXB24|\bA7105|\bSC14CVMDECT|\bDECT\b|\bRFX\d{4}')),
+    ('wifi_bt', rx(r'\bESP32(?!-P4)|\bESP8266|\bESP-\d\d|\bESP-WROOM|\bWROOM|\bWROVER|\bnRF5[1-4]|\bCC2[56]\d\d|\bCC13\d\d|'
+                   r'\bCC2[45]\d\d|\bEFR32|\bBGM\d|\bMGM\d|\bBL6\d\d|\bBL54L|\bHC-0[56]|\bRN4[0-9]\d\d|\bBM7\d|\bCYW43|\bATWINC|'
+                   r'\bWINC15|\bRTL87\d\d|\bW600|\bPico.?W\b|\bDA1458\d|\bNORA-|\bANNA-|\bBLE\b|\bBluetooth|\bWi-?Fi\b|\bSTM32WB|\bSTM32WL')),
+]
+RADIO_SUB = ('rf',)       # an IC subtype that is a radio whatever its part number (kae.circuit.roles IC_RULES)
+
+
+def radio_kind(text: str, kind: str | None = None, subtype: str | None = None) -> str | None:
+    """'gnss', 'cellular', 'subghz', 'wifi_bt' or 'rf' for a radio or GNSS part (its value, library and footprint
+    text), else None. Only active parts (ICs and modules) count: an antenna or an RF connector is the radio's
+    load, not a radio."""
+    if kind not in ('ic', 'module', 'unknown', None):
+        return None
+    for k, pat in RADIO_RULES:
+        if pat.search(text or ''):
+            return k
+    return 'rf' if subtype in RADIO_SUB else None
+
+
 def _text(part: Part) -> str:
     return part.text()
 

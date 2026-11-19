@@ -24,10 +24,12 @@ from kae.physics import criteria as CR
 from .observe import F_CM, F_KNEE, cm_v_lim
 
 
-def peak(Zf, Le, I, D, ti):
+def peak(Zf, Le, I, D, ti, I_off=None):
+    """I the commutated current's average (the fundamental's amplitude); I_off the current the switch turns off,
+    the inductor's peak (kae.physics.converter.turnoff_current), for the edge term L I_off / t_i (default I)."""
     c1 = 2 / math.pi * abs(math.sin(math.pi * D))
     vf = abs(Zf) * c1 * I
-    ve = abs(Le) * I / ti
+    ve = abs(Le) * (I if I_off is None else I_off) / ti
     return vf + ve, vf, ve
 
 
@@ -100,7 +102,7 @@ def pair_u(kind, bound, Zf, Le, val):
     if kind == "cm":
         u, fw = cm(Le, I, val["f_sw_Hz"], ti)
         return u, dict(f_worst=fw)
-    V, vf, ve = peak(Zf, Le, I, val.get("D", 0.5), ti)
+    V, vf, ve = peak(Zf, Le, I, val.get("D", 0.5), ti, val.get("I_pk_A"))
     if kind == "overshoot":
         bound = overshoot_bound(val, bound)
     return (V / bound if bound else 0.0), dict(volts=V, bound=bound, vf=vf, ve=ve)

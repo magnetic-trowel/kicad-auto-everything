@@ -176,11 +176,33 @@ pathlib.Path(sys.argv[2]).write_text(pathlib.Path(sys.argv[1]).read_text() + " d
 """
 
 
-def test_run_hit_replays_outputs_and_charges_its_duration(cache, tmp_path):
+class _HoldableClock:
+    """Real monotonic time until held, then the time it was held at: the hit's replay then takes
+    no time on this clock however slowly the host runs it (a frozen or descheduled job), so what
+    the hit saves is exactly its recorded duration."""
+    def __init__(self):
+        self.held = None
+
+    def __call__(self):
+        return self.held if self.held is not None else stepcache_real()
+
+    def hold(self):
+        self.held = stepcache_real()
+
+
+stepcache_real = stepcache._real_monotonic
+
+
+def test_run_hit_replays_outputs_and_charges_its_duration(cache, tmp_path, monkeypatch):
     prog = tmp_path / "slow.py"
     prog.write_text(SLOW)
+    clk = _HoldableClock()
+    monkeypatch.setattr(stepcache, "_real_monotonic", clk)
+    monkeypatch.setattr(stepcache.time, "monotonic", clk)
     results = []
     for n in ("a", "b"):
+        if n == "b":
+            clk.hold()                                          # the replay costs no clock time
         wd = tmp_path / n
         wd.mkdir()
         (wd / "in.txt").write_text(f"board in {wd}")      # its own path: normalised
@@ -195,7 +217,7 @@ def test_run_hit_replays_outputs_and_charges_its_duration(cache, tmp_path):
     assert side_a and side_b                                    # KiCad's side effect replayed
     assert hit.seconds == pytest.approx(miss.seconds, abs=0.01) and hit.seconds >= 1.0
     assert clock_b >= 1.0                                       # the clock counts the hit as its duration
-    assert stepcache.offset() == pytest.approx(hit.saved) and hit.saved > 0.5
+    assert stepcache.offset() == pytest.approx(hit.saved) and hit.saved == pytest.approx(hit.seconds)
     t = stepcache.charges(tmp_path / "charge.jsonl")
     assert (t["hits"], t["misses"]) == (1, 1) and t["charged_s"] == pytest.approx(2 * miss.seconds, abs=0.01)
 

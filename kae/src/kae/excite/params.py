@@ -14,12 +14,18 @@ Commutation cell (switch current I, bus voltage V, input voltage Vin, frequency 
   (part table, else [30, 300] pF for a small Schottky).
 - t_v = C_sw V / I, the voltage edge once the current has commutated (physics): the switch node can
   move no faster than the current charging its capacitance.
-- D: boost 1 - Vin/V, buck Vout/Vin (physics).
+- D: boost 1 - Vin eta/V, buck Vout/Vin (physics).
+- The commutated current and duty by topology (kae.physics.converter, docs/topics/physics/converter-currents.md):
+  an intent's I_switch_A overrides; a stated I_A stands; else I_out_A converted through the cell's topology (a
+  boost's switch carries its input current I_out V_out / (V_in eta), a 4-switch buck-boost leg that is static in
+  its region carries none).
 Cores and clocks keep class priors, as intervals.
 """
 from __future__ import annotations
 
 import math
+
+from kae.physics import converter as CV
 
 from .beliefs import Param, intent_value, lookup
 
@@ -62,6 +68,26 @@ def cell(L, s, brief, bd, intent, text, rect_text="", vin_net=None):
         out["V"] = _p(L, sid, "V_V", 12.0, 3.3, 48.0, "V", "prior", "bus voltage unknown")
     vin_net = st.get("vin") if cls == "boost" and st.get("vin") else vin_net
     vi = volts(vin_net) if vin_net else None
+    icell = ((intent or {}).get("cells") or {}).get(sid) or {}
+    # the converter's own input and output voltages: the intent's, else its rails' (a buck's bus is its input, a
+    # boost's its output); a 4-switch leg's other rail is its sibling leg's bus
+    vo_b = volts(st.get("vout")) if st.get("vout") else None
+    if st.get("topology") == "buck_boost_4switch":
+        sib = next((x for x in brief.get("structures") or [] if x.get("topology") == "buck_boost_4switch"
+                    and x.get("id") != sid and x.get("controller") == st.get("controller")), {})
+        sv = volts(sib.get("rail")) if sib.get("rail") else None
+        vi_c, vo_c = ((vb[0] if vb else None), (sv[0] if sv else None)) if cls == "buck" else \
+            ((sv[0] if sv else None), (vb[0] if vb else None))
+    elif cls == "boost":
+        vi_c, vo_c = (vi[0] if vi else None), (vb[0] if vb else None)
+    else:
+        vi_c, vo_c = (vb[0] if vb else None), (vo_b[0] if vo_b else None)
+    top, leg = CV.topology_of(cls, st, vo_c)
+    eta_n = intent_value(intent, "nets", st.get("vout") or (st.get("rail") if cls == "boost" else None) or "", "eta")
+    cc = CV.from_intent(icell, top, leg, vi_c, vo_c, eta_n) if top else None
+    e_ = intent_value(intent, "cells", sid, "eta") or eta_n
+    if e_:
+        s.meta["eta"] = e_[0]                # its stated efficiency (typical), for its input current (kae.excite.dc)
     # f_sw
     iv = intent_value(intent, "cells", sid, "f_sw_Hz")
     if iv:
@@ -75,9 +101,19 @@ def cell(L, s, brief, bd, intent, text, rect_text="", vin_net=None):
     else:
         out["f_sw"] = _p(L, sid, "f_sw_Hz", 1e6, 0.3e6, 3e6, "Hz", "prior", "switching frequency unknown")
     # operating current
-    iv = intent_value(intent, "cells", sid, "I_A")
-    if iv:
+    iv = intent_value(intent, "cells", sid, "I_A") or intent_value(intent, "cells", sid, "I_switch_A")
+    if cc is not None:
+        out["I"] = _p(L, sid, "I_A", *cc.I, "A", cc.source, cc.basis)
+    elif iv:
         out["I"] = _p(L, sid, "I_A", *iv, "A", "intent", "the intent file")
+    elif top == "buck_boost_4switch" and vi_c and vo_c and CV.operating(top, vi_c, vo_c, 1.0, leg=leg).I_sw == 0:
+        mode = CV.region_4switch(vi_c, vo_c)
+        out["I"] = _p(L, sid, "I_A", 0.0, 0.0, 0.0, "A", "physics",
+                      f"4-switch buck-boost in its {mode} region (V_in {vi_c:g} V, V_out {vo_c:g} V): the {leg} leg is "
+                      f"static, no commutated current ({CV.SOURCES[top]})")
+    elif intent_value(intent, "cells", sid, "I_out_A"):
+        iv = intent_value(intent, "cells", sid, "I_out_A")
+        out["I"] = _p(L, sid, "I_A", *iv, "A", "intent", "I_out_A as the commutated current (not a DC-DC topology)")
     else:
         rated = float(ex.get("I") or 1.0) / 0.6
         basis = "; ".join(b for b in ex.get("basis") or [] if b.startswith("I ="))
@@ -119,14 +155,20 @@ def cell(L, s, brief, bd, intent, text, rect_text="", vin_net=None):
         out["R_on"] = _p(L, sid, "R_on_ohm", t, lo, hi, "ohm", "part_table", src)
     # voltage edge: the switch node cannot move faster than I charges C_sw
     V, I, C = out["V"], out["I"], out["C_sw"]
-    tv = (C.lo * V.lo / I.hi, C.typ * V.typ / I.typ, C.hi * V.hi / I.lo)
+    i_ = lambda x: max(x, 1e-9)             # a static leg (no commutated current) has no edge to speak of
+    tv = (C.lo * V.lo / i_(I.hi), C.typ * V.typ / i_(I.typ), C.hi * V.hi / i_(I.lo))
     out["t_v"] = _p(L, sid, "t_v_s", tv[1], tv[0], tv[2], "s", "physics",
                     "t_v = C_sw V / I: the switch node charged by the commutated current")
     # duty
-    if vi and cls == "boost":
-        D = (max(0.05, 1 - vi[2] / V.lo), 1 - vi[0] / V.typ, min(0.95, 1 - vi[1] / V.hi))
+    if cc is not None and cc.D is not None:
+        out["D"] = _p(L, sid, "D", *cc.D, "", "physics", f"{cc.op.mode} D at the intent's operating point "
+                      f"({CV.SOURCES.get(top, '')}; eta {cc.eta[1]:g}-{cc.eta[2]:g})")
+    elif vi and cls == "boost":
+        e = CV.ETA
+        D = (max(0.05, 1 - vi[2] * e[2] / V.lo), 1 - vi[0] * e[1] / V.typ, min(0.95, 1 - vi[1] * e[0] / V.hi))
         clip = " (clipped: Vin >= Vout as the rails read, their voltages are suspect)" if vi[0] >= V.typ else ""
-        out["D"] = _p(L, sid, "D", D[1], min(D), max(D), "", "physics", f"boost D = 1 - Vin/V with Vin from {vin_net}{clip}")
+        out["D"] = _p(L, sid, "D", D[1], min(D), max(D), "", "physics",
+                      f"boost D = 1 - Vin eta/V with Vin from {vin_net}, eta {e[0]:g}-{e[2]:g} typical (TI SLVA372){clip}")
     elif cls == "buck" and volts(st.get("vout")):
         # a buck's bus (V) is its input; its output is the structure's vout
         vo = volts(st.get("vout"))

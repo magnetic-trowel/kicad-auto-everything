@@ -9,6 +9,7 @@
                                                [--[no-]last-mile] [--[no-]blocked] [--[no-]finish] [--report FILE]
     python -m kae.route.cli lastmile INPUT BOARD OUTPUT [--seed N] [--time S] [--workdir DIR] [--keep]
                                                [--set KEY=VALUE] [--report FILE]
+    python -m kae.route.cli clear INPUT BOARD OUTPUT [--time S] [--set KEY=VALUE] [--report FILE]
     python -m kae.route.cli finish INPUT BOARD OUTPUT [--time S] [--parts tails,taut,power] [--input-drc FILE]
                                                [--set KEY=VALUE] [--report FILE]
 
@@ -31,9 +32,16 @@ diagnosis alone on any routed board.
 `lastmile` is the post-route stage alone (bridge.last_mile_only): BOARD, routed from the task
 INPUT, gets the last mile with INPUT's rules; OUTPUT is BOARD or a round KiCad's DRC finds better.
 
+`route` ends with stage 7, finish (kae.route.finish), when time is left (on by default; --no-finish
+turns it off). Routing gets its time first: finish runs on what the repair rounds and the last mile
+leave, and a `finish_part_skipped` hazard says when that was too little. In a restart portfolio's
+attempts (KAE_FINISH_KEPT=1, set by tools/kaeres/restart.py --finish and kae.route.portfolio) it is
+deferred: the wrapper finishes the board it keeps, once.
+
 `finish` is stage 7 alone (kae.route.finish): BOARD gets rule D tails, taut arcs and power copper
-behind one journaled KiCad DRC gate with INPUT's rules; OUTPUT is never worse than BOARD. --set
-takes finish options (zone_above_a, drc_budget, ...); --input-drc a DRC report of BOARD to reuse.
+behind one journaled KiCad DRC gate with INPUT's rules; OUTPUT is never worse than BOARD, and the
+command never runs past --time (finish.safety_margin). --set takes finish options (zone_above_a,
+drc_budget, ...); --input-drc a DRC report of BOARD to reuse.
 
 The report ends with "hazards" and "hazard_summary" (kae.hazards): among them a recheck of
 OUTPUT with the safety checks forced on whatever the project's severities say (--recheck,
@@ -43,6 +51,7 @@ from kae.budget import start_run as _start_run
 from kae.budget import now as clock_now
 import argparse
 import json
+import os
 import sys
 import time
 
@@ -85,9 +94,11 @@ def main(argv=None):
     r.add_argument("--blocked", action=argparse.BooleanOptionalAction, default=True,
                    help="at the end, diagnose the connections still open: the report's \"blocked\" names the "
                         "board rule (or kae default) that makes each impossible (kae.route.blocked)")
-    r.add_argument("--finish", action=argparse.BooleanOptionalAction, default=False,
+    r.add_argument("--finish", action=argparse.BooleanOptionalAction, default=None,
                    help="at the end, when time is left: the finish stage (rule D tails, taut arcs, power copper, "
-                        "one journaled DRC gate; kae.route.finish)")
+                        "one journaled DRC gate; kae.route.finish). Default on; off (deferred) in a restart "
+                        "portfolio's attempts (KAE_FINISH_KEPT=1), whose wrapper finishes the kept board once; "
+                        "--no-finish turns it off")
     r.add_argument("--neckdown", action=argparse.BooleanOptionalAction, default=False,
                    help="Freerouting's neck-down at pins, floored at the board's legal minimum width")
     r.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
@@ -107,6 +118,16 @@ def main(argv=None):
     m.add_argument("--set", action="append", default=[], metavar="KEY=VALUE")
     m.add_argument("--report")
     recheck_args(m)
+    c = sub.add_parser("clear", help="clear the hot loops' returns of foreign copper on a routed board "
+                                     "(kae.route.hotloop.clear, design D)")
+    c.add_argument("input")
+    c.add_argument("board")
+    c.add_argument("output")
+    c.add_argument("--time", type=float, default=600.0)
+    c.add_argument("--workdir")
+    c.add_argument("--set", action="append", default=[], metavar="KEY=VALUE")
+    c.add_argument("--report")
+    recheck_args(c)
     f = sub.add_parser("finish", help="the finish stage alone on a routed board (with the task input's rules)")
     f.add_argument("input")
     f.add_argument("board")
@@ -132,6 +153,19 @@ def main(argv=None):
             rep["status"] = "finished"
             return rep
         return _finish(a, run_finish, dict(parts=tuple(p for p in a.parts.split(",") if p)))
+    if a.cmd == "clear":
+        def run_clear(opts):
+            import shutil
+            import tempfile
+            from kae.route import hotloop
+            from pathlib import Path
+            shutil.copy2(a.board, a.output)
+            wd = Path(a.workdir or tempfile.mkdtemp(prefix="kae-clear-", dir=str(Path(a.output).parent)))
+            rep = hotloop.clear(a.input, a.output, wd, opts=dict(opts, hotloop_clear=1),
+                                deadline=clock_now() + a.time - 10)
+            rep["status"] = "finished"
+            return rep
+        return _finish(a, run_clear, {})
     if a.cmd == "lastmile":
         return _finish(a, lambda opts: bridge.last_mile_only(a.input, a.board, a.output, time_s=a.time, seed=a.seed,
                                                              workdir=a.workdir, opts=opts),
@@ -141,11 +175,21 @@ def main(argv=None):
                 passes=a.passes, rounds=a.rounds if a.rounds == "auto" else int(a.rounds), keep=a.keep,
                 planes=a.planes, pad_shapes=a.pad_shapes,
                 router_share=a.router_share if a.router_share == "auto" else float(a.router_share),
-                last_mile=a.last_mile, neckdown=a.neckdown, blocked=a.blocked, finish=a.finish)
+                last_mile=a.last_mile, neckdown=a.neckdown, blocked=a.blocked, finish=finish_default(a.finish))
+    if a.finish is None and not opts["finish"]:
+        opts["finish_deferred"] = True
     if a.thermal_all:
         opts["thermal_pads"] = "all"
     return _finish(a, lambda o: bridge.route(a.input, a.output, seed=a.seed, time_s=a.time, workdir=a.workdir,
                                              opts=o), opts)
+
+
+def finish_default(flag):
+    """--finish / --no-finish as given; unset: on, except in a restart portfolio's attempt
+    (KAE_FINISH_KEPT=1: the wrapper runs finish once on the board it keeps)."""
+    if flag is not None:
+        return bool(flag)
+    return os.environ.get("KAE_FINISH_KEPT") != "1"
 
 
 def _finish(a, run, opts):

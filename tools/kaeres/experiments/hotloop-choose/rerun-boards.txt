@@ -1,0 +1,5 @@
+berkeleyauv-robosub-hw-noggin
+buildacubesat-project-bac-hardware-bq25306-charger-module-v1
+govish-fusion-pack-buck-converter-subboard-0-2
+librespacefoundation-qubik-qubik-bmps-bmps
+shazmeenshz-esp32-flight-controller-flight-controller-rev2

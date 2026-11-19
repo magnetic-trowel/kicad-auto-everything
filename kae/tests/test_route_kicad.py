@@ -403,11 +403,13 @@ def test_critical_zones_are_obstacles_for_other_nets(routed, exported, tmp_path)
 
 FAKE_ROUTER = """#!/usr/bin/env python3
 # A Freerouting that ignores its job timeout (the caller must kill it), except that a
-# one-pass run (-mp 1) writes the canned session CANNED, if it exists.
+# one-pass run (-mp 1) ends at once: it writes the canned session CANNED if that exists, and
+# nothing otherwise. Only the first run is killed, so the test spends no wall time it can't control.
 import os, shutil, sys, time
 a = sys.argv[1:]
-if "-mp" in a and os.path.exists({canned!r}):
-    shutil.copy({canned!r}, a[a.index("-do") + 1])
+if "-mp" in a:
+    if os.path.exists({canned!r}):
+        shutil.copy({canned!r}, a[a.index("-do") + 1])
     sys.exit(0)
 time.sleep(3600)
 """
@@ -447,10 +449,13 @@ def test_router_killed_at_its_deadline_still_yields_a_board(exported, tmp_path, 
     # the fake needs no memory: its own slots, so it never waits for a host-wide Freerouting
     # slot (kae.route.freerouting._Slot) held by real routers, which would spend the deadline
     monkeypatch.setenv("KAE_FR_LOCKDIR", str(tmp_path / "fr-slots"))
-    fast = dict(repair=False, router_share_alone=0.25, router_grace=2, plane_escapes=False)
+    # The router gets its 20 s floor (router_budget) out of a large budget, so the quick pass's
+    # condition (more than 25 s left after the kill) holds however slow the export and plan are
+    # on a loaded host. With a 50 s budget it held by 0.2 s at best and failed on most runs.
+    fast = dict(repair=False, router_share_alone=0.05, router_grace=2, plane_escapes=False)
 
     out = tmp_path / "out" / "board.kicad_pcb"
-    rep = bridge.route(board, out, time_s=50, workdir=tmp_path / "wd", opts=fast)
+    rep = bridge.route(board, out, time_s=300, workdir=tmp_path / "wd", opts=fast)
     assert rep["router"]["timed_out"] and rep["router_quick"]["rc"] == 0
     assert rep["status"] == "routed" and out.exists()
     routing = pcbnew_io.edit_routing(out, tmp_path / "l.kicad_pcb")["routing"]
@@ -458,14 +463,15 @@ def test_router_killed_at_its_deadline_still_yields_a_board(exported, tmp_path, 
 
     canned.unlink()   # now the quick pass writes nothing either
     out2 = tmp_path / "out2" / "board.kicad_pcb"
-    rep2 = bridge.route(board, out2, time_s=30, workdir=tmp_path / "wd2", opts=fast)
-    assert rep2["status"] == "no_session" and rep2["router"]["timed_out"]
+    rep2 = bridge.route(board, out2, time_s=300, workdir=tmp_path / "wd2", opts=fast)
+    assert rep2["status"] == "no_session" and rep2["router"]["timed_out"] and "router_quick" in rep2
     assert out2.read_bytes() == board.read_bytes()
 
     # with the repair loop on, an attempt without a session goes on from the unrouted input
     # (its rounds and the last mile route what they can) instead of ending there
     out3 = tmp_path / "out3" / "board.kicad_pcb"
-    rep3 = bridge.route(board, out3, time_s=150, workdir=tmp_path / "wd3", opts=dict(fast, repair=True, rounds=1))
+    rep3 = bridge.route(board, out3, time_s=300, workdir=tmp_path / "wd3",
+                        opts=dict(fast, repair=True, rounds=1, router_share=0.05))
     assert rep3["status"] == "no_session" and out3.exists()
     assert (rep3.get("repair") or {}).get("rounds"), rep3.get("repair")
 

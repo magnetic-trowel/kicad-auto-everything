@@ -560,6 +560,56 @@ def _excite_current(s):
     return float(ex.get("I") or 1.0)
 
 
+def _intent_cell(ctx, m):
+    """The intent's cells.<id> entry (opts intent: a kae.intent/1 document or its facts), or {}."""
+    intent = ctx.opts.get("intent") or None
+    if not isinstance(intent, dict):
+        return {}
+    facts = intent.get("facts") if intent.get("schema") == "kae.intent/1" else intent
+    cs = (facts or {}).get("cells") or {}
+    return cs.get(m.id) or cs.get(f"cell:{m.id}") or {}
+
+
+def _intent_converter(ctx, m):
+    """The cell's commutated current and duty from the intent's cells.<id> (kae.physics.converter.from_intent, as
+    kae.excite.params.cell reads it: I_switch_A, else I_A, else I_out_A through the cell's topology at the
+    intent's or the rails' voltages), or None when the intent states no current."""
+    from kae.physics import converter as CV
+    cell = _intent_cell(ctx, m)
+    if not cell:
+        return None
+    s = m.spec
+    cls = s.get("class") or ""
+    v = lambda k: ctx.volts(s.get(k) or "") if s.get(k) else None
+    if cls == "boost":
+        vi, vo = v("vin"), v("rail")
+    else:
+        vi, vo = v("rail"), v("vout")
+    if s.get("topology") == "buck_boost_4switch":
+        sib = next((x for x in ctx.brief.get("structures") or [] if x.get("topology") == "buck_boost_4switch"
+                    and x.get("id") != s.get("id") and x.get("controller") == s.get("controller")), {})
+        so = ctx.volts(sib.get("rail") or "") if sib.get("rail") else None
+        vi, vo = (v("rail"), so) if cls == "buck" else (so, v("rail"))
+    top, leg = CV.topology_of(cls, s, vo)
+    try:
+        return CV.from_intent(cell, top, leg, vi, vo)
+    except (TypeError, ValueError, ZeroDivisionError):
+        return None
+
+
+def _intent_current(ctx, m):
+    """The current a cell's copper is sized for when the intent states it: the upper end of its commutated
+    current (_intent_converter: a boost's input current, not its output; the brief's own estimate, 0.6 x an
+    inductor rating, can be several times what the board carries: bq25306's 4.7 A against the intent's
+    0.3-1 A). None without one."""
+    cc = _intent_converter(ctx, m)
+    if cc is None:
+        return None
+    if cc.I[2] <= 0 and cc.I_L:              # a static 4-switch leg: its closed switch still carries I_L, as DC
+        return float(cc.I_L[2])
+    return float(cc.I[2])
+
+
 def route_cell(ctx, m):
     s = m.spec
     loop = s.get("loop") or []
@@ -569,7 +619,9 @@ def route_cell(ctx, m):
         m.notes.append("loop terminals not found")
         return m
     n = len(T)
-    I = _excite_current(s)
+    I = _intent_current(ctx, m)
+    if I is None:
+        I = _excite_current(s)
     sw = s.get("sw")
     m.spec["_T"] = T
     side = ctx.side_layer(T[0].fp)
@@ -634,6 +686,23 @@ def route_cell(ctx, m):
             outer = [ctx.sp.cu[0], ctx.sp.cu[-1]]
             rt = route_hop(ctx, m, f"hop{k}", net, [anchor(ta)], [anchor(tb)], widths[-3:], outer, via=True,
                            via_cost=4.0)
+        narrowed = None
+        if rt is None and _opt(ctx, "cell_widest_fit") and floor > mn + 1e-6:
+            # no room at the width the current asks: the widest width that fits, down to the class minimum,
+            # rather than the bridge's class width (bq25306: a 1.7 mm VIN hop with no room went to Freerouting
+            # at 0.2 mm). The shortfall stays a heat hazard below (copper_below_ipc_width).
+            below = [w for w in sorted(set(round(w, 4) for w in width_ladder(floor, max(mn, 1e-3), 6)), reverse=True)
+                     if w < floor - 1e-6]
+            rt = route_hop(ctx, m, f"hop{k}", net, [anchor(ta)], [anchor(tb)], below, [L0], via=False)
+            if rt is None and len(ctx.sp.cu) > 1:
+                rt = route_hop(ctx, m, f"hop{k}", net, [anchor(ta)], [anchor(tb)], below[-3:],
+                               [ctx.sp.cu[0], ctx.sp.cu[-1]], via=True, via_cost=4.0)
+            if rt is not None:
+                narrowed = rt.width
+                m.notes.append(f"hop {k} ({net}): no room at {floor:.2f} mm; widest fit {rt.width:.2f} mm")
+                m.flags.append(dict(flag="widest_fit", hop=k, net=net, floor_mm=round(floor, 3),
+                                    width_mm=round(rt.width, 3)))
+                m.spec.setdefault("_floor", {})[f"hop{k}"] = rt.width     # trim_widths keeps it
         t_l0 = ctx.sp.tcu.get(L0, 0.035)
         refs = [getattr(ctx.fp.get(t_.fp), "ref", t_.fp) for t_ in (ta, tb)]
         where = f"{m.id} hop {k} ({refs[0]} to {refs[1]})"
@@ -653,6 +722,8 @@ def route_cell(ctx, m):
             m.hazards.append(hz)
     # return vias at the ground terminals of the loop
     _return_vias(ctx, m, T, side)
+    if _opt(ctx, "cell_via_array"):
+        _via_array(ctx, m, T, side)
     m.status = "routed" if ok == len(hops) else ("partial" if ok else "failed")
     quote(ctx, m)
     return m
@@ -681,7 +752,7 @@ def _return_vias(ctx, m, T, side, max_pairs=None):
     h, pl, pn = ctx.plane(layer, cx, cy, gnd=True)
     if pl is None or pn != net:
         return
-    I = float((m.spec.get("excite") or {}).get("I") or 1.0)
+    I = _intent_current(ctx, m) or float((m.spec.get("excite") or {}).get("I") or 1.0)
     n_max = max_pairs or int(min(4, max(2, math.ceil(I))))
     ca = via_candidates(ctx, ta, layer, net, pl, toward=(tb.x, tb.y), in_pad=_is_thermal_pad(ta))
     cb = via_candidates(ctx, tb, layer, net, pl, toward=(ta.x, ta.y), in_pad=_is_thermal_pad(tb))
@@ -734,6 +805,106 @@ def _return_vias(ctx, m, T, side, max_pairs=None):
             break
         _commit_vias(ctx, m, net, layer, gain[1], [gain[3]], gain[2])
         cur = gain[0]
+
+
+VIA_ARRAY_GAIN = 0.01      # an array via beyond the count the current needs must cut the cell's cost this much
+
+
+def _via_array(ctx, m, T, side):
+    """Return-via arrays at the cell's two ground terminals (the input capacitor's ground pad and the
+    IC's PGND / exposed pad; kae-hot-loops R4, practice X6): each terminal gets at least
+    max(ceil(I), vias_needed(I)) vias (>= 1 via per amp, SLYT614 and AN065; IPC barrel ampacity), and
+    more while each further via cuts the cell's quote (watts or nH, as the cell is priced) by
+    VIA_ARRAY_GAIN, at most opts via_array_max per terminal. Sites come from via_candidates (exactly
+    legal, landing in the plane), never inside the strip between the two ground terminals (the
+    hull of their copper: the CIN-IC path, SLYT614), except vias in a thermal pad; at each step the
+    site with the lowest quote is taken, so the array spreads (mutual inductance falls with pitch,
+    pdn-and-commutation.md section 2). Committed vias are re-checked against all copper so far.
+    A terminal left below the count its current needs gets vias_below_current (via_hazard)."""
+    from shapely.geometry import Point as _Pt
+    from .critical_physics import T_PLATE, vias_needed, via_hazard
+    k = _ground_hop(ctx, T)
+    if k is None:
+        return 0
+    ta, tb = T[k], T[(k + 1) % len(T)]
+    net = ta.net
+    cx = sum(t.x for t in T) / len(T)
+    cy = sum(t.y for t in T) / len(T)
+    layer = side if side in ta.layers else ta.layers[0]
+    h, pl, pn = ctx.plane(layer, cx, cy, gnd=True)
+    if pl is None or pn != net:
+        return 0
+    I = _intent_current(ctx, m)
+    if I is None:
+        I = _excite_current(m.spec)
+    D, drill = ctx.sp.via_size(net)
+    plating = float(_opt(ctx, "via_plating_mm") or 0.0) or T_PLATE
+    per_via = float(_opt(ctx, "via_A") or 0.0) or None
+    need = vias_needed(I, drill, plating=plating, dT=dT_max(ctx), per_via_a=per_via)
+    need = max(need, int(math.ceil(I - 1e-9)))
+    cap = int(_opt(ctx, "via_array_max") or 8)
+    need = min(need, cap)
+    strip = ta.geom.union(tb.geom).convex_hull
+    pitch = max(ctx.sp.same_net_via_pitch(net), D + 0.05)
+    keys = {id(ta): f"via:{ta.fp}:{ta.pad}", id(tb): f"via:{tb.fp}:{tb.pad}"}
+    for key in keys.values():
+        m.vias.setdefault(key, [])
+    cur = quote(ctx, m, store=False)
+    added = 0
+
+    # the fan-out lanes of multi-pin parts' other-net pins stay free: an array via keeps one escape track
+    # (and its clearances) from each of them (bq25306: 6 array vias round the QFN left Freerouting 11 opens)
+    lanes = [(it, _escape_gap(ctx, net, 0.0, it, layer)) for it in ctx.sp.pads
+             if it.kind == "pad" and it.net and it.net != net and layer in it.layers
+             and len(ctx.sp.pads_by_fp.get(it.fp, [])) > 3 and it.geom.distance(strip) < 3.0]
+
+    def sites(t):
+        th = _is_thermal_pad(t)
+        out = []
+        for v in via_candidates(ctx, t, layer, net, pl, toward=None, n_dirs=36,
+                                gaps=(0.0, 0.1, 0.25, 0.5, 0.8, 1.2), in_pad=th, max_n=80):
+            p = _Pt(v[0], v[1])
+            in_pad = v[2] <= 0
+            if not in_pad and strip.contains(p):
+                continue
+            if not in_pad and any(pd.geom.distance(p) < D / 2 + gap for pd, gap in lanes):
+                continue
+            mine = [q for key in keys.values() for q in m.vias.get(key, [])]
+            if any(math.dist(v[:2], q[:2]) < pitch for q in mine):
+                continue
+            out.append(v)
+        return out
+    for t in (ta, tb):
+        key = keys[id(t)]
+        while len(m.vias[key]) < cap:
+            cands = []
+            for v in sites(t)[:24]:
+                m.vias[key].append(v)
+                q = quote(ctx, m, store=False)
+                m.vias[key].pop()
+                if q is not None:
+                    cands.append((q, v))
+            if not cands:
+                break
+            q, v = min(cands, key=lambda c: c[0])
+            forced = len(m.vias[key]) < need
+            if not forced and (cur is None or q > cur * (1.0 - VIA_ARRAY_GAIN)):
+                break
+            if not _commit_vias(ctx, m, net, layer, t, [v], key):
+                break
+            cur = q
+            added += 1
+            m.spec.setdefault("_array_vias", []).append(tuple(v[:3]))
+        n = len(m.vias[key])
+        if n < need:
+            ref = getattr(ctx.fp.get(t.fp), "ref", t.fp)
+            hz = via_hazard(I, n, need, drill, plating, dT_max(ctx), [ref, net],
+                            where=f"{m.id} return vias at {ref} pad {t.pad}", per_via_a=per_via)
+            if hz is not None:
+                m.hazards.append(hz)
+    if added:
+        m.notes.append(f"return-via array: {added} via(s) added")
+    return added
 
 
 def _commit_vias(ctx, m, net, layer, t, vias, key):
@@ -806,17 +977,17 @@ def loop_model(ctx, m, T, h, gnd_k=None, vias_by_key=None, hops=None):
             va = vias_by_key.get(f"via:{ta.fp}:{ta.pad}") or []
             vb = vias_by_key.get(f"via:{tb.fp}:{tb.pad}") or []
             if va and vb:
-                D = ctx.sp.via_size(ta.net)[0]
+                D, dr = ctx.sp.via_size(ta.net)
                 rv = D / 2
                 ka, kb = {}, {}
                 for i, (x, y, ws, _) in enumerate(va):
                     e = f"va{i}"
                     lp.strip((ta.x, ta.y), (x, y), max(ws, D), h, e)
-                    lp.vert(x, y, h, 0.0, rv, e)
+                    lp.vert(x, y, h, 0.0, rv, e, drill=dr)
                     ka[e] = 1.0
                 for j, (x, y, ws, _) in enumerate(vb):
                     e = f"vb{j}"
-                    lp.vert(x, y, 0.0, h, rv, e)
+                    lp.vert(x, y, 0.0, h, rv, e, drill=dr)
                     lp.strip((x, y), (tb.x, tb.y), max(ws, D), h, e)
                     kb[e] = 1.0
                 if rt is not None and rt.segs:
@@ -855,7 +1026,71 @@ def quote(ctx, m, store=True):
         alloc = alloc or allocation(ctx, m)
         m.physics = dict(value=round(val, 4), unit=alloc.unit, alloc=round(alloc.value, 4),
                          u=round(val / alloc.value, 4) if alloc.value > 0 else None, basis=alloc.basis, **extra)
+    if val is not None and m.kind == "cell" and _opt(ctx, "cell_price") == "W" and extra.get("W"):
+        # the cell priced in watts (kae-hot-loops R2): what its copper costs, L and R together
+        return float(extra["W"])
     return val
+
+
+def cell_operating(ctx, m):
+    """(I in A, f_sw in Hz, D) a cell's watts are priced at, with their basis, as the evaluator's
+    parameters read them (kae.excite.params.cell, typical values): the intent's cells.<id> values
+    (opts intent, a kae.intent/1 document or its facts) where it states them, else I from the brief's
+    excitation (0.6 x the rating), f_sw from the brief's switcher table or 1 MHz, D = Vout/Vin (buck),
+    1 - Vin/V (boost), else 0.5."""
+    got = m.spec.get("_op")
+    if got is not None:
+        return got
+    s = m.spec
+    ex = s.get("excite") or {}
+    cells = _intent_cell(ctx, m)
+
+    def iv(key):
+        # typical value as kae.excite.beliefs.intent_value takes it: an interval's geometric mean
+        v = cells.get(key)
+        try:
+            if isinstance(v, (list, tuple)) and v:
+                lo, hi = float(v[0]), float(v[-1])
+                return math.sqrt(lo * hi) if lo > 0 else (lo + hi) / 2
+            return float(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+    basis = []
+    cc = _intent_converter(ctx, m)
+    if cc is None:
+        I = float(ex.get("I") or 1.0)
+        basis.append("I: brief excitation")
+    else:
+        I = float(cc.I[0])
+        basis.append(f"I: intent ({cc.basis})" if cc.source == "physics" else "I: intent")
+    f = iv("f_sw_Hz")
+    if f is None:
+        f = float(ex.get("f_sw_Hz") or 1e6)
+        basis.append("f_sw: brief" if ex.get("f_sw_Hz") else "f_sw: 1 MHz prior")
+    else:
+        basis.append("f_sw: intent")
+    D = iv("D")
+    if D is None and cc is not None and cc.D is not None:
+        D = cc.D[0]
+        basis.append("D: intent operating point (kae.physics.converter)")
+    if D is None:
+        cls = s.get("class") or ""
+        # the cell's rail is its bus: a buck's input, a boost's output (kae.circuit.structures)
+        bus, vin, vout = (ctx.volts(s.get(k) or "") for k in ("rail", "vin", "vout"))
+        if cls == "boost" and vin and bus and bus > vin:
+            from kae.physics import converter as CV
+            D = CV.duty("boost", vin, bus)
+            basis.append(f"D: boost 1 - Vin eta/V (eta {CV.ETA[1]:g})")
+        elif cls == "buck" and vout and bus and bus > vout:
+            D = vout / bus
+            basis.append("D: buck Vout/Vin")
+        else:
+            D = 0.5
+            basis.append("D: 0.5 prior")
+    D = min(max(D, 0.02), 0.98)
+    got = (I, f, D, basis)
+    m.spec["_op"] = got
+    return got
 
 
 def _cell_value(ctx, m):
@@ -873,15 +1108,56 @@ def _cell_value(ctx, m):
     vals = []
     for Tv, cap in cell_variants(m.spec, T, lambda c, net: ctx.pad_term(c, net=net)):
         if Tv is T:
-            vals.append(loop_model(ctx, m, T, h, gnd_k=gk).value())
+            vals.append(loop_model(ctx, m, T, h, gnd_k=gk).value_r())
             continue
         hops = {k: v for k, v in m.hops.items() if k not in ("hop0", f"hop{n - 1}")}
-        vals.append(loop_model(ctx, m, Tv, h, gnd_k=gk, hops=hops).value())
-    vals = [v for v in vals if v is not None and math.isfinite(v) and v > 1e-9]
+        vals.append(loop_model(ctx, m, Tv, h, gnd_k=gk, hops=hops).value_r())
+    vals = [(v, r) for v, r in vals if v is not None and math.isfinite(v) and v > 1e-9]
     if not vals:
         return None, {}
-    val = 1.0 / sum(1.0 / v for v in vals)
-    return val, dict(h_mm=round(h, 3) if h != INF else None, plane=pl, plane_net=pn, variants=len(vals))
+    val = 1.0 / sum(1.0 / v for v, _ in vals)
+    # parallel loops share the current as their inductances do (x_i = L / L_i)
+    R = sum((val / v) ** 2 * r for v, r in vals)
+    extra = dict(h_mm=round(h, 3) if h != INF else None, plane=pl, plane_net=pn, variants=len(vals),
+                 R_mohm=round(R * 1e3, 4))
+    if m.kind == "cell":
+        from .critical_physics import ac_loss
+        I, f, D, _basis = cell_operating(ctx, m)
+        t_r = float((m.spec.get("excite") or {}).get("t_sw_ns") or 2.0) * 1e-9
+        hh = h if h != INF else 1.5
+        w_l = 0.5 * val * 1e-9 * I * I * f          # loss.loop: 1/2 L I^2 f_sw
+        # loss.loop_ac at f_sw and its harmonics, skin and proximity included (critical_physics.ac_loss;
+        # I^2 D (1 - D) R_loop, the evaluator's DC-resistance term, is its rac = 1 limit)
+        key = f"_acK{hh:.4f}"                      # ac_loss is linear in R: its factor once per cell and height
+        acK = m.spec.get(key)
+        if acK is None:
+            acK = m.spec[key] = ac_loss(I, D, f, 1.0, hh, t_r)
+        w_r = acK * R
+        w_s = _swnode_watts(ctx, m, hh, f)          # loss.swnode: the switch-node copper's 1/2 C V^2 f_sw
+        extra.update(W=w_l + w_r + w_s, W_loop=round(w_l, 9), W_loop_ac=round(w_r, 9),
+                     W_loop_ac_dc=round(I * I * D * (1.0 - D) * R, 9), W_swnode=round(w_s, 9))
+    return val, extra
+
+
+def _swnode_watts(ctx, m, h, f):
+    """loss.swnode of the cell's routed switch-node copper: 1/2 C V^2 f_sw with C the parallel-plate
+    capacitance of its hop strips to the plane below (eps0 er A / h). Only what routing changes: the
+    pads' share is a constant of the placement."""
+    sw = m.spec.get("sw")
+    if not sw or h in (None, INF) or h <= 0:
+        return 0.0
+    area = 0.0
+    for rt in m.hops.values():
+        if rt is None or rt.net != sw:
+            continue
+        for i, (_l, a, b) in enumerate(rt.segs):
+            area += math.dist(a, b) * rt.seg_w(i)
+    if area <= 0:
+        return 0.0
+    er = (ctx.sp.er[0] if getattr(ctx.sp, "er", None) else 4.5)
+    C = 8.854e-15 * er * area / h                       # F (mm units)
+    V = ctx.volts(m.spec.get("rail") or "") or 5.0
+    return 0.5 * C * V * V * f
 
 
 # ----------------------------------------------------------------------------- allocations

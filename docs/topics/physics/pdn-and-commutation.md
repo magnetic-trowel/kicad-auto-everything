@@ -1,6 +1,6 @@
 # PDN and commutation: loop geometry, parallel vias and caps, plane spreading, Kelvin and gate loops, eddy currents
 
-Scope: commutation-loop inductance, via clusters and current sharing, decap mounting and orientation, plane-pair spreading and IR drop, Kelvin sense error, gate loops, eddy currents under inductors. Not here: copper shapes, AC resistance, node/branch classes -> [power-copper](power-copper.md); target impedance -> [decoupling-pdn](../rules/decoupling-pdn.md).
+Scope: commutation-loop inductance, via clusters and current sharing, decap mounting and orientation, plane-pair spreading and IR drop, Kelvin sense error, gate loops, eddy currents under inductors. Not here: copper shapes, AC resistance, node/branch classes -> [power-copper](power-copper.md); the loop's current and duty by topology -> [converter-currents](converter-currents.md); target impedance -> [decoupling-pdn](../rules/decoupling-pdn.md).
 Keys: hot loop, commutation loop, loop inductance, height × squares μ0·h·N□, lateral vs vertical loop, internal-vertical, via cluster spreading inductance, logarithmic in pitch, reverse-return feed, Tichelmann, current sharing, decap mounting inductance, via-in-pad, side vias, alternating orientation, plane-pair spreading, Peaceman, IR drop, decap reach, Kelvin L_err, ESL compensation, gate loop, common-source inductance, eddy current under inductor, Dodd–Deeds, f_ext, inductor cut-out, N7, N8
 
 **Results**

@@ -69,7 +69,14 @@ physical bounds. This file is the instruction given to the model.
 - `loads`: every IC and module, with typical and maximum current from its datasheet class, and
   `T_max_C` its maximum junction (or operating) temperature when the part number's datasheet gives it
   (null otherwise: kae then uses the part class's rating).
-- `converters`: one per `cell:` section; switching regulators and motor/LED drivers.
+- `converters`: one per `cell:` section; switching regulators and motor/LED drivers. `I_out_A` is the
+  converter's load current; `I_switch_A` (optional) is the cell's commutated current, its inductor's average:
+  a buck's is its output current, a boost's its input current, I_out V_out / (V_in eta). kae prices the hot
+  loop with `I_switch_A` when it is given, else with `I_out_A`. Optional, for the reader and the record:
+  `L_H` (the inductor's value), `inductor_ref`, `C_in` and `C_out` (lists of {"ref", "value_F"}), and `fields`
+  ({"<key>": {"basis": "board|datasheet|typical|guess", "why": "..."}}: each value's own provenance, `board`
+  for a value read from the board's parts, such as a feedback divider or the inductor's marking). The
+  converter's `basis` is then its weakest field's (`board` counts as `datasheet`).
 - `sensitive`: feedback pins (`victim:feedback:*`), ADC inputs, references, resets, crystal pins, RF inputs.
 - `radio`: only parts that are a radio transmitter/receiver or a GNSS receiver on this board.
 - `connectors`: every connector. `direction` is power/signal flow seen from the board; `I_A` is what flows

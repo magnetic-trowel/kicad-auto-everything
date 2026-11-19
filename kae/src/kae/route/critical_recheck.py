@@ -31,6 +31,8 @@ round judged by KiCad's DRC and kept only if it is no worse.
 """
 from __future__ import annotations
 
+import os
+
 from kae.budget import now as clock_now
 import math
 import time
@@ -663,7 +665,8 @@ class _AllocCtx:
 def fills_of(board_path):
     """{net: {layer: [Polygon]}} of KiCad's refill of a board (pcbnew_io.zone_fills)."""
     from kae.board import pcbnew_io
-    d = pcbnew_io.zone_fills(board_path)
+    # KAE_ZONE_FILL_TIMEOUT: a heavily poured board's refill can take longer than the default (USB armory: > 15 min)
+    d = pcbnew_io.zone_fills(board_path, timeout=float(os.environ.get("KAE_ZONE_FILL_TIMEOUT", "900")))
     out = {}
     for z in d.get("zones") or []:
         if not z.get("net") or (z.get("name") or "").startswith("kae-crit:"):

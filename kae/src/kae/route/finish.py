@@ -30,9 +30,12 @@ KiCad's DRC itself (`gate=False`: each returns its changes as kae.route.journal 
 
 `pad_trim` (`trim`) can be added to `parts` (the bridge's pad_entry=edge cut).
 
-Time (`time_s`): each part runs only when its estimate from the board's size (`estimate`) and the
-gate's fit in what is left; a board too big for its reserve runs (a) and (b) and reports (c) as
-skipped. The result is cached in the step cache (KAE_STEP_CACHE) by input board, project files,
+Time (`time_s`): finish never runs past it. It plans against `time_s` less a safety margin
+(`safety_margin`: 15 s + 5 %, at most a quarter) for a gate DRC started late and the exit. Each part
+runs only when its estimate from the board's size (`estimate`) and the gate's fit in what is left; a
+part gets what is left less the gate's estimate, and the taut pass checks it between branches and
+passes, keeping (and journaling) what it finished. A board too big for its time runs (a) and (b)
+and reports (c) as skipped (`finish_part_skipped`). The result is cached in the step cache (KAE_STEP_CACHE) by input board, project files,
 code and options, unless a part was skipped or the gate stopped for time.
 """
 from __future__ import annotations
@@ -71,6 +74,14 @@ COEF = dict(tails=(5.0, 0.02), taut=(5.0, 0.12), power=(5.0, 0.03), trim=(3.0, 0
 DRC_COEF = (3.0, 0.02)       # one KiCad DRC: about 8 s at 300 pads, 30 s at 1,300 (zones refilled)
 
 
+SAFETY_S = (15.0, 0.05)      # s: the margin finish keeps below its --time: fixed, and per second of budget
+
+
+def safety_margin(time_s):
+    """Seconds finish keeps free below its budget `time_s` (at most a quarter of it)."""
+    return round(min(0.25 * time_s, SAFETY_S[0] + SAFETY_S[1] * time_s), 1)
+
+
 def size_of(board_path):
     text = Path(board_path).read_text(encoding="utf-8", errors="replace")
     return dict(pads=text.count("(pad "), segments=text.count("(segment"), arcs=text.count("(arc"))
@@ -105,6 +116,9 @@ def _pass(part, src, dst, o, wd, timeout, log):
         po.setdefault("zone_above_a", o.get("zone_above_a"))
         if o.get("operating"):
             po.setdefault("operating", o["operating"])
+        for k in ("tht_neck", "tht_wide"):         # the THT neck's settings (constraints.DEFAULTS)
+            if o.get(k) not in (None, ""):
+                po.setdefault(k, o[k])
         return power_copper.run(src, dst, opts=po, workdir=wd, timeout=timeout, log=log, gate=False)
     if part == "trim":
         from . import pad_trim
@@ -120,6 +134,8 @@ def _summary(part, rep):
         out["nets_changed"] = len(out["nets_changed"])
     if part == "taut" and "stats" in rep:
         out["passes"] = rep["stats"].get("passes")
+        if rep["stats"].get("stopped"):
+            out["stopped"] = rep["stats"]["stopped"]
     if part == "power" and "nets" in rep:
         out["zone_nets"] = rep["nets"].get("zones")
     return out
@@ -141,6 +157,10 @@ def run(input_path, output_path, project=None, opts=None, workdir=None, time_s=N
     out = Path(output_path).resolve()
     out.parent.mkdir(parents=True, exist_ok=True)
     key_opts = {k: v for k, v in o.items()}
+    import os
+    for k in ("KAE_THT_NECK", "KAE_THT_WIDE"):          # board-wide env defaults of power copper's THT neck
+        if os.environ.get(k):
+            key_opts["env:" + k] = os.environ[k]
     if o.get("operating") and Path(o["operating"]).exists():
         key_opts["operating"] = stepcache.file_sha(o["operating"])      # its content, not its path
     key = None
@@ -165,7 +185,11 @@ def _run(inp, out, project, o, workdir, time_s, base_report, drc_s, log):
     from kae import hazards as H
     from . import drc
     t0 = clock_now()
-    deadline = None if time_s is None else t0 + float(time_s)
+    # the parts and the gate plan against `deadline`; the margin below it covers what may still run
+    # after them: a gate DRC started just before the deadline (journal: timeout >= 10 s), writing the
+    # board, and the caller's exit (kae.route.cli finish's recheck is skipped with under 20 s left)
+    margin = None if time_s is None else safety_margin(float(time_s))
+    deadline = None if time_s is None else t0 + float(time_s) - margin
     own = workdir is None
     wd = Path(workdir).resolve() if workdir else Path(tempfile.mkdtemp(prefix="kae-finish-", dir=out.parent))
     wd.mkdir(parents=True, exist_ok=True)
@@ -174,7 +198,7 @@ def _run(inp, out, project, o, workdir, time_s, base_report, drc_s, log):
         return float("inf") if deadline is None else deadline - clock_now()
 
     rep = dict(input=str(inp), project=str(project), parts=dict(ran=[], skipped={}, failed={}), stages={},
-               seconds={}, hazards=[])
+               seconds={}, hazards=[], budget_s=time_s, margin_s=margin)
     cacheable = True
     try:
         staged = drc.stage_board(inp, project, wd / "in")
@@ -202,7 +226,7 @@ def _run(inp, out, project, o, workdir, time_s, base_report, drc_s, log):
             dst = drc.stage_board(cur, project, wd / part / "out")
             try:
                 r = _pass(part, cur, dst, o, wd / part / "work",
-                          timeout=max(30, int(left() - est["gate"])) if deadline else 3600, log=log)
+                          timeout=max(1, int(left() - est["gate"])) if deadline else 3600, log=log)
             except Exception as e:      # noqa: BLE001 - one part never costs the board
                 import traceback
                 traceback.print_exc()
@@ -239,6 +263,7 @@ def _run(inp, out, project, o, workdir, time_s, base_report, drc_s, log):
         # re-plan: entries reverted with a change they built on lose their copper, where the chained passes
         # would have planned the later stage around the gated earlier one. The stages after the earliest one
         # with reverts run again on the gated board, behind a second gate whose input DRC is the first's last
+        g2 = None
         ran = rep["parts"]["ran"]
         rev_st = [p for p in ran if any(e.stage == p and e.id not in kept for e in jr.entries)]
         later = ran[ran.index(rev_st[0]) + 1:] if rev_st else []
@@ -252,7 +277,7 @@ def _run(inp, out, project, o, workdir, time_s, base_report, drc_s, log):
                 dst = drc.stage_board(cur2, project, wd / "r2" / part / "out")
                 try:
                     rr = _pass(part, cur2, dst, o, wd / "r2" / part / "work",
-                               timeout=max(30, int(left() - est["gate"])) if deadline else 3600, log=log)
+                               timeout=max(1, int(left() - est["gate"])) if deadline else 3600, log=log)
                 except Exception as e:      # noqa: BLE001
                     r2.setdefault("failed", {})[part] = f"{type(e).__name__}: {e}"[:300]
                     continue
@@ -294,6 +319,17 @@ def _run(inp, out, project, o, workdir, time_s, base_report, drc_s, log):
             rep["hazards"].append(H.make("finish_part_failed", "warn", "data", f"Finish part '{part}' failed: {why}",
                                          objects=[part], evidence=dict(error=why),
                                          fix="Report the board; the other parts and the gate ran without it."))
+        for gg in (g, g2):
+            if gg is None:
+                continue
+            if gg.get("gate_error"):
+                rep["gate_error"] = gg["gate_error"]
+                rep["hazards"].append(H.make(
+                    "finish_failed", "warn", "data",
+                    f"The finish gate could not finish ({gg['gate_error']}); the board has only the changes KiCad's "
+                    f"DRC had already verified ({len(gg['kept'])} entries).",
+                    objects=["finish"], evidence=dict(error=gg["gate_error"], kept=len(gg["kept"]), drc_runs=gg["drc_runs"]),
+                    fix="Give the finish stage more time; unverified changes were dropped, the routed copper is intact."))
         if g["noise"]:
             rep["hazards"].append(H.make(
                 "drc_noisy_checks", "info", "data",

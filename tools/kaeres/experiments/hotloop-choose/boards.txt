@@ -1,0 +1,11 @@
+antmicro-arvsom-arvsom
+berkeleyauv-robosub-hw-noggin
+buildacubesat-project-bac-hardware-bq25306-charger-module-v1
+dimoustroufis-librewave-ecp5-librewave-ecp5
+govish-fusion-pack-buck-converter-subboard-0-2
+heypcb-kestrel-esc-kestrel-esc
+librespacefoundation-qubik-qubik-bmps-bmps
+livitup-hrv-sstv-badge-defcon-sstv-badge
+logisim-evolution-gecko5education-gecko5education
+shazmeenshz-esp32-flight-controller-flight-controller-rev2
+zephray-nekoink-pcb-2

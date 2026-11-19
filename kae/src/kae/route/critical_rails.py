@@ -137,16 +137,25 @@ def load_current(ctx, u, net, cells, draws=None):
             not (_supply_pins(ctx, u, net) if draws is None else draws):
         return 0.0
     v = ctx.volts(net) or 3.3
-    if u in cells:                            # a converter's input: its output power / (eta V_in)
+    from kae.physics import converter as CV
+    if u in cells:                            # a buck's input: its output power / (eta V_in) (kae.physics.converter)
         c = cells[u]
         ex = c.get("excite") or {}
         vin = ex.get("V") or v
         vout = ctx.volts(c.get("vout")) or 0.5 * vin
         i_out = float(ex.get("I") or 1.0)
         if c.get("rail") == net and c.get("class") in ("buck", None):
-            return vout * i_out / (0.88 * max(vin, 0.5))
+            return CV.input_current("buck", max(vin, 0.5), vout, i_out)
         if c.get("rail") == net:
             return i_out
+    if kind == "inductor":
+        # a boost's input current flows through its inductor, not the controller's supply pin: I_in = I_L, the
+        # cell's commutated current (its excitation; kae.physics.converter: I_out V_out / (V_in eta))
+        for c in cells.values():
+            if c.get("inductor") == u and c.get("class") == "boost" and c.get("vin") == net and \
+                    c.get("topology") != "buck_boost_4switch":
+                return float((c.get("excite") or {}).get("I") or 1.0)
+        return 0.0
     if kind == "ic":
         if sub == "mcu":
             from kae.physics.priors import ic_current_prior
