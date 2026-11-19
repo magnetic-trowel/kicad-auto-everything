@@ -73,7 +73,7 @@ the default stays wall time.
 | critical router (joint module stage) | grid searches / their A* expansions | 0.10 / 7.9e-7 |
 | any deadline check | one poll (a loop that only polls still ends) | 1e-3 (exact repair 5e-3) |
 
-Rates are medians over three boards (65–328 pins) on a quiet host (`tools/research/budget/calibrate.py`).
+These are the first rates; the current ones, the Freerouting work budget and what counted budgets did to boards are in [counted budgets in practice](counted-budgets-2611.md). Rates are medians over three boards (65–328 pins) on a quiet host (`tools/research/budget/calibrate.py`).
 Per-pass Freerouting time follows pins² (7–9.8e-5 s per pin²); per MB of `.dsn` it varied 9×.
 
 **The critical router was charged late (2026-11-11).** Until then the critical-copper grid router
