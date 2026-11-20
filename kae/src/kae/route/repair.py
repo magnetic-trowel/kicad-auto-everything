@@ -235,12 +235,25 @@ def spoke_tracks(pad, zone, layer, need, plan, space, taken=None, skip=()):
 
 
 # ----------------------------------------------------------------------------- analysis
-def needs_fills(report):
-    """Whether a DRC report has zone trouble the fill geometry helps with."""
+def needs_fills(report, info=None):
+    """Whether a DRC report has zone trouble the fill geometry helps with: a starved thermal, an
+    unconnected pair that names a zone, or (with `info`) an open net that has a zone on the board.
+    Which pairs KiCad names varies from run to run (a net's cut-off fill island is named as the
+    zone in one DRC and as a pad of its island in the next, at 2 threads as at 16), so the open
+    nets and the board's zones decide, not the names."""
     if any(v.get("type") == "starved_thermal" for v in drc.errors(report)):
         return True
-    return any(_is_zone(it.get("description")) for u in report.get("unconnected_items") or []
-               for it in u.get("items") or [])
+    if any(_is_zone(it.get("description")) for u in report.get("unconnected_items") or []
+           for it in u.get("items") or []):
+        return True
+    zoned = {z.get("net") for z in (info or {}).get("zones") or [] if z.get("net")}
+    return bool(zoned & _unconnected_nets(report))
+
+
+def _unconnected_nets(report):
+    """The nets of a DRC report's unconnected pairs."""
+    return {n for u in report.get("unconnected_items") or [] for it in u.get("items") or []
+            for n in _nets_of(it.get("description"))}
 
 
 def analyse(report, routed, info=None, plan=None, fills=None, layer_map=None, copper=None):
@@ -322,9 +335,18 @@ def analyse(report, routed, info=None, plan=None, fills=None, layer_map=None, co
         for it in ours:
             items.add(it["uuid"])
             nets.add(routed[it["uuid"]]["net"])
+    # a net with fills is judged by its parts (net_clusters), not by which of its items KiCad's
+    # unconnected pairs name: those names vary between DRCs of one board (atrivatech ch32v003: GND's
+    # cut-off island named as a zone pair in 2 of 6 runs of one input, spokes in the others and a
+    # split plane in those 2)
+    filled = {z.get("net") for z in zones.values() if z.get("net")} if (info is not None and plan is not None) \
+        else set()
+    by_parts = sorted(filled & _unconnected_nets(report))
     for u in report.get("unconnected_items") or []:
         its = u.get("items") or []
         uns = {n for it in its for n in _nets_of(it.get("description"))}
+        if uns and uns <= set(by_parts):
+            continue
         zone_its = [it for it in its if _is_zone(it.get("description"))]
         if not zone_its:
             for n in uns:
@@ -348,6 +370,9 @@ def analyse(report, routed, info=None, plan=None, fills=None, layer_map=None, co
                 connect.add(n)
             cur = opened.get(n, set())
             opened[n] = None if cur is None else (cur | zl)
+    for n in by_parts:
+        _zone_net_parts(n, info, plan, copper if copper is not None else routed, fills, zones, lmap,
+                        try_spokes, own_pieces, want_corridor, connect, opened)
     thermal = set()
     if want_corridor and info is not None and plan is not None:
         from shapely.strtree import STRtree
@@ -365,6 +390,46 @@ def analyse(report, routed, info=None, plan=None, fills=None, layer_map=None, co
                     nets.add(r["net"])
     return dict(widen=widen, items=items, nets=nets, spokes=spokes, connect=connect, open=opened,
                 thermal=thermal, unattributed=other)
+
+
+def _zone_net_parts(net, info, plan, copper, fills, zones, lmap, try_spokes, own_pieces, want_corridor, connect,
+                    opened):
+    """analyse() for an open net with fills, from its parts (net_clusters: the part with the most pads
+    first) in a fixed order. Each other part with pads gets a spoke track from its first pad (by uuid)
+    into a zone of the net (by zone uuid) on a layer they share, outside the part's own fill pieces;
+    a part no spoke joins and that has no fill gets a spoke corridor at its first pad. When the main
+    part and the parts left hold fill in more than one part, the net's planes are replaced by its
+    pieces (`connect`), and a net with parts left is re-routed on its fills' layers; a net whole by
+    its parts but open by KiCad's, on every layer."""
+    parts = net_clusters(net, info, copper, fills, plan.copper)
+    if not parts:
+        return
+    pads = {pd["uuid"]: pd for pd in info.get("pads") or [] if pd.get("uuid")}
+    own = sorted((z for z in zones.values() if z.get("net") == net), key=lambda z: z["uuid"])
+    left = []
+    for p in parts[1:]:
+        firsts = [pads[u] for u in sorted(p["pads"]) if u in pads]
+        joined = False
+        for pad in firsts:
+            for z in own:
+                layers = [l for l in pad.get("layers") or [] if l in z.get("layers", {})]
+                if layers and try_spokes(pad, z, layers, 1, skip=own_pieces(pad)):
+                    joined = True
+                    break
+            if joined:
+                break
+        if not joined:
+            left.append(p)
+            if firsts and not p["pieces"]:
+                want_corridor.add(firsts[0]["uuid"])
+    if sum(1 for p in [parts[0]] + left if p["pieces"]) > 1:
+        connect.add(net)
+    cur = opened.get(net, set())
+    if left:
+        if cur is not None:
+            opened[net] = cur | {lmap.get(l, l) for z in own for l in z.get("layers", {})}
+    elif len(parts) == 1:
+        opened[net] = None       # whole by its parts, open by KiCad's: re-route it on every layer
 
 
 # ----------------------------------------------------------------------------- DSN edits
@@ -633,7 +698,7 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
         rounds.append(rec)
         if left() - reserve < 45:
             rec["stopped"] = "time"
-            if left() >= SPOKES_MIN_S and needs_fills(best_rep):
+            if left() >= SPOKES_MIN_S and needs_fills(best_rep, info):
                 # no time for a routed round, but spoke tracks need no router (under counted
                 # budgets the router spends its whole share, so a short attempt never reached
                 # round 1 and kept every starved thermal: bestelampe 24). They go into the last
@@ -651,7 +716,7 @@ def loop(input_path, output_path, wd, plan, info, opts, deadline, log=print):
         copper = {r["uuid"]: r for r in listing}
         routed = {u: r for u, r in copper.items() if not r.get("locked") and u not in fixed}
         fills = None
-        if needs_fills(best_rep):
+        if needs_fills(best_rep, info):
             try:  # refilled with the board's rules: next to its project files
                 fills = pcbnew_io.zone_fills(drc.stage_board(output_path, input_path, rdir / "fills"))["zones"]
             except pcbnew_io.PcbnewError as e:

@@ -364,3 +364,45 @@ def test_spokes_with_no_routed_round_go_into_the_last_miles_first_round(tmp_path
     assert lm["spokes"] == 1 and lm["kept"]
     assert rep["final"]["errors"] == 0 and rep["final"]["unconnected"] == 2 - joined
     assert out.read_text() == "routed+spokes" + ("+join" if joined else "")
+
+
+def test_a_zone_nets_repair_does_not_depend_on_which_pair_kicad_names():
+    """KiCad's DRC names a net's cut-off fill island as the zone in one run and as pads of its island in
+    the next (atrivatech ch32v003, one input: 2 of 6 runs, at 2 threads as at 16), and analyse() spoked or
+    split the plane by those names. Judged by the net's parts, both reports ask for the same repair."""
+    pad, other = _pad("p1", "N", 0, 0), _pad("q1", "N", 5, 0)
+    info = dict(pads=[pad, other], graphics=[], copper=["F.Cu", "B.Cu"], zones=[dict(uuid="z", net="N")])
+    island = box(-2, -2, 2, 2).difference(box(-0.9, -0.9, 0.9, 0.9)).union(box(0.4, -0.1, 0.95, 0.1))
+    main = box(3, -3, 8, 3)
+    zone = dict(uuid="z", net="N", layers={"F.Cu": [_ring(island), _ring(main)]})
+    plan = SimpleNamespace(net_class={"N": "kae_A"}, classes={"kae_A": SimpleNamespace(widths={"F.Cu": 0.2})},
+                           matrix={}, pin_class={}, obstacle_classes={}, obstacles=[], copper=["F.Cu", "B.Cu"])
+    as_zones = dict(violations=[], unconnected_items=[dict(items=[
+        dict(description="Zone [N] on F.Cu, priority 0", uuid="z", pos=dict(x=-2, y=-2)),
+        dict(description="Zone [N] on F.Cu, priority 0", uuid="z", pos=dict(x=3, y=-3))])])
+    as_pads = dict(violations=[], unconnected_items=[dict(items=[
+        dict(description="Pad 1 [N] of U1 on F.Cu", uuid="p1", pos=dict(x=0, y=0)),
+        dict(description="Pad 1 [N] of U2 on F.Cu", uuid="q1", pos=dict(x=5, y=0))])])
+    got = [repair.analyse(r, {}, info, plan, fills=[zone], layer_map={}, copper={}) for r in (as_zones, as_pads)]
+    for a in got:
+        assert len(a["spokes"]) == 1 and not a["connect"] and not a["open"]
+        assert main.contains(Point(a["spokes"][0]["b"]))
+    assert got[0]["spokes"] == got[1]["spokes"]
+    # the fill geometry is fetched for both: the open net has a zone on the board
+    assert repair.needs_fills(as_pads, info) and not repair.needs_fills(as_pads)
+
+
+def test_a_zone_nets_cut_off_fill_without_a_spoke_splits_the_plane():
+    """A fill island no spoke can join (no pad in it) makes the net's planes its pieces (`connect`) and
+    re-routes it on the fill's layers, whichever items KiCad names."""
+    other = _pad("q1", "N", 5, 0)
+    info = dict(pads=[other], graphics=[], copper=["F.Cu", "B.Cu"], zones=[dict(uuid="z", net="N")])
+    island, main = box(-2, -2, 1, 1), box(3, -3, 8, 3)
+    zone = dict(uuid="z", net="N", layers={"F.Cu": [_ring(island), _ring(main)]})
+    plan = SimpleNamespace(net_class={"N": "kae_A"}, classes={"kae_A": SimpleNamespace(widths={"F.Cu": 0.2})},
+                           matrix={}, pin_class={}, obstacle_classes={}, obstacles=[], copper=["F.Cu", "B.Cu"])
+    rep = dict(violations=[], unconnected_items=[dict(items=[
+        dict(description="Zone [N] on F.Cu, priority 0", uuid="z", pos=dict(x=-2, y=-2)),
+        dict(description="Pad 1 [N] of U2 on F.Cu", uuid="q1", pos=dict(x=5, y=0))])])
+    a = repair.analyse(rep, {}, info, plan, fills=[zone], layer_map={}, copper={})
+    assert a["connect"] == {"N"} and a["open"] == {"N": {"F.Cu"}} and not a["spokes"]
