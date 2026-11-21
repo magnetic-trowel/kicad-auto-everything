@@ -1039,6 +1039,68 @@ def text_shapes(path, out):
     _status(dict(ok=True, texts=len(texts)))
 
 
+ZONE_ANCHORS_MAX = 256    # an island's outline vertices kept as its anchors (evenly spaced), at most
+PAD_REACH_NM = 500_000    # beyond a pad's half size, where its thermal relief's fill may begin (gap + spoke)
+
+
+def _zone_islands(board, up, nm, objs, touches, find, parent):
+    """The filled islands of BOARD's zones on a net (after the refill), one item each, as KiCad's DRC names a
+    zone: uuid (the zone's: one for all its islands), key (zone uuid/layer/index: the island), kind "zone",
+    net, description, pos (the outline's first vertex), anchors (up to ZONE_ANCHORS_MAX of its outline's
+    vertices, evenly spaced) and ring (the outline, nm). Each item of `objs` KiCad's connectivity joins to a
+    zone (`touches`: uuid -> zone uuids) is joined (`find`/`parent`, union by uuid or key) to each island of
+    that zone, on a layer they share, that one of its anchors reaches (within half its width; a pad,
+    which sits in its thermal relief's hole, within half its size plus PAD_REACH_NM; an island's outer
+    outline holds its holes). Without them an island no pad or track touches was in no cluster, and
+    canonical_unconnected left every pair of its net as KiCad named it."""
+    out, isl = [], {}
+    for i in range(board.GetAreaCount()):
+        z = board.GetArea(i)
+        if z.GetIsRuleArea() or z.GetNetCode() <= 0:
+            continue
+        zu = z.m_Uuid.AsString()
+        desc = z.GetItemDescription(up, True)
+        for layer in z.GetLayerSet().CuStack():
+            polys = z.GetFilledPolysList(layer)
+            if polys is None:
+                continue
+            for k in range(polys.OutlineCount()):
+                ol = polys.COutline(k)
+                ring = [nm(ol.CPoint(j)) for j in range(ol.PointCount())]
+                if not ring:
+                    continue
+                step = max(1, -(-len(ring) // ZONE_ANCHORS_MAX))
+                key = f"{zu}/{board.GetLayerName(layer)}/{k}"
+                out.append(dict(uuid=zu, key=key, kind="zone", net=z.GetNetname(), description=desc, pos=ring[0],
+                                anchors=ring[::step], ring=ring, layer=board.GetLayerName(layer)))
+                parent.setdefault(key, key)
+                isl.setdefault((zu, layer), []).append((k, key, ol, ring))
+    for o in objs:
+        zs = touches.get(o.m_Uuid.AsString())
+        if not zs:
+            continue
+        cls = o.GetClass()
+        if cls in ("PCB_TRACK", "PCB_ARC"):
+            pts, reach = [o.GetStart(), o.GetEnd()], o.GetWidth() // 2
+        elif cls == "PCB_VIA":
+            pts, reach = [o.GetPosition()], o.GetWidth() // 2 if hasattr(o, "GetWidth") else 0
+        elif cls == "PAD":
+            bb = o.GetBoundingBox()
+            # a pad sits in its thermal relief's hole: its fill is within its size and the relief gap
+            pts, reach = [o.GetPosition()], max(bb.GetWidth(), bb.GetHeight()) // 2 + PAD_REACH_NM
+        else:
+            pts, reach = (list(o.GetConnectionPoints()) if hasattr(o, "GetConnectionPoints") else []), 0
+        for (zu, layer), cands in sorted(isl.items(), key=lambda kv: (kv[0][0], int(kv[0][1]))):
+            if zu not in zs or not o.IsOnLayer(layer):
+                continue
+            for k, key, ol, ring in cands:       # GetConnectedItems is the whole cluster: only an island it reaches
+                if any(ol.PointInside(p, int(reach)) for p in pts):
+                    a, b = find(key), find(o.m_Uuid.AsString())
+                    if a != b:
+                        parent[b] = a
+    return out
+
+
 def copper_items(path, out, clusters=False):
     """Every pad with copper, track, arc, via and copper graphic on a net of BOARD (loaded as kicad-cli's
     DRC loads it) as KiCad's DRC report names it: uuid, kind, net, description (GetItemDescription, the
@@ -1104,23 +1166,27 @@ def copper_items(path, out, clusters=False):
                 parent[u] = parent[parent[u]]
                 u = parent[u]
             return u
-        seen = set()
+        seen, touches = set(), {}
         for o in objs:
             u = o.m_Uuid.AsString()
+            for x in conn.GetConnectedItems(o):
+                if x.GetClass() == "ZONE":           # a zone's islands are clusters of their own: never a link
+                    touches.setdefault(u, set()).add(x.m_Uuid.AsString())
             if u in seen:
                 continue
             seen.add(u)
             for x in conn.GetConnectedItems(o):
-                if x.GetClass() == "ZONE":           # a zone's islands are clusters of their own: never a link
+                if x.GetClass() == "ZONE":
                     continue
                 v = x.m_Uuid.AsString()
                 seen.add(v)
                 a, b = find(u), find(v)
                 if a != b:
                     parent[b] = a
+        items += _zone_islands(board, up, nm, objs, touches, find, parent)
         roots = {}
         for it in items:
-            it["cluster"] = roots.setdefault(find(it["uuid"]), len(roots))
+            it["cluster"] = roots.setdefault(find(it.get("key", it["uuid"])), len(roots))
         _write(out, dict(ok=True, items=items, unconnected=conn.GetUnconnectedCount(False)))
         _status(dict(ok=True, items=len(items)))
         return

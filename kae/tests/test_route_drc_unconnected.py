@@ -163,3 +163,53 @@ def test_a_net_with_a_zone_pair_renames_its_other_pairs_one_by_one():
     out = drc.canonical_unconnected(rep, ITEMS)
     named = sorted(sorted(i["uuid"] for i in u["items"]) for u in out["unconnected_items"])
     assert named == [["p4", "z1"], ["q1", "t1"]]      # the zone's pair as KiCad named it
+
+
+def _sq(x0, y0, x1, y1):
+    return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
+
+
+# a GND zone with two filled islands on F.Cu: A (0..4 mm) holds pad pA, B (10..14 mm) holds nothing; pad pC
+# (20, 2) is on its own. Three parts, two missing connections.
+ZD = "Zone [GND] on F.Cu, priority 0"
+ZITEMS = [
+    dict(uuid="pA", kind="pad", net="GND", description="Pad 1 [GND] of U1 on F.Cu", pos=[2_000_000, 2_000_000],
+         anchors=[[2_000_000, 2_000_000]], cluster=0),
+    dict(uuid="z", key="z/F.Cu/0", kind="zone", net="GND", description=ZD, pos=[0, 0],
+         anchors=_sq(0, 0, 4_000_000, 4_000_000), ring=_sq(0, 0, 4_000_000, 4_000_000), cluster=0),
+    dict(uuid="z", key="z/F.Cu/1", kind="zone", net="GND", description=ZD, pos=[10_000_000, 0],
+         anchors=_sq(10_000_000, 0, 14_000_000, 4_000_000), ring=_sq(10_000_000, 0, 14_000_000, 4_000_000),
+         cluster=1),
+    dict(uuid="pC", kind="pad", net="GND", description="Pad 2 [GND] of U2 on F.Cu", pos=[20_000_000, 2_000_000],
+         anchors=[[20_000_000, 2_000_000]], cluster=2),
+]
+
+
+def _zrep(*pairs):
+    def one(x):
+        u, p = x if isinstance(x, tuple) else (x, None)
+        it = next(i for i in ZITEMS if i["uuid"] == u)
+        q = p or it["pos"]
+        return dict(description=it["description"], pos=dict(x=q[0] / 1e6, y=q[1] / 1e6), uuid=u)
+    return dict(violations=[], unconnected_items=[dict(type="unconnected_items", severity="error",
+                                                         description="Missing connection between items",
+                                                         items=[one(a), one(b)]) for a, b in pairs])
+
+
+def test_a_zone_nets_pairs_are_the_same_whichever_island_or_pad_kicad_named():
+    # run 1 named the islands as the zone and pC's pair with pA; run 2 named island B with pA and pC with
+    # island A; ch32v003's GND was named both ways by one board's DRCs
+    a = drc.canonical_unconnected(_zrep((("z", [11_000_000, 1_000_000]), ("z", [3_000_000, 1_000_000])),
+                                        ("pC", "pA")), ZITEMS)
+    b = drc.canonical_unconnected(_zrep((("z", [12_000_000, 3_000_000]), "pA"),
+                                        ("pC", ("z", [1_000_000, 3_000_000]))), ZITEMS)
+    assert a == b
+    sides = sorted(sorted((i["uuid"], i["pos"]["x"]) for i in u["items"]) for u in a["unconnected_items"])
+    # the tree: island A to island B (4 mm to 10 mm), island B to pC (14 mm to 20 mm)
+    assert sides == [[("pC", 20.0), ("z", 14.0)], [("z", 4.0), ("z", 10.0)]]
+
+
+def test_a_zone_pair_maps_to_the_island_that_holds_its_position():
+    isl = [i for i in ZITEMS if i.get("kind") == "zone"]
+    assert drc._island_at(isl, (12_000_000, 2_000_000))["key"] == "z/F.Cu/1"
+    assert drc._island_at(isl, (5_000_000, 2_000_000))["key"] == "z/F.Cu/0"      # outside both: the nearest
