@@ -194,6 +194,8 @@ def route(input_path, output_path, seed=0, time_s=600.0, workdir=None, opts=None
             opts["crit_zones"] = [z for z in pcbnew_io.zone_fills(input_path)["zones"]
                                   if (z.get("name") or "").startswith(CRIT_PREFIX)]
         p = constraints.plan(info, input_path, opts)
+        for k in ("ripup_cost_big", "ripup_big_pads"):   # the board's KAE_<NAME> text variable, else --set
+            opts[k] = constraints.setting(k, input_path, opts)
         zoned = any(z.get("net") for z in info.get("zones") or [])
         share = strict_share(opts, seed, input_path)
         planes = zoned and opts.get("plane_escapes")
@@ -521,7 +523,23 @@ def router_settings(p, opts, repair=False):
     if p.min_width:
         # the fork's floor for every neck-down (pads, fanout, retries); older builds ignore it
         s["min_trace_width_um"] = specctra.fmt(p.min_width * 1000)
+    cost = ripup_cost(p, opts)
+    if cost is not None:
+        s["scoring.start_ripup_costs"] = str(cost)
     return s
+
+
+def ripup_cost(p, opts):
+    """Freerouting's start rip-up cost for this plan, or None for its own default (100): ripup_cost_big
+    on boards with more than ripup_big_pads pins (constraints.DEFAULTS; KAE_<NAME> text variable or
+    --set override, resolved in route() into opts). Only route() and its repair rounds set it: the
+    last-mile-only pass keeps Freerouting's default, as in the A/B that chose it (fr-ripup-ab6)."""
+    if opts.get("ripup_cost_big") is None or opts.get("ripup_big_pads") is None:
+        return None
+    big, cost = float(opts["ripup_big_pads"]), int(float(opts["ripup_cost_big"]))
+    if len(p.pin_class) <= big or cost == 100:
+        return None
+    return cost
 
 
 def plan_summary(p):

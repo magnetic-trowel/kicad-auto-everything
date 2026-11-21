@@ -168,6 +168,12 @@ IGNORABLE = {"clearance": "clearance", "hole_clearance": "hole_clearance", "copp
 # code: a KAE_<NAME> text variable in the KiCad project wins over the run's opts (<name>), which win
 # over the default here.
 DEFAULTS = dict(
+    ripup_cost_big=200,            # Freerouting's start rip-up cost (scoring.start_ripup_costs; its default 100) on
+                                   # boards with more than ripup_big_pads pads: each pass searches harder, so fewer
+                                   # but better passes. fr-ripup-ab6 (31 boards over 1,000 pads, counted work): opens
+                                   # per attempt x0.950 [0.903, 0.989], DRC errors unchanged; the gain sits on 3-4
+                                   # near-clean boards (x0.991 [0.976, 1.007] where more than 5 stay open). 100: off
+    ripup_big_pads=1000,           # pads (plan pins) above which ripup_cost_big applies
     ignored_clearance_floor=0.1,   # mm: gap kept for a clearance check the board turns off (or the
                                    # board's own minimum, if larger); KiCad then checks only shorts
     plane_strict_share="odd",      # with planes "cost": inner layers whose one-net fill (refilled input)
