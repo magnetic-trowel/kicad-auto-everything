@@ -44,7 +44,9 @@ Observers (requirements: the intent file's, else these priors):
              Brooks-Adam fit of IPC-2152 (ipc2152_dT; no plane under the track) reads hotter wherever
              a 10 K track on 35 um is wider than 0.41 mm (above 1.25 A; 1.5-1.9x on 3 mm at 5-10 A)
              and cooler below; inner layers use IPC-2221's internal curve, which the fit does not
-             cover (docs/research/physics/anchors-2611.md, check 3)
+             cover (docs/research/physics/anchors-2611.md, check 3). The chart is a long track's rise:
+             a track's run of thin copper sheds heat along itself to where it is held (track_runs), so
+             the rise is IPC-2221's times fin_factor (1 for a long run, < 0.01 for a 0.8 mm pin neck)
 """
 from __future__ import annotations
 
@@ -142,6 +144,31 @@ def ipc_dT(I, w_mm, t_mm, external=True):
     if I <= 0 or A <= 0:
         return 0.0
     return (I / (K_IPC[bool(external)] * A ** 0.725)) ** (1 / 0.44)
+
+
+RHO_CU = 1.72e-8          # ohm m, copper at 20 C
+K_CU = 390.0              # W/mK, electrodeposited copper
+RUN_WIDTH = 1.05          # a track's run: its net's tracks no wider than this times its width
+
+
+def fin_factor(I, w_mm, t_mm, dT_ipc, L_mm, anchored):
+    """The share of IPC-2221's rise dT_ipc that a run of length L_mm reaches at its hottest point: a fin of uniform
+    Joule heat q' = I^2 rho/(w t), shedding it to the board through the line conductance G' = q'/dT_ipc that the
+    chart implies, conducting along its copper (k_Cu w t), its ends held at the rise of the copper they meet.
+    Both ends held: 1 - 1/cosh(L/(2 l)), l = sqrt(k_Cu w t/G') = w t sqrt(k_Cu dT_ipc/rho)/I; one end held (the
+    other insulated: a dangling end, or one only into more thin copper): as a run of 2L held at both ends; none: 1
+    (IPC's infinitely long track). docs/topics/physics/thermal-physics.md, 'IPC-2221/2152 as a thermal model'."""
+    if anchored <= 0 or I <= 0 or dT_ipc <= 0 or w_mm <= 0 or t_mm <= 0:
+        return 1.0
+    ell = w_mm * t_mm * 1e-6 * math.sqrt(K_CU * dT_ipc / RHO_CU) / I * 1e3      # mm
+    x = (L_mm if anchored >= 2 else 2.0 * L_mm) / (2.0 * ell)
+    return 1.0 if x > 40 else 1.0 - 1.0 / math.cosh(x)
+
+
+def fin_dT(I, w_mm, t_mm, external, L_mm, anchored=2):
+    """Peak rise (K) of a run of track of length L_mm carrying I: ipc_dT times fin_factor."""
+    d = ipc_dT(abs(I), w_mm, t_mm, external)
+    return d * fin_factor(abs(I), w_mm, t_mm, d, L_mm, anchored)
 
 
 def ipc2152_dT(I, w_mm, t_mm):
@@ -1263,7 +1290,8 @@ def _mean(V, toks):
 
 def observe(pl, cv, V, info, tracks=None):
     """The DC observers at one corner from its solve: dict(loss=(u, P_cu, budget), drops=[(ref, rail, u,
-    dV, budget)], drops_signed=[(ref, rail, signed dV)], heat=[(track index, u, dT, I)]). dV >= 0: a load whose
+    dV, budget)], drops_signed=[(ref, rail, signed dV)], heat=[(track index, u, dT, I, IPC-2221 dT)]); dT is
+    IPC-2221's rise reduced by the track's run (fin_factor). dV >= 0: a load whose
     ground sits below its source's (a ground shift) reads 0, its signed value in drops_signed."""
     inj = injections(pl, cv)
     net, x = info["net"], info["x"]
@@ -1317,9 +1345,13 @@ def observe(pl, cv, V, info, tracks=None):
         d = max(dv, 0.0)
         out["drops"].append((ld["ref"], ld["rail"], d / b, d, b))
     if tracks:
+        # IPC-2221 prices a track as infinitely long; its run's copper carries heat to where the run is held
+        # (fin_factor, track_runs), so a 0.8 mm neck into a pad reads < 1 K where IPC reads 200 K
+        runs = getattr(tracks, "runs", None)
         for k, (I, w_eff, t_mm, ext) in enumerate(tracks(x)):
-            dT = ipc_dT(abs(I), w_eff, t_mm, ext)
-            out["heat"].append((k, dT / pl.dT_max, dT, I))
+            d0 = ipc_dT(abs(I), w_eff, t_mm, ext)
+            dT = d0 * fin_factor(abs(I), w_eff, t_mm, d0, *runs[k]) if runs else d0
+            out["heat"].append((k, dT / pl.dT_max, dT, I, d0))
     return out
 
 
@@ -1398,6 +1430,125 @@ def _copper_across(tree, cx, cy, nx, ny, half):
             return hi - lo
         lo, hi = a, b
     return hi - lo if lo is not None and lo <= 1e-6 and hi >= -1e-6 else 0.0
+
+
+def _track_len(t):
+    """Length (mm) of a track or arc track."""
+    a = _arc_frame(t) if getattr(t, "mid", None) is not None else None
+    return a[3] if a is not None else math.hypot(t.end[0] - t.start[0], t.end[1] - t.start[1])
+
+
+def track_runs(bm, board_tracks, sel):
+    """[(L mm, held ends)] per track of sel: the length of its run and how many places the run is held.
+
+    A track's run is the connected set of its net's tracks no wider than RUN_WIDTH times its own, joined where an
+    end of one lies in the other's copper (end to end, or a T), on its layer or through a via that is not held.
+    The run is held where it meets copper of its net that is not part of it: a pad or a fill (KiCad's zone fill)
+    holding a track's end (tracks meeting on a pad are separate runs, each held there), a wider track it touches, or a via that meets a pad, a fill or a wider track on any of
+    its layers. A via that leads only to more thin track chains the run through it: its far side adds its length
+    and holds nothing. L is the summed length of the run's tracks, so a branched run reads at least as hot as a
+    straight one of its total length (fin_factor; the anchors' own rise is their own observation)."""
+    from shapely import STRtree
+    from shapely.geometry import LineString, Point
+
+    from haslam.em.kicad import _arc_points
+    nets = {t.net for t in sel}
+    trs = [t for t in board_tracks if t.net in nets]
+    if not trs:
+        return []
+    lines = [LineString(_arc_points(t, 16) if getattr(t, "mid", None) is not None else [t.start, t.end]) for t in trs]
+    lens = [_track_len(t) for t in trs]
+    group = {}
+    for k, t in enumerate(trs):
+        group.setdefault((t.net, t.layer), []).append(k)
+    held = {}
+    for nt, per in (getattr(bm, "fills", None) or {}).items():
+        if nt in nets:
+            for layer, pgs in per.items():
+                held.setdefault((nt, layer), []).extend(pgs)
+    for lst in (getattr(bm, "pads", None) or {}).values():
+        for layer, g, p in lst:
+            if p.net in nets and g is not None:
+                held.setdefault((p.net, layer), []).append(g)
+    held = {key: (STRtree(gs), gs) for key, gs in held.items()}
+
+    def on_held(key, pt):
+        h = held.get(key)
+        return h is not None and any(h[1][i].intersects(pt) for i in h[0].query(pt))
+
+    trees = {key: STRtree([lines[k] for k in ks]) for key, ks in group.items()}
+    pairs = {}                        # tracks in contact, (k, j) with k < j -> whether only on held copper
+    ends_held = [0] * len(trs)
+    for k, t in enumerate(trs):
+        key = (t.net, t.layer)
+        ks = group[key]
+        for e in (t.start, t.end):
+            pt = Point(e)
+            h = on_held(key, pt)
+            ends_held[k] += h
+            for i in trees[key].query(pt.buffer(t.width / 2 + 1e-6)):
+                j = ks[i]
+                if j != k and lines[j].distance(pt) <= max(t.width, trs[j].width) / 2 + 1e-6:
+                    # two tracks meeting on a pad or fill: each is held there, the run does not pass through it
+                    pairs[(min(k, j), max(k, j))] = pairs.get((min(k, j), max(k, j)), True) and h
+    vias = []                         # (tracks touching it, held by a pad or fill)
+    b = getattr(bm, "b", None)
+    span = getattr(bm, "span", None) or (lambda ls: list(ls))
+    for v in (getattr(b, "vias", None) or []):
+        if v.net not in nets:
+            continue
+        pt, touch, hv = Point(v.x, v.y), [], False
+        for layer in span(v.layers):
+            key = (v.net, layer)
+            hv = hv or on_held(key, pt)
+            if key in trees:
+                ks = group[key]
+                touch.extend(ks[i] for i in trees[key].query(pt.buffer(v.size / 2 + 1e-6))
+                             if lines[ks[i]].distance(pt) <= v.size / 2 + 1e-6)
+        if touch:
+            vias.append((touch, hv))
+    out = {}
+    widths = {}
+    for t in sel:
+        widths.setdefault(t.net, set()).add(t.width)
+    for nt, ws in widths.items():
+        mine = [k for k, t in enumerate(trs) if t.net == nt]
+        for w in ws:
+            thin = {k for k in mine if trs[k].width <= RUN_WIDTH * w + 1e-9}
+            root = {k: k for k in thin}
+
+            def find(a):
+                while root[a] != a:
+                    root[a] = root[root[a]]
+                    a = root[a]
+                return a
+            hold = {k: ends_held[k] for k in thin}
+            for (k, j), on_pad in pairs.items():
+                if trs[k].net != nt or on_pad:
+                    continue
+                if k in thin and j in thin:
+                    root[find(k)] = find(j)
+                elif k in thin or j in thin:
+                    hold[k if k in thin else j] += 1
+            for touch, hv in vias:
+                if trs[touch[0]].net != nt:
+                    continue
+                tt = [k for k in touch if k in thin]
+                if hv or len(tt) < len(touch):
+                    for k in tt:
+                        hold[k] += 1
+                else:
+                    for k in tt[1:]:
+                        root[find(k)] = find(tt[0])
+            L, H = {}, {}
+            for k in thin:
+                r = find(k)
+                L[r] = L.get(r, 0.0) + lens[k]
+                H[r] = H.get(r, 0) + hold[k]
+            for k in thin:
+                if trs[k].width == w:
+                    out[id(trs[k])] = (L[find(k)], H[find(k)])
+    return [out.get(id(t), (_track_len(t), 0)) for t in sel]
 
 
 def track_currents(bm, board_tracks, net, nets=None):
@@ -1505,4 +1656,5 @@ def track_currents(bm, board_tracks, net, nets=None):
             out.append((best, weff, layer.t, ext))
         return out
     per_track.tracks = kept
+    per_track.runs = track_runs(bm, board_tracks, kept)
     return per_track

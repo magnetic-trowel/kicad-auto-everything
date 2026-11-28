@@ -155,9 +155,12 @@ def test_a_synthetic_boards_drop_and_copper_loss_are_ohms_law(tmp_path):
     assert 1.0 <= f_d < 1.05 and 1.0 <= f_l < 1.05        # 50 mW in 60 x 20 mm: a few kelvin
     assert drop["dV_mV"] / f_d == pytest.approx(1.0 * R * 1e3, rel=0.03)
     assert loss["P_mW"] / f_l == pytest.approx(1.0 ** 2 * R * 1e3, rel=0.03)
-    # the rail track's rise by IPC-2221 at 1 A: A = 27.12 mil^2, (1 / 0.525)^2.273 = 4.3 K
+    # the rail track's rise by IPC-2221 at 1 A: A = 27.12 mil^2, (1 / 0.525)^2.273 = 4.3 K; its 40 mm run, held by
+    # the pads at both ends, is a fin of l = w t sqrt(k_Cu dT / rho) / I = 5.47 mm: 4.3 (1 - 1/cosh(40 / 10.94)) = 4.08 K
     heat = rows["dc:heating:VIN@F.Cu"]
-    assert heat["I_A"] == pytest.approx(1.0, rel=1e-3) and heat["dT_K"] == pytest.approx(4.3, abs=0.06)
+    assert heat["I_A"] == pytest.approx(1.0, rel=1e-3) and heat["ipc_K"] == pytest.approx(4.3, abs=0.06)
+    assert heat["track"]["run_mm"] == pytest.approx(40.0) and heat["track"]["held_ends"] == 2
+    assert heat["dT_K"] == pytest.approx(4.08, abs=0.06)
 
 
 def test_a_linear_regulators_dissipation_is_its_drop_times_its_current(tmp_path):

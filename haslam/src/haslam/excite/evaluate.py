@@ -1044,16 +1044,22 @@ def _dc_harms(dcp, bm, b, net_dc, op_dc, cps, srcs, n_corners, seed, tot, notes,
         worst = max((h for h in heat if h), key=lambda h: h[1])
         tr = trk.tracks[worst[0]]
         h0 = heat[0]
+        L_run, held = trk.runs[worst[0]]
+        # values: IPC-2221's rise times the run's fin factor (haslam.excite.dc.fin_factor); ipc_K the chart's own
         obs.append(dict(id="heat.track", unit="K", values=[h[2] if h else 0.0 for h in heat], u=u_,
-                        scope=dict(kind="dc_heat", nets=[tr.net], layer=tr.layer, width_mm=tr.width),
-                        reference=dict(value=dcp.dT_max, basis="IPC-2221 rise"),
+                        ipc_K=[h[4] if h else 0.0 for h in heat],
+                        scope=dict(kind="dc_heat", nets=[tr.net], layer=tr.layer, width_mm=tr.width,
+                                   run_mm=round(L_run, 3), held_ends=held),
+                        reference=dict(value=dcp.dT_max, basis="IPC-2221 rise of the track's run"),
                         label=f"temperature rise of the hottest track (worst corner: {tr.net} on {tr.layer}, "
                               f"{tr.width} mm)"))
         QT.check(obs[-1])
         rows.append(dict(observer=f"dc:heating:{tr.net}@{tr.layer}", source="dc", kind="dc_heat", u=u_[0], u_lo=min(u_),
-                         u_hi=max(u_), dT_K=round(h0[2], 2) if h0 else None, I_A=round(abs(worst[3]), 3),
-                         track=dict(net=tr.net, layer=tr.layer, width=tr.width, start=tr.start, end=tr.end),
-                         basis=f"hottest track by IPC-2221 against {dcp.dT_max:g} K"))
+                         u_hi=max(u_), dT_K=round(h0[2], 2) if h0 else None,
+                         ipc_K=round(h0[4], 2) if h0 else None, I_A=round(abs(worst[3]), 3),
+                         track=dict(net=tr.net, layer=tr.layer, width=tr.width, start=tr.start, end=tr.end,
+                                    run_mm=round(L_run, 3), held_ends=held),
+                         basis=f"hottest track by IPC-2221 over its run (fin) against {dcp.dT_max:g} K"))
     log(f"DC band: {len(dcp.loads)} loads on {len(dcp.feeds)} rails, {len(cvs)} corners in {time.time() - t0:.1f}s")
     notes.extend(f"DC: {n}" for n in dcp.notes)
     return rows

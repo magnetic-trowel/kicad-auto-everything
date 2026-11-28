@@ -1,7 +1,7 @@
 # Thermal and electro-thermal physics of the board
 
 Scope: the board as a 2-D fin (G_s, λ), heat-transfer coefficients, TI thermal rules decompressed, IPC-2221/2152 vs a thermal network, TCR feedback, heatsinks and standoffs, pulsed loads, placement scoring by superposition, temperature-sensitive victims. Not here: dissipation, noise, electro-thermal stability theory -> [lens-th](lens-th.md); copper current physics -> [power-copper](power-copper.md).
-Keys: fin, sheet conductance G_s = Σ k·t, spreading length λ = √(G_s/h_total), K₀ kernel, heat-transfer coefficient h, natural convection, radiation, emissivity, 15.3 cm²/W, 261 K/W via, thermal via fill, copper weight, cuts across heat flow, IPC-2221, IPC-2152, line conductance, TCR fixed point, fusing 254 K, TIM, metal standoff, diffusion length √(αt), image lattice kernel, superposition, Arrhenius electrolytic, 32 kHz crystal ppm/K², voltage reference stress, thermocouple error, Seebeck, isotherm alignment
+Keys: fin, sheet conductance G_s = Σ k·t, spreading length λ = √(G_s/h_total), K₀ kernel, heat-transfer coefficient h, natural convection, radiation, emissivity, 15.3 cm²/W, 261 K/W via, thermal via fill, copper weight, cuts across heat flow, IPC-2221, IPC-2152, line conductance, track fin, run length, pin neck, heat.track fin_factor, TCR fixed point, fusing 254 K, TIM, metal standoff, diffusion length √(αt), image lattice kernel, superposition, Arrhenius electrolytic, 32 kHz crystal ppm/K², voltage reference stress, thermocouple error, Seebeck, isotherm alignment
 
 **Results**
 - A board is a 2-D fin with spreading length λ (table below). Below ~2λ a board is nearly isothermal plus local peaks: spacing hot parts lowers the mean rise little (total power / total area sets the floor), still moves a neighbour's peak 10–20% (E5) and matters for fatigue, current hogging, plumes ([lens-th](lens-th.md)) [C]. Express every thermal spacing in units of λ (per region, from stackup and local copper fraction); below ~2λ stop spreading hot parts for the mean rise (still price neighbour peaks; current-hogging parts want proximity); maximise connected copper, edge exposure and metal-standoff paths; use moats to protect victims.
@@ -89,6 +89,25 @@ Consequences:
 - **IPC-2221's exponents are physics-plausible.** For narrow traces I ∝ ΔT^0.5·A^0.5; for wide traces I ∝ A·t^−0.5. The 0.44 exponent absorbs the TCR.
 - **So use a network:** per-net line conductance from stackup and planes, plus superposed part heat, plus the TCR fixed point. IPC-2221 is the conservative fallback (TM18); log which one bound.
 - **How `heat.track` applies the chart** (`haslam.excite.dc.track_currents`): current is the DC flux through a grid line across the track, exact for a raster staircase at any angle or offset. The width is the track's, or its net's copper across it (board geometry). Cells counted along a perpendicular gave 0.7–2× the current, so the rise moved up to 3× when a route merely shifted [C].
+- **`heat.track` prices a track's run as a fin, not as an infinitely long track** (`haslam.excite.dc.fin_factor`, `track_runs`). The chart is a long trace's rise; a short thin run sheds its heat along its own copper into whatever holds its ends.
+  - Fin: heat q′ = I²ρ/(w·t) per metre, line conductance G′ = q′/ΔT_IPC (the chart's own), copper conduction k_Cu·w·t. Peak rise with both ends held: `ΔT = ΔT_IPC·(1 − 1/cosh(L/(2ℓ)))`, `ℓ = √(k_Cu·w·t/G′) = w·t·√(k_Cu·ΔT_IPC/ρ)/I`. One end held: the same with 2L. None held: ΔT_IPC. L ≪ ℓ: `ΔT → q′L²/(8·k_Cu·w·t)`, pure conduction, independent of G′.
+  - Run: the track's net's tracks no wider than 1.05× its width, joined end to end or at a T, on its layer or through a via that is not held. L is the run's summed length, so ten 2 mm segments read as one 20 mm run and a branched run as at least as hot as a straight one of its total length.
+  - Held: a pad or a zone fill holding a track end, a wider track touching the run, or a via meeting a pad, fill or wider track on any of its layers. A via into only more thin track chains the run (its far side adds length, holds nothing). The holding copper's own rise is its own observation, not added to the run's.
+  - Reported: `heat.track` values are the fin rise; `ipc_K` keeps the chart's; `scope.run_mm`, `held_ends` name the run.
+  - Ground truth [C] ([tm_track_fin_fv.py](../../../tools/research/physics/tm_track_fin_fv.py): tensor-grid FV, the board model of tm_board_thermal_fv.py, mesh-converged to 0.3%): a 0.127 mm, 1 oz neck of length L between two 2 mm × 15 mm tracks at 2 A, 2-layer 1.6 mm FR-4, h = 10 W/m²K per side, constant ρ. Excess = neck peak − rise where the neck meets the wide track.
+
+| L (mm) | FV peak (K) | FV excess (K) | FV+TCR peak (K) | IPC-2221 (K) | fin (K) | fin / FV excess |
+|---|---|---|---|---|---|---|
+| 0.5 | 4.2 | 0.24 | 4.3 | 201.5 | 0.28 | 1.17 |
+| 0.8 | 5.3 | 0.56 | 5.4 | 201.5 | 0.72 | 1.29 |
+| 1 | 6.0 | 0.83 | 6.2 | 201.5 | 1.12 | 1.36 |
+| 2 | 10.0 | 2.60 | 10.3 | 201.5 | 4.43 | 1.70 |
+| 5 | 21.2 | 9.18 | 22.8 | 201.5 | 25.3 | 2.75 |
+| 8 | 29.7 | 15.0 | 33.1 | 201.5 | 55.5 | 3.70 |
+| 20 | 46.8 | 28.4 | 56.4 | 201.5 | 153.7 | 5.42 |
+| 60 | 56.4 | 37.1 | 72.2 | 201.5 | 200.8 | 5.41 |
+
+  - The fin is above the FV excess at every length: 1.2–1.7× up to 2 mm, where the rise is copper conduction alone; 2.8–5.4× beyond, where it tends to IPC-2221, which reads 2.8× the FV+TCR peak of a long 0.127 mm trace on this board (the chart's long-trace conservatism for narrow traces, unchanged here).
 
 **TCR feedback** [C, §E]. At constant current, ΔT = ΔT₀/(1 − αΔT₀) with α = 0.00393/K.
 - A constant-R estimate of 40 K becomes 47.5 K; 100 K becomes 165 K.
