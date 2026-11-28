@@ -94,7 +94,8 @@ MONITOR_A = (1e-6, 1e-2)
 EXPORT_SHARE = 0.01
 EXPORT_BAND = (0.1, 10.0)       # lo, hi as factors of the assumed current
 # A rail whose only loads are such exports takes what its feed delivers instead (plan): "stated" only where the facts
-# state that current (cells.<id>.I_A or I_out_A, a charger's parts.<ref>.I_A), "all" also a ledger prior, "off" never
+# state that current (cells.<id>.I_A or I_out_A, a charger's parts.<ref>.I_A), "all" also a ledger prior, "band" keeps
+# the 1 % typical and raises the band's top to the feed's (stated or prior), "off" never
 EXPORT_FROM_FEED = "stated"
 CHARGE_SINKS = True             # a charger with no load charges the external source one series part away (plan)
 CHARGE_PATH = ("transistor", "diode")   # the blocking parts such a path runs through (any SERIES part for a charger IC)
@@ -187,6 +188,8 @@ def export_questions(pl):
         f = pl.feeds.get(ex["rail"]) or {}
         if f.get("kind") == "cell":
             why.append(f"its rail is fed by {f['cell']['id']}, whose operating current follows its loads")
+        if ex.get("feed_top_A"):
+            why.append(f"its rail's only loads are exports: their band reaches the {ex['feed_top_A']:.3g} A its feed delivers")
         if ex.get("feed_prior_A"):
             why.append(f"its rail's only loads are exports and its feed's prior current is {ex['feed_prior_A']:.3g} A")
         ref, r, a = ex["ref"], ex["rail"], ex["assumed_A"]
@@ -792,6 +795,25 @@ def plan(board, brief, bd, P, srcs, intent=None):
                     (f2["cell"]["vin"] if f2["kind"] == "cell" else f2.get("rin")) == r for f2 in pl.feeds.values()):
                 continue        # it feeds a regulator or a split-supply load returns into it: drawn otherwise
             fo = feed_output(r)
+            if fo is not None and EXPORT_FROM_FEED == "band":
+                # the feed's current bounds the exports from above (as a cell's I_A bounds its rail's loads): the
+                # band's top rises to it, the typical stays the 1 % prior, so the copper's worst corner (drop, track
+                # heating) sees what the converter can deliver while temperatures, which take a prior export at its
+                # typical (haslam.excite.heat), are not raised by a guess
+                tot = sum(ex["rating_A"] for ex in exs) or 1.0
+                for ex in exs:
+                    k = ex["rating_A"] / tot
+                    old = pl.params[by_key[ex["key"]]]
+                    hi = max(old.hi, fo[2] * k)
+                    if hi > old.hi:
+                        pl.params[by_key[ex["key"]]] = Param(old.subject, "I_A", old.typ, old.lo, hi, "A", old.source,
+                                                             old.basis + f"; its top is what {pl.feeds[r]['ref']} delivers "
+                                                             f"({fo[2] * k:.3g} A, {fo[4]}): its rail's only loads are exports")
+                        ex.update(hi_A=hi, feed_top_A=fo[2] * k)
+                pl.notes.append(f"{r}: its only loads are unstated exports ({', '.join(ex['ref'] for ex in exs)}); their "
+                                f"band reaches what {pl.feeds[r]['ref']} delivers ({fo[2]:.3g} A; {fo[3]}), the typical stays "
+                                f"{EXPORT_SHARE * 100:g} % of their rating")
+                continue
             if fo is not None and EXPORT_FROM_FEED == "stated" and fo[3] != "intent":
                 # the converter's current is a class prior too: the 1 % stands, and the evaluation says what to state
                 pl.notes.append(f"{r}: its only loads are unstated exports ({', '.join(ex['ref'] for ex in exs)}) and "
