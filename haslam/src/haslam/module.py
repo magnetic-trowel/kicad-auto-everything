@@ -12,7 +12,9 @@ A module file (schema "haslam.module/1", JSON) is drawn in the anchor footprint'
   1 degree steps, position by least squares), and the best fit within fit_tol wins.
 - copper: [{"layer": "F.Cu", "net": role, "outline": [[x, y], ...]}]: written as zones (solid pad connection,
   priority `priority`), filled by KiCad like any zone.
-- vias: [{"x", "y", "net": role, "size", "drill"}], written locked.
+- vias: [{"x", "y", "net": role, "size", "drill"}], written locked; by default only those on the module's own copper
+  of their net (the rest stitch the reference board's planes), and none on or near a held part's pad of another net.
+- every copper piece also becomes a rule area that keeps other footprints off it (tracks and vias may cross).
 - applies: what the reference layout assumed (layers, copper weight, plane under it); recorded, not enforced.
 
 `apply` moves the matched parts (haslam.board.pcbnew_io.write_poses), then locks them and the anchor and adds the
@@ -67,7 +69,7 @@ def _fit(fp, targets):
     return best
 
 
-def plan(board, module, anchor, at=None, fit_tol=0.4, via_clearance=0.2):
+def plan(board, module, anchor, at=None, fit_tol=0.4, via_clearance=0.2, vias_on_copper=True):
     """{moves: {uuid: (x, y, rot, side)}, refs, zones, vias, slots, unmatched} for `module` held at `anchor` (a ref).
     at: (x, y, rot) of the anchor; default its pose on `board`. A part fills a slot only when its pads fit the slot's points
     within fit_tol mm rms (another package has another pad pitch: a 1206 in an 0603 slot fits at 0.78 mm and would sit
@@ -153,6 +155,9 @@ def plan(board, module, anchor, at=None, fit_tol=0.4, via_clearance=0.2):
             continue
         x, y = B(v["x"], v["y"])
         disk = Point(x, y).buffer(v.get("size", 0.6) / 2 + via_clearance)
+        if vias_on_copper and not any(z["net"] == n and Polygon(z["outline"]).contains(Point(x, y)) for z in zones):
+            dropped += 1        # off the module's own copper: the reference board's plane stitching, not the module's
+            continue
         if any(net != n and poly.intersects(disk) for net, poly in held_pads):
             dropped += 1
             continue
@@ -185,6 +190,23 @@ for z in s["zones"]:
         ol.Append(mm(x), mm(y))
     zone.SetZoneName("module")
     b.Add(zone)
+    if s.get("keepout", True):
+        # other parts stay off the module's copper (haslam.place.problem: rule areas that keep out footprints are
+        # obstacles); tracks and vias may still cross it (the zone's fill gives way)
+        ka = pcbnew.ZONE(b)
+        ka.SetIsRuleArea(True)
+        ka.SetLayer(lay[z["layer"]])
+        ka.SetDoNotAllowFootprints(True)
+        ka.SetDoNotAllowTracks(False)
+        ka.SetDoNotAllowVias(False)
+        ka.SetDoNotAllowPads(False)
+        ka.SetDoNotAllowZoneFills(False)
+        ko = ka.Outline()
+        ko.NewOutline()
+        for x, y in z["outline"]:
+            ko.Append(mm(x), mm(y))
+        ka.SetZoneName("module keep-out")
+        b.Add(ka)
 for v in s["vias"]:
     via = pcbnew.PCB_VIA(b)
     via.SetPosition(pcbnew.VECTOR2I(mm(v["x"]), mm(v["y"])))

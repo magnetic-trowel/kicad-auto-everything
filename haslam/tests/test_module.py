@@ -62,8 +62,17 @@ def test_another_package_does_not_fill_a_slot():
 def test_a_via_on_another_nets_pad_is_dropped_and_one_on_its_own_net_kept():
     p = M.plan(board(ic(), cap("C1", "VIN_NET", "GND")), MOD, "U1")
     # (-3, 2) is on C1's VIN pad: dropped; (-3, 4) is on its GND pad: kept; (3, 3) is clear: kept
-    xy = sorted((round(v["x"], 3), round(v["y"], 3)) for v in p["vias"])
-    assert xy == [(7.0, 24.0), (13.0, 23.0)] and p["vias_dropped"] == 1
+    q = M.plan(board(ic(), cap("C1", "VIN_NET", "GND")), MOD, "U1", vias_on_copper=False)
+    xy = sorted((round(v["x"], 3), round(v["y"], 3)) for v in q["vias"])
+    assert xy == [(7.0, 24.0), (13.0, 23.0)] and q["vias_dropped"] == 1
+
+
+def test_by_default_a_via_off_the_modules_copper_of_its_net_is_dropped():
+    gnd = dict(layer="F.Cu", net="PGND", outline=[[-4, 3.5], [-2, 3.5], [-2, 4.5], [-4, 4.5]])
+    mod = dict(MOD, copper=MOD["copper"] + [gnd])
+    p = M.plan(board(ic(), cap("C1", "VIN_NET", "GND")), mod, "U1")
+    # (-3, 4) lies on the PGND piece: kept; (3, 3) is on no PGND copper: dropped; (-3, 2) on VIN copper: dropped
+    assert [(round(v["x"], 3), round(v["y"], 3)) for v in p["vias"]] == [(7.0, 24.0)] and p["vias_dropped"] == 2
     assert all(v["net"] == "GND" for v in p["vias"])
 
 
