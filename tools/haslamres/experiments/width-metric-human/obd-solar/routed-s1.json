@@ -1,0 +1,344 @@
+{
+ "routed": {
+  "w_sig": 0.25,
+  "ref": {
+   "GND": {
+    "w_h": 2.05,
+    "human_mm": null,
+    "role": "ground",
+    "by_role": true,
+    "by_width": true,
+    "basis": "class",
+    "w_class": 2.05
+   },
+   "OBD_RAW": {
+    "w_h": 1.7,
+    "human_mm": null,
+    "role": "signal",
+    "by_role": false,
+    "by_width": true,
+    "basis": "class",
+    "w_class": 1.7
+   },
+   "/CHG/SW_CHG": {
+    "w_h": 0.3,
+    "human_mm": null,
+    "role": "switch_node",
+    "by_role": true,
+    "by_width": true,
+    "basis": "class",
+    "w_class": 0.3
+   },
+   "/CHG/CHG_CS": {
+    "w_h": 0.3,
+    "human_mm": null,
+    "role": "rail",
+    "by_role": true,
+    "by_width": true,
+    "basis": "class",
+    "w_class": 0.3
+   },
+   "CHG_OUT": {
+    "w_h": 0.3,
+    "human_mm": null,
+    "role": "rail",
+    "by_role": true,
+    "by_width": true,
+    "basis": "class",
+    "w_class": 0.3
+   },
+   "PV_IN": {
+    "w_h": 0.3,
+    "human_mm": null,
+    "role": "rail",
+    "by_role": true,
+    "by_width": true,
+    "basis": "class",
+    "w_class": 0.3
+   },
+   "/USB/BB_VCC": {
+    "w_h": 0.25,
+    "human_mm": null,
+    "role": "rail",
+    "by_role": true,
+    "by_width": false,
+    "basis": "class",
+    "w_class": 0.25
+   },
+   "/BLK/CMP_VCC": {
+    "w_h": 0.25,
+    "human_mm": null,
+    "role": "rail",
+    "by_role": true,
+    "by_width": false,
+    "basis": "class",
+    "w_class": 0.25
+   },
+   "VBAT": {
+    "w_h": 2.05,
+    "human_mm": null,
+    "role": "rail",
+    "by_role": true,
+    "by_width": true,
+    "basis": "class",
+    "w_class": 2.05
+   },
+   "VBUS": {
+    "w_h": 0.8,
+    "human_mm": null,
+    "role": "rail",
+    "by_role": true,
+    "by_width": true,
+    "basis": "class",
+    "w_class": 0.8
+   },
+   "+3V3": {
+    "w_h": 0.25,
+    "human_mm": null,
+    "role": "rail",
+    "by_role": true,
+    "by_width": false,
+    "basis": "class",
+    "w_class": 0.25
+   },
+   "/USB/BB_SW2": {
+    "w_h": 1.4,
+    "human_mm": null,
+    "role": "switch_node",
+    "by_role": true,
+    "by_width": true,
+    "basis": "class",
+    "w_class": 1.4
+   },
+   "/USB/BB_SW1": {
+    "w_h": 1.4,
+    "human_mm": null,
+    "role": "switch_node",
+    "by_role": true,
+    "by_width": true,
+    "basis": "class",
+    "w_class": 1.4
+   },
+   "/CHG/VG_CHG": {
+    "w_h": 0.25,
+    "human_mm": null,
+    "role": "rail",
+    "by_role": true,
+    "by_width": false,
+    "basis": "class",
+    "w_class": 0.25
+   }
+  },
+  "nets": {
+   "GND": {
+    "routed_mm": 78.827,
+    "w_h": 2.05,
+    "share": 0.8487076852721801,
+    "share_x": 0.0,
+    "deficit": 0.7820917999003987,
+    "share_i": 0.0,
+    "share_neck": 0.0
+   },
+   "OBD_RAW": {
+    "routed_mm": 12.103,
+    "w_h": 1.7,
+    "share": 0.9548035945603411,
+    "share_x": 1.0,
+    "deficit": 0.8834741495549508,
+    "share_i": 1.0,
+    "share_neck": 1.0
+   },
+   "/CHG/SW_CHG": {
+    "routed_mm": 8.204,
+    "w_h": 0.3,
+    "share": 0.0,
+    "share_x": 0.0,
+    "deficit": 0.0,
+    "share_i": null,
+    "share_neck": 0.0
+   },
+   "/CHG/CHG_CS": {
+    "routed_mm": 49.544,
+    "w_h": 0.3,
+    "share": 0.0,
+    "share_x": 0.0,
+    "deficit": 0.0,
+    "share_i": null,
+    "share_neck": 0.0
+   },
+   "CHG_OUT": {
+    "routed_mm": 83.236,
+    "w_h": 0.3,
+    "share": 0.9665555012772116,
+    "share_x": 0.9976090432938166,
+    "deficit": 0.5573803390698587,
+    "share_i": 0.9958860275472567,
+    "share_neck": 0.9976090432938166
+   },
+   "PV_IN": {
+    "routed_mm": 99.763,
+    "w_h": 0.3,
+    "share": 0.5253345725187814,
+    "share_x": 0.6112179870605127,
+    "deficit": 0.30294293681916384,
+    "share_i": 0.00018165699622816058,
+    "share_neck": 0.6112179870605127
+   },
+   "/USB/BB_VCC": {
+    "routed_mm": 12.036,
+    "w_h": 0.25,
+    "share": 0.7086348508961722,
+    "share_x": 1.0,
+    "deficit": 0.34864834664091676,
+    "share_i": 1.0,
+    "share_neck": 1.0
+   },
+   "/BLK/CMP_VCC": {
+    "routed_mm": 11.763,
+    "w_h": 0.25,
+    "share": 0.8105691883781715,
+    "share_x": 1.0,
+    "deficit": 0.39880004068206043,
+    "share_i": null,
+    "share_neck": 1.0
+   },
+   "VBAT": {
+    "routed_mm": 194.515,
+    "w_h": 2.05,
+    "share": 0.9213690993116257,
+    "share_x": 0.9197115860054069,
+    "deficit": 0.8642891599884175,
+    "share_i": 0.8349021205734886,
+    "share_neck": 0.9197115860054069
+   },
+   "VBUS": {
+    "routed_mm": 93.118,
+    "w_h": 0.8,
+    "share": 0.9601773908223336,
+    "share_x": 1.0,
+    "deficit": 0.8077492300292879,
+    "share_i": 1.0,
+    "share_neck": 1.0
+   },
+   "+3V3": {
+    "routed_mm": 58.138,
+    "w_h": 0.25,
+    "share": 0.0,
+    "share_x": 0.0,
+    "deficit": 0.0,
+    "share_i": 0.0,
+    "share_neck": 0.0
+   },
+   "/USB/BB_SW2": {
+    "routed_mm": 39.858,
+    "w_h": 1.4,
+    "share": 0.7311476844031043,
+    "share_x": 0.7519171833034797,
+    "deficit": 0.6648221444608227,
+    "share_i": 0.9333675903581555,
+    "share_neck": 0.7519171833034797
+   },
+   "/USB/BB_SW1": {
+    "routed_mm": 10.861,
+    "w_h": 1.4,
+    "share": 1.0,
+    "share_x": 1.0,
+    "deficit": 0.9092857142857144,
+    "share_i": 1.0,
+    "share_neck": 1.0
+   },
+   "/CHG/VG_CHG": {
+    "routed_mm": 2.652,
+    "w_h": 0.25,
+    "share": 0.9466772409005815,
+    "share_x": null,
+    "deficit": 0.46576520252308606,
+    "share_i": null,
+    "share_neck": null
+   }
+  },
+  "pooled": {
+   "power": {
+    "share": 0.7162904545711919,
+    "share_x": 0.696332199302187,
+    "deficit": 0.5814718092513524,
+    "share_i": 0.8382308783214368,
+    "share_neck": 0.696332199302187
+   },
+   "power_no_gnd": {
+    "share": 0.700844817453602,
+    "share_x": 0.7414177035707614,
+    "deficit": 0.5580707491499172,
+    "share_i": 0.8382308783216058,
+    "share_neck": 0.7414177035707614
+   },
+   "by_role": {
+    "share": 0.7124026488904966,
+    "share_x": 0.692379253576889,
+    "deficit": 0.5765491185590534,
+    "share_i": 0.8318073268849575,
+    "share_neck": 0.692379253576889
+   },
+   "by_width": {
+    "share": 0.7760129842682081,
+    "share_x": 0.7541075277196471,
+    "deficit": 0.639773025838625,
+    "share_i": 0.8449279685719431,
+    "share_neck": 0.7541075277196471
+   },
+   "all": {
+    "share": 0.7162904545711919,
+    "share_x": 0.696332199302187,
+    "deficit": 0.5814718092513524,
+    "share_i": 0.8382308783214368,
+    "share_neck": 0.696332199302187
+   }
+  }
+ },
+ "opts": {
+  "tol": 0.05,
+  "reach": 1.0,
+  "wide": 1.2,
+  "branch": true,
+  "pour": true
+ },
+ "human": {
+  "pooled": {
+   "power": {
+    "share": null,
+    "share_x": null,
+    "deficit": null,
+    "share_i": null,
+    "share_neck": null
+   },
+   "power_no_gnd": {
+    "share": null,
+    "share_x": null,
+    "deficit": null,
+    "share_i": null,
+    "share_neck": null
+   },
+   "by_role": {
+    "share": null,
+    "share_x": null,
+    "deficit": null,
+    "share_i": null,
+    "share_neck": null
+   },
+   "by_width": {
+    "share": null,
+    "share_x": null,
+    "deficit": null,
+    "share_i": null,
+    "share_neck": null
+   },
+   "all": {
+    "share": null,
+    "share_x": null,
+    "deficit": null,
+    "share_i": null,
+    "share_neck": null
+   }
+  }
+ }
+}
