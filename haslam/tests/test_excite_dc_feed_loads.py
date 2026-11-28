@@ -34,6 +34,12 @@ def _usb(ref="J2", rail="+3V3"):
               [("1", rail, "VBUS", "passive"), ("2", "DM", "", ""), ("3", "DP", "", ""), ("4", "GND", "GND", "passive")])
 
 
+@pytest.fixture
+def stated(monkeypatch):
+    """The "stated" mode: the feed's stated current replaces the export's prior (the default is "band")."""
+    monkeypatch.setattr(DC, "EXPORT_FROM_FEED", "stated")
+
+
 def _plan(parts, intent):
     b = board(parts)
     br = B.build(b, facts=intent)
@@ -64,7 +70,7 @@ def _param(pl, subject):
     return next(p for p in pl.params if p.subject == subject and p.name == "I_A")
 
 
-def test_an_export_alone_on_a_cell_rail_takes_the_cells_stated_current():
+def test_an_export_alone_on_a_cell_rail_takes_the_cells_stated_current(stated):
     pl, P, srcs = _plan(_buck() + [_usb()], {"cells": {CELL: {"I_A": [0.5, 1.0, 1.5]}}})
     p = _param(pl, "dc:J2@+3V3")
     assert (p.typ, p.lo, p.hi, p.source) == (pytest.approx(1.0), pytest.approx(0.5), pytest.approx(1.5), "intent")
@@ -74,7 +80,7 @@ def test_an_export_alone_on_a_cell_rail_takes_the_cells_stated_current():
     assert q["from_feed"] == "U1" and "U1 delivers" in q["ask"] and q["assumed_share"] is None
 
 
-def test_an_unstated_cell_current_leaves_the_one_percent_prior():
+def test_an_unstated_cell_current_leaves_the_one_percent_prior(stated):
     pl, P, srcs = _plan(_buck() + [_usb()], None)
     p = _param(pl, "dc:J2@+3V3")
     assert p.source == "prior" and p.typ == pytest.approx(DC.EXPORT_SHARE * 1.5)
@@ -84,14 +90,14 @@ def test_an_unstated_cell_current_leaves_the_one_percent_prior():
     _balanced(pl, P, srcs)
 
 
-def test_an_export_beside_another_load_keeps_its_prior():
+def test_an_export_beside_another_load_keeps_its_prior(stated):
     mcu = IC("U2", "STM32G071KBT6", "Package_QFP:LQFP-32_7x7mm_P0.8mm",
              [("4", "VDD", "+3V3", "power_in"), ("5", "VSS", "GND", "power_in")])
     pl, P, srcs = _plan(_buck() + [_usb(), mcu], {"cells": {CELL: {"I_A": [0.5, 1.0, 1.5]}}})
     assert _param(pl, "dc:J2@+3V3").source == "prior"
 
 
-def test_a_cells_stated_output_current_wins_and_is_split_over_the_exports_by_rating():
+def test_a_cells_stated_output_current_wins_and_is_split_over_the_exports_by_rating(stated):
     j3 = fp("J3", "Conn_01x02", "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
             [("1", "+3V3", "", "passive"), ("2", "GND", "", "passive")])
     pl, P, srcs = _plan(_buck() + [_usb(), j3], {"cells": {CELL: {"I_A": [0.5, 1.0, 1.5], "I_out_A": 0.8}}})
@@ -124,7 +130,7 @@ def test_a_charger_with_no_load_charges_the_battery_through_its_blocking_fet():
     assert not any("nothing draws from it" in n for n in pl.notes)
 
 
-def test_a_charger_through_a_diode_feeds_its_battery_as_the_rails_only_export():
+def test_a_charger_through_a_diode_feeds_its_battery_as_the_rails_only_export(stated):
     """With a blocking diode the brief feeds VBAT from CHG through D1, so the battery's connector is VBAT's only load:
     an export, which takes the charger's current through the diode."""
     pl, P, srcs = _plan(_charger(D("D1", "SS34", "VBAT", "CHG")), FACTS)
@@ -223,7 +229,7 @@ def test_an_external_switch_fet_takes_the_switch_loss_not_the_controller(stated)
 
 
 def test_band_mode_keeps_the_typical_and_raises_the_top_to_the_feeds():
-    """EXPORT_FROM_FEED "band": the cell's current bounds the export from above (temperatures stay at the 1 % typical,
+    """EXPORT_FROM_FEED "band" (the default): the cell's current bounds the export from above (temperatures stay at the 1 % typical,
     the copper's worst corner sees what the converter delivers), for a stated and for a prior cell current."""
     old = DC.EXPORT_FROM_FEED
     DC.EXPORT_FROM_FEED = "band"
