@@ -134,6 +134,13 @@ def test_a_charger_through_a_diode_feeds_its_battery_as_the_rails_only_export():
     assert inj["J3.1"] == pytest.approx(-0.6)
 
 
+def test_a_resistor_link_to_a_connector_rail_is_no_charge_path():
+    """antmicro sdi-mipi: a buck's 3V3_OUT reaches +3V3 through R40, and the brief reads +3V3 as fed by its connector:
+    one rail joined by a link, not a battery being charged (read as one, 1.6 A went into the connector)."""
+    pl, _, _ = _plan(_charger(R("R9", "0", "CHG", "VBAT")), FACTS)
+    assert not any(x.get("charge") for x in pl.loads)
+
+
 def test_no_charge_path_when_the_switch_is_off():
     pl, _, _ = _plan(_charger(Q("Q1", "AO3407A", "G", "CHG", "VBAT")), FACTS)
     DC.CHARGE_SINKS, old = False, DC.CHARGE_SINKS

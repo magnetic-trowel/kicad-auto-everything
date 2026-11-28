@@ -97,6 +97,7 @@ EXPORT_BAND = (0.1, 10.0)       # lo, hi as factors of the assumed current
 # state that current (cells.<id>.I_A or I_out_A, a charger's parts.<ref>.I_A), "all" also a ledger prior, "off" never
 EXPORT_FROM_FEED = "stated"
 CHARGE_SINKS = True             # a charger with no load charges the external source one series part away (plan)
+CHARGE_PATH = ("transistor", "diode")   # the blocking parts such a path runs through (any SERIES part for a charger IC)
 SUPPLY_PIN = re.compile(r"^(V(CC|DD|IN|BAT|BUS|S|M|PP|IO|CORE|DDA|DDIO|USB|SYS|P|\+)\w*|AVDD|DVDD|IOVDD|PVDD|PVIN|"
                         r"AVCC|DVCC|VIN\d*|PWR|POWER|\+V\w*|V\+|VREG_IN|IN)$", re.I)
 VOLT_PIN = re.compile(r"^\+?\d+V\d*$|^\+?\d+(\.\d+)?V$", re.I)     # '3V3', '5V', '+1.8V': a supply pin by its voltage
@@ -832,9 +833,15 @@ def plan(board, brief, bd, P, srcs, intent=None):
             if fo is None:
                 continue
             own_parts = (f["cell"]["parts"] if f["kind"] == "cell" else {f["ref"]})
+            # a charge path into a battery runs through a blocking part (obd-solar's Q203, a Schottky); a resistor,
+            # jumper, bead or fuse between a converter and a connector's rail joins one rail (antmicro sdi-mipi's
+            # U7 -> R40 -> +3V3, whose J7 the brief reads as its source: read as a charge, 1.6 A into J7). A charger
+            # IC's output may reach its battery through any series part
+            is_charger = (parts.get(uuid_of.get(f.get("ref"))) or {}).get("subtype") == "charger"
+            kinds = SERIES if is_charger else CHARGE_PATH
             cands = []
             for ref, pp in sorted(pads.items()):
-                if ref in own_parts or (parts.get(uuid_of.get(ref)) or {}).get("kind") not in SERIES:
+                if ref in own_parts or (parts.get(uuid_of.get(ref)) or {}).get("kind") not in kinds:
                     continue
                 ns = {nt for _, nt, _, _ in pp}
                 if r not in ns:
