@@ -96,7 +96,7 @@ EXPORT_BAND = (0.1, 10.0)       # lo, hi as factors of the assumed current
 # A rail whose only loads are such exports takes what its feed delivers instead (plan): "stated" only where the facts
 # state that current (cells.<id>.I_A or I_out_A, a charger's parts.<ref>.I_A), "all" also a ledger prior, "band" keeps
 # the 1 % typical and raises the band's top to the feed's (stated or prior), "off" never
-EXPORT_FROM_FEED = "stated"
+EXPORT_FROM_FEED = "band"
 CHARGE_SINKS = True             # a charger with no load charges the external source one series part away (plan)
 CHARGE_PATH = ("transistor", "diode")   # the blocking parts such a path runs through (any SERIES part for a charger IC)
 SUPPLY_PIN = re.compile(r"^(V(CC|DD|IN|BAT|BUS|S|M|PP|IO|CORE|DDA|DDIO|USB|SYS|P|\+)\w*|AVDD|DVDD|IOVDD|PVDD|PVIN|"
