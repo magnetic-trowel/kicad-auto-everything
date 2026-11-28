@@ -30,6 +30,9 @@ Definitions, each a share in [0, 1] per net and pooled per board (sum of numerat
   fills, since router outputs store none). Only nets the plan gives a source and a load; elsewhere missing.
 Boards without a human layout (generated designs): `--ref class` takes each net's KiCad class width as w_h
 (reference_from_classes); that is the class-relative measure W8 warns about, stated as such.
+- `share_neck`: the part of `share_x` that is also narrower than the net's own KiCad class width (from the human
+  board's `.kicad_pro`; without rules, w_h): the router necking, as opposed to drawing at a class the human widened
+  past by hand. `share_x - share_neck` is what only a width source other than the class can close.
 The same definitions applied to the human layout against its own w_h (`human`) give the floor: humans neck too.
 """
 from __future__ import annotations
@@ -45,11 +48,12 @@ from pathlib import Path
 
 POWER_ROLES = ("rail", "ground", "switch_node")
 IMPEDANCE_ROLES = ("high_speed", "rf", "clock")   # drawn wide for impedance, not current (USB pairs, RF feeds)
-DEFS = ("share", "share_x", "deficit", "share_i")
+DEFS = ("share", "share_x", "deficit", "share_i", "share_neck")
 DEFAULTS = dict(tol=0.05, reach=1.0, wide=1.2, min_human_mm=2.0, branch=True, pour=True)
 
 
-def _load(path):
+def _load(path, rules=False):
+    """A board (`.kicad_pcb` or `.kicad_pcb.gz`); `rules`: read the net classes of the `.kicad_pro` beside it."""
     from haslam.board.kicad_file import load
     p = Path(path)
     if p.suffix == ".gz":
@@ -57,7 +61,20 @@ def _load(path):
             q = Path(d) / p.stem
             q.write_bytes(gzip.decompress(p.read_bytes()))
             return load(q, rules=False)
-    return load(p, rules=False)
+    return load(p, rules=rules)
+
+
+def class_width(board, net):
+    """The net's KiCad class track width (None without rules)."""
+    from haslam.board.kicad_file import netclass_of
+    r = getattr(board, "rules", None)
+    ncs = getattr(r, "netclasses", None) or {}
+    if not ncs:
+        return None
+    for name in netclass_of(r, net).split(","):
+        if name in ncs and ncs[name].track_width:
+            return ncs[name].track_width
+    return ncs["Default"].track_width if "Default" in ncs else None
 
 
 def wmedian(pairs):
@@ -99,7 +116,8 @@ def reference(human, brief=None, wide=DEFAULTS["wide"], min_human_mm=DEFAULTS["m
         by_role = n in power_role
         by_width = bool(w_sig and w_h >= wide * w_sig - 1e-9)
         if by_role or by_width:
-            out[n] = dict(w_h=w_h, human_mm=round(mm, 3), role=roles.get(n), by_role=by_role, by_width=by_width)
+            out[n] = dict(w_h=w_h, human_mm=round(mm, 3), role=roles.get(n), by_role=by_role, by_width=by_width,
+                          w_class=class_width(human, n))
     return out, w_sig
 
 
@@ -125,7 +143,8 @@ def reference_from_classes(board, brief=None, wide=DEFAULTS["wide"]):
         by_role = roles.get(n) in POWER_ROLES
         by_width = w >= wide * w0 - 1e-9
         if by_role or by_width:
-            out[n] = dict(w_h=w, human_mm=None, role=roles.get(n), by_role=by_role, by_width=by_width, basis="class")
+            out[n] = dict(w_h=w, human_mm=None, role=roles.get(n), by_role=by_role, by_width=by_width, basis="class",
+                          w_class=w)
     return out, w0
 
 
@@ -209,6 +228,7 @@ def measure_layout(board, ref, tol=DEFAULTS["tol"], reach=DEFAULTS["reach"], bra
     for net, r in ref.items():
         ts = by_net.get(net) or []
         w_h = r["w_h"]
+        w_neck = min(w_h, r.get("w_class") or w_h)      # below this a track is narrower than its own class too
         zone = unary_union([g.buffer(reach) for _tk, g, _l in pads.get(net, ())]) if pads.get(net) else None
         poured = {ly: unary_union(gs) for ly, gs in pours.get(net, {}).items()} if pour else {}
         num = dict.fromkeys(DEFS, 0.0)
@@ -233,6 +253,8 @@ def measure_layout(board, ref, tol=DEFAULTS["tol"], reach=DEFAULTS["reach"], bra
             if Lx > 1e-9:
                 den["share_x"] += Lx
                 num["share_x"] += Ln
+                den["share_neck"] += Lx
+                num["share_neck"] += Ln if t.width < (1 - tol) * w_neck else 0.0
                 if ci is not None:
                     i = ci.get(_key(t.start, t.end), 0.0)
                     den["share_i"] += Lx * i

@@ -102,3 +102,17 @@ def test_narrow_track_under_a_same_net_pour_counts_as_wide(tmp_path, human):
     beyond = 20.0 - 2 * (1.0 + 0.3)                      # the run beyond 1 mm of either 0.6 mm pad
     assert pw["share_x"] == pytest.approx((beyond - 10.0) / beyond, rel=1e-3)
     assert W.measure(p, human, {"branch": False, "pour": False})["pooled"]["power"]["share_x"] == pytest.approx(1.0)
+
+
+def test_share_neck_separates_class_width_from_necks(tmp_path, human):
+    # the human drew VBAT at 1.0; its class says 0.5: a router at 0.5 is narrow but not necked, at 0.2 it is both
+    W_class = {"VBAT": 0.5}
+    ref, w_sig = W.reference(W._load(human))
+    for n in ref:
+        ref[n]["w_class"] = W_class.get(n)
+    for w, neck in ((0.5, 0.0), (0.2, 1.0)):
+        p = tmp_path / f"routed-{w}.kicad_pcb"
+        p.write_text(board(w))
+        pw = W.measure(p, human, {"branch": False}, ref=(ref, w_sig))["pooled"]["power"]
+        assert pw["share_x"] == pytest.approx(1.0)
+        assert pw["share_neck"] == pytest.approx(neck)

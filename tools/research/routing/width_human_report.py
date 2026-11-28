@@ -14,7 +14,7 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-DEFS = ("share", "share_x", "deficit", "share_i")
+DEFS = ("share", "share_x", "deficit", "share_i", "share_neck")
 NAMES = {"288a499c": "bridge", "85993b60": "staged", "human": "human"}
 
 
@@ -140,7 +140,7 @@ def main(argv=None):
                 "|---|---|---|---|---|---|---|"]
         for sf in a.suites:
             bs = {b for b in Path(sf).read_text().split() if not b.startswith("#")}
-            for k in ("share_x", "deficit", "share_i"):
+            for k in ("share_x", "share_neck", "deficit", "share_i"):
                 x = seed_mean(v, "bridge", "d", s, k, bs)
                 h = v.get(("human", 0, "d", s, k), {})
                 c = [b for b in x if b in h]

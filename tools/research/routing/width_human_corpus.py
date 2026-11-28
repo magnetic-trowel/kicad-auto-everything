@@ -41,7 +41,7 @@ def one_board(board, methods, attempts):
     if not human_path.exists():
         return [dict(board=board, error="no corpus board")]
     try:
-        human = W._load(human_path)
+        human = W._load(human_path, rules=True)      # net classes for share_neck
         ref0 = W.reference(human)
     except Exception as e:
         return [dict(board=board, error=f"human: {type(e).__name__}: {e}")]
