@@ -89,13 +89,14 @@ def main(argv=None):
     a = ap.parse_args(argv)
     v, errors, nets = load(a.rows)
     s = a.subset
+    methods = sorted({key[0] for key in v if key[0] != "human"}, key=lambda m: (m not in ("bridge", "staged"), m))
     out = [f"# width_human on stored runs (subset `{s}`)", ""]
     out.append(f"Boards with >= 1 power net with human track: {nets['boards_with_power_nets']}. "
                f"Errors: {dict(errors) or 'none'}.")
     out += ["", "## 1. Corpus mean, paired against the human floor (option set d, mean of seeds 0 and 1 per board)", "",
             "| method | definition | boards | mean | median | human floor | method - floor [95 % CI] |",
             "|---|---|---|---|---|---|---|"]
-    for m in ("bridge", "staged"):
+    for m in methods:
         for k in DEFS:
             x = seed_mean(v, m, "d", s, k)
             h = v.get(("human", 0, "d", s, k), {})
@@ -110,7 +111,7 @@ def main(argv=None):
     out += ["", "## 2. Stability: seed 0 vs seed 1 (Spearman across boards) and option-set sensitivity", "",
             "| method | definition | boards (both seeds) | Spearman s0-s1 | mean abs s0-s1 | "
             "mean d | tol15 - d | reach05 - d | nopour - d |", "|---|---|---|---|---|---|---|---|---|"]
-    for m in ("bridge", "staged"):
+    for m in methods:
         for k in DEFS:
             a0, a1 = v.get((m, 0, "d", s, k), {}), v.get((m, 1, "d", s, k), {})
             both = [b for b in a0 if b in a1]
