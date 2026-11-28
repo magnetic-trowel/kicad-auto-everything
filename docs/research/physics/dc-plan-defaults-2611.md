@@ -11,7 +11,7 @@ a DC plan with no load where only a converter is stated, per-cell window solves 
 unless a design writes them. Not here: the router's widths -> [power-net-track-width](../routing/power-net-track-width.md)
 (branch `obd-solar-e2e`); the 1 % export prior's own A/B -> [export-current-one-percent](export-current-one-percent.md).
 Keys: EXPORT_FROM_FEED, band, stated, CHARGE_SINKS, CHARGE_PATH, charge sink, feed_output, element_terminals, per_net,
-planned_injections facts, _switch_parts, external switch FET heat, HASLAM_CELL_WINDOW_GB, window memory budget,
+planned_injections facts, _switch_parts, external switch FET heat, HASLAM_CELL_WINDOW_GB, HASLAM_CELL_MAX_CELLS, window_budget, window memory budget,
 D-HEAT, dc_terms, D-laminate, LAMINATE_MOT_C, width_injections, obd-solar
 
 ## 1. DC plan (`physics/dc-plan-cells`)
@@ -87,15 +87,18 @@ Inputs and intents of [evaluator-audit-2611](evaluator-audit-2611.md) (`runs12`)
 Done by a sub-agent; numbers and method in `docs/research/physics/cell-window-memory.md` on that branch.
 
 1. A memory estimate before factoring, `420 B x (1 + layers/2) x n log2 n` (upper envelope of 30 measured windows,
-   1.02-2.3x actual), against a fixed budget of 6 GB per window (`HASLAM_CELL_WINDOW_GB`); over it the pitch doubles,
+   1.02-2.3x actual), against the memory really available when the window starts (`window_budget`: 0.85 of the least of
+   MemAvailable, the cgroup's hard limit and `ulimit -v`; about 135 GB on the shared host); over it the pitch doubles,
    at the board's pitch the board values stand; recorded in the row (`window.coarsened`, `window.why`).
-2. `MemoryError`, and SuperLU's out-of-memory `SystemError`, fall back the same way (a backstop: the heap stays high).
-3. Freed after use: each cell's kernel tables, the DC network and operator after the heat band.
-4. obd-solar at the default pitch: 15.9 GB, 95 min -> 6.1 GB, 44 min (its three cells refuse 0.0625 and run at 0.125:
-   observations identical to the old `--cell-pitch 0.125` run). 0.125 vs 0.0625 mm on 11 cells: L_loop -5.6 .. +3.8 %,
-   R_loop -9.1 .. +8.2 %. 8 corpus boards: observations identical before and after.
-5. Not adopted: a subprocess per window (fork after OpenMP threads), a free-memory budget (a board's pitch would
-   depend on the host's load).
+   `HASLAM_CELL_WINDOW_GB` sets an explicit cap. A first version used a fixed 6 GB and coarsened obd-solar's cells on a
+   251 GB host: rejected, no made-up resolution budgets.
+2. No raster cap by default: `MAX_CELLS` (1.2M cells, a 5-minute guess) took obd-solar's U201 window to 0.125 mm
+   though 14.6 GB fit; it is opt-in (`HASLAM_CELL_MAX_CELLS`).
+3. `MemoryError`, and SuperLU's out-of-memory `SystemError`, fall back the same way (a backstop: the heap stays high).
+4. Freed after use: each cell's kernel tables, the DC network and operator after the heat band.
+5. 0.125 vs 0.0625 mm on 11 cells: L_loop -5.6 .. +3.8 %, R_loop -9.1 .. +8.2 % (what a coarsened window costs).
+   Re-scored with cells on (12-board set and obd-solar, main vs the branch): see the branch's doc.
+6. Not adopted: a subprocess per window (fork after OpenMP threads).
 
 ## 3. Default DC terms
 
